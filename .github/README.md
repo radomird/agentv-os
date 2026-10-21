@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>A TV OS whose own agent builds the apps it is missing.</b><br>
+  <b>The world's first open-source agentic TV OS.</b><br>
   Powered by <a href="https://omarchy.org">Omarchy</a>.
 </p>
 
