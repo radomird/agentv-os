@@ -12,13 +12,13 @@
 
 ---
 
-AgenTV is a TV OS for a little x86 box under your TV. Mine's an Intel NUC.
+AgenTV is a TV OS for a little x86 box under your TV. Tested on an Intel NUC.
 
 I wanted a TV I could just talk to. Sit down, say "continue the show I was watching" into your phone, and it knows which app that was.
 
-And when it's missing an app, you shouldn't have to wait for someone to write one. Ask it to add Disney+ and its agent goes off and builds the app: finds the site, writes the integration, tests it, and asks an adult before anything gets installed.
+And when it's missing an app, you shouldn't have to wait for someone to write one. Ask it to add Disney+ and its agent goes off and builds the app: finds the site, writes the integration and tests it.
 
-It'll install from a USB stick. You answer Omarchy's usual installer questions and finish the rest from your phone.
+It'll install from a USB stick. You answer Omarchy's usual installer questions and finish the rest from your phone. A companion app is coming soon too: remote, keyboard and microphone in one.
 
 Not there yet, though. Phase 1 is being built right now, so there's nothing to install. Watch the repo if you want to know when there is.
 
@@ -40,6 +40,7 @@ The AgenTV wordmark is drawn in the letterforms of Omarchy's logo, as a thank-yo
 | --- | --- |
 | `agentv-os` (this one) | The TV OS: Omarchy plus TV mode, the daemon, the launcher, setup, the builder and the app contract |
 | [`agentv-iso`](https://github.com/radomird/agentv-iso) | The installer ISO, a fork of `omacom/omarchy-iso` that installs `agentv-os` |
-| `agentv-index` | The signed index of apps (coming) |
-| `agentv-app-*` | Official apps: Jellyfin, Plex, Immich, Steam (coming) |
-| `agentv-plugin` | An Omarchy shell plugin with a "Back to TV" button for the desktop (coming) |
+| `agentv-index` | The signed index of apps (coming soon) |
+| `agentv-app-*` | Official apps: Jellyfin, Plex, Immich, Steam (coming soon) |
+| `agentv-plugin` | An Omarchy shell plugin with a "Back to TV" button for the desktop (coming soon) |
+| `agentv-companion` | The phone app: remote, keyboard and microphone (coming soon) |
