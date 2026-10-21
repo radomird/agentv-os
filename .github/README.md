@@ -16,7 +16,7 @@ AgenTV is a TV OS for a little x86 box under your TV. Tested on an Intel NUC.
 
 I wanted a TV I could just talk to. Sit down, say "continue the show I was watching" into your phone, and it knows which app that was.
 
-And when it's missing an app, you shouldn't have to wait for someone to write one. Ask it to add Disney+ and its agent goes off and builds the app: finds the site, writes the integration and tests it.
+And when it's missing an app, you shouldn't have to wait for someone to write one. Ask it to add a streaming service or a game and its agent goes off and builds the app: finds it, writes the integration and tests it.
 
 It'll install from a USB stick. You answer Omarchy's usual installer questions and finish the rest from your phone. A companion app is coming soon too: remote, keyboard and microphone in one.
 
