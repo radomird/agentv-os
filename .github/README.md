@@ -12,9 +12,15 @@
 
 ---
 
-AgenTV turns an x86_64 mini PC (the reference box is an Intel NUC) into a TV. Install it from a USB stick, finish setup from your phone, and it boots to a couch-sized home screen. Ask it for an app it doesn't have, say "add Disney+", and its agent builds and tests that app in the background, then installs it once an adult approves.
+AgenTV is a TV OS for a little x86 box under your TV. Mine's an Intel NUC.
 
-**Status:** early. Phase 1 is being built, and there is nothing to install yet.
+I wanted a TV I could just talk to. Sit down, say "continue the show I was watching" into your phone, and it knows which app that was.
+
+And when it's missing an app, you shouldn't have to wait for someone to write one. Ask it to add Disney+ and its agent goes off and builds the app: finds the site, writes the integration, tests it, and asks an adult before anything gets installed.
+
+It'll install from a USB stick. You answer Omarchy's usual installer questions and finish the rest from your phone.
+
+Not there yet, though. Phase 1 is being built right now, so there's nothing to install. Watch the repo if you want to know when there is.
 
 ## Powered by Omarchy
 
