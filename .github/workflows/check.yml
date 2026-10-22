@@ -4,7 +4,8 @@ name: Check
 # push to agentv: Omarchy's files unchanged since .github/omarchy-base, no em
 # dashes, no secrets, no service automation, no owner in code, shellcheck,
 # AgenTV's unit tests, and Omarchy's own tests no worse than at the base.
-# Other workflows reuse it.
+# A pull request that changes what the box installs, runs or migrates also
+# gets the image layer (layer 5). Other workflows reuse it.
 
 on:
   pull_request:
@@ -95,6 +96,61 @@ jobs:
               test/agentv/omarchy-tests
             "
           '
+
+  # ADR-019: install/, system/, config/hypr/ and migrations/ change the box
+  # itself, so a pull request touching them gets the image layer too. Not a
+  # fork's, which gets no signing key, and not a sync pull request, which
+  # omarchy-sync.yml already runs the image layer for.
+  changes:
+    name: Does this need the image layer
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.paths.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: paths
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          # The checkout is the pull request merged into its base, so its
+          # first parent is the base.
+          changed=$(git diff --name-only HEAD^1 HEAD -- install/ system/ config/hypr/ migrations/)
+          image=false
+          if [[ -z $changed ]]; then
+            why="nothing under install/, system/, config/hypr/ or migrations/ changed"
+          elif [[ $HEAD_REPO != "$GITHUB_REPOSITORY" ]]; then
+            why="it's from a fork, which gets no signing key"
+          elif [[ $HEAD_REF == omarchy-sync/* ]]; then
+            why="it's an Omarchy sync, and omarchy-sync.yml runs the image layer for it"
+          else
+            image=true
+          fi
+          echo "image=$image" >>"$GITHUB_OUTPUT"
+          if [[ $image == true ]]; then
+            echo "The image layer runs: $(wc -l <<<"$changed") changed files under install/, system/, config/hypr/ or migrations/." >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "No image layer, because $why." >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+  image:
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
+    # image.yml asks for contents: write, for the nightly run's tested.json.
+    # A pull request's run never publishes it.
+    permissions:
+      contents: write
+    uses: ./.github/workflows/image.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      packages: build
+      update-test: true
+    secrets: inherit
 
   report:
     name: Acceptance ids

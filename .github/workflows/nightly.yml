@@ -5,6 +5,12 @@ name: Nightly
 # place (S0.5). When everything passes, the run signs tested.json with every
 # package and version on the box, and boxes take only those (ADR-026, S0.7).
 # Until AgenTV has a stable release, it tests edge. A failure opens an issue.
+#
+# It's also where the edge ISO is made, the way omarchy-iso's own nightly
+# build makes Omarchy's: AgenTV's edge packages on Omarchy's stable channel,
+# built from agentv-iso's agentv branch, kept as a workflow artifact when
+# every check passes. Once there's a stable release, edge gets a run of its
+# own beside it, and only the stable run signs tested.json.
 
 on:
   schedule:
@@ -24,7 +30,7 @@ jobs:
     name: Which release to test
     runs-on: ubuntu-26.04
     outputs:
-      channel: ${{ steps.which.outputs.channel }}
+      runs: ${{ steps.which.outputs.runs }}
     steps:
       - id: which
         env:
@@ -32,21 +38,27 @@ jobs:
           PKGS: ${{ github.repository_owner }}/agentv-pkgs
         run: |
           if gh release view stable -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^agentv-[0-9]'; then
-            channel=stable
+            runs='[{"packages":"stable","tested":true,"iso":false},{"packages":"edge","tested":false,"iso":true}]'
+            echo "Testing AgenTV's stable release, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           else
-            channel=edge
+            runs='[{"packages":"edge","tested":true,"iso":true}]'
+            echo "Testing AgenTV's edge release (there's no stable one yet), and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
-          echo "channel=$channel" >>"$GITHUB_OUTPUT"
-          echo "Testing AgenTV's $channel release" >>"$GITHUB_STEP_SUMMARY"
+          echo "runs=$runs" >>"$GITHUB_OUTPUT"
 
   image:
     needs: which
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.which.outputs.runs) }}
     uses: ./.github/workflows/image.yml
     with:
       ref: agentv
-      packages: ${{ needs.which.outputs.channel }}
+      packages: ${{ matrix.packages }}
       update-test: true
-      nightly: true
+      nightly: ${{ matrix.tested }}
+      keep-iso: ${{ matrix.iso }}
     secrets: inherit
 
   issue:
@@ -60,4 +72,4 @@ jobs:
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh issue create -R "$GITHUB_REPOSITORY" --title "Nightly run failed on $(date -u +%Y-%m-%d)" \
-            --body "Tonight's image run failed, so tested.json wasn't updated and boxes stay where they are. Screenshots and logs: $RUN"
+            --body "An image run failed tonight, so tested.json, the edge ISO or both weren't updated. Boxes stay where they are. Screenshots and logs: $RUN"
