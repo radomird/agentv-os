@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# Runs Omarchy's own CLI and shell suites at the base tag and at HEAD, one
+# file at a time, and fails when a file that passes at the base fails here.
+# AgenTV only adds files, so a new failure means something of ours leaked into
+# Omarchy's world, such as a command in bin/ that one of its scans picks up.
+# Comparing with the base keeps a test that needs a desktop (and so can't pass
+# in CI either way) from hiding the ones that can.
+
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+base=$(sed -n '1{s/[[:space:]]//g;p;}' .github/omarchy-base)
+WORK=$(mktemp -d)
+# Next to this checkout, so both trees sit in the same kind of directory: some
+# of Omarchy's tests care who owns the folders above them.
+BASE_TREE="$(dirname "$ROOT")/.agentv-omarchy-base.$$"
+trap 'git worktree remove --force "$BASE_TREE" >/dev/null 2>&1 || true; rm -rf "$WORK" "$BASE_TREE"' EXIT
+
+git worktree add --quiet --detach "$BASE_TREE" "$base^{commit}"
+
+# run_suites <tree> <results file>: one "pass|fail <name>" line per test file.
+run_suites() {
+  local tree="$1" results="$2" test name
+
+  : >"$results"
+  for test in "$tree/test/cli" "$tree"/test/shell.d/*-test.sh; do
+    name=${test#"$tree"/}
+    [[ $name == "test/shell.d/base-test.sh" ]] && continue
+    if (cd "$tree" && timeout 120 bash "$test" >"$WORK/last.log" 2>&1); then
+      printf 'pass %s\n' "$name" >>"$results"
+    else
+      printf 'fail %s\n' "$name" >>"$results"
+      cp "$WORK/last.log" "$WORK/$(basename "$results").$(basename "$name").log"
+    fi
+  done
+}
+
+printf '==> Omarchy %s\n' "$base"
+run_suites "$BASE_TREE" "$WORK/base-results"
+printf '==> HEAD\n'
+run_suites "$ROOT" "$WORK/head-results"
+
+total=$(grep -c . "$WORK/head-results")
+base_failing=$(grep -c '^fail ' "$WORK/base-results" || true)
+
+# passes_on_retry <name>: a test that passes here on any of four more tries
+# is flaky, not broken by AgenTV.
+passes_on_retry() {
+  local _
+
+  for _ in 1 2 3 4; do
+    (cd "$ROOT" && timeout 120 bash "$ROOT/$1" >/dev/null 2>&1) && return 0
+  done
+  return 1
+}
+
+sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$ROOT/test/agentv/omarchy-flaky" >"$WORK/known-flaky"
+
+regressions=()
+flaky=()
+while read -r status name; do
+  [[ $status == "fail" ]] || continue
+  grep -qxF "pass $name" "$WORK/base-results" || continue
+  if grep -qxF "$name" "$WORK/known-flaky" || passes_on_retry "$name"; then
+    flaky+=("$name")
+  else
+    regressions+=("$name")
+  fi
+done <"$WORK/head-results"
+
+if (( ${#flaky[@]} > 0 )); then
+  printf 'note: these failed here but are known to be flaky, or passed on a retry:\n'
+  printf '  %s\n' "${flaky[@]}"
+fi
+
+if (( ${#regressions[@]} > 0 )); then
+  printf 'not ok - Omarchy test files that pass at %s fail here:\n' "$base" >&2
+  for name in "${regressions[@]}"; do
+    printf '\n--- %s\n' "$name" >&2
+    tail -n 40 "$WORK/head-results.$(basename "$name").log" >&2 || true
+  done
+  exit 1
+fi
+
+printf "ok - Omarchy's own tests: %d files, none worse than at %s (%d fail there too, without a desktop)\n" \
+  "$total" "$base" "$base_failing"

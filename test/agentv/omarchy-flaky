@@ -1,0 +1,9 @@
+# Omarchy test files that pass or fail by chance, at the base as much as
+# here, so test/agentv/omarchy-tests reports them and moves on. One path per
+# line, with the reason. Drop a line once upstream fixes the test.
+
+# Picks a quarantined hook with find -print -quit, which returns whichever
+# match the filesystem lists first. Earlier cases in the same file leave other
+# keyboard-backlight quarantines with random names, so "discards an unsafe
+# custom symlink" fails when one of those comes first.
+test/shell.d/system-sleep-ownership-migration-test.sh

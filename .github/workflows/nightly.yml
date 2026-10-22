@@ -1,0 +1,63 @@
+name: Nightly
+
+# Every night, the current AgenTV release on Omarchy's stable channel as it
+# stands tonight goes through the whole image layer, including an update in
+# place (S0.5). When everything passes, the run signs tested.json with every
+# package and version on the box, and boxes take only those (ADR-026, S0.7).
+# Until AgenTV has a stable release, it tests edge. A failure opens an issue.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  which:
+    name: Which release to test
+    runs-on: ubuntu-26.04
+    outputs:
+      channel: ${{ steps.which.outputs.channel }}
+    steps:
+      - id: which
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PKGS: ${{ github.repository_owner }}/agentv-pkgs
+        run: |
+          if gh release view stable -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^agentv-[0-9]'; then
+            channel=stable
+          else
+            channel=edge
+          fi
+          echo "channel=$channel" >>"$GITHUB_OUTPUT"
+          echo "Testing AgenTV's $channel release" >>"$GITHUB_STEP_SUMMARY"
+
+  image:
+    needs: which
+    uses: ./.github/workflows/image.yml
+    with:
+      ref: agentv
+      packages: ${{ needs.which.outputs.channel }}
+      update-test: true
+      nightly: true
+    secrets: inherit
+
+  issue:
+    name: Say what broke
+    needs: image
+    if: failure()
+    runs-on: ubuntu-26.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create -R "$GITHUB_REPOSITORY" --title "Nightly run failed on $(date -u +%Y-%m-%d)" \
+            --body "Tonight's image run failed, so tested.json wasn't updated and boxes stay where they are. Screenshots and logs: $RUN"

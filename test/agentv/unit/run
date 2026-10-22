@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Runs AgenTV's unit tests (ADR-019, layer 2), every file, even after one
+# fails, so one failure can't hide the rest.
+
+set -euo pipefail
+
+DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+failed=()
+count=0
+for test in "$DIR"/*-test.sh; do
+  [[ -f $test ]] || continue
+  count=$(( count + 1 ))
+  printf '==> %s\n' "${test##*/}"
+  bash "$test" || failed+=("${test##*/}")
+done
+
+if (( ${#failed[@]} > 0 )); then
+  printf '\n%d of %d unit test files failed:\n' "${#failed[@]}" "$count" >&2
+  printf '  %s\n' "${failed[@]}" >&2
+  exit 1
+fi
+printf '\nAll %d unit test files passed.\n' "$count"

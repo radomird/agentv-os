@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# agentv:summary=Put AgenTV's package repository in /etc/pacman.conf
+# agentv:args=[--check] [--file <pacman.conf>]
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# Omarchy owns /etc/pacman.conf and rewrites it whole, on install and on
+# omarchy refresh pacman. AgenTV keeps one section at its end, between two
+# marker lines, and this puts it back whenever it's missing or out of date.
+# The repository's address comes from the package's settings, written when
+# the package was built, so the GitHub owner isn't in this code.
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: agentv-pacman-conf [--check] [--file <pacman.conf>]"
+}
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+conf=/etc/pacman.conf
+check=0
+
+while (( $# )); do
+  case "$1" in
+    --check) check=1 ;;
+    --file)
+      conf="${2:?--file needs a path}"
+      shift
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+settings="$AGENTV_PATH/settings"
+if [[ ! -f $settings ]]; then
+  echo "agentv-pacman-conf: $settings is missing" >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$settings"
+: "${AGENTV_REPO_URL:?is not set in $settings}"
+: "${AGENTV_CHANNEL:?is not set in $settings}"
+server="$AGENTV_REPO_URL/$AGENTV_CHANNEL"
+
+# The box's own choices win over the package's: a channel picked with agentv
+# channel, or a whole repository address (a local mirror, or a test).
+AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
+if [[ -s $AGENTV_ETC/repository ]]; then
+  server=$(head -n 1 "$AGENTV_ETC/repository")
+elif [[ -s $AGENTV_ETC/channel ]]; then
+  AGENTV_CHANNEL=$(head -n 1 "$AGENTV_ETC/channel")
+  server="$AGENTV_REPO_URL/$AGENTV_CHANNEL"
+fi
+
+begin="# BEGIN agentv: added by agentv-pacman-conf, kept at the end"
+end="# END agentv"
+section=$(printf '%s\n' \
+  "$begin" \
+  "[agentv]" \
+  "SigLevel = Required DatabaseOptional" \
+  "Server = $server" \
+  "$end")
+
+# The file without AgenTV's section, whatever state that section is in.
+without_section() {
+  awk -v begin="$begin" -v end="$end" '
+    $0 == begin { skipping = 1; next }
+    skipping && $0 == end { skipping = 0; next }
+    !skipping
+  ' "$conf"
+}
+
+current=$(awk -v begin="$begin" -v end="$end" '
+  $0 == begin { printing = 1 }
+  printing { print }
+  printing && $0 == end { exit }
+' "$conf")
+
+if [[ $current == "$section" ]]; then
+  (( check )) && echo "AgenTV's repository is in $conf"
+  exit 0
+fi
+
+if (( check )); then
+  echo "AgenTV's repository is missing from $conf, or out of date" >&2
+  exit 1
+fi
+
+# Write a sibling file, then move it into place, so pacman never reads half.
+tmp=$(mktemp "$conf.agentv.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+{
+  without_section | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+  echo
+  printf '%s\n' "$section"
+} >"$tmp"
+chmod --reference="$conf" "$tmp" 2>/dev/null || chmod 644 "$tmp"
+mv -f "$tmp" "$conf"
+trap - EXIT
+
+echo "AgenTV's repository in $conf is now $server"

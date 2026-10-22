@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# agentv:summary=Hand a newly installed box over to TV setup
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# Runs once, as root, from agentv-firstboot.service, before the login screen.
+# Each leaf in install/tv/ runs through Omarchy's own run_logged, the way
+# Omarchy runs its install leaves, and logs to /var/log/agentv-firstboot.log.
+
+set -euo pipefail
+
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+export AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+export AGENTV_INSTALL="$AGENTV_PATH/install/tv"
+export OMARCHY_INSTALL_LOG_FILE=/var/log/agentv-firstboot.log
+
+# The person who answered Omarchy's installer: the first ordinary user.
+AGENTV_OWNER=$(awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /nologin|false/ { print $1; exit }' /etc/passwd)
+if [[ -z $AGENTV_OWNER ]]; then
+  echo "agentv-firstboot: no user yet; trying again next boot" >&2
+  exit 0
+fi
+AGENTV_OWNER_HOME=$(getent passwd "$AGENTV_OWNER" | cut -d: -f6)
+export AGENTV_OWNER AGENTV_OWNER_HOME
+
+# shellcheck source=/dev/null
+source "$OMARCHY_PATH/install/helpers/logging.sh"
+start_install_log
+
+run_logged "$AGENTV_INSTALL/pacman.sh"
+run_logged "$AGENTV_INSTALL/state.sh"
+run_logged "$AGENTV_INSTALL/hooks.sh"
+run_logged "$AGENTV_INSTALL/autologin.sh"
+# A boot menu or a splash that fails to set isn't worth keeping the TV from
+# starting.
+run_logged "$AGENTV_INSTALL/bootmenu.sh" || echo "agentv-firstboot: boot menu failed; see $OMARCHY_INSTALL_LOG_FILE" >&2
+run_logged "$AGENTV_INSTALL/branding.sh" || echo "agentv-firstboot: branding failed; see $OMARCHY_INSTALL_LOG_FILE" >&2
+
+stop_install_log
+touch /var/lib/agentv/firstboot.done

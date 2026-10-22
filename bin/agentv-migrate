@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# agentv:summary=Run pending AgenTV migrations
+# agentv:args=[--pending | --mark-all-done]
+# agentv:hidden=true
+
+# AgenTV's own migrations, numbered and run the way omarchy-migrate runs
+# Omarchy's: each <unix-time>.sh once per user, oldest first, with a marker
+# file once it has finished. Omarchy's post-update hook calls this after every
+# update (ADR-025). A fresh install marks them all as done, since it already
+# is what they would migrate to.
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: agentv-migrate [--pending | --mark-all-done]"
+}
+
+mode="run"
+while (( $# )); do
+  case "$1" in
+    --pending) mode="pending" ;;
+    --mark-all-done) mode="mark" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+MIGRATIONS_DIR="$AGENTV_PATH/migrations"
+STATE_DIR="${AGENTV_MIGRATION_STATE:-$HOME/.local/state/agentv/migrations}"
+
+# Oldest first. Names are unix times, so a numeric sort is the order.
+migrations() {
+  local file
+
+  [[ -d $MIGRATIONS_DIR ]] || return 0
+  for file in "$MIGRATIONS_DIR"/*.sh; do
+    [[ -f $file ]] && basename "$file"
+  done | sort -n
+}
+
+pending=()
+while IFS= read -r name; do
+  [[ -n $name && ! -f $STATE_DIR/$name ]] && pending+=("$name")
+done < <(migrations)
+
+case "$mode" in
+  pending)
+    (( ${#pending[@]} > 0 )) || exit 1
+    printf '%s\n' "${pending[@]}"
+    exit 0
+    ;;
+  mark)
+    mkdir -p "$STATE_DIR"
+    for name in ${pending[@]+"${pending[@]}"}; do
+      touch "$STATE_DIR/$name"
+    done
+    exit 0
+    ;;
+esac
+
+if (( ${#pending[@]} == 0 )); then
+  echo "No AgenTV migrations to run"
+  exit 0
+fi
+
+mkdir -p "$STATE_DIR"
+for name in "${pending[@]}"; do
+  echo -e "\e[32m\nRunning AgenTV migration (${name%.sh})\e[0m"
+  # A failed migration stops here unmarked, so the next update runs it again.
+  AGENTV_PATH="$AGENTV_PATH" bash -euo pipefail "$MIGRATIONS_DIR/$name"
+  touch "$STATE_DIR/$name"
+done

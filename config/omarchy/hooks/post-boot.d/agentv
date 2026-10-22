@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Opens the TV once the Omarchy desktop has started. AgenTV's first boot puts
+# this file in the owner's ~/.config/omarchy/hooks/post-boot.d/, and
+# omarchy-hook runs it with bash a moment after Hyprland comes up.
+
+agentv-tv

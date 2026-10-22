@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# AgenTV's migrations, run after Omarchy's own on every omarchy update
+# (ADR-025). AgenTV's first boot puts this file in the owner's
+# ~/.config/omarchy/hooks/post-update.d/, and omarchy-hook runs it with bash.
+
+agentv-migrate

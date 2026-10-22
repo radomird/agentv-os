@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# agentv:summary=Show or switch the channel AgenTV updates from
+# agentv:args=[stable|edge]
+# agentv:examples=agentv channel | agentv channel edge
+# agentv:requires-sudo=true
+
+# Everyone is on stable. edge gets every commit that passes AgenTV's checks
+# and is for development only (ADR-025). Omarchy stays on its own stable
+# channel either way.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
+
+if (( $# == 0 )); then
+  if [[ -s $AGENTV_ETC/channel ]]; then
+    head -n 1 "$AGENTV_ETC/channel"
+  else
+    # shellcheck source=/dev/null
+    source "$AGENTV_PATH/settings"
+    echo "${AGENTV_CHANNEL:-stable}"
+  fi
+  exit 0
+fi
+
+case "$1" in
+  stable|edge) ;;
+  *) echo "Usage: agentv channel [stable|edge]" >&2; exit 2 ;;
+esac
+
+sudo install -d -m 755 "$AGENTV_ETC"
+echo "$1" | sudo tee "$AGENTV_ETC/channel" >/dev/null
+sudo "$AGENTV_BIN_DIR/agentv-pacman-conf"
+echo "AgenTV now updates from $1. Run agentv update to move to it."

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AgenTV setup</title>
+<!--
+  The TV setup welcome screen, as a placeholder (stage 0). The real setup
+  (stage 5) follows the signed-off canvas. Terminal look (ADR-014), Tokyo
+  Night colours, nothing loaded from outside the box.
+-->
+<style>
+  :root {
+    --bg: #1a1b26;
+    --fg: #c0caf5;
+    --muted: #565f89;
+    --accent: #7aa2f7;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 10vw;
+    box-sizing: border-box;
+  }
+  img {
+    width: 30vw;
+    min-width: 420px;
+    image-rendering: pixelated;
+  }
+  .prompt {
+    margin: 8vh 0 2vh;
+    font-size: 32px;
+    color: var(--muted);
+  }
+  .prompt b {
+    color: var(--accent);
+    font-weight: normal;
+  }
+  h1 {
+    margin: 0;
+    font-size: 120px;
+    font-weight: bold;
+  }
+  p {
+    margin: 3vh 0 0;
+    font-size: 36px;
+  }
+</style>
+</head>
+<body>
+  <img src="/logo.svg" alt="AgenTV">
+  <div class="prompt">~ <b>$</b> tv setup</div>
+  <h1>Hi.</h1>
+  <p>TV setup starts here. It isn't built yet.</p>
+<script>
+  // Once the page and its logo are drawn, tell the daemon this screen is
+  // really on the TV, for its /health.
+  window.addEventListener("load", () => {
+    fetch("/api/welcome-shown", { method: "POST" }).catch(() => {});
+  });
+</script>
+</body>
+</html>
