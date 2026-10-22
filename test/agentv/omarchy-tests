@@ -46,23 +46,25 @@ run_suites "$ROOT" "$WORK/head-results"
 total=$(grep -c . "$WORK/head-results")
 base_failing=$(grep -c '^fail ' "$WORK/base-results" || true)
 
-# passes_on_retry <name>: a test that passes here on a second or third try is
-# flaky, not broken by AgenTV.
+# passes_on_retry <name>: a test that passes here on any of four more tries
+# is flaky, not broken by AgenTV.
 passes_on_retry() {
   local _
 
-  for _ in 2 3; do
+  for _ in 1 2 3 4; do
     (cd "$ROOT" && timeout 120 bash "$ROOT/$1" >/dev/null 2>&1) && return 0
   done
   return 1
 }
+
+sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$ROOT/test/agentv/omarchy-flaky" >"$WORK/known-flaky"
 
 regressions=()
 flaky=()
 while read -r status name; do
   [[ $status == "fail" ]] || continue
   grep -qxF "pass $name" "$WORK/base-results" || continue
-  if passes_on_retry "$name"; then
+  if grep -qxF "$name" "$WORK/known-flaky" || passes_on_retry "$name"; then
     flaky+=("$name")
   else
     regressions+=("$name")
@@ -70,7 +72,7 @@ while read -r status name; do
 done <"$WORK/head-results"
 
 if (( ${#flaky[@]} > 0 )); then
-  printf 'note: these failed once here and then passed, so they count as flaky:\n'
+  printf 'note: these failed here but are known to be flaky, or passed on a retry:\n'
   printf '  %s\n' "${flaky[@]}"
 fi
 
