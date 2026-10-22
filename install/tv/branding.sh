@@ -1,7 +1,15 @@
-# AgenTV's logo on the boot splash and the login screen, through Omarchy's own
-# omarchy plymouth set, and on the screensaver and About, through Omarchy's
-# branding files (ADR-021). Omarchy's own commands, such as omarchy branding
-# screensaver reset, still bring its logo back.
+# AgenTV's logo on the screensaver and About, through Omarchy's branding
+# files, and on the boot splash and the login screen, through Omarchy's own
+# omarchy plymouth set (ADR-021). Omarchy's own commands, such as omarchy
+# branding screensaver reset, still bring its logo back.
+
+# The screensaver and About first, so a splash that fails can't stop them.
+# The folder is made as the owner, so nothing in their home ends up root's.
+branding_dir="$AGENTV_OWNER_HOME/.config/omarchy/branding"
+runuser -u "$AGENTV_OWNER" -- mkdir -p "$branding_dir"
+for art in screensaver about; do
+  install -m 644 -o "$AGENTV_OWNER" -g "$AGENTV_OWNER" "$AGENTV_PATH/branding/logo.txt" "$branding_dir/$art.txt"
+done
 
 # The splash takes the colours of the owner's current Omarchy theme, Tokyo
 # Night unless they've changed it.
@@ -29,8 +37,3 @@ visudo -cqf "$rule"
 runuser -u "$AGENTV_OWNER" -- env HOME="$AGENTV_OWNER_HOME" OMARCHY_PATH="$OMARCHY_PATH" \
   omarchy-plymouth-set "$background" "$foreground" "$AGENTV_PATH/branding/plymouth-logo.png"
 rm -f "$rule"
-
-for art in screensaver about; do
-  install -D -m 644 -o "$AGENTV_OWNER" -g "$AGENTV_OWNER" "$AGENTV_PATH/branding/logo.txt" \
-    "$AGENTV_OWNER_HOME/.config/omarchy/branding/$art.txt"
-done
