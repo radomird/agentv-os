@@ -22,16 +22,18 @@ theme_color() {
 background=$(theme_color background '#1a1b26')
 foreground=$(theme_color foreground '#c0caf5')
 
-# omarchy plymouth set runs as a user and asks sudo for its one privileged
-# step. First boot has nobody to type a password, and runs before the login
-# screen, when nothing of the owner's is running. So the owner may run bash as
-# root without a password for this one call. The rule goes right after, and
-# also if anything here fails. It uses the name omarchy sudo passwordless
-# uses, so Omarchy's own tmpfiles rule removes it at the next boot even if the
-# power goes out halfway through.
+# omarchy plymouth set runs as a user and asks sudo for its privileged steps:
+# a root bash that publishes the theme, then plymouth-set-default-theme and a
+# rebuild of the boot image. First boot has nobody to type a password, and
+# runs before the login screen, when nothing of the owner's is running. So
+# the owner may use sudo without a password for this one call; a root bash is
+# all of root anyway, so naming each command would protect nothing. The rule
+# goes right after, and also if anything here fails. It uses the name omarchy
+# sudo passwordless uses, so Omarchy's own tmpfiles rule removes it at the
+# next boot even if the power goes out halfway through.
 rule="/etc/sudoers.d/99-omarchy-nopasswd-$AGENTV_OWNER"
 trap 'rm -f "$rule"' EXIT
-printf '%s ALL=(root) NOPASSWD: /bin/bash\n' "$AGENTV_OWNER" >"$rule"
+printf '%s ALL=(root) NOPASSWD: ALL\n' "$AGENTV_OWNER" >"$rule"
 chmod 0440 "$rule"
 visudo -cqf "$rule"
 runuser -u "$AGENTV_OWNER" -- env HOME="$AGENTV_OWNER_HOME" OMARCHY_PATH="$OMARCHY_PATH" \
