@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# agentv:summary=Print the installed AgenTV and Omarchy versions
+# agentv:examples=agentv version
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+
+if [[ -f $AGENTV_PATH/settings ]]; then
+  # shellcheck source=/dev/null
+  source "$AGENTV_PATH/settings"
+  echo "AgenTV ${AGENTV_VERSION:-unknown} (${AGENTV_CHANNEL:-stable})"
+else
+  # A checkout, not the package.
+  echo "AgenTV dev ($(git -C "$AGENTV_PATH" rev-parse --short HEAD 2>/dev/null || echo unknown))"
+fi
+
+if type -P omarchy-version >/dev/null; then
+  echo "Omarchy $(omarchy-version)"
+fi

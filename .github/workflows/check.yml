@@ -1,9 +1,10 @@
 name: Check
 
-# AgenTV's fast gate (ADR-019, layer 1) on every pull request and every push to
-# agentv: Omarchy's files unchanged since .github/omarchy-base, no em dashes,
-# no secrets, no service automation, no owner in code, shellcheck, and
-# Omarchy's own tests no worse than at the base. Other workflows reuse it.
+# AgenTV's fast gates (ADR-019, layers 1 and 2) on every pull request and every
+# push to agentv: Omarchy's files unchanged since .github/omarchy-base, no em
+# dashes, no secrets, no service automation, no owner in code, shellcheck,
+# AgenTV's unit tests, and Omarchy's own tests no worse than at the base.
+# Other workflows reuse it.
 
 on:
   pull_request:
@@ -52,6 +53,16 @@ jobs:
       - name: The gate catches what it should
         run: test/agentv/policy/check-test.sh --ci
 
+  unit:
+    name: "Layer 2: unit tests"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: test/agentv/unit/run
+
   omarchy-tests:
     name: "Omarchy's own tests, no worse than at the base"
     runs-on: ubuntu-26.04
@@ -88,7 +99,7 @@ jobs:
   report:
     name: Acceptance ids
     if: always()
-    needs: [policy, omarchy-tests]
+    needs: [policy, unit, omarchy-tests]
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# omarchy refresh pacman writes Omarchy's own /etc/pacman.conf, which doesn't
+# have AgenTV's repository, then updates. This runs in between, as the user
+# with a warm sudo cache, and puts the repository back first.
+
+sudo agentv-pacman-conf

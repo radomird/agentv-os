@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# agentv:summary=AgenTV's command line
+# agentv:args=<command> [args...]
+# agentv:examples=agentv update | agentv version
+# agentv:hidden=true
+
+# Routes `agentv <group> <name> [args]` to bin/agentv-<group>-<name>, the way
+# bin/omarchy routes to omarchy-*. The longest matching command wins.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+# metadata <file> <key>: a "# agentv:<key>=" line from the first 80 lines.
+metadata() {
+  sed -n "1,80s/^# agentv:$2=//p" "$1" | head -n 1
+}
+
+usage() {
+  local file name
+
+  echo "Usage: agentv <command> [args]"
+  echo
+  echo "Commands:"
+  for file in "$AGENTV_BIN_DIR"/agentv-*; do
+    [[ -f $file && -x $file ]] || continue
+    [[ $(metadata "$file" hidden) == "true" ]] && continue
+    name=${file##*/agentv-}
+    printf '  %-20s %s\n' "${name//-/ }" "$(metadata "$file" summary)"
+  done
+}
+
+if (( $# == 0 )); then
+  usage
+  exit 0
+fi
+
+case "$1" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+words=("$@")
+for (( n = $#; n >= 1; n-- )); do
+  candidate="agentv"
+  for (( i = 0; i < n; i++ )); do
+    # Command words are plain names, so nothing can climb out of bin/.
+    [[ ${words[i]} =~ ^[a-z0-9]+$ ]] || continue 2
+    candidate+="-${words[i]}"
+  done
+  if [[ -f $AGENTV_BIN_DIR/$candidate && -x $AGENTV_BIN_DIR/$candidate ]]; then
+    exec "$AGENTV_BIN_DIR/$candidate" "${words[@]:n}"
+  fi
+done
+
+echo "agentv: no such command: $*" >&2
+echo >&2
+usage >&2
+exit 1

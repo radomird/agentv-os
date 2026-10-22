@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# agentv:summary=Update AgenTV, Omarchy and the system packages in place
+# agentv:args=[-y]
+# agentv:examples=agentv update | agentv update -y
+# agentv:requires-sudo=true
+
+# AgenTV ships as its own package beside Omarchy's (ADR-025), so Omarchy's own
+# update moves both: one snapshot, one pacman -Syu for Arch, Omarchy and
+# AgenTV, then Omarchy's migrations and its post-update hook, where AgenTV's
+# own migrations run (config/omarchy/hooks/post-update.d/agentv).
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+# Omarchy writes /etc/pacman.conf from its own template, which doesn't know
+# about AgenTV's repository. Put it back first, or AgenTV never updates.
+sudo "$AGENTV_BIN_DIR/agentv-pacman-conf"
+
+exec omarchy-update "$@"
