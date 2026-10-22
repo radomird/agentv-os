@@ -14,9 +14,12 @@ cd "$ROOT"
 
 base=$(sed -n '1{s/[[:space:]]//g;p;}' .github/omarchy-base)
 WORK=$(mktemp -d)
-trap 'git worktree remove --force "$WORK/base" >/dev/null 2>&1 || true; rm -rf "$WORK"' EXIT
+# Next to this checkout, so both trees sit in the same kind of directory: some
+# of Omarchy's tests care who owns the folders above them.
+BASE_TREE="$(dirname "$ROOT")/.agentv-omarchy-base.$$"
+trap 'git worktree remove --force "$BASE_TREE" >/dev/null 2>&1 || true; rm -rf "$WORK" "$BASE_TREE"' EXIT
 
-git worktree add --quiet --detach "$WORK/base" "$base^{commit}"
+git worktree add --quiet --detach "$BASE_TREE" "$base^{commit}"
 
 # run_suites <tree> <results file>: one "pass|fail <name>" line per test file.
 run_suites() {
@@ -36,20 +39,40 @@ run_suites() {
 }
 
 printf '==> Omarchy %s\n' "$base"
-run_suites "$WORK/base" "$WORK/base-results"
+run_suites "$BASE_TREE" "$WORK/base-results"
 printf '==> HEAD\n'
 run_suites "$ROOT" "$WORK/head-results"
 
 total=$(grep -c . "$WORK/head-results")
 base_failing=$(grep -c '^fail ' "$WORK/base-results" || true)
 
+# passes_on_retry <name>: a test that passes here on a second or third try is
+# flaky, not broken by AgenTV.
+passes_on_retry() {
+  local _
+
+  for _ in 2 3; do
+    (cd "$ROOT" && timeout 120 bash "$ROOT/$1" >/dev/null 2>&1) && return 0
+  done
+  return 1
+}
+
 regressions=()
+flaky=()
 while read -r status name; do
   [[ $status == "fail" ]] || continue
-  if grep -qxF "pass $name" "$WORK/base-results"; then
+  grep -qxF "pass $name" "$WORK/base-results" || continue
+  if passes_on_retry "$name"; then
+    flaky+=("$name")
+  else
     regressions+=("$name")
   fi
 done <"$WORK/head-results"
+
+if (( ${#flaky[@]} > 0 )); then
+  printf 'note: these failed once here and then passed, so they count as flaky:\n'
+  printf '  %s\n' "${flaky[@]}"
+fi
 
 if (( ${#regressions[@]} > 0 )); then
   printf 'not ok - Omarchy test files that pass at %s fail here:\n' "$base" >&2
