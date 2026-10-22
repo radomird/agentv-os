@@ -108,9 +108,17 @@ jobs:
       - name: Report
         env:
           POLICY: ${{ needs.policy.result }}
+          UNIT: ${{ needs.unit.result }}
         run: |
           case "$POLICY" in
             success) s04="pass (no Omarchy file edited; the logo is checked in agentv-iso)" ;;
             *) s04="fail (layer 1: $POLICY)" ;;
           esac
-          test/agentv/report check "S0.4=$s04" >>"$GITHUB_STEP_SUMMARY"
+          case "$UNIT" in
+            success)
+              s06="pass (unit: the sync's decisions; the live sync runs in omarchy-sync)"
+              s07="pass (unit: holding back; the live check runs in nightly)"
+              ;;
+            *) s06="fail (layer 2: $UNIT)"; s07="fail (layer 2: $UNIT)" ;;
+          esac
+          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" >>"$GITHUB_STEP_SUMMARY"
