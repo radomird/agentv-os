@@ -1,14 +1,14 @@
 # AgenTV
 
-This repo is `agentv-os`: AgenTV, a TV OS whose own agent builds the apps it's missing, built on top of Omarchy. It's a fork of `omacom/omarchy`, pinned to a release tag (`v4.0.6`). Omarchy's own `AGENTS.md` still applies to everything here: its style, its runtime environment rules and its privilege rules. This file adds what's different for AgenTV, and when the two disagree, this file wins.
+This repo is `agentv-os`: AgenTV, a TV OS whose own agent builds the apps it's missing, built on top of Omarchy. It's a fork of `omacom/omarchy` that follows Omarchy's stable releases (ADR-026). The release it's on is in `.github/omarchy-base`. Omarchy's own `AGENTS.md` still applies to everything here: its style, its runtime environment rules and its privilege rules. This file adds what's different for AgenTV, and when the two disagree, this file wins.
 
 The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, then the ADRs in `DECISION-RECORD.md`, then `PHASE-1-PLAN.md`. The ADRs are decisions, so don't re-open one without asking Radomir.
 
 ## Never edit Omarchy's files
 
-- Only add files. Every file that exists at the pinned tag stays byte-for-byte as it is, so rebasing onto a new Omarchy release stays easy.
+- Only add files. Every file that exists at the base in `.github/omarchy-base` stays byte-for-byte as it is, so merging each new Omarchy release stays mechanical. The daily Omarchy sync does that merge and moves the base.
 - AgenTV's own code goes under `install/tv/`, `config/hypr/tv.lua`, `config/omarchy/`, `system/`, `daemon/`, `launcher/`, `setup/`, `companion-web/`, `builder/`, `apps/`, `branding/`, `test/agentv/`, `.claude/` and `bin/agentv*`.
-- Check before every commit: `git diff --diff-filter=MDR --name-only v4.0.6...HEAD` must print nothing.
+- Check before every commit with `bin/agentv-check`. Its first check is the same as `git diff --diff-filter=MDR --name-only "$(cat .github/omarchy-base)"...HEAD` printing nothing.
 - If you think an upstream file has to change, stop and ask. ADR-021 leaves one possible exception, `logo.txt`, and only if no overlay works.
 - Omarchy's commands all start with `omarchy-`. AgenTV's own commands start with `agentv` instead (see the `agentv-commands` skill), and they never add, rename or wrap an `omarchy-*` command.
 
