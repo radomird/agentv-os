@@ -32,7 +32,9 @@ run_logged "$AGENTV_INSTALL/pacman.sh"
 run_logged "$AGENTV_INSTALL/state.sh"
 run_logged "$AGENTV_INSTALL/hooks.sh"
 run_logged "$AGENTV_INSTALL/autologin.sh"
-# A splash that fails to set isn't worth keeping the TV from starting.
+# A boot menu or a splash that fails to set isn't worth keeping the TV from
+# starting.
+run_logged "$AGENTV_INSTALL/bootmenu.sh" || echo "agentv-firstboot: boot menu failed; see $OMARCHY_INSTALL_LOG_FILE" >&2
 run_logged "$AGENTV_INSTALL/branding.sh" || echo "agentv-firstboot: branding failed; see $OMARCHY_INSTALL_LOG_FILE" >&2
 
 stop_install_log
