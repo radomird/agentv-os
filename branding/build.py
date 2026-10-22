@@ -127,6 +127,37 @@ def logo_txt(rows):
     return '\n'.join(out) + '\n'
 
 
+def logo_ansi(rows, owner):
+    """logo.txt in colour for the installer's console: the same 81 x 10, with
+    "agen" in the ink colour, "tv" in the accent and the credit in grey, as
+    indexed ANSI colours. The live console maps them to Tokyo Night (97 is
+    #c0caf5, 34 is #7aa2f7, 37 is #a9b1d6), and renders indexed colours true
+    where truecolour comes out muddy."""
+    text = logo_txt(rows).split('\n')[:-1]
+    left = (WIDTH - len(rows[0])) // 2
+    ink, accent, credit = '\033[97m', '\033[34m', '\033[37m'
+    out = []
+    for line in text:
+        coloured, current = '', None
+        for col, ch in enumerate(line):
+            if ch == ' ':
+                coloured += ch
+                continue
+            i = col - left
+            if ch.isalpha():
+                colour = credit
+            elif 0 <= i < len(owner) and owner[i] >= ACCENT_FROM:
+                colour = accent
+            else:
+                colour = ink
+            if colour != current:
+                coloured += colour
+                current = colour
+            coloured += ch
+        out.append(coloured + '\033[0m')
+    return '\n'.join(out) + '\n'
+
+
 def bitmap(rows, owner):
     """Half-row pixels: (x, y) -> letter index, y counts half-rows."""
     px = {}
@@ -194,6 +225,7 @@ def main():
     px = bitmap(rows, owner)
     files = {
         'logo.txt': logo_txt(rows).encode(),
+        'logo.ansi': logo_ansi(rows, owner).encode(),
         'logo.svg': svg(px, DARK).encode(),
         'logo-light.svg': svg(px, LIGHT).encode(),
         # Boot splash: same size class as Omarchy's 800 x 188 plymouth logo.
