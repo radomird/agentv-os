@@ -8,6 +8,7 @@ set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
 cmd="$ROOT/bin/agentv-pacman-conf"
+export AGENTV_ETC="$SCRATCH/no-etc"
 conf="$SCRATCH/pacman.conf"
 fake_agentv_path "$SCRATCH/stable" stable
 fake_agentv_path "$SCRATCH/edge" edge
@@ -64,3 +65,18 @@ pass "the repository comes back after Omarchy rewrites the file"
 AGENTV_PATH="$SCRATCH/nowhere" "$cmd" --file "$conf" >/dev/null 2>&1 &&
   fail "it refuses to run without the package's settings"
 pass "it refuses to run without the package's settings"
+
+# The box's own choices: a channel picked with agentv channel, then a whole
+# repository address, which wins over both.
+mkdir -p "$SCRATCH/etc"
+echo edge >"$SCRATCH/etc/channel"
+AGENTV_ETC="$SCRATCH/etc" AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
+grep -qxF 'Server = https://example.invalid/agentv-pkgs/releases/download/edge' "$conf" ||
+  fail "a channel the box picked wins over the package's" "$(cat "$conf")"
+pass "a channel the box picked wins over the package's"
+
+echo "http://10.0.2.2:8000/test" >"$SCRATCH/etc/repository"
+AGENTV_ETC="$SCRATCH/etc" AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
+grep -qxF 'Server = http://10.0.2.2:8000/test' "$conf" || fail "a repository address wins over both" "$(cat "$conf")"
+(( $(grep -c '^\[agentv\]$' "$conf") == 1 )) || fail "still one section" "$(cat "$conf")"
+pass "a repository address wins over both, still in one section"

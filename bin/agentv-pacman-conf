@@ -44,6 +44,17 @@ fi
 source "$settings"
 : "${AGENTV_REPO_URL:?is not set in $settings}"
 : "${AGENTV_CHANNEL:?is not set in $settings}"
+server="$AGENTV_REPO_URL/$AGENTV_CHANNEL"
+
+# The box's own choices win over the package's: a channel picked with agentv
+# channel, or a whole repository address (a local mirror, or a test).
+AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
+if [[ -s $AGENTV_ETC/repository ]]; then
+  server=$(head -n 1 "$AGENTV_ETC/repository")
+elif [[ -s $AGENTV_ETC/channel ]]; then
+  AGENTV_CHANNEL=$(head -n 1 "$AGENTV_ETC/channel")
+  server="$AGENTV_REPO_URL/$AGENTV_CHANNEL"
+fi
 
 begin="# BEGIN agentv: added by agentv-pacman-conf, kept at the end"
 end="# END agentv"
@@ -51,7 +62,7 @@ section=$(printf '%s\n' \
   "$begin" \
   "[agentv]" \
   "SigLevel = Required DatabaseOptional" \
-  "Server = $AGENTV_REPO_URL/$AGENTV_CHANNEL" \
+  "Server = $server" \
   "$end")
 
 # The file without AgenTV's section, whatever state that section is in.
@@ -91,4 +102,4 @@ chmod --reference="$conf" "$tmp" 2>/dev/null || chmod 644 "$tmp"
 mv -f "$tmp" "$conf"
 trap - EXIT
 
-echo "Added AgenTV's $AGENTV_CHANNEL repository to $conf"
+echo "AgenTV's repository in $conf is now $server"

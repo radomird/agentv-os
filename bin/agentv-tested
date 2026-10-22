@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# agentv:summary=Check every pending update against the nightly run's signed tested.json
+# agentv:args=[--tested <tested.json>] [--pending <checkupdates output>]
+# agentv:hidden=true
+
+# A box takes an update only when every package it would install that the
+# nightly run lists is at the version that run tested (ADR-026). One that
+# isn't waits for the next night, and so does the whole update, so a box
+# never ends up half on tested versions. Packages the nightly run never
+# installs, such as Steam, aren't held back. tested.json counts only with a
+# good signature from AgenTV's key, and without one nothing goes ahead.
+#
+# Exits 0 when the update may go ahead, 1 when it waits.
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+AGENTV_KEYRING=${AGENTV_KEYRING:-/usr/share/pacman/keyrings/agentv.gpg}
+tested=""
+pending=""
+
+while (( $# )); do
+  case "$1" in
+    --tested)
+      tested="${2:?--tested needs a file}"
+      shift
+      ;;
+    --pending)
+      pending="${2:?--pending needs a file}"
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: agentv-tested [--tested <tested.json>] [--pending <checkupdates output>]"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+# The nightly run's list and its signature, from the box's own settings.
+if [[ -z $tested ]]; then
+  # shellcheck source=/dev/null
+  source "$AGENTV_PATH/settings"
+  : "${AGENTV_TESTED_URL:?is not set in $AGENTV_PATH/settings}"
+  if ! curl -fsSL --retry 2 -o "$work/tested.json" "$AGENTV_TESTED_URL/tested.json" ||
+    ! curl -fsSL --retry 2 -o "$work/tested.json.sig" "$AGENTV_TESTED_URL/tested.json.sig"; then
+    echo "Couldn't fetch tested.json, so the update waits. Nothing changed." >&2
+    exit 1
+  fi
+  tested="$work/tested.json"
+fi
+
+# gpgv takes a signature only from a key in the keyring it's given, and that
+# keyring holds AgenTV's key alone.
+gpg --batch --quiet --dearmor <"$AGENTV_KEYRING" >"$work/agentv.gpg" 2>/dev/null ||
+  cp "$AGENTV_KEYRING" "$work/agentv.gpg"
+if ! gpgv --quiet --keyring "$work/agentv.gpg" "$tested.sig" "$tested" 2>/dev/null; then
+  echo "tested.json isn't signed by AgenTV's key, so the update waits. Nothing changed." >&2
+  exit 1
+fi
+
+# What the update would install: "name old -> new" per line.
+if [[ -z $pending ]]; then
+  pending="$work/pending"
+  checkupdates --nocolor >"$pending" 2>/dev/null || true
+fi
+
+held=$(jq -r --rawfile pending "$pending" '
+  .packages as $tested
+  | $pending | split("\n")[] | select(test("->"))
+  | capture("^(?<name>\\S+) \\S+ -> (?<new>\\S+)")
+  | select($tested[.name] != null and $tested[.name] != .new)
+  | "\(.name) \(.new) (tested: \($tested[.name]))"
+' "$tested")
+
+if [[ -n $held ]]; then
+  echo "These versions haven't passed AgenTV's nightly run yet, so the update waits:"
+  printf '  %s\n' "$held"
+  exit 1
+fi
+
+echo "Every pending update has passed AgenTV's nightly run ($(jq -r '.date' "$tested"))."

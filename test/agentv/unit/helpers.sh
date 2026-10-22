@@ -32,5 +32,6 @@ fake_agentv_path() {
 AGENTV_VERSION=0.1.0
 AGENTV_CHANNEL=$channel
 AGENTV_REPO_URL=https://example.invalid/agentv-pkgs/releases/download
+AGENTV_TESTED_URL=https://example.invalid/agentv-os/releases/download/tested
 SETTINGS
 }
