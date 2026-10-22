@@ -11,6 +11,8 @@ name: Image
 # passing run lists every package on the box, signs it as tested.json with
 # the release key and publishes it on this repo's "tested" release, then
 # checks that a box takes tonight's list and holds back anything else (S0.7).
+# With keep-iso, an ISO that passed every check is kept as a workflow
+# artifact: that's how the nightly run makes the edge ISO.
 
 on:
   workflow_dispatch:
@@ -28,6 +30,10 @@ on:
         description: "Also update the box to a newer agentv (S0.5)"
         type: boolean
         default: true
+      keep-iso:
+        description: "Keep the ISO as an artifact when every check passes"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
@@ -40,6 +46,9 @@ on:
         type: boolean
         default: true
       nightly:
+        type: boolean
+        default: false
+      keep-iso:
         type: boolean
         default: false
     secrets:
@@ -166,6 +175,32 @@ jobs:
           AGENTV_TEST_TESTED_LIVE: "1"
         run: set -o pipefail; iso/test/agentv/image/ci --again s0.7-tested 2>&1 | tee -a image.log
 
+      # The name people download (ADR-027): the channel its packages came
+      # from, the day and the agentv-os commit. At about 6.4 GB the ISO is
+      # over the 2 GiB cap for release assets, so it stays a workflow artifact.
+      - name: Name the ISO
+        if: success() && inputs.keep-iso
+        id: name
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          name="agentv-$PACKAGES-$(date -u +%Y.%m.%d)-$(git -C os rev-parse --short=7 HEAD)-x86_64"
+          mv iso/release/*.iso "iso/release/$name.iso"
+          (cd iso/release && sha256sum "$name.iso" >"$name.iso.sha256")
+          echo "name=$name" >>"$GITHUB_OUTPUT"
+          echo "ISO: \`$name.iso\`" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the ISO
+        if: success() && inputs.keep-iso
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: |
+            iso/release/*.iso
+            iso/release/*.iso.sha256
+          compression-level: 0
+          retention-days: 7
+
       - name: Acceptance ids
         if: always()
         run: |
@@ -182,7 +217,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: image-${{ github.run_id }}-${{ github.run_attempt }}
+          name: image-${{ inputs.packages }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             image.log
             tested.json
