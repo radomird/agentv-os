@@ -1,0 +1,18 @@
+# Hands a newly installed box over to TV setup (ADR-007), once, before the
+# login screen starts: AgenTV's repository line, autologin for the owner,
+# AgenTV's hooks in the owner's Omarchy config, and the folders setup uses.
+# Omarchy's installer questions have all run by now, unchanged.
+
+[Unit]
+Description=AgenTV first boot
+ConditionPathExists=!/var/lib/agentv/firstboot.done
+After=local-fs.target systemd-sysusers.service
+Before=display-manager.service sddm.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/agentv-firstboot
+
+[Install]
+WantedBy=multi-user.target

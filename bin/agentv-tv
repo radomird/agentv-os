@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# agentv:summary=Open the TV on this screen
+# agentv:examples=agentv tv
+
+# For now that means the TV setup welcome page, full screen in a kiosk
+# Chromium with its own profile in /var/lib/agentv/chromium. Stage 1 gives it
+# a TV mode of its own (config/hypr/tv.lua).
+
+set -euo pipefail
+
+url="http://127.0.0.1:3000/"
+
+# The daemon starts with the system, and this runs at login, so it's usually
+# up already. Give it a moment if not.
+for _ in $(seq 1 30); do
+  curl -fsS -o /dev/null "${url}health" && break
+  sleep 1
+done
+
+setsid -f uwsm app -- chromium \
+  --kiosk \
+  --user-data-dir=/var/lib/agentv/chromium \
+  --no-first-run \
+  --no-default-browser-check \
+  --noerrdialogs \
+  --disable-session-crashed-bubble \
+  --password-store=basic \
+  "$url" >/dev/null 2>&1

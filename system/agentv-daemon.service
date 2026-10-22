@@ -1,0 +1,19 @@
+# AgenTV's daemon. For now it's the stage 0 placeholder: the TV setup welcome
+# page and a health endpoint, on this box only. The real daemon (stage 2)
+# takes over this unit.
+
+[Unit]
+Description=AgenTV daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/share/agentv/daemon/placeholder.py --port 3000
+Restart=on-failure
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
