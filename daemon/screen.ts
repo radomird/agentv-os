@@ -961,6 +961,9 @@ export class Screen {
       case "tv":
         if (typeof request.on !== "boolean") return { ok: false, error: "tv on or off" };
         return this.tv(request.on);
+      case "update":
+        if (request.what !== "check" && request.what !== "install") return { ok: false, error: "update check or install" };
+        return this.fromHome({ cmd: `update-${request.what}` });
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
         return this.close(request.role);

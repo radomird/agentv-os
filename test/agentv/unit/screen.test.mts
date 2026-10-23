@@ -784,4 +784,8 @@ test("S2.12 Settings → Updates checks and installs through the update units", 
   assert.deepEqual(await t.screen.fromHome({ cmd: "update-check" }), { ok: true });
   assert.deepEqual(await t.screen.fromHome({ cmd: "update-install" }), { ok: true });
   assert.deepEqual(t.launcher.units, ["agentv-update-check.service", "agentv-update-tv.service"]);
+  // agentv screen update check|install does the same, over SSH too.
+  assert.deepEqual(await t.screen.handle({ cmd: "update", what: "install" }), { ok: true });
+  assert.equal(((await t.screen.handle({ cmd: "update", what: "rm" })) as { ok: boolean }).ok, false);
+  assert.equal(t.launcher.units.length, 3);
 });
