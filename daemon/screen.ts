@@ -128,6 +128,9 @@ interface Options {
   tvOffCloseMs?: number;
   // How long the overlay's idle monitor waits before it says so.
   idleReportMs?: number;
+  // How soon after the ambient screen comes up input on the seat is taken
+  // for bringing home to the front.
+  ambientSettleMs?: number;
 }
 
 export class Screen {
@@ -148,6 +151,8 @@ export class Screen {
   // The ambient screen, and the window to go back to after it.
   ambient = false;
   private ambientFrom: string | null = null;
+  private ambientAt = 0;
+  private ambientSettleMs: number;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private idleGeneration = 0;
   private idleAfter: number | null = null;
@@ -181,6 +186,7 @@ export class Screen {
     this.tvPollMs = options.tvPollMs ?? 2000;
     this.tvOffCloseMs = options.tvOffCloseMs ?? 120_000;
     this.idleReportMs = options.idleReportMs ?? 30_000;
+    this.ambientSettleMs = options.ambientSettleMs ?? 3000;
   }
 
   // Runs one step at a time, in the order things happened.
@@ -640,7 +646,13 @@ export class Screen {
     // Each report starts over; anything still waiting from an older one stops.
     const generation = ++this.idleGeneration;
     // Input again: the ambient screen ends, as with a key on the home screen.
-    if (!idle && this.ambient) void this.wake("input again");
+    // Bringing home to the front for it counts as input on the seat too, at
+    // once, so a report that soon after it came up is that, and it stays. A
+    // key or the mouse still ends it through the home screen itself.
+    if (!idle && this.ambient) {
+      if (this.now() - this.ambientAt < this.ambientSettleMs) this.log("input as the ambient screen came up; it stays");
+      else void this.wake("input again");
+    }
     if (!idle || this.ambient) return { ok: true };
     void (async () => {
       const minutes = await this.launcher.idleMinutes().catch(() => 10);
@@ -689,6 +701,7 @@ export class Screen {
       const home = this.homeWindow();
       if (home && front?.address !== home.address) await this.toFront(home.address);
       this.ambient = true;
+      this.ambientAt = this.now();
       this.log(`the ambient screen${this.ambientFrom ? `, over ${this.ambientFrom}` : ""}`);
       await this.inHome("window.agentvAmbient?.(true)");
     }).then(() => ({ ok: true }));

@@ -228,7 +228,7 @@ after(() => {
 });
 
 async function tv(
-  options: { now?: () => number; backHoldMs?: number; tvPoll?: () => boolean | null; tvPollMs?: number; tvOffCloseMs?: number; idleReportMs?: number } = {},
+  options: { now?: () => number; backHoldMs?: number; tvPoll?: () => boolean | null; tvPollMs?: number; tvOffCloseMs?: number; idleReportMs?: number; ambientSettleMs?: number } = {},
 ) {
   const hypr = new FakeHyprland();
   const launcher = new FakeLauncher();
@@ -757,7 +757,7 @@ test("agentv screen tv off and on do the same, for a box that can't tell", async
 });
 
 test("S2.17 no ambient screen during setup, and input on the seat ends one", async () => {
-  const t = await tv({ idleReportMs: 0 });
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 50 });
   t.launcher.minutes = null;
   assert.deepEqual(await t.screen.handle({ cmd: "idle-after", seconds: 0.05 }), { ok: true });
   t.screen.seatIdle(true);
@@ -767,6 +767,16 @@ test("S2.17 no ambient screen during setup, and input on the seat ends one", asy
   await openApp(t, "agentv.tube", "0xb");
   await t.screen.handle({ cmd: "ambient" });
   assert.equal(t.screen.ambient, true);
+  // Bringing home to the front counts as input on the seat, at once (as on
+  // an installed box): that doesn't end it.
+  t.screen.seatIdle(false);
+  await sleep(20);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  assert.ok(t.lines.includes("input as the ambient screen came up; it stays"), t.lines.join("\n"));
+  // Input after that does.
+  await sleep(60);
+  t.screen.seatIdle(true);
   t.screen.seatIdle(false);
   await sleep(20);
   await t.screen.idle();
