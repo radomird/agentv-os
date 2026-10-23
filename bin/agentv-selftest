@@ -239,4 +239,6 @@ for id in "${checks[@]}"; do
 done
 echo "$summary"
 
+# The exit status says whether everything passed; that's not a stop.
+trap - ERR
 [[ $failed == " " ]]

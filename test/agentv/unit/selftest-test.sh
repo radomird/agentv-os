@@ -65,12 +65,14 @@ case "$args" in
   *) echo "fake nmcli: unexpected: $args" >&2; exit 9 ;;
 esac'
 
-# run [args...]: the selftest against the fakes; its output in $SCRATCH/out.
+# run [args...]: the selftest against the fakes, in the same bash as this
+# test, so bash 5 runs it too and not only the Mac's bash 3.2; its output in
+# $SCRATCH/out.
 fake_agentv_path "$SCRATCH/agentv"
 
 run() {
   env PATH="$fakes:$PATH" STATE="$state" AGENTV_PATH="$SCRATCH/agentv" AGENTV_SDDM_CONF="$SCRATCH/sddm.conf" \
-    "$selftest" "$@" >"$SCRATCH/out" 2>&1
+    "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
 }
 
 # A healthy box: unencrypted, autologin, welcome shown, a Wi-Fi card that does
