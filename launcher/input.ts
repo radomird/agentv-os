@@ -2,7 +2,7 @@
 // the virtual input device the phone and the d-pad send through (it types
 // the same keys), a gamepad and a mouse.
 
-export type Action = "up" | "down" | "left" | "right" | "ok" | "back" | "home" | "info" | "plus" | "minus" | "edit" | "pin" | "remove";
+export type Action = "up" | "down" | "left" | "right" | "ok" | "back" | "home" | "info" | "plus" | "minus" | "edit" | "pin" | "remove" | "quit";
 
 const KEYS: Record<string, Action> = {
   ArrowUp: "up",
@@ -27,10 +27,12 @@ const KEYS: Record<string, Action> = {
   p: "pin",
   P: "pin",
   Delete: "remove",
+  q: "quit",
+  Q: "quit",
 };
 
-// Standard gamepad buttons: A, B, Y, start, the d-pad and the guide button.
-const BUTTONS: Record<number, Action> = { 0: "ok", 1: "back", 3: "info", 9: "edit", 12: "up", 13: "down", 14: "left", 15: "right", 16: "home" };
+// Standard gamepad buttons: A, B, X, Y, start, the d-pad and the guide button.
+const BUTTONS: Record<number, Action> = { 0: "ok", 1: "back", 2: "quit", 3: "info", 9: "edit", 12: "up", 13: "down", 14: "left", 15: "right", 16: "home" };
 const REPEAT_FIRST = 400;
 const REPEAT_NEXT = 120;
 const STICK = 0.6;

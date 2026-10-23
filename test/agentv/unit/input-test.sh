@@ -64,6 +64,41 @@ print("ok - a request it can't do is refused, with nothing half-typed")
 
 assert struct.calcsize("HHHH80sI") == 92 and agentv_input.UI_DEV_SETUP == 0x405C5503
 print("ok - the device setup matches struct uinput_setup")
+
+import time
+started = time.monotonic()
+device.handle({"hold": "back", "ms": 150})
+assert time.monotonic() - started >= 0.15, "held for the time asked"
+assert events() == [(1, 1, 1), (1, 1, 0)], "hold is one press and one release"
+for bad in ({"hold": "back", "ms": 9000}, {"hold": "nope", "ms": 10}):
+    try:
+        device.handle(bad)
+    except ValueError:
+        continue
+    raise AssertionError(f"accepted {bad}")
+print("ok - hold keeps a key down for a while, such as Back for Home (ADR-031)")
+
+# A gamepad, as a FIFO: its guide button goes down and up, and A is pressed.
+import os, tempfile, threading
+fifo = os.path.join(tempfile.mkdtemp(), "pad-event-joystick")
+os.mkfifo(fifo)
+writer = os.open(fifo, os.O_RDWR)
+guides = []
+stop = threading.Event()
+watcher = threading.Thread(target=agentv_input.watch_guide, args=(lambda: [fifo], lambda: guides.append(1), stop, 0.05))
+watcher.start()
+time.sleep(0.2)
+for code, value in ((0x13C, 1), (0x13C, 0), (0x130, 1), (0x130, 0), (0x13C, 1)):
+    os.write(writer, agentv_input.event(1, code, value) + agentv_input.event(0, 0, 0))
+deadline = time.monotonic() + 2
+while len(guides) < 2 and time.monotonic() < deadline:
+    time.sleep(0.05)
+stop.set()
+watcher.join(2)
+os.close(writer)
+assert guides == [1, 1], f"the guide button went down twice, not {guides}"
+assert not watcher.is_alive(), "the watcher stops"
+print("ok - a gamepad's guide button is Home, and its other buttons aren't")
 PY
 }
 

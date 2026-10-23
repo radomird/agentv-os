@@ -16,9 +16,24 @@ export function logo(app: App, big = false): HTMLElement {
   return el;
 }
 
-// What a small tile says about its app: setup still needed, or what it's for.
-function state(app: App): HTMLElement {
+// What a small tile says about its app: open behind home, setup still
+// needed, or what it's for. A game still running has Quit (ADR-031).
+function state(ctx: Ctx, app: App): HTMLElement {
+  const open = ctx.running.get(app.id);
+  if (open?.game) return h("span", { class: "tile-state" }, "running ", h("span", { class: "tile-quit" }, "· q quit"));
+  if (open) return h("span", { class: "tile-state" }, open.paused ? "paused" : "open");
   return app.needsSetup ? h("span", { class: "tile-state" }, "set up") : h("span", { class: "tile-label" }, app.category);
+}
+
+async function quit(ctx: Ctx, app: App): Promise<void> {
+  const reply = await screen.quit(app.id);
+  if (reply.ok) {
+    ctx.sounds.play("confirm");
+    ctx.toast(`${app.name.toLowerCase()} closed`, "ok");
+  } else {
+    ctx.sounds.play("failure");
+    ctx.toast(reply.error ?? `${app.name} didn't close`, "fail");
+  }
 }
 
 function entry(app: App, item: TileEntry): HTMLElement {
@@ -65,12 +80,17 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
       "aria-label": app.name,
       onclick: editing
         ? undefined
-        : async () => {
+        : async (event: MouseEvent) => {
+            // A click on a game's "q quit" quits it.
+            if ((event.target as Element).closest(".tile-quit")) {
+              await quit(ctx, app);
+              return;
+            }
             const reply = await screen.open(app.id);
             if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
           },
     },
-    h("div", { class: "tile-top" }, logo(app), state(app)),
+    h("div", { class: "tile-top" }, logo(app), editing ? state({ ...ctx, running: new Map() }, app) : state(ctx, app)),
     h("div", { class: "tile-body" }, h("span", { class: "tile-name" }, app.name.toLowerCase())),
   );
   if (placed.size !== "s") void fill(el, app, placed);
@@ -126,6 +146,11 @@ export function home(ctx: Ctx): View {
       }
       if (action === "edit") {
         ctx.edit();
+        return true;
+      }
+      // q (or a gamepad's X) on an app open behind home closes it.
+      if (action === "quit" && id && ctx.running.has(id) && byId.has(id)) {
+        void quit(ctx, byId.get(id)!);
         return true;
       }
       return false;

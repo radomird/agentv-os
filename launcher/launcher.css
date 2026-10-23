@@ -715,3 +715,8 @@ button {
 .toast.fail {
   border-left-color: var(--red);
 }
+
+/* A game still running behind home, and its Quit (ADR-031). */
+.tile-quit {
+  color: var(--red);
+}

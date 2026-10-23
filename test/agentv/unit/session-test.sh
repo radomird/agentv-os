@@ -119,6 +119,20 @@ run "$ROOT/bin/agentv-desktop-hook" --install
   fail "Back to TV is Super+Ctrl+Home, running agentv tv"
 pass "Back to TV on Omarchy's desktop is Super+Ctrl+Home, loaded from Omarchy's toggles folder"
 
+# Home and Back in the TV session (ADR-031): Home from a keyboard's Home key and
+# a remote's Home button; Back stays the app's, with each press and release
+# timed so a hold goes home.
+hypr="$ROOT/session/hypr.lua"
+for bind in 'hl.bind("Home", hl.dsp.exec_cmd("agentv screen home")' 'hl.bind("XF86HomePage", hl.dsp.exec_cmd("agentv screen home")'; do
+  grep -qF "$bind" "$hypr" || fail "S2.16 Home is bound in the TV session" "$bind"
+done
+for bind in 'for _, key in ipairs({ "Escape", "XF86Back" }) do' \
+  'hl.bind(key, hl.dsp.exec_cmd("agentv screen back down $(date +%s%3N)"), { non_consuming = true })' \
+  'hl.bind(key, hl.dsp.exec_cmd("agentv screen back up $(date +%s%3N)"), { non_consuming = true, release = true })'; do
+  grep -qF "$bind" "$hypr" || fail "S2.16 Back reaches the app in front, and its press and release reach the daemon" "$bind"
+done
+pass "S2.16 Home is bound in the TV session, and Back still reaches the app in front"
+
 rm -f "$loader"
 run "$ROOT/bin/agentv-desktop-hook"
 [[ -f $loader ]] || fail "the desktop's post-boot hook puts a missing loader back"

@@ -246,9 +246,9 @@ test("Enter on a tile asks the TV session to open its app, and Settings asks for
   const page = await tv();
   await page.locator('.grid [data-id="agentv.tube"]').hover();
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => (window as unknown as { screenRequests: unknown[] }).screenRequests.length > 0);
-  const [open] = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests);
-  assert.deepEqual({ cmd: open.cmd, app: open.app }, { cmd: "open-app", app: "agentv.tube" });
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "open-app"));
+  const open = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.find((r) => r.cmd === "open-app"));
+  assert.deepEqual({ cmd: open?.cmd, app: open?.app }, { cmd: "open-app", app: "agentv.tube" });
 
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="desktop"]').click();
@@ -270,6 +270,41 @@ test("details put an app on home and take it off", async () => {
   assert.ok(!layout.includes("agentv.games"));
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector('[data-action="home"] .button-value')?.textContent === "[x]");
+  await page.close();
+});
+
+test("S2.15 tiles show the apps open behind home, and q quits a game", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.addInitScript(() => {
+    const w = window as unknown as { screenRequests: any[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
+    w.screenRequests = [];
+    w.agentvScreen = (json: string) => {
+      const request = JSON.parse(json);
+      w.screenRequests.push(request);
+      const apps = [
+        { id: "agentv.games", game: true, paused: false },
+        { id: "agentv.tube", game: false, paused: true },
+      ];
+      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(request.cmd === "running" ? { ok: true, apps } : { ok: true })), 0);
+    };
+  });
+  await page.goto(`${url}/`);
+  await page.waitForSelector('.grid [data-id="agentv.games"] .tile-quit');
+  assert.equal(await page.locator('.grid [data-id="agentv.games"] .tile-state').innerText(), "running · q quit");
+  assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-state').innerText(), "paused");
+  await page.locator('.grid [data-id="agentv.games"]').hover();
+  await page.keyboard.press("q");
+  await page.waitForFunction(() => (window as unknown as { screenRequests: any[] }).screenRequests.some((r) => r.cmd === "quit" && r.app === "agentv.games"));
+  // The screen daemon says it's gone.
+  await page.evaluate(() => (window as unknown as { agentvRunning: (json: string) => void }).agentvRunning("[]"));
+  await page.waitForFunction(() => !document.querySelector(".tile-quit"));
+  assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-label').innerText(), "streaming");
+  // Home from the screen daemon, with the home screen already in front,
+  // goes back to the home page.
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.waitForSelector(".settings");
+  await page.evaluate(() => (window as unknown as { agentvHome: () => void }).agentvHome());
+  await page.waitForSelector(".grid:not(.editing)");
   await page.close();
 });
 

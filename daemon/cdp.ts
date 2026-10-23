@@ -84,6 +84,49 @@ export class CdpPipe {
     return session!;
   }
 
+  // A session on one page, by its target id.
+  private async attachTarget(targetId: string): Promise<string> {
+    const key = `target:${targetId}`;
+    let session = this.sessions.get(key);
+    if (!session) {
+      ({ sessionId: session } = await this.send("Target.attachToTarget", { targetId, flatten: true }));
+      this.sessions.set(key, session!);
+    }
+    return session!;
+  }
+
+  // The pages open now, newest last.
+  async pages(): Promise<{ targetId: string; url: string }[]> {
+    const { targetInfos } = await this.send("Target.getTargets");
+    return targetInfos.filter((t: any) => t.type === "page").map((t: any) => ({ targetId: t.targetId, url: String(t.url) }));
+  }
+
+  // Opens url in a window of its own, and says which page it is.
+  async open(url: string): Promise<string> {
+    const { targetId } = await this.send("Target.createTarget", { url, newWindow: true });
+    return targetId;
+  }
+
+  async close(targetId: string): Promise<void> {
+    this.sessions.delete(`target:${targetId}`);
+    await this.send("Target.closeTarget", { targetId });
+  }
+
+  // Runs an expression in one page, by its target id, like evaluate.
+  async evaluateIn(targetId: string, expression: string): Promise<any> {
+    const session = await this.attachTarget(targetId);
+    try {
+      const reply = await this.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, session);
+      if (reply.exceptionDetails) {
+        throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text);
+      }
+      return reply.result.value;
+    } catch (error) {
+      this.sessions.delete(`target:${targetId}`);
+      throw error;
+    }
+  }
+
   // Gives the page at prefix a function, window[name](json), that calls
   // handler here, and answers it through window[name + "Reply"](id, json). It
   // stays through reloads of the page. Only this pipe's holder can add one.
@@ -121,3 +164,7 @@ export class CdpPipe {
     }
   }
 }
+
+// What the screen daemon uses of a browser's pipe, so the tests can stand in
+// for one.
+export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages">;

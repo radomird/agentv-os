@@ -22,3 +22,20 @@ if ! node ${flags[@]+"${flags[@]}"} --test --test-reporter=tap "$ROOT/test/agent
   fail "the screen daemon's tests pass" "$(grep -E '^(not ok|# |  ---|    )' "$SCRATCH/tap" | head -n 60)"
 fi
 grep -E '^ok ' "$SCRATCH/tap" | sed -E 's/^ok [0-9]+ - /ok - /'
+
+# agentv screen's own requests, to a stand-in for the daemon's socket client.
+fake_path="$SCRATCH/agentv"
+mkdir -p "$fake_path/daemon"
+echo 'console.log(process.argv[2]);' >"$fake_path/daemon/screen-call.ts"
+screen() {
+  AGENTV_PATH="$fake_path" "$ROOT/bin/agentv-screen" "$@"
+}
+[[ $(screen back down 1700000000123) == '{"cmd":"back","edge":"down","at":1700000000123}' ]] ||
+  fail "agentv screen back down sends the press and when it happened" "$(screen back down 1700000000123 2>&1)"
+[[ $(screen back up 5) == '{"cmd":"back","edge":"up","at":5}' ]] || fail "agentv screen back up sends the release"
+[[ $(screen quit agentv.games) == '{"cmd":"quit","app":"agentv.games"}' ]] || fail "agentv screen quit names the app"
+for bad in "back" "back left 1" "back down soon" "quit"; do
+  # shellcheck disable=SC2086 # each case is words on purpose
+  if screen $bad >/dev/null 2>&1; then fail "agentv screen $bad is refused"; fi
+done
+pass "agentv screen sends Back's presses and releases, and quit"
