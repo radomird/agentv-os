@@ -12,8 +12,11 @@
 #
 # Omarchy's update asks sudo for its privileged steps, and nobody is at a
 # terminal to type a password. So the owner may use sudo without one for this
-# update only, the way AgenTV's first boot does for the boot splash. The rule
-# goes right after, and also if anything here fails; its name is the one
+# update only, the way AgenTV's first boot does for the boot splash. Omarchy's
+# update also runs sudo -v, which asks for a password unless every sudo rule
+# for the owner says it needn't, and wheel's own rule doesn't; so the owner
+# isn't asked at all for this update, as upstream's own update test does. The
+# rule goes right after, and also if anything here fails; its name is the one
 # omarchy sudo passwordless uses, so Omarchy's own tmpfiles rule removes it at
 # the next boot even if the power goes out halfway through.
 
@@ -51,7 +54,7 @@ home=$(getent passwd "$owner" | cut -d: -f6)
 
 rule="$SUDOERS/99-omarchy-nopasswd-$owner"
 trap 'rm -f "$rule"' EXIT
-printf '%s ALL=(root) NOPASSWD: ALL\n' "$owner" >"$rule"
+printf '%s ALL=(root) NOPASSWD: ALL\nDefaults:%s !authenticate\n' "$owner" "$owner" >"$rule"
 chmod 0440 "$rule"
 if command -v visudo >/dev/null && ! visudo -cqf "$rule"; then
   rm -f "$rule"
