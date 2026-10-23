@@ -20,10 +20,13 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
+import { APPS_TILE, Home } from "./home.ts";
+import type { Size } from "../launcher/layout.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
   state: string; // the daemon's own state: /var/lib/agentv/daemon
+  apps?: string; // the box's apps: /var/lib/agentv/apps
   port: number;
   host?: string;
   log?: (line: string) => void;
@@ -63,10 +66,12 @@ export class Daemon {
   private welcome = { shownAt: null as string | null, lastShownAt: null as string | null, count: 0 };
   private streams = new Set<ServerResponse>();
   private stripped = new Map<string, { mtime: number; code: string }>();
+  readonly home: Home;
 
   constructor(options: DaemonOptions) {
     this.options = options;
     this.log = options.log ?? ((line) => console.log(line));
+    this.home = new Home({ appsDir: options.apps ?? "/var/lib/agentv/apps", state: options.state, log: this.log });
     this.server = createServer((request, response) => {
       this.handle(request, response).catch((error: Error) => {
         this.log(`error: ${request.method} ${request.url}: ${error.message}`);
@@ -86,6 +91,7 @@ export class Daemon {
 
   close(): Promise<void> {
     for (const stream of this.streams) stream.end();
+    this.home.stop();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -150,8 +156,7 @@ export class Daemon {
     response.end(body);
   }
 
-  private async body(request: IncomingMessage): Promise<unknown> {
-    if (!String(request.headers["content-type"] ?? "").startsWith("application/json")) return undefined;
+  private async text(request: IncomingMessage): Promise<string> {
     let size = 0;
     const chunks: Buffer[] = [];
     for await (const chunk of request) {
@@ -159,11 +164,27 @@ export class Daemon {
       if (size > MAX_BODY) throw new Error("the request is too big");
       chunks.push(chunk as Buffer);
     }
+    return Buffer.concat(chunks).toString("utf8");
+  }
+
+  private async body(request: IncomingMessage): Promise<unknown> {
+    if (!String(request.headers["content-type"] ?? "").startsWith("application/json")) return undefined;
     try {
-      return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      return JSON.parse(await this.text(request));
     } catch {
       return undefined;
     }
+  }
+
+  private send(response: ServerResponse, type: string, body: Buffer | string, extra: Record<string, string> = {}): void {
+    response.writeHead(200, {
+      "Content-Type": type,
+      "Content-Length": Buffer.byteLength(body),
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      ...extra,
+    });
+    response.end(body);
   }
 
   private async file(response: ServerResponse, relative: string): Promise<void> {
@@ -255,6 +276,114 @@ export class Daemon {
       return;
     }
 
+    // --- The home screen ---------------------------------------------------
+
+    if (method === "GET" && path === "/api/home") {
+      const viewer = await this.home.viewer();
+      const [info, setup, apps, layout, settings] = await Promise.all([
+        this.settings(),
+        this.setup(),
+        this.home.apps(),
+        this.home.layout(viewer.id),
+        this.home.settings(),
+      ]);
+      this.json(response, 200, {
+        ok: true,
+        version: info.AGENTV_VERSION,
+        channel: info.AGENTV_CHANNEL,
+        setup,
+        viewer,
+        apps,
+        appsTile: APPS_TILE,
+        layout,
+        settings,
+      });
+      return;
+    }
+
+    if (method === "PUT" && path === "/api/layout") {
+      const body = (await this.body(request)) as { layout?: unknown } | undefined;
+      const viewer = await this.home.viewer();
+      const why = await this.home.saveLayout(viewer.id, body?.layout);
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      const layout = await this.home.layout(viewer.id);
+      this.broadcast("layout", { viewer: viewer.id, layout });
+      this.json(response, 200, { ok: true, layout });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/settings") {
+      const why = await this.home.saveSettings(await this.body(request));
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      const settings = await this.home.settings();
+      this.broadcast("settings", settings);
+      this.json(response, 200, { ok: true, settings });
+      return;
+    }
+
+    const tile = /^\/api\/tile\/([a-z0-9.-]+)\/([sml])$/.exec(path);
+    if (method === "GET" && tile) {
+      const content = await this.home.tile(tile[1], tile[2] as Size, await this.home.viewer());
+      this.json(response, 200, { ok: true, tile: content });
+      return;
+    }
+
+    const icon = /^\/api\/apps\/([a-z0-9.-]+)\/icon$/.exec(path);
+    if (method === "GET" && icon) {
+      const found = await this.home.icon(icon[1]);
+      const type = found ? TYPES[extname(found.path).toLowerCase()] : undefined;
+      if (!found || !type?.startsWith("image/")) {
+        this.json(response, 404, { ok: false, error: "not found" });
+        return;
+      }
+      // An app's icon is only ever drawn, never run.
+      this.send(response, type, await readFile(found.path), { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox" });
+      return;
+    }
+
+    const launch = /^\/api\/apps\/([a-z0-9.-]+)\/launch$/.exec(path);
+    if (method === "GET" && launch) {
+      const target = await this.home.launch(launch[1]);
+      if (!target) {
+        this.json(response, 404, { ok: false, error: "that app can't be opened yet" });
+        return;
+      }
+      this.json(response, 200, { ok: true, ...target });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/image") {
+      const image = await this.home.image(url.searchParams.get("app") ?? "", url.searchParams.get("url") ?? "");
+      if (!image) {
+        this.json(response, 404, { ok: false, error: "not found" });
+        return;
+      }
+      this.send(response, image.type, image.body);
+      return;
+    }
+
+    if (method === "GET" && path === "/api/theme.css") {
+      this.send(response, TYPES[".css"], await this.home.theme());
+      return;
+    }
+
+    // From Omarchy's theme-set hook, on this box: the theme's launcher.css.
+    if (method === "POST" && path === "/api/theme") {
+      if (!(await this.home.saveTheme(await this.text(request)))) {
+        this.json(response, 400, { ok: false, error: "that theme has no colours the TV can use" });
+        return;
+      }
+      this.broadcast("theme", {});
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     if (method === "GET" && path === "/api/events") {
       response.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -309,6 +438,7 @@ async function main(): Promise<void> {
   const daemon = new Daemon({
     root: process.env.AGENTV_PATH ?? "/usr/share/agentv",
     state: process.env.AGENTV_DAEMON_STATE ?? "/var/lib/agentv/daemon",
+    apps: process.env.AGENTV_APPS ?? "/var/lib/agentv/apps",
     port,
   });
   const listening = await daemon.listen();

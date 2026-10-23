@@ -5,4 +5,4 @@
 
 [Unit]
 Description=AgenTV's TV session
-Wants=agentv-screen.service agentv-input.service agentv-toast.service
+Wants=agentv-screen.service agentv-input.service agentv-toast.service agentv-theme.service

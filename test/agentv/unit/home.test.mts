@@ -1,0 +1,121 @@
+// What the daemon keeps for the home screen (daemon/home.ts): the apps and who
+// made each, layouts it checks before it keeps them, the TV's settings, tile
+// content from each app's tile(), images only from an app's own origins, and
+// a theme that can only change colours.
+
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { after, before, test } from "node:test";
+import { cleanTheme } from "../../../daemon/home.ts";
+import type { Daemon } from "../../../daemon/server.ts";
+import { startBox } from "../ui/box.mts";
+
+let daemon: Daemon;
+let url = "";
+
+before(async () => {
+  ({ daemon, url } = await startBox());
+});
+
+after(() => daemon.close());
+
+async function get(path: string): Promise<any> {
+  return (await fetch(`${url}${path}`)).json();
+}
+
+async function send(method: string, path: string, body: unknown): Promise<{ status: number; data: any }> {
+  const response = await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return { status: response.status, data: await response.json() };
+}
+
+test("the home screen gets the apps, who made each, and where they are", async () => {
+  const home = await get("/api/home");
+  assert.equal(home.viewer.role, "adult");
+  const byId = Object.fromEntries(home.apps.map((app: any) => [app.id, app]));
+  assert.equal(byId["agentv.sample"].maker, "official · made by agentv");
+  assert.equal(byId["someone.radio"].maker, "community · made by someone");
+  assert.equal(byId["local.mytv"].maker, "made by your agent · on this tv only");
+  assert.deepEqual(byId["local.mytv"].sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m continue"]);
+  assert.deepEqual(byId["agentv.tube"].sizes.map((s: any) => s.size), ["s"]);
+  assert.equal(byId["someone.radio"].needsSetup, true);
+  assert.equal(byId["agentv.sample"].needsSetup, false);
+  // Until the viewer changes it, every app is on home, small, with all apps last.
+  assert.deepEqual(home.layout.map((t: any) => t.id), ["agentv.sample", "agentv.tube", "someone.radio", "local.mytv", "agentv.games", "apps"]);
+  assert.ok(home.layout.every((t: any) => t.size === "s"));
+});
+
+test("a layout is kept only when the grid can draw it", async () => {
+  const good = [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "apps", x: 2, y: 0, size: "s" }];
+  assert.equal((await send("PUT", "/api/layout", { layout: good })).status, 200);
+  assert.deepEqual((await get("/api/home")).layout, good);
+  for (const [layout, why] of [
+    [[{ id: "agentv.tube", x: 0, y: 0, size: "m" }], /can't be size m/],
+    [[{ id: "agentv.sample", x: 3, y: 0, size: "l" }], /doesn't fit/],
+    [[{ id: "agentv.nothing", x: 0, y: 0, size: "s" }], /isn't an app on this box/],
+    [[{ id: "apps", x: 0, y: 0, size: "s" }, { id: "agentv.tube", x: 0, y: 0, size: "s" }], /overlaps/],
+  ] as const) {
+    const { status, data } = await send("PUT", "/api/layout", { layout });
+    assert.equal(status, 400);
+    assert.match(data.error, why);
+  }
+  assert.deepEqual((await get("/api/home")).layout, good);
+});
+
+test("the TV's settings change only to values they can take", async () => {
+  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15 })).status, 200);
+  const settings = (await get("/api/home")).settings;
+  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15 });
+  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes" });
+  assert.deepEqual((await get("/api/home")).settings, settings);
+  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10 });
+});
+
+test("a tile's content comes from its app's tile(), in its own worker", async () => {
+  const { tile } = await get("/api/tile/agentv.sample/m");
+  assert.equal(tile.headline.label, "Big Buck Bunny");
+  assert.deepEqual(tile.entries.map((e: any) => e.label), ["Sintel", "Cosmos Laundromat"]);
+  // An app without tile() has nothing to send.
+  assert.equal((await get("/api/tile/agentv.tube/m")).tile, null);
+});
+
+test("an app's icon is served to be drawn, never run", async () => {
+  const response = await fetch(`${url}/api/apps/agentv.sample/icon`);
+  assert.equal(response.headers.get("content-type"), "image/svg+xml");
+  assert.match(String(response.headers.get("content-security-policy")), /sandbox/);
+  assert.equal((await fetch(`${url}/api/apps/agentv.games/icon`)).status, 404);
+});
+
+test("opening an app means its home address with setup filled in, or its command", async () => {
+  assert.deepEqual(await get("/api/apps/agentv.sample/launch"), { ok: true, runtime: "web", url: "http://127.0.0.1:1/web/" });
+  assert.deepEqual(await get("/api/apps/agentv.games/launch"), { ok: true, runtime: "native", exec: ["steam", "-gamepadui"] });
+  // Not set up yet: there's no address to open.
+  assert.equal((await fetch(`${url}/api/apps/someone.radio/launch`)).status, 404);
+});
+
+test("images come only from an app's own origins", async () => {
+  const server = createServer((_request, response) => response.writeHead(200, { "Content-Type": "image/png" }).end("not really a png"));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  try {
+    const image = (app: string, address: string) => fetch(`${url}/api/image?app=${app}&url=${encodeURIComponent(address)}`);
+    // agentv.sample's origin is its server, http://127.0.0.1:1 in this box.
+    assert.equal((await image("agentv.sample", `http://127.0.0.1:${port}/poster.png`)).status, 404);
+    assert.equal((await image("agentv.sample", "file:///etc/passwd")).status, 404);
+    assert.equal((await image("agentv.nothing", "https://image.tmdb.org/t/p/w500/x.jpg")).status, 404);
+  } finally {
+    server.close();
+  }
+});
+
+test("a theme can only change colours", () => {
+  const css = cleanTheme(`:root {\n  --background: #1a1b26;\n  --accent: rgb(122, 162, 247);\n  --evil: url(https://evil.example/);\n  color: red;\n}\nbody { background: url(x) }\n--fake: expression(alert(1));`);
+  assert.equal(css, ":root {\n  --background: #1a1b26;\n  --accent: rgb(122, 162, 247);\n}\n");
+  assert.equal(cleanTheme("body { color: red }"), "");
+});
+
+test("the theme reaches the TV, as colours only", async () => {
+  const response = await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: ":root { --background: #eff1f5; --x: url(evil); }" });
+  assert.equal(response.status, 200);
+  assert.equal(await (await fetch(`${url}/api/theme.css`)).text(), ":root {\n  --background: #eff1f5;\n}\n");
+  assert.equal((await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: "body {}" })).status, 400);
+});

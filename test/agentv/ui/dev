@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Serves the launcher from this checkout, with a few sample apps, for working
+# on it without a TV: open http://127.0.0.1:3000/ at 1920 × 1080.
+#
+# Usage: test/agentv/ui/dev [port]
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+
+exec node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning --input-type=module -e "
+  const { startBox } = await import('$ROOT/test/agentv/ui/box.mts');
+  const box = await startBox(${1:-3000});
+  console.log('The launcher, with sample apps: ' + box.url + '/');
+"

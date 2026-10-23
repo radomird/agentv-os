@@ -67,6 +67,17 @@ jobs:
         run: test/agentv/types
       - run: test/agentv/unit/run
 
+  ui:
+    name: "Layer 4: the launcher in Chromium"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The launcher, in a headless Chromium at 1920 × 1080
+        run: test/agentv/ui/run
+
   omarchy-tests:
     name: "Omarchy's own tests, no worse than at the base"
     runs-on: ubuntu-26.04
@@ -182,7 +193,7 @@ jobs:
   report:
     name: Acceptance ids
     if: always()
-    needs: [policy, unit, omarchy-tests]
+    needs: [policy, unit, ui, omarchy-tests]
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -192,6 +203,7 @@ jobs:
         env:
           POLICY: ${{ needs.policy.result }}
           UNIT: ${{ needs.unit.result }}
+          UI: ${{ needs.ui.result }}
         run: |
           case "$POLICY" in
             success) s04="pass (no Omarchy file edited; the logo is checked in agentv-iso)" ;;
@@ -206,4 +218,11 @@ jobs:
               ;;
             *) s06="fail (layer 2: $UNIT)"; s07="fail (layer 2: $UNIT)"; s21="fail (layer 2: $UNIT)"; s22="fail (layer 2: $UNIT)" ;;
           esac
-          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" >>"$GITHUB_STEP_SUMMARY"
+          case "$UI" in
+            success)
+              s23="pass (layer 4: every tile reached with the arrows)"
+              s27="pass (layer 4: no tier on tiles; details say who made each app)"
+              ;;
+            *) s23="fail (layer 4: $UI)"; s27="fail (layer 4: $UI)" ;;
+          esac
+          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.7=$s27" >>"$GITHUB_STEP_SUMMARY"

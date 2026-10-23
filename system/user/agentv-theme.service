@@ -1,0 +1,11 @@
+# The Omarchy theme's colours for the TV, each time the TV session starts, so a
+# theme changed on Omarchy's desktop is on the TV when it's back (ADR-012).
+
+[Unit]
+Description=AgenTV: the Omarchy theme's colours for the TV
+PartOf=agentv-tv.target
+
+[Service]
+Type=oneshot
+# Without the daemon the TV keeps the colours it had, so a miss is no failure.
+ExecStart=-/usr/bin/agentv-theme-sync

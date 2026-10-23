@@ -134,6 +134,14 @@ class FakeLauncher implements Launcher {
     if (!this.steamInstalled) throw new Error("Steam isn't installed.");
     return this.launch("steam");
   }
+  targets = new Map<string, { runtime: "web"; url: string } | { runtime: "native"; exec: string[] }>();
+  desktops = 0;
+  async appTarget(id: string) {
+    return this.targets.get(id) ?? null;
+  }
+  desktop() {
+    this.desktops++;
+  }
   async toast(text: string) {
     this.toasts.push(text);
   }
@@ -384,4 +392,24 @@ test("end closes every window, then ends Hyprland, and the home screen stays dow
 test("an unknown request is refused", async () => {
   const { screen } = await tv();
   assert.equal(((await screen.handle({ cmd: "reboot" })) as { ok: boolean }).ok, false);
+});
+
+test("the home screen opens an installed web app the way its manifest says", async () => {
+  const { hypr, launcher, screen } = await tv();
+  launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/" });
+  assert.deepEqual(await screen.fromHome({ cmd: "open-app", app: "agentv.tube" }), { ok: true });
+  const web = launcher.last("web");
+  hypr.open("0xd", web.pid);
+  await screen.idle();
+  assert.equal(screen.front()?.role, "web");
+  assert.deepEqual(await screen.fromHome({ cmd: "open-app", app: "agentv.nothing" }), { ok: false, error: "that app can't be opened yet" });
+  launcher.targets.set("agentv.player", { runtime: "native", exec: ["player"] });
+  assert.equal((await screen.fromHome({ cmd: "open-app", app: "agentv.player" }) as { ok: boolean }).ok, false);
+});
+
+test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {
+  const { launcher, screen } = await tv();
+  assert.deepEqual(await screen.fromHome({ cmd: "desktop" }), { ok: true });
+  assert.equal(launcher.desktops, 1);
+  assert.equal((await screen.fromHome({ cmd: "rm" }) as { ok: boolean }).ok, false);
 });
