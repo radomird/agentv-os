@@ -2,7 +2,7 @@
    blocks, headings written as shell prompts and a status bar along the bottom.
    Every colour comes from the active Omarchy theme: these are Tokyo Night's,
    and /api/theme.css puts the theme's own over them. Sizes are for a 1080p
-   screen; main.ts zooms the page to the TV's. */
+   screen; dom.ts zooms the page to the TV's. */
 
 :root {
   --background: #1a1b26;
