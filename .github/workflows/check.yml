@@ -201,7 +201,8 @@ jobs:
             success)
               s06="pass (unit: the sync's decisions; the live sync runs in omarchy-sync)"
               s07="pass (unit: holding back; the live check runs in nightly)"
+              s22="pass (unit: agentv app validate)"
               ;;
-            *) s06="fail (layer 2: $UNIT)"; s07="fail (layer 2: $UNIT)" ;;
+            *) s06="fail (layer 2: $UNIT)"; s07="fail (layer 2: $UNIT)"; s22="fail (layer 2: $UNIT)" ;;
           esac
-          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" >>"$GITHUB_STEP_SUMMARY"
+          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.2=$s22" >>"$GITHUB_STEP_SUMMARY"

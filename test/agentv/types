@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Type-checks AgenTV's TypeScript (ADR-019, layer 1): the daemon and its
-# tests, with TypeScript and Node's types at pinned versions, fetched into a
-# folder of their own. The box itself never needs them: Node runs the
-# TypeScript as it is.
+# Type-checks AgenTV's TypeScript (ADR-019, layer 1): the daemon, the app
+# contract, the apps in the test fixtures and the tests, with TypeScript,
+# Node's types and Playwright's (for the contract's Page) at pinned versions,
+# fetched into a folder of their own. The box itself never needs them: Node
+# runs the TypeScript as it is, and an app imports the contract's types only.
 #
 # Usage: test/agentv/types
 
@@ -12,10 +13,21 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 TYPESCRIPT=typescript@5.9.3
 NODE_TYPES=@types/node@24.10.1
+PLAYWRIGHT=playwright-core@1.56.1
 
 tools=$(mktemp -d)
 trap 'rm -rf "$tools"' EXIT
 
-npm install --prefix "$tools" --no-save --no-audit --no-fund --silent "$TYPESCRIPT" "$NODE_TYPES"
-"$tools/node_modules/.bin/tsc" -p "$ROOT/daemon/tsconfig.json" --typeRoots "$tools/node_modules/@types"
-echo "ok - the daemon's TypeScript type-checks ($TYPESCRIPT, $NODE_TYPES)"
+npm install --prefix "$tools" --no-save --no-audit --no-fund --silent "$TYPESCRIPT" "$NODE_TYPES" "$PLAYWRIGHT"
+
+# The repo's own settings, with the fetched types found where they are.
+jq -n --arg base "$ROOT/daemon/tsconfig.json" --arg modules "$tools/node_modules" '{
+  extends: $base,
+  compilerOptions: {
+    typeRoots: [$modules + "/@types"],
+    paths: {"playwright-core": [$modules + "/playwright-core/index.d.ts"]}
+  }
+}' >"$tools/tsconfig.json"
+
+"$tools/node_modules/.bin/tsc" -p "$tools/tsconfig.json"
+echo "ok - AgenTV's TypeScript type-checks ($TYPESCRIPT, $NODE_TYPES, $PLAYWRIGHT)"

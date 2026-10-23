@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# agentv:summary=Check an app package against AgenTV's app contract
+# agentv:args=[--official | --local] <package-dir>...
+# agentv:examples=agentv app validate ./my-app | agentv app validate --official apps/builtin/clock
+
+# Checks each package's manifest.json and code before anything in it can load:
+# the fields, the tv block, safe entry points that exist, no symlinks, an id in
+# the right namespace, and code that Node runs as it is and that imports only
+# files from its own package (PHASE-1-PLAN.md, "App contract"). A package is
+# checked as a community app, whose id starts with its author, unless it's
+# one of AgenTV's own (--official) or built on this box (--local).
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+
+# Node 22.6 to 22.17 runs TypeScript only when asked.
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+
+exec node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$AGENTV_PATH/apps/contract/validate.ts" "$@"

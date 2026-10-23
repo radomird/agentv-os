@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.sample",
+  "name": "Sample",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "A sample app for AgenTV's tests",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "media",
+    "runtime": "web",
+    "homeUrl": "{serverUrl}/web/",
+    "capabilities": ["launch", "signIn", "search", "playback", "tile"],
+    "setup": [
+      { "type": "field", "key": "serverUrl", "label": "Server address" },
+      { "type": "signIn" }
+    ],
+    "origins": ["{serverUrl}"],
+    "icon": "icon.svg",
+    "tiles": { "s": "logo", "m": "continue", "l": "continue and latest" },
+    "kidsSafe": false
+  }
+}

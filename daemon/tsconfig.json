@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "../test/agentv/unit/*.mts"]
+  "include": ["*.ts", "../apps/contract/*.ts", "../test/agentv/unit/*.mts", "../test/agentv/fixtures/apps/*/*.ts"]
 }
