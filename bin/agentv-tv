@@ -31,14 +31,15 @@ if pgrep -u "$(id -u)" -f "user-data-dir=/var/lib/agentv/chromium" >/dev/null; t
   exit 0
 fi
 
-# App mode, full screen. Omarchy's Hyprland lets a newly focused window take
-# the full screen over (on_focus_under_fullscreen), and --kiosk on Linux is
-# only a locked full screen, so on the NUC opening a terminal turned the
-# welcome page into an ordinary browser window, tabs and address bar and all.
-# An app window has neither, full screen or not.
+# A kiosk app window. Kiosk mode keeps it full screen with no "press Esc to
+# exit full screen" bubble, and Esc, which is AgenTV's back key (ADR-008),
+# can't take it out. The app window keeps tabs and the address bar away when
+# it isn't full screen anyway: Omarchy's Hyprland hands the full screen to a
+# newly focused window (on_focus_under_fullscreen), and kiosk alone then
+# showed the whole browser on the NUC. Either one alone failed there.
 setsid -f uwsm app -- chromium \
+  --kiosk \
   --app="$url" \
-  --start-fullscreen \
   --user-data-dir=/var/lib/agentv/chromium \
   --no-first-run \
   --no-default-browser-check \
