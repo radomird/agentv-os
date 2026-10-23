@@ -164,7 +164,10 @@ pass "an update that fails before anything changed says nothing changed"
 
 # Boxes installed before start the daily check without waiting for a restart.
 migration=$(grep -l "agentv-update-check.timer" "$ROOT"/migrations/agentv/*.sh)
-printf '#!/bin/bash\necho "sudo $*" >>"$CALLS"\n' >"$SCRATCH/bin/sudo"
+cat >"$SCRATCH/bin/sudo" <<'SH'
+#!/bin/bash
+echo "sudo $*" >>"$CALLS"
+SH
 chmod +x "$SCRATCH/bin/sudo"
 : >"$CALLS"
 bash "$migration" || fail "the migration runs"
