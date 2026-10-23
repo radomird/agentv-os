@@ -145,10 +145,12 @@ function apply(settings: Settings): void {
 // the TV has been off for a while; any key, click or mouse move ends it.
 const ambientEl = document.getElementById("ambient")!;
 let ambient = false;
+let ambientPointer: { x: number; y: number } | null = null;
 
 function setAmbient(on: boolean): void {
   if (on === ambient) return;
   ambient = on;
+  ambientPointer = null;
   if (on) {
     const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }).toLowerCase();
     const time = h("div", { class: "ambient-time" }, clock());
@@ -259,9 +261,17 @@ let pointer = { x: -1, y: -1 };
 let hide = 0;
 document.body.classList.add("pointer-hidden");
 document.addEventListener("pointermove", (event) => {
+  // Chromium sends one as this window comes to the front for the ambient
+  // screen, wherever the mouse was left. So the first move on the ambient
+  // screen only says where the mouse is, and the next one ends it.
+  if (ambient) {
+    const last = ambientPointer;
+    ambientPointer = { x: event.clientX, y: event.clientY };
+    if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
+    wake();
+  }
   if (event.clientX === pointer.x && event.clientY === pointer.y) return;
   pointer = { x: event.clientX, y: event.clientY };
-  if (ambient) wake();
   document.body.classList.remove("pointer-hidden");
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);

@@ -501,7 +501,7 @@ export class Screen {
       case "quit":
         return this.quit(String(request.app ?? ""));
       case "wake":
-        return this.wake();
+        return this.wake("a key or the mouse on home");
       // Settings → Updates: Check now, and Install now (ADR-025).
       case "update-check":
         return (await this.launcher.startUnit("agentv-update-check.service")) ? { ok: true } : { ok: false, error: "couldn't check for updates" };
@@ -648,7 +648,7 @@ export class Screen {
     // Each report starts over; anything still waiting from an older one stops.
     const generation = ++this.idleGeneration;
     // Input again: the ambient screen ends, as with a key on the home screen.
-    if (!idle && this.ambient) void this.wake();
+    if (!idle && this.ambient) void this.wake("input again");
     if (!idle || this.ambient) return { ok: true };
     void (async () => {
       const minutes = await this.launcher.idleMinutes().catch(() => 10);
@@ -703,10 +703,11 @@ export class Screen {
   }
 
   // A key on the ambient screen: back to what was in front, or home.
-  wake(): Promise<object> {
+  wake(why = "asked"): Promise<object> {
     return this.queue(async () => {
       if (!this.ambient) return;
       this.ambient = false;
+      this.log(`the ambient screen ends: ${why}`);
       const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
       this.ambientFrom = null;
       await this.inHome("window.agentvAmbient?.(false)");
@@ -957,7 +958,7 @@ export class Screen {
       case "ambient":
         return this.showAmbient();
       case "wake":
-        return this.wake();
+        return this.wake("agentv screen wake");
       case "tv":
         if (typeof request.on !== "boolean") return { ok: false, error: "tv on or off" };
         return this.tv(request.on);
