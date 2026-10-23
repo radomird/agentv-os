@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Ask the TV session what's on screen, or put something in front
-# agentv:args=status | home | open <url> | open steam | close <home|web|steam> | toast <text> | frames [seconds] | keys [seconds]
+# agentv:args=status | home | open <url> | open steam | quit <app> | close <home|web|steam> | toast <text> | frames [seconds] | keys [seconds]
 # agentv:examples=agentv screen status | agentv screen open https://example.org | agentv screen toast "Hello"
 
 # Talks to AgenTV's screen daemon (daemon/screen.ts), which decides what's in
@@ -10,10 +10,14 @@
 # when it says ok, 1 when it doesn't, and 2 when the TV session isn't on.
 #
 #   status         what's in front, every window and where it is, the apps
-#                  the daemon started, the screen and the overlays
-#   home           the home screen in front
-#   open <url>     a web page in the services' Chromium, in front
+#                  the daemon started, the apps open, the screen and the
+#                  overlays
+#   home           Home: the app in front pauses, and the home screen comes
+#                  to the front
+#   open <url>     a web page in the services' Chromium, in front; one open
+#                  already comes back where it was
 #   open steam     Steam in its own gamescope, in front
+#   quit <app>     close an app that's open, such as a game behind home
 #   close <role>   close the home screen, the web apps or Steam
 #   toast <text>   a toast over whatever's in front
 #   frames [s]     how smoothly the home screen draws, over s seconds
@@ -33,6 +37,16 @@ command=${1:-status}
 case "$command" in
   status | home)
     request=$(jq -cn --arg cmd "$command" '{cmd: $cmd}')
+    ;;
+  back)
+    # The session's Hyprland, on each press and release of Back:
+    # agentv screen back down|up <milliseconds since 1970>.
+    (( $# == 2 )) && [[ $1 == "down" || $1 == "up" ]] && [[ $2 =~ ^[0-9]+$ ]] || { usage >&2; exit 2; }
+    request=$(jq -cn --arg edge "$1" --argjson at "$2" '{cmd: "back", edge: $edge, at: $at}')
+    ;;
+  quit)
+    (( $# == 1 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg app "$1" '{cmd: "quit", app: $app}')
     ;;
   open)
     (( $# == 1 )) || { usage >&2; exit 2; }

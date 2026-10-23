@@ -90,14 +90,26 @@ interface ScreenWindow {
   agentvScreenReply?: (id: number, reply: string) => void;
 }
 
-const waiting = new Map<number, (reply: { ok: boolean; error?: string }) => void>();
+export interface Running {
+  id: string;
+  game: boolean;
+  paused: boolean;
+}
+
+interface Reply {
+  ok: boolean;
+  error?: string;
+  apps?: Running[];
+}
+
+const waiting = new Map<number, (reply: Reply) => void>();
 let next = 0;
 (window as ScreenWindow).agentvScreenReply = (id, reply) => {
   waiting.get(id)?.(JSON.parse(reply));
   waiting.delete(id);
 };
 
-function ask(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+function ask(request: Record<string, unknown>): Promise<Reply> {
   const binding = (window as ScreenWindow).agentvScreen;
   if (!binding) return Promise.resolve({ ok: false, error: "that works on the TV" });
   const id = ++next;
@@ -111,8 +123,13 @@ function ask(request: Record<string, unknown>): Promise<{ ok: boolean; error?: s
 }
 
 export const screen = {
-  // Puts an app in front, the way its manifest says to open it.
+  // Puts an app in front, the way its manifest says to open it, or brings
+  // it back where it was when it's open behind home.
   open: (app: string) => ask({ cmd: "open-app", app }),
+  // The apps open behind home, and whether Home paused them.
+  running: async () => (await ask({ cmd: "running" })).apps ?? [],
+  // Closes an app open behind home, such as a game still running.
+  quit: (app: string) => ask({ cmd: "quit", app }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
 };

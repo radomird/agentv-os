@@ -1,23 +1,24 @@
 #!/bin/bash
 
 # agentv:summary=Press keys or type text on the TV, through its virtual input device
-# agentv:args=key <name>... | text <text>
-# agentv:examples=agentv input key down enter | agentv input text "hello"
+# agentv:args=key <name>... | hold <name> <seconds> | text <text>
+# agentv:examples=agentv input key down enter | agentv input hold back 1.2 | agentv input text "hello"
 
 # Sends keys to AgenTV's virtual input device, "AgenTV remote"
 # (daemon/input.py, ADR-008), which the TV session runs. They reach whatever
 # is in front, the way the phone's d-pad and keyboard will. Keys: up, down,
 # left, right, enter, back (Esc), home, playpause, volumeup, volumedown,
-# mute, letters and digits. Works over SSH too, as the person on the TV.
+# mute, letters and digits. hold keeps one down for a while, such as Back
+# for a second, which goes home. Works over SSH too, as the person on the TV.
 
 set -euo pipefail
 
 AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 
 case "${1:-}" in
-  key | text) exec python3 "$AGENTV_PATH/daemon/input.py" "$@" ;;
+  key | hold | text) exec python3 "$AGENTV_PATH/daemon/input.py" "$@" ;;
   *)
-    echo "Usage: agentv input key <name>... | text <text>" >&2
+    echo "Usage: agentv input key <name>... | hold <name> <seconds> | text <text>" >&2
     exit 2
     ;;
 esac

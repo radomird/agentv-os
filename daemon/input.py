@@ -12,19 +12,27 @@ Input. Nobody else on the box can use it.
                               $XDG_RUNTIME_DIR/agentv/input.sock
   input.py key <name>...      press and release keys: up, down, left, right,
                               enter, back, home, playpause, a, 1, ...
+  input.py hold <name> <s>    press a key, hold it for s seconds, release it
   input.py text <text>        type text (US layout)
 
-A request is one JSON line: {"key": "up"}, {"text": "hello"},
-{"move": [dx, dy]}, {"click": "left"} or {"scroll": n}. The answer is
-"ok" or an error, on one line. Standard library only.
+A request is one JSON line: {"key": "up"}, {"hold": "back", "ms": 1200},
+{"text": "hello"}, {"move": [dx, dy]}, {"click": "left"} or {"scroll": n}.
+The answer is "ok" or an error, on one line.
+
+It also watches the gamepads for their guide button, which is Home
+(ADR-031), and tells the screen daemon. A gamepad's other buttons reach
+the window in front as they are. Standard library only.
 """
 
 import fcntl
+import glob
 import json
 import os
+import select
 import socket
 import struct
 import sys
+import threading
 import time
 
 # linux/input-event-codes.h
@@ -32,6 +40,8 @@ EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
 SYN_REPORT = 0
 REL_X, REL_Y, REL_WHEEL = 0x00, 0x01, 0x08
 BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
+BTN_MODE = 0x13C
+EVENT_SIZE = struct.calcsize("llHHi")
 KEY_LEFTSHIFT = 42
 BUS_VIRTUAL = 0x06
 
@@ -120,6 +130,15 @@ class Device:
             raise ValueError(f"unknown key: {name}")
         self.tap(KEYS[name])
 
+    def hold(self, name, ms):
+        if name not in KEYS:
+            raise ValueError(f"unknown key: {name}")
+        if not 0 <= ms <= 5000:
+            raise ValueError("hold for up to 5000 ms")
+        self.emit(event(EV_KEY, KEYS[name], 1))
+        time.sleep(ms / 1000)
+        self.emit(event(EV_KEY, KEYS[name], 0))
+
     def text(self, text):
         codes = [code_of_char(c) for c in text]
         for code, shift in codes:
@@ -140,6 +159,8 @@ class Device:
     def handle(self, request):
         if "key" in request:
             self.key(str(request["key"]))
+        elif "hold" in request:
+            self.hold(str(request["hold"]), int(request.get("ms", 1000)))
         elif "text" in request:
             self.text(str(request["text"]))
         elif "move" in request:
@@ -149,7 +170,7 @@ class Device:
         elif "scroll" in request:
             self.scroll(request["scroll"])
         else:
-            raise ValueError("a request is key, text, move, click or scroll")
+            raise ValueError("a request is key, hold, text, move, click or scroll")
 
 
 def create():
@@ -167,9 +188,71 @@ def create():
     return fd
 
 
-def socket_path():
+def socket_path(name="input.sock"):
     runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    return os.path.join(runtime, "agentv", "input.sock")
+    return os.path.join(runtime, "agentv", name)
+
+
+def gamepads():
+    """The gamepads plugged in now. The seat's user can read them (udev's
+    uaccess), which is how a browser's gamepad support works too."""
+    return sorted(glob.glob("/dev/input/by-id/*-event-joystick"))
+
+
+def watch_guide(find, on_guide, stop, rescan=3.0):
+    """Calls on_guide each time a gamepad's guide button goes down, until
+    stop is set. find lists the devices; it's asked again every few seconds,
+    so a gamepad plugged in later counts too."""
+    fds = {}
+    scanned = 0.0
+    while not stop.is_set():
+        if time.monotonic() - scanned >= rescan:
+            scanned = time.monotonic()
+            for path in find():
+                if path not in fds:
+                    try:
+                        fds[path] = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                    except OSError:
+                        pass
+        if not fds:
+            stop.wait(min(rescan, 0.5))
+            continue
+        ready, _, _ = select.select(list(fds.values()), [], [], 0.5)
+        for fd in ready:
+            try:
+                data = os.read(fd, EVENT_SIZE * 64)
+            except BlockingIOError:
+                continue
+            except OSError:
+                data = b""
+            if not data:
+                # Unplugged.
+                for path, open_fd in list(fds.items()):
+                    if open_fd == fd:
+                        del fds[path]
+                os.close(fd)
+                continue
+            for i in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
+                _, _, kind, code, value = struct.unpack_from("llHHi", data, i)
+                if kind == EV_KEY and code == BTN_MODE and value == 1:
+                    on_guide()
+    for fd in fds.values():
+        os.close(fd)
+
+
+def screen_home():
+    """Asks the screen daemon for Home, as the guide button. In a game, the
+    guide button is the game's own, so the daemon leaves it."""
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(5)
+    try:
+        client.connect(socket_path("screen.sock"))
+        client.sendall(b'{"cmd":"home","from":"guide"}\n')
+        client.recv(4096)
+    except OSError as error:
+        print(f"agentv input: Home didn't reach the screen daemon: {error}", flush=True)
+    finally:
+        client.close()
 
 
 def serve():
@@ -184,6 +267,8 @@ def serve():
     os.chmod(path, 0o600)
     server.listen(8)
     print(f"agentv input: {NAME.decode()} is ready on {path}", flush=True)
+    stop = threading.Event()
+    threading.Thread(target=watch_guide, args=(gamepads, screen_home, stop), daemon=True).start()
     try:
         while True:
             conn, _ = server.accept()
@@ -195,6 +280,7 @@ def serve():
                 except (ValueError, TypeError, KeyError) as error:
                     stream.write(f"{error}\n".encode())
     finally:
+        stop.set()
         fcntl.ioctl(fd, UI_DEV_DESTROY)
         os.close(fd)
 
@@ -226,6 +312,12 @@ def main(args):
             if status:
                 return status
         return 0
+    if args[:1] == ["hold"] and len(args) == 3:
+        try:
+            ms = round(float(args[2]) * 1000)
+        except ValueError:
+            ms = -1
+        return send({"hold": args[1], "ms": ms})
     if args[:1] == ["text"] and len(args) == 2:
         return send({"text": args[1]})
     print(__doc__.split("\n\n")[1], file=sys.stderr)

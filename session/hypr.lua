@@ -123,6 +123,20 @@ hl.window_rule({
 -- 2). agentv desktop asks for the PIN first, once there is one (stage 4).
 hl.bind("SUPER + CTRL + Home", hl.dsp.exec_cmd("agentv desktop"), { description = "Omarchy's desktop" })
 
+-- Home from every input (ADR-031): a keyboard's Home key and a remote's Home
+-- button, which the phone sends through the virtual input device too. The
+-- gamepad's guide button reaches the daemon from input.py.
+hl.bind("Home", hl.dsp.exec_cmd("agentv screen home"), { description = "Home" })
+hl.bind("XF86HomePage", hl.dsp.exec_cmd("agentv screen home"), { description = "Home" })
+
+-- Back stays the app's, and holding it for a second goes home. Each press and
+-- release says when it happened, since the two commands can arrive out of
+-- order.
+for _, key in ipairs({ "Escape", "XF86Back" }) do
+  hl.bind(key, hl.dsp.exec_cmd("agentv screen back down $(date +%s%3N)"), { non_consuming = true })
+  hl.bind(key, hl.dsp.exec_cmd("agentv screen back up $(date +%s%3N)"), { non_consuming = true, release = true })
+end
+
 hl.on("hyprland.start", function()
   -- The screen daemon, the virtual input device and the toast overlay run
   -- as user units under agentv-tv.target, and need this session's display.

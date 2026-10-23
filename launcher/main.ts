@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { daemon, listen, type HomeState, type Settings } from "./api.ts";
+import { daemon, listen, screen, type HomeState, type Running, type Settings } from "./api.ts";
 import { fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
@@ -27,6 +27,8 @@ export interface View {
 
 export interface Ctx {
   state: HomeState;
+  // Apps open behind home, by id (ADR-031).
+  running: Map<string, Running>;
   sounds: Sounds;
   focus: Focus;
   go(route: string): void;
@@ -46,6 +48,7 @@ let view: View | undefined;
 
 const ctx: Ctx = {
   state: undefined as unknown as HomeState,
+  running: new Map(),
   sounds,
   focus,
   go(route) {
@@ -181,8 +184,22 @@ async function refresh(): Promise<void> {
   if (JSON.stringify(state) === JSON.stringify(ctx.state)) return;
   ctx.state = state;
   apply(ctx.state.settings);
+  redraw();
+}
+
+// The page again, in place, with the focus where it was.
+function redraw(): void {
   const current = focus.get();
   show(history[history.length - 1], undefined, current?.dataset.action ?? current?.dataset.id);
+}
+
+// Which apps are open behind home, from the screen daemon. Home's tiles show
+// it; edit mode doesn't, so it isn't redrawn under the viewer's hands.
+function setRunning(apps: Running[]): void {
+  const next = new Map(apps.map((app) => [app.id, app]));
+  if (JSON.stringify([...next]) === JSON.stringify([...ctx.running])) return;
+  ctx.running = next;
+  if (history[history.length - 1] === "home") redraw();
 }
 
 async function start(): Promise<void> {
@@ -205,8 +222,14 @@ async function start(): Promise<void> {
     setup: () => location.reload(),
   });
   void sounds.load();
+  // The screen daemon calls these: Home when the home screen is already in
+  // front, and the apps open behind it whenever that changes.
+  const w = window as unknown as { agentvHome: () => void; agentvRunning: (json: string) => void; agentvLauncher: object };
+  w.agentvHome = () => act("home");
+  w.agentvRunning = (json) => setRunning(JSON.parse(json));
+  void screen.running().then(setRunning);
   // For the UI checks: the sounds that played, and the focus.
-  (window as unknown as { agentvLauncher: object }).agentvLauncher = { sounds, focus };
+  w.agentvLauncher = { sounds, focus };
 }
 
 void start();

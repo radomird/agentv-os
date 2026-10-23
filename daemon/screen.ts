@@ -16,8 +16,11 @@
 // (/var/lib/agentv/chromium, with Widevine and the sign-ins), and Steam in a
 // gamescope of its own.
 //
-// Home and Back, up to two apps kept open, the ambient screen and the TV-off
-// policy come in stage 2, on top of this.
+// Home pauses the app in front and shows the home screen; choosing the app
+// again brings it back where it was. Up to two apps stay open like that, and
+// a third closes the oldest. A game keeps running under home until it's
+// quit. Back goes to the app in front, and holding it for a second goes home
+// (ADR-031). The ambient screen and the TV-off policy come later in stage 2.
 //
 // Run by agentv-screen.service in the TV session. Other commands talk to it
 // over $XDG_RUNTIME_DIR/agentv/screen.sock, one JSON request and one JSON
@@ -29,8 +32,9 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
-import { CdpPipe } from "./cdp.ts";
+import { CdpPipe, type DevTools } from "./cdp.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
+import { PAUSE, RESUME } from "./media.ts";
 
 export type Role = "home" | "web" | "steam";
 
@@ -39,13 +43,15 @@ export const HELD_WORKSPACE = "special:agentv-held";
 export const HOME_URL = "http://127.0.0.1:3000/";
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
+// Apps kept open behind home, besides a game (ADR-031).
+export const KEEP_OPEN = 2;
 
 // A process the daemon started.
 export interface App {
   role: Role;
   pid: number;
   startedAt: number;
-  cdp?: CdpPipe;
+  cdp?: DevTools;
   stop(): void;
   onExit(callback: () => void): void;
 }
@@ -61,7 +67,8 @@ export interface Launcher {
   homeReady(): Promise<void>;
   home(): App;
   // A new process each time. When the services' Chromium is already
-  // running, it hands the window to that one and exits.
+  // running, it hands the window to that one and exits. A browser this
+  // starts has a DevTools pipe, and the daemon opens later windows with it.
   web(url: string): App;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
@@ -83,12 +90,27 @@ interface Window {
   title: string;
 }
 
+// An app open on the TV: in front, or out of sight behind home.
+interface Open {
+  // The app's id, or the address it opened, for one opened by address.
+  id: string;
+  role: Role;
+  // Its page in the services' Chromium, when the daemon started that one.
+  target?: string;
+  // Its window, once it has one.
+  address?: string;
+  usedAt: number;
+  // Home paused it, so choosing it again plays it.
+  paused: boolean;
+}
+
 interface Options {
   hyprland: Hyprland;
   launcher: Launcher;
   now?: () => number;
   log?: (line: string) => void;
   homeRestartMs?: number;
+  backHoldMs?: number;
 }
 
 export class Screen {
@@ -100,7 +122,12 @@ export class Screen {
   // Windows that have been in front, the one in front last.
   private stack: string[] = [];
   private apps = new Map<Role, App>();
-  private want: { role: Role; until: number } | null = null;
+  private opens: Open[] = [];
+  private want: { role: Role; until: number; app?: string } | null = null;
+  private backHoldMs: number;
+  private backDown = 0;
+  private backUp = 0;
+  private backTimer: ReturnType<typeof setTimeout> | null = null;
   private ending = false;
   private chain: Promise<void> = Promise.resolve();
   private homeRestartMs: number;
@@ -117,6 +144,7 @@ export class Screen {
     this.log = options.log ?? ((line) => console.log(line));
     this.homeRestartMs = options.homeRestartMs ?? 500;
     this.homeDelay = this.homeRestartMs;
+    this.backHoldMs = options.backHoldMs ?? 1000;
   }
 
   // Runs one step at a time, in the order things happened.
@@ -227,9 +255,15 @@ export class Screen {
     const wanted = this.want && window.role === this.want.role && this.now() <= this.want.until;
 
     if (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front)) {
+      const app = wanted ? this.want?.app : undefined;
       if (wanted) this.want = null;
       this.log(`in front: ${describe(window)}`);
       await this.toFront(address);
+      const entry = app ? this.opens.find((o) => o.id === app && !o.address) : undefined;
+      if (entry) {
+        entry.address = address;
+        this.running();
+      }
       return;
     }
 
@@ -247,6 +281,10 @@ export class Screen {
     const wasFront = this.front()?.address === address;
     this.windows.delete(address);
     this.stack = this.stack.filter((a) => a !== address);
+    if (this.opens.some((o) => o.address === address)) {
+      this.opens = this.opens.filter((o) => o.address !== address);
+      this.running();
+    }
     if (!window || !wasFront || this.ending) return;
 
     // Another window of the same app, such as the one a sign-in window
@@ -392,16 +430,26 @@ export class Screen {
     this.log("the home screen's page never came, so it can't open apps");
   }
 
-  // What the home screen asks for: an app in front, or Omarchy's desktop.
+  // What the home screen asks for: an app in front, the apps open, quitting
+  // one, or Omarchy's desktop.
   async fromHome(request: any): Promise<object> {
     switch (request?.cmd) {
       case "open-app": {
-        const target = await this.launcher.appTarget(String(request.app ?? "")).catch(() => null);
+        const id = String(request.app ?? "");
+        if (this.opens.some((o) => o.id === id && o.address && this.windows.has(o.address))) {
+          return this.reopen(id);
+        }
+        const target = await this.launcher.appTarget(id).catch(() => null);
         if (!target) return { ok: false, error: "that app can't be opened yet" };
-        if (target.runtime === "web") return this.openWeb(target.url);
-        if (target.exec[0] === "steam") return this.openSteam();
+        if (target.runtime === "web") return this.openWeb(target.url, id);
+        if (target.exec[0] === "steam") return this.openSteam(id);
         return { ok: false, error: "that app can't be opened from the tv yet" };
       }
+      case "running":
+        await this.chain;
+        return { ok: true, apps: this.runningApps() };
+      case "quit":
+        return this.quit(String(request.app ?? ""));
       case "desktop":
         this.launcher.desktop();
         return { ok: true };
@@ -410,46 +458,181 @@ export class Screen {
     }
   }
 
-  home(): Promise<object> {
+  // Home, from any input (ADR-031): the app in front pauses and goes out of
+  // sight, and the home screen comes to the front. With the home screen
+  // already there, it goes back to its own home page. A game's guide button
+  // is the game's own.
+  home(from = ""): Promise<object> {
     return this.queue(async () => {
+      const front = this.front();
+      if (from === "guide" && front?.role === "steam") return;
+      const entry = front && this.opens.find((o) => o.address === front.address);
+      if (entry) {
+        entry.usedAt = this.now();
+        if (entry.role === "web") entry.paused = (await this.media(entry, PAUSE)) > 0;
+      }
       const home = this.homeWindow();
-      if (home) {
+      if (home && front?.address === home.address) {
+        await this.inHome("window.agentvHome?.()");
+      } else if (home) {
         await this.toFront(home.address);
       } else {
         this.want = { role: "home", until: Infinity };
         this.startHome();
       }
+      this.running();
     }).then(() => ({ ok: true }));
   }
 
-  openWeb(url: string): Promise<object> {
+  // Back is the app's own, but holding it for a second goes home. The
+  // session's Hyprland reports each press and release with the time it
+  // happened, since the two can arrive out of order.
+  back(edge: "down" | "up", at: number): object {
+    if (edge === "up") {
+      this.backUp = Math.max(this.backUp, at);
+      if (at >= this.backDown && this.backTimer) {
+        clearTimeout(this.backTimer);
+        this.backTimer = null;
+      }
+      return { ok: true };
+    }
+    if (at <= this.backUp || at <= this.backDown) return { ok: true };
+    this.backDown = at;
+    if (this.backTimer) clearTimeout(this.backTimer);
+    this.backTimer = setTimeout(
+      () => {
+        this.backTimer = null;
+        if (this.backUp < this.backDown) void this.home("back");
+      },
+      Math.max(0, at + this.backHoldMs - this.now()),
+    );
+    return { ok: true };
+  }
+
+  // An app open behind home comes back where it was, playing again if Home
+  // paused it.
+  private reopen(id: string): Promise<object> {
+    return this.queue(async () => {
+      const entry = this.opens.find((o) => o.id === id);
+      if (!entry?.address || !this.windows.has(entry.address)) return;
+      await this.toFront(entry.address);
+      entry.usedAt = this.now();
+      if (entry.paused) await this.media(entry, RESUME);
+      entry.paused = false;
+      this.running();
+    }).then(() => ({ ok: true }));
+  }
+
+  // Runs PAUSE or RESUME in an app's page. 0 when it can't: a page the
+  // daemon didn't open, or one that doesn't answer in half a second, so Home
+  // never waits on an app.
+  private async media(entry: Open, script: string): Promise<number> {
+    const cdp = this.apps.get("web")?.cdp;
+    if (!cdp || !entry.target) return 0;
+    const answer = await Promise.race([cdp.evaluateIn(entry.target, script).catch(() => 0), sleep(500).then(() => 0)]);
+    return Number(answer) || 0;
+  }
+
+  // Closes the oldest apps past KEEP_OPEN; a game doesn't count.
+  private async makeRoom(keep: string): Promise<void> {
+    const apps = this.opens.filter((o) => o.role !== "steam");
+    for (const oldest of apps.filter((o) => o.id !== keep).sort((a, b) => a.usedAt - b.usedAt)) {
+      if (this.opens.filter((o) => o.role !== "steam").length <= KEEP_OPEN) break;
+      this.log(`closing ${oldest.id}, the oldest of ${KEEP_OPEN + 1} apps open`);
+      await this.closeOpen(oldest);
+    }
+  }
+
+  private async closeOpen(entry: Open): Promise<void> {
+    this.opens = this.opens.filter((o) => o !== entry);
+    if (entry.role === "steam") {
+      for (const window of [...this.windows.values()].filter((w) => w.role === "steam")) {
+        await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
+      }
+      this.apps.get("steam")?.stop();
+    } else if (entry.target && this.apps.get("web")?.cdp) {
+      await this.apps.get("web")!.cdp!.close(entry.target).catch(() => {});
+    } else if (entry.address) {
+      await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${entry.address}`)} })`);
+    }
+    this.running();
+  }
+
+  quit(id: string): Promise<object> {
+    let found = false;
+    return this.queue(async () => {
+      const entry = this.opens.find((o) => o.id === id);
+      if (!entry) return;
+      found = true;
+      await this.closeOpen(entry);
+    }).then(() => (found ? { ok: true } : { ok: false, error: `${id} isn't open` }));
+  }
+
+  private runningApps(): { id: string; game: boolean; paused: boolean }[] {
+    return this.opens.filter((o) => o.address).map((o) => ({ id: o.id, game: o.role === "steam", paused: o.paused }));
+  }
+
+  // Tells the home screen which apps are open, for their tiles.
+  private running(): void {
+    const apps = JSON.stringify(JSON.stringify(this.runningApps()));
+    void this.inHome(`window.agentvRunning?.(${apps})`);
+  }
+
+  openWeb(url: string, id = url): Promise<object> {
     if (!/^(https?|data):/.test(url)) {
       return Promise.resolve({ ok: false, error: "only http, https and data URLs open on the TV" });
     }
+    if (this.opens.some((o) => o.id === id && o.address && this.windows.has(o.address))) return this.reopen(id);
     return this.queue(async () => {
-      const app = this.launcher.web(url);
-      this.want = { role: "web", until: this.now() + 30_000 };
+      this.opens = this.opens.filter((o) => o.id !== id);
+      const entry: Open = { id, role: "web", usedAt: this.now(), paused: false };
+      this.opens.push(entry);
+      this.want = { role: "web", until: this.now() + 30_000, app: id };
       const running = this.apps.get("web");
-      if (!running) {
-        this.apps.set("web", app);
-        app.onExit(() => {
-          if (this.apps.get("web") === app) this.apps.delete("web");
-        });
+      if (running?.cdp) {
+        entry.target = await running.cdp.open(url).catch(() => undefined);
       }
-      this.log(`opening ${url} in the services' Chromium`);
+      if (!entry.target) {
+        const app = this.launcher.web(url);
+        if (!running) {
+          this.apps.set("web", app);
+          app.onExit(() => {
+            if (this.apps.get("web") === app) this.apps.delete("web");
+          });
+          if (app.cdp) void this.firstPage(app.cdp, entry);
+        }
+      }
+      this.log(`opening ${id === url ? url : `${id} at ${url}`} in the services' Chromium`);
+      await this.makeRoom(id);
     }).then(() => ({ ok: true }));
   }
 
-  openSteam(): Promise<object> {
+  // The page a new services' Chromium opened with.
+  private async firstPage(cdp: DevTools, entry: Open): Promise<void> {
+    for (let tries = 0; tries < 50 && !entry.target; tries++) {
+      const pages = await cdp.pages().catch(() => []);
+      if (pages.length > 0) {
+        entry.target = pages[0].targetId;
+        return;
+      }
+      await sleep(100);
+    }
+  }
+
+  openSteam(id = "steam"): Promise<object> {
     let result: object = { ok: true };
     return this.queue(async () => {
       const running = [...this.windows.values()].filter((w) => w.role === "steam").pop();
       if (running) {
         await this.toFront(running.address);
+        const entry = this.opens.find((o) => o.role === "steam");
+        if (entry) entry.usedAt = this.now();
         return;
       }
+      this.opens = this.opens.filter((o) => o.role !== "steam");
+      this.opens.push({ id, role: "steam", usedAt: this.now(), paused: false });
       if (this.apps.has("steam")) {
-        this.want = { role: "steam", until: this.now() + 120_000 };
+        this.want = { role: "steam", until: this.now() + 120_000, app: id };
         return;
       }
       const monitor = (await this.hypr.monitors()).find((m) => m.focused) ?? (await this.hypr.monitors())[0];
@@ -462,10 +645,13 @@ export class Screen {
         this.apps.set("steam", app);
         app.onExit(() => {
           if (this.apps.get("steam") === app) this.apps.delete("steam");
+          this.opens = this.opens.filter((o) => o.role !== "steam");
+          this.running();
         });
-        this.want = { role: "steam", until: this.now() + 120_000 };
+        this.want = { role: "steam", until: this.now() + 120_000, app: id };
         this.log(`started Steam in its gamescope (pid ${app.pid})`);
       } catch (error) {
+        this.opens = this.opens.filter((o) => o.role !== "steam");
         result = { ok: false, error: (error as Error).message };
       }
     }).then(() => result);
@@ -473,6 +659,7 @@ export class Screen {
 
   close(role: Role): Promise<object> {
     return this.queue(async () => {
+      this.opens = this.opens.filter((o) => o.role !== role);
       for (const window of [...this.windows.values()].filter((w) => w.role === role)) {
         await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
       }
@@ -511,6 +698,7 @@ export class Screen {
       front: front ? summary(front, clients) : null,
       windows: [...this.windows.values()].map((w) => ({ ...summary(w, clients), front: w.address === front?.address })),
       apps: [...this.apps.values()].map((a) => ({ role: a.role, pid: a.pid, started_at: new Date(a.startedAt).toISOString() })),
+      open: this.opens.map((o) => ({ id: o.id, role: o.role, paused: o.paused, front: o.address !== undefined && o.address === front?.address })),
       home_restarts: this.homeRestarts,
       monitors: monitors.map((m) => ({ name: m.name, width: m.width, height: m.height, refresh_rate: m.refreshRate })),
       layers: layers.map((l) => l.namespace),
@@ -573,10 +761,15 @@ export class Screen {
       case "status":
         return this.status();
       case "home":
-        return this.home();
+        return this.home(String(request.from ?? ""));
+      case "back":
+        if (!["down", "up"].includes(request.edge) || !Number.isFinite(request.at)) return { ok: false, error: "back down or up, and when" };
+        return this.back(request.edge, Number(request.at));
       case "open":
         if (request.app === "steam") return this.openSteam();
         return this.openWeb(String(request.url ?? ""));
+      case "quit":
+        return this.quit(String(request.app ?? ""));
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
         return this.close(request.role);
@@ -695,10 +888,11 @@ export const launcher: Launcher = {
   },
 
   web(url) {
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`], {
-      stdio: ["ignore", "ignore", "inherit"],
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+      stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
-    return track("web", child);
+    const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
+    return track("web", child, false, cdp);
   },
 
   steam(mode) {
