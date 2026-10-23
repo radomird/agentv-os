@@ -35,3 +35,23 @@ AGENTV_REPO_URL=https://example.invalid/agentv-pkgs/releases/download
 AGENTV_TESTED_URL=https://example.invalid/agentv-os/releases/download/tested
 SETTINGS
 }
+
+# node_test <file.mts>: runs a TypeScript test file with Node's own test
+# runner and prints a line per passing test, or fails with the failures. Node
+# 22.6 to 22.17 runs TypeScript only when asked. Without Node it skips, except
+# in CI.
+node_test() {
+  local file="$1" flags=()
+
+  if ! type -P node >/dev/null; then
+    [[ -n ${CI:-} ]] && fail "Node is installed" "${file##*/} needs Node 22.18 or newer"
+    echo "skip - ${file##*/} (Node isn't installed)"
+    return 0
+  fi
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  if ! node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning --test --test-reporter=tap \
+    "$file" >"$SCRATCH/tap" 2>&1; then
+    fail "${file##*/} passes" "$(grep -E '^(not ok|# |  ---|    )' "$SCRATCH/tap" | head -n 60)"
+  fi
+  grep -E '^ok ' "$SCRATCH/tap" | sed -E 's/^ok [0-9]+ - /ok - /'
+}

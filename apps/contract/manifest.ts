@@ -160,6 +160,7 @@ function checkCode(root: string, files: Set<string>, rel: string, problem: (text
   }
   if (/\brequire\s*\(/.test(source)) problem(`${rel} calls require(), which apps can't use`);
   if (/\bimport\s*\(/.test(source)) problem(`${rel} uses import(), which apps can't use; import files statically instead`);
+  if (/\bgetBuiltinModule\b/.test(source)) problem(`${rel} reaches for Node's own modules, which apps can't use`);
   for (const match of source.matchAll(STATIC_IMPORT)) {
     const specifier = match[1];
     if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
