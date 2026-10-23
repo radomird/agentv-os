@@ -24,10 +24,10 @@ Not there yet, though. Phase 1 is being built right now, so there's nothing to i
 
 ## Powered by Omarchy
 
-AgenTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4 and adds a TV mode on top. When you need a full desktop, switch from the TV to the Omarchy desktop and back.
+AgenTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4 and adds a TV session of its own beside Omarchy's desktop. The box logs in to the TV. When you need the full desktop, you switch over to Omarchy's and back.
 
-- **This repo** is a fork of [omacom/omarchy](https://github.com/omacom/omarchy), pinned to a release tag.
-- **Omarchy's files are never edited here.** AgenTV only adds its own, under `install/tv/`, `config/hypr/tv.lua`, `daemon/`, `launcher/`, `setup/`, `builder/`, `apps/`, `branding/` and `bin/agentv`.
+- **This repo** is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that follows Omarchy's stable releases.
+- **Omarchy's files are never edited here.** AgenTV only adds its own, under `install/tv/`, `session/`, `daemon/`, `launcher/`, `setup/`, `builder/`, `apps/`, `branding/` and `bin/agentv`.
 - **Omarchy's own README** is [`../README.md`](../README.md).
 - **Omarchy is made by David Heinemeier Hansson and its contributors.** It is MIT-licensed, and its [licence](../LICENSE) is kept as it is. AgenTV's additions use the same licence.
 - **Not official:** AgenTV isn't made or endorsed by the Omarchy project.
@@ -38,7 +38,7 @@ The AgenTV wordmark is drawn in the letterforms of Omarchy's logo, as a thank-yo
 
 | Repo | What it is |
 | --- | --- |
-| `agentv-os` (this one) | The TV OS: Omarchy plus TV mode, the daemon, the launcher, setup, the builder and the app contract |
+| `agentv-os` (this one) | The TV OS: Omarchy plus AgenTV's TV session, the daemon, the launcher, setup, the builder and the app contract |
 | [`agentv-iso`](https://github.com/radomird/agentv-iso) | The installer ISO, a fork of `omacom/omarchy-iso` that installs `agentv-os` |
 | `agentv-index` | The signed index of apps (coming soon) |
 | `agentv-app-*` | Official apps: Jellyfin, Plex, Immich, Steam (coming soon) |

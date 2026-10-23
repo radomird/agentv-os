@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Guards bin/agentv-selftest, the stage 0 NUC checks, against fake system
-# tools: S0.2's disk, autologin and welcome checks, and S0.3's access point
-# check, hotspot and Wi-Fi restore. The real radio is the image layer's job
-# (a virtual one) and the NUC's.
+# Guards bin/agentv-selftest, the NUC checks, against fake system tools and
+# a fake screen daemon: stage 1's TV session checks (S1.1, S1.2, S1.5, S1.6),
+# and stage 0's disk, autologin and welcome checks (S0.2) and access point,
+# hotspot and Wi-Fi restore (S0.3). The real radio and TV session are the
+# image layer's job and the NUC's.
 
 # shellcheck disable=SC2016 # the fakes' bodies are run later, by the script under test
 set -euo pipefail
@@ -88,7 +89,7 @@ healthy() {
 }
 
 healthy
-run || fail "a healthy box passes" "$(cat "$SCRATCH/out")"
+run S0.2 S0.3 || fail "a healthy box passes" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.2 the root disk isn't encrypted" "$SCRATCH/out" || fail "it says the disk isn't encrypted" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.2 radomir logs in on their own (session 2 on seat0)" "$SCRATCH/out" || fail "it finds the autologin session" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.2 the TV setup welcome screen was shown" "$SCRATCH/out" || fail "it reads welcome_shown" "$(cat "$SCRATCH/out")"
@@ -149,3 +150,100 @@ rm -f "$fakes/od"
 grep -q "^fail S0.3 the selftest stopped at line [0-9]*; send this whole output" "$SCRATCH/out" ||
   fail "a selftest that stops halfway says so" "$(cat "$SCRATCH/out")"
 pass "a selftest that stops halfway says so on a fail line"
+
+# --- Stage 1: the TV session ------------------------------------------------
+
+# A screen daemon that does what it's asked, from a status file: open puts
+# an app in front, home the home screen, toast an overlay. A home screen
+# whose process has gone comes back as a new one, as the real daemon does.
+fake agentv-screen '
+status="$STATE/screen.json"
+[[ -f $STATE/no-tv ]] && exit 2
+set_front() { jq --arg role "$1" --arg class "$2" ".front = {role: \$role, class: \$class, workspace: \"1\", fullscreen: 2}" "$status" >"$status.new" && mv "$status.new" "$status"; }
+case "$1" in
+  status)
+    pid=$(jq -r ".apps[] | select(.role == \"home\") | .pid" "$status")
+    if ! kill -0 "$pid" 2>/dev/null; then
+      jq ".apps = [{role: \"home\", pid: 4242}] | .home_restarts += 1" "$status" >"$status.new" && mv "$status.new" "$status"
+    fi
+    cat "$status" ;;
+  frames) cat "$STATE/frames.json" ;;
+  open) if [[ $2 == steam ]]; then set_front steam gamescope; else set_front web chromium; fi; echo "{\"ok\":true}" ;;
+  home) set_front home chromium; echo "{\"ok\":true}" ;;
+  toast) jq ".layers += [\"agentv-toast\"]" "$status" >"$status.new" && mv "$status.new" "$status"; echo "{\"ok\":true}" ;;
+  close) echo "{\"ok\":true}" ;;
+esac'
+fake pgrep 'exit 1'
+fake systemctl '
+case "$*" in
+  "--user show-environment") echo WAYLAND_DISPLAY=wayland-1 ;;
+  *) exit 3 ;;
+esac'
+# A terminal opened in the session: the daemon keeps it out of sight.
+fake foot '
+jq ".windows += [{title: \"agentv selftest\", workspace: \"special:agentv-held\", front: false}]" "$STATE/screen.json" >"$STATE/screen.json.new" && mv "$STATE/screen.json.new" "$STATE/screen.json"
+exec sleep 30'
+fake steam 'exit 0'
+
+tv() {
+  healthy
+  printf '[Autologin]\nUser=radomir\nSession=agentv.desktop\nRelogin=true\n' >"$SCRATCH/sddm.conf.d/agentv-autologin.conf"
+  sleep 300 &
+  home_pid=$!
+  disown "$home_pid"
+  jq -n --argjson pid "$home_pid" '{ok: true, front: {role: "home", class: "chromium", workspace: "1", fullscreen: 2},
+    windows: [], apps: [{role: "home", pid: $pid}], home_restarts: 0,
+    monitors: [{name: "HDMI-A-1", width: 1920, height: 1080, refresh_rate: 60}], layers: []}' >"$state/screen.json"
+  echo '{"ok": true, "frames": 301, "fps": 60, "worst_ms": 17.1, "slow_frames": 0}' >"$state/frames.json"
+  mkdir -p "$SCRATCH/var/chromium/WidevineCdm/4.10.2891.0"
+  echo '{"version": "4.10.2891.0"}' >"$SCRATCH/var/chromium/WidevineCdm/4.10.2891.0/manifest.json"
+}
+
+run1() {
+  env PATH="$fakes:$PATH" STATE="$state" AGENTV_PATH="$SCRATCH/agentv" AGENTV_SDDM_CONF="$SCRATCH/sddm.conf" \
+    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
+}
+
+tv
+run1 || fail "a box in the TV session passes stage 1's checks" "$(cat "$SCRATCH/out")"
+for line in \
+  "pass S1.1 SDDM logs radomir in to the TV session, and back in after every log-out" \
+  "pass S1.1 the TV session is on, with the home screen in front, full screen" \
+  "pass S1.1 nothing of Omarchy's desktop runs in the TV session" \
+  "pass S1.2 the services' Chromium has its Widevine module (4.10.2891.0)" \
+  "manual S1.2 sign in with agentv screen open" \
+  "pass S1.5 the home screen draws at 60 fps on a 60 Hz screen, with no frame over 25 ms" \
+  "pass S1.5 a web app came in front in" \
+  "pass S1.5 a toast showed over the app in front" \
+  "pass S1.5 the home screen came back in front in" \
+  "pass S1.5 Steam came in front in its own gamescope in" \
+  "manual S1.5 watch:" \
+  "pass S1.6 a new window stayed out of sight, and the home screen stayed in front" \
+  "pass S1.6 the home screen came back in front"; do
+  grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
+done
+[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass" ]] ||
+  fail "with no id it runs stage 1's checks, and manual lines don't fail them" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "stage 1's checks pass in a healthy TV session, with manual lines for what needs eyes"
+
+tv
+printf '[Autologin]\nUser=radomir\nSession=omarchy.desktop\n' >"$SCRATCH/sddm.conf.d/agentv-autologin.conf"
+touch "$state/no-tv"
+! run1 S1.1 || fail "a box not on the TV session fails S1.1"
+grep -q "^fail S1.1 SDDM logs in to omarchy.desktop" "$SCRATCH/out" || fail "it says where SDDM logs in" "$(cat "$SCRATCH/out")"
+grep -q "^fail S1.1 the TV session isn't on here" "$SCRATCH/out" || fail "it says the TV session isn't on" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "S1.1 fails on a box that isn't on the TV session, and says how to get there"
+
+tv
+echo '{"ok": true, "fps": 41.5, "slow_frames": 12}' >"$state/frames.json"
+rm -rf "$SCRATCH/var/chromium/WidevineCdm"
+rm -f "$fakes/steam"
+! run1 S1.2 S1.5 || fail "a slow home screen, no Widevine and no Steam fail"
+grep -q "^fail S1.2 the services' Chromium has no Widevine module yet" "$SCRATCH/out" || fail "it says Widevine is missing" "$(cat "$SCRATCH/out")"
+grep -q "^fail S1.5 the home screen draws at 41.5 fps on a 60 Hz screen, with 12 frames over 25 ms" "$SCRATCH/out" ||
+  fail "it says the home screen is slow" "$(cat "$SCRATCH/out")"
+grep -q "^fail S1.5 Steam isn't installed" "$SCRATCH/out" || fail "it says Steam isn't installed" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "S1.2 and S1.5 fail without Widevine, on dropped frames and without Steam, and say what to do"

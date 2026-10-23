@@ -1,0 +1,116 @@
+#!/bin/bash
+
+# agentv:summary=Start the TV session, or Omarchy's desktop once when the TV asked for it
+# agentv:hidden=true
+
+# The login manager runs this for AgenTV's session entry
+# (/usr/share/wayland-sessions/agentv.desktop), and logs straight back in
+# whenever it ends (Relogin, install/tv/autologin.sh). Usually it starts the
+# TV session (ADR-031): Hyprland with AgenTV's session/hypr.lua and nothing
+# of Omarchy's desktop.
+#
+# When agentv desktop has left a note for this boot, it starts Omarchy's own
+# session instead, once. Back to TV, Omarchy's own Log out, or a crash there
+# all end that session, and the log-in after it is the TV again. So is the
+# next power on, since the note names the boot it was left in.
+#
+# A TV session that ends within 20 s three times in a row starts Omarchy's
+# desktop instead, so a box whose TV session can't start can still be fixed.
+
+set -uo pipefail
+
+export AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/agentv"
+NEXT="$STATE_DIR/next-session"
+QUICK="$STATE_DIR/quick-exits"
+BOOT_ID=$(cat "${AGENTV_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null || echo unknown)
+read -ra SESSION_DIRS <<<"${AGENTV_SESSION_DIRS:-/usr/share/wayland-sessions /usr/local/share/wayland-sessions}"
+
+mkdir -p "$STATE_DIR"
+
+log() {
+  echo "agentv-session: $*" >&2
+  logger -t agentv-session -- "$*" 2>/dev/null || true
+}
+
+# Omarchy's own session command, from its own session entry, so it's
+# whatever Omarchy ships.
+omarchy_session() {
+  local dir
+
+  for dir in "${SESSION_DIRS[@]}" "$OMARCHY_PATH/default/wayland-sessions"; do
+    if [[ -f $dir/omarchy.desktop ]]; then
+      sed -n 's/^Exec=//p' "$dir/omarchy.desktop" | head -n 1
+      return 0
+    fi
+  done
+  echo "uwsm start -g -1 -e -D Hyprland hyprland.desktop"
+}
+
+desktop() {
+  local -a command
+
+  read -ra command <<<"$(omarchy_session)"
+  log "starting Omarchy's desktop: ${command[*]}"
+  exec "${command[@]}"
+}
+
+# The count of TV sessions in a row that ended within 20 s, this boot.
+quick_exits() {
+  local count boot
+
+  read -r count boot <"$QUICK" 2>/dev/null || return 0
+  [[ $boot == "$BOOT_ID" && $count =~ ^[0-9]+$ ]] && echo "$count"
+}
+
+tv() {
+  local started=$SECONDS status count
+
+  log "starting the TV session"
+  export AGENTV_SESSION=tv
+  export XDG_CURRENT_DESKTOP=AgenTV:Hyprland XDG_SESSION_DESKTOP=agentv XDG_SESSION_TYPE=wayland
+  # Hyprland would start graphical-session.target, and Omarchy's desktop
+  # services (its notices, its sleep lock and more) hang off that. The TV
+  # session has agentv-tv.target instead.
+  export HYPRLAND_NO_SD_TARGET=1
+
+  if omarchy-cmd-present start-hyprland; then
+    start-hyprland -- --config "$AGENTV_PATH/session/hypr.lua"
+  else
+    Hyprland --config "$AGENTV_PATH/session/hypr.lua"
+  fi
+  status=$?
+
+  systemctl --user stop agentv-tv.target 2>/dev/null
+  systemctl --user unset-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE 2>/dev/null
+
+  if (( SECONDS - started < 20 )) && [[ ! -f $NEXT ]]; then
+    count=$(quick_exits)
+    count=$(( ${count:-0} + 1 ))
+    printf '%s %s\n' "$count" "$BOOT_ID" >"$QUICK"
+    log "the TV session ended after $(( SECONDS - started )) s (status $status), $count time(s) in a row"
+  else
+    rm -f "$QUICK"
+    log "the TV session ended (status $status)"
+  fi
+  return "$status"
+}
+
+# A note from agentv desktop counts once, and only in the boot it was left in.
+if [[ -f $NEXT ]]; then
+  read -r want boot <"$NEXT" || true
+  rm -f "$NEXT"
+  if [[ ${want:-} == "desktop" && ${boot:-} == "$BOOT_ID" ]]; then
+    desktop
+  fi
+fi
+
+count=$(quick_exits)
+if (( ${count:-0} >= 3 )); then
+  rm -f "$QUICK"
+  log "the TV session couldn't start three times in a row; starting Omarchy's desktop so the box can be fixed"
+  desktop
+fi
+
+tv

@@ -21,6 +21,14 @@ on:
         description: "agentv-os commit or branch to test"
         type: string
         default: agentv
+      iso-ref:
+        description: "agentv-iso branch or tag with the image checks"
+        type: string
+        default: agentv
+      pkgs-ref:
+        description: "agentv-pkgs branch with the PKGBUILDs"
+        type: string
+        default: main
       packages:
         description: "Build the packages from that ref, or take a channel's"
         type: choice
@@ -39,6 +47,12 @@ on:
       ref:
         type: string
         required: true
+      iso-ref:
+        type: string
+        default: agentv
+      pkgs-ref:
+        type: string
+        default: main
       packages:
         type: string
         default: build
@@ -76,13 +90,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/agentv-pkgs
+          ref: ${{ inputs.pkgs-ref }}
           path: pkgs
           persist-credentials: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/agentv-iso
-          ref: agentv
+          ref: ${{ inputs.iso-ref }}
           path: iso
           submodules: recursive
           persist-credentials: false
@@ -211,6 +226,7 @@ jobs:
           }
           os/test/agentv/report image \
             "S0.1=$(result S0.1)" "S0.4=$(result S0.4)" "S0.5=$(result S0.5)" "S0.7=$(result S0.7)" \
+            "S1.1=$(result S1.1)" "S1.3=$(result S1.3)" "S1.6=$(result S1.6)" \
             >>"$GITHUB_STEP_SUMMARY"
 
       - name: Keep the screenshots and logs

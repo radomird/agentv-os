@@ -1,0 +1,4 @@
+# AgenTV's virtual input device (daemon/input.py, ADR-008) is made by the
+# person logged in on the screen. This lets whoever has the active seat use
+# uinput, and nobody else, the way Steam's own rule does for Steam Input.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

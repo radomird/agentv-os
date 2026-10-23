@@ -1,13 +1,28 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3]
-# agentv:examples=agentv selftest | agentv selftest S0.3
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6]...
+# agentv:examples=agentv selftest | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
 # The acceptance checks CI can't see, run on the box itself (ADR-019, layer
-# 7). Every line starts with pass or fail and the check's id, so the whole
-# output can be pasted back as it is. Stage 0:
+# 7). Every line starts with pass, fail or manual and the check's id, so the
+# whole output can be pasted back as it is. With no id it runs stage 1's.
+#
+# Stage 1, the TV session (ADR-031). Run these over SSH while the TV is on,
+# as the person it logs in:
+#
+#   S1.1  SDDM logs in to the TV session and back in after a log-out; the
+#         home screen is in front; nothing of Omarchy's desktop runs there.
+#   S1.2  the services' Chromium has its Widevine module. The 10 minutes of
+#         playback and the fan are for eyes and ears: manual lines say so.
+#   S1.5  how smoothly the home screen draws; an app in front and the home
+#         screen back; a toast over the app; Steam in its own gamescope.
+#         What only a person can judge is listed on manual lines.
+#   S1.6  a new window stays out of sight, and the home screen comes back in
+#         front after a crash. It closes the home screen on purpose for that.
+#
+# Stage 0:
 #
 #   S0.2  the root disk isn't encrypted, so there's no password at boot; the
 #         owner logs in on their own; the TV setup welcome screen was shown.
@@ -24,17 +39,22 @@ set -Eeuo pipefail
 AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 AGENTV_HEALTH_URL=${AGENTV_HEALTH_URL:-http://127.0.0.1:3000/health}
 AGENTV_SDDM_CONF=${AGENTV_SDDM_CONF:-/etc/sddm.conf}
+AGENTV_STATE=${AGENTV_STATE:-/var/lib/agentv}
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
-case "${1:-all}" in
-  all) checks=(S0.2 S0.3) ;;
-  [sS]0.2) checks=(S0.2) ;;
-  [sS]0.3) checks=(S0.3) ;;
-  -h|--help)
-    echo "Usage: agentv selftest [S0.2|S0.3]"
-    exit 0
-    ;;
-  *) echo "Usage: agentv selftest [S0.2|S0.3]" >&2; exit 2 ;;
-esac
+usage() {
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6]..."
+}
+
+checks=()
+for arg in "$@"; do
+  case "$arg" in
+    [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6) checks+=("S${arg:1}") ;;
+    -h | --help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+(( ${#checks[@]} )) || checks=(S1.1 S1.2 S1.5 S1.6)
 
 failed=" "
 current=""
@@ -43,10 +63,10 @@ current=""
 # on, said on a line of its own, never a quiet end.
 trap 'printf "fail %s the selftest stopped at line %s; send this whole output\n" "${current:-?}" "$LINENO"' ERR
 
-# result <pass|fail> <id> <what>
+# result <pass|fail|manual> <id> <what>
 result() {
   printf '%s %s %s\n' "$1" "$2" "$3"
-  [[ $1 == "pass" || $failed == *" $2 "* ]] || failed+="$2 "
+  [[ $1 != "fail" || $failed == *" $2 "* ]] || failed+="$2 "
 }
 
 s02_disk() {
@@ -220,6 +240,192 @@ s03() {
   fi
 }
 
+# --- Stage 1: the TV session ------------------------------------------------
+
+# The screen daemon's answer to a request, or nothing when the TV session
+# isn't on. The status says what's in front, every window and the overlays.
+screen() {
+  "${AGENTV_SCREEN:-$AGENTV_BIN_DIR/agentv-screen}" "$@" 2>/dev/null || true
+}
+
+# The value of a jq filter on the screen daemon's status.
+front() {
+  jq -r "$1" <<<"$(screen status)" 2>/dev/null || true
+}
+
+# wait_front <role> <seconds>: waits until that role is in front, and prints
+# how long it took, in tenths of a second, or nothing.
+wait_front() {
+  local tenths=0
+  while (( tenths < $2 * 10 )); do
+    [[ $(front '.front.role // ""') == "$1" ]] && { echo "$tenths"; return 0; }
+    sleep 0.2
+    tenths=$(( tenths + 2 ))
+  done
+}
+
+seconds() {
+  printf '%d.%d s' "$(( $1 / 10 ))" "$(( $1 % 10 ))"
+}
+
+# The last value of a key in SDDM's [Autologin] section; files in sddm.conf.d
+# are read in name order, sddm.conf last.
+autologin() {
+  for file in "$AGENTV_SDDM_CONF.d"/*.conf "$AGENTV_SDDM_CONF"; do
+    if [[ -f $file ]]; then cat -- "$file"; fi
+  done | awk -F= -v key="$1" '/^\[/ { section = $0 } section == "[Autologin]" && $1 == key { value = $2 } END { print value }'
+}
+
+tv_on() {
+  local status
+
+  status=$(screen status)
+  if [[ -z $status ]]; then
+    result fail "$1" "the TV session isn't on here; go back to the TV (Super+Ctrl+Home on Omarchy's desktop) and run this over SSH"
+    return 1
+  fi
+}
+
+s11() {
+  local session relogin home omarchy
+
+  session=$(autologin Session)
+  relogin=$(autologin Relogin)
+  if [[ $session == "agentv.desktop" && $relogin == "true" ]]; then
+    result pass S1.1 "SDDM logs $(autologin User) in to the TV session, and back in after every log-out"
+  else
+    result fail S1.1 "SDDM logs in to ${session:-no session} (Relogin=${relogin:-false}); agentv update moves the box to the TV session"
+  fi
+
+  tv_on S1.1 || return 0
+  home=$(front 'select(.front.role == "home") | "\(.front.workspace) \(.front.fullscreen)"')
+  if [[ $home == "1 2" ]]; then
+    result pass S1.1 "the TV session is on, with the home screen in front, full screen"
+  else
+    result fail S1.1 "the TV session is on, but the home screen isn't in front ($(front '.front.role // "nothing"'))"
+  fi
+
+  omarchy=""
+  pgrep -u "$(id -u)" -f "$OMARCHY_PATH/shell" >/dev/null 2>&1 && omarchy+="Omarchy's shell (bar, notices, screensaver, idle lock), "
+  systemctl --user is-active --quiet graphical-session.target 2>/dev/null && omarchy+="graphical-session.target, "
+  [[ -n $(front '.layers[] | select(startswith("omarchy"))') ]] && omarchy+="an Omarchy overlay, "
+  if [[ -z $omarchy ]]; then
+    result pass S1.1 "nothing of Omarchy's desktop runs in the TV session: no bar, notices, screensaver or idle lock"
+  else
+    result fail S1.1 "Omarchy's desktop runs in the TV session: ${omarchy%, }"
+  fi
+}
+
+s12() {
+  local manifest version
+
+  manifest=$(find "$AGENTV_STATE/chromium/WidevineCdm" -name manifest.json 2>/dev/null | sort | tail -n 1 || true)
+  if [[ -n $manifest ]]; then
+    version=$(jq -r '.version // "unknown"' "$manifest" 2>/dev/null || echo unknown)
+    result pass S1.2 "the services' Chromium has its Widevine module ($version)"
+  else
+    result fail S1.2 "the services' Chromium has no Widevine module yet; open a page with agentv screen open <address>, wait five minutes, and run this again"
+  fi
+  result manual S1.2 "sign in with agentv screen open <the service's address>, then play something for 10 minutes at 720p: no stutter, and no fan from the couch"
+}
+
+s15() {
+  local frames fps slow refresh took back
+
+  tv_on S1.5 || return 0
+
+  frames=$(screen frames 5)
+  fps=$(jq -r '.fps // empty' <<<"$frames" 2>/dev/null || true)
+  slow=$(jq -r '.slow_frames // empty' <<<"$frames" 2>/dev/null || true)
+  refresh=$(front '.monitors[0].refresh_rate // 60 | floor')
+  if [[ -z $fps ]]; then
+    result fail S1.5 "couldn't measure the home screen's frames: $(jq -r '.error // "no answer"' <<<"$frames" 2>/dev/null)"
+  elif awk -v fps="$fps" -v refresh="$refresh" -v slow="$slow" 'BEGIN { exit !(fps >= refresh - 2 && slow == 0) }'; then
+    result pass S1.5 "the home screen draws at $fps fps on a $refresh Hz screen, with no frame over 25 ms"
+  else
+    result fail S1.5 "the home screen draws at $fps fps on a $refresh Hz screen, with $slow frames over 25 ms"
+  fi
+
+  # Any page will do for an app in front; the box's own logo is always there.
+  screen open "http://127.0.0.1:3000/logo.svg" >/dev/null
+  took=$(wait_front web 15)
+  if [[ -n $took ]]; then
+    result pass S1.5 "a web app came in front in $(seconds "$took")"
+    screen toast "AgenTV selftest: this toast is over the app in front" >/dev/null
+    sleep 1
+    if [[ -n $(front '.layers[] | select(. == "agentv-toast")') ]]; then
+      result pass S1.5 "a toast showed over the app in front"
+    else
+      result fail S1.5 "the toast didn't show over the app in front"
+    fi
+    screen home >/dev/null
+    back=$(wait_front home 10)
+    if [[ -n $back ]]; then
+      result pass S1.5 "the home screen came back in front in $(seconds "$back")"
+    else
+      result fail S1.5 "the home screen didn't come back in front"
+    fi
+    screen close web >/dev/null
+  else
+    result fail S1.5 "a web app didn't come in front within 15 s"
+  fi
+
+  if ! command -v steam >/dev/null 2>&1; then
+    result fail S1.5 "Steam isn't installed; on Omarchy's desktop: Install > Gaming > Steam, then run agentv selftest S1.5 again"
+  else
+    screen open steam >/dev/null
+    took=$(wait_front steam 90)
+    if [[ -n $took && $(front '.front.class') == "gamescope" ]]; then
+      result pass S1.5 "Steam came in front in its own gamescope in $(seconds "$took")"
+    else
+      result fail S1.5 "Steam didn't come in front in its gamescope within 90 s"
+    fi
+    screen home >/dev/null
+    screen close steam >/dev/null
+  fi
+
+  result manual S1.5 "watch: the home screen moves smoothly, an app and home again show nothing of the desktop or a browser, a toast shows over a playing film (agentv screen toast hello), and Steam's games pace well in its gamescope. If Hyprland fails this, gamescope as the TV session's compositor is next (ADR-031)."
+}
+
+s16() {
+  local display stray pid where before took
+
+  tv_on S1.6 || return 0
+
+  # A window opened in the TV session by someone else: a terminal.
+  display=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^WAYLAND_DISPLAY=//p')
+  if [[ -z $display ]] || ! command -v foot >/dev/null 2>&1; then
+    result fail S1.6 "couldn't open a window in the TV session to try (no WAYLAND_DISPLAY or no foot)"
+  else
+    WAYLAND_DISPLAY=$display setsid foot --title "agentv selftest" sleep 30 >/dev/null 2>&1 &
+    stray=$!
+    sleep 3
+    where=$(front '.windows[] | select(.title == "agentv selftest") | .workspace')
+    if [[ $where == "special:agentv-held" && $(front '.front.role') == "home" ]]; then
+      result pass S1.6 "a new window stayed out of sight, and the home screen stayed in front"
+    else
+      result fail S1.6 "a new window went to ${where:-nowhere}, with $(front '.front.role // "nothing"') in front"
+    fi
+    kill "$stray" 2>/dev/null || true
+  fi
+
+  # The home screen crashing.
+  pid=$(front '.apps[] | select(.role == "home") | .pid')
+  before=$(front '.home_restarts')
+  if [[ -z $pid ]]; then
+    result fail S1.6 "the screen daemon didn't start the home screen"
+    return 0
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  sleep 1
+  took=$(wait_front home 20)
+  if [[ -n $took && $(front '.home_restarts') -gt $before && $(front '.apps[] | select(.role == "home") | .pid') != "$pid" ]]; then
+    result pass S1.6 "the home screen came back in front $(seconds $(( took + 10 ))) after a crash"
+  else
+    result fail S1.6 "the home screen didn't come back in front within 20 s of a crash"
+  fi
+}
+
 echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 "$AGENTV_BIN_DIR/agentv-version" 2>/dev/null || true
 echo
@@ -229,6 +435,10 @@ for id in "${checks[@]}"; do
   case $id in
     S0.2) s02_disk; s02_login; s02_welcome ;;
     S0.3) s03 ;;
+    S1.1) s11 ;;
+    S1.2) s12 ;;
+    S1.5) s15 ;;
+    S1.6) s16 ;;
   esac
 done
 

@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# agentv:summary=Ask the TV session what's on screen, or put something in front
+# agentv:args=status | home | open <url> | open steam | close <home|web|steam> | toast <text> | frames [seconds] | keys [seconds]
+# agentv:examples=agentv screen status | agentv screen open https://example.org | agentv screen toast "Hello"
+
+# Talks to AgenTV's screen daemon (daemon/screen.ts), which decides what's in
+# front of the TV in the TV session (ADR-031). Works over SSH too, as the
+# person logged in on the TV. Prints the daemon's answer as JSON, and exits 0
+# when it says ok, 1 when it doesn't, and 2 when the TV session isn't on.
+#
+#   status         what's in front, every window and where it is, the apps
+#                  the daemon started, the screen and the overlays
+#   home           the home screen in front
+#   open <url>     a web page in the services' Chromium, in front
+#   open steam     Steam in its own gamescope, in front
+#   close <role>   close the home screen, the web apps or Steam
+#   toast <text>   a toast over whatever's in front
+#   frames [s]     how smoothly the home screen draws, over s seconds
+#   keys [s]       the keys the home screen gets over s seconds
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+
+usage() {
+  sed -n 's/^# agentv:args=/Usage: agentv screen /p' "${BASH_SOURCE[0]}" | head -n 1
+}
+
+command=${1:-status}
+(( $# )) && shift
+
+case "$command" in
+  status | home)
+    request=$(jq -cn --arg cmd "$command" '{cmd: $cmd}')
+    ;;
+  open)
+    (( $# == 1 )) || { usage >&2; exit 2; }
+    if [[ $1 == "steam" ]]; then
+      request=$(jq -cn '{cmd: "open", app: "steam"}')
+    else
+      request=$(jq -cn --arg url "$1" '{cmd: "open", url: $url}')
+    fi
+    ;;
+  close)
+    (( $# == 1 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg role "$1" '{cmd: "close", role: $role}')
+    ;;
+  toast)
+    (( $# >= 1 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg text "$*" '{cmd: "toast", text: $text}')
+    ;;
+  frames | keys)
+    seconds=${1:-5}
+    [[ $seconds =~ ^[0-9]+$ ]] || { usage >&2; exit 2; }
+    request=$(jq -cn --arg cmd "$command" --argjson seconds "$seconds" '{cmd: $cmd, seconds: $seconds}')
+    ;;
+  end)
+    # agentv desktop's way out of the TV session.
+    request='{"cmd":"end"}'
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+exec node "$AGENTV_PATH/daemon/screen-call.ts" "$request"

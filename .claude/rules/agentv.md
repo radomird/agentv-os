@@ -7,7 +7,7 @@ The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, the
 ## Never edit Omarchy's files
 
 - Only add files. Every file that exists at the base in `.github/omarchy-base` stays byte-for-byte as it is, so merging each new Omarchy release stays mechanical. The daily Omarchy sync does that merge and moves the base.
-- AgenTV's own code goes under `install/tv/`, `config/hypr/tv.lua`, `config/omarchy/`, `system/`, `daemon/`, `launcher/`, `setup/`, `companion-web/`, `builder/`, `apps/`, `branding/`, `test/agentv/`, `.claude/` and `bin/agentv*`.
+- AgenTV's own code goes under `install/tv/`, `session/` (the TV session, ADR-031), `config/omarchy/`, `system/`, `daemon/`, `launcher/`, `setup/`, `companion-web/`, `builder/`, `apps/`, `branding/`, `test/agentv/`, `.claude/` and `bin/agentv*`.
 - Check before every commit with `bin/agentv-check`. Its first check is the same as `git diff --diff-filter=MDR --name-only "$(cat .github/omarchy-base)"...HEAD` printing nothing.
 - If you think an upstream file has to change, stop and ask. ADR-021 leaves one possible exception, `logo.txt`, and only if no overlay works.
 - Omarchy's commands all start with `omarchy-`. AgenTV's own commands start with `agentv` instead (see the `agentv-commands` skill), and they never add, rename or wrap an `omarchy-*` command.

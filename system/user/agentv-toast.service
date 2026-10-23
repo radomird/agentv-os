@@ -1,0 +1,12 @@
+# AgenTV's toasts over the app in front (session/toast/shell.qml), drawn by
+# Quickshell, which comes with Omarchy.
+
+[Unit]
+Description=AgenTV toasts
+PartOf=agentv-tv.target
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+ExecStart=/usr/bin/quickshell -p /usr/share/agentv/session/toast
+Restart=on-failure
+RestartSec=2

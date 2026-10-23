@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# agentv:summary=AgenTV's part of Omarchy's desktop: Back to TV, and no first-run notices
+# agentv:args=[--install]
+# agentv:hidden=true
+
+# Omarchy's desktop is for maintenance now (ADR-031), so the TV no longer
+# opens there. When the desktop starts, Omarchy's post-boot hook runs this
+# (config/omarchy/hooks/post-boot.d/agentv):
+#   - Omarchy's first-run notices stay off it, as before (ADR-029);
+#   - Super+Ctrl+Home goes back to the TV.
+#
+# The key comes from a one-line loader in Omarchy's toggles folder
+# (~/.local/state/omarchy/toggles/hypr/), which Omarchy's Hyprland loads with
+# its config, so no Omarchy file and none of the owner's own config changes.
+# It reads session/desktop.lua from the package. --install writes the loader
+# only; first boot and the TV session migration run that.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+TOGGLES="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/toggles/hypr"
+LOADER="$TOGGLES/agentv-back-to-tv.lua"
+
+install_loader() {
+  mkdir -p "$TOGGLES"
+  cat >"$LOADER" <<LUA
+-- AgenTV: Super+Ctrl+Home goes back to the TV (ADR-031). Written by AgenTV;
+-- the key itself is in $AGENTV_PATH/session/desktop.lua.
+local path = "$AGENTV_PATH/session/desktop.lua"
+local file = io.open(path, "r")
+if file then
+  file:close()
+  dofile(path)
+end
+LUA
+}
+
+if [[ ${1:-} == "--install" ]]; then
+  install_loader
+  exit 0
+fi
+
+# Until Omarchy's first run has finished, its notifications for the desktop
+# keep coming.
+if ! omarchy-done check first-run-user 2>/dev/null; then
+  setsid -f "$AGENTV_BIN_DIR/agentv-quiet-first-run" >/dev/null 2>&1
+fi
+
+# A box that missed the loader gets it now, and this session gets the key
+# straight away.
+if [[ ! -f $LOADER ]]; then
+  install_loader
+  hyprctl eval "dofile(\"$AGENTV_PATH/session/desktop.lua\")" >/dev/null 2>&1 || true
+fi

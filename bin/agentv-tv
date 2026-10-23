@@ -1,49 +1,32 @@
 #!/bin/bash
 
-# agentv:summary=Open the TV on this screen
+# agentv:summary=Back to the TV: from Omarchy's desktop, or to the home screen in the TV session
 # agentv:examples=agentv tv
 
-# For now that means the TV setup welcome page, full screen in a Chromium
-# app window with its own profile in /var/lib/agentv/chromium. Stage 1 gives it
-# a TV mode of its own (config/hypr/tv.lua).
+# In the TV session (ADR-031) this puts the home screen in front. On
+# Omarchy's desktop it's Back to TV: it closes the desktop's windows and ends
+# Omarchy's session, and the login manager logs back in to the TV session
+# (bin/agentv-session). Super+Ctrl+Home on the desktop runs it, until the
+# agentv-plugin bar widget does.
 
 set -euo pipefail
 
 AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-url="http://127.0.0.1:3000/"
 
-# Until Omarchy's first run has finished, its notifications for the desktop
-# keep coming, so the first login also clears them off the TV.
-if ! omarchy-done check first-run-user 2>/dev/null; then
-  setsid -f "$AGENTV_BIN_DIR/agentv-quiet-first-run" >/dev/null 2>&1
+# The TV session answers on the screen daemon's socket.
+status=0
+"$AGENTV_BIN_DIR/agentv-screen" home >/dev/null 2>&1 || status=$?
+case $status in
+  0) exit 0 ;;
+  2) ;;
+  *) echo "The TV session is on, but its screen daemon didn't put the home screen in front." >&2; exit 1 ;;
+esac
+
+# Omarchy's desktop: close its windows the way its own Log out does, so apps
+# save what they have, then end the session.
+omarchy-hyprland-window-close-all >/dev/null 2>&1 || true
+sleep 1
+if ! uwsm stop >/dev/null 2>&1; then
+  echo "Couldn't end Omarchy's session; log out from its menu instead." >&2
+  exit 1
 fi
-
-# The daemon starts with the system, and this runs at login, so it's usually
-# up already. Give it a moment if not.
-for _ in $(seq 1 30); do
-  curl -fsS -o /dev/null "${url}health" && break
-  sleep 1
-done
-
-# One TV window: a second launch on the same profile would only open an
-# ordinary window in the one that's running.
-if pgrep -u "$(id -u)" -f "user-data-dir=/var/lib/agentv/chromium" >/dev/null; then
-  exit 0
-fi
-
-# A kiosk app window. Kiosk mode keeps it full screen with no "press Esc to
-# exit full screen" bubble, and Esc, which is AgenTV's back key (ADR-008),
-# can't take it out. The app window keeps tabs and the address bar away when
-# it isn't full screen anyway: Omarchy's Hyprland hands the full screen to a
-# newly focused window (on_focus_under_fullscreen), and kiosk alone then
-# showed the whole browser on the NUC. Either one alone failed there.
-setsid -f uwsm app -- chromium \
-  --kiosk \
-  --app="$url" \
-  --user-data-dir=/var/lib/agentv/chromium \
-  --no-first-run \
-  --no-default-browser-check \
-  --noerrdialogs \
-  --disable-session-crashed-bubble \
-  --password-store=basic \
-  >/dev/null 2>&1

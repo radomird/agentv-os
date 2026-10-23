@@ -1,0 +1,5 @@
+{
+  "name": "agentv-daemon",
+  "private": true,
+  "type": "module"
+}
