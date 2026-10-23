@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# agentv:summary=Remove an app from this box
+# agentv:args=<app-id>
+# agentv:requires-sudo=true
+
+# Removes the app's folder from /var/lib/agentv/apps/ and its line from the record.
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+AGENTV_STATE=${AGENTV_STATE:-/var/lib/agentv}
+
+# The apps belong to the box, so changing them takes sudo, in this terminal.
+apps="$AGENTV_STATE/apps"
+[[ -d $apps ]] || apps=$AGENTV_STATE
+if [[ ! -w $apps ]] && (( EUID != 0 )); then
+  exec sudo -- "$0" "$@"
+fi
+
+# Node 22.6 to 22.17 runs TypeScript only when asked.
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+
+export AGENTV_PATH AGENTV_STATE
+exec node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$AGENTV_PATH/daemon/apps/cli.ts" remove "$@"
