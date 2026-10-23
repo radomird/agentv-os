@@ -65,6 +65,10 @@ export interface Launcher {
   web(url: string): App;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
+  // What opening an installed app means, from AgenTV's daemon, or null.
+  appTarget(id: string): Promise<{ runtime: "web"; url: string } | { runtime: "native"; exec: string[] } | null>;
+  // Settings → Omarchy desktop: agentv desktop, which ends this session.
+  desktop(): void;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -353,6 +357,7 @@ export class Screen {
     if (this.ending || this.apps.has("home")) return;
     const app = this.launcher.home();
     this.apps.set("home", app);
+    void this.bridge(app);
     const front = this.front();
     if (!front || front.role === "home") {
       this.want = { role: "home", until: Infinity };
@@ -370,6 +375,39 @@ export class Screen {
         this.startHome();
       }, this.homeDelay);
     });
+  }
+
+  // Gives the home screen window.agentvScreen, over its DevTools pipe, once
+  // its page is there (launcher/api.ts).
+  private async bridge(app: App): Promise<void> {
+    if (!app.cdp) return;
+    for (let tries = 0; tries < 60 && this.apps.get("home") === app; tries++) {
+      try {
+        await app.cdp.bind(HOME_URL, "agentvScreen", (request) => this.fromHome(request));
+        return;
+      } catch {
+        await sleep(500);
+      }
+    }
+    this.log("the home screen's page never came, so it can't open apps");
+  }
+
+  // What the home screen asks for: an app in front, or Omarchy's desktop.
+  async fromHome(request: any): Promise<object> {
+    switch (request?.cmd) {
+      case "open-app": {
+        const target = await this.launcher.appTarget(String(request.app ?? "")).catch(() => null);
+        if (!target) return { ok: false, error: "that app can't be opened yet" };
+        if (target.runtime === "web") return this.openWeb(target.url);
+        if (target.exec[0] === "steam") return this.openSteam();
+        return { ok: false, error: "that app can't be opened from the tv yet" };
+      }
+      case "desktop":
+        this.launcher.desktop();
+        return { ok: true };
+      default:
+        return { ok: false, error: `unknown request: ${request?.cmd}` };
+    }
   }
 
   home(): Promise<object> {
@@ -648,7 +686,8 @@ export const launcher: Launcher = {
   home() {
     const child = spawn(
       chromium(),
-      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe"],
+      // The home screen's sounds play without waiting for a first key press.
+      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe", "--autoplay-policy=no-user-gesture-required"],
       { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] },
     );
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
@@ -684,6 +723,19 @@ export const launcher: Launcher = {
         else resolve();
       });
     });
+  },
+
+  async appTarget(id) {
+    const response = await fetch(`${HOME_URL}api/apps/${encodeURIComponent(id)}/launch`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return null;
+    const target = await response.json();
+    if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url };
+    if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String) };
+    return null;
+  },
+
+  desktop() {
+    spawn("agentv-desktop", [], { stdio: "ignore", detached: true }).unref();
   },
 
   parent(pid) {

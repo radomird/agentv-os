@@ -17,3 +17,7 @@ S1.5  manual    the TV session check: 60 fps, an app and home again, a toast ove
 S1.6  image     no window takes the screen unless the daemon puts it in front: a new window, a home screen crash, an update
 S2.1  check     a sample app installs from a signed test index, and a tampered index is refused
 S2.2  check     agentv app validate rejects a symlink, an unsafe entry path and a third-party agentv.* id
+S2.3  check     every tile can be reached with the keyboard alone
+S2.7  check     no tile shows a tier, and every app's details say who made it
+S2.10 manual    the focus glide, hover lift and page transitions at 60 fps on the NUC; reduce motion fades (layer 4 checks the rules)
+S2.11 manual    each UI sound within a frame of its action; move at most every 60 ms; Settings → Sound silences them (layer 4 checks the rules)

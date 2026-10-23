@@ -1,0 +1,547 @@
+/* AgenTV's home screen, in the Terminal look (ADR-014): JetBrains Mono, sharp
+   blocks, headings written as shell prompts and a status bar along the bottom.
+   Every colour comes from the active Omarchy theme: these are Tokyo Night's,
+   and /api/theme.css puts the theme's own over them. Sizes are for a 1080p
+   screen; dom.ts zooms the page to the TV's. */
+
+:root {
+  --background: #1a1b26;
+  --dark-background: #13141c;
+  --darker-background: #0e0e14;
+  --lighter-background: #24283b;
+  --foreground: #a9b1d6;
+  --dark-foreground: #565f89;
+  --bright-foreground: #c0caf5;
+  --accent: #7aa2f7;
+  --selection: #292e42;
+  --muted: #414868;
+  --red: #f7768e;
+  --yellow: #e0af68;
+  --orange: #eb927b;
+  --green: #9ece6a;
+  --cyan: #449dab;
+  --blue: #7aa2f7;
+  --magenta: #ad8ee6;
+  --bright-yellow: #ff9e64;
+  --bright-cyan: #0db9d7;
+  --bright-magenta: #bb9af7;
+
+  --font: "JetBrains Mono NF", "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace;
+  --bar: 60px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--bright-foreground);
+  font-family: var(--font);
+  font-size: 28px;
+}
+
+body.pointer-hidden,
+body.pointer-hidden * {
+  cursor: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+[data-focus] {
+  outline: none;
+}
+
+#page {
+  position: absolute;
+  inset: 0;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+}
+
+/* The focus ring: one outline that glides from element to element. */
+#ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border: 4px solid var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: 0 0;
+  z-index: 10;
+}
+
+#ring.on {
+  opacity: 1;
+}
+
+/* --- The status bar ------------------------------------------------------ */
+
+.bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--bar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--dark-background);
+  color: var(--foreground);
+  font-size: 24px;
+}
+
+.bar-left,
+.bar-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.bar-mode {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 24px;
+  background: var(--accent);
+  color: var(--background);
+  font-weight: 700;
+}
+
+.bar-link {
+  height: 100%;
+  padding: 0 20px;
+  color: var(--foreground);
+}
+
+.bar-right {
+  gap: 36px;
+  padding: 0 24px;
+}
+
+.bar-clock {
+  color: var(--bright-foreground);
+}
+
+/* --- The home grid (ADR-015, ADR-016) ------------------------------------ */
+
+.grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: var(--bar);
+  padding: 32px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 0;
+  padding: 28px;
+  border: 2px solid var(--selection);
+  background: var(--background);
+  color: var(--bright-foreground);
+  overflow: hidden;
+}
+
+/* The focused tile's border brightens to the accent colour. */
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 4px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tile.focused::after {
+  opacity: 1;
+}
+
+.tile-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  font-size: 28px;
+  color: var(--foreground);
+}
+
+.tile-name {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.size-m .tile-name,
+.size-l .tile-name {
+  font-size: 96px;
+  letter-spacing: -4px;
+}
+
+.tile-label {
+  color: var(--bright-magenta);
+  text-align: right;
+}
+
+.tile-state {
+  color: var(--yellow);
+  text-align: right;
+}
+
+.tile-apps {
+  border-style: dashed;
+  border-color: var(--muted);
+}
+
+.tile-apps .tile-name {
+  font-size: 56px;
+}
+
+.tile-count {
+  color: var(--foreground);
+}
+
+/* An app's logo, or a monogram in the theme's colours (ADR-015). */
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 72px;
+  height: 72px;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--background);
+  overflow: hidden;
+}
+
+.logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.logo-big {
+  width: 168px;
+  height: 168px;
+  font-size: 64px;
+}
+
+.mono-0 { background: var(--bright-magenta); }
+.mono-1 { background: var(--blue); }
+.mono-2 { background: var(--green); }
+.mono-3 { background: var(--bright-yellow); }
+.mono-4 { background: var(--bright-cyan); }
+.mono-5 { background: var(--yellow); }
+
+/* What an app's tile() sends, drawn here in the theme (ADR-016). */
+.tile-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.headline-label {
+  color: var(--accent);
+}
+
+.headline-value {
+  font-size: 88px;
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 1;
+}
+
+.headline-caption,
+.entry-caption {
+  color: var(--foreground);
+}
+
+.entries {
+  display: flex;
+  gap: 20px;
+  min-width: 0;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: 220px;
+}
+
+.entry img {
+  width: 140px;
+  height: 210px;
+  object-fit: cover;
+  background: var(--selection);
+}
+
+.entry-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* --- Pages: apps, details, settings -------------------------------------- */
+
+.page {
+  position: absolute;
+  inset: 0 0 var(--bar) 0;
+  padding: 64px 120px 0;
+}
+
+.prompt {
+  font-size: 30px;
+  color: var(--foreground);
+}
+
+.prompt b {
+  color: var(--green);
+  font-weight: 400;
+}
+
+.headline {
+  margin: 16px 0 0;
+  font-size: 96px;
+  font-weight: 800;
+  letter-spacing: -4px;
+  line-height: 1;
+}
+
+.details-head .headline {
+  font-size: 112px;
+}
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.section {
+  margin: 40px 0 16px;
+  color: var(--foreground);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.row .tile {
+  height: 200px;
+  padding: 22px;
+}
+
+.row .tile-name {
+  font-size: 36px;
+  letter-spacing: -1px;
+}
+
+.empty {
+  color: var(--dark-foreground);
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 80px;
+  padding: 0 32px;
+  border: 2px solid var(--muted);
+  color: var(--bright-foreground);
+  font-size: 32px;
+}
+
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+  font-weight: 800;
+}
+
+.button.focused {
+  border-color: var(--accent);
+}
+
+.button-value {
+  color: var(--green);
+}
+
+.button.danger {
+  color: var(--red);
+}
+
+.details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 480px;
+  gap: 64px;
+  margin-top: 48px;
+}
+
+.details-head {
+  display: flex;
+  gap: 40px;
+  align-items: center;
+}
+
+.maker {
+  color: var(--bright-magenta);
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  row-gap: 24px;
+  align-content: start;
+  padding: 40px;
+  border: 2px solid var(--selection);
+}
+
+.facts dt {
+  color: var(--foreground);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.owner {
+  position: absolute;
+  left: 120px;
+  right: 120px;
+  bottom: 48px;
+  color: var(--foreground);
+  font-size: 24px;
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: 500px minmax(0, 1fr);
+  gap: 64px;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  margin-top: 24px;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 20px;
+  font-size: 30px;
+}
+
+.menu-item.focused,
+.menu-item.open {
+  background: var(--accent);
+  color: var(--background);
+  font-weight: 700;
+}
+
+.menu-value {
+  color: var(--foreground);
+}
+
+.menu-item.focused .menu-value,
+.menu-item.open .menu-value {
+  color: var(--background);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 56px;
+  border: 2px solid var(--selection);
+}
+
+.panel-title {
+  color: var(--foreground);
+}
+
+.panel-big {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: -3px;
+}
+
+.panel-note {
+  color: var(--foreground);
+}
+
+.panel .button {
+  max-width: 640px;
+}
+
+/* --- Toasts --------------------------------------------------------------- */
+
+#toasts {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 20;
+}
+
+.toast {
+  width: 560px;
+  padding: 22px 26px;
+  background: var(--dark-background);
+  border: 2px solid var(--selection);
+  border-left: 6px solid var(--accent);
+  font-size: 28px;
+}
+
+.toast.ok {
+  border-left-color: var(--green);
+}
+
+.toast.fail {
+  border-left-color: var(--red);
+}

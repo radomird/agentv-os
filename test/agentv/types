@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Type-checks AgenTV's TypeScript (ADR-019, layer 1): the daemon, the app
-# contract, the apps in the test fixtures and the tests, with TypeScript,
+# contract, the apps in the test fixtures, the tests and the launcher, with TypeScript,
 # Node's types and Playwright's (for the contract's Page) at pinned versions,
 # fetched into a folder of their own. The box itself never needs them: Node
 # runs the TypeScript as it is, and an app imports the contract's types only.
@@ -20,14 +20,16 @@ trap 'rm -rf "$tools"' EXIT
 
 npm install --prefix "$tools" --no-save --no-audit --no-fund --silent "$TYPESCRIPT" "$NODE_TYPES" "$PLAYWRIGHT"
 
-# The repo's own settings, with the fetched types found where they are.
-jq -n --arg base "$ROOT/daemon/tsconfig.json" --arg modules "$tools/node_modules" '{
-  extends: $base,
-  compilerOptions: {
-    typeRoots: [$modules + "/@types"],
-    paths: {"playwright-core": [$modules + "/playwright-core/index.d.ts"]}
-  }
-}' >"$tools/tsconfig.json"
-
-"$tools/node_modules/.bin/tsc" -p "$tools/tsconfig.json"
+# Each project's own settings, with the fetched types found where they are:
+# the daemon and the app contract on Node, and the launcher in the browser.
+for project in daemon launcher; do
+  jq -n --arg base "$ROOT/$project/tsconfig.json" --arg modules "$tools/node_modules" '{
+    extends: $base,
+    compilerOptions: {
+      typeRoots: [$modules + "/@types"],
+      paths: {"playwright-core": [$modules + "/playwright-core/index.d.ts"]}
+    }
+  }' >"$tools/$project.json"
+  "$tools/node_modules/.bin/tsc" -p "$tools/$project.json"
+done
 echo "ok - AgenTV's TypeScript type-checks ($TYPESCRIPT, $NODE_TYPES, $PLAYWRIGHT)"

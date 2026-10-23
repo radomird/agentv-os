@@ -1,0 +1,98 @@
+/* AgenTV's motion (ADR-024). Only transform and opacity move, which keeps the
+   NUC's integrated graphics at 60 fps. Every screen uses these tokens: fast
+   for focus, hover and press, base for pages, toasts and tiles settling,
+   slow for setup steps. Things arriving ease in with a quick start and a soft
+   landing; things leaving fade out fast. */
+
+:root {
+  --fast: 120ms;
+  --base: 200ms;
+  --slow: 320ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Focus: the ring glides to the focused element (focus.ts moves it), and the
+   focused tile lifts a little. A press squeezes it. */
+#ring {
+  transition: transform var(--fast) var(--ease), opacity var(--fast) var(--ease);
+}
+
+[data-focus] {
+  transition: transform var(--fast) var(--ease), opacity var(--fast) var(--ease);
+}
+
+.tile.focused {
+  transform: scale(1.03);
+}
+
+.tile.pressed,
+.button.pressed {
+  transform: scale(0.97);
+}
+
+.tile::after {
+  transition: opacity var(--fast) var(--ease);
+}
+
+/* Pages: forward slides in 24 px from the right as it fades in; back runs the
+   other way. */
+.page-forward {
+  animation: page-forward var(--base) var(--ease) both;
+}
+
+.page-back {
+  animation: page-back var(--base) var(--ease) both;
+}
+
+@keyframes page-forward {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes page-back {
+  from { opacity: 0; transform: translateX(-24px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Toasts slide in at the top right and fade out. */
+.toast {
+  animation: toast-in var(--base) var(--ease) both;
+}
+
+.toast.leaving {
+  animation: fade-out var(--fast) ease-out both;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(32px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Reduce motion, from the system or Settings → Look: movement becomes plain
+   fades. */
+@media (prefers-reduced-motion: reduce) {
+  .tile.focused,
+  .tile.pressed,
+  .button.pressed { transform: none; }
+  #ring { transition: opacity var(--fast) ease-out; }
+  .page-forward,
+  .page-back,
+  .toast { animation: fade-in var(--base) ease-out both; }
+}
+
+:root.reduce-motion .tile.focused,
+:root.reduce-motion .tile.pressed,
+:root.reduce-motion .button.pressed { transform: none; }
+:root.reduce-motion #ring { transition: opacity var(--fast) ease-out; }
+:root.reduce-motion .page-forward,
+:root.reduce-motion .page-back,
+:root.reduce-motion .toast { animation: fade-in var(--base) ease-out both; }

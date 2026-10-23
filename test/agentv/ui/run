@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# AgenTV's layer 4 (ADR-019): the launcher in a real Chromium, headless, at
+# 1920 × 1080, on the daemon itself with a few sample apps. It checks keyboard
+# reach, what tiles and app details say, the motion and sound rules, and the
+# requests the launcher sends the TV session. Playwright comes at a pinned
+# version into a folder of its own; the browser is the one on the machine.
+#
+# Usage: test/agentv/ui/run
+# AGENTV_UI_BROWSER names the browser when it isn't found by itself.
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+PLAYWRIGHT=playwright-core@1.56.1
+
+browser=${AGENTV_UI_BROWSER:-}
+if [[ -z $browser ]]; then
+  for candidate in google-chrome-stable google-chrome chromium chromium-browser /opt/pw-browsers/chromium-*/chrome-linux64/chrome; do
+    if found=$(type -P "$candidate" 2>/dev/null); then
+      browser=$found
+      break
+    fi
+  done
+fi
+tools=$(mktemp -d)
+trap 'rm -rf "$tools"' EXIT
+npm install --prefix "$tools" --no-save --no-audit --no-fund --silent "$PLAYWRIGHT"
+
+# With no Chromium on the machine, Playwright's own, into the same folder.
+if [[ -z $browser ]]; then
+  export PLAYWRIGHT_BROWSERS_PATH="$tools/browsers"
+  "$tools/node_modules/.bin/playwright-core" install chromium >/dev/null
+  browser=$(cd "$tools" && node -e 'console.log(require("playwright-core").chromium.executablePath())')
+fi
+
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+
+AGENTV_UI_BROWSER="$browser" AGENTV_UI_MODULES="$tools/node_modules" \
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning --test --test-reporter=spec \
+  "$ROOT"/test/agentv/ui/*.test.mts

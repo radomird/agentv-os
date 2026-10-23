@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# agentv:summary=Hand the Omarchy theme's colours to the TV
+# agentv:hidden=true
+
+# Omarchy renders AgenTV's launcher.css.tpl into the current theme on every
+# theme change. This sends the result to AgenTV's daemon, which keeps only
+# the colours (ADR-012). It runs from Omarchy's theme-set hook and when the TV
+# session starts. A theme set before the template was there has no
+# launcher.css yet, so it's rendered here from the theme's colours.
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+# The TV session's units don't have Omarchy's commands on their PATH.
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+theme="$HOME/.local/state/omarchy/current/theme"
+css="$theme/launcher.css"
+
+if [[ ! -f $css ]]; then
+  [[ -f $theme/colors.toml ]] || exit 0
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  # Each colour as a sed substitution; only plain names and colours get in.
+  "$OMARCHY_PATH/bin/omarchy-theme-color" --file "$theme/colors.toml" --all |
+    awk -F '\t' '$1 ~ /^[a-z_]+$/ && $2 ~ /^#[0-9a-fA-F]+$/ && length($2) <= 9 { printf "s/{{ *%s *}}/%s/g\n", $1, $2 }' >"$work/colors.sed"
+  sed -f "$work/colors.sed" "$AGENTV_PATH/config/omarchy/themed/launcher.css.tpl" >"$work/launcher.css"
+  css="$work/launcher.css"
+fi
+
+# At the TV session's start the daemon may still be on its way up.
+if ! curl -fsS --max-time 5 --retry 3 --retry-connrefused --retry-delay 1 -o /dev/null -H 'Content-Type: text/css' --data-binary @"$css" \
+  "http://127.0.0.1:${AGENTV_PORT:-3000}/api/theme"; then
+  echo "AgenTV's daemon didn't take the theme's colours" >&2
+  exit 1
+fi

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# The TV takes its colours from the Omarchy theme (ADR-012). AgenTV's first
+# boot puts this file in the owner's ~/.config/omarchy/hooks/theme-set.d/, and
+# omarchy-hook runs it with bash once a new theme is in place.
+
+agentv-theme-sync
