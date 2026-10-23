@@ -4,6 +4,7 @@
 [Unit]
 Description=AgenTV toasts
 PartOf=agentv-tv.target
+StartLimitIntervalSec=0
 ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]

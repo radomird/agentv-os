@@ -12,6 +12,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 class FakeHyprland implements Hyprland {
   windows: Client[] = [];
   dispatched: string[] = [];
+  specialShown = false;
   active = "";
   exited = false;
   private handler: (name: string, data: string) => void = () => {};
@@ -42,6 +43,9 @@ class FakeHyprland implements Hyprland {
       this.get(m[1]).fullscreen = 2;
     } else if ((m = expression.match(/^hl\.dsp\.window\.close\(\{ window = "address:(0x\w+)"/))) {
       this.close(m[1]);
+    } else if ((m = expression.match(/^hl\.dsp\.workspace\.toggle_special\("([^"]+)"\)$/))) {
+      this.specialShown = !this.specialShown;
+      this.emit("activespecial", this.specialShown ? `special:${m[1]},HDMI-A-1` : ",HDMI-A-1");
     } else if (expression === "hl.dsp.exit()") {
       this.exited = true;
     } else {
@@ -183,6 +187,19 @@ test("S1.6 a window that grabs focus gets it taken back", async () => {
   await sleep(150);
   hypr.emit("activewindowv2", "b");
   await screen.idle();
+  assert.equal(hypr.active, "0xa");
+});
+
+test("S1.6 the workspace of windows out of sight is hidden again if something shows it", async () => {
+  const { hypr, screen } = await tv();
+  hypr.open("0xb", 999, "foot");
+  await screen.idle();
+  // Focusing a held window from outside shows its special workspace.
+  hypr.specialShown = true;
+  hypr.active = "0xb";
+  hypr.emit("activespecial", `${HELD_WORKSPACE},HDMI-A-1`);
+  await screen.idle();
+  assert.equal(hypr.specialShown, false);
   assert.equal(hypr.active, "0xa");
 });
 

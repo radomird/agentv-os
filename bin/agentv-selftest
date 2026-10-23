@@ -370,7 +370,7 @@ s15() {
     result fail S1.5 "a web app didn't come in front within 15 s"
   fi
 
-  if ! command -v steam >/dev/null 2>&1; then
+  if ! omarchy-cmd-present steam; then
     result fail S1.5 "Steam isn't installed; on Omarchy's desktop: Install > Gaming > Steam, then run agentv selftest S1.5 again"
   else
     screen open steam >/dev/null
@@ -394,7 +394,7 @@ s16() {
 
   # A window opened in the TV session by someone else: a terminal.
   display=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^WAYLAND_DISPLAY=//p')
-  if [[ -z $display ]] || ! command -v foot >/dev/null 2>&1; then
+  if [[ -z $display ]] || ! omarchy-cmd-present foot; then
     result fail S1.6 "couldn't open a window in the TV session to try (no WAYLAND_DISPLAY or no foot)"
   else
     WAYLAND_DISPLAY=$display setsid foot --title "agentv selftest" sleep 30 >/dev/null 2>&1 &

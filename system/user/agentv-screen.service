@@ -4,6 +4,9 @@
 [Unit]
 Description=AgenTV screen daemon
 PartOf=agentv-tv.target
+# Keep trying for as long as the session runs: a TV with no screen daemon
+# would stay black.
+StartLimitIntervalSec=0
 ConditionEnvironment=HYPRLAND_INSTANCE_SIGNATURE
 
 [Service]

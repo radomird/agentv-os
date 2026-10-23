@@ -155,6 +155,11 @@ export class Screen {
       case "movewindowv2":
         this.queue(() => this.moved(address, data.split(",")[2] ?? ""));
         break;
+      case "activespecial":
+        if (data.split(",")[0] === HELD_WORKSPACE) {
+          this.queue(() => this.hideHeld());
+        }
+        break;
       case "fullscreen":
         if (data === "0") {
           this.queue(() => this.keepFullscreen());
@@ -274,6 +279,15 @@ export class Screen {
       await this.hold(address);
       if (front) await this.focus(front.address);
     }
+  }
+
+  // The windows out of sight are on a special workspace, which Hyprland
+  // shows over the TV if something focuses one of them. Hide it again.
+  private async hideHeld(): Promise<void> {
+    this.log("the workspace of windows out of sight was shown; hiding it again");
+    await this.hypr.dispatch(`hl.dsp.workspace.toggle_special(${lua(HELD_WORKSPACE.slice("special:".length))})`);
+    const front = this.front();
+    if (front && !this.ending) await this.focus(front.address);
   }
 
   private async keepFullscreen(): Promise<void> {

@@ -184,6 +184,7 @@ fake foot '
 jq ".windows += [{title: \"agentv selftest\", workspace: \"special:agentv-held\", front: false}]" "$STATE/screen.json" >"$STATE/screen.json.new" && mv "$STATE/screen.json.new" "$STATE/screen.json"
 exec sleep 30'
 fake steam 'exit 0'
+fake omarchy-cmd-present 'type -P "$1" >/dev/null'
 
 tv() {
   healthy
