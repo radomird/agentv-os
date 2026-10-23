@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# agentv:summary=Start TV setup again from the welcome page
+
+# Marks TV setup as not done, so the TV shows the welcome page again.
+
+set -euo pipefail
+
+port=${AGENTV_PORT:-3000}
+if ! curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
+  -d '{"done": false}' "http://127.0.0.1:$port/api/setup"; then
+  echo "AgenTV's daemon isn't answering. Try: sudo systemctl restart agentv-daemon" >&2
+  exit 1
+fi
+echo "Setup starts again from the welcome page."

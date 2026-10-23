@@ -65,6 +65,10 @@
   window.addEventListener("load", () => {
     fetch("/api/welcome-shown", { method: "POST" }).catch(() => {});
   });
+
+  // When setup is marked done (agentv setup skip, until setup is built), the
+  // home screen takes over.
+  new EventSource("/api/events").addEventListener("setup", () => location.reload());
 </script>
 </body>
 </html>
