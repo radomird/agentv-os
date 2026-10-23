@@ -95,6 +95,7 @@ cat >"$SCRATCH/bin/runuser" <<'SH'
 #!/bin/bash
 echo "runuser $*" >>"$CALLS"
 [[ -f $AGENTV_SUDOERS_DIR/99-omarchy-nopasswd-someone ]] && echo "rule in place" >>"$CALLS"
+cat "$AGENTV_SUDOERS_DIR/99-omarchy-nopasswd-someone" >>"$CALLS" 2>/dev/null
 touch "$SNAPSHOT_TAKEN"
 echo "Create system snapshot"
 echo ":: Synchronizing package databases..."
@@ -137,6 +138,7 @@ progress="$AGENTV_UPDATE_STATE/progress.json"
 grep -q "^runuser -u someone -- env HOME=$SCRATCH/home .* agentv update -y$" "$CALLS" ||
   fail "it runs agentv update as the owner" "$(cat "$CALLS")"
 grep -qx "rule in place" "$CALLS" || fail "the owner may use sudo while it runs"
+grep -qx "Defaults:someone !authenticate" "$CALLS" || fail "including sudo -v, which Omarchy's update runs" "$(cat "$CALLS")"
 [[ -z $(ls -A "$sudoers") ]] || fail "and not after" "$(ls "$sudoers")"
 [[ $(jq -c '[.state, .step, .percent, .from.agentv, .to.agentv]' "$progress") == '["done","restart",100,"0.2.1-1","0.3.0-1"]' ]] ||
   fail "S2.12 the Updating screen hears it's done" "$(cat "$progress")"
