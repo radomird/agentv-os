@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# agentv:summary=Check the box after an update, for the TV's Go back
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# The check after an update from the TV (ADR-025, board 33): the daemon
+# answers, the home screen loads, the services' Chromium runs and still has
+# Widevine if it had it before, and every installed app loads.
+# agentv-update-tv runs it when an update is done, and
+# agentv-update-after.service at the boot after an update that needed a
+# restart. What it found goes to /var/lib/agentv/update/after.json. When
+# something's off, the TV says so and offers Go back (bin/agentv-go-back).
+
+set -uo pipefail
+
+STATE=${AGENTV_UPDATE_STATE:-/var/lib/agentv/update}
+DAEMON=${AGENTV_DAEMON_URL:-http://127.0.0.1:3000}
+CHROMIUM_STATE=${AGENTV_CHROMIUM_STATE:-/var/lib/agentv/chromium}
+WAIT=${AGENTV_AFTER_WAIT:-120}
+
+checks="[]"
+
+# add <name> <true|false> [<what's wrong>]
+add() {
+  checks=$(jq -c --arg name "$1" --argjson ok "$2" --arg detail "${3:-}" '. + [{name: $name, ok: $ok, detail: $detail}]' <<<"$checks")
+}
+
+get() {
+  curl -fsS --max-time "${2:-10}" "$DAEMON$1" 2>/dev/null
+}
+
+# The daemon, given time to come up after a restart.
+started=$SECONDS
+daemon=false
+while true; do
+  if get /health 3 | jq -e '.ok == true' >/dev/null 2>&1; then
+    daemon=true
+    break
+  fi
+  (( SECONDS - started >= WAIT )) && break
+  sleep 3
+done
+if [[ $daemon == "true" ]]; then
+  add daemon true
+else
+  add daemon false "the daemon doesn't answer"
+fi
+
+# The home screen: its page, and the state it draws.
+if [[ $daemon == "true" ]] && get /launcher/main.ts >/dev/null && get /api/home | jq -e '.ok == true' >/dev/null 2>&1; then
+  add "home screen" true
+else
+  add "home screen" false "the home screen doesn't load"
+fi
+
+# The services' Chromium, and its Widevine module when it had one before the
+# update. Chromium fetches it a few minutes after it's first online, so a box
+# that never had it hasn't lost it.
+had_widevine=$(jq -r '.widevine // false' "$STATE/go-back.json" 2>/dev/null || echo false)
+if ! chromium --version >/dev/null 2>&1; then
+  add "chromium and widevine" false "chromium doesn't start"
+elif [[ $had_widevine == "true" ]] && [[ -z $(find "$CHROMIUM_STATE/WidevineCdm" -name manifest.json 2>/dev/null) ]]; then
+  add "chromium and widevine" false "chromium has lost widevine"
+else
+  add "chromium and widevine" true
+fi
+
+# Every installed app, as the daemon loads it.
+if [[ $daemon == "true" ]]; then
+  apps=$(get /api/apps/check 120 | jq -c '.apps // []' 2>/dev/null || echo '[]')
+  while IFS=$'\t' read -r name ok; do
+    [[ -n $name ]] || continue
+    if [[ $ok == "true" ]]; then
+      add "$name" true
+    else
+      add "$name" false "$name won't load"
+    fi
+  done < <(jq -r '.[] | [.name, (.ok | tostring)] | @tsv' <<<"$apps")
+fi
+
+mkdir -p "$STATE"
+jq -n --argjson checks "$checks" \
+  --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg agentv "$(pacman -Q agentv 2>/dev/null | cut -d' ' -f2)" \
+  '{at: $at, ok: all($checks[]; .ok), agentv: $agentv, checks: $checks}' >"$STATE/after.json.new"
+chmod 644 "$STATE/after.json.new"
+mv "$STATE/after.json.new" "$STATE/after.json"
+rm -f "$STATE/check-pending"
+
+jq -r '.checks[] | "\(if .ok then "ok" else "not ok" end) - \(.name)\(if .detail != "" then ": \(.detail)" else "" end)"' "$STATE/after.json"
+jq -e '.ok' "$STATE/after.json" >/dev/null

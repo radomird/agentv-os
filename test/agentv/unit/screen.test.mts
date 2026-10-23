@@ -789,3 +789,10 @@ test("S2.12 Settings → Updates checks and installs through the update units", 
   assert.equal(((await t.screen.handle({ cmd: "update", what: "rm" })) as { ok: boolean }).ok, false);
   assert.equal(t.launcher.units.length, 3);
 });
+
+test("S2.14 Go back goes through its unit, from home and over SSH", async () => {
+  const t = await tv();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "update-go-back" }), { ok: true });
+  assert.deepEqual(await t.screen.handle({ cmd: "update", what: "go-back" }), { ok: true });
+  assert.deepEqual(t.launcher.units, ["agentv-go-back.service", "agentv-go-back.service"]);
+});

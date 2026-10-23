@@ -339,6 +339,26 @@ export class Daemon {
       return;
     }
 
+    // The check after an update (bin/agentv-update-after): does every
+    // installed app still load?
+    if (method === "GET" && path === "/api/apps/check") {
+      this.json(response, 200, { ok: true, apps: await this.home.check() });
+      return;
+    }
+
+    // What the TV has dealt with: Keep this version on its "something's off"
+    // screen, for that check, and the toast after going back.
+    if (method === "POST" && path === "/api/updates/seen") {
+      const why = await this.updates.markSeen(await this.body(request));
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.broadcast("updates", await this.updates.read());
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     if (method === "POST" && path === "/api/settings") {
       const why = await this.home.saveSettings(await this.body(request));
       if (why) {

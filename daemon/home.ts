@@ -166,6 +166,36 @@ export class Home {
     });
   }
 
+  // Whether each installed app still loads, for the check after an update
+  // (ADR-025): its package passes the contract's checks, and its module
+  // starts in a worker of its own, apart from the one its tiles use.
+  async check(): Promise<{ id: string; name: string; ok: boolean; error?: string }[]> {
+    const results = [];
+    const settings = await this.appSettings();
+    for (const app of Object.values(await readInstalled(this.appsDir))) {
+      const dir = join(this.appsDir, app.id);
+      const { manifest, problems } = validatePackage(dir, app.tier);
+      if (!manifest) {
+        results.push({ id: app.id, name: app.name, ok: false, error: problems[0] ?? "it doesn't pass the app contract's checks" });
+        continue;
+      }
+      if (!manifest.entryPoints.tvApp) {
+        results.push({ id: app.id, name: manifest.name, ok: true });
+        continue;
+      }
+      const host = new AppHost({ dir, manifest, settings: settings[app.id] ?? {}, log: this.log });
+      try {
+        await host.start();
+        results.push({ id: app.id, name: manifest.name, ok: true });
+      } catch (error) {
+        results.push({ id: app.id, name: manifest.name, ok: false, error: (error as AppError).message });
+      } finally {
+        host.stop();
+      }
+    }
+    return results;
+  }
+
   async appSettings(): Promise<Record<string, Record<string, string>>> {
     return readJson(join(this.state, "app-settings.json"), {});
   }

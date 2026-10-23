@@ -1,0 +1,152 @@
+#!/bin/bash
+
+# agentv:summary=Go back to the version from before the last update from the TV
+# agentv:args=[--cleanup]
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# Go back, in Settings → Updates and on the TV's "something's off" screen
+# after an update (ADR-025, board 33), starts agentv-go-back.service, which
+# runs this as root. It puts the box back the way it was before the last
+# update from the TV, from the snapshot Omarchy's update took first, and
+# restarts it.
+#
+# It works the way Omarchy's factory reset does: a writable copy of the
+# snapshot becomes the root (@), with the boot files rebuilt from inside it,
+# and the box restarts into it. /home isn't in the snapshot and stays as it
+# is. AgenTV's own state under /var/lib/agentv goes back with the system, so
+# code and data match. The root it replaces is kept until the next boot,
+# when agentv-go-back-cleanup.service deletes it (--cleanup).
+
+set -uo pipefail
+
+STATE=${AGENTV_UPDATE_STATE:-/var/lib/agentv/update}
+TOP=${AGENTV_GO_BACK_TOP:-/run/agentv-go-back/top}
+SNAPSHOTS=${AGENTV_SNAPSHOTS:-/.snapshots}
+NEXT=@agentv-next
+
+mkdir -p "$STATE"
+
+root_device() {
+  findmnt -no SOURCE / | sed 's/\[.*\]//'
+}
+
+# The top of the btrfs disk, where @ and the other subvolumes are.
+mount_top() {
+  mkdir -p "$TOP"
+  mountpoint -q "$TOP" && return 0
+  local device
+  device=$(root_device)
+  [[ -n $device ]] && mount -o subvolid=5 "$device" "$TOP"
+}
+
+unmount_top() {
+  umount "$TOP" 2>/dev/null || true
+  rmdir "$TOP" 2>/dev/null || true
+}
+
+# The roots that went, from going back before.
+delete_old() {
+  local old
+  for old in "$TOP"/@agentv-old-*; do
+    [[ -d $old ]] || continue
+    btrfs subvolume delete --recursive "$old" >/dev/null 2>&1 || echo "Couldn't delete ${old##*/}" >&2
+  done
+}
+
+if [[ ${1:-} == "--cleanup" ]]; then
+  mount_top || exit 1
+  delete_old
+  unmount_top
+  rm -f "$STATE/cleanup-pending"
+  exit 0
+fi
+
+go=$(cat "$STATE/go-back.json" 2>/dev/null || echo '{}')
+now_agentv=$(pacman -Q agentv 2>/dev/null | cut -d' ' -f2)
+now_omarchy=$(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2)
+back_agentv=$(jq -r '.from.agentv // empty' <<<"$go")
+
+# progress <state> <percent> [<detail>], for the TV, as an install's.
+progress() {
+  jq -n --arg state "$1" --argjson percent "$2" --arg detail "${3:-}" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg from "$now_agentv" --arg omarchy "$now_omarchy" --arg to "$back_agentv" \
+    '{state: $state, what: "go-back", step: "restart", percent: $percent, detail: $detail, at: $at, from: {agentv: $from, omarchy: $omarchy}, to: {agentv: $to}}' \
+    >"$STATE/progress.json.new"
+  chmod 644 "$STATE/progress.json.new"
+  mv "$STATE/progress.json.new" "$STATE/progress.json"
+}
+
+fail() {
+  echo "Couldn't go back: $1." >&2
+  progress failed 0 "$1"
+  unmount_top
+  exit 1
+}
+
+snapshot=$(jq -r '.snapshot // empty' <<<"$go")
+[[ $snapshot =~ ^[0-9]+$ && -n $back_agentv ]] || fail "there's no update to go back from"
+# Updated again since, from a terminal: that snapshot is two updates back.
+[[ $now_agentv == "$(jq -r '.to.agentv // empty' <<<"$go")" ]] || fail "the box has been updated again since"
+source="$SNAPSHOTS/$snapshot/snapshot"
+btrfs subvolume show "$source" >/dev/null 2>&1 || fail "the snapshot from before the update is gone"
+if [[ $(findmnt -no FSTYPE /) != "btrfs" ]] || ! findmnt -no OPTIONS / | grep -q "subvol=/@\(,\|$\)"; then
+  fail "this box's disk isn't laid out the way Omarchy installs it"
+fi
+
+progress going-back 10
+log="$STATE/go-back.log"
+: >"$log"
+
+# limine-snapper-sync mustn't write the boot menu while this does. The mask
+# goes at the restart.
+systemctl mask --runtime --now limine-snapper-sync.service limine-snapper-sync.path >>"$log" 2>&1 || true
+
+mount_top || fail "couldn't reach the disk's subvolumes"
+delete_old
+next="$TOP/$NEXT"
+[[ -d $next ]] && btrfs subvolume delete --recursive "$next" >>"$log" 2>&1
+btrfs subvolume snapshot "$source" "$next" >>"$log" 2>&1 || fail "couldn't copy the snapshot"
+progress going-back 40
+
+# What the TV knows after the restart: that it went back, and from where.
+# The update's own records describe the root that goes.
+install -d -m 755 "$next/var/lib/agentv/update"
+jq -n --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg from "$now_agentv" --arg omarchy "$now_omarchy" --arg to "$back_agentv" \
+  '{at: $at, from: {agentv: $from, omarchy: $omarchy}, to: {agentv: $to}}' >"$next/var/lib/agentv/update/went-back.json"
+chmod 644 "$next/var/lib/agentv/update/went-back.json"
+touch "$next/var/lib/agentv/update/cleanup-pending"
+rm -f "$next/var/lib/agentv/update/"{go-back.json,after.json,check-pending,progress.json}
+
+# The boot files from inside the copy, so its kernel and modules match, as
+# Omarchy's factory reset does.
+esp=$(awk '$3 == "vfat" && $2 ~ /^\/(boot|efi)/ { print $2; exit }' "$next/etc/fstab")
+[[ -n $esp ]] || fail "the snapshot has no boot partition in its fstab"
+mounts=("$next$esp")
+mount --bind "$esp" "$next$esp" >>"$log" 2>&1 || fail "couldn't reach the boot partition"
+for dir in proc sys dev run; do
+  mount --rbind "/$dir" "$next/$dir" >>"$log" 2>&1 && mount --make-rslave "$next/$dir" >>"$log" 2>&1
+  mounts+=("$next/$dir")
+done
+chroot "$next" /usr/bin/limine-update >>"$log" 2>&1
+built=$?
+for (( i = ${#mounts[@]} - 1; i >= 0; i-- )); do
+  umount -R "${mounts[i]}" >>"$log" 2>&1 || true
+done
+(( built == 0 )) || fail "couldn't rebuild the boot menu"
+progress going-back 80
+
+# The copy becomes @ for the next boot. The running root stays mounted until
+# then, under its new name.
+old="@agentv-old-$(date +%s)"
+mv "$TOP/@" "$TOP/$old" || fail "couldn't set the current system aside"
+if ! mv "$next" "$TOP/@"; then
+  mv "$TOP/$old" "$TOP/@"
+  fail "couldn't put the snapshot in place"
+fi
+sync
+unmount_top
+
+progress going-back 98 "restarting"
+sleep 3
+systemctl reboot

@@ -4,7 +4,7 @@
 // a theme that can only change colours.
 
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -15,9 +15,10 @@ import { startBox } from "../ui/box.mts";
 let daemon: Daemon;
 let url = "";
 let updates = "";
+let appsDir = "";
 
 before(async () => {
-  ({ daemon, url, updates } = await startBox());
+  ({ daemon, url, updates, apps: appsDir } = await startBox());
 });
 
 after(() => daemon.close());
@@ -124,7 +125,16 @@ test("the theme reaches the TV, as colours only", async () => {
 });
 
 test("S2.12 the daemon passes on what the update check found and how an install is going", async () => {
-  assert.deepEqual(await get("/api/updates"), { ok: true, status: null, progress: null, toasted: null });
+  assert.deepEqual(await get("/api/updates"), {
+    ok: true,
+    status: null,
+    progress: null,
+    toasted: null,
+    after: null,
+    goBack: null,
+    wentBack: null,
+    seen: { kept: null, wentBack: null },
+  });
   // The TV hears when either changes.
   const events = await fetch(`${url}/api/events`);
   const reader = events.body!.getReader();
@@ -143,4 +153,39 @@ test("S2.12 the daemon passes on what the update check found and how an install 
   assert.equal((await send("POST", "/api/updates/toasted", { version: "0.3.0" })).status, 200);
   assert.equal((await get("/api/updates")).toasted, "0.3.0");
   assert.equal((await send("POST", "/api/updates/toasted", { version: "../x" })).status, 400);
+});
+
+test("S2.14 the daemon passes on the check after an update and what Go back returns to", async () => {
+  const check = { at: "2026-10-23T22:00:00Z", ok: false, agentv: "0.3.0-1", checks: [{ name: "daemon", ok: true, detail: "" }] };
+  const go = { snapshot: 3, at: "2026-10-23T21:58:00Z", from: { agentv: "0.2.1-1" }, to: { agentv: "0.3.0-1" } };
+  writeFileSync(join(updates, "after.json"), JSON.stringify(check));
+  writeFileSync(join(updates, "go-back.json"), JSON.stringify(go));
+  const state = await get("/api/updates");
+  assert.deepEqual([state.after, state.goBack, state.wentBack], [check, go, null]);
+  // Keep this version, and the toast after going back, by their times.
+  assert.equal((await send("POST", "/api/updates/seen", { kept: check.at })).status, 200);
+  assert.equal((await send("POST", "/api/updates/seen", { wentBack: "2026-10-23T22:05:00Z" })).status, 200);
+  assert.deepEqual((await get("/api/updates")).seen, { kept: check.at, wentBack: "2026-10-23T22:05:00Z" });
+  assert.equal((await send("POST", "/api/updates/seen", { kept: "yesterday" })).status, 400);
+  assert.equal((await send("POST", "/api/updates/seen", {})).status, 400);
+});
+
+test("S2.14 the check after an update loads every installed app, each in a worker of its own", async () => {
+  const { apps } = await get("/api/apps/check");
+  assert.ok(apps.length >= 3, `${apps.length} apps checked`);
+  assert.deepEqual(apps.filter((app: { ok: boolean }) => !app.ok), []);
+  // An update that broke an app's code, and one that broke its package.
+  const code = join(appsDir, "agentv.sample", "app.ts");
+  const manifest = join(appsDir, "someone.radio", "manifest.json");
+  const [goodCode, goodManifest] = [readFileSync(code, "utf8"), readFileSync(manifest, "utf8")];
+  try {
+    writeFileSync(code, "throw new Error('broken by the update');\n");
+    writeFileSync(manifest, "{");
+    const broken = (await get("/api/apps/check")).apps.filter((app: { ok: boolean }) => !app.ok);
+    assert.deepEqual(broken.map((app: { id: string; name: string }) => [app.id, app.name]), [["agentv.sample", "Sample"], ["someone.radio", "Radio"]]);
+    for (const app of broken) assert.ok(app.error, `${app.id} says why`);
+  } finally {
+    writeFileSync(code, goodCode);
+    writeFileSync(manifest, goodManifest);
+  }
 });

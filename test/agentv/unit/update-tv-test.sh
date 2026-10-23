@@ -87,12 +87,15 @@ sudoers="$SCRATCH/sudoers.d"
 modules="$SCRATCH/modules"
 mkdir -p "$sudoers" "$modules/$(uname -r)" "$SCRATCH/home"
 export AGENTV_SUDOERS_DIR="$sudoers" AGENTV_MODULES_DIR="$modules" AGENTV_OWNER=someone CALLS="$SCRATCH/calls"
+# The check after the update, with no daemon to ask here: it finds that.
+export AGENTV_AFTER_WAIT=0 AGENTV_DAEMON_URL=http://127.0.0.1:9 AGENTV_CHROMIUM_STATE="$SCRATCH/chromium" SNAPSHOT_TAKEN="$SCRATCH/snapshot-taken"
 # runuser runs the update as the owner, here a stand-in agentv update that
 # prints what Omarchy's and pacman's would, and checks the sudo rule is there.
 cat >"$SCRATCH/bin/runuser" <<'SH'
 #!/bin/bash
 echo "runuser $*" >>"$CALLS"
 [[ -f $AGENTV_SUDOERS_DIR/99-omarchy-nopasswd-someone ]] && echo "rule in place" >>"$CALLS"
+touch "$SNAPSHOT_TAKEN"
 echo "Create system snapshot"
 echo ":: Synchronizing package databases..."
 echo "(1/4) upgrading agentv"
@@ -109,6 +112,13 @@ cat >"$SCRATCH/bin/systemctl" <<'SH'
 echo "systemctl $*" >>"$CALLS"
 SH
 printf '#!/bin/bash\nexit 0\n' >"$SCRATCH/bin/visudo"
+# Snapper's list: two snapshots from before, and the one Omarchy's update
+# takes first.
+cat >"$SCRATCH/bin/snapper" <<'SH'
+#!/bin/bash
+printf '%s\n' number 0 1 2
+[[ -f $SNAPSHOT_TAKEN ]] && printf '%s\n' 3 4
+SH
 printf '#!/bin/bash\n' >"$SCRATCH/bin/sleep"
 chmod +x "$SCRATCH/bin/"*
 
@@ -131,9 +141,14 @@ grep -qx "rule in place" "$CALLS" || fail "the owner may use sudo while it runs"
 [[ $(jq -c '[.state, .step, .percent, .from.agentv, .to.agentv]' "$progress") == '["done","restart",100,"0.2.1-1","0.3.0-1"]' ]] ||
   fail "S2.12 the Updating screen hears it's done" "$(cat "$progress")"
 grep -q "^Running migrations$" "$AGENTV_UPDATE_STATE/update.log" || fail "the update's output is kept"
+[[ $(jq -c '[.snapshot, .from.agentv, .widevine]' "$AGENTV_UPDATE_STATE/go-back.json") == '[3,"0.2.1-1",false]' ]] ||
+  fail "S2.14 Go back returns to the first snapshot the update took" "$(cat "$AGENTV_UPDATE_STATE/go-back.json")"
+[[ $(jq -c '[.checks[0].name, .checks[0].ok]' "$AGENTV_UPDATE_STATE/after.json") == '["daemon",false]' ]] ||
+  fail "S2.14 the check runs after the update" "$(cat "$AGENTV_UPDATE_STATE/after.json" 2>&1)"
 [[ $(jq -r '.agentv.available' "$status") == "null" ]] || fail "the check runs again after" "$(cat "$status")"
 ! grep -q reboot "$CALLS" || fail "no restart without a new kernel" "$(cat "$CALLS")"
 pass "S2.12 Install now runs agentv update as the owner, with sudo for that update only, and says when it's done"
+pass "S2.14 then it checks the box, and keeps which snapshot Go back returns to"
 
 # Its steps, as the Updating screen sees them: the package lines move it on.
 FAKE_UPDATE_STATUS=0 bash -c '
@@ -147,10 +162,13 @@ pass "the Updating screen gets the step, the percent and which package of how ma
 
 # A new kernel: the box restarts, and says so first.
 rmdir "$modules/$(uname -r)"
+rm -f "$SNAPSHOT_TAKEN" "$AGENTV_UPDATE_STATE/after.json"
 : >"$CALLS"
 "$ROOT/bin/agentv-update-tv" >/dev/null 2>&1 || fail "an update with a new kernel goes through"
 grep -qx "systemctl reboot" "$CALLS" || fail "a new kernel restarts the box" "$(cat "$CALLS")"
 [[ $(jq -r .state "$progress") == "restarting" ]] || fail "the TV says it's restarting" "$(cat "$progress")"
+[[ -f $AGENTV_UPDATE_STATE/check-pending && ! -f $AGENTV_UPDATE_STATE/after.json ]] ||
+  fail "S2.14 the check waits for the box to be up again"
 mkdir -p "$modules/$(uname -r)"
 pass "S2.12 an update with a new kernel restarts the box, and the TV says so"
 

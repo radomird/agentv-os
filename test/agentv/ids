@@ -26,6 +26,7 @@ S2.10 manual    the focus glide, hover lift and page transitions at 60 fps on th
 S2.11 manual    each UI sound within a frame of its action; move at most every 60 ms; Settings → Sound silences them (layer 4 checks the rules)
 S2.12 check     Settings → Updates shows the installed and the new AgenTV and Omarchy with What's new, and Install now runs the update (the NUC does a real one)
 S2.13 check     a new release shows one toast on home, and the bar says so until it's installed (no profiles or kids until stage 4)
+S2.14 image     when the check after an update finds something off, Go back returns the box to the version from before, with no reinstall
 S2.15 image     Home pauses the app in front and shows home, choosing it again plays it where it was, a third app closes the oldest, a game keeps running with Quit (the NUC times the 1 s)
 S2.16 image     Back reaches the app in front, and Home works from the Home key, a gamepad's guide button, the phone and a 1 s hold on Back
 S2.8  manual    with the TV off mid-episode, playback pauses within 5 s, every app closes after 2 min, and home is on its ambient screen when it's back (layer 2 checks the policy, the image layer with agentv screen tv)

@@ -878,3 +878,39 @@ button {
 .updating-step.now b {
   color: var(--yellow);
 }
+
+/* Something's off after an update (board 33): what the check found, then Go
+   back or Keep. */
+.check-summary {
+  max-width: 1200px;
+  margin-bottom: 36px;
+  font-size: 32px;
+}
+
+.check-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 48px;
+  font-size: 30px;
+  color: var(--foreground);
+}
+
+.check-row b {
+  color: var(--green);
+  font-weight: 400;
+}
+
+.check-row.bad,
+.check-row.bad b {
+  color: var(--red);
+}
+
+.check-actions {
+  display: flex;
+  gap: 24px;
+}
+
+.check-actions .button {
+  max-width: 560px;
+}
