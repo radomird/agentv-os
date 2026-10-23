@@ -27,7 +27,11 @@ fake curl 'cat "$STATE/health"'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
 fake iw '
 case "$1" in
-  phy) printf "Wiphy phy0\n\tSupported interface modes:\n%s\tBand 1:\n" "$(cat "$STATE/modes")" ;;
+  phy)
+    # Real radios print thousands of lines, so a reader that stops early breaks the pipe.
+    printf "Wiphy phy0\n\tSupported interface modes:\n%s\n\tBand 1:\n" "$(cat "$STATE/modes")"
+    yes "$(printf "\t\t * 2412.0 MHz [1] (22.0 dBm)")" | head -n 20000
+    ;;
   dev)
     if [[ $(cat "$STATE/active" 2>/dev/null) == hotspot ]]; then
       printf "\ttype AP\n\tchannel 6 (2437 MHz)\n"
@@ -134,3 +138,12 @@ echo "3: wlan0    inet 192.168.1.20/24 brd 192.168.1.255 scope global wlan0" >"$
 grep -q "^fail S0.3 not run: this SSH session goes over wlan0" "$SCRATCH/out" || fail "it says why it didn't run" "$(cat "$SCRATCH/out")"
 [[ $(cat "$state/active") == home && ! -f $state/profile ]] || fail "it doesn't touch Wi-Fi over SSH on Wi-Fi"
 pass "S0.3 doesn't take over Wi-Fi from an SSH session that runs over it"
+
+# Something nobody planned for, here od failing, is still a fail line.
+healthy
+fake od 'exit 1'
+! run S0.3 || fail "a selftest that stops halfway doesn't pass"
+rm -f "$fakes/od"
+grep -q "^fail S0.3 the selftest stopped at line [0-9]*; send this whole output" "$SCRATCH/out" ||
+  fail "a selftest that stops halfway says so" "$(cat "$SCRATCH/out")"
+pass "a selftest that stops halfway says so on a fail line"

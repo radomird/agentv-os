@@ -19,7 +19,7 @@
 #
 # Exits 0 when every check passed, 1 when one didn't.
 
-set -euo pipefail
+set -Eeuo pipefail
 
 AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 AGENTV_HEALTH_URL=${AGENTV_HEALTH_URL:-http://127.0.0.1:3000/health}
@@ -37,6 +37,11 @@ case "${1:-all}" in
 esac
 
 failed=" "
+current=""
+
+# Anything that stops the selftest halfway is a failure of the check it was
+# on, said on a line of its own, never a quiet end.
+trap 'printf "fail %s the selftest stopped at line %s; send this whole output\n" "${current:-?}" "$LINENO"' ERR
 
 # result <pass|fail> <id> <what>
 result() {
@@ -74,7 +79,7 @@ s02_login() {
 
   # Columns: SESSION UID USER SEAT, then more.
   session=$(loginctl list-sessions --no-legend 2>/dev/null |
-    awk -v user="$user" '$3 == user && $4 == "seat0" { print $1; exit }' || true)
+    awk -v user="$user" '!found && $3 == user && $4 == "seat0" { print $1; found = 1 }' || true)
   if [[ -n $session ]]; then
     result pass S0.2 "$user logs in on their own (session $session on seat0)"
   else
@@ -95,15 +100,19 @@ s02_welcome() {
   fi
 }
 
+# The awk calls here read to the end: one that stopped early would leave the
+# command before it writing into a closed pipe, and with pipefail that ends
+# the selftest.
+
 # The first Wi-Fi device NetworkManager knows, or nothing.
 wifi_device() {
-  nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }'
+  nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '!found && $2 == "wifi" { print $1; found = 1 }'
 }
 
 # The interface modes the device's radio supports, one per line.
 ap_modes() {
   iw phy "$1" info 2>/dev/null |
-    awk '/Supported interface modes:/ { list = 1; next } list && /^[[:space:]]+\* / { print $2; next } list { exit }'
+    awk '/Supported interface modes:/ && !done { list = 1; next } list && /^[[:space:]]+\* / { print $2; next } list { list = 0; done = 1 }'
 }
 
 # Is this an SSH session that runs over the given device?
@@ -122,7 +131,7 @@ restored=0
 
 # The connection the device is on now, by UUID, or nothing.
 active_uuid() {
-  nmcli -g UUID,DEVICE connection show --active 2>/dev/null | awk -F: -v device="$1" '$2 == device { print $1; exit }'
+  nmcli -g UUID,DEVICE connection show --active 2>/dev/null | awk -F: -v device="$1" '!found && $2 == device { print $1; found = 1 }'
 }
 
 # Wi-Fi as it was: no test hotspot, the radio as it was, and the connection
@@ -216,6 +225,7 @@ echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 echo
 
 for id in "${checks[@]}"; do
+  current=$id
   case $id in
     S0.2) s02_disk; s02_login; s02_welcome ;;
     S0.3) s03 ;;
