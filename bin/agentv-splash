@@ -33,7 +33,7 @@ if systemd-detect-virt --quiet --chroot; then
   exit 0
 fi
 
-if command -v limine-mkinitcpio >/dev/null; then
+if omarchy-cmd-present limine-mkinitcpio; then
   limine-mkinitcpio
 else
   mkinitcpio -P

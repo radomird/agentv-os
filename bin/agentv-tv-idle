@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# agentv:summary=Keep the TV from locking itself with the account's password
+# agentv:hidden=true
+
+# A TV never asks for the account's password (ADR-009, ADR-029): its only
+# lock will be AgenTV's own optional PIN. Omarchy's shell locks the screen
+# after five idle minutes and asks for the password, and Omarchy's menu
+# offers suspend, which locks before it sleeps. This turns the idle lock off
+# in the owner's ~/.config/omarchy/shell.json, where the screensaver (AgenTV's
+# logo, after two and a half minutes) stays, and takes suspend out of the
+# menu with Omarchy's own suspend-off toggle. When the screen goes dark and
+# the TV sleeps is stage 2's TV-off policy.
+#
+# Runs as the owner: at first boot (install/tv/idle.sh) and from a migration.
+
+set -euo pipefail
+
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+config="$HOME/.config/omarchy/shell.json"
+defaults="$OMARCHY_PATH/config/omarchy/shell.json"
+
+# The owner's shell.json replaces Omarchy's defaults whole, so it starts from
+# theirs when they have one, and changes nothing else.
+source=$config
+jq -e '.version == 1' "$config" >/dev/null 2>&1 || source=$defaults
+
+mkdir -p "${config%/*}"
+tmp=$(mktemp "$config.XXXXXX")
+jq '.version = 1 | .idle = ((.idle // {}) + {lock: 0})' "$source" >"$tmp"
+mv -- "$tmp" "$config"
+
+omarchy-toggle suspend-off on
+
+# A running shell takes it now; otherwise the next login does.
+omarchy-shell shell reloadConfig >/dev/null 2>&1 || true

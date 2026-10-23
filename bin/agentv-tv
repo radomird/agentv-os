@@ -3,8 +3,8 @@
 # agentv:summary=Open the TV on this screen
 # agentv:examples=agentv tv
 
-# For now that means the TV setup welcome page, full screen in a kiosk
-# Chromium with its own profile in /var/lib/agentv/chromium. Stage 1 gives it
+# For now that means the TV setup welcome page, full screen in a Chromium
+# app window with its own profile in /var/lib/agentv/chromium. Stage 1 gives it
 # a TV mode of its own (config/hypr/tv.lua).
 
 set -euo pipefail
@@ -25,12 +25,24 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
+# One TV window: a second launch on the same profile would only open an
+# ordinary window in the one that's running.
+if pgrep -u "$(id -u)" -f "user-data-dir=/var/lib/agentv/chromium" >/dev/null; then
+  exit 0
+fi
+
+# App mode, full screen. Omarchy's Hyprland lets a newly focused window take
+# the full screen over (on_focus_under_fullscreen), and --kiosk on Linux is
+# only a locked full screen, so on the NUC opening a terminal turned the
+# welcome page into an ordinary browser window, tabs and address bar and all.
+# An app window has neither, full screen or not.
 setsid -f uwsm app -- chromium \
-  --kiosk \
+  --app="$url" \
+  --start-fullscreen \
   --user-data-dir=/var/lib/agentv/chromium \
   --no-first-run \
   --no-default-browser-check \
   --noerrdialogs \
   --disable-session-crashed-bubble \
   --password-store=basic \
-  "$url" >/dev/null 2>&1
+  >/dev/null 2>&1

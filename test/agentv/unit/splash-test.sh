@@ -23,6 +23,7 @@ fake() {
 
 fake systemd-detect-virt '[[ -f $CHROOT ]]'
 fake limine-mkinitcpio 'echo limine-mkinitcpio >>"$CALLS"'
+fake omarchy-cmd-present 'command -v "$1" >/dev/null'
 
 # splash [chroot]: Omarchy's logo in the theme, then the script.
 splash() {
