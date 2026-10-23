@@ -2,8 +2,8 @@
 
 # AgenTV's layer 4 (ADR-019): the launcher in a real Chromium, headless, at
 # 1920 × 1080, on the daemon itself with a few sample apps. It checks keyboard
-# reach, what tiles and app details say, the motion and sound rules, and the
-# requests the launcher sends the TV session. Playwright comes at a pinned
+# reach, what tiles and app details say, edit mode, the motion and sound
+# rules, and the requests the launcher sends the TV session. Playwright comes at a pinned
 # version into a folder of its own; the browser is the one on the machine.
 #
 # Usage: test/agentv/ui/run

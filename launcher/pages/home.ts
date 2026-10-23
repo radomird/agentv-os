@@ -55,7 +55,7 @@ async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
   el.querySelector(".tile-body")?.replaceWith(h("div", { class: "tile-body" }, content));
 }
 
-function appTile(ctx: Ctx, app: App, placed: Placed): HTMLElement {
+function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElement {
   const el = h(
     "button",
     {
@@ -63,10 +63,12 @@ function appTile(ctx: Ctx, app: App, placed: Placed): HTMLElement {
       "data-focus": true,
       "data-id": app.id,
       "aria-label": app.name,
-      onclick: async () => {
-        const reply = await screen.open(app.id);
-        if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
-      },
+      onclick: editing
+        ? undefined
+        : async () => {
+            const reply = await screen.open(app.id);
+            if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
+          },
     },
     h("div", { class: "tile-top" }, logo(app), state(app)),
     h("div", { class: "tile-body" }, h("span", { class: "tile-name" }, app.name.toLowerCase())),
@@ -75,13 +77,30 @@ function appTile(ctx: Ctx, app: App, placed: Placed): HTMLElement {
   return el;
 }
 
-function appsTile(ctx: Ctx, count: number): HTMLElement {
+function appsTile(ctx: Ctx, count: number, editing: boolean): HTMLElement {
   return h(
     "button",
-    { class: "tile tile-apps size-s", "data-focus": true, "data-id": ctx.state.appsTile, onclick: () => ctx.go("apps") },
+    { class: "tile tile-apps size-s", "data-focus": true, "data-id": ctx.state.appsTile, onclick: editing ? undefined : () => ctx.go("apps") },
     h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, count === 1 ? "1 installed" : `${count} installed`)),
     h("span", { class: "tile-name" }, "all apps →"),
   );
+}
+
+// Puts a tile in its cells.
+export function placeTile(el: HTMLElement, placed: Placed): void {
+  const { w, h: rows } = span(placed.size);
+  el.style.gridColumn = `${placed.x + 1} / span ${w}`;
+  el.style.gridRow = `${placed.y + 1} / span ${rows}`;
+}
+
+// A home tile, drawn for home or for edit mode, where choosing it doesn't
+// open anything. Null for an app that isn't on the box any more.
+export function tileFor(ctx: Ctx, placed: Placed, editing = false): HTMLElement | null {
+  const app = ctx.state.apps.find((a) => a.id === placed.id);
+  const el =
+    placed.id === ctx.state.appsTile ? appsTile(ctx, ctx.state.apps.length, editing) : app ? appTile(ctx, app, placed, editing) : null;
+  if (el) placeTile(el, placed);
+  return el;
 }
 
 export function home(ctx: Ctx): View {
@@ -89,13 +108,8 @@ export function home(ctx: Ctx): View {
   const byId = new Map(ctx.state.apps.map((app) => [app.id, app]));
   const ordered = [...ctx.state.layout].sort((a, b) => a.y - b.y || a.x - b.x);
   for (const placed of ordered) {
-    const app = byId.get(placed.id);
-    const tile = placed.id === ctx.state.appsTile ? appsTile(ctx, ctx.state.apps.length) : app ? appTile(ctx, app, placed) : null;
-    if (!tile) continue;
-    const { w, h: rows } = span(placed.size);
-    tile.style.gridColumn = `${placed.x + 1} / span ${w}`;
-    tile.style.gridRow = `${placed.y + 1} / span ${rows}`;
-    grid.append(tile);
+    const tile = tileFor(ctx, placed);
+    if (tile) grid.append(tile);
   }
 
   const el = h("div", { class: "screen" }, grid, bar(ctx, "home"));
@@ -103,10 +117,15 @@ export function home(ctx: Ctx): View {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,
     act(action) {
-      // i on a focused tile opens its app's details (ADR-018).
+      // i on a focused tile opens its app's details (ADR-018), and e edits
+      // home (ADR-015).
       const id = ctx.focus.get()?.dataset.id;
       if (action === "info" && id && byId.has(id)) {
         ctx.go(`details/${id}`);
+        return true;
+      }
+      if (action === "edit") {
+        ctx.edit();
         return true;
       }
       return false;

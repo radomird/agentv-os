@@ -10,7 +10,7 @@ import { Daemon } from "../../../daemon/server.ts";
 export const ROOT = join(import.meta.dirname, "../../..");
 const SAMPLE = join(ROOT, "test/agentv/fixtures/apps/sample");
 
-interface Fixture {
+export interface Fixture {
   id: string;
   name: string;
   tier: "official" | "community" | "local";
@@ -65,14 +65,14 @@ function code(id: string): string {
   return readFileSync(join(SAMPLE, "app.ts"), "utf8").replace('id: "agentv.sample"', `id: "${id}"`);
 }
 
-export function makeBox(): { apps: string; state: string } {
+export function makeBox(fixtures: Fixture[] = FIXTURES): { apps: string; state: string } {
   const dir = mkdtempSync(join(tmpdir(), "agentv-box-"));
   const apps = join(dir, "apps");
   const state = join(dir, "state");
   mkdirSync(apps);
   mkdirSync(state);
   const installed: Record<string, unknown> = {};
-  for (const fixture of FIXTURES) {
+  for (const fixture of fixtures) {
     const target = join(apps, fixture.id);
     cpSync(SAMPLE, target, { recursive: true });
     const manifest = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
@@ -90,8 +90,8 @@ export function makeBox(): { apps: string; state: string } {
   return { apps, state };
 }
 
-export async function startBox(port = 0): Promise<{ daemon: Daemon; url: string; apps: string; state: string }> {
-  const { apps, state } = makeBox();
+export async function startBox(port = 0, fixtures = FIXTURES): Promise<{ daemon: Daemon; url: string; apps: string; state: string }> {
+  const { apps, state } = makeBox(fixtures);
   const daemon = new Daemon({ root: ROOT, state, apps, port, log: () => {} });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state };

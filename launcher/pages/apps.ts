@@ -1,17 +1,26 @@
-// Apps (ADR-015): everything on the box, on the home screen or not. Choosing
-// an app opens its details, where it can be opened, or put on home or taken
-// off it.
+// Apps (ADR-015): everything on the box, on the home screen or not. Enter
+// opens an app, i shows its details, p puts it on home or takes it off, and e
+// edits home.
 
-import type { App } from "../api.ts";
+import { screen, type App } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo } from "./home.ts";
-import { bar, heading } from "./parts.ts";
+import { bar, heading, togglePin } from "./parts.ts";
 
 function appTile(ctx: Ctx, app: App): HTMLElement {
   return h(
     "button",
-    { class: "tile size-s", "data-focus": true, "data-id": app.id, "aria-label": app.name, onclick: () => ctx.go(`details/${app.id}`) },
+    {
+      class: "tile size-s",
+      "data-focus": true,
+      "data-id": app.id,
+      "aria-label": app.name,
+      onclick: async () => {
+        const reply = await screen.open(app.id);
+        if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
+      },
+    },
     h("div", { class: "tile-top" }, logo(app)),
     h("span", { class: "tile-name" }, app.name.toLowerCase()),
   );
@@ -50,7 +59,27 @@ export function apps(ctx: Ctx): View {
       h("div", { class: "section" }, "# not on your home"),
       h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), add),
     ),
-    bar(ctx, "apps", ctx.state.apps.length === 1 ? "1 app" : `${ctx.state.apps.length} apps`),
+    bar(ctx, "apps", "↵ open · i details · p pin to home · e edit home"),
   );
-  return { el, first: el.querySelector<HTMLElement>(".row [data-focus]") ?? undefined };
+  const installed = new Set(ctx.state.apps.map((app) => app.id));
+  return {
+    el,
+    first: el.querySelector<HTMLElement>(".row [data-focus]") ?? undefined,
+    act(action) {
+      const id = ctx.focus.get()?.dataset.id;
+      if (action === "info" && id && installed.has(id)) {
+        ctx.go(`details/${id}`);
+        return true;
+      }
+      if (action === "pin" && id && installed.has(id)) {
+        void togglePin(ctx, id).then((changed) => changed && ctx.render("apps", id));
+        return true;
+      }
+      if (action === "edit") {
+        ctx.edit();
+        return true;
+      }
+      return false;
+    },
+  };
 }

@@ -11,6 +11,7 @@ import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
+import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { settings } from "./pages/settings.ts";
 import { Sounds } from "./sounds.ts";
@@ -20,6 +21,8 @@ export interface View {
   first?: HTMLElement;
   act?(action: Action): boolean;
   focused?(el: HTMLElement): void;
+  // True while the page has the pointer, as edit mode does during a drag.
+  busy?(): boolean;
 }
 
 export interface Ctx {
@@ -28,6 +31,7 @@ export interface Ctx {
   focus: Focus;
   go(route: string): void;
   back(): void;
+  edit(): void;
   render(route: string, action?: string): void;
   toast(text: string, kind?: "ok" | "fail"): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
@@ -54,6 +58,15 @@ const ctx: Ctx = {
     history.pop();
     show(history[history.length - 1], "back");
     sounds.play("back");
+  },
+  // Edit mode, on the focused tile; only adults edit home (ADR-015).
+  edit() {
+    if (ctx.state.viewer.role !== "adult") {
+      ctx.toast("only an adult can edit home", "fail");
+      sounds.play("failure");
+      return;
+    }
+    ctx.go(`edit/${focus.get()?.dataset.id ?? ""}`);
   },
   render(route, action) {
     history[history.length - 1] = route;
@@ -86,6 +99,7 @@ function viewFor(route: string): View {
   const [name, arg] = route.split("/");
   if (name === "apps") return apps(ctx);
   if (name === "details") return details(ctx, arg);
+  if (name === "edit") return edit(ctx, arg);
   if (name === "settings") return settings(ctx, arg);
   return home(ctx);
 }
@@ -102,7 +116,7 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     setTimeout(() => focus.release(), 400);
   }
   page.replaceChildren(el);
-  const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"]`) : null;
+  const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }
 
@@ -139,10 +153,20 @@ focus.onMove = (el) => {
   view?.focused?.(el);
 };
 
-// A mouse moves the focus by hovering, and a click is OK (ADR-015).
+// A mouse moves the focus by hovering, and a click is OK (ADR-015). The
+// pointer shows when the mouse moves and hides after 3 s. Only a real move
+// counts: Chromium also sends one when the page changes under a still mouse.
+let pointer = { x: -1, y: -1 };
+let hide = 0;
+document.body.classList.add("pointer-hidden");
 document.addEventListener("pointermove", (event) => {
+  if (event.clientX === pointer.x && event.clientY === pointer.y) return;
+  pointer = { x: event.clientX, y: event.clientY };
+  document.body.classList.remove("pointer-hidden");
+  clearTimeout(hide);
+  hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
   const el = (event.target as Element | null)?.closest<HTMLElement>("[data-focus]");
-  if (el && view?.el.contains(el)) focus.set(el);
+  if (el && view?.el.contains(el) && !view.busy?.()) focus.set(el);
 });
 document.addEventListener("click", (event) => {
   if (event.detail === 0) return; // a click from the keyboard, already played
@@ -150,10 +174,15 @@ document.addEventListener("click", (event) => {
   if (el) sounds.play("select");
 });
 
+// Draws the page again when something changed somewhere else, such as on
+// the phone. A change this page made itself is already on the screen.
 async function refresh(): Promise<void> {
-  ctx.state = await daemon.home();
+  const state = await daemon.home();
+  if (JSON.stringify(state) === JSON.stringify(ctx.state)) return;
+  ctx.state = state;
   apply(ctx.state.settings);
-  show(history[history.length - 1], undefined, focus.get()?.dataset.action);
+  const current = focus.get();
+  show(history[history.length - 1], undefined, current?.dataset.action ?? current?.dataset.id);
 }
 
 async function start(): Promise<void> {
