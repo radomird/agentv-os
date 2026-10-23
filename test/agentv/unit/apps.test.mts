@@ -153,6 +153,7 @@ test("app code imports only files from its own package", () => {
     ['import "./missing.ts";', /isn't in the package/],
     ['const fs = require("fs");', /calls require\(\)/],
     ['const m = await import("./library.ts");', /uses import\(\)/],
+    ['const fs = process.getBuiltinModule("fs");', /reaches for Node's own modules/],
   ] as const) {
     const dir = sample();
     writeFileSync(join(dir, "extra.ts"), `${code}\nexport const x = 1;\n`);
