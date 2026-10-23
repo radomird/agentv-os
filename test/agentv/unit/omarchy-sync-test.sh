@@ -70,6 +70,8 @@ pass "S0.6 the newest stable tag is picked, never a release candidate"
   git merge-base --is-ancestor v1.0.1 HEAD || fail "it merges the tag"
   [[ -f ours.txt ]] || fail "AgenTV's files stay"
   (( $(git rev-list --count --merges origin/agentv..HEAD) == 1 )) || fail "it merges, never rebases"
+  [[ -z $(git config --local user.name || true) ]] || fail "a dry run leaves the repo's git identity alone"
+  [[ $(git log -1 --format=%cn) == "github-actions[bot]" ]] || fail "the sync commits as the bot"
 )
 [[ $(outcome "$SCRATCH/os" automerge) == "true" ]] || fail "a clean minor release merges itself" "$(cat "$SCRATCH/os.out")"
 pass "S0.6 a new stable tag gets a merge, the base moves, and it may merge itself"
