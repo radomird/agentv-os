@@ -31,6 +31,8 @@ start_install_log
 run_logged "$AGENTV_INSTALL/pacman.sh"
 run_logged "$AGENTV_INSTALL/state.sh"
 run_logged "$AGENTV_INSTALL/hooks.sh"
+run_logged "$AGENTV_INSTALL/notices.sh"
+run_logged "$AGENTV_INSTALL/idle.sh"
 run_logged "$AGENTV_INSTALL/autologin.sh"
 # A boot menu or a splash that fails to set isn't worth keeping the TV from
 # starting.

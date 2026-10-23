@@ -1,0 +1,16 @@
+# AgenTV's logo on the boot splash, over Omarchy's (ADR-021, ADR-029).
+# Omarchy's splash belongs to its omarchy-settings package, so the install and
+# every update of that package bring Omarchy's logo back. 60 runs before
+# mkinitcpio's own hook, so a boot image that's rebuilt anyway gets it too.
+
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/share/plymouth/themes/omarchy/logo.png
+Target = usr/share/agentv/branding/plymouth-logo.png
+
+[Action]
+Description = Putting AgenTV's logo on the boot splash...
+When = PostTransaction
+Exec = /usr/bin/agentv-splash

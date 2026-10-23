@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# agentv:summary=Ask before an update, saying what changes and where to read about it
+# agentv:hidden=true
+
+# AgenTV's own question before agentv update (ADR-025, ADR-029), in place of
+# Omarchy's, which points at Omarchy's release notes and a laptop's battery.
+# It says which AgenTV and Omarchy versions the update moves to, how many
+# other packages change, and where AgenTV's release notes are.
+#
+# Exits 0 to go ahead, 1 when the answer is no.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+
+# shellcheck source=/dev/null
+source "$AGENTV_PATH/settings"
+
+# checkupdates exits 2 when there's nothing to update, 1 when it couldn't look.
+status=0
+pending=$(checkupdates 2>/dev/null) || status=$?
+if (( status != 0 && status != 2 )); then
+  pending=""
+fi
+
+# version_line <package> <name>: where the update takes it, or that it stays.
+version_line() {
+  local now next
+  now=$(pacman -Q "$1" 2>/dev/null | cut -d' ' -f2)
+  next=$(awk -v name="$1" '$1 == name { print $4 }' <<<"$pending")
+  if [[ -n $next ]]; then
+    echo "• $2 ${now:-not installed} to $next"
+  else
+    echo "• $2 ${now:-not installed}, already the newest"
+  fi
+}
+
+others=$(awk '$1 != "agentv" && $1 != "omarchy" && NF { n++ } END { print n + 0 }' <<<"$pending")
+lines=(
+  "Ready to update?"
+  ""
+  "$(version_line agentv AgenTV)"
+  "$(version_line omarchy Omarchy)"
+)
+if (( status == 1 )); then
+  lines+=("• Couldn't check for other updates; the update will")
+elif (( others > 0 )); then
+  lines+=("• $others other package$( (( others == 1 )) || echo s)")
+fi
+if [[ $("$AGENTV_BIN_DIR/agentv-channel") == "edge" ]]; then
+  lines+=("• On edge: every green build, not only releases")
+fi
+lines+=(
+  "• A snapshot comes first, so you can go back from the boot menu"
+  "• Keep the TV plugged in, and let it finish once it starts"
+  ""
+  "What's new: ${AGENTV_TESTED_URL%/download/tested}"
+)
+
+gum style --border normal --padding "1 2" "${lines[@]}"
+echo
+
+if ! gum confirm "Update now?"; then
+  echo "Update cancelled"
+  exit 1
+fi

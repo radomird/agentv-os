@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# agentv:summary=Put AgenTV's logo back on the boot splash after a package replaced it
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# Omarchy's splash theme belongs to its omarchy-settings package. Installing
+# that package, at install time and with every update of it, puts Omarchy's
+# logo on the splash, before AgenTV's first boot has had a chance to run and
+# again after it. AgenTV's pacman hook (60-agentv-splash.hook) runs this after
+# any such transaction (ADR-021, ADR-029): AgenTV's logo goes back over
+# Omarchy's, and the boot image is rebuilt so the next boot shows it.
+#
+# Inside the installer's chroot it only puts the logo back: the installer
+# builds the boot image itself, once, at the end. The colours stay as they
+# are; first boot sets AgenTV's through omarchy plymouth set
+# (install/tv/branding.sh).
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+theme=${AGENTV_SPLASH_THEME:-/usr/share/plymouth/themes/omarchy}
+logo="$AGENTV_PATH/branding/plymouth-logo.png"
+
+# Nothing to do until both are installed, or when it's AgenTV's already.
+[[ -d $theme && -f $logo ]] || exit 0
+cmp -s -- "$logo" "$theme/logo.png" && exit 0
+
+install -m 644 -- "$logo" "$theme/logo.png"
+echo "AgenTV's logo is back on the boot splash"
+
+if systemd-detect-virt --quiet --chroot; then
+  exit 0
+fi
+
+if omarchy-cmd-present limine-mkinitcpio; then
+  limine-mkinitcpio
+else
+  mkinitcpio -P
+fi

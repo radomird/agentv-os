@@ -24,6 +24,7 @@ fake sudo 'exec "$@"'
 fake agentv-pacman-conf 'echo pacman-conf >>"$CALLS"'
 fake agentv-tested 'echo tested >>"$CALLS"; [[ -f $HOLD ]] && exit 1; exit 0'
 fake omarchy-update 'echo "omarchy-update $*" >>"$CALLS"'
+fake agentv-update-confirm 'echo confirm >>"$CALLS"; [[ ! -f $DECLINE ]]'
 
 fake_agentv_path "$SCRATCH/agentv" stable
 
@@ -34,7 +35,7 @@ update() {
   rm -rf "${SCRATCH:?}/etc" "${calls:?}"
   mkdir -p "$SCRATCH/etc"
   [[ -n $channel ]] && echo "$channel" >"$SCRATCH/etc/channel"
-  env PATH="$bin:$PATH" CALLS="$calls" HOLD="$SCRATCH/hold" \
+  env PATH="$bin:$PATH" CALLS="$calls" HOLD="$SCRATCH/hold" DECLINE="$SCRATCH/decline" \
     AGENTV_PATH="$SCRATCH/agentv" AGENTV_ETC="$SCRATCH/etc" \
     "$bin/agentv-update" "$@" >"$SCRATCH/out" 2>&1
 }
@@ -57,3 +58,15 @@ update edge -y || fail "edge goes ahead even when tested.json would hold it" "$(
 [[ $(cat "$calls") == $'pacman-conf\nomarchy-update -y' ]] || fail "edge skips tested.json" "$(cat "$calls")"
 grep -q "^On edge: taking AgenTV's newest green build" "$SCRATCH/out" || fail "edge says why it doesn't wait" "$(cat "$SCRATCH/out")"
 pass "edge takes the newest green build without waiting for the nightly run"
+
+rm -f "$SCRATCH/hold"
+update "" || fail "an update without -y goes ahead once it's confirmed" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == $'pacman-conf\ntested\nconfirm\nomarchy-update -y' ]] ||
+  fail "without -y, AgenTV asks, then Omarchy's update runs without asking again" "$(cat "$calls")"
+pass "without -y, AgenTV's own question comes first, and Omarchy's update doesn't ask again"
+
+touch "$SCRATCH/decline"
+! update "" || fail "a no stops the update"
+! grep -q omarchy-update "$calls" || fail "nothing is updated after a no"
+rm -f "$SCRATCH/decline"
+pass "a no to AgenTV's question updates nothing"
