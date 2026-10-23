@@ -120,6 +120,26 @@ test("S2.4 a tile dragged with the mouse lands where it was dropped", async () =
   await page.close();
 });
 
+test("S2.4 on a 720p TV, a dragged tile lands in the cell it was dropped on too", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  await page.keyboard.press("e");
+  await page.waitForSelector(".grid.editing .tile.focused");
+  const from = await tile(page, "agentv.games").boundingBox();
+  assert.ok(from);
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  const to = cell(2, 2);
+  await page.mouse.move((to.x * 2) / 3, (to.y * 2) / 3, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  assert.equal((await layout())["agentv.games"], "s@2,2");
+  const landed = await tile(page, "agentv.games").boundingBox();
+  assert.ok(landed && Math.abs(landed.x + landed.width / 2 - (to.x * 2) / 3) < 4 && Math.abs(landed.y + landed.height / 2 - (to.y * 2) / 3) < 4);
+  await page.close();
+});
+
 test("S2.4 the layout stays as it was left when the daemon starts again", async () => {
   await setLayout([...START.slice(0, 4), { id: "agentv.games", x: 3, y: 2, size: "s" }, { id: "apps", x: 0, y: 2, size: "s" }]);
   await daemon.close();
