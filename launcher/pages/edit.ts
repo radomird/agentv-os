@@ -6,7 +6,7 @@
 // happens, and the tiles it moves glide to their new cells.
 
 import type { SizeChoice } from "../api.ts";
-import { h } from "../dom.ts";
+import { h, zoom } from "../dom.ts";
 import { at, choices, COLUMNS, move, resize, ROWS, span, unpin, type Placed, type Size } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { placeTile, tileFor } from "./home.ts";
@@ -109,8 +109,9 @@ export function edit(ctx: Ctx, focusOn?: string): View {
         const was = before.get(id);
         if (!was || was.width === 0) continue;
         const now = el.getBoundingClientRect();
-        const dx = was.left - now.left;
-        const dy = was.top - now.top;
+        // Rects come zoomed (dom.ts); a transform goes in the page's pixels.
+        const dx = (was.left - now.left) / zoom();
+        const dy = (was.top - now.top) / zoom();
         const resized = Math.abs(was.width - now.width) > 2 || Math.abs(was.height - now.height) > 2;
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && !resized) continue;
         el.style.transition = "none";
@@ -159,13 +160,17 @@ export function edit(ctx: Ctx, focusOn?: string): View {
         id === ctx.state.appsTile ? null : h("button", { class: "chip unpin", onclick: () => void remove(id) }, "del unpin"),
       ),
     );
-    // Where the tile ends up, not where it is while it glides there.
+    // Where the tile ends up, not where it is while it glides there, in the
+    // page's own pixels.
+    const z = zoom();
     const area = grid.getBoundingClientRect();
-    const box = { left: area.left + el.offsetLeft, top: area.top + el.offsetTop, bottom: area.top + el.offsetTop + el.offsetHeight };
-    const below = box.bottom + 16 + 150 < window.innerHeight - 60;
-    sizebar.style.left = `${Math.min(Math.max(32, box.left), window.innerWidth - 32 - 920)}px`;
+    const box = { left: area.left / z + el.offsetLeft, top: area.top / z + el.offsetTop, bottom: area.top / z + el.offsetTop + el.offsetHeight };
+    const width = window.innerWidth / z;
+    const height = window.innerHeight / z;
+    const below = box.bottom + 16 + 150 < height - 60;
+    sizebar.style.left = `${Math.min(Math.max(32, box.left), width - 32 - 920)}px`;
     sizebar.style.top = below ? `${box.bottom + 16}px` : "";
-    sizebar.style.bottom = below ? "" : `${window.innerHeight - box.top + 16}px`;
+    sizebar.style.bottom = below ? "" : `${height - box.top + 16}px`;
     sizebar.classList.add("on");
   }
 
@@ -253,12 +258,13 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     ctx.sounds.play("move");
   }
 
-  // The cell under a point on the screen.
+  // The cell under a point on the screen. The point and the grid's rect come
+  // zoomed, and its padding and gap don't.
   function cellAt(clientX: number, clientY: number): { x: number; y: number } {
     const box = grid.getBoundingClientRect();
     const style = getComputedStyle(grid);
-    const pad = parseFloat(style.paddingLeft);
-    const gap = parseFloat(style.columnGap);
+    const pad = parseFloat(style.paddingLeft) * zoom();
+    const gap = parseFloat(style.columnGap) * zoom();
     const cellW = (box.width - pad * 2 - gap * (COLUMNS - 1)) / COLUMNS;
     const cellH = (box.height - pad * 2 - gap * (ROWS - 1)) / ROWS;
     const x = Math.floor((clientX - box.left - pad + gap / 2) / (cellW + gap));
@@ -326,7 +332,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     } else {
       drag.el.classList.add("dragging");
       drag.el.style.transition = "none";
-      drag.el.style.transform = `translate(${dx}px, ${dy}px) rotate(-2deg)`;
+      drag.el.style.transform = `translate(${dx / zoom()}px, ${dy / zoom()}px) rotate(-2deg)`;
       const { w, h: rows } = span(placed.size);
       const x = Math.max(0, Math.min(COLUMNS - w, cell.x - drag.grabX));
       const y = Math.max(0, Math.min(ROWS - rows, cell.y - drag.grabY));

@@ -5,7 +5,7 @@
 // its sound (ADR-024).
 
 import { daemon, listen, screen, type HomeState, type Running, type Settings } from "./api.ts";
-import { h } from "./dom.ts";
+import { fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
@@ -203,6 +203,11 @@ function setRunning(apps: Running[]): void {
 }
 
 async function start(): Promise<void> {
+  fit();
+  window.addEventListener("resize", () => {
+    fit();
+    focus.refresh();
+  });
   ctx.state = await daemon.home();
   apply(ctx.state.settings);
   show("home");

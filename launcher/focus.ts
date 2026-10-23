@@ -2,6 +2,8 @@
 // nearest element in that direction, a mouse moves it by hovering, and one
 // ring glides from the old element to the new one rather than jumping.
 
+import { zoom } from "./dom.ts";
+
 export type Direction = "up" | "down" | "left" | "right";
 
 interface Box {
@@ -13,9 +15,11 @@ interface Box {
   height: number;
 }
 
+// Where an element is, in the page's own pixels (dom.ts zooms the page).
 function box(el: Element): Box {
   const r = el.getBoundingClientRect();
-  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  const z = zoom();
+  return { left: r.left / z, top: r.top / z, right: r.right / z, bottom: r.bottom / z, width: r.width / z, height: r.height / z };
 }
 
 // How far a candidate is in a direction: the gap along it, plus twice how far
@@ -41,7 +45,6 @@ export class Focus {
 
   constructor(ring: HTMLElement) {
     this.ring = ring;
-    window.addEventListener("resize", () => this.current && this.place(this.current, false));
   }
 
   get(): HTMLElement | undefined {
