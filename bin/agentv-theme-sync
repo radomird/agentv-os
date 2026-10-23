@@ -12,6 +12,8 @@
 set -euo pipefail
 
 AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+# The TV session's units don't have Omarchy's commands on their PATH.
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 theme="$HOME/.local/state/omarchy/current/theme"
 css="$theme/launcher.css"
 
@@ -20,13 +22,14 @@ if [[ ! -f $css ]]; then
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
   # Each colour as a sed substitution; only plain names and colours get in.
-  omarchy-theme-color --file "$theme/colors.toml" --all |
+  "$OMARCHY_PATH/bin/omarchy-theme-color" --file "$theme/colors.toml" --all |
     awk -F '\t' '$1 ~ /^[a-z_]+$/ && $2 ~ /^#[0-9a-fA-F]+$/ && length($2) <= 9 { printf "s/{{ *%s *}}/%s/g\n", $1, $2 }' >"$work/colors.sed"
   sed -f "$work/colors.sed" "$AGENTV_PATH/config/omarchy/themed/launcher.css.tpl" >"$work/launcher.css"
   css="$work/launcher.css"
 fi
 
-if ! curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: text/css' --data-binary @"$css" \
+# At the TV session's start the daemon may still be on its way up.
+if ! curl -fsS --max-time 5 --retry 3 --retry-connrefused --retry-delay 1 -o /dev/null -H 'Content-Type: text/css' --data-binary @"$css" \
   "http://127.0.0.1:${AGENTV_PORT:-3000}/api/theme"; then
   echo "AgenTV's daemon didn't take the theme's colours" >&2
   exit 1
