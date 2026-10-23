@@ -1,13 +1,16 @@
-# AgenTV's daemon. For now it's the stage 0 placeholder: the TV setup welcome
-# page and a health endpoint, on this box only. The real daemon (stage 2)
-# takes over this unit.
+# AgenTV's daemon (daemon/server.ts): the TV's pages and the state behind
+# them, on this box only for now. Node runs its TypeScript as it is. Its own
+# state, such as whether setup is done, lives in /var/lib/agentv/daemon.
 
 [Unit]
 Description=AgenTV daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /usr/share/agentv/daemon/placeholder.py --port 3000
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/daemon/server.ts --port 3000
+Environment=AGENTV_PATH=/usr/share/agentv
+Environment=AGENTV_DAEMON_STATE=/var/lib/agentv/daemon
+StateDirectory=agentv/daemon
 Restart=on-failure
 DynamicUser=yes
 ProtectSystem=strict

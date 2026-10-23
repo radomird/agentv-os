@@ -1,0 +1,321 @@
+// AgenTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
+// pages and the state behind them, on this box only (127.0.0.1) for now. The
+// phone companions reach it over the network from stage 4.
+//
+// - The welcome page until setup is done, and the home screen (launcher/)
+//   after it. Setup isn't built until stage 5, so `agentv setup skip` marks it
+//   done for now.
+// - /health, which CI's image checks and `agentv selftest` read. The page on
+//   the TV tells the daemon each time it has been drawn, so /health can say the
+//   welcome screen is really on the TV (S0.1, S1.3, S1.6).
+// - The launcher's TypeScript, served as JavaScript with its types stripped,
+//   so the box needs no build step, as for the daemon itself.
+// - /api/events, a stream of what changed, so the TV follows without polling.
+//
+// Only requests addressed to this box by name, and coming from its own pages
+// or from no page at all (a command on the box), are answered. A web page
+// elsewhere can't change anything here.
+
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { stripTypeScriptTypes } from "node:module";
+import { extname, join, normalize, resolve, sep } from "node:path";
+
+export interface DaemonOptions {
+  root: string; // AgenTV's files: /usr/share/agentv, or a checkout
+  state: string; // the daemon's own state: /var/lib/agentv/daemon
+  port: number;
+  host?: string;
+  log?: (line: string) => void;
+}
+
+interface Setup {
+  done: boolean;
+  at?: string;
+}
+
+const TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".ts": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ogg": "audio/ogg",
+  ".woff2": "font/woff2",
+};
+
+// The folders the TV's pages come from, by their first path segment.
+const STATIC = ["launcher", "setup"];
+const MAX_BODY = 64 * 1024;
+
+function now(): string {
+  return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
+}
+
+export class Daemon {
+  readonly server: Server;
+  private options: DaemonOptions;
+  private log: (line: string) => void;
+  private welcome = { shownAt: null as string | null, lastShownAt: null as string | null, count: 0 };
+  private streams = new Set<ServerResponse>();
+  private stripped = new Map<string, { mtime: number; code: string }>();
+
+  constructor(options: DaemonOptions) {
+    this.options = options;
+    this.log = options.log ?? ((line) => console.log(line));
+    this.server = createServer((request, response) => {
+      this.handle(request, response).catch((error: Error) => {
+        this.log(`error: ${request.method} ${request.url}: ${error.message}`);
+        if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
+        else response.end();
+      });
+    });
+  }
+
+  listen(): Promise<number> {
+    return new Promise((resolve) => {
+      this.server.listen(this.options.port, this.options.host ?? "127.0.0.1", () => {
+        resolve((this.server.address() as { port: number }).port);
+      });
+    });
+  }
+
+  close(): Promise<void> {
+    for (const stream of this.streams) stream.end();
+    return new Promise((resolve) => this.server.close(() => resolve()));
+  }
+
+  // --- State --------------------------------------------------------------
+
+  private async settings(): Promise<Record<string, string>> {
+    const values: Record<string, string> = { AGENTV_VERSION: "dev", AGENTV_CHANNEL: "dev" };
+    const text = await readFile(join(this.options.root, "settings"), "utf8").catch(() => "");
+    for (const line of text.split("\n")) {
+      const at = line.indexOf("=");
+      if (at > 0 && line.slice(0, at) in values) values[line.slice(0, at)] = line.slice(at + 1).trim();
+    }
+    return values;
+  }
+
+  async setup(): Promise<Setup> {
+    try {
+      const setup = JSON.parse(await readFile(join(this.options.state, "setup.json"), "utf8"));
+      return { done: setup.done === true, at: setup.at };
+    } catch {
+      return { done: false };
+    }
+  }
+
+  private async saveSetup(setup: Setup): Promise<void> {
+    await mkdir(this.options.state, { recursive: true });
+    const next = join(this.options.state, ".setup.json.next");
+    await writeFile(next, `${JSON.stringify(setup, null, 2)}\n`);
+    await rename(next, join(this.options.state, "setup.json"));
+  }
+
+  // Tells every page that's listening what changed.
+  private broadcast(event: string, data: unknown): void {
+    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  // --- Requests -----------------------------------------------------------
+
+  // Requests have to be addressed to this box by name (no DNS rebinding), and
+  // anything that changes state has to come from one of its own pages or from
+  // no page at all.
+  private allowed(request: IncomingMessage): { ok: boolean; why?: string } {
+    const port = (this.server.address() as { port: number }).port;
+    const names = [`127.0.0.1:${port}`, `localhost:${port}`];
+    if (!names.includes(String(request.headers.host))) return { ok: false, why: "unknown host" };
+    if (request.method === "GET" || request.method === "HEAD") return { ok: true };
+    const origin = request.headers.origin;
+    if (origin !== undefined && !names.map((name) => `http://${name}`).includes(origin)) {
+      return { ok: false, why: "not from one of this box's own pages" };
+    }
+    return { ok: true };
+  }
+
+  private json(response: ServerResponse, status: number, data: unknown): void {
+    const body = JSON.stringify(data);
+    response.writeHead(status, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(body),
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    });
+    response.end(body);
+  }
+
+  private async body(request: IncomingMessage): Promise<unknown> {
+    if (!String(request.headers["content-type"] ?? "").startsWith("application/json")) return undefined;
+    let size = 0;
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_BODY) throw new Error("the request is too big");
+      chunks.push(chunk as Buffer);
+    }
+    try {
+      return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async file(response: ServerResponse, relative: string): Promise<void> {
+    const path = join(this.options.root, relative);
+    const type = TYPES[extname(path).toLowerCase()];
+    let info;
+    try {
+      info = await stat(path);
+    } catch {
+      this.json(response, 404, { ok: false, error: "not found" });
+      return;
+    }
+    if (!type || !info.isFile()) {
+      this.json(response, 404, { ok: false, error: "not found" });
+      return;
+    }
+    let body: Buffer | string = await readFile(path);
+    if (path.endsWith(".ts")) {
+      const cached = this.stripped.get(path);
+      if (cached?.mtime === info.mtimeMs) {
+        body = cached.code;
+      } else {
+        body = stripTypeScriptTypes(body.toString("utf8"), { mode: "strip" });
+        this.stripped.set(path, { mtime: info.mtimeMs, code: body });
+      }
+    }
+    response.writeHead(200, {
+      "Content-Type": type,
+      "Content-Length": Buffer.byteLength(body),
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    });
+    response.end(body);
+  }
+
+  private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const allowed = this.allowed(request);
+    if (!allowed.ok) {
+      this.log(`refused ${request.method} ${request.url}: ${allowed.why}`);
+      this.json(response, 403, { ok: false, error: "not allowed" });
+      return;
+    }
+    const url = new URL(request.url ?? "/", "http://localhost");
+    const path = url.pathname;
+    const method = request.method;
+
+    if (method === "GET" && path === "/health") {
+      const [info, setup] = await Promise.all([this.settings(), this.setup()]);
+      this.json(response, 200, {
+        ok: true,
+        service: "agentv",
+        version: info.AGENTV_VERSION,
+        channel: info.AGENTV_CHANNEL,
+        screen: setup.done ? "home" : "welcome",
+        welcome_shown: this.welcome.shownAt !== null,
+        welcome_shown_at: this.welcome.shownAt,
+        welcome_last_shown_at: this.welcome.lastShownAt,
+        welcome_shown_count: this.welcome.count,
+      });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/welcome-shown") {
+      const at = now();
+      this.welcome.shownAt ??= at;
+      this.welcome.lastShownAt = at;
+      this.welcome.count++;
+      response.writeHead(204).end();
+      return;
+    }
+
+    if (method === "GET" && path === "/api/state") {
+      const [info, setup] = await Promise.all([this.settings(), this.setup()]);
+      this.json(response, 200, { ok: true, version: info.AGENTV_VERSION, channel: info.AGENTV_CHANNEL, setup });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/setup") {
+      const body = (await this.body(request)) as { done?: unknown } | undefined;
+      if (typeof body?.done !== "boolean") {
+        this.json(response, 400, { ok: false, error: 'send {"done": true} or {"done": false} as JSON' });
+        return;
+      }
+      const setup: Setup = body.done ? { done: true, at: now() } : { done: false };
+      await this.saveSetup(setup);
+      this.log(body.done ? "setup marked done" : "setup reset");
+      this.broadcast("setup", setup);
+      this.json(response, 200, { ok: true, setup });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/events") {
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-store",
+        Connection: "keep-alive",
+      });
+      response.write(": agentv\n\n");
+      this.streams.add(response);
+      // A comment now and then keeps the connection open through idle hours.
+      const beat = setInterval(() => response.write(": beat\n\n"), 25_000);
+      request.on("close", () => {
+        clearInterval(beat);
+        this.streams.delete(response);
+      });
+      return;
+    }
+
+    if (method === "GET" && path === "/") {
+      const setup = await this.setup();
+      const home = join("launcher", "index.html");
+      const hasHome = await stat(join(this.options.root, home)).then((info) => info.isFile(), () => false);
+      await this.file(response, setup.done && hasHome ? home : join("setup", "welcome", "index.html"));
+      return;
+    }
+
+    if (method === "GET" && path === "/logo.svg") {
+      await this.file(response, join("branding", "logo.svg"));
+      return;
+    }
+
+    // A file from one of the TV's page folders, and nowhere else.
+    let relative: string;
+    try {
+      relative = normalize(decodeURIComponent(path)).replace(/^\/+/, "");
+    } catch {
+      this.json(response, 400, { ok: false, error: "that address isn't valid" });
+      return;
+    }
+    if (method === "GET" && STATIC.includes(relative.split(sep)[0]) && !relative.split(sep).includes("..")) {
+      await this.file(response, relative);
+      return;
+    }
+
+    this.json(response, 404, { ok: false, error: "not found" });
+  }
+}
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const at = args.indexOf("--port");
+  const port = at >= 0 ? Number(args[at + 1]) : Number(process.env.AGENTV_PORT ?? 3000);
+  const daemon = new Daemon({
+    root: process.env.AGENTV_PATH ?? "/usr/share/agentv",
+    state: process.env.AGENTV_DAEMON_STATE ?? "/var/lib/agentv/daemon",
+    port,
+  });
+  const listening = await daemon.listen();
+  console.log(`agentv daemon on http://127.0.0.1:${listening}/`);
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => void daemon.close().then(() => process.exit(0)));
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) await main();

@@ -1,14 +1,20 @@
 #!/bin/bash
 
-# Guards the placeholder daemon behind S0.1: it serves the welcome page and
-# the logo, answers /health, and only reports the welcome screen as shown
-# once the page has told it so. CI's image check reads that /health.
+# Guards AgenTV's daemon (daemon/server.ts) with Node's own test runner, then
+# runs it the way its unit does and checks what the image checks and the
+# selftest read: the welcome page, /health, and agentv setup skip and reset.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
-port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-AGENTV_PATH="$ROOT" python3 "$ROOT/daemon/placeholder.py" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
+node_test "$ROOT/test/agentv/unit/server.test.mts"
+type -P node >/dev/null || exit 0
+
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+port=$(node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
+AGENTV_PATH="$ROOT" AGENTV_DAEMON_STATE="$SCRATCH/state" \
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; rm -rf "$SCRATCH"' EXIT
 
@@ -20,31 +26,39 @@ done
 
 health=$(curl -fsS "$url/health") || fail "/health answers" "$(cat "$SCRATCH/daemon.log")"
 [[ $(jq -r '.ok, .screen, .welcome_shown' <<<"$health" | paste -sd ' ' -) == "true welcome false" ]] ||
-  fail "/health starts on the welcome screen, not yet shown" "$health"
-pass "/health starts on the welcome screen, not yet shown"
+  fail "S0.1 /health starts on the welcome screen, not yet shown" "$health"
+grep -q "agentv daemon on http://127.0.0.1:$port/" "$SCRATCH/daemon.log" || fail "the daemon says where it listens" "$(cat "$SCRATCH/daemon.log")"
+pass "S0.1 the daemon runs as its unit runs it, and /health starts on the welcome screen"
 
 page=$(curl -fsS "$url/")
 [[ $page == *"<h1>Hi.</h1>"* && $page == *"/api/welcome-shown"* ]] || fail "the welcome page is served, and reports itself"
-pass "the welcome page is served, and reports itself"
+curl -fsS -o /dev/null -X POST "$url/api/welcome-shown" || fail "the welcome page can say it's drawn"
+[[ $(curl -fsS "$url/health" | jq -r '.welcome_shown_count') == 1 ]] || fail "/health counts each time the welcome page is drawn"
+pass "the welcome page is served, and /health counts each time it's drawn"
 
-curl -fsS -o /dev/null "$url/logo.svg" || fail "the logo is served"
-pass "the logo is served"
+out=$(AGENTV_PORT=$port "$ROOT/bin/agentv-setup-skip") || fail "agentv setup skip works" "$out"
+[[ $out == "Setup is marked done, so the TV shows the home screen." ]] || fail "agentv setup skip says what it did" "$out"
+[[ $(curl -fsS "$url/health" | jq -r '.screen') == "home" ]] || fail "after agentv setup skip, the TV is on the home screen"
+[[ $(jq -r '.done' "$SCRATCH/state/setup.json") == "true" ]] || fail "setup's state is kept in the daemon's state folder"
+out=$(AGENTV_PORT=$port "$ROOT/bin/agentv-setup-reset") || fail "agentv setup reset works" "$out"
+[[ $(curl -fsS "$url/health" | jq -r '.screen') == "welcome" ]] || fail "after agentv setup reset, the TV is on the welcome page"
+pass "agentv setup skip and reset move the TV between the welcome page and home"
 
-[[ $(curl -s -o /dev/null -w '%{http_code}' -X POST "$url/api/welcome-shown") == "204" ]] ||
-  fail "the page can report that it's shown"
-health=$(curl -fsS "$url/health")
-[[ $(jq -r '.welcome_shown' <<<"$health") == "true" && $(jq -r '.welcome_shown_at' <<<"$health") != "null" ]] ||
-  fail "/health then says the welcome screen is shown" "$health"
-pass "/health then says the welcome screen is shown, and when"
+kill "$pid"
+wait "$pid" 2>/dev/null || true
+status=0
+out=$(AGENTV_PORT=$port "$ROOT/bin/agentv-setup-skip" 2>&1) || status=$?
+if (( status != 1 )) || [[ $out != *"isn't answering"* ]]; then
+  fail "agentv setup skip says when the daemon isn't there" "$out"
+fi
+pass "agentv setup skip says when the daemon isn't there"
 
-first=$(jq -r '.welcome_shown_at' <<<"$health")
-curl -fsS -o /dev/null -X POST "$url/api/welcome-shown" || fail "the page can report again"
-health=$(curl -fsS "$url/health")
-[[ $(jq -r '.welcome_shown_count' <<<"$health") == "2" && $(jq -r '.welcome_shown_at' <<<"$health") == "$first" &&
-  $(jq -r '.welcome_last_shown_at' <<<"$health") != "null" ]] ||
-  fail "a second draw counts, and the first time stays" "$health"
-pass "every draw counts, with the first and the last time (S1.3, S1.6)"
-
-[[ $(curl -s -o /dev/null -w '%{http_code}' "$url/../../etc/passwd") == "404" ]] ||
-  fail "anything else is a 404"
-pass "anything else is a 404"
+# Boxes installed before it restart the daemon at their next update.
+mkdir -p "$SCRATCH/bin"
+printf '#!/bin/bash\necho "sudo $*" >>"%s/calls"\n' "$SCRATCH" >"$SCRATCH/bin/sudo"
+chmod +x "$SCRATCH/bin/sudo"
+migration=$(grep -l "agentv-daemon.service" "$ROOT"/migrations/agentv/*.sh)
+PATH="$SCRATCH/bin:$PATH" bash "$migration"
+[[ $(cat "$SCRATCH/calls") == "sudo systemctl try-restart agentv-daemon.service" ]] ||
+  fail "the migration restarts the daemon" "$(cat "$SCRATCH/calls")"
+pass "an update restarts the daemon, so a box runs the new one without waiting for a reboot"

@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# agentv:summary=Skip TV setup and go to the home screen, until setup is built
+
+# Marks TV setup as done, so the TV shows the home screen instead of the welcome
+# page. TV setup itself comes in stage 5; until then this is the way home.
+
+set -euo pipefail
+
+port=${AGENTV_PORT:-3000}
+if ! curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
+  -d '{"done": true}' "http://127.0.0.1:$port/api/setup"; then
+  echo "AgenTV's daemon isn't answering. Try: sudo systemctl restart agentv-daemon" >&2
+  exit 1
+fi
+echo "Setup is marked done, so the TV shows the home screen."
