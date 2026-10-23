@@ -144,6 +144,9 @@ export class CdpPipe {
       const expression = `window.${name}Reply?.(${Number(request.id)}, ${JSON.stringify(JSON.stringify(reply))})`;
       await this.send("Runtime.evaluate", { expression, contextId: params.executionContextId }, session).catch(() => {});
     });
+    // Without Runtime enabled on the session, V8 adds the binding to the
+    // page there is now and not to the one a reload brings.
+    await this.send("Runtime.enable", {}, session);
     await this.send("Runtime.addBinding", { name }, session);
   }
 
