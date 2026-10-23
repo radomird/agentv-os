@@ -37,6 +37,14 @@ health=$(curl -fsS "$url/health")
   fail "/health then says the welcome screen is shown" "$health"
 pass "/health then says the welcome screen is shown, and when"
 
+first=$(jq -r '.welcome_shown_at' <<<"$health")
+curl -fsS -o /dev/null -X POST "$url/api/welcome-shown" || fail "the page can report again"
+health=$(curl -fsS "$url/health")
+[[ $(jq -r '.welcome_shown_count' <<<"$health") == "2" && $(jq -r '.welcome_shown_at' <<<"$health") == "$first" &&
+  $(jq -r '.welcome_last_shown_at' <<<"$health") != "null" ]] ||
+  fail "a second draw counts, and the first time stays" "$health"
+pass "every draw counts, with the first and the last time (S1.3, S1.6)"
+
 [[ $(curl -s -o /dev/null -w '%{http_code}' "$url/../../etc/passwd") == "404" ]] ||
   fail "anything else is a 404"
 pass "anything else is a 404"

@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# agentv:summary=Go from the TV to Omarchy's desktop, for maintenance
+# agentv:examples=agentv desktop
+
+# Settings will have an Omarchy desktop entry that runs this (ADR-031), and
+# until it does, Super+Ctrl+Home in the TV session does. It asks for the PIN
+# first, once there is one (ADR-009, stage 4).
+#
+# It's a log-out and a log-in: the open apps close, and it takes up to about
+# 10 seconds. The note it leaves makes the next log-in Omarchy's own session,
+# once (bin/agentv-session). Back to TV on the desktop, Super+Ctrl+Home there
+# or agentv tv, comes back.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/agentv"
+NEXT="$STATE_DIR/next-session"
+BOOT_ID=$(cat "${AGENTV_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}")
+
+if ! "$AGENTV_BIN_DIR/agentv-pin-check" desktop; then
+  echo "Omarchy's desktop needs the PIN." >&2
+  exit 1
+fi
+
+mkdir -p "$STATE_DIR"
+printf 'desktop %s\n' "$BOOT_ID" >"$NEXT"
+
+# The screen daemon closes the apps, so Chromium saves its profile, and ends
+# the session.
+if "$AGENTV_BIN_DIR/agentv-screen" end >/dev/null 2>&1; then
+  exit 0
+fi
+
+rm -f "$NEXT"
+echo "The TV session isn't running here, so there's nothing to leave. Omarchy's desktop may already be on." >&2
+exit 1

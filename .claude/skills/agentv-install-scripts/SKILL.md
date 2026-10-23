@@ -1,10 +1,10 @@
 ---
 name: agentv-install-scripts
-description: Use when working on AgenTV's install, first boot or system setup, under install/tv/, system/, config/hypr/tv.lua or the agentv-iso repo. Builds on Omarchy's install-scripts guide and adds AgenTV's rules.
+description: Use when working on AgenTV's install, first boot or system setup, under install/tv/, system/, session/ or the agentv-iso repo. Builds on Omarchy's install-scripts guide and adds AgenTV's rules.
 paths:
   - "install/tv/**"
   - "system/**"
-  - "config/hypr/tv.lua"
+  - "session/**"
   - "config/omarchy/**"
 ---
 
@@ -20,7 +20,8 @@ Read Omarchy's `agents/skills/install-scripts.md` first. Every rule in it holds 
 
 - **Our leaves live under `install/tv/`** and never inside Omarchy's own folders. Don't add a line to Omarchy's `all.sh` files or any other upstream script to call ours. How our install hooks in without editing upstream is a stage 0 question (`HANDOFF.md`, "Next: stage 0"). Until it's answered, ask before inventing a hook.
 - **The ISO still owns orchestration.** Omarchy's installer questions run unchanged (ADR-007). AgenTV takes over at first boot through `agentv-firstboot.service`. That unit goes online, installs the TV runtime and opens the TV setup welcome screen.
-- **System units** are named `agentv-*.service` and live in `system/`. The daemon runs as its own service. The builder runs as the `agentv-builder` user, with no sudo, writing only to its build folder.
+- **System units** are named `agentv-*.service` and live in `system/`. The daemon runs as its own service.
+- **The TV session** (ADR-031) lives in `session/`: its entry for the login manager, its own Hyprland setup with nothing of Omarchy's desktop, and its toasts. Its user units live in `system/user/` under `agentv-tv.target`, which the session starts itself; it never starts `graphical-session.target`, because Omarchy's desktop services hang off that. Anything that changes how a box already installed logs in ships as a migration too. The builder runs as the `agentv-builder` user, with no sudo, writing only to its build folder.
 - **Secrets** go in `/etc/agentv/env`: root-only, written by setup, never echoed or logged. Sign-ins live in `/var/lib/agentv/chromium/`. Neither ever lands in the repo or in a fixture.
 - **No disk encryption by default** (ADR-007). If the ISO can't default to that without editing upstream files, the install guide says to press Ctrl+C at the disk confirm.
 - **Branding** goes through Omarchy's own commands, not through edited files (ADR-021):

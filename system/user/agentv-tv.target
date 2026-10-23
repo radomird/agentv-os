@@ -1,0 +1,8 @@
+# AgenTV's TV session (ADR-031). The session's Hyprland starts it once it's
+# up (session/hypr.lua), and bin/agentv-session stops it when the session
+# ends. It takes the place of graphical-session.target, which the TV session
+# never starts, because Omarchy's desktop services hang off that one.
+
+[Unit]
+Description=AgenTV's TV session
+Wants=agentv-screen.service agentv-input.service agentv-toast.service

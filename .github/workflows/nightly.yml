@@ -11,6 +11,11 @@ name: Nightly
 # built from agentv-iso's agentv branch, kept as a workflow artifact when
 # every check passes. Once there's a stable release, edge gets a run of its
 # own beside it, and only the stable run signs tested.json.
+#
+# Each release is checked with agentv-iso as it was tagged with it, so the
+# stable run doesn't hold a release to checks written for later work, such
+# as a stage it doesn't have yet. Edge is checked with agentv-iso's agentv
+# branch.
 
 on:
   schedule:
@@ -37,11 +42,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PKGS: ${{ github.repository_owner }}/agentv-pkgs
         run: |
-          if gh release view stable -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^agentv-[0-9]'; then
-            runs='[{"packages":"stable","tested":true,"iso":false},{"packages":"edge","tested":false,"iso":true}]'
-            echo "Testing AgenTV's stable release, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+          stable=$(gh release view stable -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null |
+            sed -nE 's/^agentv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1)
+          if [[ -n $stable ]]; then
+            checks=agentv
+            if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" "refs/tags/v$stable" >/dev/null 2>&1; then
+              checks="v$stable"
+            fi
+            runs=$(jq -cn --arg checks "$checks" '[{packages: "stable", tested: true, iso: false, checks: $checks},
+              {packages: "edge", tested: false, iso: true, checks: "agentv"}]')
+            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           else
-            runs='[{"packages":"edge","tested":true,"iso":true}]'
+            runs='[{"packages":"edge","tested":true,"iso":true,"checks":"agentv"}]'
             echo "Testing AgenTV's edge release (there's no stable one yet), and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
@@ -55,6 +67,7 @@ jobs:
     uses: ./.github/workflows/image.yml
     with:
       ref: agentv
+      iso-ref: ${{ matrix.checks }}
       packages: ${{ matrix.packages }}
       update-test: true
       nightly: ${{ matrix.tested }}

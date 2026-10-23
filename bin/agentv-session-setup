@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# agentv:summary=Make the TV session the one the box logs in to
+# agentv:args=<owner>
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# The box logs in to AgenTV's TV session on its own (ADR-031): SDDM's
+# autologin goes to the owner with AgenTV's session entry, and logs straight
+# back in whenever a session ends (Relogin). That's what makes every switch
+# between the TV and Omarchy's desktop a log-out and a log-in, and what
+# brings the TV back if its session ever stops. It also makes the home
+# screen's Chromium profile, which has no sign-ins and belongs to the owner.
+#
+# Runs as root: at first boot (install/tv/autologin.sh) and from the TV
+# session migration, for boxes installed before it.
+
+set -euo pipefail
+
+owner=${1:?usage: agentv-session-setup <owner>}
+SDDM_CONF_DIR=${AGENTV_SDDM_CONF_DIR:-/etc/sddm.conf.d}
+STATE=${AGENTV_STATE:-/var/lib/agentv}
+
+# A name from /etc/passwd, written as a value and never run.
+if ! id -u -- "$owner" >/dev/null 2>&1; then
+  echo "agentv-session-setup: no such user: $owner" >&2
+  exit 1
+fi
+
+# SDDM reads sddm.conf.d in name order, and the last file to set a key wins.
+# Omarchy's installer writes its own autologin.conf, to omarchy.desktop, for
+# the first boot and for good on an encrypted disk, so AgenTV's file is named
+# to come after it. Stage 0's agentv-autologin.conf came before it, and goes.
+install -d -m 755 "$SDDM_CONF_DIR"
+printf '[Autologin]\nUser=%s\nSession=agentv.desktop\nRelogin=true\n' "$owner" >"$SDDM_CONF_DIR/zz-agentv-autologin.conf"
+rm -f "$SDDM_CONF_DIR/agentv-autologin.conf"
+
+install -d -m 755 "$STATE"
+install -d -m 700 -o "$owner" -g "$(id -gn -- "$owner")" "$STATE/chromium-home"

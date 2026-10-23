@@ -1,0 +1,17 @@
+# AgenTV's screen daemon (daemon/screen.ts): which window is in front of the
+# TV. It starts the home screen and the apps, so they stop with it.
+
+[Unit]
+Description=AgenTV screen daemon
+PartOf=agentv-tv.target
+# Keep trying for as long as the session runs: a TV with no screen daemon
+# would stay black.
+StartLimitIntervalSec=0
+ConditionEnvironment=HYPRLAND_INSTANCE_SIGNATURE
+
+[Service]
+Environment=AGENTV_PATH=/usr/share/agentv
+ExecStart=/usr/bin/node /usr/share/agentv/daemon/screen.ts
+Restart=on-failure
+RestartSec=1
+KillMode=control-group

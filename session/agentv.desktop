@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=AgenTV
+Comment=AgenTV's TV session. Powered by Omarchy
+Exec=/usr/bin/agentv-session
+TryExec=/usr/bin/agentv-session
+Type=Application
+DesktopNames=AgenTV;Hyprland

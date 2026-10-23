@@ -1,0 +1,12 @@
+# AgenTV's virtual input device (daemon/input.py, ADR-008): the phone's
+# d-pad and keyboard reach every window on the TV through it.
+
+[Unit]
+Description=AgenTV virtual input device
+PartOf=agentv-tv.target
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/share/agentv/daemon/input.py serve
+Restart=on-failure
+RestartSec=2

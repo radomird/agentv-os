@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# agentv:summary=Ask for the PIN before an adult action
+# agentv:args=<action>
+# agentv:hidden=true
+
+# A stand-in until stage 4 builds the PIN (ADR-009), which replaces this:
+# no PIN can be set yet, so every action goes ahead. It's the one place the
+# PIN will be asked for, so callers such as agentv desktop already use it.
+#
+# Exits 0 when the action may go ahead, 1 when it may not.
+
+set -euo pipefail
+
+exit 0
