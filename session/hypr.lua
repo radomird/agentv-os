@@ -77,6 +77,9 @@ hl.config({
     disable_scale_notification = true,
     disable_hyprland_guiutils_check = true,
     disable_watchdog_warning = true,
+    -- The TV session sets its own XDG_CURRENT_DESKTOP (AgenTV:Hyprland), and
+    -- Hyprland would say so in a notice over the TV.
+    disable_xdg_env_checks = true,
     force_default_wallpaper = 0,
     -- Tokyo Night's background, for the moment before the home screen draws.
     background_color = "rgb(1a1b26)",

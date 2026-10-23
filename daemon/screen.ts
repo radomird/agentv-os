@@ -269,7 +269,8 @@ export class Screen {
     if (this.now() - this.lastRefocus < 100) return;
     this.lastRefocus = this.now();
     this.log(`focus went to ${address}; back to ${describe(front)}`);
-    await this.focus(front.address);
+    // Focusing a window out of sight shows its workspace too.
+    await this.hideHeld();
   }
 
   private async moved(address: string, workspace: string): Promise<void> {
@@ -282,10 +283,16 @@ export class Screen {
   }
 
   // The windows out of sight are on a special workspace, which Hyprland
-  // shows over the TV if something focuses one of them. Hide it again.
+  // shows over the TV if something focuses one of them. Hide it again, and
+  // put focus back on the window in front. Hyprland only has a toggle, so
+  // it looks first: one event too many must not show it again.
   private async hideHeld(): Promise<void> {
-    this.log("the workspace of windows out of sight was shown; hiding it again");
-    await this.hypr.dispatch(`hl.dsp.workspace.toggle_special(${lua(HELD_WORKSPACE.slice("special:".length))})`);
+    for (const monitor of await this.hypr.monitors()) {
+      if (monitor.specialWorkspace?.name === HELD_WORKSPACE) {
+        this.log(`the workspace of windows out of sight was shown on ${monitor.name}; hiding it again`);
+        await this.hypr.dispatch(`hl.dsp.workspace.toggle_special(${lua(HELD_WORKSPACE.slice("special:".length))})`);
+      }
+    }
     const front = this.front();
     if (front && !this.ending) await this.focus(front.address);
   }

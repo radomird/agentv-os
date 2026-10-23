@@ -21,7 +21,8 @@ class FakeHyprland implements Hyprland {
     return structuredClone(this.windows);
   }
   async monitors(): Promise<Monitor[]> {
-    return [{ name: "HDMI-A-1", width: 1920, height: 1080, refreshRate: 60, focused: true }];
+    const special = this.specialShown ? HELD_WORKSPACE : "";
+    return [{ name: "HDMI-A-1", width: 1920, height: 1080, refreshRate: 60, focused: true, specialWorkspace: { id: -98, name: special } }];
   }
   async layers(): Promise<Layer[]> {
     return [];
@@ -198,6 +199,25 @@ test("S1.6 the workspace of windows out of sight is hidden again if something sh
   hypr.specialShown = true;
   hypr.active = "0xb";
   hypr.emit("activespecial", `${HELD_WORKSPACE},HDMI-A-1`);
+  await screen.idle();
+  assert.equal(hypr.specialShown, false);
+  assert.equal(hypr.active, "0xa");
+  // Events that come late, after it's hidden, don't show it again.
+  hypr.emit("activespecial", `${HELD_WORKSPACE},HDMI-A-1`);
+  hypr.emit("activespecial", `${HELD_WORKSPACE},HDMI-A-1`);
+  await screen.idle();
+  assert.equal(hypr.specialShown, false);
+  assert.equal(hypr.active, "0xa");
+});
+
+test("S1.6 focus on a window out of sight hides its workspace again, and goes back to the TV", async () => {
+  const { hypr, screen } = await tv();
+  hypr.open("0xb", 999, "foot");
+  await screen.idle();
+  await sleep(150);
+  hypr.specialShown = true;
+  hypr.active = "0xb";
+  hypr.emit("activewindowv2", "b");
   await screen.idle();
   assert.equal(hypr.specialShown, false);
   assert.equal(hypr.active, "0xa");

@@ -24,6 +24,8 @@ export interface Monitor {
   height: number;
   refreshRate: number;
   focused: boolean;
+  // The special workspace shown on it, with an empty name when there's none.
+  specialWorkspace?: { id: number; name: string };
 }
 
 export interface Layer {
