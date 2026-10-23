@@ -221,8 +221,11 @@ jobs:
           case "$UI" in
             success)
               s23="pass (layer 4: every tile reached with the arrows)"
+              s24="pass (layer 4: a dragged tile lands where it was dropped and is still there after the daemon starts again; the image layer reboots)"
+              s25="pass (layer 4: +/-, the corner and the size bar give only the app's sizes)"
+              s26="pass (layer 4: covered tiles move to the next free cells; no room can't be picked)"
               s27="pass (layer 4: no tier on tiles; details say who made each app)"
               ;;
-            *) s23="fail (layer 4: $UI)"; s27="fail (layer 4: $UI)" ;;
+            *) s23="fail (layer 4: $UI)"; s24="fail (layer 4: $UI)"; s25="fail (layer 4: $UI)"; s26="fail (layer 4: $UI)"; s27="fail (layer 4: $UI)" ;;
           esac
-          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.7=$s27" >>"$GITHUB_STEP_SUMMARY"
+          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" >>"$GITHUB_STEP_SUMMARY"

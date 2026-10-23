@@ -18,6 +18,9 @@ S1.6  image     no window takes the screen unless the daemon puts it in front: a
 S2.1  check     a sample app installs from a signed test index, and a tampered index is refused
 S2.2  check     agentv app validate rejects a symlink, an unsafe entry path and a third-party agentv.* id
 S2.3  check     every tile can be reached with the keyboard alone
+S2.4  check     a tile dragged with the mouse lands where it was dropped, and the layout survives a reboot
+S2.5  check     a tile resized with +/-, by its corner or from the size bar takes only the sizes its manifest lists
+S2.6  check     the tiles it covers move to the next free cells, and a size with no room can't be picked
 S2.7  check     no tile shows a tier, and every app's details say who made it
 S2.10 manual    the focus glide, hover lift and page transitions at 60 fps on the NUC; reduce motion fades (layer 4 checks the rules)
 S2.11 manual    each UI sound within a frame of its action; move at most every 60 ms; Settings → Sound silences them (layer 4 checks the rules)

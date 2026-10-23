@@ -41,8 +41,13 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "home",
       label: "home",
-      value: () => "edit layout",
-      panel: () => soon("moving and resizing tiles from here comes next. for now, apps → an app → on home puts it on or takes it off."),
+      value: () => "edit home",
+      panel: () => [
+        h("div", { class: "panel-title" }, `${ctx.state.viewer.name}'s home`),
+        h("div", { class: "panel-big" }, `${ctx.state.layout.length} tiles`),
+        note("move, resize and unpin tiles. on home, e does the same."),
+        h("button", { class: "button", "data-focus": true, "data-action": "edit", onclick: () => ctx.edit() }, "edit home →"),
+      ],
     },
     {
       key: "apps",

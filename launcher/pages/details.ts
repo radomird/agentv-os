@@ -4,10 +4,9 @@
 
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
-import { pin, unpin } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo } from "./home.ts";
-import { bar } from "./parts.ts";
+import { bar, togglePin } from "./parts.ts";
 
 export function details(ctx: Ctx, id: string): View {
   const app = ctx.state.apps.find((a) => a.id === id);
@@ -24,15 +23,7 @@ export function details(ctx: Ctx, id: string): View {
       "data-focus": true,
       "data-action": "home",
       onclick: async () => {
-        const layout = onHome ? unpin(ctx.state.layout, id) : pin(ctx.state.layout, id);
-        if (!layout) {
-          ctx.toast("there's no room on home: make room in edit layout first", "fail");
-          return;
-        }
-        if (await ctx.saveLayout(layout)) {
-          ctx.sounds.play("confirm");
-          ctx.render(`details/${id}`, toggle.dataset.action);
-        }
+        if (await togglePin(ctx, id)) ctx.render(`details/${id}`, toggle.dataset.action);
       },
     },
     h("span", {}, "on home"),
