@@ -7,6 +7,9 @@ import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
+// The times the ambient screen can wait, in minutes (ADR-031).
+const IDLE = [5, 10, 15, 30, 60];
+
 interface Section {
   key: string;
   label: string;
@@ -66,6 +69,19 @@ export function settings(ctx: Ctx, open?: string): View {
         h("div", { class: "panel-title" }, "colours"),
         note("they come from your omarchy theme. change it on omarchy's desktop, and the tv follows."),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
+        h(
+          "button",
+          {
+            class: "button",
+            "data-focus": true,
+            "data-action": "idle",
+            "data-adjust": "idle",
+            onclick: () => save({ idleMinutes: IDLE[(IDLE.indexOf(s.idleMinutes) + 1) % IDLE.length] }, "look", "idle"),
+          },
+          h("span", {}, "ambient screen after"),
+          h("span", { class: "button-value" }, `${s.idleMinutes} min`),
+        ),
+        note("with nothing playing and no key pressed for that long. left and right change it."),
       ],
     },
     {
@@ -187,6 +203,11 @@ export function settings(ctx: Ctx, open?: string): View {
     },
     act(action) {
       const current = ctx.focus.get();
+      if (current?.dataset.adjust === "idle" && (action === "left" || action === "right")) {
+        const at = Math.max(0, Math.min(IDLE.length - 1, IDLE.indexOf(s.idleMinutes) + (action === "right" ? 1 : -1)));
+        void save({ idleMinutes: IDLE[at] }, "look", "idle");
+        return true;
+      }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {
         const volume = Math.max(0, Math.min(1, Math.round((s.sound.volume + (action === "right" ? 0.1 : -0.1)) * 10) / 10));
         void save({ sound: { ...s.sound, volume } }, "sound", "volume");

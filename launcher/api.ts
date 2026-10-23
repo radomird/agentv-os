@@ -130,6 +130,8 @@ export const screen = {
   running: async () => (await ask({ cmd: "running" })).apps ?? [],
   // Closes an app open behind home, such as a game still running.
   quit: (app: string) => ask({ cmd: "quit", app }),
+  // A key on the ambient screen: back to what was in front.
+  wake: () => ask({ cmd: "wake" }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
 };

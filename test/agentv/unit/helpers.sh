@@ -55,3 +55,10 @@ node_test() {
   fi
   grep -E '^ok ' "$SCRATCH/tap" | sed -E 's/^ok [0-9]+ - /ok - /'
 }
+
+# node_eval <code>: runs ES module code that may import AgenTV's TypeScript.
+node_eval() {
+  local flags=()
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning --input-type=module -e "$1"
+}

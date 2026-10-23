@@ -77,6 +77,20 @@
   to { opacity: 1; }
 }
 
+/* The ambient screen fades in, and its clock drifts over a few minutes. */
+#ambient.on {
+  animation: fade-in var(--slow) ease-out both;
+}
+
+.ambient-drift {
+  animation: ambient-drift 240s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-drift {
+  from { transform: translate(-48px, -32px); }
+  to { transform: translate(48px, 32px); }
+}
+
 /* Reduce motion, from the system or Settings → Look: movement becomes plain
    fades. */
 @media (prefers-reduced-motion: reduce) {
@@ -87,12 +101,14 @@
   .page-forward,
   .page-back,
   .toast { animation: fade-in var(--base) ease-out both; }
+  .ambient-drift { animation: none; }
 }
 
 :root.reduce-motion .tile.focused,
 :root.reduce-motion .tile.pressed,
 :root.reduce-motion .button.pressed { transform: none; }
 :root.reduce-motion #ring { transition: opacity var(--fast) ease-out; }
+:root.reduce-motion .ambient-drift { animation: none; }
 :root.reduce-motion .page-forward,
 :root.reduce-motion .page-back,
 :root.reduce-motion .toast { animation: fade-in var(--base) ease-out both; }

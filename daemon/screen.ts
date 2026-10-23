@@ -20,7 +20,13 @@
 // again brings it back where it was. Up to two apps stay open like that, and
 // a third closes the oldest. A game keeps running under home until it's
 // quit. Back goes to the app in front, and holding it for a second goes home
-// (ADR-031). The ambient screen and the TV-off policy come later in stage 2.
+// (ADR-031).
+//
+// With nothing playing and no input for the time Settings gives (10 minutes
+// at first), the home screen shows its ambient screen over whatever was in
+// front, which stays open behind it, and any key goes back there. When the
+// TV goes off, playback pauses at once; after 2 minutes every app closes and
+// the home screen waits on its ambient screen, where any key goes home.
 //
 // Run by agentv-screen.service in the TV session. Other commands talk to it
 // over $XDG_RUNTIME_DIR/agentv/screen.sock, one JSON request and one JSON
@@ -35,6 +41,7 @@ import type { Readable, Writable } from "node:stream";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { PAUSE, RESUME } from "./media.ts";
+import { tvOn } from "./tv-power.ts";
 
 export type Role = "home" | "web" | "steam";
 
@@ -76,6 +83,9 @@ export interface Launcher {
   appTarget(id: string): Promise<{ runtime: "web"; url: string } | { runtime: "native"; exec: string[] } | null>;
   // Settings → Omarchy desktop: agentv desktop, which ends this session.
   desktop(): void;
+  // How long the TV waits before its ambient screen, from Settings, or null
+  // while setup is on the screen, which has no ambient screen.
+  idleMinutes(): Promise<number | null>;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -111,6 +121,13 @@ interface Options {
   log?: (line: string) => void;
   homeRestartMs?: number;
   backHoldMs?: number;
+  // Whether the TV is on, or null when the box can't tell (tv-power.ts).
+  tvPoll?: () => boolean | null;
+  tvPollMs?: number;
+  // How long after the TV goes off every app closes.
+  tvOffCloseMs?: number;
+  // How long the overlay's idle monitor waits before it says so.
+  idleReportMs?: number;
 }
 
 export class Screen {
@@ -128,6 +145,21 @@ export class Screen {
   private backDown = 0;
   private backUp = 0;
   private backTimer: ReturnType<typeof setTimeout> | null = null;
+  // The ambient screen, and the window to go back to after it.
+  ambient = false;
+  private ambientFrom: string | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleGeneration = 0;
+  private idleAfter: number | null = null;
+  private idleReportMs: number;
+  // The TV's power, as the box last read it, and what was done about it.
+  tvOff = false;
+  private tvSeen: boolean | null = null;
+  private tvPoll?: () => boolean | null;
+  private tvPollMs: number;
+  private tvOffCloseMs: number;
+  private tvTimer: ReturnType<typeof setTimeout> | null = null;
+  private tvWatch: ReturnType<typeof setInterval> | null = null;
   private ending = false;
   private chain: Promise<void> = Promise.resolve();
   private homeRestartMs: number;
@@ -145,6 +177,10 @@ export class Screen {
     this.homeRestartMs = options.homeRestartMs ?? 500;
     this.homeDelay = this.homeRestartMs;
     this.backHoldMs = options.backHoldMs ?? 1000;
+    this.tvPoll = options.tvPoll;
+    this.tvPollMs = options.tvPollMs ?? 2000;
+    this.tvOffCloseMs = options.tvOffCloseMs ?? 120_000;
+    this.idleReportMs = options.idleReportMs ?? 30_000;
   }
 
   // Runs one step at a time, in the order things happened.
@@ -170,6 +206,17 @@ export class Screen {
       }
     });
     this.startHome();
+    if (this.tvPoll) {
+      this.tvSeen = this.tvPoll();
+      this.tvWatch = setInterval(() => this.pollTv(), this.tvPollMs);
+    }
+  }
+
+  // Stops the timers, for the tests.
+  stop(): void {
+    this.idleGeneration++;
+    for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer]) if (timer) clearTimeout(timer);
+    if (this.tvWatch) clearInterval(this.tvWatch);
   }
 
   event(name: string, data: string): void {
@@ -450,6 +497,8 @@ export class Screen {
         return { ok: true, apps: this.runningApps() };
       case "quit":
         return this.quit(String(request.app ?? ""));
+      case "wake":
+        return this.wake();
       case "desktop":
         this.launcher.desktop();
         return { ok: true };
@@ -550,10 +599,12 @@ export class Screen {
         await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
       }
       this.apps.get("steam")?.stop();
-    } else if (entry.target && this.apps.get("web")?.cdp) {
-      await this.apps.get("web")!.cdp!.close(entry.target).catch(() => {});
-    } else if (entry.address) {
-      await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${entry.address}`)} })`);
+    } else {
+      if (entry.target && this.apps.get("web")?.cdp) await this.apps.get("web")!.cdp!.close(entry.target).catch(() => {});
+      // Its window too, in case the page didn't take it with it.
+      if (entry.address && this.windows.has(entry.address)) {
+        await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${entry.address}`)} })`).catch(() => {});
+      }
     }
     this.running();
   }
@@ -576,6 +627,125 @@ export class Screen {
   private running(): void {
     const apps = JSON.stringify(JSON.stringify(this.runningApps()));
     void this.inHome(`window.agentvRunning?.(${apps})`);
+  }
+
+  // --- The ambient screen and TV off (ADR-031) ------------------------------
+
+  // The overlay's idle monitor (session/toast/shell.qml) says the seat has had
+  // no input for a while, or has again. Something playing keeps it from
+  // saying so; a page that plays sound only is checked here too.
+  seatIdle(idle: boolean): object {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    // Each report starts over; anything still waiting from an older one stops.
+    const generation = ++this.idleGeneration;
+    // Input again: the ambient screen ends, as with a key on the home screen.
+    if (!idle && this.ambient) void this.wake();
+    if (!idle || this.ambient) return { ok: true };
+    void (async () => {
+      const minutes = await this.launcher.idleMinutes().catch(() => 10);
+      if (minutes === null) return;
+      const seconds = this.idleAfter ?? 60 * minutes;
+      const arm = (ms: number) => {
+        if (generation !== this.idleGeneration) return;
+        this.idleTimer = setTimeout(async () => {
+          this.idleTimer = null;
+          if (await this.playing()) arm(seconds * 1000);
+          else if (generation === this.idleGeneration) void this.showAmbient();
+        }, ms);
+      };
+      arm(Math.max(0, seconds * 1000 - this.idleReportMs));
+    })();
+    return { ok: true };
+  }
+
+  // For the checks: the ambient screen after this many seconds, not Settings'.
+  idleAfterSeconds(seconds: number | null): object {
+    this.idleAfter = seconds;
+    return { ok: true };
+  }
+
+  // Whether an open app's page is playing.
+  private async playing(): Promise<boolean> {
+    const cdp = this.apps.get("web")?.cdp;
+    if (!cdp) return false;
+    for (const entry of this.opens.filter((o) => o.target)) {
+      const answer = await Promise.race([
+        cdp.evaluateIn(entry.target!, `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`).catch(() => false),
+        sleep(500).then(() => false),
+      ]);
+      if (answer === true) return true;
+    }
+    return false;
+  }
+
+  // The home screen in front on its ambient screen. What was in front stays
+  // open behind it, unless the TV went off and it closed.
+  showAmbient(): Promise<object> {
+    return this.queue(async () => {
+      if (this.ambient) return;
+      const front = this.front();
+      this.ambientFrom = front && front.role !== "home" ? front.address : null;
+      const home = this.homeWindow();
+      if (home && front?.address !== home.address) await this.toFront(home.address);
+      this.ambient = true;
+      this.log(`the ambient screen${this.ambientFrom ? `, over ${this.ambientFrom}` : ""}`);
+      await this.inHome("window.agentvAmbient?.(true)");
+    }).then(() => ({ ok: true }));
+  }
+
+  // A key on the ambient screen: back to what was in front, or home.
+  wake(): Promise<object> {
+    return this.queue(async () => {
+      if (!this.ambient) return;
+      this.ambient = false;
+      const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
+      this.ambientFrom = null;
+      await this.inHome("window.agentvAmbient?.(false)");
+      if (back) await this.toFront(back);
+    }).then(() => ({ ok: true }));
+  }
+
+  private pollTv(): void {
+    const on = this.tvPoll?.() ?? null;
+    if (on === null || on === this.tvSeen) return;
+    this.tvSeen = on;
+    void this.tv(on);
+  }
+
+  // The TV went off or came back. Off: everything playing pauses at once, and
+  // after tvOffCloseMs every app closes and home waits on its ambient screen.
+  tv(on: boolean): Promise<object> {
+    return this.queue(async () => {
+      if (!on) {
+        if (this.tvOff) return;
+        this.tvOff = true;
+        this.log("the TV went off; pausing");
+        for (const entry of this.opens.filter((o) => o.role === "web")) {
+          if ((await this.media(entry, PAUSE)) > 0) entry.paused = true;
+        }
+        this.tvTimer = setTimeout(() => {
+          this.tvTimer = null;
+          void this.offTooLong();
+        }, this.tvOffCloseMs);
+        this.running();
+        return;
+      }
+      if (!this.tvOff) return;
+      this.tvOff = false;
+      if (this.tvTimer) clearTimeout(this.tvTimer);
+      this.tvTimer = null;
+      this.log("the TV came back on");
+    }).then(() => ({ ok: true }));
+  }
+
+  private offTooLong(): Promise<void> {
+    return this.queue(async () => {
+      if (!this.tvOff) return;
+      this.log("the TV has been off for a while; closing every app");
+      for (const entry of [...this.opens]) await this.closeOpen(entry);
+      this.ambient = false;
+    }).then(() => void this.showAmbient());
   }
 
   openWeb(url: string, id = url): Promise<object> {
@@ -700,6 +870,8 @@ export class Screen {
       apps: [...this.apps.values()].map((a) => ({ role: a.role, pid: a.pid, started_at: new Date(a.startedAt).toISOString() })),
       open: this.opens.map((o) => ({ id: o.id, role: o.role, paused: o.paused, front: o.address !== undefined && o.address === front?.address })),
       home_restarts: this.homeRestarts,
+      ambient: this.ambient,
+      tv: this.tvOff ? "off" : "on",
       monitors: monitors.map((m) => ({ name: m.name, width: m.width, height: m.height, refresh_rate: m.refreshRate })),
       layers: layers.map((l) => l.namespace),
     };
@@ -770,6 +942,17 @@ export class Screen {
         return this.openWeb(String(request.url ?? ""));
       case "quit":
         return this.quit(String(request.app ?? ""));
+      case "idle":
+        return this.seatIdle(request.idle === true);
+      case "idle-after":
+        return this.idleAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
+      case "ambient":
+        return this.showAmbient();
+      case "wake":
+        return this.wake();
+      case "tv":
+        if (typeof request.on !== "boolean") return { ok: false, error: "tv on or off" };
+        return this.tv(request.on);
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
         return this.close(request.role);
@@ -932,6 +1115,14 @@ export const launcher: Launcher = {
     spawn("agentv-desktop", [], { stdio: "ignore", detached: true }).unref();
   },
 
+  async idleMinutes() {
+    const health = await (await fetch(`${HOME_URL}health`, { signal: AbortSignal.timeout(5000) })).json();
+    if (health?.screen !== "home") return null;
+    const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
+    const minutes = (await response.json())?.settings?.idleMinutes;
+    return typeof minutes === "number" && minutes > 0 ? minutes : 10;
+  },
+
   parent(pid) {
     try {
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
@@ -979,7 +1170,7 @@ function serve(screen: Screen): void {
 }
 
 async function main(): Promise<void> {
-  const screen = new Screen({ hyprland: connect(), launcher });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn() });
   // When Hyprland goes, so does the TV session, and this with it.
   await screen.start(() => {
     console.log("Hyprland went away; stopping");

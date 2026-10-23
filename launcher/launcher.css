@@ -720,3 +720,40 @@ button {
 .tile-quit {
   color: var(--red);
 }
+
+/* The ambient screen (ADR-031): a placeholder until the backgrounds come in
+   stage 5. The clock drifts slowly, so nothing stays in one place on the TV
+   for long. */
+#ambient {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--darker-background);
+  z-index: 30;
+}
+
+#ambient.on {
+  display: flex;
+}
+
+.ambient-time {
+  font-size: 240px;
+  font-weight: 800;
+  letter-spacing: -10px;
+  line-height: 1;
+  color: var(--bright-foreground);
+}
+
+.ambient-day {
+  margin-top: 24px;
+  font-size: 48px;
+  color: var(--foreground);
+}
+
+.ambient-note {
+  margin-top: 64px;
+  font-size: 28px;
+  color: var(--dark-foreground);
+}
