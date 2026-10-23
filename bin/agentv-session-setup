@@ -27,8 +27,13 @@ if ! id -u -- "$owner" >/dev/null 2>&1; then
   exit 1
 fi
 
+# SDDM reads sddm.conf.d in name order, and the last file to set a key wins.
+# Omarchy's installer writes its own autologin.conf, to omarchy.desktop, for
+# the first boot and for good on an encrypted disk, so AgenTV's file is named
+# to come after it. Stage 0's agentv-autologin.conf came before it, and goes.
 install -d -m 755 "$SDDM_CONF_DIR"
-printf '[Autologin]\nUser=%s\nSession=agentv.desktop\nRelogin=true\n' "$owner" >"$SDDM_CONF_DIR/agentv-autologin.conf"
+printf '[Autologin]\nUser=%s\nSession=agentv.desktop\nRelogin=true\n' "$owner" >"$SDDM_CONF_DIR/zz-agentv-autologin.conf"
+rm -f "$SDDM_CONF_DIR/agentv-autologin.conf"
 
 install -d -m 755 "$STATE"
 install -d -m 700 -o "$owner" -g "$(id -gn -- "$owner")" "$STATE/chromium-home"

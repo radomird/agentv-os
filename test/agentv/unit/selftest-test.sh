@@ -188,7 +188,10 @@ fake omarchy-cmd-present 'type -P "$1" >/dev/null'
 
 tv() {
   healthy
-  printf '[Autologin]\nUser=radomir\nSession=agentv.desktop\nRelogin=true\n' >"$SCRATCH/sddm.conf.d/agentv-autologin.conf"
+  # Omarchy's own autologin to its desktop, kept on an encrypted disk, comes
+  # before AgenTV's in name order.
+  printf '[Autologin]\nUser=radomir\nSession=omarchy.desktop\n' >"$SCRATCH/sddm.conf.d/autologin.conf"
+  printf '[Autologin]\nUser=radomir\nSession=agentv.desktop\nRelogin=true\n' >"$SCRATCH/sddm.conf.d/zz-agentv-autologin.conf"
   sleep 300 &
   home_pid=$!
   disown "$home_pid"
@@ -229,7 +232,7 @@ kill "$home_pid" 2>/dev/null || true
 pass "stage 1's checks pass in a healthy TV session, with manual lines for what needs eyes"
 
 tv
-printf '[Autologin]\nUser=radomir\nSession=omarchy.desktop\n' >"$SCRATCH/sddm.conf.d/agentv-autologin.conf"
+rm "$SCRATCH/sddm.conf.d/zz-agentv-autologin.conf"
 touch "$state/no-tv"
 ! run1 S1.1 || fail "a box not on the TV session fails S1.1"
 grep -q "^fail S1.1 SDDM logs in to omarchy.desktop" "$SCRATCH/out" || fail "it says where SDDM logs in" "$(cat "$SCRATCH/out")"

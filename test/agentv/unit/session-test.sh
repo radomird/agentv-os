@@ -134,10 +134,19 @@ pass "Omarchy's desktop no longer opens the TV; its post-boot hook only adds Bac
 # --- agentv-session-setup and the migration ---------------------------------
 
 me=$(id -un)
+# A box as Omarchy's installer and stage 0 left it: Omarchy's autologin to its
+# desktop (kept on an encrypted disk) and stage 0's own file.
+mkdir -p "$SCRATCH/sddm.conf.d"
+printf '[Autologin]\nUser=%s\nSession=omarchy.desktop\n' "$me" >"$SCRATCH/sddm.conf.d/autologin.conf"
+printf '[Autologin]\nUser=%s\nSession=omarchy.desktop\n' "$me" >"$SCRATCH/sddm.conf.d/agentv-autologin.conf"
 AGENTV_SDDM_CONF_DIR="$SCRATCH/sddm.conf.d" AGENTV_STATE="$SCRATCH/var" run "$ROOT/bin/agentv-session-setup" "$me" ||
   fail "agentv-session-setup runs"
-[[ $(cat "$SCRATCH/sddm.conf.d/agentv-autologin.conf") == $'[Autologin]\nUser='"$me"$'\nSession=agentv.desktop\nRelogin=true' ]] ||
-  fail "SDDM logs the owner in to the TV session, and back in after every log-out" "$(cat "$SCRATCH/sddm.conf.d/agentv-autologin.conf")"
+[[ $(cat "$SCRATCH/sddm.conf.d/zz-agentv-autologin.conf") == $'[Autologin]\nUser='"$me"$'\nSession=agentv.desktop\nRelogin=true' ]] ||
+  fail "SDDM logs the owner in to the TV session, and back in after every log-out" "$(cat "$SCRATCH/sddm.conf.d/zz-agentv-autologin.conf")"
+[[ ! -e $SCRATCH/sddm.conf.d/agentv-autologin.conf ]] || fail "stage 0's autologin file is gone"
+# What SDDM ends up with: the last Session= in name order.
+session=$(for file in "$SCRATCH/sddm.conf.d"/*.conf; do cat "$file"; done | awk -F= '$1 == "Session" { value = $2 } END { print value }')
+[[ $session == "agentv.desktop" ]] || fail "AgenTV's autologin comes after Omarchy's own, so it's the one SDDM uses" "$session"
 [[ -d $SCRATCH/var/chromium-home && $(stat -c %a "$SCRATCH/var/chromium-home" 2>/dev/null || stat -f %Lp "$SCRATCH/var/chromium-home") == 700 ]] ||
   fail "the home screen's profile belongs to the owner alone"
 pass "S1.1 SDDM logs the owner in to the TV session, and the home screen gets its own profile"
