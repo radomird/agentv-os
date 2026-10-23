@@ -38,3 +38,15 @@ export function tint(id: string): number {
 export function clock(date = new Date()): string {
   return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
+
+// The launcher is drawn for 1920 × 1080 and zoomed to fit the screen, so a
+// 720p TV shows the same page, smaller. Rects from the page come zoomed;
+// styles go in unzoomed, so code that measures and then places divides by
+// this.
+export function zoom(): number {
+  return Number(document.documentElement.style.zoom) || 1;
+}
+
+export function fit(): void {
+  document.documentElement.style.zoom = String(Math.min(innerWidth / 1920, innerHeight / 1080));
+}

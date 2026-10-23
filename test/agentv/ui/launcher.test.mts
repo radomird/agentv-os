@@ -273,6 +273,29 @@ test("details put an app on home and take it off", async () => {
   await page.close();
 });
 
+test("a 720p TV shows the same page, smaller, with the ring on the focused tile", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(400);
+  const rect = (selector: string) =>
+    page.evaluate((s) => {
+      const r = document.querySelector(s)!.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom };
+    }, selector);
+  const tile = await rect(".tile.focused");
+  const ring = await rect("#ring");
+  // A small tile is 452 × 308 at 1080p, and two thirds of that here, lifted 3%.
+  assert.ok(Math.abs(tile.w - 452 * (2 / 3) * 1.03) < 3, `tile ${tile.w} wide`);
+  for (const key of ["x", "y", "w", "h"] as const) assert.ok(Math.abs(tile[key] - ring[key]) < 2, `ring ${key}: ${ring[key]} vs ${tile[key]}`);
+  assert.equal((await rect(".bar")).bottom, 720);
+  // All apps fits on one line, as at 1080p.
+  const name = await rect('.tile-apps .tile-name');
+  assert.ok(name.h < 60, `"all apps" is ${name.h} px tall`);
+  await page.close();
+});
+
 test("the launcher has no errors in its console", async () => {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   const errors: string[] = [];
