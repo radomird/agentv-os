@@ -56,7 +56,7 @@ rule="$SUDOERS/99-omarchy-nopasswd-$owner"
 trap 'rm -f "$rule"' EXIT
 printf '%s ALL=(root) NOPASSWD: ALL\nDefaults:%s !authenticate\n' "$owner" "$owner" >"$rule"
 chmod 0440 "$rule"
-if command -v visudo >/dev/null && ! visudo -cqf "$rule"; then
+if ! visudo -cqf "$rule"; then
   rm -f "$rule"
   progress failed start 0 "couldn't let the update use sudo"
   exit 1
