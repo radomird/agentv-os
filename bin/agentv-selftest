@@ -1,0 +1,232 @@
+#!/bin/bash
+
+# agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
+# agentv:args=[S0.2|S0.3]
+# agentv:examples=agentv selftest | agentv selftest S0.3
+# agentv:requires-sudo=true
+
+# The acceptance checks CI can't see, run on the box itself (ADR-019, layer
+# 7). Every line starts with pass or fail and the check's id, so the whole
+# output can be pasted back as it is. Stage 0:
+#
+#   S0.2  the root disk isn't encrypted, so there's no password at boot; the
+#         owner logs in on their own; the TV setup welcome screen was shown.
+#   S0.3  the Wi-Fi device can be an access point, NetworkManager brings up a
+#         WPA2 hotspot on it in AP mode, and Wi-Fi goes back to how it was.
+#
+# The hotspot takes over Wi-Fi for up to a minute, so S0.3 runs on the box
+# itself or over Ethernet. Over SSH on that Wi-Fi it says so and doesn't run.
+#
+# Exits 0 when every check passed, 1 when one didn't.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+AGENTV_HEALTH_URL=${AGENTV_HEALTH_URL:-http://127.0.0.1:3000/health}
+AGENTV_SDDM_CONF=${AGENTV_SDDM_CONF:-/etc/sddm.conf}
+
+case "${1:-all}" in
+  all) checks=(S0.2 S0.3) ;;
+  [sS]0.2) checks=(S0.2) ;;
+  [sS]0.3) checks=(S0.3) ;;
+  -h|--help)
+    echo "Usage: agentv selftest [S0.2|S0.3]"
+    exit 0
+    ;;
+  *) echo "Usage: agentv selftest [S0.2|S0.3]" >&2; exit 2 ;;
+esac
+
+failed=" "
+
+# result <pass|fail> <id> <what>
+result() {
+  printf '%s %s %s\n' "$1" "$2" "$3"
+  [[ $1 == "pass" || $failed == *" $2 "* ]] || failed+="$2 "
+}
+
+s02_disk() {
+  local source types
+
+  source=$(findmnt -no SOURCE -v / 2>/dev/null || true)
+  if [[ -z $source ]] || ! types=$(lsblk -nso TYPE "$source" 2>/dev/null); then
+    result fail S0.2 "couldn't tell which disk / is on"
+  elif grep -qx crypt <<<"${types// /}"; then
+    result fail S0.2 "the root disk is encrypted ($source), so it asks for a password at boot"
+  else
+    result pass S0.2 "the root disk isn't encrypted ($source), so there's no password at boot"
+  fi
+}
+
+s02_login() {
+  local user session
+
+  # SDDM reads sddm.conf.d in name order and sddm.conf last; the last User=
+  # in an [Autologin] section wins.
+  user=$(
+    for file in "$AGENTV_SDDM_CONF.d"/*.conf "$AGENTV_SDDM_CONF"; do
+      if [[ -f $file ]]; then cat -- "$file"; fi
+    done | awk -F= '/^\[/ { section = $0 } section == "[Autologin]" && $1 == "User" { user = $2 } END { print user }'
+  )
+  if [[ -z $user ]]; then
+    result fail S0.2 "nobody logs in on their own: SDDM has no autologin user"
+    return
+  fi
+
+  # Columns: SESSION UID USER SEAT, then more.
+  session=$(loginctl list-sessions --no-legend 2>/dev/null |
+    awk -v user="$user" '$3 == user && $4 == "seat0" { print $1; exit }' || true)
+  if [[ -n $session ]]; then
+    result pass S0.2 "$user logs in on their own (session $session on seat0)"
+  else
+    result fail S0.2 "SDDM logs $user in, but $user has no session on the screen right now"
+  fi
+}
+
+s02_welcome() {
+  local health
+
+  health=$(curl -fsS --max-time 5 "$AGENTV_HEALTH_URL" 2>/dev/null || true)
+  if [[ -z $health ]]; then
+    result fail S0.2 "the daemon doesn't answer at $AGENTV_HEALTH_URL"
+  elif [[ $(jq -r '.welcome_shown // false' <<<"$health" 2>/dev/null) == "true" ]]; then
+    result pass S0.2 "the TV setup welcome screen was shown ($(jq -r '.welcome_shown_at // "time unknown"' <<<"$health"))"
+  else
+    result fail S0.2 "the TV setup welcome screen hasn't been shown since the daemon started"
+  fi
+}
+
+# The first Wi-Fi device NetworkManager knows, or nothing.
+wifi_device() {
+  nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '$2 == "wifi" { print $1; exit }'
+}
+
+# The interface modes the device's radio supports, one per line.
+ap_modes() {
+  iw phy "$1" info 2>/dev/null |
+    awk '/Supported interface modes:/ { list = 1; next } list && /^[[:space:]]+\* / { print $2; next } list { exit }'
+}
+
+# Is this an SSH session that runs over the given device?
+ssh_over() {
+  local here
+
+  [[ -n ${SSH_CONNECTION:-} ]] || return 1
+  here=$(awk '{ print $3 }' <<<"$SSH_CONNECTION")
+  ip -o addr show dev "$1" 2>/dev/null | grep -qF " $here/"
+}
+
+hotspot=agentv-selftest-hotspot
+radio_before=""
+uuid_before=""
+restored=0
+
+# The connection the device is on now, by UUID, or nothing.
+active_uuid() {
+  nmcli -g UUID,DEVICE connection show --active 2>/dev/null | awk -F: -v device="$1" '$2 == device { print $1; exit }'
+}
+
+# Wi-Fi as it was: no test hotspot, the radio as it was, and the connection
+# the device had before, if it had one. Also runs when the selftest is
+# stopped halfway.
+restore_wifi() {
+  (( restored )) && return 0
+  restored=1
+  sudo nmcli connection down "$hotspot" >/dev/null 2>&1 || true
+  sudo nmcli connection delete "$hotspot" >/dev/null 2>&1 || true
+  [[ $radio_before == "disabled" ]] && sudo nmcli radio wifi off
+  if [[ -n $uuid_before ]]; then
+    sudo nmcli --wait 45 connection up uuid "$uuid_before" >/dev/null 2>&1 || true
+  fi
+}
+
+s03() {
+  local device phy driver modes ssid psk state type channel uuid_after
+
+  device=$(wifi_device)
+  if [[ -z $device ]]; then
+    result fail S0.3 "NetworkManager has no Wi-Fi device"
+    return
+  fi
+  phy=$(cat "/sys/class/net/$device/phy80211/name" 2>/dev/null || true)
+  driver=$(basename "$(readlink -f "/sys/class/net/$device/device/driver" 2>/dev/null)" 2>/dev/null || true)
+  modes=$(ap_modes "$phy")
+  if grep -qx AP <<<"$modes"; then
+    result pass S0.3 "the Wi-Fi device can be an access point ($device${driver:+, $driver}${phy:+, $phy})"
+  else
+    result fail S0.3 "the Wi-Fi device can't be an access point ($device${driver:+, $driver}; modes: $(tr '\n' ' ' <<<"$modes"))"
+    return
+  fi
+
+  if ssh_over "$device"; then
+    result fail S0.3 "not run: this SSH session goes over $device, which the hotspot takes over for up to a minute. Run it on the box or over Ethernet."
+    return
+  fi
+
+  radio_before=$(nmcli radio wifi 2>/dev/null || true)
+  uuid_before=$(active_uuid "$device")
+  trap restore_wifi EXIT
+  trap 'restore_wifi; exit 130' HUP INT TERM
+
+  [[ $radio_before == "enabled" ]] || sudo nmcli radio wifi on
+
+  # WPA2 with a throwaway passphrase that's never shown. A fixed address,
+  # because handing out addresses to phones comes with TV setup's own hotspot.
+  ssid="AgenTV-selftest-$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"
+  psk=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')
+  sudo nmcli connection delete "$hotspot" >/dev/null 2>&1 || true
+  if ! sudo nmcli connection add type wifi ifname "$device" con-name "$hotspot" autoconnect no ssid "$ssid" \
+    802-11-wireless.mode ap 802-11-wireless.band bg \
+    wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp \
+    wifi-sec.pmf disable wifi-sec.psk "$psk" \
+    ipv4.method manual ipv4.addresses 10.42.0.1/24 ipv6.method disabled >/dev/null 2>&1; then
+    result fail S0.3 "NetworkManager wouldn't take the hotspot's settings"
+    restore_wifi
+    return
+  fi
+
+  sudo nmcli --wait 45 connection up "$hotspot" >/dev/null 2>&1 || true
+  state=$(nmcli -g GENERAL.STATE connection show "$hotspot" 2>/dev/null || true)
+  type=$(iw dev "$device" info 2>/dev/null | awk '$1 == "type" { print $2 }')
+  channel=$(iw dev "$device" info 2>/dev/null | awk '$1 == "channel" { print $2 }')
+  if [[ $state == "activated" && $type == "AP" ]]; then
+    result pass S0.3 "NetworkManager brought up a WPA2 hotspot in AP mode ($ssid on channel ${channel:-unknown})"
+  else
+    result fail S0.3 "NetworkManager didn't bring up the hotspot (connection: ${state:-not active}, device mode: ${type:-unknown}); journalctl -u NetworkManager says why"
+  fi
+
+  restore_wifi
+  trap - EXIT HUP INT TERM
+
+  if nmcli -g NAME connection show 2>/dev/null | grep -qx "$hotspot"; then
+    result fail S0.3 "the test hotspot is still there; remove it with: sudo nmcli connection delete $hotspot"
+  elif [[ -n $uuid_before ]]; then
+    uuid_after=$(active_uuid "$device")
+    if [[ $uuid_after == "$uuid_before" ]]; then
+      result pass S0.3 "Wi-Fi is back on $(nmcli -g connection.id connection show uuid "$uuid_before" 2>/dev/null)"
+    else
+      result fail S0.3 "Wi-Fi didn't reconnect to $(nmcli -g connection.id connection show uuid "$uuid_before" 2>/dev/null) on its own; reconnect from the Wi-Fi menu"
+    fi
+  else
+    result pass S0.3 "Wi-Fi is back as it was (it wasn't connected before)"
+  fi
+}
+
+echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
+"$AGENTV_BIN_DIR/agentv-version" 2>/dev/null || true
+echo
+
+for id in "${checks[@]}"; do
+  case $id in
+    S0.2) s02_disk; s02_login; s02_welcome ;;
+    S0.3) s03 ;;
+  esac
+done
+
+echo
+summary=""
+for id in "${checks[@]}"; do
+  if [[ $failed == *" $id "* ]]; then summary+="${summary:+, }$id fail"; else summary+="${summary:+, }$id pass"; fi
+done
+echo "$summary"
+
+[[ $failed == " " ]]

@@ -28,9 +28,13 @@ done
 # about AgenTV's repository. Put it back first, or AgenTV never updates.
 sudo "$AGENTV_BIN_DIR/agentv-pacman-conf"
 
-# Only versions AgenTV's nightly run has passed (ADR-026). --untested skips
-# that, for development boxes on edge.
-if (( ! untested )); then
+# Only versions AgenTV's nightly run has passed (ADR-026). That run tests the
+# release, so it holds back stable. edge takes every green build of agentv-os
+# (ADR-025), newer than any night's, so it skips the check, and so does
+# --untested.
+if [[ $("$AGENTV_BIN_DIR/agentv-channel") == "edge" ]]; then
+  echo "On edge: taking AgenTV's newest green build, without waiting for the nightly run."
+elif (( ! untested )); then
   "$AGENTV_BIN_DIR/agentv-tested" || exit 1
 fi
 
