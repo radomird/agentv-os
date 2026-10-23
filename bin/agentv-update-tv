@@ -74,7 +74,7 @@ fi
 
 # Snapper's snapshots by number, newest last.
 snapshots() {
-  command -v snapper >/dev/null || return 0
+  omarchy-cmd-present snapper || return 0
   snapper -c root --csvout list --columns number 2>/dev/null | awk -F, 'NR > 1 && $1 + 0 > 0 { print $1 + 0 }'
 }
 snapshot_before=$(snapshots | tail -n 1)
