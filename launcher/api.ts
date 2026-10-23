@@ -42,6 +42,35 @@ export interface HomeState {
   settings: Settings;
 }
 
+// What the daily update check found (bin/agentv-update-check, ADR-025).
+export interface UpdateStatus {
+  checked_at: string;
+  ok: boolean;
+  channel: string;
+  agentv: { installed: string | null; available: string | null };
+  omarchy: { installed: string | null; available: string | null };
+  packages: number;
+  security: boolean;
+  notes: { agentv: string[]; agentv_date: string | null; omarchy: string[] };
+}
+
+// How an install from the TV is going (bin/agentv-update-tv).
+export interface UpdateProgress {
+  state: "running" | "restarting" | "done" | "failed";
+  step: "start" | "snapshot" | "packages" | "migrations" | "restart";
+  percent: number;
+  detail: string;
+  at: string;
+  from: { agentv: string; omarchy: string };
+  to: { agentv: string };
+}
+
+export interface Updates {
+  status: UpdateStatus | null;
+  progress: UpdateProgress | null;
+  toasted: string | null;
+}
+
 export interface TileEntry {
   label?: string;
   value?: string;
@@ -71,6 +100,8 @@ export const daemon = {
   saveLayout: (layout: Placed[]) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }),
   saveSettings: (change: Partial<Settings>) => call<{ settings: Settings }>("POST", "/api/settings", change),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
+  updates: () => call<Updates>("GET", "/api/updates"),
+  toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
 };
 
@@ -132,6 +163,9 @@ export const screen = {
   quit: (app: string) => ask({ cmd: "quit", app }),
   // A key on the ambient screen: back to what was in front.
   wake: () => ask({ cmd: "wake" }),
+  // Settings → Updates: Check now and Install now.
+  checkUpdates: () => ask({ cmd: "update-check" }),
+  installUpdate: () => ask({ cmd: "update-install" }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
 };

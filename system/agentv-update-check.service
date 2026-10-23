@@ -1,0 +1,12 @@
+# Looks for a new AgenTV, Omarchy and system packages for Settings → Updates
+# (ADR-025): bin/agentv-update-check. Its timer runs it once a day and a few
+# minutes after boot, and Check now on the TV starts it too. It only looks.
+
+[Unit]
+Description=AgenTV update check
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-update-check

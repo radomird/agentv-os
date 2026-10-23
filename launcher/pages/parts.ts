@@ -16,7 +16,7 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
   const links = step ?? [
     h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("apps") }, "apps"),
     h("span", {}, "·"),
-    h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("settings") }, "settings"),
+    h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("settings") }, ctx.updates.status?.agentv.available ? "settings ●" : "settings"),
   ];
   return h(
     "div",

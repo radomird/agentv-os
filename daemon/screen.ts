@@ -83,6 +83,9 @@ export interface Launcher {
   appTarget(id: string): Promise<{ runtime: "web"; url: string } | { runtime: "native"; exec: string[] } | null>;
   // Settings → Omarchy desktop: agentv desktop, which ends this session.
   desktop(): void;
+  // Starts one of AgenTV's update units (ADR-025), which polkit lets the
+  // person at the TV start: the check, or an install.
+  startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service"): Promise<boolean>;
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
@@ -499,6 +502,11 @@ export class Screen {
         return this.quit(String(request.app ?? ""));
       case "wake":
         return this.wake();
+      // Settings → Updates: Check now, and Install now (ADR-025).
+      case "update-check":
+        return (await this.launcher.startUnit("agentv-update-check.service")) ? { ok: true } : { ok: false, error: "couldn't check for updates" };
+      case "update-install":
+        return (await this.launcher.startUnit("agentv-update-tv.service")) ? { ok: true } : { ok: false, error: "couldn't start the update" };
       case "desktop":
         this.launcher.desktop();
         return { ok: true };
@@ -1113,6 +1121,12 @@ export const launcher: Launcher = {
 
   desktop() {
     spawn("agentv-desktop", [], { stdio: "ignore", detached: true }).unref();
+  },
+
+  startUnit(name) {
+    return new Promise((resolve) => {
+      execFile("systemctl", ["start", "--no-block", name], { timeout: 10_000 }, (error) => resolve(!error));
+    });
   },
 
   async idleMinutes() {

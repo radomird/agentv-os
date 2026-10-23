@@ -132,7 +132,9 @@ export function home(ctx: Ctx): View {
     if (tile) grid.append(tile);
   }
 
-  const el = h("div", { class: "screen" }, grid, bar(ctx, "home"));
+  // A new release says so in the bar (ADR-025, board 31).
+  const next = ctx.updates.status?.agentv.available;
+  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", next ? `agentv ${next.replace(/-\d+$/, "")} is ready · settings → updates` : ""));
   return {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,

@@ -90,9 +90,15 @@ export function makeBox(fixtures: Fixture[] = FIXTURES): { apps: string; state: 
   return { apps, state };
 }
 
-export async function startBox(port = 0, fixtures = FIXTURES): Promise<{ daemon: Daemon; url: string; apps: string; state: string }> {
+export async function startBox(
+  port = 0,
+  fixtures = FIXTURES,
+): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string }> {
   const { apps, state } = makeBox(fixtures);
-  const daemon = new Daemon({ root: ROOT, state, apps, port, log: () => {} });
+  // What the update check and an install write, empty until a test fills it.
+  const updates = join(state, "..", "update");
+  mkdirSync(updates, { recursive: true });
+  const daemon = new Daemon({ root: ROOT, state, apps, updates, port, log: () => {} });
   const listening = await daemon.listen();
-  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state };
+  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates };
 }

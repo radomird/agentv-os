@@ -21,12 +21,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
+import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
   state: string; // the daemon's own state: /var/lib/agentv/daemon
   apps?: string; // the box's apps: /var/lib/agentv/apps
+  updates?: string; // what the update check and an install write: /var/lib/agentv/update
   port: number;
   host?: string;
   log?: (line: string) => void;
@@ -67,11 +69,14 @@ export class Daemon {
   private streams = new Set<ServerResponse>();
   private stripped = new Map<string, { mtime: number; code: string }>();
   readonly home: Home;
+  readonly updates: Updates;
 
   constructor(options: DaemonOptions) {
     this.options = options;
     this.log = options.log ?? ((line) => console.log(line));
     this.home = new Home({ appsDir: options.apps ?? "/var/lib/agentv/apps", state: options.state, log: this.log });
+    this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
+    this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.server = createServer((request, response) => {
       this.handle(request, response).catch((error: Error) => {
         this.log(`error: ${request.method} ${request.url}: ${error.message}`);
@@ -92,6 +97,7 @@ export class Daemon {
   close(): Promise<void> {
     for (const stream of this.streams) stream.end();
     this.home.stop();
+    this.updates.stop();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -315,6 +321,24 @@ export class Daemon {
       return;
     }
 
+    // Updates (ADR-025): what the check found, an install's progress, and
+    // the release whose toast home has shown.
+    if (method === "GET" && path === "/api/updates") {
+      this.json(response, 200, { ok: true, ...(await this.updates.read()) });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/updates/toasted") {
+      const body = (await this.body(request)) as { version?: unknown } | undefined;
+      const why = await this.updates.markToasted(body?.version);
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     if (method === "POST" && path === "/api/settings") {
       const why = await this.home.saveSettings(await this.body(request));
       if (why) {
@@ -439,6 +463,7 @@ async function main(): Promise<void> {
     root: process.env.AGENTV_PATH ?? "/usr/share/agentv",
     state: process.env.AGENTV_DAEMON_STATE ?? "/var/lib/agentv/daemon",
     apps: process.env.AGENTV_APPS ?? "/var/lib/agentv/apps",
+    updates: process.env.AGENTV_UPDATE_STATE ?? "/var/lib/agentv/update",
     port,
   });
   const listening = await daemon.listen();

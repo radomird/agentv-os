@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { daemon, listen, screen, type HomeState, type Running, type Settings } from "./api.ts";
+import { daemon, listen, screen, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
@@ -14,6 +14,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { settings } from "./pages/settings.ts";
+import { drawUpdating, release, whatsNew } from "./pages/updates.ts";
 import { Sounds } from "./sounds.ts";
 
 export interface View {
@@ -29,12 +30,17 @@ export interface Ctx {
   state: HomeState;
   // Apps open behind home, by id (ADR-031).
   running: Map<string, Running>;
+  // What the update check found, and an install's progress (ADR-025).
+  updates: Updates;
   sounds: Sounds;
   focus: Focus;
   go(route: string): void;
   back(): void;
   edit(): void;
   render(route: string, action?: string): void;
+  // Notes where the page is now, such as a section of Settings, so Back to
+  // it comes back there.
+  remember(route: string): void;
   toast(text: string, kind?: "ok" | "fail"): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
   saveSettings(change: Partial<Settings>): Promise<void>;
@@ -49,6 +55,7 @@ let view: View | undefined;
 const ctx: Ctx = {
   state: undefined as unknown as HomeState,
   running: new Map(),
+  updates: { status: null, progress: null, toasted: null },
   sounds,
   focus,
   go(route) {
@@ -70,6 +77,9 @@ const ctx: Ctx = {
       return;
     }
     ctx.go(`edit/${focus.get()?.dataset.id ?? ""}`);
+  },
+  remember(route) {
+    history[history.length - 1] = route;
   },
   render(route, action) {
     history[history.length - 1] = route;
@@ -103,6 +113,7 @@ function viewFor(route: string): View {
   if (name === "apps") return apps(ctx);
   if (name === "details") return details(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
+  if (name === "whats-new") return whatsNew(ctx);
   if (name === "settings") return settings(ctx, arg);
   return home(ctx);
 }
@@ -159,7 +170,57 @@ function wake(): void {
   void screen.wake();
 }
 
+// The Updating screen (ADR-025): over everything while an install from the TV
+// runs, and after one that failed until a key is pressed. When one is done,
+// the page loads again, from the new release.
+const updatingEl = document.getElementById("updating")!;
+let updatingShown = false;
+let updatingFailed = false;
+
+function setUpdates(updates: Updates): void {
+  const before = ctx.updates;
+  ctx.updates = updates;
+  const progress = updates.progress;
+  const fresh = progress && Date.now() - new Date(progress.at).getTime() < 15 * 60_000;
+  if (progress && fresh && (progress.state === "running" || progress.state === "restarting" || (progress.state === "failed" && updatingShown))) {
+    drawUpdating(updatingEl, progress);
+    updatingEl.classList.add("on");
+    updatingShown = true;
+    updatingFailed = progress.state === "failed";
+  } else if (updatingShown && progress?.state === "done") {
+    location.reload();
+    return;
+  }
+  // The notice on home: the bar says so, and one toast per release.
+  if (JSON.stringify(before.status) !== JSON.stringify(updates.status)) {
+    const route = history[history.length - 1];
+    if (route === "home" || route.startsWith("settings")) redraw();
+  }
+  toastRelease();
+}
+
+// One toast per release, on home, for an adult, never during setup or an
+// install (ADR-025). Setup has no launcher, and nothing plays while home is
+// in front.
+function toastRelease(): void {
+  const version = release(ctx.updates);
+  if (!version || ctx.updates.toasted === version || updatingShown || ambient) return;
+  if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
+  ctx.updates.toasted = version;
+  ctx.toast(`agentv ${version} is ready · settings → updates`, "ok");
+  void daemon.toasted(version).catch(() => {});
+}
+
 function act(action: Action): void {
+  // An install is running: keys wait. One that failed goes away on a key.
+  if (updatingShown) {
+    if (updatingFailed) {
+      updatingShown = false;
+      updatingFailed = false;
+      updatingEl.classList.remove("on");
+    }
+    return;
+  }
   // The first key on the ambient screen only ends it.
   if (ambient) {
     wake();
@@ -256,7 +317,9 @@ async function start(): Promise<void> {
       link.href = `/api/theme.css?at=${Date.now()}`;
     },
     setup: () => location.reload(),
+    updates: (data) => setUpdates(data as Updates),
   });
+  void daemon.updates().then(setUpdates).catch(() => {});
   void sounds.load();
   // The screen daemon calls these: Home when the home screen is already in
   // front, and the apps open behind it whenever that changes.

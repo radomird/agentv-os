@@ -225,7 +225,14 @@ jobs:
               s25="pass (layer 4: +/-, the corner and the size bar give only the app's sizes)"
               s26="pass (layer 4: covered tiles move to the next free cells; no room can't be picked)"
               s27="pass (layer 4: no tier on tiles; details say who made each app)"
+              s212="pass (layers 2 and 4: the check, Settings → Updates, What's new and Install now)"
+              s213="pass (layer 4: one toast per release, and the bar's notice)"
               ;;
-            *) s23="fail (layer 4: $UI)"; s24="fail (layer 4: $UI)"; s25="fail (layer 4: $UI)"; s26="fail (layer 4: $UI)"; s27="fail (layer 4: $UI)" ;;
+            *)
+              s23="fail (layer 4: $UI)"; s24="fail (layer 4: $UI)"; s25="fail (layer 4: $UI)"; s26="fail (layer 4: $UI)"; s27="fail (layer 4: $UI)"
+              s212="fail (layer 4: $UI)"; s213="fail (layer 4: $UI)"
+              ;;
           esac
-          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" >>"$GITHUB_STEP_SUMMARY"
+          [[ $UNIT == "success" ]] || s212="fail (layer 2: $UNIT)"
+          test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
+            "S2.12=$s212" "S2.13=$s213" >>"$GITHUB_STEP_SUMMARY"
