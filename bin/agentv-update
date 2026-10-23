@@ -15,13 +15,14 @@ set -euo pipefail
 AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 untested=0
+yes=0
 args=()
 for arg in "$@"; do
-  if [[ $arg == "--untested" ]]; then
-    untested=1
-  else
-    args+=("$arg")
-  fi
+  case "$arg" in
+    --untested) untested=1 ;;
+    -y) yes=1 ;;
+    *) args+=("$arg") ;;
+  esac
 done
 
 # Omarchy writes /etc/pacman.conf from its own template, which doesn't know
@@ -38,4 +39,10 @@ elif (( ! untested )); then
   "$AGENTV_BIN_DIR/agentv-tested" || exit 1
 fi
 
-exec omarchy-update ${args[@]+"${args[@]}"}
+# AgenTV asks its own question, with AgenTV's versions and release notes
+# (ADR-029), so Omarchy's update runs with -y and skips its own.
+if (( ! yes )); then
+  "$AGENTV_BIN_DIR/agentv-update-confirm" || exit 1
+fi
+
+exec omarchy-update -y ${args[@]+"${args[@]}"}

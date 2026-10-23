@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# agentv:summary=Dismiss Omarchy's first-run notifications as they arrive
+# agentv:hidden=true
+
+# Omarchy's first run, at the owner's first login, shows "Learn Keybindings"
+# and, once the network is up, "Update System", which opens Omarchy's own
+# update. Neither belongs on a TV (ADR-029), and neither has a marker that
+# would skip it, so agentv tv starts this at the first login: it dismisses
+# them through Omarchy's own omarchy-notification-dismiss until the first run
+# is done. That includes its network check, which waits up to an hour for a
+# connection and sends the update notice last.
+
+set -uo pipefail
+
+notices=("Learn Keybindings" "Update System")
+
+dismiss() {
+  local notice
+  for notice in "${notices[@]}"; do
+    omarchy-notification-dismiss "$notice" >/dev/null 2>&1 || true
+  done
+}
+
+deadline=$((SECONDS + ${AGENTV_QUIET_SECONDS:-3900}))
+while (( SECONDS < deadline )); do
+  dismiss
+  if omarchy-done check first-run-user 2>/dev/null && ! pgrep -u "$(id -u)" -f "install/user/first-run/" >/dev/null 2>&1; then
+    break
+  fi
+  sleep "${AGENTV_QUIET_INTERVAL:-2}"
+done
+dismiss

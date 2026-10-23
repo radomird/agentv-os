@@ -9,7 +9,14 @@
 
 set -euo pipefail
 
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 url="http://127.0.0.1:3000/"
+
+# Until Omarchy's first run has finished, its notifications for the desktop
+# keep coming, so the first login also clears them off the TV.
+if ! omarchy-done check first-run-user 2>/dev/null; then
+  setsid -f "$AGENTV_BIN_DIR/agentv-quiet-first-run" >/dev/null 2>&1
+fi
 
 # The daemon starts with the system, and this runs at login, so it's usually
 # up already. Give it a moment if not.
