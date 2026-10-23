@@ -345,6 +345,29 @@ test("S2.17 the ambient screen covers the TV, and the first key only ends it", a
   await page.close();
 });
 
+test("S2.17 the mouse move Chromium sends as home comes to the front doesn't end the ambient screen", async () => {
+  const page = await tv();
+  const ambientOn = () => page.evaluate(() => document.getElementById("ambient")!.classList.contains("on"));
+  const wakes = () => page.evaluate(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.filter((r) => r.cmd === "wake").length);
+  // The first move on the ambient screen only says where the mouse is.
+  await page.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(true));
+  await page.mouse.move(700, 400);
+  await page.waitForTimeout(300);
+  assert.equal(await ambientOn(), true, "the first move after it came up ended it");
+  // A real move ends it.
+  await page.mouse.move(760, 430);
+  await page.waitForFunction(() => !document.getElementById("ambient")?.classList.contains("on"));
+  assert.equal(await wakes(), 1);
+  // The next time, the mouse was left somewhere else: home coming to the
+  // front under it isn't a move either.
+  await page.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(true));
+  await page.mouse.move(200, 150);
+  await page.waitForTimeout(300);
+  assert.equal(await ambientOn(), true, "the move as home came back ended it");
+  assert.equal(await wakes(), 1);
+  await page.close();
+});
+
 test("S2.17 Settings → Look changes how long the ambient screen waits", async () => {
   const page = await tv();
   await page.locator('.bar-link:has-text("settings")').click();
