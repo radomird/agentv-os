@@ -211,6 +211,7 @@ tv() {
     "2026-10-24T21:02:02+0200 nuc agentv-screen[812]: the TV has been off for a while; closing every app" \
     "2026-10-24T21:03:10+0200 nuc agentv-screen[812]: the TV came back on" >"$state/journal"
   rm -f "$state/input.log"
+  echo '{"ok": true, "welcome_shown": true, "screen": "home"}' >"$state/health"
   mkdir -p "$SCRATCH/var/chromium/Default"
   echo '{"credentials_enable_service": false, "credentials_enable_autosignin": false, "autofill": {"profile_enabled": false, "credit_card_enabled": false},
     "translate": {"enabled": false}, "profile": {"default_content_setting_values": {"notifications": 2}}}' >"$SCRATCH/var/chromium/Default/Preferences"
@@ -293,6 +294,15 @@ done
 echo '{"ok": true, "on": false, "keys": 30, "played": [], "worst_ms": null, "closest_moves_ms": null}' >"$state/sounds.json"
 ! run1 S2.11 || fail "UI sounds turned off fail S2.11"
 grep -qF "fail S2.11 Settings → Sound has the UI sounds off" "$SCRATCH/out" || fail "it says the sounds are off" "$(cat "$SCRATCH/out")"
+[[ $(grep -c "^fail S2.11" "$SCRATCH/out") == 1 ]] || fail "sounds off is said once, with nothing more to measure" "$(cat "$SCRATCH/out")"
+echo '{"ok": false, "error": "the home screen isn'"'"'t running"}' >"$state/sounds.json"
+! run1 S2.11 || fail "a measurement that doesn't come back fails S2.11"
+grep -qF "fail S2.11 couldn't measure the UI sounds: the home screen isn't running" "$SCRATCH/out" || fail "it says why it couldn't measure" "$(cat "$SCRATCH/out")"
+# TV setup not done yet: the welcome page has no tiles or sounds to measure.
+echo '{"ok": true, "welcome_shown": true, "screen": "welcome"}' >"$state/health"
+! run1 S2.10 S2.11 || fail "S2.10 and S2.11 fail before TV setup is done"
+[[ $(grep -c "^fail S2.1[01] the TV is still on its setup welcome page; finish TV setup, or run agentv setup skip" "$SCRATCH/out") == 2 ]] ||
+  fail "S2.10 and S2.11 say TV setup isn't done" "$(cat "$SCRATCH/out")"
 kill "$home_pid" 2>/dev/null || true
 pass "S1.7 and stage 2's checks fail on what they measure, and say what they saw"
 

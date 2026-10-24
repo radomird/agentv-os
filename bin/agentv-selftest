@@ -484,6 +484,18 @@ ms_until() {
   done
 }
 
+# Stage 2 measures the home screen itself, so TV setup has to be done: until
+# then the welcome page is on the TV, with no tiles and no UI sounds.
+launcher_on() {
+  local health
+
+  health=$(curl -fsS --max-time 5 "$AGENTV_HEALTH_URL" 2>/dev/null || true)
+  if [[ $(jq -r '.screen // ""' <<<"$health" 2>/dev/null || true) != "home" ]]; then
+    result fail "$1" "the TV is still on its setup welcome page; finish TV setup, or run agentv setup skip, then run this again"
+    return 1
+  fi
+}
+
 # The home screen in front, with nothing else open, for a measurement.
 home_alone() {
   screen home >/dev/null
@@ -535,6 +547,7 @@ s210() {
   local out fps slow refresh
 
   tv_on S2.10 || return 0
+  launcher_on S2.10 || return 0
   home_alone
   refresh=$(front '.monitors[0].refresh_rate // 60 | floor')
   out=$(mktemp)
@@ -574,6 +587,7 @@ s211() {
   local out on worst closest
 
   tv_on S2.11 || return 0
+  launcher_on S2.11 || return 0
   home_alone
   out=$(mktemp)
   screen sounds 7 >"$out" &
@@ -589,9 +603,16 @@ s211() {
   on=$(value '.on' "$out")
   worst=$(value '.worst_ms' "$out")
   closest=$(value '.closest_moves_ms' "$out")
-  if [[ $on != "true" ]]; then
-    result fail S2.11 "Settings → Sound has the UI sounds off ($(value '.error' "$out")); turn them on and run this again"
-  elif [[ -z $worst ]]; then
+  if [[ -n $(value '.error' "$out") || $on != "true" ]]; then
+    if [[ -n $(value '.error' "$out") ]]; then
+      result fail S2.11 "couldn't measure the UI sounds: $(value '.error' "$out")"
+    else
+      result fail S2.11 "Settings → Sound has the UI sounds off; turn them on and run this again"
+    fi
+    rm -f "$out"
+    return 0
+  fi
+  if [[ -z $worst ]]; then
     result fail S2.11 "no UI sound played for the keys sent (audio: $(value '.audio' "$out"))"
   elif awk -v worst="$worst" 'BEGIN { exit !(worst <= 16.7) }'; then
     result pass S2.11 "each UI sound started within $worst ms of its key, inside one frame; the audio output adds about $(value '.output_ms' "$out") ms"
