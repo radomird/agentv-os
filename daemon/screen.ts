@@ -60,6 +60,8 @@ export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
 // Apps kept open behind home, besides a game (ADR-031).
 export const KEEP_OPEN = 2;
+// How far before its press a tap's release can read the clock (see back).
+const BACK_SLACK_MS = 50;
 
 // A process the daemon started.
 export interface App {
@@ -630,23 +632,29 @@ export class Screen {
 
   // Back is the app's own, but holding it for a second goes home. The
   // session's Hyprland reports each press and release with the time it
-  // happened, since the two can arrive out of order.
+  // happened, since the two can arrive out of order. Each comes from a
+  // process of its own that reads the clock itself, so a tap's release, a
+  // remote's or the phone's right after its press, can read a few
+  // milliseconds earlier than the press: within BACK_SLACK_MS they're one
+  // tap.
   back(edge: "down" | "up", at: number): object {
     if (edge === "up") {
       this.backUp = Math.max(this.backUp, at);
-      if (at >= this.backDown && this.backTimer) {
+      if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
       }
       return { ok: true };
     }
-    if (at <= this.backUp || at <= this.backDown) return { ok: true };
+    if (at <= this.backUp + BACK_SLACK_MS || at <= this.backDown) return { ok: true };
     this.backDown = at;
     if (this.backTimer) clearTimeout(this.backTimer);
     this.backTimer = setTimeout(
       () => {
         this.backTimer = null;
-        if (this.backUp < this.backDown) void this.home("back");
+        if (this.backUp >= this.backDown - BACK_SLACK_MS) return;
+        this.log(`Back held for ${this.now() - this.backDown} ms: home`);
+        void this.home("back");
       },
       Math.max(0, at + this.backHoldMs - this.now()),
     );
