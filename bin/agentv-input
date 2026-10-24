@@ -11,7 +11,9 @@
 # mute, letters and digits. hold keeps one down for a while, such as Back
 # for a second, which goes home. move and click are the mouse: pushed far
 # enough, the pointer stops in a corner, such as the top left one with Home
-# (ADR-031). Works over SSH too, as the person on the TV.
+# (ADR-031). Works over SSH too, as the person on the TV. What text types is
+# never logged (ADR-032); text - reads it from stdin, so it isn't on the
+# command line either.
 
 set -euo pipefail
 
