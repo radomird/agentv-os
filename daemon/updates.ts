@@ -40,6 +40,7 @@ export class Updates {
   private state: string;
   private watcher: FSWatcher | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private again: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: { dir: string; state: string }) {
     this.dir = options.dir;
@@ -88,31 +89,36 @@ export class Updates {
     return null;
   }
 
-  // Calls changed shortly after any of its files changes. The folder may
-  // not be there until the first check, so it looks again now and then.
-  watch(changed: () => void): void {
-    const attach = () => {
+  // Calls changed shortly after any of its files changes. On a new box
+  // the folder isn't there until the first check makes it, which can be
+  // Check now a moment after the box starts, so it looks for it every few
+  // seconds, and once it's there, says what was written before it looked.
+  watch(changed: () => void, every = 5_000): void {
+    const soon = () => {
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = setTimeout(changed, 200);
+    };
+    const attach = (first: boolean) => {
       if (this.watcher) return;
       try {
-        this.watcher = watch(this.dir, () => {
-          if (this.timer) clearTimeout(this.timer);
-          this.timer = setTimeout(changed, 200);
-        });
+        this.watcher = watch(this.dir, soon);
         this.watcher.on("error", () => {
           this.watcher?.close();
           this.watcher = null;
         });
+        if (!first) soon();
       } catch {
         this.watcher = null;
       }
     };
-    attach();
-    const again = setInterval(attach, 60_000);
-    again.unref();
+    attach(true);
+    this.again = setInterval(() => attach(false), every);
+    this.again.unref();
   }
 
   stop(): void {
     this.watcher?.close();
     if (this.timer) clearTimeout(this.timer);
+    if (this.again) clearInterval(this.again);
   }
 }
