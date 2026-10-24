@@ -703,6 +703,34 @@ test("S2.16 holding Back for a second goes home; a tap stays with the app", asyn
   assert.equal(t.screen.front()?.role, "home");
 });
 
+test("S2.16 a tap whose release read the clock a moment before its press is still a tap", async () => {
+  // Hyprland starts agentv screen back down and back up as two processes at
+  // almost the same moment, each reading the clock itself. A remote's or
+  // the phone's tap is a press and a release back to back, so the release's
+  // time can come out a few milliseconds before the press's, and either
+  // can arrive first.
+  const t = await tv({ backHoldMs: 80 });
+  await openApp(t, "agentv.tube", "0xb");
+  const now = Date.now();
+  t.screen.back("down", now);
+  t.screen.back("up", now - 3);
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xb", "the release arrived second");
+  t.screen.back("up", now + 197);
+  t.screen.back("down", now + 200);
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xb", "the release arrived first");
+  // A release from long before doesn't end a new hold.
+  t.screen.back("down", Date.now());
+  t.screen.back("up", now + 197);
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.lines.some((line) => line.startsWith("Back held")), t.lines.join("\n"));
+});
+
 test("S2.16 the guide button is a game's own; on the home screen Home goes to its home page", async () => {
   const t = await tv();
   t.launcher.targets.set("agentv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
