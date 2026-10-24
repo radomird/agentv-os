@@ -14,6 +14,9 @@ Input. Nobody else on the box can use it.
                               enter, back, home, playpause, a, 1, ...
   input.py hold <name> <s>    press a key, hold it for s seconds, release it
   input.py text <text>        type text (US layout)
+  input.py move <dx> <dy>     move the pointer; pushed far enough, it stops
+                              in a corner, such as the one with Home
+  input.py click [button]     click: left, the default, right or middle
 
 A request is one JSON line: {"key": "up"}, {"hold": "back", "ms": 1200},
 {"text": "hello"}, {"move": [dx, dy]}, {"click": "left"} or {"scroll": n}.
@@ -28,6 +31,7 @@ import fcntl
 import glob
 import json
 import os
+import re
 import select
 import socket
 import struct
@@ -320,6 +324,10 @@ def main(args):
         return send({"hold": args[1], "ms": ms})
     if args[:1] == ["text"] and len(args) == 2:
         return send({"text": args[1]})
+    if args[:1] == ["move"] and len(args) == 3 and all(re.fullmatch(r"-?\d{1,5}", a) for a in args[1:]):
+        return send({"move": [int(args[1]), int(args[2])]})
+    if args[:1] == ["click"] and len(args) <= 2:
+        return send({"click": args[1] if len(args) == 2 else "left"})
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
 
