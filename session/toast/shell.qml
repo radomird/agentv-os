@@ -1,6 +1,6 @@
 // AgenTV's toasts in the TV session (ADR-031): drawn the standard Wayland
 // way, as a layer surface over the app in front, so a toast shows over a
-// playing film too. It never takes the keyboard or the mouse.
+// playing film too. A toast never takes the keyboard or the mouse.
 //
 // agentv-toast.service runs it with Quickshell, which comes with Omarchy.
 // The screen daemon shows one with:
@@ -11,6 +11,12 @@
 // It also watches the seat for input: after 30 s with none, and when there's
 // some again, it tells the screen daemon, which starts the ambient screen at
 // the time Settings gives (ADR-031). Something playing in front holds it off.
+//
+// And it has the mouse's Home (ADR-031). While an app is in front, the
+// pointer pushed into the top left corner shows a Home button there, and a
+// click goes home, as the Home key does. The screen daemon says when an app
+// is in front:
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- corner front true
 
 import QtQuick
 import Quickshell
@@ -22,6 +28,8 @@ ShellRoot {
 
   property string message: ""
   property bool shown: false
+  property bool appInFront: false
+  property bool cornerOpen: false
 
   Timer {
     id: hideTimer
@@ -50,6 +58,110 @@ ShellRoot {
       root.shown = true
       hideTimer.restart()
       return "ok"
+    }
+  }
+
+  IpcHandler {
+    target: "corner"
+
+    function front(on: bool): string {
+      root.appInFront = on
+      if (!on)
+        root.cornerOpen = false
+      return "ok"
+    }
+  }
+
+  // After the overlay starts again, what's in front now.
+  Process {
+    running: true
+    command: ["agentv", "screen", "status"]
+    stdout: StdioCollector {
+      id: frontNow
+      waitForEnd: true
+    }
+    onExited: {
+      try {
+        const front = JSON.parse(frontNow.text).front
+        root.appInFront = Boolean(front && front.role && front.role !== "home")
+      } catch (e) {
+      }
+    }
+  }
+
+  Process {
+    id: goHome
+    command: ["agentv", "screen", "home"]
+  }
+
+  // It goes away a moment after the pointer leaves it, or after a while
+  // when the pointer was only passing.
+  Timer {
+    id: cornerClose
+    interval: 1500
+    onTriggered: {
+      if (!buttonArea.containsMouse)
+        root.cornerOpen = false
+    }
+  }
+
+  PanelWindow {
+    visible: root.appInFront
+    anchors {
+      top: true
+      left: true
+    }
+    implicitWidth: cornerButton.width
+    implicitHeight: cornerButton.height
+    color: "transparent"
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "agentv-corner"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    // Until it opens, it takes the pointer only in the corner itself, so
+    // the app gets every other click.
+    mask: Region {
+      item: root.cornerOpen ? cornerButton : hotCorner
+    }
+
+    MouseArea {
+      id: hotCorner
+      width: 4
+      height: 4
+      hoverEnabled: true
+      onEntered: {
+        root.cornerOpen = true
+        cornerClose.restart()
+      }
+    }
+
+    Rectangle {
+      id: cornerButton
+      width: 240
+      height: 104
+      visible: root.cornerOpen
+      color: "#7aa2f7"
+
+      Text {
+        anchors.centerIn: parent
+        text: "home"
+        color: "#1a1b26"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 32
+        font.bold: true
+      }
+
+      MouseArea {
+        id: buttonArea
+        anchors.fill: parent
+        hoverEnabled: true
+        enabled: root.cornerOpen
+        onExited: cornerClose.restart()
+        onClicked: {
+          root.cornerOpen = false
+          goHome.running = true
+        }
+      }
     }
   }
 

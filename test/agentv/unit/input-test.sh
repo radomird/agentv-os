@@ -155,3 +155,36 @@ wait "$server"
   fail "S1.7 agentv input never prints what it types" "$out"
 [[ -s $SCRATCH/typed ]] || fail "what was typed reached the device"
 pass "S1.7 agentv input types from its command line or stdin, and prints nothing of what it typed"
+
+# agentv input move and click, the mouse, end to end the same way: what
+# reaches the device's socket.
+rm -f "$XDG_RUNTIME_DIR/agentv/input.sock"
+python3 -I - "$ROOT/daemon" "$SCRATCH/pointer" <<'PY' &
+import json, socket, sys
+sys.path.insert(0, sys.argv[1])
+import input as agentv_input
+
+asked = []
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(agentv_input.socket_path())
+server.listen(4)
+for _ in range(3):
+    conn, _ = server.accept()
+    with conn, conn.makefile("rwb") as stream:
+        asked.append(json.loads(stream.readline()))
+        stream.write(b"ok\n")
+open(sys.argv[2], "w").write(json.dumps(asked))
+PY
+server=$!
+for _ in $(seq 50); do [[ -S $XDG_RUNTIME_DIR/agentv/input.sock ]] && break; sleep 0.1; done
+for bad in "move 5" "move a b" "move 1 2 3" "click left right"; do
+  # shellcheck disable=SC2086 # each case is words on purpose
+  if AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-input" $bad >/dev/null 2>&1; then fail "agentv input $bad is refused"; fi
+done
+AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-input" move -4000 -4000 || fail "agentv input move sends the move"
+AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-input" click || fail "agentv input click sends a left click"
+AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-input" click right || fail "agentv input click right sends a right click"
+wait "$server"
+[[ $(cat "$SCRATCH/pointer") == '[{"move": [-4000, -4000]}, {"click": "left"}, {"click": "right"}]' ]] ||
+  fail "the pointer's requests reach the device" "$(cat "$SCRATCH/pointer")"
+pass "agentv input moves the pointer and clicks, for the corner's Home (ADR-031)"

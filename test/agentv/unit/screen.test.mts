@@ -171,6 +171,8 @@ class FakeLauncher implements Launcher {
   parents = new Map<number, number>();
   profiles = new Map<number, string>();
   toasts: string[] = [];
+  corners: boolean[] = [];
+  cornerFails = 0;
   steamInstalled = true;
   browser = new FakeBrowser();
   homeBrowser = new FakeBrowser();
@@ -225,6 +227,13 @@ class FakeLauncher implements Launcher {
   }
   async toast(text: string) {
     this.toasts.push(text);
+  }
+  async corner(on: boolean) {
+    if (this.cornerFails > 0) {
+      this.cornerFails--;
+      throw new Error("no overlay yet");
+    }
+    this.corners.push(on);
   }
   parent(pid: number) {
     return this.parents.get(pid) ?? null;
@@ -429,6 +438,31 @@ test("home puts the home screen back in front of an app", async () => {
   assert.deepEqual(await screen.handle({ cmd: "home" }), { ok: true });
   assert.deepEqual(hypr.onTv(), ["0xa"]);
   assert.equal(hypr.get("0xd").workspace.name, HELD_WORKSPACE);
+});
+
+test("the mouse's Home button is in the corner while an app is in front, and only then", async () => {
+  const { hypr, launcher, screen, lines } = await tv();
+  assert.deepEqual(launcher.corners, [false], "home is in front");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  assert.deepEqual(launcher.corners, [false, true]);
+  // A second window of the app in front changes nothing.
+  hypr.open("0xe", launcher.last("web").pid);
+  await screen.idle();
+  assert.deepEqual(launcher.corners, [false, true]);
+  assert.deepEqual(await screen.handle({ cmd: "home" }), { ok: true });
+  assert.deepEqual(launcher.corners, [false, true, false]);
+  // An overlay that doesn't answer is told again at the next change.
+  launcher.cornerFails = 1;
+  await screen.handle({ cmd: "open", url: "https://example.org/b" });
+  hypr.open("0xf", launcher.last("web").pid);
+  await screen.idle();
+  await sleep(10);
+  assert.deepEqual(launcher.corners, [false, true, false]);
+  assert.ok(lines.some((line) => line.startsWith("the corner's Home button: no overlay yet")), lines.join("\n"));
+  assert.deepEqual(await screen.handle({ cmd: "home" }), { ok: true });
+  assert.deepEqual(launcher.corners, [false, true, false, false]);
 });
 
 test("a home screen that restarts while an app is in front stays behind it", async () => {

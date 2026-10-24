@@ -16,6 +16,9 @@ Input. Nobody else on the box can use it.
   input.py text <text>        type text (US layout)
   input.py text -             type text read from stdin, so it isn't on
                               the command line for ps to show
+  input.py move <dx> <dy>     move the pointer; pushed far enough, it stops
+                              in a corner, such as the one with Home
+  input.py click [button]     click: left, the default, right or middle
 
 What it types is never logged, and no error names it (ADR-032): it can be
 a password, typed from the phone.
@@ -33,6 +36,7 @@ import fcntl
 import glob
 import json
 import os
+import re
 import select
 import socket
 import struct
@@ -337,6 +341,10 @@ def main(args):
     if args[:1] == ["text"] and len(args) == 2:
         text = sys.stdin.read().removesuffix("\n") if args[1] == "-" else args[1]
         return send({"text": text})
+    if args[:1] == ["move"] and len(args) == 3 and all(re.fullmatch(r"-?\d{1,5}", a) for a in args[1:]):
+        return send({"move": [int(args[1]), int(args[2])]})
+    if args[:1] == ["click"] and len(args) <= 2:
+        return send({"click": args[1] if len(args) == 2 else "left"})
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
 

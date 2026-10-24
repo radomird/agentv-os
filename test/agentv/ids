@@ -29,7 +29,7 @@ S2.12 check     Settings → Updates shows the installed and the new AgenTV and 
 S2.13 check     a new release shows one toast on home, and the bar says so until it's installed (no profiles or kids until stage 4)
 S2.14 image     when the check after an update finds something off, Go back returns the box to the version from before, with no reinstall
 S2.15 image     Home pauses the app in front and shows home, choosing it again plays it where it was, a third app closes the oldest, a game keeps running with Quit (the NUC times the 1 s)
-S2.16 image     Back reaches the app in front, and Home works from the Home key, a gamepad's guide button, the phone and a 1 s hold on Back
+S2.16 image     Back reaches the app in front, and Home works from the Home key, a gamepad's guide button, the phone, a 1 s hold on Back and the mouse's button in the top left corner
 S2.8  manual    with the TV off mid-episode, playback pauses within 5 s, every app closes after 2 min, and home is on its ambient screen when it's back (layer 2 checks the policy, the image layer with agentv screen tv)
 S2.9  manual    when the TV comes back on, a key press brings the launcher back within 10 s (layer 2 checks the policy)
 S2.17 image     with no input and nothing playing, the ambient screen starts after the time Settings gives, and a paused film stays open behind it

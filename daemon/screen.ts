@@ -97,6 +97,9 @@ export interface Launcher {
   web(url: string): App;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
+  // Tells the overlay whether an app is in front, so the mouse's Home
+  // button can show in the corner (ADR-031).
+  corner(appInFront: boolean): Promise<void>;
   // What opening an installed app means, from AgenTV's daemon, or null.
   appTarget(id: string): Promise<{ runtime: "web"; url: string } | { runtime: "native"; exec: string[] } | null>;
   // Settings → Omarchy desktop: agentv desktop, which ends this session.
@@ -202,6 +205,7 @@ export class Screen {
   private homeDelay: number;
   private homeTimer: ReturnType<typeof setTimeout> | null = null;
   private lastRefocus = 0;
+  private cornerSaid: boolean | null = null;
   private homeStarting = false;
   private homeCheckMs: number;
   homeRestarts = 0;
@@ -460,6 +464,18 @@ export class Screen {
     }
     this.stack = this.stack.filter((a) => a !== address);
     this.stack.push(address);
+    void this.corner(this.windows.get(address)?.role !== "home");
+  }
+
+  // The mouse's Home in the overlay, on while an app is in front. Said once
+  // per change; once more when the overlay didn't answer.
+  private async corner(on: boolean): Promise<void> {
+    if (this.cornerSaid === on) return;
+    this.cornerSaid = on;
+    await this.launcher.corner(on).catch((error: Error) => {
+      this.cornerSaid = null;
+      this.log(`the corner's Home button: ${error.message}`);
+    });
   }
 
   private hold(address: string): Promise<void> {
@@ -1226,6 +1242,17 @@ export const launcher: Launcher = {
       { stdio: ["ignore", "ignore", "inherit"], detached: true },
     );
     return track("steam", child, true);
+  },
+
+  corner(appInFront) {
+    return new Promise((resolve, reject) => {
+      const args = ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "corner", "front", String(appInFront)];
+      execFile("qs", args, { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
+    });
   },
 
   toast(text) {
