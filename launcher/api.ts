@@ -30,6 +30,8 @@ export interface Settings {
   sound: { on: boolean; volume: number };
   reduceMotion: boolean;
   idleMinutes: number;
+  // Install tested updates between 02:00 and 05:00 without asking (Q79).
+  updateOvernight: boolean;
 }
 
 export interface HomeState {
@@ -93,7 +95,9 @@ export interface Updates {
   after?: AfterCheck | null;
   goBack?: GoBack | null;
   wentBack?: { at: string; from: { agentv: string }; to: { agentv: string } } | null;
-  seen?: { kept: string | null; wentBack: string | null };
+  seen?: { kept: string | null; wentBack: string | null; later?: string | null };
+  // Tonight was chosen, for this release ("packages" when it's only those).
+  tonight?: { version: string; at: string } | null;
 }
 
 export interface TileEntry {
@@ -127,7 +131,8 @@ export const daemon = {
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
   updates: () => call<Updates>("GET", "/api/updates"),
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
-  seen: (change: { kept?: string; wentBack?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
+  seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
+  tonight: (version: string | null) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
 };
 

@@ -339,6 +339,20 @@ export class Daemon {
       return;
     }
 
+    // Install tonight (ADR-025), from Settings → Updates or the phone; the
+    // screen daemon does it between 02:00 and 05:00.
+    if (method === "POST" && path === "/api/updates/tonight") {
+      const why = await this.updates.setTonight(await this.body(request));
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      const state = await this.updates.read();
+      this.broadcast("updates", state);
+      this.json(response, 200, { ok: true, tonight: state.tonight });
+      return;
+    }
+
     // The check after an update (bin/agentv-update-after): does every
     // installed app still load?
     if (method === "GET" && path === "/api/apps/check") {

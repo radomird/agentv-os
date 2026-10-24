@@ -54,6 +54,78 @@ function ready(status: UpdateStatus | null): boolean {
   return pending(status) && !status?.waiting;
 }
 
+// What Tonight and Later name: the AgenTV release, or "packages" when only
+// Omarchy's or the system's are new.
+function what(status: UpdateStatus | null): string {
+  return status?.agentv.available ?? "packages";
+}
+
+// Tonight was chosen, here or on the phone (S4.8), and there's still
+// something to install. The screen daemon installs it between 02:00 and
+// 05:00, once nothing has played for half an hour.
+export function tonight(updates: Updates): boolean {
+  return Boolean(updates.tonight) && ready(updates.status);
+}
+
+// Later was chosen for this release, so home doesn't say it's ready.
+export function later(updates: Updates): boolean {
+  return pending(updates.status) && updates.seen?.later === what(updates.status);
+}
+
+async function chooseTonight(ctx: Ctx, route: string): Promise<void> {
+  const version = what(ctx.updates.status);
+  try {
+    await daemon.tonight(version);
+  } catch (error) {
+    ctx.sounds.play("failure");
+    ctx.toast((error as Error).message, "fail");
+    return;
+  }
+  ctx.updates.tonight = { version, at: new Date().toISOString() };
+  ctx.sounds.play("confirm");
+  ctx.toast("it installs tonight, between 2 and 5", "ok");
+  ctx.render(route, "later");
+}
+
+// Not now: Tonight is off again, home stops saying it's ready, and it waits
+// in Settings → Updates.
+async function chooseLater(ctx: Ctx, leave: boolean): Promise<void> {
+  const version = what(ctx.updates.status);
+  try {
+    if (ctx.updates.tonight) await daemon.tonight(null);
+    await daemon.seen({ later: version });
+  } catch (error) {
+    ctx.sounds.play("failure");
+    ctx.toast((error as Error).message, "fail");
+    return;
+  }
+  ctx.updates.tonight = null;
+  ctx.updates.seen = { kept: null, wentBack: null, ...ctx.updates.seen, later: version };
+  ctx.toast("later, then. it's here in settings → updates.", "ok");
+  if (leave) ctx.back();
+  else {
+    ctx.sounds.play("confirm");
+    ctx.render("settings/updates", "tonight");
+  }
+}
+
+// Install now, Tonight and Later, for Settings → Updates and What's new.
+function choices(ctx: Ctx, route: string): HTMLElement[] {
+  if (!ready(ctx.updates.status)) return [];
+  const on = tonight(ctx.updates);
+  const parts: (HTMLElement | null)[] = [
+    h("button", { class: "button primary", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "↵ install now"),
+    on ? null : h("button", { class: "button", "data-focus": true, "data-action": "tonight", onclick: () => void chooseTonight(ctx, route) }, "tonight"),
+    h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void chooseLater(ctx, route === "whats-new") }, "later"),
+  ];
+  return parts.filter((part): part is HTMLElement => part !== null);
+}
+
+function tonightNote(ctx: Ctx): HTMLElement | null {
+  if (!tonight(ctx.updates)) return null;
+  return h("div", { class: "panel-note tonight-note" }, "it installs tonight, between 2 and 5, once nothing has played for half an hour. later takes that back.");
+}
+
 function when(iso: string | null | undefined): string {
   if (!iso) return "never";
   const at = new Date(iso);
@@ -112,22 +184,45 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
       row("omarchy", status.omarchy.installed, status.omarchy.available),
     ),
     h("div", { class: "panel-note" }, status.packages > 0 ? `plus ${status.packages} system package${status.packages === 1 ? "" : "s"} · ${tested}` : tested),
-    ready(status)
-      ? h("button", { class: "button primary", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "↵ install now")
-      : null,
+    h(
+      "div",
+      { class: "update-choices" },
+      ...choices(ctx, "settings/updates"),
+      status.notes.agentv.length || status.notes.omarchy.length
+        ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "what's new ›")
+        : null,
+    ),
+    tonightNote(ctx),
     status.waiting && pending(status)
       ? h("div", { class: "panel-note" }, "it waits until agentv's nightly run has tested it. the box looks again tomorrow.")
       : null,
-    status.notes.agentv.length || status.notes.omarchy.length
-      ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "what's new ›")
-      : null,
     go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `go back to ${shown(go.from.agentv)}`) : null,
     go ? h("div", { class: "panel-note" }, "kept until the next update.") : null,
-    h("div", { class: "panel-note" }, "tonight, and updating overnight on its own, are coming soon."),
+    h(
+      "button",
+      { class: "button wide", "data-focus": true, "data-action": "overnight", onclick: () => void overnight(ctx) },
+      h("span", {}, "update overnight on its own"),
+      h("span", { class: "button-value" }, ctx.state.settings.updateOvernight ? "[x]" : "[ ]"),
+    ),
+    ctx.state.settings.updateOvernight
+      ? h("div", { class: "panel-note" }, "tested updates install between 2 and 5, once nothing has played for half an hour.")
+      : null,
     h("div", { class: "panel-note" }, `last checked ${when(status.checked_at)}${status.ok ? "" : ", and it couldn't look"}.`),
     h("button", { class: "button", "data-focus": true, "data-action": "check", onclick: () => void check(ctx) }, "check now"),
   ];
   return parts.filter((part): part is HTMLElement => part !== null);
+}
+
+async function overnight(ctx: Ctx): Promise<void> {
+  try {
+    await ctx.saveSettings({ updateOvernight: !ctx.state.settings.updateOvernight });
+  } catch (error) {
+    ctx.sounds.play("failure");
+    ctx.toast((error as Error).message, "fail");
+    return;
+  }
+  ctx.sounds.play("confirm");
+  ctx.render("settings/updates", "overnight");
 }
 
 async function check(ctx: Ctx): Promise<void> {
@@ -158,9 +253,7 @@ export function whatsNew(ctx: Ctx): View {
           ? lines(status.notes.omarchy)
           : h("div", { class: "empty" }, "omarchy's own notes are on github.com/omacom/omarchy/releases.")
         : null,
-      ready(status)
-        ? h("button", { class: "button primary notes-install", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "↵ install now")
-        : null,
+      ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "whats-new"), tonightNote(ctx)) : null,
     ),
     bar(ctx, "settings", "↵ select · esc back"),
   );
@@ -175,7 +268,7 @@ export function checkView(ctx: Ctx): View {
   const wrong = (after?.checks ?? []).filter((check) => !check.ok).map((check) => check.detail || `${check.name} isn't right`);
   const keep = async () => {
     if (after) {
-      ctx.updates.seen = { kept: after.at, wentBack: ctx.updates.seen?.wentBack ?? null };
+      ctx.updates.seen = { wentBack: null, ...ctx.updates.seen, kept: after.at };
       await daemon.seen({ kept: after.at }).catch(() => {});
     }
     ctx.back();
