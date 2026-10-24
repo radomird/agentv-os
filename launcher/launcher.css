@@ -757,3 +757,124 @@ button {
   font-size: 28px;
   color: var(--dark-foreground);
 }
+
+/* Updates (ADR-025, boards 29 to 32). */
+.update-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 40px;
+}
+
+.update-row {
+  display: grid;
+  grid-template-columns: 220px auto auto auto;
+  justify-content: start;
+  gap: 24px;
+  align-items: baseline;
+}
+
+.update-name {
+  color: var(--foreground);
+  font-size: 30px;
+}
+
+.update-arrow {
+  color: var(--dark-foreground);
+}
+
+.update-next {
+  color: var(--green);
+  font-weight: 800;
+}
+
+.update-same {
+  color: var(--foreground);
+  font-size: 28px;
+}
+
+.panel-title.security {
+  color: var(--red);
+}
+
+.notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 32px;
+}
+
+.notes b {
+  color: var(--green);
+}
+
+.notes-install {
+  margin-top: 48px;
+  max-width: 640px;
+}
+
+#updating {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--background);
+  z-index: 40;
+}
+
+#updating.on {
+  display: flex;
+}
+
+.updating-box {
+  width: 1100px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+.updating-title {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: -3px;
+}
+
+.updating-bar {
+  height: 28px;
+  border: 2px solid var(--selection);
+  overflow: hidden;
+}
+
+.updating-fill {
+  height: 100%;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+
+.updating-note {
+  color: var(--foreground);
+}
+
+.updating-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--foreground);
+}
+
+.updating-step b {
+  color: var(--green);
+  font-weight: 400;
+}
+
+.updating-step.now {
+  color: var(--bright-foreground);
+}
+
+.updating-step.now b {
+  color: var(--yellow);
+}

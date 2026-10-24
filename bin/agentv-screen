@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Ask the TV session what's on screen, or put something in front
-# agentv:args=status | home | open <url> | open steam | quit <app> | close <home|web|steam> | ambient | tv <on|off> | toast <text> | frames [seconds] | keys [seconds]
+# agentv:args=status | home | open <url> | open steam | quit <app> | close <home|web|steam> | ambient | tv <on|off> | update <check|install> | toast <text> | frames [seconds] | keys [seconds]
 # agentv:examples=agentv screen status | agentv screen open https://example.org | agentv screen toast "Hello"
 
 # Talks to AgenTV's screen daemon (daemon/screen.ts), which decides what's in
@@ -21,6 +21,7 @@
 #   ambient        the ambient screen now, over whatever's in front
 #   tv <on|off>    what happens when the TV goes off or comes back, as if it
 #                  had (the box reads the TV's power itself)
+#   update <check|install>  Settings → Updates' Check now and Install now
 #   idle-after <s|off>  the ambient screen after s seconds with no input,
 #                  instead of Settings' time, until the session ends
 #   close <role>   close the home screen, the web apps or Steam
@@ -55,6 +56,10 @@ case "$command" in
     ;;
   ambient)
     request='{"cmd":"ambient"}'
+    ;;
+  update)
+    (( $# == 1 )) && [[ $1 == "check" || $1 == "install" ]] || { usage >&2; exit 2; }
+    request=$(jq -cn --arg what "$1" '{cmd: "update", what: $what}')
     ;;
   tv)
     (( $# == 1 )) && [[ $1 == "on" || $1 == "off" ]] || { usage >&2; exit 2; }

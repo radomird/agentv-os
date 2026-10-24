@@ -201,6 +201,11 @@ class FakeLauncher implements Launcher {
   desktop() {
     this.desktops++;
   }
+  units: string[] = [];
+  async startUnit(name: string) {
+    this.units.push(name);
+    return true;
+  }
   minutes: number | null = 10;
   async idleMinutes() {
     return this.minutes;
@@ -782,4 +787,15 @@ test("S2.17 no ambient screen during setup, and input on the seat ends one", asy
   await t.screen.idle();
   assert.equal(t.screen.ambient, false);
   assert.equal(t.screen.front()?.address, "0xb");
+});
+
+test("S2.12 Settings → Updates checks and installs through the update units", async () => {
+  const t = await tv();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "update-check" }), { ok: true });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "update-install" }), { ok: true });
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service", "agentv-update-tv.service"]);
+  // agentv screen update check|install does the same, over SSH too.
+  assert.deepEqual(await t.screen.handle({ cmd: "update", what: "install" }), { ok: true });
+  assert.equal(((await t.screen.handle({ cmd: "update", what: "rm" })) as { ok: boolean }).ok, false);
+  assert.equal(t.launcher.units.length, 3);
 });

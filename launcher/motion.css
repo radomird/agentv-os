@@ -112,3 +112,8 @@
 :root.reduce-motion .page-forward,
 :root.reduce-motion .page-back,
 :root.reduce-motion .toast { animation: fade-in var(--base) ease-out both; }
+
+/* The Updating screen's bar fills as the install goes. */
+.updating-fill {
+  transition: transform var(--slow) var(--ease);
+}

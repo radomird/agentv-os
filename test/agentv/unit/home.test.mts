@@ -4,7 +4,9 @@
 // a theme that can only change colours.
 
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { cleanTheme } from "../../../daemon/home.ts";
 import type { Daemon } from "../../../daemon/server.ts";
@@ -12,9 +14,10 @@ import { startBox } from "../ui/box.mts";
 
 let daemon: Daemon;
 let url = "";
+let updates = "";
 
 before(async () => {
-  ({ daemon, url } = await startBox());
+  ({ daemon, url, updates } = await startBox());
 });
 
 after(() => daemon.close());
@@ -118,4 +121,26 @@ test("the theme reaches the TV, as colours only", async () => {
   assert.equal(response.status, 200);
   assert.equal(await (await fetch(`${url}/api/theme.css`)).text(), ":root {\n  --background: #eff1f5;\n}\n");
   assert.equal((await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: "body {}" })).status, 400);
+});
+
+test("S2.12 the daemon passes on what the update check found and how an install is going", async () => {
+  assert.deepEqual(await get("/api/updates"), { ok: true, status: null, progress: null, toasted: null });
+  // The TV hears when either changes.
+  const events = await fetch(`${url}/api/events`);
+  const reader = events.body!.getReader();
+  const status = { checked_at: "2026-10-23T09:12:00Z", ok: true, channel: "stable", agentv: { installed: "0.2.1-1", available: "0.3.0-1" } };
+  writeFileSync(join(updates, "status.json"), JSON.stringify(status));
+  let seen = "";
+  const deadline = Date.now() + 3000;
+  while (!seen.includes("event: updates") && Date.now() < deadline) {
+    const { value } = await Promise.race([reader.read(), new Promise<{ value: undefined }>((r) => setTimeout(() => r({ value: undefined }), 500))]);
+    if (value) seen += new TextDecoder().decode(value);
+  }
+  await reader.cancel();
+  assert.match(seen, /event: updates/);
+  assert.deepEqual((await get("/api/updates")).status, status);
+  // Home's toast, once per release.
+  assert.equal((await send("POST", "/api/updates/toasted", { version: "0.3.0" })).status, 200);
+  assert.equal((await get("/api/updates")).toasted, "0.3.0");
+  assert.equal((await send("POST", "/api/updates/toasted", { version: "../x" })).status, 400);
 });

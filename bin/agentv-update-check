@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# agentv:summary=Look for a new AgenTV, Omarchy and system packages, for Settings → Updates
+# agentv:args=[--pending <checkupdates output>]
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# Run once a day and a few minutes after boot by agentv-update-check.timer,
+# and by Check now in Settings → Updates (ADR-025). It only looks: it reads
+# AgenTV's signed release.json and the package repositories, and writes what
+# it found to /var/lib/agentv/update/status.json for the home screen.
+# Nothing about the box is sent anywhere.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+AGENTV_KEYRING=${AGENTV_KEYRING:-/usr/share/pacman/keyrings/agentv.gpg}
+STATE=${AGENTV_UPDATE_STATE:-/var/lib/agentv/update}
+OMARCHY_RELEASES=${AGENTV_OMARCHY_RELEASES:-https://api.github.com/repos/omacom/omarchy/releases/tags}
+
+pending=""
+while (( $# )); do
+  case "$1" in
+    --pending)
+      pending="${2:?--pending needs a file}"
+      shift
+      ;;
+    *) echo "Usage: agentv-update-check [--pending <checkupdates output>]" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# shellcheck source=/dev/null
+source "$AGENTV_PATH/settings"
+channel=$("$AGENTV_BIN_DIR/agentv-channel")
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$STATE"
+chmod 755 "$STATE"
+
+ok=true
+if [[ -z $pending ]]; then
+  # Omarchy's update can write pacman.conf without AgenTV's repository.
+  # AGENTV_PACMAN_CONF is for the tests.
+  if (( EUID == 0 )); then
+    "$AGENTV_BIN_DIR/agentv-pacman-conf" ${AGENTV_PACMAN_CONF:+--file "$AGENTV_PACMAN_CONF"} >/dev/null 2>&1 || true
+  fi
+  pending="$work/pending"
+  # checkupdates exits 2 when there's nothing new, 1 when it couldn't look.
+  status=0
+  checkupdates --nocolor >"$pending" 2>/dev/null || status=$?
+  (( status == 0 || status == 2 )) || ok=false
+fi
+
+installed() {
+  pacman -Q "$1" 2>/dev/null | cut -d' ' -f2
+}
+
+available() {
+  awk -v name="$1" '$1 == name && $3 == "->" { print $4 }' "$pending"
+}
+
+agentv_now=$(installed agentv)
+agentv_next=$(available agentv)
+omarchy_now=$(installed omarchy)
+omarchy_next=$(available omarchy)
+others=$(awk '$1 != "agentv" && $1 != "omarchy" && $3 == "->" { n++ } END { print n + 0 }' "$pending")
+
+# Off edge, an update goes ahead only once AgenTV's nightly run has passed
+# every version it would install (ADR-026). Until then it waits, and the TV
+# says so instead of offering Install now. edge takes every green build.
+waiting=false
+if [[ $ok == "true" && $channel != "edge" ]] && grep -q -- "->" "$pending" &&
+  ! "$AGENTV_BIN_DIR/agentv-tested" --pending "$pending" >/dev/null 2>&1; then
+  waiting=true
+fi
+
+# AgenTV's What's new, from release.json, signed with AgenTV's key. Without a
+# good signature it doesn't count.
+release="{}"
+if curl -fsSL --retry 2 --max-time 20 -o "$work/release.json" "$AGENTV_REPO_URL/$channel/release.json" 2>/dev/null &&
+  curl -fsSL --retry 2 --max-time 20 -o "$work/release.json.sig" "$AGENTV_REPO_URL/$channel/release.json.sig" 2>/dev/null; then
+  gpg --batch --quiet --dearmor <"$AGENTV_KEYRING" >"$work/agentv.gpg" 2>/dev/null || cp "$AGENTV_KEYRING" "$work/agentv.gpg"
+  if gpgv --quiet --keyring "$work/agentv.gpg" "$work/release.json.sig" "$work/release.json" 2>/dev/null &&
+    jq -e 'type == "object"' "$work/release.json" >/dev/null 2>&1; then
+    release=$(jq -c '{version, date, security: (.security == true), notes: ([.notes[]? | strings][:5])}' "$work/release.json")
+  fi
+fi
+
+# Omarchy's What's new: the headings of its own release notes for that
+# version, from GitHub's public API.
+omarchy_notes="[]"
+if [[ -n $omarchy_next ]] &&
+  curl -fsSL --max-time 20 -H "Accept: application/vnd.github+json" -o "$work/omarchy.json" \
+    "$OMARCHY_RELEASES/v${omarchy_next%-*}" 2>/dev/null; then
+  omarchy_notes=$(jq -c '[(.body // "") | split("\n")[] | select(test("^#{1,3} ")) | sub("^#+ +"; "") | .[0:80]][:5]' "$work/omarchy.json" 2>/dev/null || echo "[]")
+fi
+
+previous="{}"
+[[ -f $STATE/status.json ]] && previous=$(cat "$STATE/status.json")
+
+jq -n \
+  --arg checked "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --argjson ok "$ok" \
+  --arg channel "$channel" \
+  --arg agentv_now "$agentv_now" --arg agentv_next "$agentv_next" \
+  --arg omarchy_now "$omarchy_now" --arg omarchy_next "$omarchy_next" \
+  --argjson others "$others" \
+  --argjson waiting "$waiting" \
+  --argjson release "$release" \
+  --argjson omarchy_notes "$omarchy_notes" \
+  --argjson previous "$previous" '
+  def nonempty: if . == "" then null else . end;
+  if $ok then
+    {
+      checked_at: $checked, ok: true, channel: $channel,
+      agentv: { installed: ($agentv_now | nonempty), available: ($agentv_next | nonempty) },
+      omarchy: { installed: ($omarchy_now | nonempty), available: ($omarchy_next | nonempty) },
+      packages: $others,
+      waiting: $waiting,
+      security: (($release.security // false) and ($release.version != null) and (($agentv_next | startswith($release.version)))),
+      notes: {
+        agentv: (if ($release.version != null and ($agentv_next | startswith($release.version))) then ($release.notes // []) else [] end),
+        agentv_date: ($release.date // null),
+        omarchy: $omarchy_notes
+      }
+    }
+  else
+    # It couldn'\''t look: what it found last time stands, marked as such.
+    ($previous + { checked_at: $checked, ok: false, channel: $channel })
+  end' >"$STATE/status.json.new"
+chmod 644 "$STATE/status.json.new"
+mv "$STATE/status.json.new" "$STATE/status.json"
+
+if [[ $ok == "false" ]]; then
+  echo "Couldn't check for updates. Nothing changed." >&2
+  exit 1
+fi
+jq -r '"AgenTV \(.agentv.installed // "?")\(if .agentv.available then " → \(.agentv.available)" else "" end), Omarchy \(.omarchy.installed // "?")\(if .omarchy.available then " → \(.omarchy.available)" else "" end), \(.packages) other packages\(if .waiting then ", waiting for the nightly run" else "" end)"' "$STATE/status.json"

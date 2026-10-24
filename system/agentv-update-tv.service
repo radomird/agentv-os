@@ -1,0 +1,14 @@
+# Install now in Settings → Updates (ADR-025): bin/agentv-update-tv runs agentv
+# update as the box's owner and reports its progress to the TV. Started from
+# the TV session through polkit (system/polkit/50-agentv-update.rules), never
+# enabled.
+
+[Unit]
+Description=AgenTV update from the TV
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-update-tv
+TimeoutStartSec=2h

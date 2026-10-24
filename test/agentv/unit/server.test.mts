@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Daemon } from "../../../daemon/server.ts";
+import { Updates } from "../../../daemon/updates.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-daemon-"));
@@ -139,4 +140,24 @@ test("a page on another site can't change anything here", async () => {
   // A command on the box sends no Origin.
   assert.equal((await raw("POST", "/api/setup", json, '{"done":false}')).status, 200);
   assert.ok(lines.some((line) => /refused POST \/api\/setup: not from one of this box's own pages/.test(line)));
+});
+
+test("S2.12 home hears about an update even when the update folder comes after the daemon", async () => {
+  const dir = join(scratch, "update");
+  const updates = new Updates({ dir, state: join(scratch, "update-state") });
+  let heard = 0;
+  updates.watch(() => heard++, 50);
+  const until = async (done: () => boolean) => {
+    for (let tries = 0; tries < 100 && !done(); tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+    return done();
+  };
+  // A new box: the first check makes the folder, and an install starts, before
+  // the daemon has looked again.
+  mkdirSync(dir);
+  writeFileSync(join(dir, "progress.json"), '{"state": "running"}');
+  assert.ok(await until(() => heard > 0), "what was written before it looked");
+  const before = heard;
+  writeFileSync(join(dir, "after.json"), '{"ok": false}');
+  assert.ok(await until(() => heard > before), "and what's written after");
+  updates.stop();
 });

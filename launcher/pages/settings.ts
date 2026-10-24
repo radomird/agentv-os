@@ -6,6 +6,7 @@ import { screen } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { release, updatesPanel } from "./updates.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -113,12 +114,8 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "updates",
       label: "updates",
-      value: () => ctx.state.version,
-      panel: () => [
-        h("div", { class: "panel-title" }, "agentv"),
-        h("div", { class: "panel-big" }, `${ctx.state.version} · ${ctx.state.channel}`),
-        note("updating from here is coming soon. for now, run agentv update on the box."),
-      ],
+      value: () => (release(ctx.updates) ? `● ${release(ctx.updates)}` : ctx.state.version.replace(/\.r\d+\.g[0-9a-f]+$/, "")),
+      panel: () => updatesPanel(ctx),
     },
     { key: "network", label: "network", value: () => "soon", panel: () => soon("wi-fi and the network come with tv setup.") },
     {
@@ -157,6 +154,7 @@ export function settings(ctx: Ctx, open?: string): View {
 
   const panel = h("div", { class: "panel" });
   const show = (section: Section) => {
+    ctx.remember(`settings/${section.key}`);
     panel.replaceChildren(...section.panel());
     for (const item of menu.children) item.classList.toggle("open", (item as HTMLElement).dataset.key === section.key);
   };
