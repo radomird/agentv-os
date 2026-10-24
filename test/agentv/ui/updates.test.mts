@@ -1,6 +1,7 @@
 // Updates on the TV in a real Chromium (ADR-019, layer 4; ADR-025): what the
 // update check found in Settings → Updates and What's new (S2.12), one toast
-// on home per release (S2.13), and the Updating screen while an install runs.
+// on home per release (S2.13), Tonight, Later and updating overnight on its
+// own, and the Updating screen while an install runs.
 
 import assert from "node:assert/strict";
 import { renameSync, rmSync, writeFileSync } from "node:fs";
@@ -18,6 +19,7 @@ let browser: Browser;
 let daemon: Daemon;
 let url = "";
 let updates = "";
+let state = "";
 
 const STATUS = {
   checked_at: new Date().toISOString(),
@@ -35,7 +37,7 @@ const STATUS = {
 };
 
 before(async () => {
-  ({ daemon, url, updates } = await startBox());
+  ({ daemon, url, updates, state } = await startBox());
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 
@@ -258,4 +260,94 @@ test("S2.14 going back covers the TV until the restart, and home says so after",
   assert.equal(await later.locator(".toast", { hasText: "back on agentv" }).count(), 0);
   await later.close();
   rmSync(join(updates, "went-back.json"));
+});
+
+async function openUpdates(page: Page): Promise<void> {
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.locator('.menu-item[data-key="updates"]').click();
+  await page.waitForSelector('.panel [data-action="check"]');
+}
+
+function api(page: Page, path: string): Promise<any> {
+  return page.evaluate(async (p) => (await fetch(p)).json(), path);
+}
+
+test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it back", async () => {
+  write("status.json", STATUS);
+  const page = await tv();
+  await openUpdates(page);
+  const choices = await page.locator('.panel [data-action="install"], .panel [data-action="tonight"], .panel [data-action="later"]').allInnerTexts();
+  assert.deepEqual(choices, ["↵ install now", "tonight", "later"]);
+  await page.locator('.panel [data-action="tonight"]').click();
+  await page.waitForSelector(".tonight-note");
+  assert.equal((await api(page, "/api/updates")).tonight.version, "0.3.0-1");
+  assert.match(await page.locator(".panel").innerText(), /it installs tonight, between 2 and 5, once nothing has played for half an hour/);
+  assert.equal(await page.locator('.panel [data-action="tonight"]').count(), 0, "chosen already");
+  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "later");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".grid .tile");
+  assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 installs tonight/);
+  // Later: not tonight, and home stops saying it's ready.
+  await openUpdates(page);
+  await page.locator('.panel [data-action="later"]').click();
+  await page.waitForFunction(() => !document.querySelector(".tonight-note"));
+  const after = await api(page, "/api/updates");
+  assert.equal(after.tonight, null);
+  assert.equal(after.seen.later, "0.3.0-1");
+  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "tonight");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".grid .tile");
+  assert.doesNotMatch(await page.locator(".bar").innerText(), /is ready|installs tonight/);
+  // Install now still works from there.
+  await openUpdates(page);
+  await page.locator('.panel [data-action="install"]').click();
+  await requested(page, "update-install");
+  await page.close();
+  rmSync(join(state, "update-seen.json"), { force: true });
+});
+
+test("S2.12 What's new has Install now, Tonight and Later too, and Later goes back", async () => {
+  write("status.json", STATUS);
+  const page = await tv();
+  await openUpdates(page);
+  await page.locator('[data-action="whats-new"]').click();
+  await page.waitForSelector(".notes-choices");
+  assert.deepEqual(await page.locator(".notes-choices .button").allInnerTexts(), ["↵ install now", "tonight", "later"]);
+  await page.locator('.notes-choices [data-action="tonight"]').click();
+  await page.waitForSelector(".notes-choices .tonight-note");
+  assert.equal((await api(page, "/api/updates")).tonight.version, "0.3.0-1");
+  await page.locator('.notes-choices [data-action="later"]').click();
+  await page.waitForSelector('.panel [data-action="check"]');
+  assert.equal((await api(page, "/api/updates")).tonight, null);
+  await page.close();
+  rmSync(join(state, "update-seen.json"), { force: true });
+});
+
+test("S2.12 an update the nightly run hasn't passed has no Tonight or Later", async () => {
+  write("status.json", { ...STATUS, agentv: { installed: "0.2.1-1", available: "0.3.1-1" }, waiting: true });
+  const page = await tv();
+  await openUpdates(page);
+  assert.equal(await page.locator('.panel [data-action="tonight"], .panel [data-action="later"]').count(), 0);
+  await page.close();
+});
+
+test("S2.12 updating overnight on its own is off until it's turned on, and it stays", async () => {
+  write("status.json", STATUS);
+  const page = await tv();
+  await openUpdates(page);
+  const toggle = page.locator('.panel [data-action="overnight"]');
+  assert.match(await toggle.innerText(), /update overnight on its own\s+\[ \]/);
+  await toggle.click();
+  await page.waitForFunction(() => document.querySelector('[data-action="overnight"] .button-value')?.textContent === "[x]");
+  assert.equal((await api(page, "/api/home")).settings.updateOvernight, true);
+  assert.match(await page.locator(".panel").innerText(), /tested updates install between 2 and 5, once nothing has played for half an hour/);
+  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "overnight");
+  await page.close();
+  const again = await tv();
+  await openUpdates(again);
+  assert.match(await again.locator('.panel [data-action="overnight"]').innerText(), /\[x\]/);
+  await again.locator('.panel [data-action="overnight"]').click();
+  await again.waitForFunction(() => document.querySelector('[data-action="overnight"] .button-value')?.textContent === "[ ]");
+  assert.equal((await api(again, "/api/home")).settings.updateOvernight, false);
+  await again.close();
 });

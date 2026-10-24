@@ -28,11 +28,15 @@
 // TV goes off, playback pauses at once; after 2 minutes every app closes and
 // the home screen waits on its ambient screen, where any key goes home.
 //
+// An update asked for tonight, or any with "update overnight on its own" on,
+// installs between 02:00 and 05:00 once nothing has played for 30 minutes
+// (ADR-025).
+//
 // Run by agentv-screen.service in the TV session. Other commands talk to it
 // over $XDG_RUNTIME_DIR/agentv/screen.sock, one JSON request and one JSON
 // answer per connection (daemon/screen-call.ts, agentv screen).
 
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -67,6 +71,16 @@ export interface App {
   onExit(callback: () => void): void;
 }
 
+// What the daemon knows about updates, for the night (ADR-025): what the
+// check found, how an install is going, an install asked for tonight, and
+// Settings' "update overnight on its own".
+export interface NightUpdates {
+  status: any;
+  progress: any;
+  tonight: { version: string } | null;
+  overnight: boolean;
+}
+
 export interface MonitorMode {
   width: number;
   height: number;
@@ -93,6 +107,10 @@ export interface Launcher {
   // Starts one of AgenTV's update units (ADR-025), which polkit lets the
   // person at the TV start: the check, or an install.
   startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service" | "agentv-go-back.service"): Promise<boolean>;
+  // What there is to install at night, or null when the daemon doesn't
+  // answer, and the install asked for tonight is done with.
+  nightUpdates(): Promise<NightUpdates | null>;
+  clearTonight(): Promise<void>;
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
@@ -143,6 +161,10 @@ interface Options {
   ambientSettleMs?: number;
   // How long home's page has to come up after its Chromium starts.
   homeCheckMs?: number;
+  // How often it looks at the night's updates, and how long nothing must
+  // have played before one installs.
+  nightTickMs?: number;
+  nightQuietMs?: number;
 }
 
 export class Screen {
@@ -187,6 +209,14 @@ export class Screen {
   private homeStarting = false;
   private homeCheckMs: number;
   homeRestarts = 0;
+  // Updates at night: when something last played, and the night it last
+  // checked for updates.
+  private lastPlayed: number;
+  private nightChecked = "";
+  private nightCheckAt = 0;
+  private nightTickMs: number;
+  private nightQuietMs: number;
+  private nightWatch: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: Options) {
     this.hypr = options.hyprland;
@@ -202,6 +232,9 @@ export class Screen {
     this.idleReportMs = options.idleReportMs ?? 30_000;
     this.ambientSettleMs = options.ambientSettleMs ?? 3000;
     this.homeCheckMs = options.homeCheckMs ?? 30_000;
+    this.nightTickMs = options.nightTickMs ?? 60_000;
+    this.nightQuietMs = options.nightQuietMs ?? 30 * 60_000;
+    this.lastPlayed = this.now();
   }
 
   // Runs one step at a time, in the order things happened.
@@ -231,6 +264,8 @@ export class Screen {
       this.tvSeen = this.tvPoll();
       this.tvWatch = setInterval(() => this.pollTv(), this.tvPollMs);
     }
+    this.nightWatch = setInterval(() => void this.night(), this.nightTickMs);
+    this.nightWatch.unref?.();
   }
 
   // Stops the timers, for the tests.
@@ -238,6 +273,7 @@ export class Screen {
     this.idleGeneration++;
     for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer]) if (timer) clearTimeout(timer);
     if (this.tvWatch) clearInterval(this.tvWatch);
+    if (this.nightWatch) clearInterval(this.nightWatch);
   }
 
   event(name: string, data: string): void {
@@ -730,6 +766,48 @@ export class Screen {
     return { ok: true };
   }
 
+  // --- Updates at night (ADR-025) ------------------------------------------
+
+  // Tonight, or every night with "update overnight on its own" on, an update
+  // installs between 02:00 and 05:00, once nothing has played for 30
+  // minutes. The first look each night checks for updates; a later one
+  // installs. Runs every minute, and notes when something last played.
+  async night(): Promise<void> {
+    if (await this.playing()) this.lastPlayed = this.now();
+    const at = new Date(this.now());
+    if (at.getHours() < 2 || at.getHours() >= 5) return;
+    const updates = await this.launcher.nightUpdates().catch(() => null);
+    if (!updates || (!updates.tonight && !updates.overnight)) return;
+    const night = at.toDateString();
+    if (this.nightChecked !== night) {
+      this.nightChecked = night;
+      this.nightCheckAt = this.now();
+      this.log("night: checking for updates before installing");
+      await this.launcher.startUnit("agentv-update-check.service");
+      return;
+    }
+    const progress = updates.progress;
+    if (progress && ["running", "restarting", "going-back"].includes(progress.state)) return;
+    const status = updates.status;
+    // The check from a moment ago may still be running: up to 10 minutes,
+    // its answer first.
+    const checked = Date.parse(status?.checked_at ?? "") || 0;
+    if (checked < this.nightCheckAt - 1000 && this.now() - this.nightCheckAt < 10 * 60_000) return;
+    const pending = Boolean(status && (status.agentv?.available || status.omarchy?.available || status.packages > 0));
+    if (!pending) {
+      if (updates.tonight) await this.launcher.clearTonight().catch(() => {});
+      return;
+    }
+    // On stable, one the nightly run hasn't passed waits for another night.
+    if (status.waiting) return;
+    const quiet = this.now() - this.lastPlayed;
+    if (quiet < this.nightQuietMs) return;
+    this.log(`night: installing the update, nothing has played for ${Math.round(quiet / 60_000)} min`);
+    if (await this.launcher.startUnit("agentv-update-tv.service")) {
+      if (updates.tonight) await this.launcher.clearTonight().catch(() => {});
+    }
+  }
+
   // Whether an open app's page is playing.
   private async playing(): Promise<boolean> {
     const cdp = this.apps.get("web")?.cdp;
@@ -1173,6 +1251,10 @@ export const launcher: Launcher = {
   },
 
   web(url) {
+    // Chromium's own prompts off in this profile: no Save password, autofill,
+    // translate or site notifications over the TV (ADR-032).
+    const prefs = spawnSync("agentv-chromium-prefs", [SERVICES_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
+    if (prefs.status !== 0) console.log(`couldn't turn off the services' Chromium's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
     const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
@@ -1226,6 +1308,26 @@ export const launcher: Launcher = {
 
   desktop() {
     spawn("agentv-desktop", [], { stdio: "ignore", detached: true }).unref();
+  },
+
+  async nightUpdates() {
+    const get = async (path: string) => (await fetch(`${HOME_URL}${path}`, { signal: AbortSignal.timeout(5000) })).json();
+    const [updates, home] = await Promise.all([get("api/updates"), get("api/home")]);
+    return {
+      status: updates?.status ?? null,
+      progress: updates?.progress ?? null,
+      tonight: updates?.tonight ?? null,
+      overnight: home?.settings?.updateOvernight === true,
+    };
+  },
+
+  async clearTonight() {
+    await fetch(`${HOME_URL}api/updates/tonight`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: null }),
+      signal: AbortSignal.timeout(5000),
+    });
   },
 
   startUnit(name) {
