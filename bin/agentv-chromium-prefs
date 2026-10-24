@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# agentv:summary=Turn off the services' Chromium's own prompts, in its profile only
+# agentv:args=[<profile-dir>]
+# agentv:hidden=true
+
+# On the TV, the services' Chromium shows none of its own prompts (ADR-032):
+# no Save password, no address or card autofill, no translate and no site
+# notifications. AgenTV stores no passwords; the phone's password manager
+# fills sign-ins. They're set in the services' profile, not as a system
+# policy, so the Chromium on Omarchy's desktop keeps all of them.
+#
+# The screen daemon runs this before it starts the services' Chromium. A
+# Chromium already running on the profile writes its own settings back when
+# it ends, so then this changes nothing and says so; the next start sets
+# them.
+
+set -euo pipefail
+
+profile=${1:-/var/lib/agentv/chromium}
+prefs="$profile/Default/Preferences"
+
+if pgrep -f -- "--user-data-dir=$profile( |$)" >/dev/null 2>&1; then
+  echo "The services' Chromium is running, so its prompts go off when it next starts."
+  exit 0
+fi
+
+mkdir -p "$profile/Default"
+base="$prefs"
+if ! jq -e 'type == "object"' "$prefs" >/dev/null 2>&1; then
+  base=/dev/null
+fi
+
+jq -n --slurpfile current "$base" '($current[0] // {}) * {
+  credentials_enable_service: false,
+  credentials_enable_autosignin: false,
+  autofill: { profile_enabled: false, credit_card_enabled: false },
+  translate: { enabled: false },
+  profile: { default_content_setting_values: { notifications: 2 } }
+}' >"$prefs.agentv"
+chmod 600 "$prefs.agentv"
+mv "$prefs.agentv" "$prefs"

@@ -32,7 +32,7 @@
 // over $XDG_RUNTIME_DIR/agentv/screen.sock, one JSON request and one JSON
 // answer per connection (daemon/screen-call.ts, agentv screen).
 
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -1125,6 +1125,10 @@ export const launcher: Launcher = {
   },
 
   web(url) {
+    // Chromium's own prompts off in this profile: no Save password, autofill,
+    // translate or site notifications over the TV (ADR-032).
+    const prefs = spawnSync("agentv-chromium-prefs", [SERVICES_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
+    if (prefs.status !== 0) console.log(`couldn't turn off the services' Chromium's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
     const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
