@@ -8,6 +8,7 @@ import { h, monogram, tint } from "../dom.ts";
 import { span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar } from "./parts.ts";
+import { release } from "./updates.ts";
 
 export function logo(app: App, big = false): HTMLElement {
   const el = h("span", { class: `logo mono-${tint(app.id)}${big ? " logo-big" : ""}` });
@@ -133,8 +134,8 @@ export function home(ctx: Ctx): View {
   }
 
   // A new release says so in the bar (ADR-025, board 31).
-  const next = ctx.updates.status?.agentv.available;
-  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", next ? `agentv ${next.replace(/-\d+$/, "")} is ready · settings → updates` : ""));
+  const next = release(ctx.updates);
+  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", next ? `agentv ${next} is ready · settings → updates` : ""));
   return {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,
