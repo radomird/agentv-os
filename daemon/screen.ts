@@ -1053,6 +1053,36 @@ export class Screen {
     })`);
   }
 
+  // The UI sounds the home screen plays for the keys it gets over a few
+  // seconds (S2.11): how long after its key each one started, how close two
+  // moves came, and what the audio output adds.
+  sounds(seconds: number): Promise<object> {
+    const ms = Math.round(Math.min(Math.max(seconds, 1), 30) * 1000);
+    return this.inHome(`new Promise((resolve) => {
+      const sounds = window.agentvLauncher?.sounds;
+      if (!sounds) return resolve({ ok: false, error: "the launcher isn't on the home screen" });
+      const keys = [];
+      const on = (e) => keys.push(e.timeStamp);
+      window.addEventListener("keydown", on, true);
+      const from = performance.now();
+      setTimeout(() => {
+        window.removeEventListener("keydown", on, true);
+        const played = sounds.log.filter((s) => s.at >= from);
+        const delays = played.map((s) => s.at - Math.max(...keys.filter((k) => k <= s.at + 1), -Infinity)).filter((d) => d >= -1 && d < 1000);
+        const moves = played.filter((s) => s.sound === "move").map((s) => s.at);
+        const gaps = moves.slice(1).map((at, i) => at - moves[i]);
+        const audio = sounds.context;
+        resolve({
+          on: sounds.on, keys: keys.length, played: played.map((s) => s.sound),
+          worst_ms: delays.length ? Math.round(Math.max(0, ...delays) * 10) / 10 : null,
+          closest_moves_ms: gaps.length ? Math.round(Math.min(...gaps)) : null,
+          output_ms: audio ? Math.round(((audio.baseLatency || 0) + (audio.outputLatency || 0)) * 1000) : null,
+          audio: audio ? audio.state : "none",
+        });
+      }, ${ms});
+    })`);
+  }
+
   private async inHome(expression: string): Promise<object> {
     const cdp = this.apps.get("home")?.cdp;
     if (!cdp) return { ok: false, error: "the home screen isn't running" };
@@ -1110,6 +1140,8 @@ export class Screen {
         return this.frames(Number(request.seconds ?? 5));
       case "keys":
         return this.keys(Number(request.seconds ?? 5));
+      case "sounds":
+        return this.sounds(Number(request.seconds ?? 5));
       case "end":
         return this.end();
       default:

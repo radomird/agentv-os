@@ -168,6 +168,8 @@ case "$1" in
     fi
     cat "$status" ;;
   frames) cat "$STATE/frames.json" ;;
+  keys) cat "$STATE/keys.json" ;;
+  sounds) cat "$STATE/sounds.json" ;;
   open) if [[ $2 == steam ]]; then set_front steam gamescope; else set_front web chromium; fi; echo "{\"ok\":true}" ;;
   home) set_front home chromium; echo "{\"ok\":true}" ;;
   toast) jq ".layers += [\"agentv-toast\"]" "$status" >"$status.new" && mv "$status.new" "$status"; echo "{\"ok\":true}" ;;
@@ -185,6 +187,9 @@ jq ".windows += [{title: \"agentv selftest\", workspace: \"special:agentv-held\"
 exec sleep 30'
 fake steam 'exit 0'
 fake omarchy-cmd-present 'type -P "$1" >/dev/null'
+# The virtual input device, and the screen daemon's journal.
+fake agentv-input 'echo "$*" >>"$STATE/input.log"'
+fake journalctl 'cat "$STATE/journal" 2>/dev/null || true'
 
 tv() {
   healthy
@@ -197,15 +202,25 @@ tv() {
   disown "$home_pid"
   jq -n --argjson pid "$home_pid" '{ok: true, front: {role: "home", class: "chromium", workspace: "1", fullscreen: 2},
     windows: [], apps: [{role: "home", pid: $pid}], home_restarts: 0,
-    monitors: [{name: "HDMI-A-1", width: 1920, height: 1080, refresh_rate: 60}], layers: []}' >"$state/screen.json"
+    monitors: [{name: "HDMI-A-1", width: 1920, height: 1080, refresh_rate: 60}], layers: [], tv: "on"}' >"$state/screen.json"
   echo '{"ok": true, "frames": 301, "fps": 60, "worst_ms": 17.1, "slow_frames": 0}' >"$state/frames.json"
+  echo '{"ok": true, "keys": ["ArrowRight", "ArrowLeft"]}' >"$state/keys.json"
+  echo '{"ok": true, "on": true, "keys": 30, "played": ["move", "move"], "worst_ms": 1.4, "closest_moves_ms": 61, "output_ms": 21, "audio": "running"}' >"$state/sounds.json"
+  printf '%s\n' \
+    "2026-10-24T21:00:02+0200 nuc agentv-screen[812]: the TV went off; pausing" \
+    "2026-10-24T21:02:02+0200 nuc agentv-screen[812]: the TV has been off for a while; closing every app" \
+    "2026-10-24T21:03:10+0200 nuc agentv-screen[812]: the TV came back on" >"$state/journal"
+  rm -f "$state/input.log"
+  mkdir -p "$SCRATCH/var/chromium/Default"
+  echo '{"credentials_enable_service": false, "credentials_enable_autosignin": false, "autofill": {"profile_enabled": false, "credit_card_enabled": false},
+    "translate": {"enabled": false}, "profile": {"default_content_setting_values": {"notifications": 2}}}' >"$SCRATCH/var/chromium/Default/Preferences"
   mkdir -p "$SCRATCH/var/chromium/WidevineCdm/4.10.2891.0"
   echo '{"version": "4.10.2891.0"}' >"$SCRATCH/var/chromium/WidevineCdm/4.10.2891.0/manifest.json"
 }
 
 run1() {
   env PATH="$fakes:$PATH" STATE="$state" AGENTV_PATH="$SCRATCH/agentv" AGENTV_SDDM_CONF="$SCRATCH/sddm.conf" \
-    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
+    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_INPUT="$fakes/agentv-input" AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
 }
 
 tv
@@ -223,13 +238,63 @@ for line in \
   "pass S1.5 Steam came in front in its own gamescope in" \
   "manual S1.5 watch:" \
   "pass S1.6 a new window stayed out of sight, and the home screen stayed in front" \
-  "pass S1.6 the home screen came back in front"; do
+  "pass S1.6 the home screen came back in front" \
+  "pass S1.7 the services' Chromium has saving passwords, address and card autofill, translate and site notifications off" \
+  "manual S1.7 sign in to a streaming service again" \
+  "pass S2.8 the box reads the TV as on" \
+  "manual S2.8 play an episode, then turn the TV off" \
+  "manual S2.8 seen at 2026-10-24T21:00:02+0200: the TV went off; pausing" \
+  "manual S2.8 seen at 2026-10-24T21:03:10+0200: the TV came back on" \
+  "pass S2.9 a key on the virtual input device reaches the home screen" \
+  "manual S2.9 with the TV back on" \
+  "pass S2.10 with the focus gliding, tiles lifting under the mouse and a page sliding in and out, the home screen drew at 60 fps on a 60 Hz screen, with no frame over 25 ms" \
+  "manual S2.10 watch:" \
+  "pass S2.11 each UI sound started within 1.4 ms of its key, inside one frame; the audio output adds about 21 ms" \
+  "pass S2.11 a held arrow played a move sound at most every 60 ms (the closest two: 61 ms)" \
+  "manual S2.11 listen:" \
+  "pass S2.15 Home put the home screen in front in" \
+  "pass S2.15 choosing the app again brought the same window back in" \
+  "manual S2.15 with an episode playing" \
+  "manual S2.16 over a playing app"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
-[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass" ]] ||
-  fail "with no id it runs stage 1's checks, and manual lines don't fail them" "$(cat "$SCRATCH/out")"
+[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass, S1.7 pass, S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass" ]] ||
+  fail "with no id it runs stages 1 and 2, and manual lines don't fail them" "$(cat "$SCRATCH/out")"
+# The keys, the pointer and the held arrows went through the input device.
+for sent in "key right" "key i" "move -4000 -4000" "hold right 1.5"; do
+  grep -qxF "$sent" "$state/input.log" || fail "it sent: $sent" "$(cat "$state/input.log")"
+done
 kill "$home_pid" 2>/dev/null || true
-pass "stage 1's checks pass in a healthy TV session, with manual lines for what needs eyes"
+pass "stages 1 and 2 pass in a healthy TV session, with manual lines for what needs eyes and ears"
+
+tv
+run1 S2 || fail "S2 runs stage 2's checks" "$(cat "$SCRATCH/out")"
+[[ $(tail -n 1 "$SCRATCH/out") == "S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass" ]] ||
+  fail "S2 runs only stage 2's checks" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "agentv selftest S2 runs stage 2's checks"
+
+tv
+echo '{"credentials_enable_service": true}' >"$SCRATCH/var/chromium/Default/Preferences"
+jq '.tv = "off"' "$state/screen.json" >"$state/screen.json.new" && mv "$state/screen.json.new" "$state/screen.json"
+echo '{"ok": true, "keys": []}' >"$state/keys.json"
+echo '{"ok": true, "fps": 52.3, "slow_frames": 4, "worst_ms": 48}' >"$state/frames.json"
+echo '{"ok": true, "on": true, "keys": 30, "played": ["move"], "worst_ms": 40.2, "closest_moves_ms": 30, "output_ms": 21, "audio": "running"}' >"$state/sounds.json"
+! run1 S1.7 S2.8 S2.9 S2.10 S2.11 || fail "prompts on, a TV read as off, lost keys, dropped frames and slow sounds fail"
+for line in \
+  "fail S1.7 the services' Chromium still has some of its own prompts on; agentv update and a reboot turn them off" \
+  "fail S2.8 the box reads the TV as off while it's on" \
+  "fail S2.9 the home screen didn't get the keys sent" \
+  "fail S2.10 with the focus gliding, tiles lifting and a page sliding, the home screen drew at 52.3 fps on a 60 Hz screen, with 4 frames over 25 ms (worst 48 ms)" \
+  "fail S2.11 a UI sound started 40.2 ms after its key, more than a frame" \
+  "fail S2.11 two move sounds played 30 ms apart, closer than 60 ms"; do
+  grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
+done
+echo '{"ok": true, "on": false, "keys": 30, "played": [], "worst_ms": null, "closest_moves_ms": null}' >"$state/sounds.json"
+! run1 S2.11 || fail "UI sounds turned off fail S2.11"
+grep -qF "fail S2.11 Settings → Sound has the UI sounds off" "$SCRATCH/out" || fail "it says the sounds are off" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "S1.7 and stage 2's checks fail on what they measure, and say what they saw"
 
 tv
 rm "$SCRATCH/sddm.conf.d/zz-agentv-autologin.conf"
