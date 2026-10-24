@@ -360,8 +360,9 @@ async function start(): Promise<void> {
   w.agentvAmbient = (on) => setAmbient(on);
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
-  // For the UI checks: the sounds that played, and the focus.
-  w.agentvLauncher = { sounds, focus };
+  // For the UI checks and agentv selftest: the sounds that played, the
+  // focus, and a page to go to.
+  w.agentvLauncher = { sounds, focus, go: (route: string) => ctx.go(route) };
 }
 
 void start();

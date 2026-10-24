@@ -232,6 +232,23 @@ test("S2.11 a held arrow plays at most one move sound every 60 ms, and Settings 
   await page.close();
 });
 
+test("S2.11 agentv selftest's measurement opens Settings, where arrows down its list always move", async () => {
+  const page = await tv();
+  await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings"));
+  await page.waitForSelector(".menu-item.focused");
+  await page.waitForTimeout(400);
+  const from = await page.evaluate(() => performance.now());
+  for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown", { delay: 0 });
+  const moves = await page.evaluate(
+    (since) => (window as unknown as { agentvLauncher: { sounds: { log: { sound: string; at: number }[] } } }).agentvLauncher.sounds.log.filter((e) => e.sound === "move" && e.at >= since).map((e) => e.at),
+    from,
+  );
+  assert.ok(moves.length >= 1, "the list moved");
+  for (let i = 1; i < moves.length; i++) assert.ok(moves[i] - moves[i - 1] >= 59, `two move sounds ${moves[i] - moves[i - 1]} ms apart`);
+  assert.notEqual(await page.evaluate(() => document.querySelector(".menu-item.focused")?.getAttribute("data-key")), "home", "the focus went down the list");
+  await page.close();
+});
+
 test("the seven sounds are there, as Ogg Opus", async () => {
   for (const sound of ["move", "select", "forward", "back", "confirm", "success", "failure"]) {
     const response = await fetch(`${url}/launcher/sounds/${sound}.ogg`);

@@ -1055,14 +1055,18 @@ export class Screen {
 
   // The UI sounds the home screen plays for the keys it gets over a few
   // seconds (S2.11): how long after its key each one started, how close two
-  // moves came, and what the audio output adds.
+  // moves came, and what the audio output adds. It starts in Settings,
+  // whose list always has somewhere for an arrow to go, however few tiles
+  // home has.
   sounds(seconds: number): Promise<object> {
     const ms = Math.round(Math.min(Math.max(seconds, 1), 30) * 1000);
     return this.inHome(`new Promise((resolve) => {
-      const sounds = window.agentvLauncher?.sounds;
+      const launcher = window.agentvLauncher;
+      const sounds = launcher?.sounds;
       if (!sounds) return resolve({ ok: false, error: "the launcher isn't on the home screen" });
+      launcher.go?.("settings");
       const keys = [];
-      const on = (e) => keys.push(e.timeStamp);
+      const on = () => keys.push(performance.now());
       window.addEventListener("keydown", on, true);
       const from = performance.now();
       setTimeout(() => {

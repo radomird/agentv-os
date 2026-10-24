@@ -250,7 +250,7 @@ for line in \
   "manual S2.9 with the TV back on" \
   "pass S2.10 with the focus gliding, tiles lifting under the mouse and a page sliding in and out, the home screen drew at 60 fps on a 60 Hz screen, with no frame over 25 ms" \
   "manual S2.10 watch:" \
-  "pass S2.11 each UI sound started within 1.4 ms of its key, inside one frame; the audio output adds about 21 ms" \
+  "pass S2.11 each UI sound started within 1.4 ms of its key reaching the page, inside one frame; the audio output adds about 21 ms" \
   "pass S2.11 a held arrow played a move sound at most every 60 ms (the closest two: 61 ms)" \
   "manual S2.11 listen:" \
   "pass S2.15 Home put the home screen in front in" \
@@ -262,7 +262,7 @@ done
 [[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass, S1.7 pass, S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass" ]] ||
   fail "with no id it runs stages 1 and 2, and manual lines don't fail them" "$(cat "$SCRATCH/out")"
 # The keys, the pointer and the held arrows went through the input device.
-for sent in "key right" "key i" "move -4000 -4000" "hold right 1.5"; do
+for sent in "key right" "key i" "move -4000 -4000" "key down" "hold down 1.5"; do
   grep -qxF "$sent" "$state/input.log" || fail "it sent: $sent" "$(cat "$state/input.log")"
 done
 kill "$home_pid" 2>/dev/null || true
@@ -287,7 +287,7 @@ for line in \
   "fail S2.8 the box reads the TV as off while it's on" \
   "fail S2.9 the home screen didn't get the keys sent" \
   "fail S2.10 with the focus gliding, tiles lifting and a page sliding, the home screen drew at 52.3 fps on a 60 Hz screen, with 4 frames over 25 ms (worst 48 ms)" \
-  "fail S2.11 a UI sound started 40.2 ms after its key, more than a frame" \
+  "fail S2.11 a UI sound started 40.2 ms after its key reached the page, more than a frame" \
   "fail S2.11 two move sounds played 30 ms apart, closer than 60 ms"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done

@@ -33,7 +33,7 @@
 #   S2.10 how smoothly the home screen draws while the focus glides, a tile
 #         lifts under the mouse and a page slides in and out.
 #   S2.11 how soon after its key each UI sound starts, and a held arrow's
-#         moves never closer than 60 ms.
+#         moves never closer than 60 ms, in Settings' list.
 #   S2.15 how long Home takes to show the home screen, and choosing the app
 #         again to bring it back.
 #   S2.16 Home and Back from the keyboard, a gamepad and the mouse: manual.
@@ -590,15 +590,17 @@ s211() {
   launcher_on S2.11 || return 0
   home_alone
   out=$(mktemp)
+  # The measurement starts in Settings, whose list always has somewhere for
+  # an arrow to go.
   screen sounds 7 >"$out" &
-  sleep 0.5
-  for key in right left right left; do
+  sleep 1
+  for key in down up down up; do
     input key "$key"
     sleep 0.5
   done
   # A held arrow repeats faster than one move sound every 60 ms.
-  input hold right 1.5
-  input hold left 1.5
+  input hold down 1.5
+  input hold up 1.5
   wait $! || true
   on=$(value '.on' "$out")
   worst=$(value '.worst_ms' "$out")
@@ -615,9 +617,9 @@ s211() {
   if [[ -z $worst ]]; then
     result fail S2.11 "no UI sound played for the keys sent (audio: $(value '.audio' "$out"))"
   elif awk -v worst="$worst" 'BEGIN { exit !(worst <= 16.7) }'; then
-    result pass S2.11 "each UI sound started within $worst ms of its key, inside one frame; the audio output adds about $(value '.output_ms' "$out") ms"
+    result pass S2.11 "each UI sound started within $worst ms of its key reaching the page, inside one frame; the audio output adds about $(value '.output_ms' "$out") ms"
   else
-    result fail S2.11 "a UI sound started $worst ms after its key, more than a frame"
+    result fail S2.11 "a UI sound started $worst ms after its key reached the page, more than a frame"
   fi
   if [[ -n $closest ]] && (( closest >= 59 )); then
     result pass S2.11 "a held arrow played a move sound at most every 60 ms (the closest two: $closest ms)"
@@ -627,6 +629,7 @@ s211() {
     result fail S2.11 "a held arrow played fewer than two move sounds"
   fi
   rm -f "$out"
+  home_alone
   result manual S2.11 "listen: each of the seven sounds comes with its action, a held arrow ticks evenly, and Settings → Sound → ui sounds off silences them all; turn them on again after"
 }
 
