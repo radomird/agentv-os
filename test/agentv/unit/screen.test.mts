@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { HELD_WORKSPACE, SERVICES_PROFILE, Screen, type App, type Launcher, type Role } from "../../../daemon/screen.ts";
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type Role } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -98,6 +98,8 @@ class FakeBrowser implements DevTools {
   playing = new Map<string, boolean>();
   heldByHome = new Set<string>();
   evaluated: string[] = [];
+  // Whether the page has come up, for the screen daemon's check on home.
+  up = true;
   closed: string[] = [];
   private next = 1;
   addPage(url: string): string {
@@ -107,6 +109,7 @@ class FakeBrowser implements DevTools {
   }
   async bind() {}
   async evaluate(_prefix: string, expression: string) {
+    if (expression === HOME_UP) return this.up;
     this.evaluated.push(expression);
     return {};
   }
@@ -233,12 +236,24 @@ after(() => {
 });
 
 async function tv(
-  options: { now?: () => number; backHoldMs?: number; tvPoll?: () => boolean | null; tvPollMs?: number; tvOffCloseMs?: number; idleReportMs?: number; ambientSettleMs?: number } = {},
+  options: {
+    now?: () => number;
+    backHoldMs?: number;
+    tvPoll?: () => boolean | null;
+    tvPollMs?: number;
+    tvOffCloseMs?: number;
+    idleReportMs?: number;
+    ambientSettleMs?: number;
+    homeCheckMs?: number;
+    homeUp?: boolean;
+  } = {},
 ) {
+  const { homeUp = true, ...rest } = options;
   const hypr = new FakeHyprland();
   const launcher = new FakeLauncher();
+  launcher.homeBrowser.up = homeUp;
   const lines: string[] = [];
-  const screen = new Screen({ hyprland: hypr, launcher, log: (line) => lines.push(line), homeRestartMs: 10, ...options });
+  const screen = new Screen({ hyprland: hypr, launcher, log: (line) => lines.push(line), homeRestartMs: 10, ...rest });
   screens.push(screen);
   await screen.start();
   await sleep(0);
@@ -254,6 +269,27 @@ test("S1.1 the home screen starts with the session and comes in front, full scre
   assert.equal(hypr.get("0xa").fullscreen, 2);
   assert.equal(hypr.active, "0xa");
   assert.equal(screen.front()?.role, "home");
+});
+
+test("S1.1 home that comes up stays as it is", async () => {
+  const { launcher, lines } = await tv({ homeCheckMs: 50 });
+  await sleep(120);
+  assert.equal(launcher.last("home").stopped, false);
+  assert.ok(!lines.some((line) => /didn't come up/.test(line)), lines.join("\n"));
+});
+
+test("S1.1 home whose page doesn't come up starts again, so the TV isn't left blank", async () => {
+  const { launcher, screen, lines } = await tv({ homeCheckMs: 50, homeUp: false });
+  const first = launcher.last("home");
+  await sleep(120);
+  assert.equal(first.stopped, true);
+  assert.ok(lines.some((line) => line === "the home screen's page didn't come up in 0 s; starting it again"), lines.join("\n"));
+  // Its Chromium goes, and home starts again.
+  launcher.homeBrowser.up = true;
+  first.exit();
+  await sleep(50);
+  assert.notEqual(launcher.last("home"), first);
+  assert.equal(screen.homeRestarts, 1);
 });
 
 test("S1.6 a new window stays out of sight, and focus stays on the TV", async () => {

@@ -64,6 +64,8 @@
   // really on the TV, for its /health.
   window.addEventListener("load", () => {
     fetch("/api/welcome-shown", { method: "POST" }).catch(() => {});
+    // The screen daemon reads this to know the page came up.
+    window.agentvWelcome = true;
   });
 
   // When setup is marked done (agentv setup skip, until setup is built), the
