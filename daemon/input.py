@@ -14,6 +14,11 @@ Input. Nobody else on the box can use it.
                               enter, back, home, playpause, a, 1, ...
   input.py hold <name> <s>    press a key, hold it for s seconds, release it
   input.py text <text>        type text (US layout)
+  input.py text -             type text read from stdin, so it isn't on
+                              the command line for ps to show
+
+What it types is never logged, and no error names it (ADR-032): it can be
+a password, typed from the phone.
 
 A request is one JSON line: {"key": "up"}, {"hold": "back", "ms": 1200},
 {"text": "hello"}, {"move": [dx, dy]}, {"click": "left"} or {"scroll": n}.
@@ -98,13 +103,20 @@ def event(kind, code, value):
     return struct.pack("llHHi", int(now), int((now % 1) * 1_000_000), kind, code, value)
 
 
+def unknown_key(name):
+    """A key's name in the error, unless it's one character, which can be
+    part of something typed."""
+    return ValueError(f"unknown key: {name}" if len(str(name)) > 1 else "unknown key")
+
+
 def code_of_char(char):
     if char in CHARS:
         key, shift = CHARS[char]
         return KEYS[key], shift
     if char in PUNCTUATION:
         return PUNCTUATION[char]
-    raise ValueError(f"can't type {char!r} yet")
+    # Not the character itself: it can be part of a password.
+    raise ValueError("can't type one of those characters yet (US layout)")
 
 
 class Device:
@@ -127,12 +139,12 @@ class Device:
 
     def key(self, name):
         if name not in KEYS:
-            raise ValueError(f"unknown key: {name}")
+            raise unknown_key(name)
         self.tap(KEYS[name])
 
     def hold(self, name, ms):
         if name not in KEYS:
-            raise ValueError(f"unknown key: {name}")
+            raise unknown_key(name)
         if not 0 <= ms <= 5000:
             raise ValueError("hold for up to 5000 ms")
         self.emit(event(EV_KEY, KEYS[name], 1))
@@ -255,6 +267,15 @@ def screen_home():
         client.close()
 
 
+def answer(device, line):
+    """Does one request and says how it went, in one line."""
+    try:
+        device.handle(json.loads(line))
+        return b"ok\n"
+    except (ValueError, TypeError, KeyError) as error:
+        return f"{error}\n".encode()
+
+
 def serve():
     fd = create()
     device = Device(lambda data: os.write(fd, data))
@@ -273,12 +294,7 @@ def serve():
         while True:
             conn, _ = server.accept()
             with conn, conn.makefile("rwb") as stream:
-                line = stream.readline()
-                try:
-                    device.handle(json.loads(line))
-                    stream.write(b"ok\n")
-                except (ValueError, TypeError, KeyError) as error:
-                    stream.write(f"{error}\n".encode())
+                stream.write(answer(device, stream.readline()))
     finally:
         stop.set()
         fcntl.ioctl(fd, UI_DEV_DESTROY)
@@ -319,7 +335,8 @@ def main(args):
             ms = -1
         return send({"hold": args[1], "ms": ms})
     if args[:1] == ["text"] and len(args) == 2:
-        return send({"text": args[1]})
+        text = sys.stdin.read().removesuffix("\n") if args[1] == "-" else args[1]
+        return send({"text": text})
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
 
