@@ -196,7 +196,7 @@ function setUpdates(updates: Updates): void {
     return;
   }
   // The notice on home: the bar says so, and one toast per release.
-  if (JSON.stringify(before.status) !== JSON.stringify(updates.status)) {
+  if (JSON.stringify([before.status, before.tonight, before.seen?.later]) !== JSON.stringify([updates.status, updates.tonight, updates.seen?.later])) {
     const route = history[history.length - 1];
     if (route === "home" || route.startsWith("settings")) redraw();
   }
@@ -212,7 +212,7 @@ function checkAfterUpdate(): void {
   if (off(ctx.updates) && route === "home") ctx.go("update-off");
   const went = ctx.updates.wentBack;
   if (went && ctx.updates.seen?.wentBack !== went.at && route === "home") {
-    ctx.updates.seen = { kept: ctx.updates.seen?.kept ?? null, wentBack: went.at };
+    ctx.updates.seen = { kept: null, ...ctx.updates.seen, wentBack: went.at };
     ctx.toast(`back on agentv ${shown(went.to.agentv)}. the update is still in settings → updates.`, "ok");
     void daemon.seen({ wentBack: went.at }).catch(() => {});
   }

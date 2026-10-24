@@ -687,6 +687,10 @@ button {
   max-width: 640px;
 }
 
+.panel .button.wide {
+  max-width: 960px;
+}
+
 /* --- Toasts --------------------------------------------------------------- */
 
 #toasts {
@@ -811,9 +815,20 @@ button {
   color: var(--green);
 }
 
-.notes-install {
+/* Install now, Tonight and Later, side by side (boards 29 and 30). */
+.update-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: center;
+}
+
+.notes-choices {
   margin-top: 48px;
-  max-width: 640px;
+}
+
+.notes-choices .panel-note {
+  flex-basis: 100%;
 }
 
 #updating {

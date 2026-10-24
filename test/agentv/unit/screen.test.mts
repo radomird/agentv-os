@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type Role } from "../../../daemon/screen.ts";
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Role } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -208,6 +208,16 @@ class FakeLauncher implements Launcher {
   async startUnit(name: string) {
     this.units.push(name);
     return true;
+  }
+  // What the daemon says about updates, for the night.
+  night: NightUpdates | null = null;
+  tonightCleared = 0;
+  async nightUpdates() {
+    return this.night;
+  }
+  async clearTonight() {
+    this.tonightCleared++;
+    if (this.night) this.night.tonight = null;
   }
   minutes: number | null = 10;
   async idleMinutes() {
@@ -841,4 +851,86 @@ test("S2.14 Go back goes through its unit, from home and over SSH", async () => 
   assert.deepEqual(await t.screen.fromHome({ cmd: "update-go-back" }), { ok: true });
   assert.deepEqual(await t.screen.handle({ cmd: "update", what: "go-back" }), { ok: true });
   assert.deepEqual(t.launcher.units, ["agentv-go-back.service", "agentv-go-back.service"]);
+});
+
+// The box's clock, at a time of day today.
+function at(hours: number, minutes = 0): number {
+  const day = new Date();
+  day.setHours(hours, minutes, 0, 0);
+  return day.getTime();
+}
+
+const READY = { agentv: { installed: "0.2.1-1", available: "0.3.0-1" }, omarchy: { installed: "4.0.6-1", available: null }, packages: 3, waiting: false };
+
+test("S2.12 Tonight installs between 02:00 and 05:00, after checking, once nothing has played for 30 minutes", async () => {
+  let clock = at(1, 20);
+  const t = await tv({ now: () => clock });
+  t.launcher.night = { status: { ...READY, checked_at: new Date(at(1, 0)).toISOString() }, progress: null, tonight: { version: "0.3.0-1" }, overnight: false };
+  // Before 02:00, nothing.
+  clock = at(1, 50);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, []);
+  // At 02:00 it checks first, and installs once that check has answered.
+  clock = at(2, 0);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"]);
+  clock = at(2, 1);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "the check hasn't answered yet");
+  t.launcher.night!.status.checked_at = new Date(at(2, 1)).toISOString();
+  clock = at(2, 2);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service", "agentv-update-tv.service"]);
+  assert.equal(t.launcher.tonightCleared, 1, "tonight is done with once it starts");
+  assert.ok(t.lines.some((line) => line === "night: installing the update, nothing has played for 42 min"), t.lines.join("\n"));
+  // Asked for once: the next night, nothing.
+  t.launcher.units = [];
+  clock = at(2, 30) + 86_400_000;
+  await t.screen.night();
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, []);
+});
+
+test("S2.12 something playing holds the night's update off, and so do the hours outside 02:00 to 05:00", async () => {
+  let clock = at(2, 0);
+  const t = await tv({ now: () => clock });
+  t.launcher.night = { status: { ...READY }, progress: null, tonight: null, overnight: true };
+  const target = await openApp(t, "agentv.tube", "0xb");
+  t.launcher.browser.playing.set(target, true);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "overnight checks too");
+  clock = at(2, 40);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "a film playing at 02:40 holds it off");
+  t.launcher.browser.playing.set(target, false);
+  clock = at(3, 5);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "only 25 quiet minutes");
+  clock = at(5, 0);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "05:00 is too late");
+});
+
+test("S2.12 at night, nothing installs without Tonight or overnight, while waiting for the nightly run, or with nothing new", async () => {
+  let clock = at(1, 0);
+  const t = await tv({ now: () => clock });
+  clock = at(3, 0);
+  // What the night's check says, half a minute after it starts.
+  const answered = new Date(at(3, 0) + 30_000).toISOString();
+  t.launcher.night = { status: { ...READY, checked_at: answered }, progress: null, tonight: null, overnight: false };
+  await t.screen.night();
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, [], "neither asked for");
+  t.launcher.night = { status: { ...READY, waiting: true, checked_at: answered }, progress: null, tonight: { version: "0.3.0-1" }, overnight: false };
+  await t.screen.night();
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "on stable, an update the nightly run hasn't passed waits");
+  assert.equal(t.launcher.tonightCleared, 0, "and stays asked for");
+  // Nothing new.
+  t.launcher.night = { status: { agentv: { installed: "0.3.0-1", available: null }, omarchy: { installed: "4.0.6-1", available: null }, packages: 0, checked_at: answered }, progress: null, tonight: { version: "0.3.0-1" }, overnight: false };
+  await t.screen.night();
+  assert.equal(t.launcher.tonightCleared, 1, "with nothing to install, tonight is done with");
+  t.launcher.night = { status: { ...READY, checked_at: answered }, progress: { state: "running" }, tonight: null, overnight: true };
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "not while an install runs");
 });

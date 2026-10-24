@@ -66,12 +66,14 @@ test("a layout is kept only when the grid can draw it", async () => {
 });
 
 test("the TV's settings change only to values they can take", async () => {
-  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15 })).status, 200);
+  // Updating overnight on its own is off until someone turns it on (Q79).
+  assert.equal((await get("/api/home")).settings.updateOvernight, false);
+  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true })).status, 200);
   const settings = (await get("/api/home")).settings;
-  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15 });
-  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes" });
+  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true });
+  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes", updateOvernight: "on" });
   assert.deepEqual((await get("/api/home")).settings, settings);
-  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10 });
+  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false });
 });
 
 test("a tile's content comes from its app's tile(), in its own worker", async () => {
@@ -133,7 +135,8 @@ test("S2.12 the daemon passes on what the update check found and how an install 
     after: null,
     goBack: null,
     wentBack: null,
-    seen: { kept: null, wentBack: null },
+    seen: { kept: null, wentBack: null, later: null },
+    tonight: null,
   });
   // The TV hears when either changes.
   const events = await fetch(`${url}/api/events`);
@@ -165,9 +168,30 @@ test("S2.14 the daemon passes on the check after an update and what Go back retu
   // Keep this version, and the toast after going back, by their times.
   assert.equal((await send("POST", "/api/updates/seen", { kept: check.at })).status, 200);
   assert.equal((await send("POST", "/api/updates/seen", { wentBack: "2026-10-23T22:05:00Z" })).status, 200);
-  assert.deepEqual((await get("/api/updates")).seen, { kept: check.at, wentBack: "2026-10-23T22:05:00Z" });
+  assert.deepEqual((await get("/api/updates")).seen, { kept: check.at, wentBack: "2026-10-23T22:05:00Z", later: null });
   assert.equal((await send("POST", "/api/updates/seen", { kept: "yesterday" })).status, 400);
   assert.equal((await send("POST", "/api/updates/seen", {})).status, 400);
+});
+
+test("S2.12 Tonight and Later, from the TV or the phone, are kept until they're changed", async () => {
+  assert.equal((await get("/api/updates")).tonight, null);
+  // Install tonight: the release, or "packages" when only those are new.
+  assert.equal((await send("POST", "/api/updates/tonight", { version: "0.3.0-1" })).status, 200);
+  const { tonight } = await get("/api/updates");
+  assert.equal(tonight.version, "0.3.0-1");
+  assert.match(tonight.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  assert.equal((await send("POST", "/api/updates/tonight", { version: "packages" })).status, 200);
+  assert.equal((await get("/api/updates")).tonight.version, "packages");
+  for (const bad of [{ version: "../x" }, { version: 3 }, {}]) {
+    assert.equal((await send("POST", "/api/updates/tonight", bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await get("/api/updates")).tonight.version, "packages");
+  assert.equal((await send("POST", "/api/updates/tonight", { version: null })).status, 200);
+  assert.equal((await get("/api/updates")).tonight, null);
+  // Later, for one release: home stops saying it's ready.
+  assert.equal((await send("POST", "/api/updates/seen", { later: "0.3.0-1" })).status, 200);
+  assert.equal((await get("/api/updates")).seen.later, "0.3.0-1");
+  assert.equal((await send("POST", "/api/updates/seen", { later: "soon" })).status, 400);
 });
 
 test("S2.14 the check after an update loads every installed app, each in a worker of its own", async () => {

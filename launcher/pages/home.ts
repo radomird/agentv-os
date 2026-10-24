@@ -8,7 +8,7 @@ import { h, monogram, tint } from "../dom.ts";
 import { span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar } from "./parts.ts";
-import { release } from "./updates.ts";
+import { later, release, tonight } from "./updates.ts";
 
 export function logo(app: App, big = false): HTMLElement {
   const el = h("span", { class: `logo mono-${tint(app.id)}${big ? " logo-big" : ""}` });
@@ -133,9 +133,10 @@ export function home(ctx: Ctx): View {
     if (tile) grid.append(tile);
   }
 
-  // A new release says so in the bar (ADR-025, board 31).
+  // A new release says so in the bar (ADR-025, board 31), until Later.
   const next = release(ctx.updates);
-  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", next ? `agentv ${next} is ready · settings → updates` : ""));
+  const notice = !next ? "" : tonight(ctx.updates) ? `agentv ${next} installs tonight` : later(ctx.updates) ? "" : `agentv ${next} is ready · settings → updates`;
+  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice));
   return {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,
