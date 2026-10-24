@@ -5,7 +5,7 @@
 // its sound (ADR-024).
 
 import { daemon, listen, screen, type HomeState, type Running, type Settings } from "./api.ts";
-import { fit, h } from "./dom.ts";
+import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
@@ -129,7 +129,44 @@ function apply(settings: Settings): void {
   document.documentElement.classList.toggle("reduce-motion", settings.reduceMotion);
 }
 
+// The ambient screen (ADR-031): a placeholder until the backgrounds come in
+// stage 5. The screen daemon shows it after a while with no input, or once
+// the TV has been off for a while; any key, click or mouse move ends it.
+const ambientEl = document.getElementById("ambient")!;
+let ambient = false;
+let ambientPointer: { x: number; y: number } | null = null;
+
+function setAmbient(on: boolean): void {
+  if (on === ambient) return;
+  ambient = on;
+  ambientPointer = null;
+  if (on) {
+    const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }).toLowerCase();
+    const time = h("div", { class: "ambient-time" }, clock());
+    const timer = setInterval(() => {
+      if (!ambient) clearInterval(timer);
+      else time.textContent = clock();
+    }, 10_000);
+    ambientEl.replaceChildren(
+      h("div", { class: "ambient-drift" }, time, h("div", { class: "ambient-day" }, day), h("div", { class: "ambient-note" }, "backgrounds are coming soon. any key to go back.")),
+    );
+  }
+  ambientEl.classList.toggle("on", on);
+}
+
+// Ends the ambient screen from this side, and asks the screen daemon to put
+// back what was in front.
+function wake(): void {
+  setAmbient(false);
+  void screen.wake();
+}
+
 function act(action: Action): void {
+  // The first key on the ambient screen only ends it.
+  if (ambient) {
+    wake();
+    return;
+  }
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -163,6 +200,15 @@ let pointer = { x: -1, y: -1 };
 let hide = 0;
 document.body.classList.add("pointer-hidden");
 document.addEventListener("pointermove", (event) => {
+  // Chromium sends one as this window comes to the front for the ambient
+  // screen, wherever the mouse was left. So the first move on the ambient
+  // screen only says where the mouse is, and the next one ends it.
+  if (ambient) {
+    const last = ambientPointer;
+    ambientPointer = { x: event.clientX, y: event.clientY };
+    if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
+    wake();
+  }
   if (event.clientX === pointer.x && event.clientY === pointer.y) return;
   pointer = { x: event.clientX, y: event.clientY };
   document.body.classList.remove("pointer-hidden");
@@ -224,8 +270,14 @@ async function start(): Promise<void> {
   void sounds.load();
   // The screen daemon calls these: Home when the home screen is already in
   // front, and the apps open behind it whenever that changes.
-  const w = window as unknown as { agentvHome: () => void; agentvRunning: (json: string) => void; agentvLauncher: object };
+  const w = window as unknown as {
+    agentvHome: () => void;
+    agentvRunning: (json: string) => void;
+    agentvAmbient: (on: boolean) => void;
+    agentvLauncher: object;
+  };
   w.agentvHome = () => act("home");
+  w.agentvAmbient = (on) => setAmbient(on);
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks: the sounds that played, and the focus.

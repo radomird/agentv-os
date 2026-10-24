@@ -26,3 +26,6 @@ S2.10 manual    the focus glide, hover lift and page transitions at 60 fps on th
 S2.11 manual    each UI sound within a frame of its action; move at most every 60 ms; Settings → Sound silences them (layer 4 checks the rules)
 S2.15 image     Home pauses the app in front and shows home, choosing it again plays it where it was, a third app closes the oldest, a game keeps running with Quit (the NUC times the 1 s)
 S2.16 image     Back reaches the app in front, and Home works from the Home key, a gamepad's guide button, the phone and a 1 s hold on Back
+S2.8  manual    with the TV off mid-episode, playback pauses within 5 s, every app closes after 2 min, and home is on its ambient screen when it's back (layer 2 checks the policy, the image layer with agentv screen tv)
+S2.9  manual    when the TV comes back on, a key press brings the launcher back within 10 s (layer 2 checks the policy)
+S2.17 image     with no input and nothing playing, the ambient screen starts after the time Settings gives, and a paused film stays open behind it

@@ -3,7 +3,7 @@
 // Run by screen-test.sh with Node's own test runner.
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
@@ -121,6 +121,7 @@ class FakeBrowser implements DevTools {
     return this.pageList;
   }
   async evaluateIn(targetId: string, expression: string) {
+    if (expression.includes("some((m) => !m.paused")) return this.playing.get(targetId) ?? false;
     if (expression === PAUSE && this.playing.get(targetId)) {
       this.playing.set(targetId, false);
       this.heldByHome.add(targetId);
@@ -200,6 +201,10 @@ class FakeLauncher implements Launcher {
   desktop() {
     this.desktops++;
   }
+  minutes: number | null = 10;
+  async idleMinutes() {
+    return this.minutes;
+  }
   async toast(text: string) {
     this.toasts.push(text);
   }
@@ -216,11 +221,20 @@ class FakeLauncher implements Launcher {
   }
 }
 
-async function tv(options: { now?: () => number; backHoldMs?: number } = {}) {
+// Every screen a test made stops its timers at the end, even after a failure.
+const screens: Screen[] = [];
+after(() => {
+  for (const screen of screens) screen.stop();
+});
+
+async function tv(
+  options: { now?: () => number; backHoldMs?: number; tvPoll?: () => boolean | null; tvPollMs?: number; tvOffCloseMs?: number; idleReportMs?: number; ambientSettleMs?: number } = {},
+) {
   const hypr = new FakeHyprland();
   const launcher = new FakeLauncher();
   const lines: string[] = [];
   const screen = new Screen({ hyprland: hypr, launcher, log: (line) => lines.push(line), homeRestartMs: 10, ...options });
+  screens.push(screen);
   await screen.start();
   await sleep(0);
   // The home screen's Chromium opens its window.
@@ -536,7 +550,7 @@ test("S2.15 up to two apps stay open, and a third closes the oldest", async () =
   // Tube was used longest ago.
   const mytv = await openApp(t, "local.mytv", "0xd");
   assert.deepEqual(t.launcher.browser.closed, [tube]);
-  t.hypr.close("0xb");
+  assert.equal(t.hypr.windows.some((w) => w.address === "0xb"), false);
   await t.screen.idle();
   assert.deepEqual((await open(t.screen)).map((o) => o.id), ["someone.radio", "local.mytv"]);
   // Choosing Radio again makes My TV the oldest, so it's the next to go.
@@ -629,4 +643,143 @@ test("a page the daemon opened by address comes back the same way", async () => 
   await t.screen.handle({ cmd: "open", url: "data:text/html,hello" });
   assert.equal(t.screen.front()?.address, "0xb");
   assert.equal(t.launcher.started.length, before);
+});
+
+// --- The ambient screen and TV off (ADR-031, stage 2) ------------------------
+
+test("S2.17 with no input and nothing playing, the ambient screen starts, and the paused app stays open behind it", async () => {
+  const t = await tv({ idleReportMs: 0 });
+  // Settings' time, here a few hundred milliseconds.
+  t.launcher.minutes = 0.003;
+  const page = await openApp(t, "agentv.tube", "0xb");
+  t.launcher.browser.playing.set(page, false);
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(true)"));
+  assert.equal(t.hypr.get("0xb").workspace.name, HELD_WORKSPACE);
+  assert.deepEqual((await open(t.screen)).map((o) => o.id), ["agentv.tube"]);
+  // Any key: the film comes back where it was.
+  assert.deepEqual(await t.screen.fromHome({ cmd: "wake" }), { ok: true });
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.address, "0xb");
+  assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(false)"));
+});
+
+test("S2.17 something playing, or input again, keeps the ambient screen away", async () => {
+  const t = await tv({ idleReportMs: 0 });
+  t.launcher.minutes = 0.003;
+  const page = await openApp(t, "agentv.tube", "0xb");
+  t.launcher.browser.playing.set(page, true);
+  t.screen.seatIdle(true);
+  await sleep(300);
+  assert.equal(t.screen.ambient, false);
+  t.launcher.browser.playing.set(page, false);
+  t.screen.seatIdle(false);
+  t.screen.seatIdle(true);
+  t.screen.seatIdle(false);
+  await sleep(300);
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.address, "0xb");
+  t.screen.stop();
+});
+
+test("S2.17 Settings changes the time, and a check can set its own", async () => {
+  const t = await tv({ idleReportMs: 0 });
+  t.launcher.minutes = 10;
+  t.screen.seatIdle(true);
+  await sleep(200);
+  assert.equal(t.screen.ambient, false);
+  t.screen.seatIdle(false);
+  assert.deepEqual(await t.screen.handle({ cmd: "idle-after", seconds: 0.1 }), { ok: true });
+  t.screen.seatIdle(true);
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  t.screen.stop();
+});
+
+test("S2.8 with the TV off, playback pauses at once, every app closes after a while, and home waits on its ambient screen", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 200 });
+  const page = await openApp(t, "agentv.tube", "0xb");
+  t.launcher.browser.playing.set(page, true);
+  on = false;
+  await sleep(80);
+  await t.screen.idle();
+  assert.equal(t.launcher.browser.playing.get(page), false, "paused at once");
+  assert.equal(t.launcher.browser.closed.length, 0, "not closed yet");
+  await sleep(250);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.browser.closed, [page]);
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home");
+  // S2.9: the TV comes back on the ambient screen, and a key goes home.
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).tv, "on");
+  assert.equal(t.screen.ambient, true);
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.stop();
+});
+
+test("S2.8 a TV back on within two minutes keeps the paused app open", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 300 });
+  const page = await openApp(t, "agentv.tube", "0xb");
+  t.launcher.browser.playing.set(page, true);
+  on = false;
+  await sleep(80);
+  on = true;
+  await sleep(400);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.browser.closed, []);
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.address, "0xb");
+  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: true }]);
+  t.screen.stop();
+});
+
+test("agentv screen tv off and on do the same, for a box that can't tell", async () => {
+  const t = await tv({ tvOffCloseMs: 100 });
+  await openApp(t, "agentv.tube", "0xb");
+  assert.deepEqual(await t.screen.handle({ cmd: "tv", on: false }), { ok: true });
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  assert.deepEqual(await t.screen.handle({ cmd: "tv", on: true }), { ok: true });
+  assert.equal(((await t.screen.handle({ cmd: "tv" })) as { ok: boolean }).ok, false);
+});
+
+test("S2.17 no ambient screen during setup, and input on the seat ends one", async () => {
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 50 });
+  t.launcher.minutes = null;
+  assert.deepEqual(await t.screen.handle({ cmd: "idle-after", seconds: 0.05 }), { ok: true });
+  t.screen.seatIdle(true);
+  await sleep(150);
+  assert.equal(t.screen.ambient, false);
+  t.launcher.minutes = 10;
+  await openApp(t, "agentv.tube", "0xb");
+  await t.screen.handle({ cmd: "ambient" });
+  assert.equal(t.screen.ambient, true);
+  // Bringing home to the front counts as input on the seat, at once (as on
+  // an installed box): that doesn't end it.
+  t.screen.seatIdle(false);
+  await sleep(20);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  assert.ok(t.lines.includes("input as the ambient screen came up; it stays"), t.lines.join("\n"));
+  // Input after that does.
+  await sleep(60);
+  t.screen.seatIdle(true);
+  t.screen.seatIdle(false);
+  await sleep(20);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.address, "0xb");
 });

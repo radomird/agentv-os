@@ -7,6 +7,10 @@
 //   qs ipc -n -p /usr/share/agentv/session/toast call -- toast show "<text>"
 // The real toasts, with What's new and the update notice, come with the
 // home screen in stage 2.
+//
+// It also watches the seat for input: after 30 s with none, and when there's
+// some again, it tells the screen daemon, which starts the ambient screen at
+// the time Settings gives (ADR-031). Something playing in front holds it off.
 
 import QtQuick
 import Quickshell
@@ -23,6 +27,19 @@ ShellRoot {
     id: hideTimer
     interval: 5000
     onTriggered: root.shown = false
+  }
+
+  IdleMonitor {
+    timeout: 30
+    respectInhibitors: true
+    onIsIdleChanged: {
+      report.command = ["agentv", "screen", "idle", isIdle ? "yes" : "no"]
+      report.running = true
+    }
+  }
+
+  Process {
+    id: report
   }
 
   IpcHandler {
