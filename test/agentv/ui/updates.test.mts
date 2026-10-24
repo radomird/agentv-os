@@ -111,6 +111,25 @@ test("S2.12 Settings → Updates shows both versions, the other packages, What's
   await page.close();
 });
 
+test("S2.12 an update the nightly run hasn't passed waits: no Install now, no toast, nothing in the bar", async () => {
+  write("status.json", { ...STATUS, agentv: { installed: "0.2.1-1", available: "0.3.1-1" }, waiting: true });
+  const page = await tv();
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator(".toast").count(), 0);
+  assert.doesNotMatch(await page.locator(".bar").innerText(), /settings ●|is ready/);
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.locator('.menu-item[data-key="updates"]').click();
+  const panel = await page.locator(".panel").innerText();
+  assert.match(panel, /updates · waiting for tonight's tests/);
+  assert.match(panel, /agentv\s+0\.2\.1\s+→\s+0\.3\.1/);
+  assert.match(panel, /it waits until agentv's nightly run has tested it/);
+  assert.equal(await page.locator('[data-action="install"]').count(), 0);
+  await page.locator('[data-action="whats-new"]').click();
+  await page.waitForSelector(".notes");
+  assert.equal(await page.locator('[data-action="install"]').count(), 0);
+  await page.close();
+});
+
 test("the Updating screen covers the TV while an install runs, and home comes back on the new release", async () => {
   write("status.json", STATUS);
   const page = await tv();
@@ -149,6 +168,14 @@ test("an install that failed says whether anything changed, and a key puts it aw
   await page.waitForSelector("#updating.on");
   write("progress.json", { ...failed, state: "failed", step: "packages", percent: 0, detail: "nothing changed" });
   await page.waitForFunction(() => document.getElementById("updating")?.innerText.includes("couldn't update. nothing changed."));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => !document.getElementById("updating")?.classList.contains("on"));
+  // One the nightly run hasn't passed yet says so.
+  write("progress.json", { ...failed, at: new Date().toISOString() });
+  await page.waitForSelector("#updating.on");
+  write("progress.json", { ...failed, state: "failed", step: "packages", percent: 0, detail: "not tested yet" });
+  await page.waitForFunction(() => document.getElementById("updating")?.innerText.includes("not tested yet. nothing changed."));
+  assert.match(await page.locator("#updating").innerText(), /agentv's nightly run hasn't passed it yet/);
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => !document.getElementById("updating")?.classList.contains("on"));
   rmSync(join(updates, "progress.json"));

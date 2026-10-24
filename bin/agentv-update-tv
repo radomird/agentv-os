@@ -68,9 +68,13 @@ log="$STATE/update.log"
 chmod 644 "$log"
 
 # The update's own output, read for its steps: Omarchy's snapshot, pacman's
-# (n/m) package lines, then the migrations.
+# (n/m) package lines, then the migrations. It runs in a login shell, as
+# someone at the box has: that's where Omarchy's environment, OMARCHY_PATH
+# among it, comes from. OMARCHY_UPDATE_LOGGED skips Omarchy's script(1)
+# wrapper, as S0.5's check does, since there's no terminal here.
 status=0
-runuser -u "$owner" -- env HOME="$home" PATH="$AGENTV_BIN_DIR:$PATH" agentv update -y </dev/null 2>&1 |
+runuser -u "$owner" -- env HOME="$home" PATH="$AGENTV_BIN_DIR:$PATH" OMARCHY_UPDATE_LOGGED=1 \
+  bash -lc "agentv update -y" </dev/null 2>&1 |
   while IFS= read -r line; do
     printf '%s\n' "$line" >>"$log"
     if [[ $line =~ \(\ *([0-9]+)/([0-9]+)\)\ (upgrading|installing|reinstalling|downgrading) ]]; then
@@ -89,7 +93,13 @@ rm -f "$rule"
 
 if (( status != 0 )); then
   if [[ $(pacman -Q agentv 2>/dev/null | cut -d' ' -f2) == "$from_agentv" && $(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2) == "$from_omarchy" ]]; then
-    progress failed packages 0 "nothing changed"
+    # agentv update stops before anything when the nightly run hasn't passed
+    # a version it would install (bin/agentv-tested).
+    if grep -q "so the update waits" "$log"; then
+      progress failed packages 0 "not tested yet"
+    else
+      progress failed packages 0 "nothing changed"
+    fi
   else
     progress failed packages 0 "the update stopped halfway"
   fi

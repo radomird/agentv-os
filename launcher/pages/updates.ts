@@ -13,15 +13,20 @@ export function shown(version: string | null | undefined): string {
   return (version ?? "?").replace(/-\d+$/, "");
 }
 
-// The new AgenTV release the check found, if any.
+// The new AgenTV release the check found, if any, once it can be installed.
 export function release(updates: Updates): string | null {
   const next = updates.status?.agentv.available;
-  return next ? shown(next) : null;
+  return next && !updates.status?.waiting ? shown(next) : null;
 }
 
-// Anything to install: AgenTV, Omarchy or system packages.
+// Anything new: AgenTV, Omarchy or system packages.
 export function pending(status: UpdateStatus | null): boolean {
   return Boolean(status && (status.agentv.available || status.omarchy.available || status.packages > 0));
+}
+
+// Anything new that can be installed now.
+function ready(status: UpdateStatus | null): boolean {
+  return pending(status) && !status?.waiting;
 }
 
 function when(iso: string | null | undefined): string {
@@ -62,7 +67,15 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
       h("button", { class: "button", "data-focus": true, "data-action": "check", onclick: () => void check(ctx) }, "check now"),
     ];
   }
-  const title = !status.ok ? "updates · couldn't check" : status.agentv.available ? "updates · a new release is out" : pending(status) ? "updates · ready" : "updates · up to date";
+  const title = !status.ok
+    ? "updates · couldn't check"
+    : status.waiting && pending(status)
+      ? "updates · waiting for tonight's tests"
+      : status.agentv.available
+        ? "updates · a new release is out"
+        : pending(status)
+          ? "updates · ready"
+          : "updates · up to date";
   const tested = status.channel === "edge" ? "on edge: every green build" : "tested by agentv's nightly run";
   const parts: (HTMLElement | null)[] = [
     h("div", { class: `panel-title${status.security ? " security" : ""}` }, status.security ? `${title} · security` : title),
@@ -73,8 +86,11 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
       row("omarchy", status.omarchy.installed, status.omarchy.available),
     ),
     h("div", { class: "panel-note" }, status.packages > 0 ? `plus ${status.packages} system package${status.packages === 1 ? "" : "s"} · ${tested}` : tested),
-    pending(status)
+    ready(status)
       ? h("button", { class: "button primary", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "↵ install now")
+      : null,
+    status.waiting && pending(status)
+      ? h("div", { class: "panel-note" }, "it waits until agentv's nightly run has tested it. the box looks again tomorrow.")
       : null,
     status.notes.agentv.length || status.notes.omarchy.length
       ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "what's new ›")
@@ -114,7 +130,7 @@ export function whatsNew(ctx: Ctx): View {
           ? lines(status.notes.omarchy)
           : h("div", { class: "empty" }, "omarchy's own notes are on github.com/omacom/omarchy/releases.")
         : null,
-      pending(status)
+      ready(status)
         ? h("button", { class: "button primary notes-install", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "↵ install now")
         : null,
     ),
@@ -138,9 +154,11 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
     STEPS.findIndex((s) => s.step === progress.step),
   );
   const title = failed
-    ? progress.detail === "nothing changed"
-      ? "couldn't update. nothing changed."
-      : "the update stopped."
+    ? progress.detail === "not tested yet"
+      ? "not tested yet. nothing changed."
+      : progress.detail === "nothing changed"
+        ? "couldn't update. nothing changed."
+        : "the update stopped."
     : `updating to agentv ${shown(progress.to.agentv || progress.from.agentv)}`;
   const fill = h("div", { class: "updating-fill" });
   fill.style.transform = `scaleX(${Math.max(0.02, Math.min(1, progress.percent / 100))})`;
@@ -154,9 +172,11 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
         "div",
         { class: "updating-note" },
         failed
-          ? progress.detail === "nothing changed"
-            ? "any key to go back. you can try again from settings → updates."
-            : "agentv update on the box says more. any key to go back."
+          ? progress.detail === "not tested yet"
+            ? "agentv's nightly run hasn't passed it yet. any key to go back."
+            : progress.detail === "nothing changed"
+              ? "any key to go back. you can try again from settings → updates."
+              : "agentv update on the box says more. any key to go back."
           : progress.state === "restarting"
             ? "restarting. back in a moment."
             : "back in a few minutes. leave the box on.",

@@ -50,6 +50,9 @@ export interface UpdateStatus {
   agentv: { installed: string | null; available: string | null };
   omarchy: { installed: string | null; available: string | null };
   packages: number;
+  // Off edge, the update waits until AgenTV's nightly run has passed it
+  // (ADR-026), so there's nothing to install yet.
+  waiting?: boolean;
   security: boolean;
   notes: { agentv: string[]; agentv_date: string | null; omarchy: string[] };
 }
