@@ -10,6 +10,10 @@
 # /var/lib/agentv/update/progress.json for the TV's Updating screen. When
 # the update needs a restart, the box restarts and comes back to home.
 #
+# Then the check after the update (bin/agentv-update-after), at once or at
+# the boot after the restart. It keeps which snapshot Omarchy's update took
+# first in go-back.json, for Go back (bin/agentv-go-back).
+#
 # Omarchy's update asks sudo for its privileged steps, and nobody is at a
 # terminal to type a password. So the owner may use sudo without one for this
 # update only, the way AgenTV's first boot does for the boot splash. Omarchy's
@@ -26,9 +30,15 @@ AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STATE=${AGENTV_UPDATE_STATE:-/var/lib/agentv/update}
 SUDOERS=${AGENTV_SUDOERS_DIR:-/etc/sudoers.d}
 MODULES=${AGENTV_MODULES_DIR:-/usr/lib/modules}
+CHROMIUM_STATE=${AGENTV_CHROMIUM_STATE:-/var/lib/agentv/chromium}
 
 mkdir -p "$STATE"
 chmod 755 "$STATE"
+
+# The root left behind by going back, when the cleanup at boot didn't run.
+if [[ -f $STATE/cleanup-pending ]]; then
+  "$AGENTV_BIN_DIR/agentv-go-back" --cleanup >/dev/null 2>&1 || true
+fi
 
 from_agentv=$(pacman -Q agentv 2>/dev/null | cut -d' ' -f2)
 from_omarchy=$(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2)
@@ -61,6 +71,15 @@ if ! visudo -cqf "$rule"; then
   progress failed start 0 "couldn't let the update use sudo"
   exit 1
 fi
+
+# Snapper's snapshots by number, newest last.
+snapshots() {
+  omarchy-cmd-present snapper || return 0
+  snapper -c root --csvout list --columns number 2>/dev/null | awk -F, 'NR > 1 && $1 + 0 > 0 { print $1 + 0 }'
+}
+snapshot_before=$(snapshots | tail -n 1)
+had_widevine=false
+[[ -n $(find "$CHROMIUM_STATE/WidevineCdm" -name manifest.json 2>/dev/null) ]] && had_widevine=true
 
 progress running snapshot 2
 log="$STATE/update.log"
@@ -106,12 +125,29 @@ if (( status != 0 )); then
   exit 1
 fi
 
+# Go back returns to the first snapshot the update took.
+snapshot=$(snapshots | awk -v before="${snapshot_before:-0}" '$1 > before { print; exit }')
+if [[ -n $snapshot ]]; then
+  jq -n --argjson snapshot "$snapshot" --argjson widevine "$had_widevine" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg from "$from_agentv" --arg omarchy "$from_omarchy" \
+    --arg to "$(pacman -Q agentv 2>/dev/null | cut -d' ' -f2)" --arg to_omarchy "$(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2)" \
+    '{snapshot: $snapshot, widevine: $widevine, at: $at, from: {agentv: $from, omarchy: $omarchy}, to: {agentv: $to, omarchy: $to_omarchy}}' \
+    >"$STATE/go-back.json"
+  chmod 644 "$STATE/go-back.json"
+else
+  rm -f "$STATE/go-back.json"
+fi
+rm -f "$STATE/after.json"
+
 # A new kernel takes a restart, as does anything Omarchy's update says needs
-# one.
+# one. The check runs once the box is up again (agentv-update-after.service).
 if [[ ! -d $MODULES/$(uname -r) || -f $home/.local/state/omarchy/reboot-required ]]; then
+  touch "$STATE/check-pending"
   progress restarting restart 98
   sleep 3
   systemctl reboot
   exit 0
 fi
+progress running restart 96 "checking"
+"$AGENTV_BIN_DIR/agentv-update-after" >>"$log" 2>&1 || true
 progress "done" restart 100

@@ -57,9 +57,11 @@ export interface UpdateStatus {
   notes: { agentv: string[]; agentv_date: string | null; omarchy: string[] };
 }
 
-// How an install from the TV is going (bin/agentv-update-tv).
+// How an install from the TV is going (bin/agentv-update-tv), or going back
+// from one (bin/agentv-go-back).
 export interface UpdateProgress {
-  state: "running" | "restarting" | "done" | "failed";
+  state: "running" | "restarting" | "done" | "failed" | "going-back";
+  what?: "go-back";
   step: "start" | "snapshot" | "packages" | "migrations" | "restart";
   percent: number;
   detail: string;
@@ -68,10 +70,30 @@ export interface UpdateProgress {
   to: { agentv: string };
 }
 
+// The check after an update (bin/agentv-update-after).
+export interface AfterCheck {
+  at: string;
+  ok: boolean;
+  agentv: string;
+  checks: { name: string; ok: boolean; detail: string }[];
+}
+
+// The snapshot Go back returns to, and the versions on either side of it.
+export interface GoBack {
+  snapshot: number;
+  at: string;
+  from: { agentv: string; omarchy: string };
+  to: { agentv: string; omarchy: string };
+}
+
 export interface Updates {
   status: UpdateStatus | null;
   progress: UpdateProgress | null;
   toasted: string | null;
+  after?: AfterCheck | null;
+  goBack?: GoBack | null;
+  wentBack?: { at: string; from: { agentv: string }; to: { agentv: string } } | null;
+  seen?: { kept: string | null; wentBack: string | null };
 }
 
 export interface TileEntry {
@@ -105,6 +127,7 @@ export const daemon = {
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
   updates: () => call<Updates>("GET", "/api/updates"),
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
+  seen: (change: { kept?: string; wentBack?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
 };
 
@@ -169,6 +192,8 @@ export const screen = {
   // Settings → Updates: Check now and Install now.
   checkUpdates: () => ask({ cmd: "update-check" }),
   installUpdate: () => ask({ cmd: "update-install" }),
+  // Go back to the version from before the last update.
+  goBack: () => ask({ cmd: "update-go-back" }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
 };

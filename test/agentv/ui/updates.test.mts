@@ -50,8 +50,9 @@ function write(name: string, data: unknown): void {
   renameSync(join(updates, `${name}.next`), join(updates, name));
 }
 
-// A TV whose screen daemon answers every request with ok, and remembers them.
-async function tv(): Promise<Page> {
+// A TV whose screen daemon answers every request with ok, and remembers them,
+// once ready is on the page.
+async function tv(ready = ".grid .tile.focused"): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.addInitScript(() => {
     const w = window as unknown as { screenRequests: { cmd: string }[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
@@ -63,7 +64,7 @@ async function tv(): Promise<Page> {
     };
   });
   await page.goto(`${url}/`);
-  await page.waitForSelector(".grid .tile.focused");
+  await page.waitForSelector(ready);
   return page;
 }
 
@@ -180,4 +181,81 @@ test("an install that failed says whether anything changed, and a key puts it aw
   await page.waitForFunction(() => !document.getElementById("updating")?.classList.contains("on"));
   rmSync(join(updates, "progress.json"));
   await page.close();
+});
+
+// The box after updating to 0.3.0 from 0.2.1, with the snapshot from before.
+const UPDATED = { ...STATUS, agentv: { installed: "0.3.0-1", available: null }, omarchy: { installed: "4.0.6-1", available: null }, packages: 0 };
+const GO_BACK = { snapshot: 3, widevine: false, at: "2026-10-23T22:00:00Z", from: { agentv: "0.2.1-1", omarchy: "4.0.6-1" }, to: { agentv: "0.3.0-1", omarchy: "4.0.6-1" } };
+const AFTER = {
+  at: "2026-10-23T22:01:00Z",
+  ok: false,
+  agentv: "0.3.0-1",
+  checks: [
+    { name: "daemon", ok: true, detail: "" },
+    { name: "home screen", ok: true, detail: "" },
+    { name: "chromium and widevine", ok: true, detail: "" },
+    { name: "jellyfin", ok: false, detail: "jellyfin won't load" },
+  ],
+};
+
+test("S2.14 when the check after an update finds something off, home makes way for Go back", async () => {
+  write("status.json", UPDATED);
+  write("go-back.json", GO_BACK);
+  write("after.json", AFTER);
+  const page = await tv(".check-rows");
+  const text = await page.locator(".page").innerText();
+  assert.match(text, /something's off\./);
+  assert.match(text, /the update finished, but jellyfin won't load\. go back to 0\.2\.1\?/);
+  assert.match(text, /\[x\] daemon[\s\S]*\[x\] home screen[\s\S]*\[x\] chromium and widevine[\s\S]*\[!\] jellyfin won't load/);
+  // Go back has the focus: OK goes back.
+  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "go-back");
+  await page.keyboard.press("Enter");
+  await requested(page, "update-go-back");
+  await page.close();
+});
+
+test("S2.14 Keep stays on the new version, and home doesn't ask again for that check", async () => {
+  write("status.json", UPDATED);
+  write("go-back.json", GO_BACK);
+  write("after.json", { ...AFTER, at: "2026-10-23T22:02:00Z" });
+  const page = await tv(".check-rows");
+  await page.locator('[data-action="keep"]').click();
+  await page.waitForSelector(".grid .tile");
+  await page.close();
+  const again = await tv();
+  await again.waitForTimeout(800);
+  assert.equal(await again.locator(".check-rows").count(), 0);
+  // Settings → Updates still offers Go back while the snapshot is kept.
+  await again.locator('.bar-link:has-text("settings")').click();
+  await again.locator('.menu-item[data-key="updates"]').click();
+  assert.match(await again.locator(".panel").innerText(), /go back to 0\.2\.1[\s\S]*kept until the next update/);
+  await again.locator('.panel [data-action="go-back"]').click();
+  await requested(again, "update-go-back");
+  await again.close();
+});
+
+test("S2.14 going back covers the TV until the restart, and home says so after", async () => {
+  write("status.json", UPDATED);
+  rmSync(join(updates, "after.json"), { force: true });
+  const page = await tv();
+  write("progress.json", { state: "going-back", what: "go-back", step: "restart", percent: 40, detail: "", at: new Date().toISOString(), from: { agentv: "0.3.0-1", omarchy: "4.0.6-1" }, to: { agentv: "0.2.1-1" } });
+  await page.waitForSelector("#updating.on");
+  const screen = await page.locator("#updating").innerText();
+  assert.match(screen, /going back to agentv 0\.2\.1/);
+  assert.match(screen, /restarting\. back in a moment\./);
+  assert.doesNotMatch(screen, /installing packages/);
+  await page.close();
+  // After the restart, on the version from before: one toast.
+  rmSync(join(updates, "progress.json"));
+  rmSync(join(updates, "go-back.json"));
+  write("status.json", STATUS);
+  write("went-back.json", { at: "2026-10-23T22:06:00Z", from: { agentv: "0.3.0-1", omarchy: "4.0.6-1" }, to: { agentv: "0.2.1-1" } });
+  const back = await tv();
+  await back.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => t.textContent?.startsWith("back on agentv 0.2.1")));
+  await back.close();
+  const later = await tv();
+  await later.waitForTimeout(800);
+  assert.equal(await later.locator(".toast", { hasText: "back on agentv" }).count(), 0);
+  await later.close();
+  rmSync(join(updates, "went-back.json"));
 });

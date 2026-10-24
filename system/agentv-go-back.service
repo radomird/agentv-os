@@ -1,0 +1,12 @@
+# Go back after an update (ADR-025): bin/agentv-go-back puts the box back the
+# way it was before the last update from the TV, from its snapshot, and
+# restarts it. Started from the TV session through polkit
+# (system/polkit/50-agentv-update.rules), never enabled.
+
+[Unit]
+Description=AgenTV going back to the version before the update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-go-back
+TimeoutStartSec=30min

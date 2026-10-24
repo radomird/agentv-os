@@ -1,0 +1,14 @@
+# After going back (ADR-025): bin/agentv-go-back keeps the system it replaced
+# until the next boot, and leaves /var/lib/agentv/update/cleanup-pending in
+# the one it put back. This deletes the old one.
+
+[Unit]
+Description=AgenTV cleanup after going back
+ConditionPathExists=/var/lib/agentv/update/cleanup-pending
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/agentv-go-back --cleanup
+
+[Install]
+WantedBy=multi-user.target

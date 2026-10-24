@@ -14,7 +14,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { settings } from "./pages/settings.ts";
-import { drawUpdating, release, whatsNew } from "./pages/updates.ts";
+import { checkView, drawUpdating, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { Sounds } from "./sounds.ts";
 
 export interface View {
@@ -114,6 +114,7 @@ function viewFor(route: string): View {
   if (name === "details") return details(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
   if (name === "whats-new") return whatsNew(ctx);
+  if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
   return home(ctx);
 }
@@ -184,7 +185,8 @@ function setUpdates(updates: Updates): void {
   ctx.updates = updates;
   const progress = updates.progress;
   const fresh = progress && Date.now() - new Date(progress.at).getTime() < 15 * 60_000;
-  if (progress && fresh && (progress.state === "running" || progress.state === "restarting" || (progress.state === "failed" && updatingShown))) {
+  const busy = progress?.state === "running" || progress?.state === "restarting" || progress?.state === "going-back";
+  if (progress && fresh && (busy || (progress.state === "failed" && updatingShown))) {
     drawUpdating(updatingEl, progress);
     updatingEl.classList.add("on");
     updatingShown = true;
@@ -199,6 +201,21 @@ function setUpdates(updates: Updates): void {
     if (route === "home" || route.startsWith("settings")) redraw();
   }
   toastRelease();
+  checkAfterUpdate();
+}
+
+// Something's off after an update (board 33): home makes way for it once,
+// until Go back or Keep. And after going back, one toast says so.
+function checkAfterUpdate(): void {
+  if (updatingShown || ambient || ctx.state.viewer.role !== "adult") return;
+  const route = history[history.length - 1];
+  if (off(ctx.updates) && route === "home") ctx.go("update-off");
+  const went = ctx.updates.wentBack;
+  if (went && ctx.updates.seen?.wentBack !== went.at && route === "home") {
+    ctx.updates.seen = { kept: ctx.updates.seen?.kept ?? null, wentBack: went.at };
+    ctx.toast(`back on agentv ${shown(went.to.agentv)}. the update is still in settings → updates.`, "ok");
+    void daemon.seen({ wentBack: went.at }).catch(() => {});
+  }
 }
 
 // One toast per release, on home, for an adult, never during setup or an

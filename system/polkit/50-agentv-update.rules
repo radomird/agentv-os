@@ -1,13 +1,15 @@
-// AgenTV (ADR-025): the person at the TV can check for updates and install
-// them from Settings → Updates, which starts these two units. The TV's screen
-// daemon asks as the box's owner, from the TV session's own systemd, which
-// isn't part of a login session, so the rule goes by the owner's admin group
-// (wheel), as sudo does. Nothing but starting these two is allowed here.
+// AgenTV (ADR-025): the person at the TV can check for updates, install them
+// and go back from one, from Settings → Updates, which starts these units.
+// The TV's screen daemon asks as the box's owner, from the TV session's own
+// systemd, which isn't part of a login session, so the rule goes by the
+// owner's admin group (wheel), as sudo does. Nothing but starting these three
+// is allowed here.
 polkit.addRule(function (action, subject) {
   if (action.id == "org.freedesktop.systemd1.manage-units" &&
       action.lookup("verb") == "start" &&
       (action.lookup("unit") == "agentv-update-check.service" ||
-       action.lookup("unit") == "agentv-update-tv.service") &&
+       action.lookup("unit") == "agentv-update-tv.service" ||
+       action.lookup("unit") == "agentv-go-back.service") &&
       subject.isInGroup("wheel")) {
     return polkit.Result.YES;
   }

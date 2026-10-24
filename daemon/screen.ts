@@ -85,7 +85,7 @@ export interface Launcher {
   desktop(): void;
   // Starts one of AgenTV's update units (ADR-025), which polkit lets the
   // person at the TV start: the check, or an install.
-  startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service"): Promise<boolean>;
+  startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service" | "agentv-go-back.service"): Promise<boolean>;
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
@@ -513,6 +513,8 @@ export class Screen {
         return (await this.launcher.startUnit("agentv-update-check.service")) ? { ok: true } : { ok: false, error: "couldn't check for updates" };
       case "update-install":
         return (await this.launcher.startUnit("agentv-update-tv.service")) ? { ok: true } : { ok: false, error: "couldn't start the update" };
+      case "update-go-back":
+        return (await this.launcher.startUnit("agentv-go-back.service")) ? { ok: true } : { ok: false, error: "couldn't go back" };
       case "desktop":
         this.launcher.desktop();
         return { ok: true };
@@ -976,7 +978,7 @@ export class Screen {
         if (typeof request.on !== "boolean") return { ok: false, error: "tv on or off" };
         return this.tv(request.on);
       case "update":
-        if (request.what !== "check" && request.what !== "install") return { ok: false, error: "update check or install" };
+        if (!["check", "install", "go-back"].includes(request.what)) return { ok: false, error: "update check, install or go-back" };
         return this.fromHome({ cmd: `update-${request.what}` });
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };

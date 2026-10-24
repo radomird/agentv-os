@@ -1,0 +1,16 @@
+# The check after an update that needed a restart (ADR-025): agentv-update-tv
+# leaves /var/lib/agentv/update/check-pending, and bin/agentv-update-after
+# checks the box once it's up again. It doesn't hold up the TV coming back.
+
+[Unit]
+Description=AgenTV check after an update
+ConditionPathExists=/var/lib/agentv/update/check-pending
+Wants=agentv-daemon.service
+After=agentv-daemon.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/agentv-update-after
+
+[Install]
+WantedBy=multi-user.target
