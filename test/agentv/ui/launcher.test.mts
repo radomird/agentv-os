@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
+import { HOME_UP } from "../../../daemon/screen.ts";
 import { FIXTURES, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -394,4 +395,22 @@ test("the launcher has no errors in its console", async () => {
   await page.waitForTimeout(300);
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test("S1.1 the screen daemon can tell home's page came up, on home and on the welcome page", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  assert.equal(await page.evaluate(HOME_UP), true, "home");
+  const setup = (done: boolean) =>
+    fetch(`${url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done }) });
+  await setup(false);
+  try {
+    await page.waitForFunction(() => document.title === "AgenTV setup" && document.readyState === "complete");
+    await page.waitForFunction(HOME_UP);
+    assert.equal(await page.evaluate(HOME_UP), true, "the welcome page");
+  } finally {
+    await setup(true);
+    await page.close();
+  }
 });

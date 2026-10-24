@@ -48,6 +48,10 @@ export type Role = "home" | "web" | "steam";
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:agentv-held";
 export const HOME_URL = "http://127.0.0.1:3000/";
+
+// True once home's page has loaded and its own script has run: the
+// launcher's start, or the welcome page's.
+export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" in window || "agentvWelcome" in window)`;
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
 // Apps kept open behind home, besides a game (ADR-031).
@@ -134,6 +138,8 @@ interface Options {
   // How soon after the ambient screen comes up input on the seat is taken
   // for bringing home to the front.
   ambientSettleMs?: number;
+  // How long home's page has to come up after its Chromium starts.
+  homeCheckMs?: number;
 }
 
 export class Screen {
@@ -175,6 +181,7 @@ export class Screen {
   private homeTimer: ReturnType<typeof setTimeout> | null = null;
   private lastRefocus = 0;
   private homeStarting = false;
+  private homeCheckMs: number;
   homeRestarts = 0;
 
   constructor(options: Options) {
@@ -190,6 +197,7 @@ export class Screen {
     this.tvOffCloseMs = options.tvOffCloseMs ?? 120_000;
     this.idleReportMs = options.idleReportMs ?? 30_000;
     this.ambientSettleMs = options.ambientSettleMs ?? 3000;
+    this.homeCheckMs = options.homeCheckMs ?? 30_000;
   }
 
   // Runs one step at a time, in the order things happened.
@@ -452,6 +460,7 @@ export class Screen {
     const app = this.launcher.home();
     this.apps.set("home", app);
     void this.bridge(app);
+    void this.watchHome(app);
     const front = this.front();
     if (!front || front.role === "home") {
       this.want = { role: "home", until: Infinity };
@@ -469,6 +478,24 @@ export class Screen {
         this.startHome();
       }, this.homeDelay);
     });
+  }
+
+  // Home's window in front isn't enough: a page that hangs or never starts
+  // leaves the TV blank. If home's page hasn't come up a while after its
+  // Chromium started, it starts again.
+  private async watchHome(app: App): Promise<void> {
+    if (!app.cdp) return;
+    const every = Math.min(1000, this.homeCheckMs / 5);
+    const started = Date.now();
+    while (Date.now() - started < this.homeCheckMs) {
+      if (this.ending || this.apps.get("home") !== app) return;
+      const up = await Promise.race([app.cdp.evaluate(HOME_URL, HOME_UP).catch(() => false), sleep(every).then(() => false)]);
+      if (up === true) return;
+      await sleep(every);
+    }
+    if (this.ending || this.apps.get("home") !== app) return;
+    this.log(`the home screen's page didn't come up in ${Math.round(this.homeCheckMs / 1000)} s; starting it again`);
+    app.stop();
   }
 
   // Gives the home screen window.agentvScreen, over its DevTools pipe, once
