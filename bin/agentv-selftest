@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6]...
-# agentv:examples=agentv selftest | agentv selftest S1.5 | agentv selftest S0.2 S0.3
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16]...
+# agentv:examples=agentv selftest | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
 # The acceptance checks CI can't see, run on the box itself (ADR-019, layer
 # 7). Every line starts with pass, fail or manual and the check's id, so the
-# whole output can be pasted back as it is. With no id it runs stage 1's.
+# whole output can be pasted back as it is. With no id it runs stages 1
+# and 2. Run them over SSH while the TV is on, as the person it logs in.
 #
-# Stage 1, the TV session (ADR-031). Run these over SSH while the TV is on,
-# as the person it logs in:
+# Stage 1, the TV session (ADR-031):
 #
 #   S1.1  SDDM logs in to the TV session and back in after a log-out; the
 #         home screen is in front; nothing of Omarchy's desktop runs there.
@@ -21,6 +21,22 @@
 #         What only a person can judge is listed on manual lines.
 #   S1.6  a new window stays out of sight, and the home screen comes back in
 #         front after a crash. It closes the home screen on purpose for that.
+#   S1.7  the services' Chromium has its own prompts off: saving passwords,
+#         address and card autofill, translate, notifications (ADR-032).
+#
+# Stage 2, the home screen (S2 runs them all). Each also says, on manual
+# lines, what to watch or listen for:
+#
+#   S2.8  the box reads the TV as on, and what it saw the last time the TV
+#         went off and came back.
+#   S2.9  a key reaches the home screen through the virtual input device.
+#   S2.10 how smoothly the home screen draws while the focus glides, a tile
+#         lifts under the mouse and a page slides in and out.
+#   S2.11 how soon after its key each UI sound starts, and a held arrow's
+#         moves never closer than 60 ms.
+#   S2.15 how long Home takes to show the home screen, and choosing the app
+#         again to bring it back.
+#   S2.16 Home and Back from the keyboard, a gamepad and the mouse: manual.
 #
 # Stage 0:
 #
@@ -43,18 +59,21 @@ AGENTV_STATE=${AGENTV_STATE:-/var/lib/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16]..."
 }
 
+STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16)
 checks=()
 for arg in "$@"; do
   case "$arg" in
-    [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6) checks+=("S${arg:1}") ;;
+    [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
+    [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16) checks+=("S${arg:1}") ;;
+    [sS]2) checks+=("${STAGE2[@]}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
 done
-(( ${#checks[@]} )) || checks=(S1.1 S1.2 S1.5 S1.6)
+(( ${#checks[@]} )) || checks=(S1.1 S1.2 S1.5 S1.6 S1.7 "${STAGE2[@]}")
 
 failed=" "
 current=""
@@ -426,6 +445,208 @@ s16() {
   fi
 }
 
+# --- ADR-032: no browser prompts on the TV ---------------------------------
+
+s17() {
+  local prefs="$AGENTV_STATE/chromium/Default/Preferences"
+
+  if [[ ! -f $prefs ]]; then
+    result fail S1.7 "the services' Chromium has no profile yet; open a page with agentv screen open <address> and run this again"
+  elif [[ $(jq -r '.credentials_enable_service == false and .credentials_enable_autosignin == false and .autofill.profile_enabled == false and .autofill.credit_card_enabled == false and .translate.enabled == false and .profile.default_content_setting_values.notifications == 2' "$prefs" 2>/dev/null) == "true" ]]; then
+    result pass S1.7 "the services' Chromium has saving passwords, address and card autofill, translate and site notifications off"
+  else
+    result fail S1.7 "the services' Chromium still has some of its own prompts on; agentv update and a reboot turn them off"
+  fi
+  result manual S1.7 "sign in to a streaming service again, with a keyboard on the box: no Save password, Translate or notification bubble shows on the TV, and you stay signed in after a reboot"
+}
+
+# --- Stage 2: the home screen -----------------------------------------------
+
+input() {
+  "${AGENTV_INPUT:-$AGENTV_BIN_DIR/agentv-input}" "$@" >/dev/null 2>&1 || true
+}
+
+# A number from a jq filter on a file, or nothing.
+value() {
+  jq -r "$1 // empty" "$2" 2>/dev/null || true
+}
+
+# ms_until <role> <seconds> <start>: waits until that role is in front, and
+# prints the milliseconds since start (date +%s%N), or nothing.
+ms_until() {
+  local deadline=$(( $3 + $2 * 1000000000 ))
+  while (( $(date +%s%N) < deadline )); do
+    if [[ $(front '.front.role // ""') == "$1" ]]; then
+      echo $(( ($(date +%s%N) - $3) / 1000000 ))
+      return 0
+    fi
+    sleep 0.05
+  done
+}
+
+# The home screen in front, with nothing else open, for a measurement.
+home_alone() {
+  screen home >/dev/null
+  wait_front home 10 >/dev/null
+  sleep 1
+}
+
+s28() {
+  local connectors seen
+
+  tv_on S2.8 || return 0
+  connectors=$(for status in /sys/class/drm/card*-*/status; do
+    if [[ -f $status && $(<"$status") == "connected" ]]; then basename "$(dirname "$status")"; fi
+  done | sed 's/^card[0-9]*-//' | paste -sd, -)
+  if [[ $(front '.tv') == "on" ]]; then
+    result pass S2.8 "the box reads the TV as on${connectors:+, from $connectors}, and looks every 2 s"
+  else
+    result fail S2.8 "the box reads the TV as off while it's on${connectors:+ (connected: $connectors)}; agentv screen status says so too"
+  fi
+  result manual S2.8 "play an episode, then turn the TV off with its own remote: it pauses within 5 s. Leave it off for 2 minutes and turn it on: home is on its ambient screen, and the episode's app has closed. Then run agentv selftest S2.8 again: it lists what the box saw."
+  seen=$(journalctl --user -b --no-pager -o short-iso -u agentv-screen 2>/dev/null |
+    grep -E "the TV went off|the TV came back on|the TV has been off|the ambient screen ends" | tail -n 6 || true)
+  while IFS= read -r line; do
+    if [[ -n $line ]]; then result manual S2.8 "seen at ${line%% *}: ${line#*]: }"; fi
+  done <<<"$seen"
+}
+
+s29() {
+  local out
+
+  tv_on S2.9 || return 0
+  home_alone
+  out=$(mktemp)
+  screen keys 3 >"$out" &
+  sleep 1
+  input key right
+  input key left
+  wait $! || true
+  if [[ $(value '[.keys[] | select(. == "ArrowRight" or . == "ArrowLeft")] | length' "$out") == "2" ]]; then
+    result pass S2.9 "a key on the virtual input device reaches the home screen"
+  else
+    result fail S2.9 "the home screen didn't get the keys sent ($(value '.keys | join(" ")' "$out"))"
+  fi
+  rm -f "$out"
+  result manual S2.9 "with the TV back on after S2.8, press a key: the launcher is back within 10 s"
+}
+
+s210() {
+  local out fps slow refresh
+
+  tv_on S2.10 || return 0
+  home_alone
+  refresh=$(front '.monitors[0].refresh_rate // 60 | floor')
+  out=$(mktemp)
+  screen frames 8 >"$out" &
+  sleep 0.5
+  # The focus glides from tile to tile, then the mouse lifts tiles as it
+  # passes, then a page slides in and back out.
+  for key in right right down left left up; do
+    input key "$key"
+    sleep 0.4
+  done
+  input move -4000 -4000
+  input move 300 300
+  for _ in 1 2 3 4; do
+    input move 420 0
+    sleep 0.3
+  done
+  input key i
+  sleep 1.2
+  input key back
+  wait $! || true
+  fps=$(value '.fps' "$out")
+  slow=$(value '.slow_frames' "$out")
+  if [[ -z $fps ]]; then
+    result fail S2.10 "couldn't measure the home screen's frames: $(value '.error' "$out")"
+  elif awk -v fps="$fps" -v refresh="$refresh" -v slow="$slow" 'BEGIN { exit !(fps >= refresh - 2 && slow == 0) }'; then
+    result pass S2.10 "with the focus gliding, tiles lifting under the mouse and a page sliding in and out, the home screen drew at $fps fps on a $refresh Hz screen, with no frame over 25 ms"
+  else
+    result fail S2.10 "with the focus gliding, tiles lifting and a page sliding, the home screen drew at $fps fps on a $refresh Hz screen, with $slow frames over 25 ms (worst $(value '.worst_ms' "$out") ms)"
+  fi
+  rm -f "$out"
+  home_alone
+  result manual S2.10 "watch: the focus glides between tiles, a tile lifts under the mouse, and pages slide in and out, all smoothly. Settings → Look → reduce motion turns them into fades; turn it off again after."
+}
+
+s211() {
+  local out on worst closest
+
+  tv_on S2.11 || return 0
+  home_alone
+  out=$(mktemp)
+  screen sounds 7 >"$out" &
+  sleep 0.5
+  for key in right left right left; do
+    input key "$key"
+    sleep 0.5
+  done
+  # A held arrow repeats faster than one move sound every 60 ms.
+  input hold right 1.5
+  input hold left 1.5
+  wait $! || true
+  on=$(value '.on' "$out")
+  worst=$(value '.worst_ms' "$out")
+  closest=$(value '.closest_moves_ms' "$out")
+  if [[ $on != "true" ]]; then
+    result fail S2.11 "Settings → Sound has the UI sounds off ($(value '.error' "$out")); turn them on and run this again"
+  elif [[ -z $worst ]]; then
+    result fail S2.11 "no UI sound played for the keys sent (audio: $(value '.audio' "$out"))"
+  elif awk -v worst="$worst" 'BEGIN { exit !(worst <= 16.7) }'; then
+    result pass S2.11 "each UI sound started within $worst ms of its key, inside one frame; the audio output adds about $(value '.output_ms' "$out") ms"
+  else
+    result fail S2.11 "a UI sound started $worst ms after its key, more than a frame"
+  fi
+  if [[ -n $closest ]] && (( closest >= 59 )); then
+    result pass S2.11 "a held arrow played a move sound at most every 60 ms (the closest two: $closest ms)"
+  elif [[ -n $closest ]]; then
+    result fail S2.11 "two move sounds played $closest ms apart, closer than 60 ms"
+  else
+    result fail S2.11 "a held arrow played fewer than two move sounds"
+  fi
+  rm -f "$out"
+  result manual S2.11 "listen: each of the seven sounds comes with its action, a held arrow ticks evenly, and Settings → Sound → ui sounds off silences them all; turn them on again after"
+}
+
+s215() {
+  local page="http://127.0.0.1:3000/logo.svg" start took
+
+  tv_on S2.15 || return 0
+  screen open "$page" >/dev/null
+  if [[ -z $(wait_front web 15) ]]; then
+    result fail S2.15 "a web app didn't come in front within 15 s"
+    return 0
+  fi
+  sleep 2
+  start=$(date +%s%N)
+  screen home >/dev/null
+  took=$(ms_until home 5 "$start")
+  if [[ -n $took ]] && (( took <= 1000 )); then
+    result pass S2.15 "Home put the home screen in front in $took ms"
+  else
+    result fail S2.15 "Home took ${took:-over 5000} ms to put the home screen in front"
+  fi
+  sleep 2
+  start=$(date +%s%N)
+  screen open "$page" >/dev/null
+  took=$(ms_until web 5 "$start")
+  if [[ -n $took ]] && (( took <= 1000 )); then
+    result pass S2.15 "choosing the app again brought the same window back in $took ms"
+  else
+    result fail S2.15 "choosing the app again took ${took:-over 5000} ms"
+  fi
+  screen home >/dev/null
+  wait_front home 10 >/dev/null
+  screen close web >/dev/null
+  result manual S2.15 "with an episode playing: Home pauses it and home shows within a second, and choosing it again plays it from the same second within a second"
+}
+
+s216() {
+  tv_on S2.16 || return 0
+  result manual S2.16 "over a playing app: the keyboard's Home key, a gamepad's guide button and the mouse pushed into the top left corner, then a click on Home there, each show the home screen. Back reaches the app, and holding Back for a second goes home. In a game, the guide button stays the game's."
+}
+
 echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 "$AGENTV_BIN_DIR/agentv-version" 2>/dev/null || true
 echo
@@ -439,6 +660,13 @@ for id in "${checks[@]}"; do
     S1.2) s12 ;;
     S1.5) s15 ;;
     S1.6) s16 ;;
+    S1.7) s17 ;;
+    S2.8) s28 ;;
+    S2.9) s29 ;;
+    S2.10) s210 ;;
+    S2.11) s211 ;;
+    S2.15) s215 ;;
+    S2.16) s216 ;;
   esac
 done
 
