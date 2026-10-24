@@ -10,6 +10,8 @@
 # left, right, enter, back (Esc), home, playpause, volumeup, volumedown,
 # mute, letters and digits. hold keeps one down for a while, such as Back
 # for a second, which goes home. Works over SSH too, as the person on the TV.
+# What text types is never logged (ADR-032); text - reads it from stdin, so
+# it isn't on the command line either.
 
 set -euo pipefail
 
