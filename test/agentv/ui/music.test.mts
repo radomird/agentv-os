@@ -113,7 +113,9 @@ async function tv(playing = true): Promise<Page> {
       w.agentvScreen = (json: string) => {
         const request = JSON.parse(json) as Request;
         w.screenRequests.push(request);
-        setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(answer(request))), 0);
+        // Mounting a share takes a while on a real box.
+        const delay = request.op === "add-share" ? 300 : 0;
+        setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(answer(request))), delay);
       };
     },
     { library: LIBRARY, cover: COVER, playing },
@@ -272,11 +274,10 @@ test("S3.6 the sources page lists the folder, the USB stick and the share, and a
   await page.fill('[aria-label="the share\'s password"]', "hunter2");
   await page.locator('[data-action="add-share"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { op?: string }[] }).screenRequests.some((r) => r.op === "add-share"));
+  // The password isn't left on the page, not even while the share mounts.
+  assert.equal(await page.inputValue('[aria-label="the share\'s password"]'), "");
   const [added] = await requests(page, "add-share");
   assert.deepEqual([added.uri, added.password], ["smb://radomir@nas/music", "hunter2"]);
-  // The password isn't left on the page.
-  await page.waitForSelector(".sources .source");
-  assert.equal(await page.inputValue('[aria-label="the share\'s password"]'), "");
   await page.close();
 });
 
