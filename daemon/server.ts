@@ -1,6 +1,7 @@
 // AgenTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
-// pages and the state behind them, on this box only (127.0.0.1) for now. The
-// phone companions reach it over the network from stage 4.
+// pages and the state behind them on this box only (127.0.0.1:3000), and the
+// phone companion on the home network (port 3001), where only a paired phone
+// gets past pairing (stage 4).
 //
 // - The welcome page until setup is done, and the home screen (launcher/)
 //   after it. Setup isn't built until stage 5, so `agentv setup skip` marks it
@@ -16,7 +17,9 @@
 // or from no page at all (a command on the box), are answered. A web page
 // elsewhere can't change anything here.
 
+import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -24,6 +27,7 @@ import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { ProviderKey } from "./key.ts";
+import { Phones } from "./phones.ts";
 import { Pin } from "./pin.ts";
 import { Profiles } from "./profiles.ts";
 import { Updates } from "./updates.ts";
@@ -47,6 +51,25 @@ export interface DaemonOptions {
   // writes, and how long that may take.
   keyStatus?: string;
   keyWaitMs?: number;
+  // The phone companion's port on the home network, or none. 3001 on the box.
+  lanPort?: number;
+  lanHost?: string;
+  // The box's address on the home network, for the pairing QR code.
+  address?: () => string | null;
+  // qrencode, which draws the QR code.
+  qrencode?: string;
+}
+
+// The box's address on the home network: its first wired or Wi-Fi IPv4
+// address, never a container's or a VM bridge's.
+export function lanAddress(): string | null {
+  const all = Object.entries(networkInterfaces()).filter(([name]) => !/^(lo|docker|br-|veth|virbr|tun|tap)/.test(name));
+  all.sort(([a], [b]) => Number(/^(en|eth|wl)/.test(b)) - Number(/^(en|eth|wl)/.test(a)));
+  for (const [, addresses] of all) {
+    const found = addresses?.find((a) => a.family === "IPv4" && !a.internal);
+    if (found) return found.address;
+  }
+  return null;
 }
 
 interface Setup {
@@ -88,6 +111,12 @@ export class Daemon {
   readonly pin: Pin;
   readonly profiles: Profiles;
   readonly key: ProviderKey;
+  readonly phones: Phones;
+  // The phone companion's listener, on the home network.
+  readonly lan?: Server;
+  // The screen daemon, taking the phone's keys and text for the virtual
+  // input device.
+  private remotes = new Set<ServerResponse>();
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
@@ -109,6 +138,16 @@ export class Daemon {
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
+    this.phones = new Phones({ path: join(options.state, "phones.json") });
+    if (options.lanPort !== undefined) {
+      this.lan = createServer((request, response) => {
+        this.handlePhone(request, response).catch((error: Error) => {
+          this.log(`error: phone ${request.method} ${new URL(request.url ?? "/", "http://phone").pathname}: ${error.message}`);
+          if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
+          else response.end();
+        });
+      });
+    }
     // A kid's profile keeps the PIN on (ADR-009).
     const kids = () => (this.ledger.viewers().some((viewer) => viewer.role === "kid") ? "a kid's profile needs the pin, so it stays" : null);
     this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId, needed: kids });
@@ -124,11 +163,24 @@ export class Daemon {
   }
 
   listen(): Promise<number> {
-    return new Promise((resolve) => {
-      this.server.listen(this.options.port, this.options.host ?? "127.0.0.1", () => {
-        resolve((this.server.address() as { port: number }).port);
-      });
-    });
+    const lan = this.lan;
+    const phones = lan
+      ? new Promise<void>((resolve) => lan.listen(this.options.lanPort, this.options.lanHost ?? "0.0.0.0", () => resolve()))
+      : Promise.resolve();
+    return phones.then(
+      () =>
+        new Promise((resolve) => {
+          this.server.listen(this.options.port, this.options.host ?? "127.0.0.1", () => {
+            resolve((this.server.address() as { port: number }).port);
+          });
+        }),
+    );
+  }
+
+  // The phone companion's port, once it listens.
+  get lanPort(): number | null {
+    const address = this.lan?.address();
+    return address && typeof address === "object" ? address.port : null;
   }
 
   // The ledger, opened the first time something needs it.
@@ -139,6 +191,8 @@ export class Daemon {
 
   close(): Promise<void> {
     for (const stream of this.streams) stream.end();
+    for (const stream of this.remotes) stream.end();
+    this.lan?.close();
     this.home.stop();
     this.updates.stop();
     this.openLedger?.close();
@@ -193,6 +247,157 @@ export class Daemon {
       return { ok: false, why: "not from one of this box's own pages" };
     }
     return { ok: true };
+  }
+
+  // The code on show, and the address it pairs at.
+  private pairing(): { code: string; until: string; url: string | null } | null {
+    const showing = this.phones.showing();
+    if (!showing) return null;
+    const address = (this.options.address ?? lanAddress)();
+    const port = this.lanPort;
+    return { ...showing, url: address && port ? `http://${address}:${port}/?code=${showing.code}` : null };
+  }
+
+  private qr(text: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      execFile(this.options.qrencode ?? "qrencode", ["-t", "SVG", "-m", "1", "-o", "-", text], { timeout: 5000 }, (error, stdout) =>
+        resolve(error || !stdout.includes("<svg") ? null : stdout),
+      );
+    });
+  }
+
+  // The phone's keys and text, to the screen daemon. False with no TV
+  // session to take them.
+  private remote(event: Record<string, unknown>): boolean {
+    if (this.remotes.size === 0) return false;
+    for (const stream of this.remotes) stream.write(`data: ${JSON.stringify(event)}\n\n`);
+    return true;
+  }
+
+  // --- The phone companion, on the home network ------------------------------
+
+  // Only the companion's page and its requests are here, never the TV's own.
+  // Past pairing, every request needs the phone's token. A request that
+  // changes something has to come from the companion's own page.
+  private async handlePhone(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const url = new URL(request.url ?? "/", "http://phone");
+    const path = url.pathname;
+    const method = request.method;
+    const origin = request.headers.origin;
+    if (method !== "GET" && origin !== undefined && origin !== `http://${request.headers.host}`) {
+      this.json(response, 403, { ok: false, error: "not from the phone companion's page" });
+      return;
+    }
+
+    if (method === "GET" && (path === "/" || path === "/index.html")) {
+      await this.file(response, join("companion-web", "index.html"));
+      return;
+    }
+    if (method === "GET" && path.startsWith("/companion-web/")) {
+      let relative: string;
+      try {
+        relative = normalize(decodeURIComponent(path)).replace(/^\/+/, "");
+      } catch {
+        this.json(response, 400, { ok: false, error: "that address isn't valid" });
+        return;
+      }
+      if (relative.split(sep)[0] === "companion-web" && !relative.split(sep).includes("..")) {
+        await this.file(response, relative);
+        return;
+      }
+    }
+
+    // The Omarchy theme's colours, as on the TV.
+    if (method === "GET" && path === "/api/theme.css") {
+      this.send(response, TYPES[".css"], await this.home.theme());
+      return;
+    }
+
+    if (method === "POST" && path === "/api/phone/pair") {
+      const body = (await this.body(request)) as { code?: unknown; name?: unknown } | undefined;
+      const paired = this.phones.pair(body?.code, body?.name);
+      if ("error" in paired) {
+        this.log("a phone sent a wrong pairing code");
+        this.json(response, 403, { ok: false, error: paired.error });
+        return;
+      }
+      this.log(`${paired.phone.name} is paired`);
+      this.broadcast("phones", { paired: paired.phone.name });
+      this.json(response, 200, { ok: true, token: paired.token, phone: paired.phone });
+      return;
+    }
+
+    const auth = String(request.headers.authorization ?? "");
+    const phone = this.phones.who(auth.startsWith("Bearer ") ? auth.slice(7) : undefined);
+    if (!phone) {
+      this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/phone/state") {
+      const viewer = await this.profiles.active();
+      const pin = this.pin.status();
+      this.json(response, 200, { ok: true, phone, viewer, viewers: await this.profiles.list(), pin: { set: pin.set, locked: pin.locked } });
+      return;
+    }
+
+    // The d-pad and the keyboard: keys, held keys and text for the virtual
+    // input device, through the screen daemon. What's typed is never logged.
+    if (method === "POST" && path === "/api/phone/remote") {
+      const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
+      let event: Record<string, unknown> | null = null;
+      if (typeof body.key === "string" && /^[a-z0-9-]{1,12}$/.test(body.key)) event = { key: body.key };
+      else if (typeof body.hold === "string" && /^[a-z0-9-]{1,12}$/.test(body.hold)) event = { hold: body.hold, ms: Math.max(100, Math.min(3000, Number(body.ms) || 1200)) };
+      else if (typeof body.text === "string" && body.text.length > 0 && body.text.length <= 500) event = { text: body.text };
+      if (!event) {
+        this.json(response, 400, { ok: false, error: "a key, a held key, or text of up to 500 characters" });
+        return;
+      }
+      if (!this.remote(event)) {
+        this.json(response, 503, { ok: false, error: "the tv session isn't on" });
+        return;
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
+    // Who's watching, from the phone (S4.2): from a kid's profile to an
+    // adult's needs the PIN, entered on the phone.
+    if (method === "POST" && path === "/api/phone/viewer") {
+      const body = (await this.body(request)) as { id?: unknown } | undefined;
+      const target = (await this.profiles.list()).find((p) => p.id === body?.id);
+      if (!target) {
+        this.json(response, 404, { ok: false, error: "there's no such profile" });
+        return;
+      }
+      const now = await this.profiles.active();
+      if (now.role === "kid" && target.role === "adult" && !this.guarded(request, response, "switching to an adult from a phone")) return;
+      await this.profiles.switchTo(target.id);
+      if (now.id !== target.id) this.log(`${target.name} is watching now, from ${phone.name}`);
+      this.broadcast("viewer", { id: target.id, role: target.role });
+      this.json(response, 200, { ok: true, viewer: target });
+      return;
+    }
+
+    // The parent PIN, entered on the phone: a grant, and the TV unlocked.
+    if (method === "POST" && path === "/api/phone/pin") {
+      const locked = this.pin.status().locked;
+      const body = (await this.body(request)) as { pin?: unknown } | undefined;
+      const checked = this.pin.check(body?.pin);
+      if (!checked.ok) {
+        this.log(checked.wait ? `a wrong pin from ${phone.name}; the next try waits ${checked.wait} s` : `a wrong pin from ${phone.name}`);
+        this.json(response, 403, checked);
+        return;
+      }
+      if (locked) {
+        this.log(`the tv is unlocked from ${phone.name}`);
+        this.broadcast("pin", this.pin.status());
+      }
+      this.json(response, 200, checked);
+      return;
+    }
+
+    this.json(response, 404, { ok: false, error: "not found" });
   }
 
   private json(response: ServerResponse, status: number, data: unknown): void {
@@ -531,6 +736,63 @@ export class Daemon {
       return;
     }
 
+    // --- Phones (stage 4) --------------------------------------------------
+
+    // Settings → Phones: the paired phones, and the code on show.
+    if (method === "GET" && path === "/api/phones") {
+      this.json(response, 200, { ok: true, phones: this.phones.list(), pairing: this.pairing() });
+      return;
+    }
+
+    // Pair a phone: a new code, and the address the QR code takes a phone to.
+    if (method === "POST" && path === "/api/phones/pair") {
+      this.phones.code();
+      this.json(response, 200, { ok: true, pairing: this.pairing() });
+      return;
+    }
+
+    // The pairing QR code, drawn by qrencode.
+    if (method === "GET" && path === "/api/phones/qr") {
+      const pairing = this.pairing();
+      const svg = pairing?.url ? await this.qr(pairing.url) : null;
+      if (!svg) {
+        this.json(response, 404, { ok: false, error: pairing ? "there's no qr code without qrencode or an address" : "there's no code on show" });
+        return;
+      }
+      this.send(response, TYPES[".svg"], svg, { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" });
+      return;
+    }
+
+    const phone = /^\/api\/phones\/(p-[0-9a-f]{8})$/.exec(path);
+    if (method === "DELETE" && phone) {
+      if (!this.phones.forget(phone[1])) {
+        this.json(response, 404, { ok: false, error: "there's no such phone" });
+        return;
+      }
+      this.log("a phone was forgotten");
+      this.broadcast("phones", {});
+      this.json(response, 200, { ok: true, phones: this.phones.list() });
+      return;
+    }
+
+    // The screen daemon's stream of the phone's keys and text. A page can't
+    // open it: it needs a header no browser sends to another site.
+    if (method === "GET" && path === "/api/remote") {
+      if (request.headers["x-agentv-screen"] !== "1") {
+        this.json(response, 403, { ok: false, error: "only the screen daemon takes the phone's keys" });
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
+      response.write(": agentv remote\n\n");
+      this.remotes.add(response);
+      const beat = setInterval(() => response.write(": beat\n\n"), 25_000);
+      request.on("close", () => {
+        clearInterval(beat);
+        this.remotes.delete(response);
+      });
+      return;
+    }
+
     // --- The provider key (ADR-009, S4.6) ------------------------------------
 
     // Which provider has a key. The key itself never comes back.
@@ -840,9 +1102,10 @@ async function main(): Promise<void> {
     apps: process.env.AGENTV_APPS ?? "/var/lib/agentv/apps",
     updates: process.env.AGENTV_UPDATE_STATE ?? "/var/lib/agentv/update",
     port,
+    lanPort: process.env.AGENTV_LAN_PORT === "off" ? undefined : Number(process.env.AGENTV_LAN_PORT ?? 3001),
   });
   const listening = await daemon.listen();
-  console.log(`agentv daemon on http://127.0.0.1:${listening}/`);
+  console.log(`agentv daemon on http://127.0.0.1:${listening}/${daemon.lanPort ? `, and for phones on port ${daemon.lanPort}` : ""}`);
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => void daemon.close().then(() => process.exit(0)));
   }

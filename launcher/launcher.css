@@ -1301,6 +1301,40 @@ button {
   margin: 0;
 }
 
+/* Pairing a phone: the QR code on white, and the code to type instead. */
+.page.pair {
+  display: flex;
+  align-items: center;
+  gap: 96px;
+}
+
+.pair-qr {
+  flex: none;
+  width: 520px;
+  height: 520px;
+  background: #fff;
+  padding: 24px;
+}
+
+.pair-qr img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.pair-text {
+  max-width: 900px;
+}
+
+.pair-code {
+  margin: 36px 0 12px;
+  font-size: 120px;
+  font-weight: 800;
+  letter-spacing: 18px;
+  color: var(--accent);
+}
+
 /* --- Music (ADR-017) ---------------------------------------------------- */
 
 .hidden {

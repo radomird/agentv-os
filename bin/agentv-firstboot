@@ -30,6 +30,7 @@ start_install_log
 
 run_logged "$AGENTV_INSTALL/pacman.sh"
 run_logged "$AGENTV_INSTALL/state.sh"
+run_logged "$AGENTV_INSTALL/firewall.sh"
 run_logged "$AGENTV_INSTALL/hooks.sh"
 run_logged "$AGENTV_INSTALL/theme.sh"
 run_logged "$AGENTV_INSTALL/notices.sh"

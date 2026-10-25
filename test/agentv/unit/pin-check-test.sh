@@ -14,7 +14,7 @@ free_port() {
   node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })'
 }
 port=$(free_port)
-AGENTV_PATH="$ROOT" AGENTV_DAEMON_STATE="$SCRATCH/state" \
+AGENTV_PATH="$ROOT" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_LAN_PORT=0 \
   node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; rm -rf "$SCRATCH"' EXIT

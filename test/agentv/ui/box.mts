@@ -133,7 +133,9 @@ export async function startBox(
   // What the update check and an install write, empty until a test fills it.
   const updates = join(state, "..", "update");
   mkdirSync(updates, { recursive: true });
-  const daemon = new Daemon({ root: ROOT, state, apps, updates, port, builtins: builtins ?? null, log: () => {} });
+  // The phone companion too, on this computer only, as the box serves it on
+  // the home network.
+  const daemon = new Daemon({ root: ROOT, state, apps, updates, port, builtins: builtins ?? null, log: () => {}, lanPort: 0, lanHost: "127.0.0.1", address: () => "127.0.0.1" });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates };
 }
