@@ -140,10 +140,14 @@ export function music(ctx: Ctx, album?: string): View {
     const q = search.value.trim();
     if (!q) {
       results.replaceChildren();
+      delete results.dataset.q;
       return;
     }
     const reply = await screen.music("search", { q });
+    // A reply for what was typed before comes too late to show.
+    if (q !== search.value.trim()) return;
     const found = (reply.results as Result[] | undefined) ?? [];
+    results.dataset.q = q;
     results.replaceChildren(
       ...(found.length
         ? found.map((result) =>
