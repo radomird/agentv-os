@@ -2,7 +2,7 @@
 // on the right. Look, Sound, Weather, Omarchy desktop and Power work now; the
 // sections later stages build say so.
 
-import { daemon, screen, type WeatherPlace } from "../api.ts";
+import { daemon, screen, type AudioState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -30,6 +30,15 @@ function soon(what: string): HTMLElement[] {
 // The weather's city and units, kept between visits so the panel draws at
 // once, and asked for again each time Settings opens.
 let weather: WeatherPlace | null = null;
+
+// The box's sound output and its volume (S2.19), the same way.
+let audio: AudioState | null = null;
+
+// The output playing and its volume, when the screen daemon says.
+function playing(state: AudioState | null): { name: string; volume: number } | null {
+  const output = state?.ok ? state.outputs?.find((o) => o.name === state.output) : undefined;
+  return output && typeof state?.volume === "number" ? { name: output.description.toLowerCase(), volume: state.volume } : null;
+}
 
 export function settings(ctx: Ctx, open?: string): View {
   const s = ctx.state.settings;
@@ -94,6 +103,52 @@ export function settings(ctx: Ctx, open?: string): View {
     ].filter((el): el is HTMLElement => el !== null);
   };
 
+  // Settings → Sound's output and its volume (ADR-017, S2.19). The box plays
+  // at full volume, so the TV's remote sets how loud it is; a level set here
+  // is kept for that output.
+  const saveAudio = async (change: Parameters<typeof screen.audio>[0], action: string) => {
+    const reply = await screen.audio(change);
+    if (reply.ok && reply.outputs) {
+      audio = reply;
+      ctx.sounds.play("confirm");
+    } else {
+      ctx.toast(reply.error ?? "the sound didn't change", "fail");
+      ctx.sounds.play("failure");
+    }
+    ctx.render("settings/sound", action);
+  };
+  const stepOutput = (by: number) => {
+    const outputs = audio?.outputs ?? [];
+    if (outputs.length < 2) return;
+    const at = outputs.findIndex((o) => o.name === audio?.output);
+    void saveAudio({ output: outputs[(at + by + outputs.length) % outputs.length].name }, "output");
+  };
+  const stepVolume = (by: number) => {
+    const now = playing(audio);
+    if (!now) return;
+    const volume = Math.max(0, Math.min(1, Math.round((now.volume + by) * 20) / 20));
+    if (volume !== now.volume) void saveAudio({ volume }, "output-volume");
+  };
+  const outputRows = (): HTMLElement[] => {
+    const now = playing(audio);
+    if (!now) return [note(audio === null ? "…" : (audio.error ?? "there's no sound output on this box yet."))];
+    return [
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "output", "data-adjust": "output", onclick: () => stepOutput(1) },
+        h("span", {}, "output"),
+        h("span", { class: "button-value" }, `‹ ${now.name} ›`),
+      ),
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "output-volume", "data-adjust": "output-volume", onclick: () => stepVolume(0.05) },
+        h("span", {}, "output volume"),
+        h("span", { class: "button-value" }, `${Math.round(now.volume * 100)}%`),
+      ),
+      note("the box plays at full volume, so the tv's remote sets how loud it is. left and right change it here, for this output."),
+    ];
+  };
+
   const sections: Section[] = [
     {
       key: "home",
@@ -141,8 +196,12 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "sound",
       label: "sound",
-      value: () => (s.sound.on ? `on · ${Math.round(s.sound.volume * 100)}%` : "off"),
+      value: () => {
+        const now = playing(audio);
+        return `${now ? `${Math.round(now.volume * 100)}% · ` : ""}ui sounds ${s.sound.on ? "on" : "off"}`;
+      },
       panel: () => [
+        ...outputRows(),
         toggle("ui sounds", s.sound.on, "sound", () => save({ sound: { ...s.sound, on: !s.sound.on } }, "sound", "sound")),
         h(
           "button",
@@ -153,10 +212,10 @@ export function settings(ctx: Ctx, open?: string): View {
             "data-adjust": "volume",
             onclick: () => save({ sound: { ...s.sound, volume: s.sound.volume >= 1 ? 0.2 : Math.round((s.sound.volume + 0.2) * 10) / 10 } }, "sound", "volume"),
           },
-          h("span", {}, "volume"),
+          h("span", {}, "ui sounds volume"),
           h("span", { class: "button-value" }, `${Math.round(s.sound.volume * 100)}%`),
         ),
-        note("left and right change the volume."),
+        note("left and right change how loud the ui sounds are."),
       ],
     },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
@@ -253,6 +312,20 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  void screen
+    .audio()
+    .then((found) => {
+      // Away from the TV, it says so; a TV with no outputs says that.
+      const next = found.ok ? { ...found, outputs: found.outputs ?? [] } : found;
+      const changed = JSON.stringify(next) !== JSON.stringify(audio);
+      audio = next;
+      const item = menu.querySelector<HTMLElement>('[data-key="sound"] .menu-value');
+      if (item) item.textContent = sections.find((section) => section.key === "sound")!.value();
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "sound")!);
+      }
+    })
+    .catch(() => {});
   const el = h(
     "div",
     { class: "screen" },
@@ -279,6 +352,14 @@ export function settings(ctx: Ctx, open?: string): View {
       }
       if (current?.dataset.adjust === "city" && (action === "left" || action === "right")) {
         stepCity(action === "right" ? 1 : -1);
+        return true;
+      }
+      if (current?.dataset.adjust === "output" && (action === "left" || action === "right")) {
+        stepOutput(action === "right" ? 1 : -1);
+        return true;
+      }
+      if (current?.dataset.adjust === "output-volume" && (action === "left" || action === "right")) {
+        stepVolume(action === "right" ? 0.05 : -0.05);
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {

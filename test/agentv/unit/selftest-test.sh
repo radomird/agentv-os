@@ -189,6 +189,8 @@ case "$1" in
     echo "{\"ok\":true}" ;;
   quit) echo "$2" >>"$STATE/quit"; echo "{\"ok\":true}" ;;
   settings) echo "$2" >>"$STATE/settings"; echo "{\"ok\":true}" ;;
+  # The sound output (S2.19): at 100%, or at what the check sets.
+  audio) cat "$STATE/audio.json" 2>/dev/null || echo "{\"ok\":true,\"output\":\"hdmi\",\"outputs\":[{\"name\":\"hdmi\",\"description\":\"LG TV (HDMI)\"}],\"volume\":1,\"expected\":1}" ;;
 esac'
 fake pgrep 'exit 1'
 fake systemctl '
@@ -312,10 +314,12 @@ for line in \
   "pass S2.18 AgenTV's units stop within 5 s, so none holds up a restart or a shut down" \
   "pass S2.18 Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there" \
   "pass S2.18 Settings opened at Power on the TV" \
-  "manual S2.18 on the TV, Power is in Settings now"; do
+  "manual S2.18 on the TV, Power is in Settings now" \
+  "pass S2.19 LG TV (HDMI) plays at 100%" \
+  "manual S2.19 play something"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
-[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass, S1.7 pass, S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass, S2.18 pass" ]] ||
+[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass, S1.7 pass, S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass, S2.18 pass, S2.19 pass" ]] ||
   fail "with no id it runs stages 1 and 2, and manual lines don't fail them" "$(cat "$SCRATCH/out")"
 # The keys, the pointer and the held arrows went through the input device.
 for sent in "key right" "key i" "move -4000 -4000" "key down" "hold down 1.5"; do
@@ -326,7 +330,7 @@ pass "stages 1 and 2 pass in a healthy TV session, with manual lines for what ne
 
 tv
 run1 S2 || fail "S2 runs stage 2's checks" "$(cat "$SCRATCH/out")"
-[[ $(tail -n 1 "$SCRATCH/out") == "S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass, S2.18 pass" ]] ||
+[[ $(tail -n 1 "$SCRATCH/out") == "S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass, S2.18 pass, S2.19 pass" ]] ||
   fail "S2 runs only stage 2's checks" "$(cat "$SCRATCH/out")"
 [[ $(cat "$state/settings") == "power" ]] || fail "S2.18 opens Settings at Power" "$(cat "$state/settings" 2>/dev/null)"
 kill "$home_pid" 2>/dev/null || true
@@ -342,6 +346,20 @@ grep -qF "fail S2.18 these may hold up a shut down for longer than 5 s: agentv-s
 rm -f "$state/no-power-rule" "$state/slow-stop"
 kill "$home_pid" 2>/dev/null || true
 pass "S2.18 fails when polkit would ask for a password or a unit would hold a shut down up"
+
+tv
+echo '{"ok":true,"output":"hdmi","outputs":[{"name":"hdmi","description":"LG TV (HDMI)"}],"volume":0.6,"expected":0.6}' >"$state/audio.json"
+run1 S2.19 || fail "S2.19 passes at a level chosen in Settings" "$(cat "$SCRATCH/out")"
+grep -qF "pass S2.19 LG TV (HDMI) plays at 60%, as chosen in Settings → Sound" "$SCRATCH/out" || fail "it says the level was chosen" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"output":"hdmi","outputs":[{"name":"hdmi","description":"LG TV (HDMI)"}],"volume":0.4,"expected":1}' >"$state/audio.json"
+! run1 S2.19 || fail "S2.19 fails at Omarchy's 40%" "$(cat "$SCRATCH/out")"
+grep -qF "fail S2.19 LG TV (HDMI) plays at 40%, not the 100% it should" "$SCRATCH/out" || fail "it says what it should be" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"output":null,"outputs":[],"volume":null,"expected":null}' >"$state/audio.json"
+! run1 S2.19 || fail "S2.19 fails with no output" "$(cat "$SCRATCH/out")"
+grep -qF "fail S2.19 there's no sound output playing" "$SCRATCH/out" || fail "it says there's no output" "$(cat "$SCRATCH/out")"
+rm -f "$state/audio.json"
+kill "$home_pid" 2>/dev/null || true
+pass "S2.19 says the output and its volume, and fails below the level it should be or with no output"
 
 tv
 echo '{"credentials_enable_service": true}' >"$SCRATCH/var/chromium/Default/Preferences"

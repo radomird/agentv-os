@@ -34,6 +34,7 @@ run_logged "$AGENTV_INSTALL/hooks.sh"
 run_logged "$AGENTV_INSTALL/theme.sh"
 run_logged "$AGENTV_INSTALL/notices.sh"
 run_logged "$AGENTV_INSTALL/idle.sh"
+run_logged "$AGENTV_INSTALL/audio.sh"
 run_logged "$AGENTV_INSTALL/autologin.sh"
 run_logged "$AGENTV_INSTALL/desktop.sh"
 # A boot menu or a splash that fails to set isn't worth keeping the TV from
