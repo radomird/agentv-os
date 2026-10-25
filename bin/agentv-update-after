@@ -5,8 +5,9 @@
 # agentv:requires-sudo=true
 
 # The check after an update from the TV (ADR-025, board 33): the daemon
-# answers, the home screen loads, the services' Chromium runs and still has
-# Widevine if it had it before, and every installed app loads.
+# answers on the version now installed, the home screen loads, the services'
+# Chromium runs and still has Widevine if it had it before, and every
+# installed app loads.
 # agentv-update-tv runs it when an update is done, and
 # agentv-update-after.service at the boot after an update that needed a
 # restart. What it found goes to /var/lib/agentv/update/after.json. When
@@ -30,21 +31,29 @@ get() {
   curl -fsS --max-time "${2:-10}" "$DAEMON$1" 2>/dev/null
 }
 
-# The daemon, given time to come up after a restart.
+# The daemon, given time to come up after a restart, on the agentv now
+# installed: the update restarts AgenTV's services (agentv-restart), so this
+# checks the new code.
+installed=$(pacman -Q agentv 2>/dev/null | cut -d' ' -f2)
 started=$SECONDS
 daemon=false
+running=""
 while true; do
-  if get /health 3 | jq -e '.ok == true' >/dev/null 2>&1; then
+  health=$(get /health 3)
+  if jq -e '.ok == true' >/dev/null 2>&1 <<<"$health"; then
     daemon=true
-    break
+    running=$(jq -r '.running // ""' <<<"$health" 2>/dev/null)
+    [[ $running == "$installed" ]] && break
   fi
   (( SECONDS - started >= WAIT )) && break
   sleep 3
 done
-if [[ $daemon == "true" ]]; then
-  add daemon true
-else
+if [[ $daemon != "true" ]]; then
   add daemon false "the daemon doesn't answer"
+elif [[ $running != "$installed" ]]; then
+  add daemon false "the daemon still runs agentv ${running:-from before the update}"
+else
+  add daemon true
 fi
 
 # The home screen: its page, and the state it draws.

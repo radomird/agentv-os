@@ -21,7 +21,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
-import { userAgent } from "./identity.ts";
+import { installedPackage, userAgent } from "./identity.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
@@ -36,6 +36,8 @@ export interface DaemonOptions {
   port: number;
   host?: string;
   log?: (line: string) => void;
+  // The agentv package this daemon runs: the one installed as it starts.
+  running?: string;
 }
 
 interface Setup {
@@ -76,9 +78,11 @@ export class Daemon {
   readonly updates: Updates;
   private ledgerPath: string;
   private openLedger?: Ledger;
+  private running: string;
 
   constructor(options: DaemonOptions) {
     this.options = options;
+    this.running = options.running ?? installedPackage();
     this.log = options.log ?? ((line) => console.log(line));
     this.home = new Home({
       appsDir: options.apps ?? "/var/lib/agentv/apps",
@@ -266,6 +270,9 @@ export class Daemon {
         service: "agentv",
         version: info.AGENTV_VERSION,
         channel: info.AGENTV_CHANNEL,
+        // What this process runs, which after an update and before AgenTV's
+        // services restart is still the package from before (agentv-restart).
+        running: this.running,
         screen: setup.done ? "home" : "welcome",
         welcome_shown: this.welcome.shownAt !== null,
         welcome_shown_at: this.welcome.shownAt,

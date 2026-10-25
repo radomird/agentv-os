@@ -294,6 +294,7 @@ async function tv(
     playback?: Playback;
     signIn?: SignIn;
     sound?: Sound;
+    running?: string;
   } = {},
 ) {
   const { homeUp = true, ...rest } = options;
@@ -770,6 +771,11 @@ test("S2.18 Settings → Power restarts and shuts down through Omarchy's command
   launcher.pinOk = true;
   launcher.powerWorks = false;
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: false, error: "the box couldn't restart" });
+});
+
+test("agentv screen status says which agentv this screen daemon runs, from when it started", async () => {
+  const { screen } = await tv({ running: "0.3.0-99" });
+  assert.equal(((await screen.handle({ cmd: "status" })) as { running?: string }).running, "0.3.0-99");
 });
 
 test("agentv screen settings opens Settings at a section on the home screen", async () => {
