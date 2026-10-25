@@ -1,0 +1,7 @@
+{
+  "settings": { "timeZone": "Europe/Amsterdam", "place": "amsterdam" },
+  "checks": [
+    { "name": "small: the time alone, which the launcher draws", "call": "tile", "args": ["s"], "expect": { "headline": { "label": "" }, "refreshMins": 60 } },
+    { "name": "medium: with the box's city", "call": "tile", "args": ["m"], "expect": { "headline": { "label": "amsterdam" } } }
+  ]
+}

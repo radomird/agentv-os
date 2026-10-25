@@ -1,0 +1,3 @@
+<!doctype html><meta charset="utf-8"><title>Sign in</title>
+<form id="login"><input id="email" autocomplete="username"><input id="password" type="password" autocomplete="current-password"><button>sign in</button></form>
+<script>document.getElementById("login").addEventListener("submit", (e) => { e.preventDefault(); document.cookie = "signed=in; path=/"; location.href = "/"; });</script>

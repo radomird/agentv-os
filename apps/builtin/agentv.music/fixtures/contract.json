@@ -1,0 +1,26 @@
+{
+  "music": "../../../../test/agentv/fixtures/music",
+  "checks": [
+    {
+      "id": "S3.6",
+      "name": "the library has the fixture folder's albums, by artist, with covers, and its playlist",
+      "op": "library",
+      "expect": {
+        "ok": true,
+        "albums": [
+          { "title": "Test Tones", "artist": "AgenTV", "year": "2026", "cover": true, "tracks": { "$length": 3 } },
+          { "title": "Night Shift", "artist": "Pixel Band", "year": "2025", "cover": true, "tracks": { "$length": 3 } }
+        ],
+        "playlists": [{ "name": "evening", "tracks": { "$length": 2 } }]
+      }
+    },
+    { "id": "S3.6", "name": "a search finds the album first", "op": "search", "request": { "q": "night" }, "expect": { "ok": true, "results": { "0": { "kind": "album", "title": "Night Shift" } } } },
+    { "id": "S3.6", "name": "play night shift plays the album", "op": "play", "request": { "q": "night shift" }, "expect": { "ok": true, "playing": { "kind": "album", "title": "Night Shift", "tracks": 3 } } },
+    { "name": "now says what's playing", "op": "now", "expect": { "ok": true, "now": { "title": "Dusk", "album": "Night Shift", "playing": true } } },
+    { "name": "next goes to the next track", "op": "next" },
+    { "name": "and now says so", "op": "now", "expect": { "now": { "title": "Midnight" } } },
+    { "name": "the album played last comes first", "op": "recent", "expect": { "ok": true, "albums": { "0": { "title": "Night Shift" } } } },
+    { "name": "a playlist plays by name", "op": "play", "request": { "kind": "playlist", "q": "evening" }, "expect": { "ok": true, "playing": { "kind": "playlist", "title": "Dusk", "tracks": 2 } } },
+    { "name": "something that isn't there says so", "op": "play", "request": { "q": "nothing like it" }, "expect": { "ok": false, "error": "nothing in the library matches nothing like it" } }
+  ]
+}

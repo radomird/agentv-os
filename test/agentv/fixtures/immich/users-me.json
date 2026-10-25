@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/users/me"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "id": "00000000-0000-0000-0000-000000000003",
+    "email": "viewer@fixtures.test",
+    "name": "Viewer",
+    "profileImagePath": "",
+    "avatarColor": "purple",
+    "profileChangedAt": "2026-10-25T13:02:11.349Z",
+    "storageLabel": "admin",
+    "shouldChangePassword": true,
+    "isAdmin": true,
+    "createdAt": "2026-10-25T13:02:11.349Z",
+    "deletedAt": null,
+    "updatedAt": "2026-10-25T13:02:12.153Z",
+    "oauthId": "",
+    "quotaSizeInBytes": null,
+    "quotaUsageInBytes": 51384,
+    "status": "active",
+    "license": null
+  }
+}

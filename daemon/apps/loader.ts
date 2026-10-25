@@ -89,6 +89,9 @@ export interface AppHostOptions {
   limits?: Partial<Record<string, number>>; // per-call time limits, for tests
   userAgent?: string; // AgenTV's own, like "AgenTV/0.1.2 (+https://...)"
   page?: PageBroker; // a web app's page, when it has one open
+  // What answers the app's requests, once they're past the origin check:
+  // the network, or the contract tests' fixtures (test/agentv/contract).
+  fetch?: typeof fetch;
   log?: (line: string) => void;
 }
 
@@ -102,6 +105,7 @@ export class AppHost {
   private nextId = 0;
   private limits: Partial<Record<string, number>>;
   private userAgent: string;
+  private fetcher: typeof fetch;
   private page?: PageBroker;
   private log: (line: string) => void;
 
@@ -111,6 +115,7 @@ export class AppHost {
     this.settings = { ...(options.settings ?? {}) };
     this.limits = options.limits ?? {};
     this.userAgent = `${options.userAgent ?? "AgenTV"} ${options.manifest.id}/${options.manifest.version}`;
+    this.fetcher = options.fetch ?? fetch;
     this.page = options.page;
     this.log = options.log ?? (() => {});
   }
@@ -257,7 +262,7 @@ export class AppHost {
     }
     const headers = new Headers(message.headers as [string, string][]);
     if (!headers.has("user-agent")) headers.set("user-agent", this.userAgent);
-    const response = await fetch(url, {
+    const response = await this.fetcher(url, {
       method: String(message.method),
       headers,
       body: message.body ? new Uint8Array(message.body as Uint8Array) : undefined,

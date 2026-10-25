@@ -1,0 +1,12 @@
+{
+  "settings": { "serverUrl": "https://sample.test" },
+  "routes": [{ "url": "https://sample.test/web/", "file": "pages/web.html" }],
+  "checks": [
+    { "name": "launch takes its page to its home address", "page": "https://sample.test/web/", "call": "launch", "after": { "url": "^https://sample\\.test/web/$" } },
+    { "name": "it says it's signed in", "call": "signIn.isSignedIn", "expect": true },
+    { "name": "search finds a title by a word in it", "call": "search", "args": ["sintel"], "expect": [{ "id": "2", "kind": "film", "title": "Sintel" }] },
+    { "name": "with nothing playing, its playback state is null", "call": "playback.readPlaybackState", "expect": null },
+    { "name": "small keeps the logo", "call": "tile", "args": ["s"], "expect": {} },
+    { "name": "medium has a headline and what fits after it", "call": "tile", "args": ["m"], "expect": { "headline": { "label": "Big Buck Bunny" }, "entries": { "$length": 2 } } }
+  ]
+}
