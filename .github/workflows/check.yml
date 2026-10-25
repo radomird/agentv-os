@@ -63,6 +63,9 @@ jobs:
         with:
           persist-credentials: false
       - run: node --version
+      # Music reads tags and covers with ffprobe and ffmpeg, as the box does.
+      - name: ffmpeg, for the Music tests
+        run: type -P ffprobe >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
       - name: The daemon's TypeScript type-checks
         run: test/agentv/types
       - run: test/agentv/unit/run
@@ -236,14 +239,16 @@ jobs:
           [[ $UNIT == "success" ]] || s212="fail (layer 2: $UNIT)"
           if [[ $UNIT == "success" && $UI == "success" ]]; then
             s33="pass (layers 2 and 4: a row within 10 s of an app opening, read from its page in Chromium; one row per viewer; the live box is the image layer's)"
+            s36="pass (layers 2 and 4: the fixture album in every format, from a folder, a USB stick and a share through stand-ins for udisks2, gvfs and mpv; the page and tiles in Chromium; the real stick and NAS are the NUC's)"
             s38="pass (layers 2 and 4: MET's symbol and the wind to a scene, from recorded replies; the live tile is the image layer's and the NUC's)"
             s39="pass (layers 2 and 4: today, tomorrow and seven days from recorded replies; the live tiles are the image layer's and the NUC's)"
             s310="pass (layers 2 and 4: the medium continue tile from the ledger, drawn with how far in; an entry opens through playback.open)"
           else
             s33="fail (layer 2: $UNIT, layer 4: $UI)"
+            s36="fail (layer 2: $UNIT, layer 4: $UI)"
             s38="fail (layer 2: $UNIT, layer 4: $UI)"
             s39="fail (layer 2: $UNIT, layer 4: $UI)"
             s310="fail (layer 2: $UNIT, layer 4: $UI)"
           fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
-            "S2.12=$s212" "S2.13=$s213" "S3.3=$s33" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" >>"$GITHUB_STEP_SUMMARY"
+            "S2.12=$s212" "S2.13=$s213" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" >>"$GITHUB_STEP_SUMMARY"

@@ -48,8 +48,10 @@ import { CdpPipe, type DevTools } from "./cdp.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
+import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
 import { PlaybackWatch } from "./playback.ts";
+import { Storage } from "./storage.ts";
 import { tvOn } from "./tv-power.ts";
 
 export type Role = "home" | "web" | "steam";
@@ -157,10 +159,17 @@ export interface Playback {
   play?(id: string, item: unknown): void;
 }
 
+// The built-in Music app's library and player (music.ts).
+export interface Music {
+  handle(request: Record<string, unknown>): Promise<object>;
+  scan(): Promise<unknown>;
+}
+
 interface Options {
   hyprland: Hyprland;
   launcher: Launcher;
   playback?: Playback;
+  music?: Music;
   now?: () => number;
   log?: (line: string) => void;
   homeRestartMs?: number;
@@ -187,6 +196,7 @@ export class Screen {
   private hypr: Hyprland;
   private launcher: Launcher;
   private playback?: Playback;
+  private music?: Music;
   private now: () => number;
   private log: (line: string) => void;
   private windows = new Map<string, Window>();
@@ -239,6 +249,7 @@ export class Screen {
     this.hypr = options.hyprland;
     this.launcher = options.launcher;
     this.playback = options.playback;
+    this.music = options.music;
     this.now = options.now ?? Date.now;
     this.log = options.log ?? ((line) => console.log(line));
     this.homeRestartMs = options.homeRestartMs ?? 500;
@@ -611,6 +622,9 @@ export class Screen {
       case "running":
         await this.chain;
         return { ok: true, apps: this.runningApps() };
+      // The Music page (ADR-017).
+      case "music":
+        return this.musicRequest(request);
       case "quit":
         return this.quit(String(request.app ?? ""));
       case "wake":
@@ -960,6 +974,15 @@ export class Screen {
     }).then(() => ({ ok: true }));
   }
 
+  private async musicRequest(request: Record<string, unknown>): Promise<object> {
+    if (!this.music) return { ok: false, error: "music isn't here" };
+    try {
+      return await this.music.handle(request);
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
+
   // An app's page, for its worker: its target in whichever services'
   // Chromium is running when a call comes.
   private pageOf(entry: Open): PageBroker {
@@ -1172,6 +1195,8 @@ export class Screen {
       case "open":
         if (request.app === "steam") return this.openSteam();
         return this.openWeb(String(request.url ?? ""));
+      case "music":
+        return this.musicRequest(request);
       // An installed app, as its tile opens it.
       case "app":
         return this.fromHome({ cmd: "open-app", app: String(request.app ?? "") });
@@ -1484,8 +1509,32 @@ export function playbackWatch(home = HOME_URL, log: (line: string) => void = con
   });
 }
 
+// The built-in Music app (ADR-017): its sources, library and player, here
+// in the TV session, and what plays handed to the daemon's ledger.
+export function musicApp(home = HOME_URL, log: (line: string) => void = console.log): MusicApp {
+  return new MusicApp({
+    storage: new Storage(),
+    library: new MusicLibrary(),
+    player: new MusicPlayer(),
+    async record(state) {
+      const response = await fetch(`${home}api/ledger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app: MUSIC, state }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error(`the ledger answered ${response.status}`);
+    },
+    log,
+  });
+}
+
 async function main(): Promise<void> {
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch() });
+  const music = musicApp();
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music });
+  // The library is read again a little after the session starts, once the
+  // USB drives and shares have had a moment.
+  setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
   // When Hyprland goes, so does the TV session, and this with it.
   await screen.start(() => {
     console.log("Hyprland went away; stopping");

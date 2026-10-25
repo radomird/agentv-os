@@ -69,9 +69,12 @@ export class Focus {
     if (el === this.current) return;
     const from = this.current?.isConnected ? this.ringBox() : undefined;
     this.current?.classList.remove("focused");
+    // A text field takes the keys while it has the focus, and lets go after.
+    if (this.current instanceof HTMLInputElement) this.current.blur();
     this.current = el;
     this.place(el, from !== undefined, from);
     el.classList.add("focused");
+    if (el instanceof HTMLInputElement) el.focus({ preventScroll: true });
     if (announce) this.onMove(el);
   }
 

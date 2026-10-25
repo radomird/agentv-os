@@ -203,6 +203,29 @@ fake steam 'exit 0'
 fake omarchy-cmd-present 'type -P "$1" >/dev/null'
 # The virtual input device, and the screen daemon's journal.
 fake agentv-input 'echo "$*" >>"$STATE/input.log"'
+# The Music app in the TV session (S3.6): its library, and a player whose
+# position moves on with each look, unless it's stuck.
+fake agentv-music '
+echo "$*" >>"$STATE/music.log"
+case "$1" in
+  scan) cat "$STATE/music-scan" 2>/dev/null || echo "{\"ok\":true,\"albums\":3,\"tracks\":9}" ;;
+  library) cat "$STATE/music-library" ;;
+  play)
+    shift
+    [[ $1 == album ]] && shift
+    jq -c --arg q "$*" "first(.albums[] | select((.title | ascii_downcase) == (\$q | ascii_downcase))) | {ok: true, playing: {kind: \"album\", key: .id, title: .title, tracks: 3}}" "$STATE/music-library" | tee "$STATE/music-playing"
+    echo 0 >"$STATE/music-looks" ;;
+  now)
+    if [[ -f $STATE/music-playing ]]; then
+      looks=$(( $(cat "$STATE/music-looks") + 1 ))
+      [[ -f $STATE/music-stuck ]] && looks=1
+      echo "$looks" >"$STATE/music-looks"
+      jq -c --argjson looks "$looks" "{ok: true, now: {title: \"Dusk\", artist: \"Pixel Band\", album: .playing.title, albumId: .playing.key, position: (\$looks * 1.5), duration: 61, playing: true}}" "$STATE/music-playing"
+    else
+      echo "{\"ok\":true,\"now\":null}"
+    fi ;;
+  stop) rm -f "$STATE/music-playing"; echo "{\"ok\":true}" ;;
+esac'
 fake journalctl 'cat "$STATE/journal" 2>/dev/null || true'
 
 tv() {
@@ -224,7 +247,12 @@ tv() {
     "2026-10-24T21:00:02+0200 nuc agentv-screen[812]: the TV went off; pausing" \
     "2026-10-24T21:02:02+0200 nuc agentv-screen[812]: the TV has been off for a while; closing every app" \
     "2026-10-24T21:03:10+0200 nuc agentv-screen[812]: the TV came back on" >"$state/journal"
-  rm -f "$state/input.log"
+  rm -f "$state/input.log" "$state/music.log" "$state/music-playing" "$state/music-stuck" "$state/music-scan"
+  # A Music library with an album on the box, one on a stick and one on a share.
+  echo '{"ok": true, "albums": [
+    {"id": "f1", "title": "Test Tones", "artist": "AgenTV", "source": "folder:/home/radomir/Music"},
+    {"id": "u1", "title": "Night Shift", "artist": "Pixel Band", "source": "usb:/dev/sdb1"},
+    {"id": "s1", "title": "Harbour Lights", "artist": "The Quays", "source": "share:smb://nas/music"}], "playlists": []}' >"$state/music-library"
   echo '{"ok": true, "welcome_shown": true, "screen": "home"}' >"$state/health"
   mkdir -p "$SCRATCH/var/chromium/Default"
   echo '{"credentials_enable_service": false, "credentials_enable_autosignin": false, "autofill": {"profile_enabled": false, "credit_card_enabled": false},
@@ -235,7 +263,8 @@ tv() {
 
 run1() {
   env PATH="$fakes:$PATH" STATE="$state" AGENTV_PATH="$SCRATCH/agentv" AGENTV_SDDM_CONF="$SCRATCH/sddm.conf" \
-    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_INPUT="$fakes/agentv-input" AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
+    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_INPUT="$fakes/agentv-input" AGENTV_MUSIC="$fakes/agentv-music" AGENTV_MUSIC_WAIT_S=0 \
+    AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
 }
 
 tv
@@ -361,7 +390,7 @@ rm -f "$state/tile"
 for line in "pass S3.8 the tile matches MET for amsterdam (52.37, 4.9)" "manual S3.8 on yr.no" "pass S3.9 the tile matches MET" "manual S3.9 on yr.no"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
-[[ $(tail -n 1 "$SCRATCH/out") == "S3.3 pass, S3.8 pass, S3.9 pass, S3.10 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
+[[ $(tail -n 1 "$SCRATCH/out") == "S3.3 pass, S3.6 pass, S3.8 pass, S3.9 pass, S3.10 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
 touch "$state/weather-off"
 ! run1 S3.8 || fail "a tile that doesn't match MET fails S3.8"
 grep -qF "fail S3.8 the tile shows cloudy for amsterdam (52.37, 4.9), but MET says rain" "$SCRATCH/out" || fail "it says what didn't match" "$(cat "$SCRATCH/out")"
@@ -412,3 +441,40 @@ grep -q "^fail S3.3 no ledger row appeared within 1.5 s of the app opening" "$SC
 rm -f "$state/no-ledger"
 kill "$home_pid" 2>/dev/null || true
 pass "S3.3 fails when no row comes, and still cleans up"
+
+# --- S3.6: an album from a stick and one from a share ---------------------------
+
+tv
+run1 S3.6 || fail "S3.6 passes when both albums play" "$(cat "$SCRATCH/out")"
+for line in \
+  "pass S3.6 play Night Shift found the album on a USB drive (/dev/sdb1), and it plays: Dusk at 3 s" \
+  "pass S3.6 play Harbour Lights found the album on a NAS share (smb://nas/music), and it plays: Dusk at 3 s" \
+  "manual S3.6 listen: each album comes out of the TV's speakers"; do
+  grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
+done
+grep -qx "scan" "$state/music.log" || fail "it reads the sources again first" "$(cat "$state/music.log")"
+grep -qx "play album Night Shift" "$state/music.log" || fail "it asks for the album by name" "$(cat "$state/music.log")"
+[[ $(tail -n 1 "$state/music.log") == stop ]] || fail "it stops the music after" "$(cat "$state/music.log")"
+[[ $(tail -n 1 "$SCRATCH/out") == "S3.6 pass" ]] || fail "S3.6 alone runs only S3.6" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.6 plays an album from a USB drive and one from a share, each found by name"
+
+tv
+# The same album on the stick and the share can't show that "play" finds
+# each, and with no share there's nothing to find there.
+echo '{"ok": true, "albums": [
+  {"id": "u1", "title": "Night Shift", "source": "usb:/dev/sdb1"},
+  {"id": "u2", "title": "Harbour Lights", "source": "usb:/dev/sdb1"},
+  {"id": "s1", "title": "harbour lights", "source": "share:smb://nas/music"}], "playlists": []}' >"$state/music-library"
+! run1 S3.6 || fail "no album only on a share fails S3.6"
+grep -qF "pass S3.6 play Night Shift found the album on a USB drive" "$SCRATCH/out" || fail "the stick's own album still passes" "$(cat "$SCRATCH/out")"
+grep -qF "fail S3.6 there's no album on a NAS share whose name is only there; add a share with agentv music add-share" "$SCRATCH/out" ||
+  fail "it says how to add a share" "$(cat "$SCRATCH/out")"
+touch "$state/music-stuck"
+! run1 S3.6 || fail "a player that doesn't move on fails S3.6"
+grep -qF "fail S3.6 Night Shift from a USB drive didn't play:" "$SCRATCH/out" || fail "it says it didn't play" "$(cat "$SCRATCH/out")"
+echo '{"ok": false, "error": "music isn'"'"'t here"}' >"$state/music-scan"
+! run1 S3.6 || fail "Music not answering fails S3.6"
+grep -qF "fail S3.6 Music couldn't read its sources: music isn't here" "$SCRATCH/out" || fail "it says Music couldn't read" "$(cat "$SCRATCH/out")"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.6 fails with what to do when an album isn't there, doesn't play, or Music doesn't answer"

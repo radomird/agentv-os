@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# agentv:summary=Play and find the box's own music, and set up where it comes from
+# agentv:args=[now] | library | sources | scan | search <words> | play [album|track|playlist] <words> | pause | next | stop | add-folder <path> | add-share <smb://...|nfs://...> | mount <device>
+# agentv:examples=agentv music play night shift | agentv music add-share smb://nas/music | agentv music search dusk
+
+# The built-in Music app's library and player (ADR-017), which run in the TV
+# session: works over SSH too, as the person logged in on the TV. Prints the
+# answer as JSON, and exits 0 when it says ok, 1 when it doesn't, and 2 when
+# the TV session isn't on.
+#
+#   now             what's playing
+#   library         every album and playlist, and where each album is
+#   sources         the folders, USB drives and shares, and whether each is there
+#   scan            read every source again (USB drives and shares mount first)
+#   search <words>  albums, tracks and playlists that match
+#   play <words>    the best match, or the best album, track or playlist
+#   pause | next | stop
+#   add-folder <path>   a folder on the box
+#   add-share <uri>     a NAS share, smb:// or nfs://. With a user name in it
+#                   (smb://me@nas/music), the password is read from stdin and
+#                   only handed to the mount, never kept
+#   mount <device>  a USB drive, through udisks2
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+
+usage() {
+  sed -n 's/^# agentv:args=/Usage: agentv music /p' "${BASH_SOURCE[0]}" | head -n 1
+}
+
+command=${1:-now}
+(( $# )) && shift
+
+case "$command" in
+  now | library | sources | scan | pause | next | stop)
+    (( $# == 0 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg op "$command" '{cmd: "music", op: $op}')
+    ;;
+  search)
+    (( $# >= 1 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg q "$*" '{cmd: "music", op: "search", q: $q}')
+    ;;
+  play)
+    (( $# >= 1 )) || { usage >&2; exit 2; }
+    kind=""
+    if [[ $1 == "album" || $1 == "track" || $1 == "playlist" ]] && (( $# >= 2 )); then
+      kind=$1
+      shift
+    fi
+    request=$(jq -cn --arg q "$*" --arg kind "$kind" '{cmd: "music", op: "play", q: $q} + (if $kind == "" then {} else {kind: $kind} end)')
+    ;;
+  add-folder)
+    (( $# == 1 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg path "$1" '{cmd: "music", op: "add-folder", path: $path}')
+    ;;
+  add-share)
+    (( $# == 1 )) || { usage >&2; exit 2; }
+    if [[ $1 =~ ^(smb|nfs)://[^/@]+@ ]]; then
+      # From stdin, so it's on no command line and in no history.
+      if [[ -t 0 ]]; then
+        read -rs -p "password for ${1%%/*}//${1#*//}: " password
+        echo >&2
+      else
+        read -r password || true
+      fi
+      request=$(jq -cn --arg uri "$1" --arg password "$password" '{cmd: "music", op: "add-share", uri: $uri, password: $password}')
+      unset password
+    else
+      request=$(jq -cn --arg uri "$1" '{cmd: "music", op: "add-share", uri: $uri}')
+    fi
+    ;;
+  mount)
+    (( $# == 1 )) || { usage >&2; exit 2; }
+    request=$(jq -cn --arg device "$1" '{cmd: "music", op: "mount", device: $device}')
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+exec node "$AGENTV_PATH/daemon/screen-call.ts" "$request"

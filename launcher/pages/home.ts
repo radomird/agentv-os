@@ -18,6 +18,7 @@ import { later, release, tonight } from "./updates.ts";
 
 export const CLOCK = "agentv.clock";
 export const WEATHER = "agentv.weather";
+export const MUSIC = "agentv.music";
 
 // How many entries each size fits, in order (ADR-016): small has room for
 // one line under its headline, medium for a few columns, large for a week.
@@ -163,6 +164,54 @@ export function drawClock(el: HTMLElement, app: App, size: Placed["size"], place
   }, 5_000);
 }
 
+// Music's tile, from the TV session's player (ADR-017): what's playing at
+// medium, and the albums played last as well at large. With nothing
+// playing, it keeps its logo.
+async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promise<void> {
+  if (size === "s") return;
+  const reply = await screen.music("now");
+  const now = reply.now as { title: string; artist: string; album: string; albumId: string | null; position: number; duration: number; playing: boolean } | null | undefined;
+  const recent = size === "l" ? (((await screen.music("recent")).albums as { id: string; title: string; artist: string }[] | undefined) ?? []) : [];
+  // While something plays, the tile follows it.
+  if (now?.playing) setTimeout(() => el.isConnected && void drawMusic(el, app, size), 10_000);
+  if (!el.isConnected || (!now && recent.length === 0)) return;
+  const art = (id: string | null) => {
+    const img = h("span", { class: "album-cover" });
+    if (id) void screen.music("cover", { key: id }).then((found) => typeof found.cover === "string" && img.replaceChildren(h("img", { src: found.cover, alt: "" })));
+    return img;
+  };
+  el.classList.add("has-content", "music-tile");
+  replaceKeeping(
+    el,
+    head(app, now ? (now.playing ? "now playing" : "paused") : "played last"),
+    h(
+      "div",
+      { class: "tile-content" },
+      now
+        ? h(
+            "div",
+            { class: "tile-now" },
+            art(now.albumId),
+            h(
+              "span",
+              { class: "tile-now-text" },
+              h("span", { class: "music-title" }, now.title.toLowerCase()),
+              h("span", { class: "headline-caption" }, `${now.artist.toLowerCase()} · ${now.album.toLowerCase()}`),
+              now.duration > 0 ? progressBar(now.position / now.duration) : null,
+            ),
+          )
+        : null,
+      recent.length
+        ? h(
+            "div",
+            { class: `entries entries-${Math.min(4, recent.length)}` },
+            ...recent.slice(0, 4).map((album) => h("div", { class: "entry" }, art(album.id), h("span", { class: "entry-label" }, album.title.toLowerCase()))),
+          )
+        : null,
+    ),
+  );
+}
+
 // Fills a tile with what its app's tile() sent.
 async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
   let data: TileData | null = null;
@@ -173,6 +222,7 @@ async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
   }
   if (!el.isConnected) return;
   if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
+  else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
   else drawTile(el, app, placed.size, data);
 }
 
@@ -180,6 +230,7 @@ async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
 export function openBuiltin(ctx: Ctx, app: App): void {
   if (app.id === CLOCK) ctx.ambient();
   else if (app.id === WEATHER) ctx.go("settings/weather");
+  else if (app.id === MUSIC) ctx.go("music");
   else ctx.go(`details/${app.id}`);
 }
 

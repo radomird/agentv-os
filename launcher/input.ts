@@ -37,10 +37,14 @@ const REPEAT_FIRST = 400;
 const REPEAT_NEXT = 120;
 const STICK = 0.6;
 
+// In a text field, the keys type; only these still move, choose and go back.
+const FIELD_KEYS = ["ArrowUp", "ArrowDown", "Enter", "NumpadEnter", "Escape", "Home", "BrowserBack", "GoBack", "BrowserHome"];
+
 export function listen(act: (action: Action) => void): void {
   window.addEventListener("keydown", (event) => {
     const action = KEYS[event.key];
     if (!action) return;
+    if (event.target instanceof HTMLInputElement && !FIELD_KEYS.includes(event.key)) return;
     event.preventDefault();
     act(action);
   });
