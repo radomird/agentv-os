@@ -41,3 +41,12 @@ S3.6  image     Music plays an album from a NAS share and one from a USB stick, 
 S3.8  image     the weather tile shows the same condition as MET Norway's current symbol for the box's city (layers 2 and 4 on recorded replies; agentv selftest S3.8 on the NUC)
 S3.9  image     the medium and large weather tiles match MET Norway's forecast for today, tomorrow and the next 7 days (agentv selftest S3.9 on the NUC)
 S3.10 image     an app with playback and no tile() shows a medium continue tile from the ledger (agentv selftest S3.10 on the NUC)
+S4.1  manual    from the TV's welcome screen to the goal screen with only an iPhone, then with only an Android phone through the web companion (waits for stage 5's setup screens and the iOS app)
+S4.2  check     a viewer switch shows on the TV within 1 s, from the TV and from the phone (layer 4)
+S4.3  manual    a spoken sentence arrives as text, from the iOS app's push-to-talk and from the web companion's dictation on an Android phone (layers 2 and 4 check what's typed reaches the TV)
+S4.4  image     typing an email into a service's sign-in form from the phone works
+S4.5  image     a PIN-guarded action is refused without the PIN (layers 2 and 4 too; agentv selftest S4.5 on the NUC)
+S4.6  image     the user account can't read the stored key (layer 2 too; agentv selftest S4.6 on the NUC)
+S4.7  check     a tile moved or resized in arrange home changes on the TV within 1 s (layer 4; the image layer moves one from a phone on the box's address)
+S4.8  check     the phone shows the same update notice as the TV, and Install tonight from the phone installs it overnight (layer 4)
+S4.9  manual    on an iPhone, the sign-in field offers AutoFill and signs in to a service on the TV; the web companion's fields do the same in a phone browser, with no password in AgenTV's logs (the image layer checks the web companion's fields and the logs)
