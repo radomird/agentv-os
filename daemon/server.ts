@@ -503,7 +503,7 @@ export class Daemon {
 
     const tile = /^\/api\/tile\/([a-z0-9.-]+)\/([sml])$/.exec(path);
     if (method === "GET" && tile) {
-      const content = await this.home.tile(tile[1], tile[2] as Size, await this.home.viewer());
+      const content = await this.home.tile(tile[1], tile[2] as Size, await this.home.viewer(), url.searchParams.has("fresh"));
       this.json(response, 200, { ok: true, tile: content });
       return;
     }

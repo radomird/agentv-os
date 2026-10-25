@@ -14,6 +14,10 @@ export interface Met {
   url: string; // the forecast's address, as the weather's forecastUrl
   seen: { url: string; headers: IncomingHttpHeaders }[];
   down(on: boolean): void;
+  // Another place's recorded reply from now on, as when MET updates its
+  // forecast, and how long each reply says it's good for.
+  serve(place: string): void;
+  expiresIn(ms: number): void;
   close(): void;
 }
 
@@ -30,16 +34,17 @@ export function shifted(body: unknown, at = Date.now()): unknown {
 }
 
 export async function startMet(place = "amsterdam"): Promise<Met> {
-  const reply = recordedReply(place);
+  let reply = recordedReply(place);
   const seen: Met["seen"] = [];
   let isDown = false;
+  let expiresMs = 30 * 60_000;
   const server = createServer((request, response) => {
     seen.push({ url: request.url ?? "", headers: request.headers });
     if (isDown) {
       response.writeHead(503).end();
       return;
     }
-    response.writeHead(200, { "Content-Type": "application/json", Expires: new Date(Date.now() + 30 * 60_000).toUTCString() });
+    response.writeHead(200, { "Content-Type": "application/json", Expires: new Date(Date.now() + expiresMs).toUTCString() });
     response.end(JSON.stringify(shifted(reply.body)));
   });
   const port = await new Promise<number>((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
@@ -48,6 +53,12 @@ export async function startMet(place = "amsterdam"): Promise<Met> {
     seen,
     down: (on) => {
       isDown = on;
+    },
+    serve: (other) => {
+      reply = recordedReply(other);
+    },
+    expiresIn: (ms) => {
+      expiresMs = ms;
     },
     close: () => server.close(),
   };
