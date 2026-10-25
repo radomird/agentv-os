@@ -260,32 +260,43 @@ ShellRoot {
       border.color: "#292e42"
       border.width: 2
 
-      Row {
+      Text {
+        id: signInName
         anchors.left: parent.left
         anchors.leftMargin: 36
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 24
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: root.signingIn.toLowerCase()
-          color: "#c0caf5"
-          font.family: "JetBrainsMono Nerd Font"
-          font.pixelSize: 36
-          font.bold: true
-        }
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "sign in"
-          color: "#a9b1d6"
-          font.family: "JetBrainsMono Nerd Font"
-          font.pixelSize: 26
-        }
+        text: root.signingIn.toLowerCase()
+        color: "#c0caf5"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 36
+        font.bold: true
       }
 
+      // Shown only while the hint still fits whole beside it, as on a 1080p
+      // TV. The status line and the button say it too.
       Text {
-        anchors.centerIn: parent
+        id: signInLabel
+        anchors.left: signInName.right
+        anchors.leftMargin: 24
+        anchors.verticalCenter: parent.verticalCenter
+        visible: signedInButton.x - (signInName.x + signInName.width + 24 + implicitWidth) >= signInHint.implicitWidth + 48
+        text: "sign in"
+        color: "#a9b1d6"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 26
+      }
+
+      // Centred in the room between the name and the button, so a long name
+      // on a smaller screen never runs into it.
+      Text {
+        id: signInHint
+        anchors.left: signInLabel.visible ? signInLabel.right : signInName.right
+        anchors.right: signedInButton.left
+        anchors.leftMargin: 24
+        anchors.rightMargin: 24
+        anchors.verticalCenter: parent.verticalCenter
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
         text: "type on your phone or keyboard"
         color: "#a9b1d6"
         font.family: "JetBrainsMono Nerd Font"
@@ -294,6 +305,7 @@ ShellRoot {
 
       // The app is asked again now; it's asked every 2 s anyway.
       Rectangle {
+        id: signedInButton
         anchors.right: parent.right
         anchors.rightMargin: 36
         anchors.verticalCenter: parent.verticalCenter
