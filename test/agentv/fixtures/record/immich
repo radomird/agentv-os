@@ -46,6 +46,13 @@ mkdir -p library postgres
 sed -i "s/- '\?2283:2283'\?/- '127.0.0.1:$PORT:2283'/" docker-compose.yml
 grep -q "127.0.0.1:$PORT:2283" docker-compose.yml || { echo "couldn't move Immich to port $PORT" >&2; exit 1; }
 services=$(docker compose config --services | grep -v machine-learning | tr '\n' ' ')
+# A registry can turn a pull away for a moment; three tries, then up.
+for attempt in 1 2 3; do
+  # shellcheck disable=SC2086 # a list of services
+  docker compose -p "$project" pull -q $services && break
+  (( attempt < 3 )) || { echo "the images didn't pull" >&2; exit 1; }
+  sleep 30
+done
 # shellcheck disable=SC2086 # a list of services
 docker compose -p "$project" up -d $services >/dev/null
 
