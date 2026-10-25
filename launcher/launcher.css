@@ -410,6 +410,36 @@ button {
   font-size: 24px;
 }
 
+/* How far in, on the continue tile (canvas board 26). */
+.entry-progress {
+  display: block;
+  height: 6px;
+  margin-top: 6px;
+  background: color-mix(in srgb, var(--bright-foreground) 25%, transparent);
+}
+
+.entry-progress-done {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.entry-item {
+  cursor: pointer;
+}
+
+/* Things to continue sit at the tile's foot, as on canvas board 26. */
+.tile-content > .entries:only-child:has(.entry-item) {
+  margin-top: auto;
+}
+
+.size-m .entry-item .entry-label {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--bright-foreground);
+  white-space: normal;
+}
+
 /* A small tile's one entry is a line along its foot. */
 .size-s .entries {
   grid-template-columns: minmax(0, 1fr);

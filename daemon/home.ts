@@ -11,6 +11,7 @@ import { validatePackage, type Manifest, type Tier } from "../apps/contract/mani
 import { pin, problem, type Placed, type Size } from "../launcher/layout.ts";
 import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
+import type { Ledger, WatchRow } from "./ledger.ts";
 import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
 
 // Where an app came from: the signed index, this box's agent, or AgenTV
@@ -127,7 +128,39 @@ export interface HomeOptions {
   state: string; // the daemon's own state
   builtins?: string; // AgenTV's own apps: /usr/share/agentv/apps/builtin
   userAgent?: string; // what every app's requests say they are
+  ledger?: () => Ledger; // for the free continue tile (ADR-016)
   log?: (line: string) => void;
+}
+
+// The free continue tile's entries: how far in, and how long is left.
+function caption(row: WatchRow): string {
+  const what = [row.season !== null ? `S${row.season}` : "", row.episode !== null ? `E${row.episode}` : ""].filter(Boolean).join(" ") || row.kind;
+  if (row.duration_s === null || row.position_s === null || row.duration_s <= 0) return what;
+  const left = Math.max(0, Math.ceil((row.duration_s - row.position_s) / 60));
+  return left > 0 ? `${what} · ${left} min left` : `${what} · watched`;
+}
+
+// A medium "continue" tile from the ledger, for an app with playback and no
+// tile() of its own (ADR-016, S3.10): its newest rows for the viewer, each
+// an item to open where it was. Null with nothing in the ledger yet, and the
+// tile shows the app's logo.
+export function continueTile(rows: WatchRow[]): unknown {
+  if (rows.length === 0) return null;
+  return {
+    headline: { label: "continue" },
+    entries: rows.map((row) => ({
+      label: row.title,
+      caption: caption(row),
+      progress: row.duration_s && row.position_s !== null ? Math.min(1, row.position_s / row.duration_s) : undefined,
+      item: {
+        id: `ledger:${row.id}`,
+        kind: row.kind,
+        title: row.title,
+        ...(row.season !== null ? { season: row.season } : {}),
+        ...(row.episode !== null ? { episode: row.episode } : {}),
+      },
+    })),
+  };
 }
 
 export class Home {
@@ -135,6 +168,7 @@ export class Home {
   private state: string;
   private builtins?: string;
   private userAgent?: string;
+  private ledger?: () => Ledger;
   private hosts = new Map<string, AppHost>();
   private tiles = new Map<string, { at: number; tile: unknown; settings: string }>();
   private log: (line: string) => void;
@@ -144,6 +178,7 @@ export class Home {
     this.state = options.state;
     this.builtins = options.builtins;
     this.userAgent = options.userAgent;
+    this.ledger = options.ledger;
     this.log = options.log ?? (() => {});
   }
 
@@ -472,7 +507,13 @@ export class Home {
     if (cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return cached.tile;
 
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
-    if (!found || !found.manifest.tv.capabilities.includes("tile")) return null;
+    if (!found) return null;
+    const capabilities = found.manifest.tv.capabilities;
+    if (!capabilities.includes("tile")) {
+      // The free medium continue tile, drawn from the ledger each time.
+      if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return null;
+      return continueTile(this.ledger().recent(viewer.id, { app: id, limit: 2 }));
+    }
     let host = this.hosts.get(id);
     if (!host) {
       host = new AppHost({ dir: found.dir, manifest: found.manifest, settings, userAgent: this.userAgent, log: this.log });

@@ -350,8 +350,12 @@ async function start(): Promise<void> {
     },
     setup: () => location.reload(),
     updates: (data) => setUpdates(data as Updates),
-    // The weather's city changed: its tiles ask again.
+    // The weather's city changed, or the ledger has a new row for a
+    // continue tile: home's tiles ask again.
     weather: () => {
+      if (history[history.length - 1] === "home") redraw();
+    },
+    ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },
   });

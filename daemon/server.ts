@@ -83,6 +83,7 @@ export class Daemon {
     this.home = new Home({
       appsDir: options.apps ?? "/var/lib/agentv/apps",
       state: options.state,
+      ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
       log: this.log,
@@ -424,8 +425,10 @@ export class Daemon {
       const viewer = await this.home.viewer();
       this.ledger.viewer(viewer);
       const state = body!.state as Parameters<Ledger["record"]>[3];
-      const row = this.ledger.record(viewer.id, body!.app as string, kindOf(state, found.category), state);
-      this.broadcast("ledger", { viewer: viewer.id, app: row.app_id });
+      const { inserted, ...row } = this.ledger.record(viewer.id, body!.app as string, kindOf(state, found.category), state);
+      // Home draws its continue tiles again for a new row, not for every
+      // moved one.
+      if (inserted) this.broadcast("ledger", { viewer: viewer.id, app: row.app_id });
       this.json(response, 200, { ok: true, row });
       return;
     }

@@ -137,6 +137,33 @@ test("S3.3 an open app's playback is read at once, every second until it comes, 
   assert.ok(recorded.every(([app]) => app === "agentv.tube"));
 });
 
+test("an item chosen on a tile opens with the app's playback.open once its page is up", async () => {
+  const opened: unknown[] = [];
+  let tries = 0;
+  const host = {
+    setPage() {},
+    async call(_viewer: Viewer, path: string, item: unknown) {
+      if (path === "playback.readPlaybackState") return null;
+      assert.equal(path, "playback.open");
+      if (++tries < 3) throw new Error("the page isn't on one of the app's origins");
+      opened.push(item);
+    },
+    stop() {},
+  } as unknown as AppHost;
+  const watch = new PlaybackWatch({ host: async () => host, viewer: async () => ({ id: "radomir", role: "adult" }), record: async () => {}, first: 5, every: 1000 });
+  watch.opened("agentv.tube");
+  const item = { id: "ledger:1", kind: "episode", title: "Sintel", season: 1, episode: 4 };
+  assert.equal(await watch.play("agentv.tube", item), true);
+  assert.deepEqual(opened, [item]);
+  assert.equal(tries, 3);
+  // An app that never takes it gives up after its time.
+  tries = -100;
+  assert.equal(await watch.play("agentv.tube", item, 30), false);
+  // And one that isn't open has nothing to open it in.
+  assert.equal(await watch.play("agentv.radio", item), false);
+  watch.stop();
+});
+
 // --- The daemon's ledger requests ---------------------------------------------
 
 let daemon: Daemon;
@@ -177,6 +204,27 @@ test("S3.3 the daemon keeps what the screen daemon sends, for the viewer, one ro
   assert.deepEqual(rows.rows.map((row: any) => [row.viewer_id, row.position_s]), [["ana", 3]]);
   writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
   assert.deepEqual((await (await fetch(`${url}/api/ledger?app=local.mytv`)).json()).rows.map((row: any) => [row.viewer_id, row.position_s]), [["radomir", 12]]);
+});
+
+test("S3.10 an app with playback and no tile() gets a medium continue tile from the ledger", async () => {
+  // local.mytv has playback and no tile(); its rows from the test above.
+  await send({ app: "local.mytv", state: { title: "Spring", position: 230, duration: 464, playing: false } });
+  const { tile } = await (await fetch(`${url}/api/tile/local.mytv/m`)).json();
+  assert.equal(tile.headline.label, "continue");
+  assert.deepEqual(
+    tile.entries.map((entry: any) => [entry.label, entry.caption, Math.round(entry.progress * 100)]),
+    [
+      ["Spring", "film · 4 min left", 50],
+      ["Sintel", "S1 E4 · 15 min left", 1],
+    ],
+  );
+  assert.deepEqual(tile.entries[1].item, { id: tile.entries[1].item.id, kind: "episode", title: "Sintel", season: 1, episode: 4 });
+  assert.match(tile.entries[1].item.id, /^ledger:\d+$/);
+  // Only medium, and only for an app without its own tile().
+  assert.equal((await (await fetch(`${url}/api/tile/local.mytv/s`)).json()).tile, null);
+  assert.notEqual((await (await fetch(`${url}/api/tile/agentv.sample/m`)).json()).tile.headline.label, "continue");
+  // An app with nothing in the ledger keeps its logo.
+  assert.equal((await (await fetch(`${url}/api/tile/agentv.tube/m`)).json()).tile, null);
 });
 
 test("the ledger takes only apps on this box and real playback states", async () => {

@@ -101,12 +101,25 @@ export interface Updates {
   tonight?: { version: string; at: string } | null;
 }
 
+// An item to open, as the contract's Item has it.
+export interface Item {
+  id: string;
+  kind: string;
+  title: string;
+  season?: number;
+  episode?: number;
+}
+
 export interface TileEntry {
   label?: string;
   value?: string;
   caption?: string;
   icon?: string;
   image?: string;
+  item?: Item;
+  // How far in, from 0 to 1: only the continue tile the daemon draws from
+  // the ledger has it (ADR-016).
+  progress?: number;
 }
 
 // Settings → Weather: the forecast's city, and the cities it can be.
@@ -200,6 +213,9 @@ export const screen = {
   // Puts an app in front, the way its manifest says to open it, or brings
   // it back where it was when it's open behind home.
   open: (app: string) => ask({ cmd: "open-app", app }),
+  // Opens an app at an item, through its playback.open: an entry of its
+  // tile, such as one to continue (ADR-016).
+  openItem: (app: string, item: Item) => ask({ cmd: "open-app", app, item }),
   // The apps open behind home, and whether Home paused them.
   running: async () => (await ask({ cmd: "running" })).apps ?? [],
   // Closes an app open behind home, such as a game still running.

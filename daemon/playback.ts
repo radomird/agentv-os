@@ -14,6 +14,8 @@ import type { AppHost, PageBroker, Viewer } from "./apps/loader.ts";
 
 export const EVERY_MS = 10_000;
 export const FIRST_MS = 1_000;
+// How long an item has to wait for its app's page to come up.
+export const PLAY_WITHIN_MS = 30_000;
 
 export interface PlaybackDeps {
   // The app's worker, when it has playback, or null.
@@ -81,6 +83,33 @@ export class PlaybackWatch {
 
   stop(): void {
     for (const id of this.open()) this.closed(id);
+  }
+
+  // Opens an item in an open app with its playback.open, such as one chosen
+  // on its continue tile: tried each second while the app's page comes up,
+  // until it takes or 30 s have gone. Then its playback is read again soon.
+  play(id: string, item: unknown, within = PLAY_WITHIN_MS): Promise<boolean> {
+    const started = Date.now();
+    const attempt = async (): Promise<boolean> => {
+      const watching = this.watching.get(id);
+      const host = watching ? await watching.host : null;
+      if (!watching || !host) return false;
+      host.setPage(watching.page);
+      try {
+        await host.call(await this.deps.viewer(), "playback.open", item);
+        watching.quickUntil = Date.now() + (this.deps.every ?? EVERY_MS);
+        this.log(`${id} opened ${(item as { title?: string })?.title ?? "an item"}`);
+        return true;
+      } catch (error) {
+        if (Date.now() - started + (this.deps.first ?? FIRST_MS) > within) {
+          this.log(`${id} couldn't open ${(item as { title?: string })?.title ?? "the item"}: ${(error as Error).message}`);
+          return false;
+        }
+        await new Promise((resolve) => setTimeout(resolve, this.deps.first ?? FIRST_MS));
+        return this.watching.get(id) === watching ? attempt() : false;
+      }
+    };
+    return attempt();
   }
 
   // One read, unless the last is still going. True when a state came and

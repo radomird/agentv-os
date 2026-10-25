@@ -24,11 +24,12 @@ fake sudo 'exec "$@"'
 fake findmnt 'echo /dev/nvme0n1p2'
 fake lsblk 'cat "$STATE/lsblk"'
 fake loginctl 'echo "2 1000 radomir seat0 1234 user tty1 no -"'
-# The daemon: /health, and the ledger (S3.3).
+# The daemon: /health, the ledger (S3.3) and a tile (S3.10).
 fake curl '
 echo "$*" >>"$STATE/curl.log"
 if [[ $* == *"-X DELETE"* ]]; then echo "{\"ok\":true}"
 elif [[ $* == *api/ledger* ]]; then cat "$STATE/ledger" 2>/dev/null || echo "{\"ok\":true,\"rows\":[]}"
+elif [[ $* == *api/tile/* ]]; then cat "$STATE/tile" 2>/dev/null || echo "{\"ok\":true,\"tile\":null}"
 else cat "$STATE/health"; fi'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
 fake iw '
@@ -354,11 +355,13 @@ if (process.env.STATE && require("node:fs").existsSync(`${process.env.STATE}/wea
   console.log(`manual ${id} on yr.no, amsterdam's forecast matches`);
 }
 CHECK
+echo '{"ok":true,"tile":{"headline":{"label":"continue"},"entries":[{"label":"agentv selftest","caption":"S1 E1"}]}}' >"$state/tile"
 run1 S3 || fail "S3 runs stage 3's checks" "$(cat "$SCRATCH/out")"
+rm -f "$state/tile"
 for line in "pass S3.8 the tile matches MET for amsterdam (52.37, 4.9)" "manual S3.8 on yr.no" "pass S3.9 the tile matches MET" "manual S3.9 on yr.no"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
-[[ $(tail -n 1 "$SCRATCH/out") == "S3.3 pass, S3.8 pass, S3.9 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
+[[ $(tail -n 1 "$SCRATCH/out") == "S3.3 pass, S3.8 pass, S3.9 pass, S3.10 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
 touch "$state/weather-off"
 ! run1 S3.8 || fail "a tile that doesn't match MET fails S3.8"
 grep -qF "fail S3.8 the tile shows cloudy for amsterdam (52.37, 4.9), but MET says rain" "$SCRATCH/out" || fail "it says what didn't match" "$(cat "$SCRATCH/out")"
@@ -385,6 +388,20 @@ grep -q -- "-X DELETE .*api/ledger?app=local.selftest-player" "$state/curl.log" 
 grep -qx local.selftest-player "$state/quit" || fail "the stand-in is closed"
 kill "$home_pid" 2>/dev/null || true
 pass "S3.3 times a ledger row after a stand-in player opens, then removes it and its rows"
+
+tv
+echo '{"ok":true,"tile":{"headline":{"label":"continue"},"entries":[{"label":"agentv selftest","caption":"S1 E1 · 10 min left"}]}}' >"$state/tile"
+run1 S3.10 || fail "S3.10 passes with a continue tile" "$(cat "$SCRATCH/out")"
+grep -qF "pass S3.10 the stand-in's medium tile continues from the ledger: agentv selftest, S1 E1 · 10 min left" "$SCRATCH/out" ||
+  fail "it says what the continue tile shows" "$(cat "$SCRATCH/out")"
+! grep -q " S3.3 " "$SCRATCH/out" || fail "S3.10 alone says nothing about S3.3" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"tile":null}' >"$state/tile"
+! run1 S3.3 S3.10 || fail "no continue tile fails S3.10"
+grep -q "^fail S3.10 the stand-in's medium tile isn't a continue tile" "$SCRATCH/out" || fail "it says the tile isn't a continue tile" "$(cat "$SCRATCH/out")"
+[[ $(grep -c "^pass S3.3 a ledger row appeared" "$SCRATCH/out") == 1 ]] || fail "S3.3 and S3.10 share one stand-in" "$(cat "$SCRATCH/out")"
+rm -f "$state/tile"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.10 checks the stand-in's continue tile, with S3.3 or alone"
 
 tv
 rm -f "$state/ledger"
