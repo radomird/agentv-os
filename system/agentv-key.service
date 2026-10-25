@@ -1,0 +1,18 @@
+# Moves the provider key the daemon was given into /etc/agentv/env, root's
+# alone (bin/agentv-key-store). agentv-key.path starts it. systemd makes
+# /etc/agentv if it isn't there yet, and lets only this write there.
+
+[Unit]
+Description=AgenTV provider key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-key-store
+UMask=0077
+ConfigurationDirectory=agentv
+ConfigurationDirectoryMode=0755
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/private/agentv/daemon
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

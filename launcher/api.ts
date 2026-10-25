@@ -135,6 +135,12 @@ export interface TileEntry {
   progress?: number;
 }
 
+// Settings → AI: which provider has a key.
+export interface KeyState {
+  set: boolean;
+  provider: string | null;
+}
+
 // Settings → Weather: the forecast's city, and the cities it can be.
 export interface WeatherPlace {
   zone: string;
@@ -194,6 +200,10 @@ export const daemon = {
   addViewer: (profile: Omit<Viewer, "id">, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
   editViewer: (id: string, change: Partial<Omit<Viewer, "id">>, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
+  // The provider key (S4.6): which provider has one, never the key.
+  key: () => call<KeyState>("GET", "/api/key"),
+  saveKey: (provider: string, key: string, grant?: string) => call<KeyState>("PUT", "/api/key", { provider, key }, grant),
+  removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
   forKids: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-kids`, { allowed }, grant),
   // The parent PIN (ADR-009, S4.5).
   checkPin: (pin: string) => call<{ grant: string; until: string }>("POST", "/api/pin/check", { pin }),
