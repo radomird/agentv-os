@@ -1,16 +1,24 @@
 name: Record fixtures
 
 # Records the replies AgenTV's tests use as fixtures (ADR-019, layer 3), from
-# the services themselves: MET Norway's forecasts for the weather app. A push
-# to a record/<anything> branch records them and pushes them back to that
-# branch, where someone copies them into a pull request and the branch is
-# deleted. Run by hand on any other branch, it keeps them as an artifact and
-# pushes nothing.
+# the services themselves: MET Norway's forecasts for the weather app, and
+# Jellyfin's and Immich's replies from their official container images, for
+# their apps' contract tests. A push to record/met, record/jellyfin or
+# record/immich (or a branch starting with one of those) records that one
+# and pushes it back to the branch, where someone copies it into a pull
+# request. Run by hand, it records what it's asked for and keeps it as an
+# artifact, pushing nothing.
 
 on:
   push:
     branches: ["record/**"]
   workflow_dispatch:
+    inputs:
+      what:
+        description: "What to record"
+        type: choice
+        options: [met, jellyfin, immich]
+        default: met
 
 permissions:
   contents: write
@@ -23,30 +31,52 @@ jobs:
   record:
     name: Record the fixtures
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: ${{ startsWith(github.ref, 'refs/heads/record/') }}
 
-      - name: MET Norway's forecasts
-        run: test/agentv/fixtures/record/met
+      - name: What to record
+        id: which
+        env:
+          INPUT: ${{ inputs.what }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          what=${INPUT:-${BRANCH#record/}}
+          case "$what" in
+            met*) what=met ;;
+            jellyfin*) what=jellyfin ;;
+            immich*) what=immich ;;
+            *) echo "::error::a record branch is record/met, record/jellyfin or record/immich, not $BRANCH"; exit 1 ;;
+          esac
+          echo "what=$what" >>"$GITHUB_OUTPUT"
+
+      # The test videos and photos are made with ffmpeg.
+      - name: ffmpeg
+        if: steps.which.outputs.what != 'met'
+        run: type -P ffmpeg >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
+
+      - name: Record
+        run: test/agentv/fixtures/record/${{ steps.which.outputs.what }}
 
       - name: Keep them
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: fixtures-${{ github.run_id }}
-          path: test/agentv/fixtures/met/*.json
+          name: fixtures-${{ steps.which.outputs.what }}-${{ github.run_id }}
+          path: test/agentv/fixtures/${{ steps.which.outputs.what }}/
           retention-days: 7
 
       - name: Push them back to the record branch
         if: startsWith(github.ref, 'refs/heads/record/')
+        env:
+          WHAT: ${{ steps.which.outputs.what }}
         run: |
-          git add test/agentv/fixtures/met/*.json
+          git add "test/agentv/fixtures/$WHAT"
           if git diff --cached --quiet; then
             echo "Nothing new to push."
             exit 0
           fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -q -m "Recorded fixtures, run ${GITHUB_RUN_ID}"
+            commit -q -m "Recorded $WHAT fixtures, run ${GITHUB_RUN_ID}"
           git push origin "HEAD:${GITHUB_REF}"

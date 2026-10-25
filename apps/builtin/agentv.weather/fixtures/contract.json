@@ -1,0 +1,31 @@
+{
+  "settings": { "timeZone": "Europe/Amsterdam", "place": "amsterdam", "lat": "52.37", "lon": "4.9", "units": "c" },
+  "shiftTimes": "2026-10-25T10:00:00Z",
+  "routes": [
+    { "url": "https://api.met.no/weatherapi/locationforecast/2.0/compact", "reply": "../../../../test/agentv/fixtures/met/amsterdam.json" }
+  ],
+  "checks": [
+    {
+      "id": "S3.8",
+      "name": "small: the weather now, as MET's recorded symbol and wind say, asked for as AgenTV with the place rounded",
+      "call": "tile",
+      "args": ["s"],
+      "expect": { "headline": { "label": "amsterdam", "icon": "wind", "value": "12°", "caption": "windy" } },
+      "asks": [{ "url": "\\?lat=52\\.37&lon=4\\.9$", "headers": { "user-agent": "^AgenTV-contract agentv\\.weather/" } }]
+    },
+    {
+      "id": "S3.9",
+      "name": "medium: today and tomorrow, each with its scene, high and low",
+      "call": "tile",
+      "args": ["m"],
+      "expect": { "headline": { "label": "amsterdam" }, "entries": { "$length": 2 } }
+    },
+    {
+      "id": "S3.9",
+      "name": "large: seven days",
+      "call": "tile",
+      "args": ["l"],
+      "expect": { "headline": { "label": "amsterdam · 7 days" }, "entries": { "$length": 7 } }
+    }
+  ]
+}

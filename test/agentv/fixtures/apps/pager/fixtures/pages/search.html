@@ -1,0 +1,3 @@
+<!doctype html><meta charset="utf-8"><title>Search</title>
+<input id="q"><button id="play" onclick="document.title = 'Playing ' + document.getElementById('q').value">play</button>
+<script>document.getElementById("q").addEventListener("keydown", (e) => { if (e.key === "Enter") document.body.dataset.searched = e.target.value; });</script>

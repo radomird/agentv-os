@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# AgenTV's layer 3 (ADR-019; S3.1): every app against its fixtures, in its
+# own worker, with its page in a real Chromium, and no network. Playwright
+# comes at a pinned version into a folder of its own; the browser is the one
+# on the machine. Music reads its tags with ffprobe.
+#
+# Usage: test/agentv/contract/run [<app-dir>...]
+# With no app, every app in this repo with fixtures/contract.json.
+# AGENTV_CONTRACT_BROWSER names the browser when it isn't found by itself.
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
+PLAYWRIGHT=playwright-core@1.56.1
+
+browser=${AGENTV_CONTRACT_BROWSER:-}
+if [[ -z $browser ]]; then
+  for candidate in google-chrome-stable google-chrome chromium chromium-browser /opt/pw-browsers/chromium-*/chrome-linux64/chrome; do
+    if found=$(type -P "$candidate" 2>/dev/null); then
+      browser=$found
+      break
+    fi
+  done
+fi
+tools=$(mktemp -d)
+trap 'rm -rf "$tools"' EXIT
+npm install --prefix "$tools" --no-save --no-audit --no-fund --silent "$PLAYWRIGHT"
+
+# With no Chromium on the machine, Playwright's own, into the same folder.
+if [[ -z $browser ]]; then
+  export PLAYWRIGHT_BROWSERS_PATH="$tools/browsers"
+  "$tools/node_modules/.bin/playwright-core" install chromium >/dev/null
+  browser=$(cd "$tools" && node -e 'console.log(require("playwright-core").chromium.executablePath())')
+fi
+
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+
+AGENTV_CONTRACT_BROWSER="$browser" AGENTV_CONTRACT_MODULES="$tools/node_modules" \
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/test/agentv/contract/runner.mts" "$@"

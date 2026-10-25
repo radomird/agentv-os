@@ -70,6 +70,20 @@ jobs:
         run: test/agentv/types
       - run: test/agentv/unit/run
 
+  contract:
+    name: "Layer 3: every app against its fixtures"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Music's fixture folder is read with ffprobe and ffmpeg, as on the box.
+      - name: ffmpeg, for Music's fixture folder
+        run: type -P ffprobe >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
+      - name: The built-ins and the test apps, each in its own worker, with its page in Chromium
+        run: test/agentv/contract/run
+
   ui:
     name: "Layer 4: the launcher in Chromium"
     runs-on: ubuntu-26.04
@@ -196,7 +210,7 @@ jobs:
   report:
     name: Acceptance ids
     if: always()
-    needs: [policy, unit, ui, omarchy-tests]
+    needs: [policy, unit, contract, ui, omarchy-tests]
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -206,6 +220,7 @@ jobs:
         env:
           POLICY: ${{ needs.policy.result }}
           UNIT: ${{ needs.unit.result }}
+          CONTRACT: ${{ needs.contract.result }}
           UI: ${{ needs.ui.result }}
         run: |
           case "$POLICY" in
@@ -250,5 +265,12 @@ jobs:
             s39="fail (layer 2: $UNIT, layer 4: $UI)"
             s310="fail (layer 2: $UNIT, layer 4: $UI)"
           fi
+          # S3.1 here is every app in this repo; the official apps and the
+          # private reference adapter run the same runner in their own repos.
+          if [[ $CONTRACT == "success" && $UNIT == "success" ]]; then
+            s31="pass (layer 3: the built-ins and the test apps, each against its fixtures; the official apps and the private reference adapter in their own repos once they exist)"
+          else
+            s31="fail (layer 3: $CONTRACT, layer 2: $UNIT)"
+          fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
-            "S2.12=$s212" "S2.13=$s213" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" >>"$GITHUB_STEP_SUMMARY"
+            "S2.12=$s212" "S2.13=$s213" "S3.1=$s31" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" >>"$GITHUB_STEP_SUMMARY"

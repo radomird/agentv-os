@@ -1,0 +1,27 @@
+{
+  "settings": { "serverUrl": "https://pager.test" },
+  "routes": [
+    { "url": "https://pager.test/", "file": "pages/player.html" },
+    { "url": "https://pager.test/search.html", "file": "pages/search.html" },
+    { "url": "https://pager.test/login.html", "file": "pages/login.html" }
+  ],
+  "checks": [
+    {
+      "name": "it reads its playback state from its page: title, season, episode and position",
+      "page": "https://pager.test/",
+      "call": "playback.readPlaybackState",
+      "expect": { "title": "Sintel", "season": 1, "episode": 2, "position": 42.4, "duration": 888, "playing": true }
+    },
+    {
+      "name": "it opens a title with the site's own search",
+      "page": "https://pager.test/",
+      "call": "playback.open",
+      "args": [{ "id": "x", "kind": "film", "title": "Spring" }],
+      "after": { "url": "/search\\.html$", "title": "^Playing Spring$" }
+    },
+    { "name": "off the player, nothing is playing", "page": "https://pager.test/search.html", "call": "playback.readPlaybackState", "expect": null },
+    { "name": "with no cookie, it isn't signed in", "page": "https://pager.test/", "call": "signIn.isSignedIn", "expect": false },
+    { "name": "signIn.open takes its page to the site's form", "page": "https://pager.test/", "call": "signIn.open", "after": { "url": "/login\\.html$", "title": "^Sign in$" } },
+    { "name": "the loader keeps its page on its own origins", "page": "https://pager.test/", "call": "search", "args": ["sintel"], "throws": "elsewhere\\.invalid isn't one of the app's origins" }
+  ]
+}

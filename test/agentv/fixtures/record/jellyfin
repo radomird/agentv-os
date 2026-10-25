@@ -1,0 +1,121 @@
+#!/bin/bash
+
+# Records Jellyfin's replies, from its official container image, as fixtures
+# for the Jellyfin app's contract tests (ADR-019 layer 3, S3.1). A throwaway
+# server gets a film and an episode made here with ffmpeg, so they're ours to
+# give away, a viewer, its libraries, and the film half watched. Then each
+# request a TV app makes is recorded with its reply, in
+# test/agentv/fixtures/jellyfin/<name>.json as { request, status, headers,
+# body }. The server's access token is replaced with "fixture-token".
+#
+# Usage: test/agentv/fixtures/record/jellyfin   (needs docker, ffmpeg, curl, jq)
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
+DIR="$ROOT/test/agentv/fixtures/jellyfin"
+IMAGE=${AGENTV_JELLYFIN_IMAGE:-jellyfin/jellyfin:10.10.7}
+PORT=${AGENTV_JELLYFIN_PORT:-18096}
+BASE="http://127.0.0.1:$PORT"
+CLIENT='MediaBrowser Client="AgenTV", Device="fixtures", DeviceId="agentv-fixtures", Version="1"'
+PASSWORD=fixture-password
+
+work=$(mktemp -d)
+name="agentv-jellyfin-$$"
+cleanup() {
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+# Six minutes each: Jellyfin keeps a place to resume only in items longer
+# than five.
+video() {
+  mkdir -p "$(dirname "$1")"
+  ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=320x180:rate=1" -f lavfi -i "sine=frequency=$2:sample_rate=22050" -t 360 \
+    -c:v libx264 -preset ultrafast -crf 40 -c:a aac -b:a 24k -metadata title="$3" "$1"
+}
+video "$work/media/films/Test Pattern (2026)/Test Pattern (2026).mkv" 440 "Test Pattern"
+video "$work/media/shows/Night Signal/Season 01/Night Signal - S01E01 - Dusk.mkv" 660 "Dusk"
+chmod -R a+rX "$work/media"
+
+docker run -d --name "$name" -p "127.0.0.1:$PORT:8096" -v "$work/media:/media:ro" "$IMAGE" >/dev/null
+for _ in $(seq 1 120); do
+  [[ $(curl -fsS "$BASE/health" 2>/dev/null) == "Healthy" ]] && break
+  sleep 1
+done
+[[ $(curl -fsS "$BASE/health" 2>/dev/null) == "Healthy" ]] || { docker logs "$name" | tail -n 30 >&2; echo "Jellyfin never came up" >&2; exit 1; }
+
+token=""
+# api <method> <path> [json body]: one request, as the app would make it.
+api() {
+  local auth="$CLIENT"
+  [[ -n $token ]] && auth="$CLIENT, Token=\"$token\""
+  curl -fsS -X "$1" "$BASE$2" -H "Authorization: $auth" -H "Content-Type: application/json" ${3:+--data "$3"}
+}
+
+# record <name> <method> <path> [json body]: one request and its reply, kept.
+record() {
+  local status
+  local auth="$CLIENT"
+  [[ -n $token ]] && auth="$CLIENT, Token=\"$token\""
+  status=$(curl -sS -X "$2" "$BASE$3" -H "Authorization: $auth" -H "Content-Type: application/json" ${4:+--data "$4"} \
+    -o "$work/body" -D "$work/headers" -w '%{http_code}')
+  [[ $status == 2* ]] || { echo "Jellyfin answered $status for $2 $3" >&2; cat "$work/body" >&2; exit 1; }
+  local type
+  type=$(tr -d '\r' <"$work/headers" | sed -n 's/^content-type: //Ip' | tail -n 1)
+  jq -n --arg method "$2" --arg path "$3" --arg body "${4:-}" --argjson status "$status" --arg type "$type" \
+    --arg token "$token" --slurpfile reply <(jq -c . "$work/body" 2>/dev/null || jq -Rs . "$work/body") '
+      ($reply[0] | walk(if type == "string" and $token != "" and . == $token then "fixture-token" else . end)) as $clean
+      | {request: ({method: $method, path: $path} + (if $body == "" then {} else {body: ($body | fromjson)} end)),
+         status: $status, headers: {"content-type": $type}, body: $clean}' >"$DIR/$1.json"
+  echo "recorded $1: $2 $3 ($status)"
+}
+
+# The first run: a viewer and their libraries.
+api POST /Startup/Configuration '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' >/dev/null
+api GET /Startup/User >/dev/null
+api POST /Startup/User "{\"Name\":\"viewer\",\"Password\":\"$PASSWORD\"}" >/dev/null
+api POST /Startup/RemoteAccess '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}' >/dev/null
+api POST /Startup/Complete >/dev/null
+
+record system-info-public GET /System/Info/Public
+record authenticate POST /Users/AuthenticateByName "{\"Username\":\"viewer\",\"Pw\":\"$PASSWORD\"}"
+# The token it gave is the one every later request carries, and it's
+# replaced in its own recording too.
+token=$(jq -r .body.AccessToken "$DIR/authenticate.json")
+jq --arg token "$token" 'walk(if type == "string" and . == $token then "fixture-token" else . end)' "$DIR/authenticate.json" >"$work/a"
+mv "$work/a" "$DIR/authenticate.json"
+user=$(api GET /Users/Me | jq -r .Id)
+
+api POST "/Library/VirtualFolders?name=Films&collectionType=movies&refreshLibrary=false" '{"LibraryOptions":{"PathInfos":[{"Path":"/media/films"}]}}' >/dev/null
+api POST "/Library/VirtualFolders?name=Shows&collectionType=tvshows&refreshLibrary=false" '{"LibraryOptions":{"PathInfos":[{"Path":"/media/shows"}]}}' >/dev/null
+api POST /Library/Refresh >/dev/null
+for _ in $(seq 1 120); do
+  count=$(api GET "/Items?userId=$user&Recursive=true&IncludeItemTypes=Movie,Episode" | jq '.TotalRecordCount')
+  (( count >= 2 )) && break
+  sleep 1
+done
+(( count >= 2 )) || { echo "Jellyfin never found the film and the episode" >&2; exit 1; }
+film=$(api GET "/Items?userId=$user&Recursive=true&IncludeItemTypes=Movie" | jq -r '.Items[0].Id')
+episode=$(api GET "/Items?userId=$user&Recursive=true&IncludeItemTypes=Episode" | jq -r '.Items[0].Id')
+
+# The film watched to 2:30 of its 6:00, the way the app reports it.
+ticks=1500000000
+api POST /Sessions/Playing "{\"ItemId\":\"$film\",\"PositionTicks\":0,\"PlaySessionId\":\"fixture\"}" >/dev/null
+api POST /Sessions/Playing/Progress "{\"ItemId\":\"$film\",\"PositionTicks\":$ticks,\"PlaySessionId\":\"fixture\",\"IsPaused\":false}" >/dev/null
+api POST /Sessions/Playing/Stopped "{\"ItemId\":\"$film\",\"PositionTicks\":$ticks,\"PlaySessionId\":\"fixture\"}" >/dev/null
+
+record users-me GET /Users/Me
+record views GET "/UserViews?userId=$user"
+record search GET "/Items?userId=$user&searchTerm=test&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=20"
+record resume GET "/UserItems/Resume?userId=$user&MediaTypes=Video&Limit=12"
+record next-up GET "/Shows/NextUp?userId=$user&Limit=12"
+record latest GET "/Items/Latest?userId=$user&Limit=12"
+record film GET "/Items/$film?userId=$user"
+record episode GET "/Items/$episode?userId=$user"
+record playback-info POST "/Items/$film/PlaybackInfo?userId=$user" '{}'
+
+jq -n --arg image "$IMAGE" --arg recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg user "$user" --arg film "$film" --arg episode "$episode" \
+  '{image: $image, recorded: $recorded, user: $user, film: $film, episode: $episode}' >"$DIR/recording.json"
+echo "recorded Jellyfin from $IMAGE"
