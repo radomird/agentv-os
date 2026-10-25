@@ -195,34 +195,47 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
   return next;
 }
 
-// The PIN, checked by the daemon, which gives the grant.
+// The PIN, checked by the daemon, which gives the grant: kept for the rest
+// of this visit to Settings with hold, and for this one action without.
 let checking = false;
-async function checkPin(pin: string): Promise<string | null> {
-  checking = true;
-  try {
-    const reply = await daemon.checkPin(pin);
-    held = { token: reply.grant, until: Date.parse(reply.until) };
-    return null;
-  } finally {
-    checking = false;
-  }
+function checkPin(hold: boolean, got?: (grant: string) => void): (pin: string) => Promise<string | null> {
+  return async (pin) => {
+    checking = true;
+    try {
+      const reply = await daemon.checkPin(pin);
+      if (hold) held = { token: reply.grant, until: Date.parse(reply.until) };
+      got?.(reply.grant);
+      return null;
+    } finally {
+      checking = false;
+    }
+  };
 }
 
-// The PIN entered for the lock, while this waited for it, does too.
-async function grantFor(what: string, idleMs?: number): Promise<string | null> {
+// The launcher's own adult actions share a grant through a visit to
+// Settings. agentv-pin-check's ask (one) gets a grant for its action alone,
+// and always asks.
+async function grantFor(what: string, options: { idleMs?: number; one?: boolean } = {}): Promise<string | null> {
   if (!ctx.state.pin?.set) return "";
-  const ok = await openPad({ command: "tv pin", title: "enter the parent pin", note: `for ${what}.`, cancel: true, idleMs, submit: checkPin }, undefined, holding);
-  return ok && held ? held.token : null;
+  let grant: string | null = null;
+  const ok = await openPad(
+    { command: "tv pin", title: "enter the parent pin", note: `for ${what}.`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
+    undefined,
+    options.one ? undefined : holding,
+  );
+  if (!ok) return null;
+  return grant ?? held?.token ?? null;
 }
 
 // The lock after the box starts and after the TV has been off: the pad with
-// no way past it but the PIN.
+// no way past it but the PIN. Unlocking is all it does: an adult action
+// after it still asks.
 function setLock(locked: boolean): void {
   if (locked && !locking) {
     locking = true;
     held = null;
     void openPad(
-      { command: "tv locked", title: "enter the parent pin", note: "the tv locks after it starts and after it's been off.", cancel: false, submit: checkPin },
+      { command: "tv locked", title: "enter the parent pin", note: "the tv locks after it starts and after it's been off.", cancel: false, submit: checkPin(false) },
       (pad) => (lockPad = pad),
       // Unlocked elsewhere while it waited its turn.
       () => ctx.state.pin?.locked !== true,
@@ -571,7 +584,7 @@ async function start(): Promise<void> {
     go: (route: string) => ctx.go(route),
     // agentv-pin-check, when there's no terminal to type the PIN in, as for
     // Super+Ctrl+Home: the pad, which gives up after 2 minutes with no key.
-    askPin: async (action: string) => ({ grant: await grantFor(ACTIONS[action] ?? action, 120_000) }),
+    askPin: async (action: string) => ({ grant: await grantFor(ACTIONS[action] ?? action, { idleMs: 120_000, one: true }) }),
   };
 }
 
