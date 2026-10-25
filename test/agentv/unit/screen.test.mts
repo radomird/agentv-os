@@ -589,6 +589,25 @@ test("S3.3 an installed app's playback is watched while it's open, from its own 
   assert.deepEqual(closed, ["agentv.tube", "agentv.player"]);
 });
 
+test("S3.10 an item chosen on a tile opens the app, then the item through its playback.open", async () => {
+  const played: [string, unknown][] = [];
+  const t = await tv({ playback: { opened() {}, closed() {}, play: (id, item) => void played.push([id, item]) } });
+  const item = { id: "ledger:1", kind: "film", title: "Spring" };
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube", item }), { ok: true });
+  assert.deepEqual(played, [["agentv.tube", item]]);
+  t.hypr.open("0xd", t.launcher.last("web").pid);
+  await t.screen.idle();
+  // Open behind home already, it comes back, then opens the item.
+  await t.screen.home();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube", item }), { ok: true });
+  assert.equal(played.length, 2);
+  // Without an item, nothing is played.
+  await t.screen.home();
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube" });
+  assert.equal(played.length, 2);
+});
+
 test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {
   const { launcher, screen } = await tv();
   assert.deepEqual(await screen.fromHome({ cmd: "desktop" }), { ok: true });

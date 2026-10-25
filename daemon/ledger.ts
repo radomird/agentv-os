@@ -21,6 +21,8 @@ export interface LedgerViewer {
 }
 
 export interface WatchRow {
+  // Set on a row that's new, not moved on, by record().
+  inserted?: boolean;
   id: number;
   viewer_id: string;
   app_id: string;
@@ -124,14 +126,14 @@ export class Ledger {
       .get(viewer, app) as unknown as WatchRow | undefined;
     if (last && last.title === state.title && last.season === season && last.episode === episode) {
       this.db.prepare("UPDATE watch SET kind = ?, position_s = ?, duration_s = ?, updated_at = ? WHERE id = ?").run(kind, position, duration, now, last.id);
-      return { ...last, kind, position_s: position, duration_s: duration, updated_at: now };
+      return { ...last, kind, position_s: position, duration_s: duration, updated_at: now, inserted: false };
     }
     const result = this.db
       .prepare(
         "INSERT INTO watch (viewer_id, app_id, kind, title, season, episode, position_s, duration_s, started_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(viewer, app, kind, state.title, season, episode, position, duration, now, now);
-    return this.row(Number(result.lastInsertRowid))!;
+    return { ...this.row(Number(result.lastInsertRowid))!, inserted: true };
   }
 
   private row(id: number): WatchRow | null {

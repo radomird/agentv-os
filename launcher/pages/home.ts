@@ -53,11 +53,20 @@ async function quit(ctx: Ctx, app: App): Promise<void> {
   }
 }
 
-function entry(app: App, item: TileEntry, size: Placed["size"]): HTMLElement {
+// How far in, as a bar. Its width goes in through the style object, which
+// the launcher's content security policy allows, unlike a style attribute.
+function progressBar(progress: number): HTMLElement {
+  const done = h("span", { class: "entry-progress-done" });
+  done.style.width = `${(progress * 100).toFixed(1)}%`;
+  return h("span", { class: "entry-progress", role: "img", "aria-label": `watched ${Math.round(progress * 100)} percent` }, done);
+}
+
+function entry(app: App, item: TileEntry, size: Placed["size"], at: number): HTMLElement {
   const icon = item.image ? null : pixel(item.icon, ICON_PX.entry[size]);
+  const progress = typeof item.progress === "number" ? Math.max(0, Math.min(1, item.progress)) : null;
   return h(
     "div",
-    { class: `entry${icon ? " entry-icon" : ""}` },
+    { class: `entry${icon ? " entry-icon" : ""}${item.item ? " entry-item" : ""}`, "data-entry": item.item ? at : undefined },
     item.label ? h("span", { class: "entry-label" }, item.label) : null,
     item.image ? h("img", { src: daemon.image(app.id, item.image), alt: item.label ?? "" }) : null,
     icon,
@@ -67,6 +76,7 @@ function entry(app: App, item: TileEntry, size: Placed["size"]): HTMLElement {
           { class: "entry-text" },
           item.value ? h("span", { class: "entry-value" }, item.value) : null,
           item.caption ? h("span", { class: "entry-caption" }, item.caption) : null,
+          progress !== null ? progressBar(progress) : null,
         )
       : null,
   );
@@ -114,6 +124,9 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
       : null;
   const entries = (data.entries ?? []).slice(0, FITS[size]);
   el.classList.add("has-content");
+  // Choosing an entry that carries an item opens it (ADR-016); the tile
+  // keeps them for its click.
+  (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems = entries;
   replaceKeeping(
     el,
     head(app, label),
@@ -121,7 +134,7 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
       "div",
       { class: "tile-content" },
       now,
-      entries.length ? h("div", { class: `entries entries-${entries.length}` }, ...entries.map((item) => entry(app, item, size))) : null,
+      entries.length ? h("div", { class: `entries entries-${entries.length}` }, ...entries.map((item, at) => entry(app, item, size, at))) : null,
     ),
   );
 }
@@ -184,6 +197,14 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
             // A click on a game's "q quit" quits it.
             if ((event.target as Element).closest(".tile-quit")) {
               await quit(ctx, app);
+              return;
+            }
+            // A click on an entry that carries an item opens it there.
+            const chosen = (event.target as Element).closest<HTMLElement>("[data-entry]");
+            const item = chosen ? (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems?.[Number(chosen.dataset.entry)]?.item : undefined;
+            if (item && app.tier !== "built-in") {
+              const reply = await screen.openItem(app.id, item);
+              if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open ${item.title}`, "fail");
               return;
             }
             if (app.tier === "built-in") {

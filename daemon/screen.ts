@@ -149,10 +149,12 @@ interface Open {
   paused: boolean;
 }
 
-// What reads each open app's playback state for the ledger (playback.ts).
+// What reads each open app's playback state for the ledger, and opens an
+// item in an app through its playback.open (playback.ts).
 export interface Playback {
   opened(id: string, page?: PageBroker): void;
   closed(id: string): void;
+  play?(id: string, item: unknown): void;
 }
 
 interface Options {
@@ -588,12 +590,21 @@ export class Screen {
     switch (request?.cmd) {
       case "open-app": {
         const id = String(request.app ?? "");
+        // An item too, such as one to continue: the app opens it with its own
+        // playback.open once its page is there (ADR-016).
+        const item = request.item && typeof request.item === "object" ? request.item : null;
         if (this.opens.some((o) => o.id === id && o.address && this.windows.has(o.address))) {
-          return this.reopen(id);
+          const reply = await this.reopen(id);
+          if (item) this.playback?.play?.(id, item);
+          return reply;
         }
         const target = await this.launcher.appTarget(id).catch(() => null);
         if (!target) return { ok: false, error: "that app can't be opened yet" };
-        if (target.runtime === "web") return this.openWeb(target.url, id);
+        if (target.runtime === "web") {
+          const reply = await this.openWeb(target.url, id);
+          if (item) this.playback?.play?.(id, item);
+          return reply;
+        }
         if (target.exec[0] === "steam") return this.openSteam(id);
         return { ok: false, error: "that app can't be opened from the tv yet" };
       }
