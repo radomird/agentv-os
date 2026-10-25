@@ -16,12 +16,13 @@
 // or from no page at all (a command on the box), are answered. A web page
 // elsewhere can't change anything here.
 
-import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
+import { userAgent } from "./identity.ts";
+import { badState, kindOf, Ledger } from "./ledger.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -31,6 +32,7 @@ export interface DaemonOptions {
   apps?: string; // the box's apps: /var/lib/agentv/apps
   updates?: string; // what the update check and an install write: /var/lib/agentv/update
   builtins?: string | null; // AgenTV's own apps: <root>/apps/builtin, or null for none
+  ledger?: string; // the ledger's database: <state>/ledger.db
   port: number;
   host?: string;
   log?: (line: string) => void;
@@ -63,23 +65,6 @@ function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
 }
 
-// What the apps' requests say they are (ADR-015): AgenTV, its version and
-// where to find it, from the package's settings, so no owner is written
-// here. "AgenTV/0.1.2 (+https://github.com/<owner>/agentv-os)".
-export function userAgent(root: string): string {
-  const text = (() => {
-    try {
-      return readFileSync(join(root, "settings"), "utf8");
-    } catch {
-      return "";
-    }
-  })();
-  const value = (key: string) => text.split("\n").find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1).trim();
-  const version = value("AGENTV_VERSION") ?? "dev";
-  const home = value("AGENTV_HOMEPAGE") ?? value("AGENTV_TESTED_URL")?.replace(/\/releases\/download\/tested$/, "");
-  return home ? `AgenTV/${version} (+${home})` : `AgenTV/${version}`;
-}
-
 export class Daemon {
   readonly server: Server;
   private options: DaemonOptions;
@@ -89,6 +74,8 @@ export class Daemon {
   private stripped = new Map<string, { mtime: number; code: string }>();
   readonly home: Home;
   readonly updates: Updates;
+  private ledgerPath: string;
+  private openLedger?: Ledger;
 
   constructor(options: DaemonOptions) {
     this.options = options;
@@ -101,6 +88,7 @@ export class Daemon {
       log: this.log,
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
+    this.ledgerPath = options.ledger ?? join(options.state, "ledger.db");
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.server = createServer((request, response) => {
       this.handle(request, response).catch((error: Error) => {
@@ -119,10 +107,17 @@ export class Daemon {
     });
   }
 
+  // The ledger, opened the first time something needs it.
+  get ledger(): Ledger {
+    this.openLedger ??= new Ledger(this.ledgerPath);
+    return this.openLedger;
+  }
+
   close(): Promise<void> {
     for (const stream of this.streams) stream.end();
     this.home.stop();
     this.updates.stop();
+    this.openLedger?.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -407,6 +402,63 @@ export class Daemon {
       const settings = await this.home.settings();
       this.broadcast("settings", settings);
       this.json(response, 200, { ok: true, settings });
+      return;
+    }
+
+    // The viewer, until profiles come (stage 4) the box's own person.
+    if (method === "GET" && path === "/api/viewer") {
+      this.json(response, 200, { ok: true, viewer: await this.home.viewer() });
+      return;
+    }
+
+    // The ledger (S3.3): where the viewer got to in an app, from the screen
+    // daemon every 10 s while the app is open, and the newest rows.
+    if (method === "POST" && path === "/api/ledger") {
+      const body = (await this.body(request)) as { app?: unknown; state?: unknown } | undefined;
+      const found = typeof body?.app === "string" ? await this.home.package(body.app) : null;
+      const why = !found ? "that isn't an app on this box" : badState(body?.state);
+      if (why || !found) {
+        this.json(response, 400, { ok: false, error: why ?? "that isn't an app on this box" });
+        return;
+      }
+      const viewer = await this.home.viewer();
+      this.ledger.viewer(viewer);
+      const state = body!.state as Parameters<Ledger["record"]>[3];
+      const row = this.ledger.record(viewer.id, body!.app as string, kindOf(state, found.category), state);
+      this.broadcast("ledger", { viewer: viewer.id, app: row.app_id });
+      this.json(response, 200, { ok: true, row });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/ledger") {
+      const viewer = await this.home.viewer();
+      const rows = this.ledger.recent(viewer.id, {
+        app: url.searchParams.get("app") ?? undefined,
+        limit: Number(url.searchParams.get("limit")) || 10,
+      });
+      this.json(response, 200, { ok: true, viewer: viewer.id, rows });
+      return;
+    }
+
+    // An app that's gone from the box takes its rows with it.
+    if (method === "DELETE" && path === "/api/ledger") {
+      const app = url.searchParams.get("app") ?? "";
+      if (!/^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/.test(app) || (await this.home.package(app))) {
+        this.json(response, 400, { ok: false, error: "only an app that's gone from the box is forgotten" });
+        return;
+      }
+      this.json(response, 200, { ok: true, forgotten: this.ledger.forget(app) });
+      return;
+    }
+
+    const pkg = /^\/api\/apps\/([a-z0-9.-]+)\/package$/.exec(path);
+    if (method === "GET" && pkg) {
+      const found = await this.home.package(pkg[1]);
+      if (!found) {
+        this.json(response, 404, { ok: false, error: "not found" });
+        return;
+      }
+      this.json(response, 200, { ok: true, ...found });
       return;
     }
 

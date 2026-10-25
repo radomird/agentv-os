@@ -13,7 +13,7 @@
 // stands in for MET's address in tests.
 
 import { days, degrees, label, now, steps, type Day } from "../apps/builtin/agentv.weather/met.ts";
-import { userAgent } from "./server.ts";
+import { userAgent } from "./identity.ts";
 
 const HOME = process.env.AGENTV_HOME_URL ?? "http://127.0.0.1:3000/";
 const MET = process.env.AGENTV_MET_URL ?? "https://api.met.no/weatherapi/locationforecast/2.0/compact";

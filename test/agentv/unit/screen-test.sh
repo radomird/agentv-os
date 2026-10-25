@@ -39,3 +39,7 @@ for bad in "back" "back left 1" "back down soon" "quit"; do
   if screen $bad >/dev/null 2>&1; then fail "agentv screen $bad is refused"; fi
 done
 pass "agentv screen sends Back's presses and releases, and quit"
+
+[[ $(screen app local.player) == '{"cmd":"app","app":"local.player"}' ]] || fail "agentv screen app names the app"
+if screen app >/dev/null 2>&1; then fail "agentv screen app with no id is refused"; fi
+pass "agentv screen app opens an installed app by its id"

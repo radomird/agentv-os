@@ -24,7 +24,12 @@ fake sudo 'exec "$@"'
 fake findmnt 'echo /dev/nvme0n1p2'
 fake lsblk 'cat "$STATE/lsblk"'
 fake loginctl 'echo "2 1000 radomir seat0 1234 user tty1 no -"'
-fake curl 'cat "$STATE/health"'
+# The daemon: /health, and the ledger (S3.3).
+fake curl '
+echo "$*" >>"$STATE/curl.log"
+if [[ $* == *"-X DELETE"* ]]; then echo "{\"ok\":true}"
+elif [[ $* == *api/ledger* ]]; then cat "$STATE/ledger" 2>/dev/null || echo "{\"ok\":true,\"rows\":[]}"
+else cat "$STATE/health"; fi'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
 fake iw '
 case "$1" in
@@ -174,6 +179,14 @@ case "$1" in
   home) set_front home chromium; echo "{\"ok\":true}" ;;
   toast) jq ".layers += [\"agentv-toast\"]" "$status" >"$status.new" && mv "$status.new" "$status"; echo "{\"ok\":true}" ;;
   close) echo "{\"ok\":true}" ;;
+  # An installed app opens, and the daemon gets its playback, unless the
+  # check says it does not.
+  app)
+    cp -r "$AGENTV_STATE/apps/$2" "$STATE/seen-app"
+    jq -c ".[\"$2\"]" "$AGENTV_STATE/apps/installed.json" >"$STATE/seen-record"
+    [[ -f $STATE/no-ledger ]] || echo "{\"ok\":true,\"rows\":[{\"viewer_id\":\"radomir\",\"title\":\"agentv selftest\",\"season\":1,\"episode\":1,\"position_s\":3}]}" >"$STATE/ledger"
+    echo "{\"ok\":true}" ;;
+  quit) echo "$2" >>"$STATE/quit"; echo "{\"ok\":true}" ;;
 esac'
 fake pgrep 'exit 1'
 fake systemctl '
@@ -345,7 +358,7 @@ run1 S3 || fail "S3 runs stage 3's checks" "$(cat "$SCRATCH/out")"
 for line in "pass S3.8 the tile matches MET for amsterdam (52.37, 4.9)" "manual S3.8 on yr.no" "pass S3.9 the tile matches MET" "manual S3.9 on yr.no"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
-[[ $(tail -n 1 "$SCRATCH/out") == "S3.8 pass, S3.9 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
+[[ $(tail -n 1 "$SCRATCH/out") == "S3.3 pass, S3.8 pass, S3.9 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
 touch "$state/weather-off"
 ! run1 S3.8 || fail "a tile that doesn't match MET fails S3.8"
 grep -qF "fail S3.8 the tile shows cloudy for amsterdam (52.37, 4.9), but MET says rain" "$SCRATCH/out" || fail "it says what didn't match" "$(cat "$SCRATCH/out")"
@@ -353,3 +366,32 @@ printf 'process.exit(3);\n' >"$SCRATCH/agentv/daemon/weather-check.ts"
 ! run1 S3.9 || fail "a check that says nothing fails"
 grep -qF "fail S3.9 daemon/weather-check.ts said nothing" "$SCRATCH/out" || fail "it says the check said nothing" "$(cat "$SCRATCH/out")"
 pass "agentv selftest S3 runs the weather checks and passes on what they say"
+
+# --- S3.3: a ledger row within 10 s ---------------------------------------------
+
+tv
+mkdir -p "$SCRATCH/var/apps"
+echo '{"agentv.sample": {"id": "agentv.sample", "tier": "official"}}' >"$SCRATCH/var/apps/installed.json"
+run1 S3.3 || fail "S3.3 passes when the row comes" "$(cat "$SCRATCH/out")"
+grep -qE "^pass S3.3 a ledger row appeared [0-9]+ ms after the app opened: radomir, agentv selftest S1 E1 at 3 s$" "$SCRATCH/out" ||
+  fail "it says how soon the row came, and what it says" "$(cat "$SCRATCH/out")"
+grep -q "^manual S3.3 a second viewer" "$SCRATCH/out" || fail "it says what waits for profiles" "$(cat "$SCRATCH/out")"
+# The stand-in was a real app while it was there, and is gone with its rows.
+AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-app-validate" --local "$state/seen-app" >/dev/null || fail "the stand-in passes the app contract's checks"
+[[ $(jq -r .tier "$state/seen-record") == local ]] || fail "the stand-in was installed as a local app" "$(cat "$state/seen-record")"
+[[ ! -e $SCRATCH/var/apps/local.selftest-player ]] || fail "the stand-in is removed after"
+[[ $(jq -c 'keys' "$SCRATCH/var/apps/installed.json") == '["agentv.sample"]' ]] || fail "installed.json is as it was" "$(cat "$SCRATCH/var/apps/installed.json")"
+grep -q -- "-X DELETE .*api/ledger?app=local.selftest-player" "$state/curl.log" || fail "its rows are forgotten" "$(cat "$state/curl.log")"
+grep -qx local.selftest-player "$state/quit" || fail "the stand-in is closed"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.3 times a ledger row after a stand-in player opens, then removes it and its rows"
+
+tv
+rm -f "$state/ledger"
+touch "$state/no-ledger"
+! AGENTV_LEDGER_WAIT_MS=1500 run1 S3.3 || fail "no ledger row fails S3.3"
+grep -q "^fail S3.3 no ledger row appeared within 1.5 s of the app opening" "$SCRATCH/out" || fail "it says no row came" "$(cat "$SCRATCH/out")"
+[[ ! -e $SCRATCH/var/apps/local.selftest-player ]] || fail "the stand-in is removed after a failure too"
+rm -f "$state/no-ledger"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.3 fails when no row comes, and still cleans up"

@@ -6,7 +6,9 @@
 // Its fetch reaches only its declared origins, with setup fields filled in,
 // and says it comes from AgenTV and which app it is, unless the app says
 // otherwise: a service such as MET Norway asks every request to say who's
-// asking (ADR-015).
+// asking (ADR-015). A web app's page (the contract's AppPage) is relayed to a
+// PageBroker, the screen daemon's DevTools pipe on the box or a test's own
+// browser, and only while the page is on one of the app's origins.
 
 import { fork, type ChildProcess } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -26,6 +28,15 @@ export interface Viewer {
   id: string;
   role: "adult" | "kid";
 }
+
+// What drives a web app's real page. url() says where it is now; call() does
+// one of PAGE_METHODS there with the worker's arguments.
+export interface PageBroker {
+  url(): Promise<string>;
+  call(method: string, args: unknown[]): Promise<unknown>;
+}
+
+export const PAGE_METHODS = ["title", "goto", "evaluate", "waitForSelector", "click", "fill", "press"];
 
 // What each declared capability lets the daemon call, and how long each call
 // may take. tile() answers within 3 s (ADR-016).
@@ -76,6 +87,7 @@ export interface AppHostOptions {
   settings?: Record<string, string>;
   limits?: Partial<Record<string, number>>; // per-call time limits, for tests
   userAgent?: string; // AgenTV's own, like "AgenTV/0.1.2 (+https://...)"
+  page?: PageBroker; // a web app's page, when it has one open
   log?: (line: string) => void;
 }
 
@@ -89,6 +101,7 @@ export class AppHost {
   private nextId = 0;
   private limits: Partial<Record<string, number>>;
   private userAgent: string;
+  private page?: PageBroker;
   private log: (line: string) => void;
 
   constructor(options: AppHostOptions) {
@@ -97,6 +110,7 @@ export class AppHost {
     this.settings = { ...(options.settings ?? {}) };
     this.limits = options.limits ?? {};
     this.userAgent = `${options.userAgent ?? "AgenTV"} ${options.manifest.id}/${options.manifest.version}`;
+    this.page = options.page;
     this.log = options.log ?? (() => {});
   }
 
@@ -196,7 +210,41 @@ export class AppHost {
         (response) => child.send({ type: "fetched", id: message.id, response }),
         (error: Error) => child.send({ type: "fetched", id: message.id, error: error.message }),
       );
+    } else if (message.type === "page") {
+      this.pageFor(message).then(
+        (reply) => child.send({ type: "paged", id: message.id, ...reply }),
+        (error: Error) => child.send({ type: "paged", id: message.id, error: error.message }),
+      );
     }
+  }
+
+  // One call on the app's page, while the page is on one of the app's
+  // origins, and going only to one of them.
+  private async pageFor(message: Record<string, unknown>): Promise<{ value: unknown; url: string }> {
+    const page = this.page;
+    const method = String(message.method);
+    if (!page || this.manifest.tv.runtime !== "web") throw new Error(`${this.manifest.name} has no page open`);
+    if (!PAGE_METHODS.includes(method)) throw new Error(`a page can't ${method} here`);
+    const args = Array.isArray(message.args) ? message.args : [];
+    const allowed = allowedOrigins(this.manifest, this.settings);
+    const origin = (url: string) => {
+      try {
+        return new URL(url).origin;
+      } catch {
+        return "";
+      }
+    };
+    const before = await page.url();
+    if (!allowed.has(origin(before))) {
+      this.log(`${this.manifest.id}: refused a page call on ${origin(before) || "a page"} that isn't one of its origins`);
+      throw new Error("the page isn't on one of the app's origins");
+    }
+    if (method === "goto" && !allowed.has(origin(String(args[0])))) {
+      this.log(`${this.manifest.id}: refused to send its page to ${origin(String(args[0])) || String(args[0]).slice(0, 80)}`);
+      throw new Error(`${origin(String(args[0])) || "that address"} isn't one of the app's origins`);
+    }
+    const value = await page.call(method, args);
+    return { value, url: await page.url() };
   }
 
   // fetch for the app, to its declared origins only.
@@ -238,8 +286,19 @@ export class AppHost {
         this.checkAlive(child);
       }, ms);
       this.pending.set(id, { resolve: resolveCall as (value: unknown) => void, reject: rejectCall, timer });
-      child.send({ type: "call", id, path: path.split("."), args, settings: this.settings, viewer });
+      void this.pageInfo().then((page) => child.send({ type: "call", id, path: path.split("."), args, settings: this.settings, viewer, page }));
     });
+  }
+
+  // Where the page is as a call starts, so the app's page.url() can answer.
+  private async pageInfo(): Promise<{ url: string } | undefined> {
+    if (!this.page || this.manifest.tv.runtime !== "web") return undefined;
+    return { url: await this.page.url().catch(() => "") };
+  }
+
+  // The page the app's calls use from now on, or none.
+  setPage(page: PageBroker | undefined): void {
+    this.page = page;
   }
 
   // After a call times out: a worker that doesn't answer a ping within a second

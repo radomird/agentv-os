@@ -42,9 +42,14 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
+import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
+import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
+import { userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
+import { cdpPage } from "./page.ts";
+import { PlaybackWatch } from "./playback.ts";
 import { tvOn } from "./tv-power.ts";
 
 export type Role = "home" | "web" | "steam";
@@ -144,9 +149,16 @@ interface Open {
   paused: boolean;
 }
 
+// What reads each open app's playback state for the ledger (playback.ts).
+export interface Playback {
+  opened(id: string, page?: PageBroker): void;
+  closed(id: string): void;
+}
+
 interface Options {
   hyprland: Hyprland;
   launcher: Launcher;
+  playback?: Playback;
   now?: () => number;
   log?: (line: string) => void;
   homeRestartMs?: number;
@@ -172,6 +184,7 @@ interface Options {
 export class Screen {
   private hypr: Hyprland;
   private launcher: Launcher;
+  private playback?: Playback;
   private now: () => number;
   private log: (line: string) => void;
   private windows = new Map<string, Window>();
@@ -223,6 +236,7 @@ export class Screen {
   constructor(options: Options) {
     this.hypr = options.hyprland;
     this.launcher = options.launcher;
+    this.playback = options.playback;
     this.now = options.now ?? Date.now;
     this.log = options.log ?? ((line) => console.log(line));
     this.homeRestartMs = options.homeRestartMs ?? 500;
@@ -388,6 +402,7 @@ export class Screen {
     this.windows.delete(address);
     this.stack = this.stack.filter((a) => a !== address);
     if (this.opens.some((o) => o.address === address)) {
+      for (const entry of this.opens.filter((o) => o.address === address)) this.playback?.closed(entry.id);
       this.opens = this.opens.filter((o) => o.address !== address);
       this.running();
     }
@@ -697,6 +712,7 @@ export class Screen {
 
   private async closeOpen(entry: Open): Promise<void> {
     this.opens = this.opens.filter((o) => o !== entry);
+    this.playback?.closed(entry.id);
     if (entry.role === "steam") {
       for (const window of [...this.windows.values()].filter((w) => w.role === "steam")) {
         await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
@@ -926,8 +942,26 @@ export class Screen {
         }
       }
       this.log(`opening ${id === url ? url : `${id} at ${url}`} in the services' Chromium`);
+      // An installed app's playback goes to the ledger while it's open, read
+      // from its page.
+      if (id !== url) this.playback?.opened(id, this.pageOf(entry));
       await this.makeRoom(id);
     }).then(() => ({ ok: true }));
+  }
+
+  // An app's page, for its worker: its target in whichever services'
+  // Chromium is running when a call comes.
+  private pageOf(entry: Open): PageBroker {
+    return cdpPage(
+      {
+        evaluateIn: (target, expression) => {
+          const cdp = this.apps.get("web")?.cdp;
+          if (!cdp) return Promise.reject(new Error("the services' Chromium isn't running"));
+          return cdp.evaluateIn(target, expression);
+        },
+      },
+      () => entry.target,
+    );
   }
 
   // The page a new services' Chromium opened with.
@@ -1127,6 +1161,9 @@ export class Screen {
       case "open":
         if (request.app === "steam") return this.openSteam();
         return this.openWeb(String(request.url ?? ""));
+      // An installed app, as its tile opens it.
+      case "app":
+        return this.fromHome({ cmd: "open-app", app: String(request.app ?? "") });
       case "quit":
         return this.quit(String(request.app ?? ""));
       case "idle":
@@ -1402,8 +1439,42 @@ function serve(screen: Screen): void {
   server.listen(path, () => chmodSync(path, 0o600));
 }
 
+// The ledger's half on this side (S3.3): each installed app's worker, made
+// from its package as AgenTV's daemon describes it, reading its playback
+// state, and the daemon keeping it.
+export function playbackWatch(home = HOME_URL, log: (line: string) => void = console.log): PlaybackWatch {
+  const get = async (path: string) => {
+    const response = await fetch(`${home}${path}`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error(`${path} answered ${response.status}`);
+    return response.json();
+  };
+  return new PlaybackWatch({
+    async host(id) {
+      const found = await get(`api/apps/${encodeURIComponent(id)}/package`).catch(() => null);
+      if (!found?.dir) return null;
+      const tier: Tier = found.tier === "built-in" ? "official" : found.tier;
+      const { manifest } = validatePackage(found.dir, tier);
+      if (!manifest?.tv.capabilities.includes("playback")) return null;
+      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log });
+    },
+    async viewer() {
+      return (await get("api/viewer")).viewer;
+    },
+    async record(app, state) {
+      const response = await fetch(`${home}api/ledger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app, state }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error(`the ledger said ${(await response.json().catch(() => ({}))).error ?? response.status}`);
+    },
+    log,
+  });
+}
+
 async function main(): Promise<void> {
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn() });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch() });
   // When Hyprland goes, so does the TV session, and this with it.
   await screen.start(() => {
     console.log("Hyprland went away; stopping");

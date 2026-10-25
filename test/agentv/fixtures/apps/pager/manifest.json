@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.pager",
+  "name": "Pager",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "A web app for AgenTV's tests that reads its page",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "streaming",
+    "runtime": "web",
+    "homeUrl": "{serverUrl}/",
+    "capabilities": ["launch", "search", "playback"],
+    "setup": [{ "type": "field", "key": "serverUrl", "label": "Server address" }],
+    "origins": ["{serverUrl}"],
+    "kidsSafe": true
+  }
+}

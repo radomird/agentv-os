@@ -7,7 +7,8 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Role } from "../../../daemon/screen.ts";
+import type { PageBroker } from "../../../daemon/apps/loader.ts";
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback, type Role } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -265,6 +266,7 @@ async function tv(
     ambientSettleMs?: number;
     homeCheckMs?: number;
     homeUp?: boolean;
+    playback?: Playback;
   } = {},
 ) {
   const { homeUp = true, ...rest } = options;
@@ -562,6 +564,29 @@ test("the home screen opens an installed web app the way its manifest says", asy
   assert.deepEqual(await screen.fromHome({ cmd: "open-app", app: "agentv.nothing" }), { ok: false, error: "that app can't be opened yet" });
   launcher.targets.set("agentv.player", { runtime: "native", exec: ["player"] });
   assert.equal((await screen.fromHome({ cmd: "open-app", app: "agentv.player" }) as { ok: boolean }).ok, false);
+});
+
+test("S3.3 an installed app's playback is watched while it's open, from its own page, and not a page opened by address", async () => {
+  const opened: [string, PageBroker | undefined][] = [];
+  const closed: string[] = [];
+  const t = await tv({ playback: { opened: (id, page) => void opened.push([id, page]), closed: (id) => void closed.push(id) } });
+  await openApp(t, "agentv.tube", "0xd");
+  assert.deepEqual(opened.map(([id]) => id), ["agentv.tube"]);
+  assert.ok(opened[0][1], "a web app gets its page");
+  assert.deepEqual(await t.screen.quit("agentv.tube"), { ok: true });
+  assert.deepEqual(closed, ["agentv.tube"]);
+  assert.deepEqual(await t.screen.openWeb("https://elsewhere.example/"), { ok: true });
+  assert.equal(opened.length, 1, "an address isn't an app with playback");
+  // agentv screen app opens an installed app the way its tile does.
+  t.launcher.targets.set("agentv.player", { runtime: "web", url: "https://player.example/" });
+  assert.deepEqual(await t.screen.handle({ cmd: "app", app: "agentv.player" }), { ok: true });
+  assert.deepEqual(opened.map(([id]) => id), ["agentv.tube", "agentv.player"]);
+  // A window that closes by itself stops its app's watch too.
+  t.hypr.open("0xe", t.launcher.last("web").pid);
+  await t.screen.idle();
+  t.hypr.close("0xe");
+  await t.screen.idle();
+  assert.deepEqual(closed, ["agentv.tube", "agentv.player"]);
 });
 
 test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {
