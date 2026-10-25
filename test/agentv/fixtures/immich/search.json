@@ -1,0 +1,117 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/search/metadata",
+    "body": {
+      "page": 1,
+      "size": 20
+    }
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "albums": {
+      "total": 0,
+      "count": 0,
+      "items": [],
+      "facets": []
+    },
+    "assets": {
+      "total": 3,
+      "count": 3,
+      "items": [
+        {
+          "id": "00000000-0000-0000-0000-000000000007",
+          "createdAt": "2026-10-25T13:02:12.144Z",
+          "deviceAssetId": "fixture-3",
+          "ownerId": "00000000-0000-0000-0000-000000000003",
+          "deviceId": "agentv-fixtures",
+          "libraryId": null,
+          "type": "IMAGE",
+          "originalPath": "/data/upload/00000000-0000-0000-0000-000000000003/eb/ba/00000000-0000-0000-0000-000000000008.jpg",
+          "originalFileName": "photo-3.jpg",
+          "originalMimeType": "image/jpeg",
+          "thumbhash": "H/gJFYiChIBod3doaHeIdwImB4uS",
+          "fileCreatedAt": "2026-10-23T18:00:00.000Z",
+          "fileModifiedAt": "2026-10-23T18:00:00.000Z",
+          "localDateTime": "2026-10-23T18:00:00.000Z",
+          "updatedAt": "2026-10-25T13:02:25.383Z",
+          "isFavorite": false,
+          "isArchived": false,
+          "isTrashed": false,
+          "visibility": "timeline",
+          "duration": "0:00:00.00000",
+          "livePhotoVideoId": null,
+          "people": [],
+          "checksum": "/IZA4E9xfwLKkdhsT2u25oVWNFI=",
+          "isOffline": false,
+          "hasMetadata": true,
+          "duplicateId": null,
+          "resized": true
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000004",
+          "createdAt": "2026-10-25T13:02:12.044Z",
+          "deviceAssetId": "fixture-2",
+          "ownerId": "00000000-0000-0000-0000-000000000003",
+          "deviceId": "agentv-fixtures",
+          "libraryId": null,
+          "type": "IMAGE",
+          "originalPath": "/data/upload/00000000-0000-0000-0000-000000000003/65/8b/00000000-0000-0000-0000-000000000005.jpg",
+          "originalFileName": "photo-2.jpg",
+          "originalMimeType": "image/jpeg",
+          "thumbhash": "HwgSLYZziIBniHdoZ4d4Z2/HB2Jz",
+          "fileCreatedAt": "2026-10-22T18:00:00.000Z",
+          "fileModifiedAt": "2026-10-22T18:00:00.000Z",
+          "localDateTime": "2026-10-22T18:00:00.000Z",
+          "updatedAt": "2026-10-25T13:02:25.347Z",
+          "isFavorite": false,
+          "isArchived": false,
+          "isTrashed": false,
+          "visibility": "timeline",
+          "duration": "0:00:00.00000",
+          "livePhotoVideoId": null,
+          "people": [],
+          "checksum": "W1gd9zoMoswPlOtjGx4Kybljdyw=",
+          "isOffline": false,
+          "hasMetadata": true,
+          "duplicateId": null,
+          "resized": true
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000002",
+          "createdAt": "2026-10-25T13:02:11.954Z",
+          "deviceAssetId": "fixture-1",
+          "ownerId": "00000000-0000-0000-0000-000000000003",
+          "deviceId": "agentv-fixtures",
+          "libraryId": null,
+          "type": "IMAGE",
+          "originalPath": "/data/upload/00000000-0000-0000-0000-000000000003/74/e5/00000000-0000-0000-0000-000000000006.jpg",
+          "originalFileName": "photo-1.jpg",
+          "originalMimeType": "image/jpeg",
+          "thumbhash": "4AcSFYp1dnB3eHdXZ4h4Z9+4+HZ9",
+          "fileCreatedAt": "2026-10-21T18:00:00.000Z",
+          "fileModifiedAt": "2026-10-21T18:00:00.000Z",
+          "localDateTime": "2026-10-21T18:00:00.000Z",
+          "updatedAt": "2026-10-25T13:02:25.307Z",
+          "isFavorite": false,
+          "isArchived": false,
+          "isTrashed": false,
+          "visibility": "timeline",
+          "duration": "0:00:00.00000",
+          "livePhotoVideoId": null,
+          "people": [],
+          "checksum": "1J/JrSmpPqlKgEgvK4u7kBJLiMI=",
+          "isOffline": false,
+          "hasMetadata": true,
+          "duplicateId": null,
+          "resized": true
+        }
+      ],
+      "facets": [],
+      "nextPage": null
+    }
+  }
+}
