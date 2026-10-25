@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# agentv:summary=Give the box's sound outputs full volume, as a TV box has them
+# agentv:hidden=true
+
+# The box plays at full volume and the TV's remote sets how loud it is
+# (S2.19). For the owner: WirePlumber starts each output it hasn't seen
+# before at 100% instead of its 40%, and when PipeWire is up, the output
+# playing goes to 100% now, unless Settings → Sound chose a level for it. The
+# screen daemon does the rest, each time an output becomes the default
+# (daemon/audio.ts).
+#
+# Runs as the owner: at first boot (install/tv/audio.sh) and from a migration.
+
+set -uo pipefail
+
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/wireplumber/wireplumber.conf.d/50-agentv-volume.conf"
+mkdir -p "${conf%/*}"
+cat >"$conf" <<'CONF'
+# AgenTV (S2.19): outputs WirePlumber hasn't seen before start at full
+# volume, and the TV's remote sets how loud they are. Written by
+# agentv-audio-default; Settings → Sound keeps a lower level for an output.
+wireplumber.settings = {
+  device.routes.default-sink-volume = 1.0
+}
+CONF
+echo "New sound outputs start at full volume"
+
+# PipeWire is only up in a session, which first boot comes before.
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+sink=$(pactl get-default-sink 2>/dev/null) || exit 0
+[[ $sink == alsa_output.* || $sink == bluez_output.* ]] || exit 0
+state="${XDG_STATE_HOME:-$HOME/.local/state}/agentv/audio.json"
+if jq -e --arg sink "$sink" '.levels[$sink] != null' "$state" >/dev/null 2>&1; then
+  echo "$sink keeps the level chosen in Settings"
+  exit 0
+fi
+if pactl set-sink-volume "$sink" 100%; then
+  echo "$sink plays at 100% now"
+else
+  echo "$sink couldn't be set now; the screen daemon sets it as the TV starts" >&2
+fi

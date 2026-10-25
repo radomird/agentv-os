@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S3|S3.3|S3.6|S3.8|S3.9|S3.10]...
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10]...
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
@@ -41,6 +41,8 @@
 #         polkit lets the owner power off and restart with no password,
 #         AgenTV's units stop within 5 s, Omarchy's commands are there, and
 #         Settings opens at Power. Turning it off and on again is manual.
+#   S2.19 the sound output playing, and its volume: 100%, or the level
+#         Settings → Sound chose for it. How loud the TV is stays manual.
 #
 # Stage 3, the reference apps (S3 runs them all):
 #
@@ -77,16 +79,16 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S3|S3.3|S3.6|S3.8|S3.9|S3.10]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10]..."
 }
 
-STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18)
+STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 checks=()
 for arg in "$@"; do
   case "$arg" in
     [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
-    [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16 | [sS]2.18) checks+=("S${arg:1}") ;;
+    [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16 | [sS]2.18 | [sS]2.19) checks+=("S${arg:1}") ;;
     [sS]2) checks+=("${STAGE2[@]}") ;;
     [sS]3.3 | [sS]3.6 | [sS]3.8 | [sS]3.9 | [sS]3.10) checks+=("S${arg:1}") ;;
     [sS]3) checks+=("${STAGE3[@]}") ;;
@@ -748,6 +750,24 @@ s218() {
   result manual S2.18 "on the TV, Power is in Settings now: Shut down asks first, then counts down from 10, and Cancel stops it. Choose it again and let it run: the box is off about 10 s after the countdown ends, and its power button turns it on again. Then Settings → Power → Restart: it's back on home in about a minute."
 }
 
+s219() {
+  local audio output volume expected
+
+  tv_on S2.19 || return 0
+  audio=$(screen audio)
+  output=$(jq -r '.output as $o | .outputs[]? | select(.name == $o) | .description' <<<"$audio" 2>/dev/null)
+  volume=$(jq -r '.volume // empty | . * 100 | round' <<<"$audio" 2>/dev/null)
+  expected=$(jq -r '.expected // empty | . * 100 | round' <<<"$audio" 2>/dev/null)
+  if [[ -z $output || -z $volume ]]; then
+    result fail S2.19 "there's no sound output playing: is the TV on, with its HDMI or DisplayPort audio?"
+  elif (( volume == expected )); then
+    result pass S2.19 "$output plays at $volume%$( (( expected < 100 )) && echo ", as chosen in Settings → Sound")"
+  else
+    result fail S2.19 "$output plays at $volume%, not the $expected% it should"
+  fi
+  result manual S2.19 "play something: it's as loud as the TV's remote says, with the TV well below its top. Settings → Sound → output volume changes the box's own level, and keeps it after a restart."
+}
+
 # ts_check <script> <id>: runs one of AgenTV's TypeScript checks, which
 # print their own pass, fail and manual lines for the id.
 ts_check() {
@@ -957,6 +977,7 @@ for id in "${checks[@]}"; do
     S2.15) s215 ;;
     S2.16) s216 ;;
     S2.18) s218 ;;
+    S2.19) s219 ;;
     S3.3 | S3.10) s33 ;;
     S3.6) s36 ;;
     S3.8) s38 ;;

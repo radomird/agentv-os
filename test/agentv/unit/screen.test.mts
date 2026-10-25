@@ -9,7 +9,7 @@ import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback,
-  type SignIn, type Role } from "../../../daemon/screen.ts";
+  type SignIn, type Sound, type Role } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -293,6 +293,7 @@ async function tv(
     homeUp?: boolean;
     playback?: Playback;
     signIn?: SignIn;
+    sound?: Sound;
     running?: string;
   } = {},
 ) {
@@ -729,6 +730,24 @@ test("the home screen's Settings → Omarchy desktop runs agentv desktop", async
   assert.deepEqual(await screen.fromHome({ cmd: "desktop" }), { ok: true });
   assert.equal(launcher.desktops, 1);
   assert.equal((await screen.fromHome({ cmd: "rm" }) as { ok: boolean }).ok, false);
+});
+
+test("S2.19 Settings → Sound and agentv screen audio reach the box's sound output", async () => {
+  const asked: Record<string, unknown>[] = [];
+  const sound: Sound = {
+    async handle(request) {
+      asked.push(request);
+      if (request.volume === 2) throw new Error("pactl set-sink-volume: no such sink");
+      return { ok: true, output: "hdmi", volume: request.volume ?? 1 };
+    },
+  };
+  const { screen } = await tv({ sound });
+  assert.deepEqual(await screen.fromHome({ cmd: "audio", volume: 0.6 }), { ok: true, output: "hdmi", volume: 0.6 });
+  assert.deepEqual(await screen.handle({ cmd: "audio", output: "analog" }), { ok: true, output: "hdmi", volume: 1 });
+  assert.deepEqual(await screen.handle({ cmd: "audio", volume: 2 }), { ok: false, error: "pactl set-sink-volume: no such sink" });
+  assert.deepEqual(asked.map((r) => r.volume ?? r.output), [0.6, "analog", 2]);
+  const { screen: none } = await tv();
+  assert.deepEqual(await none.fromHome({ cmd: "audio" }), { ok: false, error: "sound isn't here" });
 });
 
 test("S2.18 Settings → Power restarts and shuts down through Omarchy's commands, past the PIN, never during an update", async () => {

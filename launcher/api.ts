@@ -132,6 +132,23 @@ export interface WeatherPlace {
   cities: { zone: string; name: string }[];
 }
 
+// Settings → Sound: the box's sound outputs, the one playing, and its volume
+// (S2.19), from the screen daemon.
+export interface AudioOutput {
+  name: string;
+  description: string;
+  hdmi: boolean;
+  connected: boolean | null;
+}
+
+export interface AudioState {
+  ok: boolean;
+  error?: string;
+  output?: string | null;
+  outputs?: AudioOutput[];
+  volume?: number | null;
+}
+
 export interface TileData {
   headline?: TileEntry;
   entries?: TileEntry[];
@@ -238,4 +255,7 @@ export const screen = {
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // The built-in Music app's library and player, in the TV session (ADR-017).
   music: (op: string, args: Record<string, unknown> = {}) => ask({ cmd: "music", op, ...args }),
+  // Settings → Sound: the outputs and the volume, or another output or level
+  // from now on (S2.19).
+  audio: async (change: { output?: string; volume?: number } = {}) => (await ask({ cmd: "audio", ...change })) as AudioState,
 };

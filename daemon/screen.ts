@@ -44,6 +44,7 @@ import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
+import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { installedPackage, userAgent } from "./identity.ts";
@@ -186,11 +187,17 @@ export interface Music {
   scan(): Promise<unknown>;
 }
 
+// The box's sound output and its volume (audio.ts, S2.19).
+export interface Sound {
+  handle(request: Record<string, unknown>): Promise<object>;
+}
+
 interface Options {
   hyprland: Hyprland;
   launcher: Launcher;
   playback?: Playback;
   music?: Music;
+  sound?: Sound;
   signIn?: SignIn;
   now?: () => number;
   log?: (line: string) => void;
@@ -223,6 +230,7 @@ export class Screen {
   private launcher: Launcher;
   private playback?: Playback;
   private music?: Music;
+  private sound?: Sound;
   private signIn?: SignIn;
   // The app whose sign-in screen is up, with its name for the bar.
   private signingIn: { id: string; name: string } | null = null;
@@ -279,6 +287,7 @@ export class Screen {
     this.launcher = options.launcher;
     this.playback = options.playback;
     this.music = options.music;
+    this.sound = options.sound;
     this.signIn = options.signIn;
     this.now = options.now ?? Date.now;
     this.log = options.log ?? ((line) => console.log(line));
@@ -673,6 +682,9 @@ export class Screen {
       // The Music page (ADR-017).
       case "music":
         return this.musicRequest(request);
+      // Settings → Sound: the output and its volume (S2.19).
+      case "audio":
+        return this.soundRequest(request);
       case "quit":
         return this.quit(String(request.app ?? ""));
       case "wake":
@@ -1112,6 +1124,15 @@ export class Screen {
     if (entry?.address && this.front()?.address === entry.address && !this.ending) await this.fullscreen(entry.address);
   }
 
+  private async soundRequest(request: Record<string, unknown>): Promise<object> {
+    if (!this.sound) return { ok: false, error: "sound isn't here" };
+    try {
+      return await this.sound.handle(request);
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
+
   private async musicRequest(request: Record<string, unknown>): Promise<object> {
     if (!this.music) return { ok: false, error: "music isn't here" };
     try {
@@ -1338,6 +1359,9 @@ export class Screen {
         return this.openWeb(String(request.url ?? ""));
       case "music":
         return this.musicRequest(request);
+      // The sound output and its volume, as Settings → Sound sets them.
+      case "audio":
+        return this.soundRequest(request);
       // An app's sign-in screen, and "i'm signed in" on its bar.
       case "sign-in":
         return this.startSignIn(String(request.app ?? ""));
@@ -1761,7 +1785,10 @@ export function musicApp(home = HOME_URL, log: (line: string) => void = console.
 
 async function main(): Promise<void> {
   const music = musicApp();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, signIn: signInWatch() });
+  // Full volume on each new default output, or the level Settings chose.
+  const sound = new Audio({ pulse: new Pactl() });
+  sound.start();
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, signIn: signInWatch() });
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
