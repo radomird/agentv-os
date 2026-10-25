@@ -205,11 +205,16 @@ test("S3.6 typing on the remote's keyboard searches, and a result plays", async 
   await page.keyboard.press("Enter");
   await page.waitForSelector(".page.music .album-tile");
   // The focus starts in the search box. Left and right move in the text
-  // instead of moving the focus away, and down leaves it.
-  await page.keyboard.type("night");
+  // instead of moving the focus away, and down leaves it. The search goes
+  // 250 ms after the last key, so a pause while typing searches for the
+  // start of the word first, and the results are the whole word's after.
+  await page.keyboard.type("n");
+  await page.waitForTimeout(400);
+  await page.keyboard.type("ight");
   await page.keyboard.press("ArrowLeft");
   assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("music-search") && document.activeElement.classList.contains("focused")), true);
-  await page.waitForSelector(".music-result");
+  await page.waitForSelector('.music-results[data-q="night"] .music-result');
+  assert.deepEqual((await requests(page, "search")).map((r) => r.q), ["n", "night"]);
   assert.deepEqual((await requests(page, "search")).at(-1)?.q, "night");
   assert.equal(await page.locator(".music-result").first().textContent(), "album · night shiftpixel band");
   await page.keyboard.press("ArrowDown");
