@@ -57,7 +57,9 @@ async function tv(outputs = true): Promise<Page> {
         if (typeof request.volume === "number" && output) levels[output] = request.volume;
         reply = { ok: true, output, outputs: list, volume: output ? (levels[output] ?? 1) : null };
       }
-      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(reply)), 0);
+      // A slow box answers later, when a test says so.
+      const delay = request.cmd === "audio" ? ((window as unknown as { audioDelay?: number }).audioDelay ?? 0) : 0;
+      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(reply)), delay);
     };
   }, outputs);
   await page.goto(`${url}/`);
@@ -97,6 +99,25 @@ test("S2.19 Settings → Sound shows the output playing at 100%, and left and ri
   for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => /100%/.test(document.querySelector('.panel [data-action="output-volume"]')?.textContent ?? ""));
   assert.ok((await sent(page)).every((r) => r.volume === undefined || r.volume <= 1));
+  await page.close();
+});
+
+test("S2.19 presses quicker than the box's replies each go one step further, and never past 100%", async () => {
+  const page = await tv();
+  await go(page, "settings/sound");
+  await page.waitForSelector('.panel [data-action="output"]');
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await focused(page), "output-volume");
+  await page.evaluate(() => ((window as unknown as { audioDelay: number }).audioDelay = 300));
+  // Down from 100% three times, before the first reply.
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+  await page.waitForFunction(() => /85%/.test(document.querySelector('.panel [data-action="output-volume"]')?.textContent ?? ""));
+  assert.deepEqual((await sent(page)).map((r) => r.volume), [0.95, 0.9, 0.85]);
+  // And up four times, which stops at 100%.
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => /100%/.test(document.querySelector('.panel [data-action="output-volume"]')?.textContent ?? ""));
+  assert.deepEqual((await sent(page)).map((r) => r.volume), [0.95, 0.9, 0.85, 0.9, 0.95, 1]);
   await page.close();
 });
 
