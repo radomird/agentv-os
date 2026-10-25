@@ -110,7 +110,7 @@ function albumTile(ctx: Ctx, album: AlbumInfo): HTMLElement {
   return h(
     "button",
     { class: "tile size-s album-tile", "data-focus": true, "data-album": album.id, "aria-label": album.title, onclick: () => ctx.go(`music/${album.id}`) },
-    cover(album.id, album.title, album.cover),
+    cover(album.id, album.title, Boolean(album.cover)),
     h("span", { class: "album-title" }, album.title.toLowerCase()),
     h("span", { class: "album-artist" }, album.artist.toLowerCase()),
   );
