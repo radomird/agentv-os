@@ -269,8 +269,11 @@ function sources(ctx: Ctx): View {
       "data-focus": true,
       "data-action": "add-share",
       onclick: async () => {
-        const reply = await screen.music("add-share", { uri: address.value.trim(), ...(password.value ? { password: password.value } : {}) });
+        // The password leaves the page as it's sent, not once the share
+        // has mounted.
+        const secret = password.value;
         password.value = "";
+        const reply = await screen.music("add-share", { uri: address.value.trim(), ...(secret ? { password: secret } : {}) });
         if (reply.ok) {
           ctx.sounds.play("confirm");
           ctx.render("music/sources", "add-share");
