@@ -1,0 +1,5 @@
+the tv runs in a session of its own, so nothing of the desktop shows on it
+a real home screen: move and resize tiles, apps, app details and settings
+home pauses what's playing and keeps two apps open, and back stays the app's
+an ambient screen after 10 minutes, and apps close when the tv goes off
+updates from settings, with what's new, tonight and go back
