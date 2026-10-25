@@ -24,6 +24,7 @@ export interface App {
   sizes: SizeChoice[];
   reach: string[];
   needsSetup: boolean;
+  signIn?: "needed"; // its service wants a sign-in (ADR-032)
   credit?: string;
 }
 
@@ -230,6 +231,8 @@ export const screen = {
   goBack: () => ask({ cmd: "update-go-back" }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
+  // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
+  signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // The built-in Music app's library and player, in the TV session (ADR-017).
   music: (op: string, args: Record<string, unknown> = {}) => ask({ cmd: "music", op, ...args }),
 };

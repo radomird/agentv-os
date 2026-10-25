@@ -1,5 +1,6 @@
 // A web app for AgenTV's tests that does its work in its page, the way a
-// streaming service's app does: playback read from the page's player and
+// streaming service's app does: whether it's signed in, from the site's own
+// cookie, and its sign-in form; playback read from the page's player and
 // title, a title opened with the site's own search, and an attempt to take
 // its page somewhere it may not go.
 
@@ -15,6 +16,17 @@ const app: TvApp = {
 
   async launch(ctx: AppContext) {
     await page(ctx).goto(`${ctx.settings.serverUrl}/`);
+  },
+
+  signIn: {
+    async isSignedIn(ctx: AppContext) {
+      const p = page(ctx);
+      if (!p.url().startsWith(ctx.settings.serverUrl)) return false;
+      return p.evaluate(() => document.cookie.split("; ").includes("signed=in"));
+    },
+    async open(ctx: AppContext) {
+      await page(ctx).goto(`${ctx.settings.serverUrl}/login.html`);
+    },
   },
 
   // Sends its page to another site, which the loader refuses.

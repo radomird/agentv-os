@@ -91,9 +91,9 @@ test("an app's icon is served to be drawn, never run", async () => {
   assert.equal((await fetch(`${url}/api/apps/agentv.games/icon`)).status, 404);
 });
 
-test("opening an app means its home address with setup filled in, or its command", async () => {
-  assert.deepEqual(await get("/api/apps/agentv.sample/launch"), { ok: true, runtime: "web", url: "http://127.0.0.1:1/web/" });
-  assert.deepEqual(await get("/api/apps/agentv.games/launch"), { ok: true, runtime: "native", exec: ["steam", "-gamepadui"] });
+test("opening an app means its home address with setup filled in, or its command, and its name for the TV to say", async () => {
+  assert.deepEqual(await get("/api/apps/agentv.sample/launch"), { ok: true, runtime: "web", url: "http://127.0.0.1:1/web/", name: "Sample" });
+  assert.deepEqual(await get("/api/apps/agentv.games/launch"), { ok: true, runtime: "native", exec: ["steam", "-gamepadui"], name: "Games" });
   // Not set up yet: there's no address to open.
   assert.equal((await fetch(`${url}/api/apps/someone.radio/launch`)).status, 404);
 });

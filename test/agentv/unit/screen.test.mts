@@ -8,7 +8,8 @@ import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback, type Role } from "../../../daemon/screen.ts";
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback,
+  type SignIn, type Role } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -43,8 +44,8 @@ class FakeHyprland implements Hyprland {
       this.emit("movewindowv2", `${m[1].slice(2)},${window.workspace.id},${m[2]}`);
     } else if ((m = expression.match(/^hl\.dsp\.focus\(\{ window = "address:(0x\w+)"/))) {
       this.active = m[1];
-    } else if ((m = expression.match(/^hl\.dsp\.window\.fullscreen_state\(\{ window = "address:(0x\w+)", internal = 2/))) {
-      this.get(m[1]).fullscreen = 2;
+    } else if ((m = expression.match(/^hl\.dsp\.window\.fullscreen_state\(\{ window = "address:(0x\w+)", internal = (\d)/))) {
+      this.get(m[1]).fullscreen = Number(m[2]);
     } else if ((m = expression.match(/^hl\.dsp\.window\.close\(\{ window = "address:(0x\w+)"/))) {
       this.close(m[1]);
     } else if ((m = expression.match(/^hl\.dsp\.workspace\.toggle_special\("([^"]+)"\)$/))) {
@@ -199,7 +200,11 @@ class FakeLauncher implements Launcher {
     if (!this.steamInstalled) throw new Error("Steam isn't installed.");
     return this.launch("steam");
   }
-  targets = new Map<string, { runtime: "web"; url: string } | { runtime: "native"; exec: string[] }>();
+  targets = new Map<string, { runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[] }>();
+  bars: (string | null)[] = [];
+  async signInBar(name: string | null) {
+    this.bars.push(name);
+  }
   desktops = 0;
   async appTarget(id: string) {
     return this.targets.get(id) ?? null;
@@ -267,6 +272,7 @@ async function tv(
     homeCheckMs?: number;
     homeUp?: boolean;
     playback?: Playback;
+    signIn?: SignIn;
   } = {},
 ) {
   const { homeUp = true, ...rest } = options;
@@ -606,6 +612,95 @@ test("S3.10 an item chosen on a tile opens the app, then the item through its pl
   await t.screen.home();
   await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube" });
   assert.equal(played.length, 2);
+});
+
+// A stand-in for signin.ts: what it was asked, and its answers.
+function fakeSignIn(answer: { now?: boolean | null; starts?: boolean } = {}) {
+  const calls = {
+    checked: [] as [string, PageBroker][],
+    started: [] as string[],
+    stopped: [] as string[],
+    done: null as ((signedIn: boolean) => void) | null,
+  };
+  const signIn: SignIn = {
+    async check(id, page) {
+      calls.checked.push([id, page]);
+      return true;
+    },
+    async start(id, _page, done) {
+      calls.started.push(id);
+      calls.done = done;
+      return answer.starts ?? true;
+    },
+    async now() {
+      return answer.now ?? null;
+    },
+    stop(id) {
+      calls.stopped.push(id);
+    },
+  };
+  return { signIn, calls };
+}
+
+test("ADR-032 a tile that says Sign in opens the app maximized over AgenTV's sign-in bar, until the app says it's signed in", async () => {
+  const { signIn, calls } = fakeSignIn();
+  const t = await tv({ signIn });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "sign-in", app: "agentv.tube" }), { ok: true });
+  assert.deepEqual(t.launcher.bars, ["Tube"]);
+  assert.deepEqual(calls.started, ["agentv.tube"]);
+  t.hypr.open("0xd", t.launcher.last("web").pid);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xd");
+  assert.equal(t.hypr.get("0xd").fullscreen, 1, "maximized, above the bar");
+  // Opening it for a sign-in doesn't also ask it whether it's signed in.
+  assert.deepEqual(calls.checked, []);
+  calls.done!(true);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.bars, ["Tube", null]);
+  assert.equal(t.hypr.get("0xd").fullscreen, 2, "full screen again once it's signed in");
+  assert.deepEqual(t.launcher.toasts, ["signed in to tube"]);
+});
+
+test("ADR-032 Home or the app closing ends the sign-in screen, and i'm signed in asks the app now", async () => {
+  const { signIn, calls } = fakeSignIn({ now: false });
+  const t = await tv({ signIn });
+  assert.deepEqual(await t.screen.handle({ cmd: "signed-in" }), { ok: false, error: "nothing is signing in" });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
+  await t.screen.handle({ cmd: "sign-in", app: "agentv.tube" });
+  t.hypr.open("0xd", t.launcher.last("web").pid);
+  await t.screen.idle();
+  assert.deepEqual(await t.screen.handle({ cmd: "signed-in" }), { ok: true, signedIn: false });
+  assert.deepEqual(t.launcher.toasts, ["tube still says you're signed out"]);
+  await t.screen.home();
+  assert.deepEqual(calls.stopped, ["agentv.tube"]);
+  assert.deepEqual(t.launcher.bars, ["Tube", null]);
+  assert.equal(t.screen.front()?.role, "home");
+  // Again, with the app open behind home: it comes back maximized.
+  await t.screen.fromHome({ cmd: "sign-in", app: "agentv.tube" });
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xd");
+  assert.equal(t.hypr.get("0xd").fullscreen, 1);
+  t.hypr.close("0xd");
+  await t.screen.idle();
+  assert.deepEqual(calls.stopped, ["agentv.tube", "agentv.tube"]);
+  assert.deepEqual(t.launcher.bars, ["Tube", null, "Tube", null]);
+});
+
+test("ADR-032 an installed web app is asked once as it opens whether it's signed in, and only a web app with signIn signs in", async () => {
+  const { signIn, calls } = fakeSignIn({ starts: false });
+  const t = await tv({ signIn });
+  await openApp(t, "agentv.tube", "0xd");
+  assert.deepEqual(calls.checked.map(([id]) => id), ["agentv.tube"]);
+  assert.ok(calls.checked[0][1], "from its own page");
+  await t.screen.openWeb("https://elsewhere.example/");
+  assert.equal(calls.checked.length, 1, "not a page opened by address");
+  t.launcher.targets.set("agentv.player", { runtime: "native", exec: ["player"] });
+  assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.player" }), { ok: false, error: "only a web app signs in on the tv" });
+  // An app with no signIn can't say, so the bar goes again.
+  assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.tube" }), { ok: false, error: "that app can't tell whether it's signed in" });
+  assert.deepEqual(t.launcher.bars, ["agentv.tube", null], "named by its id when the daemon gives no name");
+  assert.equal(t.hypr.get("0xd").fullscreen, 2);
 });
 
 test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {

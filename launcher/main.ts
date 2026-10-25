@@ -360,6 +360,8 @@ async function start(): Promise<void> {
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },
+    // An app signed in or out, or a site's icon came: the apps again.
+    apps: () => void refresh(),
   });
   void daemon.updates().then(setUpdates).catch(() => {});
   void sounds.load();

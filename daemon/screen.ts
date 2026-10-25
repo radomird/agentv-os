@@ -51,6 +51,7 @@ import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
 import { PlaybackWatch } from "./playback.ts";
+import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
 import { tvOn } from "./tv-power.ts";
 
@@ -110,7 +111,10 @@ export interface Launcher {
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
   // What opening an installed app means, from AgenTV's daemon, or null.
-  appTarget(id: string): Promise<{ runtime: "web"; url: string } | { runtime: "native"; exec: string[] } | null>;
+  appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | null>;
+  // AgenTV's sign-in bar in the overlay, under the service's page (board
+  // 15), for the app named, or gone with null.
+  signInBar(name: string | null): Promise<void>;
   // Settings → Omarchy desktop: agentv desktop, which ends this session.
   desktop(): void;
   // Starts one of AgenTV's update units (ADR-025), which polkit lets the
@@ -159,6 +163,14 @@ export interface Playback {
   play?(id: string, item: unknown): void;
 }
 
+// What asks an app with signIn whether it's signed in (signin.ts).
+export interface SignIn {
+  check(id: string, page: PageBroker): Promise<boolean | null>;
+  start(id: string, page: PageBroker, done: (signedIn: boolean) => void): Promise<boolean>;
+  now(id: string): Promise<boolean | null>;
+  stop(id: string): void;
+}
+
 // The built-in Music app's library and player (music.ts).
 export interface Music {
   handle(request: Record<string, unknown>): Promise<object>;
@@ -170,6 +182,7 @@ interface Options {
   launcher: Launcher;
   playback?: Playback;
   music?: Music;
+  signIn?: SignIn;
   now?: () => number;
   log?: (line: string) => void;
   homeRestartMs?: number;
@@ -197,6 +210,9 @@ export class Screen {
   private launcher: Launcher;
   private playback?: Playback;
   private music?: Music;
+  private signIn?: SignIn;
+  // The app whose sign-in screen is up, with its name for the bar.
+  private signingIn: { id: string; name: string } | null = null;
   private now: () => number;
   private log: (line: string) => void;
   private windows = new Map<string, Window>();
@@ -250,6 +266,7 @@ export class Screen {
     this.launcher = options.launcher;
     this.playback = options.playback;
     this.music = options.music;
+    this.signIn = options.signIn;
     this.now = options.now ?? Date.now;
     this.log = options.log ?? ((line) => console.log(line));
     this.homeRestartMs = options.homeRestartMs ?? 500;
@@ -391,12 +408,12 @@ export class Screen {
       const app = wanted ? this.want?.app : undefined;
       if (wanted) this.want = null;
       this.log(`in front: ${describe(window)}`);
-      await this.toFront(address);
+      // The app's window, known before it comes in front, so its sign-in
+      // screen can place it.
       const entry = app ? this.opens.find((o) => o.id === app && !o.address) : undefined;
-      if (entry) {
-        entry.address = address;
-        this.running();
-      }
+      if (entry) entry.address = address;
+      await this.toFront(address);
+      if (entry) this.running();
       return;
     }
 
@@ -415,7 +432,10 @@ export class Screen {
     this.windows.delete(address);
     this.stack = this.stack.filter((a) => a !== address);
     if (this.opens.some((o) => o.address === address)) {
-      for (const entry of this.opens.filter((o) => o.address === address)) this.playback?.closed(entry.id);
+      for (const entry of this.opens.filter((o) => o.address === address)) {
+        this.playback?.closed(entry.id);
+        if (this.signingIn?.id === entry.id) void this.endSignIn("its window closed");
+      }
       this.opens = this.opens.filter((o) => o.address !== address);
       this.running();
     }
@@ -475,7 +495,7 @@ export class Screen {
 
   private async keepFullscreen(): Promise<void> {
     const front = this.front();
-    if (front && !this.ending) await this.fullscreen(front.address);
+    if (front && !this.ending) await this.place(front.address);
   }
 
   // --- Hyprland -------------------------------------------------------------
@@ -484,7 +504,7 @@ export class Screen {
     const window = lua(`address:${address}`);
     await this.hypr.dispatch(`hl.dsp.window.move({ window = ${window}, workspace = ${lua(TV_WORKSPACE)}, follow = false })`);
     await this.focus(address);
-    await this.fullscreen(address);
+    await this.place(address);
     // Whatever else is on the TV goes out of sight, after the new one is
     // covering it.
     for (const client of await this.hypr.clients()) {
@@ -522,6 +542,17 @@ export class Screen {
     return this.hypr.dispatch(
       `hl.dsp.window.fullscreen_state({ window = ${lua(`address:${address}`)}, internal = 2, client = 2, action = "set" })`,
     );
+  }
+
+  // Full screen, except the app whose sign-in screen is up: maximized, so it
+  // stays above the overlay's sign-in bar, which keeps the bottom of the
+  // screen for itself (board 15).
+  private place(address: string): Promise<void> {
+    const entry = this.opens.find((o) => o.address === address);
+    if (this.signingIn && entry?.id === this.signingIn.id) {
+      return this.hypr.dispatch(`hl.dsp.window.fullscreen_state({ window = ${lua(`address:${address}`)}, internal = 1, client = 0, action = "set" })`);
+    }
+    return this.fullscreen(address);
   }
 
   // --- The apps -------------------------------------------------------------
@@ -619,6 +650,9 @@ export class Screen {
         if (target.exec[0] === "steam") return this.openSteam(id);
         return { ok: false, error: "that app can't be opened from the tv yet" };
       }
+      // A tile that says Sign in: AgenTV's sign-in screen (ADR-032).
+      case "sign-in":
+        return this.startSignIn(String(request.app ?? ""));
       case "running":
         await this.chain;
         return { ok: true, apps: this.runningApps() };
@@ -652,6 +686,7 @@ export class Screen {
     return this.queue(async () => {
       const front = this.front();
       if (from === "guide" && front?.role === "steam") return;
+      if (this.signingIn) await this.endSignIn("home");
       const entry = front && this.opens.find((o) => o.address === front.address);
       if (entry) {
         entry.usedAt = this.now();
@@ -738,6 +773,7 @@ export class Screen {
   private async closeOpen(entry: Open): Promise<void> {
     this.opens = this.opens.filter((o) => o !== entry);
     this.playback?.closed(entry.id);
+    if (this.signingIn?.id === entry.id) await this.endSignIn("it closed");
     if (entry.role === "steam") {
       for (const window of [...this.windows.values()].filter((w) => w.role === "steam")) {
         await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
@@ -970,8 +1006,70 @@ export class Screen {
       // An installed app's playback goes to the ledger while it's open, read
       // from its page.
       if (id !== url) this.playback?.opened(id, this.pageOf(entry));
+      // And an app with signIn says whether it's signed in, for its tile.
+      if (id !== url && this.signingIn?.id !== id) void this.signIn?.check(id, this.pageOf(entry)).catch(() => null);
       await this.makeRoom(id);
     }).then(() => ({ ok: true }));
+  }
+
+  // --- Signing in (ADR-032, board 15) ---------------------------------------
+
+  // The app opens as its tile would, with AgenTV's sign-in bar under its
+  // page, and the app brings its page to the service's sign-in form. Typing
+  // on the phone or a keyboard goes to the page. It ends once the app says
+  // it's signed in, on Home, or when the app closes.
+  async startSignIn(id: string): Promise<object> {
+    if (!this.signIn) return { ok: false, error: "signing in isn't here" };
+    const target = await this.launcher.appTarget(id).catch(() => null);
+    if (target?.runtime !== "web") return { ok: false, error: "only a web app signs in on the tv" };
+    if (this.signingIn && this.signingIn.id !== id) await this.endSignIn("another sign-in");
+    this.signingIn = { id, name: target.name ?? id };
+    const opened = (await this.fromHome({ cmd: "open-app", app: id })) as { ok: boolean; error?: string };
+    const entry = this.opens.find((o) => o.id === id);
+    if (!opened.ok || !entry) {
+      this.signingIn = null;
+      return opened.ok ? { ok: false, error: "that app didn't open" } : opened;
+    }
+    await this.launcher.signInBar(this.signingIn.name).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
+    // When it's open already, it's in front now: maximized from here on.
+    await this.chain;
+    if (entry.address && this.front()?.address === entry.address) await this.place(entry.address);
+    const started = await this.signIn.start(id, this.pageOf(entry), (signedIn) => void this.signInDone(id, signedIn));
+    if (!started) {
+      await this.endSignIn("the app can't say whether it's signed in");
+      return { ok: false, error: "that app can't tell whether it's signed in" };
+    }
+    this.log(`signing in to ${id}`);
+    return { ok: true };
+  }
+
+  // "i'm signed in" on the bar: the app is asked now.
+  async signedInNow(): Promise<object> {
+    const signing = this.signingIn;
+    if (!signing || !this.signIn) return { ok: false, error: "nothing is signing in" };
+    const said = await this.signIn.now(signing.id);
+    if (said === true) return { ok: true, signedIn: true };
+    await this.toast(said === false ? `${signing.name.toLowerCase()} still says you're signed out` : `${signing.name.toLowerCase()} can't tell yet`);
+    return { ok: true, signedIn: false };
+  }
+
+  private async signInDone(id: string, signedIn: boolean): Promise<void> {
+    if (this.signingIn?.id !== id) return;
+    const name = this.signingIn.name;
+    await this.endSignIn(signedIn ? "signed in" : "it gave up");
+    if (signedIn) await this.toast(`signed in to ${name.toLowerCase()}`);
+  }
+
+  // The bar goes, and the app goes back to full screen if it's in front.
+  private async endSignIn(why: string): Promise<void> {
+    const signing = this.signingIn;
+    if (!signing) return;
+    this.signingIn = null;
+    this.signIn?.stop(signing.id);
+    this.log(`sign-in to ${signing.id} over: ${why}`);
+    await this.launcher.signInBar(null).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
+    const entry = this.opens.find((o) => o.id === signing.id);
+    if (entry?.address && this.front()?.address === entry.address && !this.ending) await this.fullscreen(entry.address);
   }
 
   private async musicRequest(request: Record<string, unknown>): Promise<object> {
@@ -1197,6 +1295,11 @@ export class Screen {
         return this.openWeb(String(request.url ?? ""));
       case "music":
         return this.musicRequest(request);
+      // An app's sign-in screen, and "i'm signed in" on its bar.
+      case "sign-in":
+        return this.startSignIn(String(request.app ?? ""));
+      case "signed-in":
+        return this.signedInNow();
       // An installed app, as its tile opens it.
       case "app":
         return this.fromHome({ cmd: "open-app", app: String(request.app ?? "") });
@@ -1372,6 +1475,17 @@ export const launcher: Launcher = {
     });
   },
 
+  signInBar(name) {
+    return new Promise((resolve, reject) => {
+      const call = name === null ? ["signin", "hide"] : ["signin", "show", name];
+      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...call], { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
+    });
+  },
+
   toast(text) {
     return new Promise((resolve, reject) => {
       execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "toast", "show", text], { timeout: 5000 }, (error, stdout) => {
@@ -1386,8 +1500,9 @@ export const launcher: Launcher = {
     const response = await fetch(`${HOME_URL}api/apps/${encodeURIComponent(id)}/launch`, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return null;
     const target = await response.json();
-    if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url };
-    if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String) };
+    const name = typeof target.name === "string" ? target.name : undefined;
+    if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url, name };
+    if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String), name };
     return null;
   },
 
@@ -1509,6 +1624,39 @@ export function playbackWatch(home = HOME_URL, log: (line: string) => void = con
   });
 }
 
+// Asks an app with signIn whether it's signed in, from its page, and tells
+// the daemon, for its tile (ADR-032).
+export function signInWatch(home = HOME_URL, log: (line: string) => void = console.log): SignInWatch {
+  const get = async (path: string) => {
+    const response = await fetch(`${home}${path}`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error(`${path} answered ${response.status}`);
+    return response.json();
+  };
+  return new SignInWatch({
+    async host(id) {
+      const found = await get(`api/apps/${encodeURIComponent(id)}/package`).catch(() => null);
+      if (!found?.dir) return null;
+      const tier: Tier = found.tier === "built-in" ? "official" : found.tier;
+      const { manifest } = validatePackage(found.dir, tier);
+      if (!manifest?.tv.capabilities.includes("signIn") || manifest.tv.runtime !== "web") return null;
+      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log });
+    },
+    async viewer() {
+      return (await get("api/viewer")).viewer;
+    },
+    async report(app, signedIn) {
+      const response = await fetch(`${home}api/apps/${encodeURIComponent(app)}/signed-in`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signedIn }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error(`the daemon said ${(await response.json().catch(() => ({}))).error ?? response.status}`);
+    },
+    log,
+  });
+}
+
 // The built-in Music app (ADR-017): its sources, library and player, here
 // in the TV session, and what plays handed to the daemon's ledger.
 export function musicApp(home = HOME_URL, log: (line: string) => void = console.log): MusicApp {
@@ -1531,7 +1679,7 @@ export function musicApp(home = HOME_URL, log: (line: string) => void = console.
 
 async function main(): Promise<void> {
   const music = musicApp();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, signIn: signInWatch() });
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);

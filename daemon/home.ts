@@ -5,6 +5,7 @@
 // runs on the home screen.
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
@@ -13,6 +14,7 @@ import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts
 import { readInstalled } from "./apps/install.ts";
 import type { Ledger, WatchRow } from "./ledger.ts";
 import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
+import { siteIcon } from "./site-icon.ts";
 
 // Where an app came from: the signed index, this box's agent, or AgenTV
 // itself, for the built-ins in apps/builtin/ (ADR-015, ADR-017).
@@ -37,6 +39,9 @@ export interface AppSummary {
   sizes: SizeChoice[];
   reach: string[]; // what it can reach, for app details
   needsSetup: boolean; // a setup field it needs isn't filled in yet
+  // Its service wants a sign-in (ADR-032): the app said so the last time it
+  // was asked, or it has a sign-in step and hasn't been asked yet.
+  signIn?: "needed";
   credit?: string; // whose data it shows, for app details: "weather data from met norway"
 }
 
@@ -133,8 +138,13 @@ export interface HomeOptions {
   builtins?: string; // AgenTV's own apps: /usr/share/agentv/apps/builtin
   userAgent?: string; // what every app's requests say they are
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
+  // Something home shows changed by itself: a site's icon came, say.
+  changed?: (event: string) => void;
   log?: (line: string) => void;
 }
+
+// How long before a site's icon that didn't come is asked for again.
+const ICON_RETRY_MS = 6 * 3600_000;
 
 // The free continue tile's entries: how far in, and how long is left.
 function caption(row: WatchRow): string {
@@ -175,6 +185,8 @@ export class Home {
   private ledger?: () => Ledger;
   private hosts = new Map<string, AppHost>();
   private tiles = new Map<string, { at: number; tile: unknown; settings: string }>();
+  private iconTried = new Map<string, number>();
+  private changed: (event: string) => void;
   private log: (line: string) => void;
 
   constructor(options: HomeOptions) {
@@ -183,6 +195,7 @@ export class Home {
     this.builtins = options.builtins;
     this.userAgent = options.userAgent;
     this.ledger = options.ledger;
+    this.changed = options.changed ?? (() => {});
     this.log = options.log ?? (() => {});
   }
 
@@ -250,10 +263,14 @@ export class Home {
 
   async apps(): Promise<AppSummary[]> {
     const settings = await this.appSettings();
+    const signIns = await this.signIns();
     return (await this.manifests()).map(({ manifest, tier }) => {
       const values = settings[manifest.id] ?? {};
       const builtin = tier === "built-in";
       const fields = (manifest.tv.setup ?? []).filter((step) => step.type === "field");
+      const signedIn = signIns[manifest.id]?.signedIn;
+      const signInStep = (manifest.tv.setup ?? []).some((step) => step.type === "signIn");
+      const icon = manifest.tv.icon || this.hasSiteIcon(manifest.id, tier) ? `/api/apps/${manifest.id}/icon` : undefined;
       const reach = [...allowedOrigins(manifest, values)].map((origin) => origin.replace(/^https?:\/\//, ""));
       return {
         id: manifest.id,
@@ -265,13 +282,70 @@ export class Home {
         description: manifest.description,
         category: manifest.tv.category,
         runtime: manifest.tv.runtime,
-        icon: manifest.tv.icon ? `/api/apps/${manifest.id}/icon` : undefined,
+        icon,
         sizes: sizesOf(manifest),
         reach: reach.length ? reach : manifest.tv.runtime === "native" ? ["its own window on this tv"] : builtin ? ["nothing outside this tv"] : ["nothing yet"],
         needsSetup: fields.some((field) => field.type === "field" && !values[field.key]),
+        signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
       };
     });
+  }
+
+  // --- Sign-ins (ADR-032) -----------------------------------------------
+
+  // What each app said the last time it was asked whether it's signed in.
+  // The services' Chromium is the box's, so a sign-in is too, not a viewer's.
+  private signIns(): Promise<Record<string, { signedIn: boolean; at: string }>> {
+    return readJson(join(this.state, "signins.json"), {});
+  }
+
+  // Notes what an app said. False when it isn't an app here, or it has no
+  // signIn.
+  async signedIn(id: string, signedIn: boolean): Promise<boolean> {
+    const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
+    if (!found?.manifest.tv.capabilities.includes("signIn")) return false;
+    const all = await this.signIns();
+    if (all[id]?.signedIn === signedIn) return true;
+    all[id] = { signedIn, at: new Date().toISOString() };
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "signins.json"), all);
+    this.changed("apps");
+    return true;
+  }
+
+  // --- Site icons ---------------------------------------------------------
+
+  // Whether a web app with no icon of its own has its site's, kept here. One
+  // that doesn't yet is fetched in the background, and home is told when it
+  // comes.
+  private hasSiteIcon(id: string, tier: AppTier): boolean {
+    if (tier === "built-in") return false;
+    if (existsSync(join(this.state, "icons", `${id}.json`))) return true;
+    const tried = this.iconTried.get(id);
+    if (tried === undefined || Date.now() - tried > ICON_RETRY_MS) {
+      this.iconTried.set(id, Date.now());
+      void this.fetchSiteIcon(id).catch((error: Error) => this.log(`${id}'s site icon: ${error.message}`));
+    }
+    return false;
+  }
+
+  private async fetchSiteIcon(id: string): Promise<void> {
+    const target = await this.launch(id);
+    if (target?.runtime !== "web") return;
+    const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
+    const allowed = found ? allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}) : new Set<string>();
+    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "AgenTV"} ${id}`, allowed: (url) => allowed.has(url.origin) });
+    if (!icon) {
+      this.log(`${id}: its site has no icon to show, so its tile keeps its letters`);
+      return;
+    }
+    const dir = join(this.state, "icons");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, id), icon.body);
+    await writeJson(join(dir, `${id}.json`), { type: icon.type, from: target.url, at: new Date().toISOString() });
+    this.log(`${id}: its site's icon is its logo now`);
+    this.changed("apps");
   }
 
   // Whether each installed app still loads, for the check after an update
@@ -390,24 +464,30 @@ export class Home {
     return { dir: found.dir, tier: found.tier, category: found.manifest.tv.category, settings: (await this.appSettings())[id] ?? {} };
   }
 
-  async icon(id: string): Promise<{ path: string } | null> {
+  // An app's logo: its package's own, or its site's, kept here.
+  async icon(id: string): Promise<{ path: string; type?: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
-    return found?.manifest.tv.icon ? { path: join(found.dir, found.manifest.tv.icon) } : null;
+    if (!found) return null;
+    if (found.manifest.tv.icon) return { path: join(found.dir, found.manifest.tv.icon) };
+    if (found.tier === "built-in") return null;
+    const site = await readJson<{ type?: string } | null>(join(this.state, "icons", `${id}.json`), null);
+    return site?.type ? { path: join(this.state, "icons", id), type: site.type } : null;
   }
 
   // What opening an app means, for the screen daemon: its home address with
   // its setup fields filled in, or its command.
-  async launch(id: string): Promise<{ runtime: "web"; url: string } | { runtime: "native"; exec: string[] } | null> {
+  async launch(id: string): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
     const tv = found.manifest.tv;
-    if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [] };
+    const name = found.manifest.name;
+    if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name };
     const values = (await this.appSettings())[id] ?? {};
     const url = (tv.homeUrl ?? "").replace(/^\{([A-Za-z][A-Za-z0-9]*)\}/, (_, key: string) => (values[key] ?? "").replace(/\/+$/, ""));
     try {
       const parsed = new URL(url);
       if (!allowedOrigins(found.manifest, values).has(parsed.origin)) return null;
-      return { runtime: "web", url: parsed.href };
+      return { runtime: "web", url: parsed.href, name };
     } catch {
       return null;
     }

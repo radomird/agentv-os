@@ -17,6 +17,14 @@
 // click goes home, as the Home key does. The screen daemon says when an app
 // is in front:
 //   qs ipc -n -p /usr/share/agentv/session/toast call -- corner front true
+//
+// And AgenTV's sign-in screen (ADR-032, board 15): a bar along the bottom
+// with the app's name, where to type, and "i'm signed in", under the
+// service's own sign-in page. It keeps the bottom of the screen for itself,
+// so the page, maximized above it, isn't covered, and it never takes the
+// keyboard, so typing goes to the page. The screen daemon shows and hides it:
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- signin show "Jellyfin"
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- signin hide
 
 import QtQuick
 import Quickshell
@@ -30,6 +38,7 @@ ShellRoot {
   property bool shown: false
   property bool appInFront: false
   property bool cornerOpen: false
+  property string signingIn: ""
 
   Timer {
     id: hideTimer
@@ -70,6 +79,25 @@ ShellRoot {
         root.cornerOpen = false
       return "ok"
     }
+  }
+
+  IpcHandler {
+    target: "signin"
+
+    function show(name: string): string {
+      root.signingIn = name
+      return "ok"
+    }
+
+    function hide(): string {
+      root.signingIn = ""
+      return "ok"
+    }
+  }
+
+  Process {
+    id: signedIn
+    command: ["agentv", "screen", "signed-in"]
   }
 
   // After the overlay starts again, what's in front now.
@@ -200,6 +228,135 @@ ShellRoot {
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 28
         wrapMode: Text.Wrap
+      }
+    }
+  }
+
+  PanelWindow {
+    visible: root.signingIn !== ""
+    anchors {
+      left: true
+      right: true
+      bottom: true
+    }
+    implicitHeight: 220
+    color: "#101014"
+    exclusionMode: ExclusionMode.Auto
+    WlrLayershell.namespace: "agentv-signin"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    Rectangle {
+      anchors {
+        left: parent.left
+        right: parent.right
+        bottom: parent.bottom
+        leftMargin: 32
+        rightMargin: 32
+        bottomMargin: 84
+      }
+      height: 112
+      color: "#1a1b26"
+      border.color: "#292e42"
+      border.width: 2
+
+      Text {
+        id: signInName
+        anchors.left: parent.left
+        anchors.leftMargin: 36
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.signingIn.toLowerCase()
+        color: "#c0caf5"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 36
+        font.bold: true
+      }
+
+      // Shown only while the hint still fits whole beside it, as on a 1080p
+      // TV. The status line and the button say it too.
+      Text {
+        id: signInLabel
+        anchors.left: signInName.right
+        anchors.leftMargin: 24
+        anchors.verticalCenter: parent.verticalCenter
+        visible: signedInButton.x - (signInName.x + signInName.width + 24 + implicitWidth) >= signInHint.implicitWidth + 48
+        text: "sign in"
+        color: "#a9b1d6"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 26
+      }
+
+      // Centred in the room between the name and the button, so a long name
+      // on a smaller screen never runs into it.
+      Text {
+        id: signInHint
+        anchors.left: signInLabel.visible ? signInLabel.right : signInName.right
+        anchors.right: signedInButton.left
+        anchors.leftMargin: 24
+        anchors.rightMargin: 24
+        anchors.verticalCenter: parent.verticalCenter
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
+        text: "type on your phone or keyboard"
+        color: "#a9b1d6"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 26
+      }
+
+      // The app is asked again now; it's asked every 2 s anyway.
+      Rectangle {
+        id: signedInButton
+        anchors.right: parent.right
+        anchors.rightMargin: 36
+        anchors.verticalCenter: parent.verticalCenter
+        width: signedInLabel.implicitWidth + 64
+        height: 72
+        color: "#7aa2f7"
+
+        Text {
+          id: signedInLabel
+          anchors.centerIn: parent
+          text: "i'm signed in"
+          color: "#1a1b26"
+          font.family: "JetBrainsMono Nerd Font"
+          font.pixelSize: 28
+          font.bold: true
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          onClicked: signedIn.running = true
+        }
+      }
+    }
+
+    Rectangle {
+      anchors {
+        left: parent.left
+        right: parent.right
+        bottom: parent.bottom
+      }
+      height: 60
+      color: "#16161e"
+
+      Text {
+        anchors.left: parent.left
+        anchors.leftMargin: 32
+        anchors.verticalCenter: parent.verticalCenter
+        text: "app setup · " + root.signingIn.toLowerCase()
+        color: "#a9b1d6"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 24
+      }
+
+      Text {
+        anchors.right: parent.right
+        anchors.rightMargin: 32
+        anchors.verticalCenter: parent.verticalCenter
+        text: "home stops"
+        color: "#a9b1d6"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 24
       }
     }
   }

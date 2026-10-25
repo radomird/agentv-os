@@ -2,7 +2,9 @@
 // 4): the app in its worker, its page driven over DevTools the way the
 // screen daemon drives the services' Chromium (daemon/page.ts). Its
 // playback state comes from the page (S3.3), it opens a title with the
-// site's own search, and the loader keeps the page on the app's origins.
+// site's own search, it signs in on the site's own form while the sign-in
+// screen asks it (ADR-032), and the loader keeps the page on the app's
+// origins.
 
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
@@ -13,6 +15,7 @@ import type { Browser, CDPSession, Page } from "playwright-core";
 import { validatePackage } from "../../../apps/contract/manifest.ts";
 import { AppHost } from "../../../daemon/apps/loader.ts";
 import { cdpPage } from "../../../daemon/page.ts";
+import { SignInWatch } from "../../../daemon/signin.ts";
 import { ROOT } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -25,6 +28,10 @@ const PAGES: Record<string, string> = {
   "/search.html": `<!doctype html><title>Search</title>
     <input id="q"><button id="play" onclick="document.title = 'Playing ' + document.getElementById('q').value">play</button>
     <script>document.getElementById("q").addEventListener("keydown", (e) => { if (e.key === "Enter") document.body.dataset.searched = e.target.value; });</script>`,
+  // The site's own sign-in form, which sets its own cookie.
+  "/login.html": `<!doctype html><title>Sign in</title>
+    <form id="login"><input id="email" autocomplete="username"><input id="password" type="password" autocomplete="current-password"><button>sign in</button></form>
+    <script>document.getElementById("login").addEventListener("submit", (e) => { e.preventDefault(); document.cookie = "signed=in; path=/"; location.href = "/"; });</script>`,
 };
 
 let browser: Browser;
@@ -87,6 +94,40 @@ test("the loader keeps an app's page on its own origins", async () => {
   assert.equal(page.url(), "about:blank");
   await page.goto(`${origin}/`);
   assert.equal(((await host.call(viewer, "playback.readPlaybackState")) as { title: string }).title, "Sintel");
+});
+
+test("ADR-032 the sign-in screen: the app shows the site's form, and once it's filled in, says it's signed in", async () => {
+  const { manifest } = validatePackage(PAGER, "official");
+  const reports: boolean[] = [];
+  const broker = cdpPage(
+    {
+      async evaluateIn(_target: string, expression: string) {
+        const reply = await session.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+        if (reply.exceptionDetails) throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text);
+        return reply.result.value;
+      },
+    },
+    () => "t1",
+  );
+  const watch = new SignInWatch({
+    host: async () => new AppHost({ dir: PAGER, manifest: manifest!, settings: { serverUrl: origin } }),
+    viewer: async () => viewer,
+    report: async (_app, signedIn) => void reports.push(signedIn),
+    every: 100,
+    settle: 0,
+  });
+  await page.context().clearCookies();
+  await page.goto(`${origin}/`);
+  assert.equal(await watch.check("agentv.pager", broker), false);
+  const done = new Promise<boolean>((resolve) => void watch.start("agentv.pager", broker, resolve));
+  await page.waitForURL(`${origin}/login.html`);
+  // What the phone's keyboard types, through the passthrough.
+  await page.fill("#email", "you@example.org");
+  await page.fill("#password", "not kept anywhere");
+  await page.click("button");
+  assert.equal(await done, true);
+  assert.deepEqual(reports, [false, true]);
+  assert.equal(new URL(page.url()).pathname, "/");
 });
 
 test("an app with no page open gets none", async () => {

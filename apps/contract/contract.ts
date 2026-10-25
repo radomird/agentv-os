@@ -67,8 +67,12 @@ export interface TvApp {
   /** Open the home URL or start the native window. */
   launch(ctx: AppContext): Promise<void>;
 
-  /** Stage A. False puts "Sign in" on the tile. */
-  signIn?: { isSignedIn(ctx: AppContext): Promise<boolean> };
+  /**
+   * Stage A. False puts "Sign in" on the tile, and choosing it shows AgenTV's
+   * sign-in screen over the service's own page (ADR-032). open() brings the
+   * page to the service's sign-in form; without it, the page stays at homeUrl.
+   */
+  signIn?: { isSignedIn(ctx: AppContext): Promise<boolean>; open?(ctx: AppContext): Promise<void> };
 
   /** "Play X" across kinds (ADR-013). */
   search?(ctx: AppContext, query: string): Promise<Item[]>;

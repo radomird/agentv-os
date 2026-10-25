@@ -43,6 +43,7 @@ export const PAGE_METHODS = ["title", "goto", "evaluate", "waitForSelector", "cl
 const CALLS: Record<string, { capability: Capability; ms: number }> = {
   launch: { capability: "launch", ms: 30_000 },
   "signIn.isSignedIn": { capability: "signIn", ms: 10_000 },
+  "signIn.open": { capability: "signIn", ms: 30_000 },
   search: { capability: "search", ms: 10_000 },
   "playback.open": { capability: "playback", ms: 30_000 },
   "playback.readPlaybackState": { capability: "playback", ms: 5_000 },
