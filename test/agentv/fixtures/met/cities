@@ -1,0 +1,9 @@
+# The places whose MET Norway forecasts are kept as fixtures, recorded by
+# test/agentv/fixtures/record/met. Each is a time zone's own city from the tz
+# database's zone.tab, rounded the way the daemon rounds it (two decimals).
+# name        lat     lon      zone
+amsterdam     52.37   4.90     Europe/Amsterdam
+oslo          59.92   10.75    Europe/Oslo
+longyearbyen  78.00   16.00    Arctic/Longyearbyen
+new-york      40.71   -74.01   America/New_York
+auckland      -36.87  174.77   Pacific/Auckland
