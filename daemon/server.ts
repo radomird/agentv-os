@@ -286,11 +286,20 @@ export class Daemon {
     return { ok: true };
   }
 
+  // The box's address for a phone: the one on the Wi-Fi the setup hotspot
+  // joined, since the phone went back to it too, or else its address on the
+  // home network.
+  private boxAddress(): string | null {
+    const joined = this.hotspot.status().joined?.address;
+    if (joined && Object.values(networkInterfaces()).some((list) => list?.some((a) => a.address === joined))) return joined;
+    return (this.options.address ?? lanAddress)();
+  }
+
   // The code on show, and the address it pairs at.
   private pairing(): { code: string; until: string; url: string | null } | null {
     const showing = this.phones.showing();
     if (!showing) return null;
-    const address = (this.options.address ?? lanAddress)();
+    const address = this.boxAddress();
     const port = this.lanPort;
     return { ...showing, url: address && port ? `http://${address}:${port}/?code=${showing.code}` : null };
   }

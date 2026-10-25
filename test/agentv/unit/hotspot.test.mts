@@ -114,6 +114,9 @@ before(async () => {
     setupHost: "127.0.0.1",
     hotspotRun: run,
     hotspotAddress: "127.0.0.1",
+    lanPort: 0,
+    lanHost: "127.0.0.1",
+    address: () => "192.168.1.20",
     qrencode,
   });
   tv = `http://127.0.0.1:${await daemon.listen()}`;
@@ -227,4 +230,16 @@ test("the TV gets the hotspot's name, password and QR code, and setup ending clo
   assert.deepEqual((await (await fetch(`${tv}/api/hotspot`)).json()).joined, { ssid: "home wi-fi", address: "192.168.1.20" });
   await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) });
   assert.ok(!existsSync(drop), "a hotspot that's off isn't asked to close");
+});
+
+test("once the hotspot joined the home Wi-Fi, phones pair at the box's address there", async () => {
+  const pair = async () => (await (await fetch(`${tv}/api/phones/pair`, { method: "POST" })).json()).pairing.url as string;
+  hotspotIs({ on: false });
+  assert.match(await pair(), /^http:\/\/192\.168\.1\.20:\d+\/\?code=/, "the home network's address, with no hotspot");
+  // 127.0.0.1 stands in for the address the box got on the Wi-Fi it joined.
+  hotspotIs({ on: false, joined: { ssid: "home wi-fi", address: "127.0.0.1" } });
+  assert.match(await pair(), /^http:\/\/127\.0\.0\.1:\d+\/\?code=/);
+  // An address the box doesn't have any more isn't used.
+  hotspotIs({ on: false, joined: { ssid: "home wi-fi", address: "10.9.9.9" } });
+  assert.match(await pair(), /^http:\/\/192\.168\.1\.20:/);
 });
