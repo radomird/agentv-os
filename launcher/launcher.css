@@ -1154,6 +1154,15 @@ button {
   max-width: 560px;
 }
 
+/* Settings → Power's questions (ADR-033), and Shut down's countdown. */
+.power-count {
+  margin: -12px 0 36px;
+  font-size: 160px;
+  line-height: 1;
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Music (ADR-017) ---------------------------------------------------- */
 
 .hidden {

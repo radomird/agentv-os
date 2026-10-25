@@ -188,13 +188,21 @@ case "$1" in
     [[ -f $STATE/no-ledger ]] || echo "{\"ok\":true,\"rows\":[{\"viewer_id\":\"radomir\",\"title\":\"agentv selftest\",\"season\":1,\"episode\":1,\"position_s\":3}]}" >"$STATE/ledger"
     echo "{\"ok\":true}" ;;
   quit) echo "$2" >>"$STATE/quit"; echo "{\"ok\":true}" ;;
+  settings) echo "$2" >>"$STATE/settings"; echo "{\"ok\":true}" ;;
 esac'
 fake pgrep 'exit 1'
 fake systemctl '
 case "$*" in
   "--user show-environment") echo WAYLAND_DISPLAY=wayland-1 ;;
+  # How long the units may take to stop (S2.18), or one that waits.
+  *"show -p TimeoutStopUSec --value agentv-"*)
+    if [[ -f $STATE/slow-stop && $* == *agentv-screen* ]]; then echo "1min 30s"; else echo 5s; fi ;;
   *) exit 3 ;;
 esac'
+# polkit, with AgenTV's power rule there unless it isn't (S2.18).
+fake pkcheck '[[ ! -f $STATE/no-power-rule ]]'
+fake omarchy-system-shutdown 'exit 0'
+fake omarchy-system-reboot 'exit 0'
 # A terminal opened in the session: the daemon keeps it out of sight.
 fake foot '
 jq ".windows += [{title: \"agentv selftest\", workspace: \"special:agentv-held\", front: false}]" "$STATE/screen.json" >"$STATE/screen.json.new" && mv "$STATE/screen.json.new" "$STATE/screen.json"
@@ -299,10 +307,15 @@ for line in \
   "pass S2.15 Home put the home screen in front in" \
   "pass S2.15 choosing the app again brought the same window back in" \
   "manual S2.15 with an episode playing" \
-  "manual S2.16 over a playing app"; do
+  "manual S2.16 over a playing app" \
+  "pass S2.18 polkit lets" \
+  "pass S2.18 AgenTV's units stop within 5 s, so none holds up a restart or a shut down" \
+  "pass S2.18 Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there" \
+  "pass S2.18 Settings opened at Power on the TV" \
+  "manual S2.18 on the TV, Power is in Settings now"; do
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
-[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass, S1.7 pass, S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass" ]] ||
+[[ $(tail -n 1 "$SCRATCH/out") == "S1.1 pass, S1.2 pass, S1.5 pass, S1.6 pass, S1.7 pass, S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass, S2.18 pass" ]] ||
   fail "with no id it runs stages 1 and 2, and manual lines don't fail them" "$(cat "$SCRATCH/out")"
 # The keys, the pointer and the held arrows went through the input device.
 for sent in "key right" "key i" "move -4000 -4000" "key down" "hold down 1.5"; do
@@ -313,10 +326,22 @@ pass "stages 1 and 2 pass in a healthy TV session, with manual lines for what ne
 
 tv
 run1 S2 || fail "S2 runs stage 2's checks" "$(cat "$SCRATCH/out")"
-[[ $(tail -n 1 "$SCRATCH/out") == "S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass" ]] ||
+[[ $(tail -n 1 "$SCRATCH/out") == "S2.8 pass, S2.9 pass, S2.10 pass, S2.11 pass, S2.15 pass, S2.16 pass, S2.18 pass" ]] ||
   fail "S2 runs only stage 2's checks" "$(cat "$SCRATCH/out")"
+[[ $(cat "$state/settings") == "power" ]] || fail "S2.18 opens Settings at Power" "$(cat "$state/settings" 2>/dev/null)"
 kill "$home_pid" 2>/dev/null || true
 pass "agentv selftest S2 runs stage 2's checks"
+
+tv
+touch "$state/no-power-rule" "$state/slow-stop"
+! run1 S2.18 || fail "S2.18 fails without the power rule and with a unit that waits" "$(cat "$SCRATCH/out")"
+grep -q "^fail S2.18 polkit asks .* for a password to power-off power-off-multiple-sessions reboot reboot-multiple-sessions: is 50-agentv-power.rules" "$SCRATCH/out" ||
+  fail "it says polkit would ask" "$(cat "$SCRATCH/out")"
+grep -qF "fail S2.18 these may hold up a shut down for longer than 5 s: agentv-screen.service (1min 30s)" "$SCRATCH/out" ||
+  fail "it names the unit that would wait" "$(cat "$SCRATCH/out")"
+rm -f "$state/no-power-rule" "$state/slow-stop"
+kill "$home_pid" 2>/dev/null || true
+pass "S2.18 fails when polkit would ask for a password or a unit would hold a shut down up"
 
 tv
 echo '{"credentials_enable_service": true}' >"$SCRATCH/var/chromium/Default/Preferences"

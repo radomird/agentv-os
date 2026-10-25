@@ -15,3 +15,6 @@ ExecStart=/usr/bin/node /usr/share/agentv/daemon/screen.ts
 Restart=on-failure
 RestartSec=1
 KillMode=control-group
+# Stopped within a few seconds, so Restart and Shut down never wait on it
+# (ADR-033).
+TimeoutStopSec=5s

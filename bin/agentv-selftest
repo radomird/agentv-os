@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.6|S3.8|S3.9|S3.10]...
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S3|S3.3|S3.6|S3.8|S3.9|S3.10]...
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
@@ -37,6 +37,10 @@
 #   S2.15 how long Home takes to show the home screen, and choosing the app
 #         again to bring it back.
 #   S2.16 Home and Back from the keyboard, a gamepad and the mouse: manual.
+#   S2.18 what Settings → Power stands on, without turning the box off:
+#         polkit lets the owner power off and restart with no password,
+#         AgenTV's units stop within 5 s, Omarchy's commands are there, and
+#         Settings opens at Power. Turning it off and on again is manual.
 #
 # Stage 3, the reference apps (S3 runs them all):
 #
@@ -73,16 +77,16 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.6|S3.8|S3.9|S3.10]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S3|S3.3|S3.6|S3.8|S3.9|S3.10]..."
 }
 
-STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16)
+STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 checks=()
 for arg in "$@"; do
   case "$arg" in
     [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
-    [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16) checks+=("S${arg:1}") ;;
+    [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16 | [sS]2.18) checks+=("S${arg:1}") ;;
     [sS]2) checks+=("${STAGE2[@]}") ;;
     [sS]3.3 | [sS]3.6 | [sS]3.8 | [sS]3.9 | [sS]3.10) checks+=("S${arg:1}") ;;
     [sS]3) checks+=("${STAGE3[@]}") ;;
@@ -688,6 +692,62 @@ s216() {
   result manual S2.16 "over a playing app: the keyboard's Home key, a gamepad's guide button and the mouse pushed into the top left corner, then a click on Home there, each show the home screen. Back reaches the app, and holding Back for a second goes home. In a game, the guide button stays the game's."
 }
 
+# How long a unit may take to stop, in milliseconds, from systemctl show's
+# TimeoutStopUSec (5s, 1min 30s, 500ms or infinity).
+stop_ms() {
+  local value=$1 ms=0 part
+
+  [[ $value == "infinity" ]] && { echo 999999999; return; }
+  for part in $value; do
+    case $part in
+      *min) ms=$(( ms + ${part%min} * 60000 )) ;;
+      *ms) ms=$(( ms + ${part%ms} )) ;;
+      *s) ms=$(( ms + ${part%s} * 1000 )) ;;
+    esac
+  done
+  echo "$ms"
+}
+
+s218() {
+  local action denied=() unit value slow=() missing=() command user
+
+  tv_on S2.18 || return 0
+  user=$(id -un)
+  for action in power-off power-off-multiple-sessions reboot reboot-multiple-sessions; do
+    pkcheck --action-id "org.freedesktop.login1.$action" --process $$ >/dev/null 2>&1 || denied+=("$action")
+  done
+  if (( ${#denied[@]} == 0 )); then
+    result pass S2.18 "polkit lets $user power off and restart with no password, with other sessions open too"
+  else
+    result fail S2.18 "polkit asks $user for a password to ${denied[*]}: is 50-agentv-power.rules in /usr/share/polkit-1/rules.d/, and $user in wheel?"
+  fi
+  value=$(systemctl show -p TimeoutStopUSec --value agentv-daemon.service 2>/dev/null || true)
+  (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("agentv-daemon.service ($value)")
+  for unit in agentv-screen.service agentv-input.service agentv-toast.service; do
+    value=$(systemctl --user show -p TimeoutStopUSec --value "$unit" 2>/dev/null || true)
+    (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("$unit ($value)")
+  done
+  if (( ${#slow[@]} == 0 )); then
+    result pass S2.18 "AgenTV's units stop within 5 s, so none holds up a restart or a shut down"
+  else
+    result fail S2.18 "these may hold up a shut down for longer than 5 s: ${slow[*]}"
+  fi
+  for command in omarchy-system-shutdown omarchy-system-reboot; do
+    omarchy-cmd-present "$command" || missing+=("$command")
+  done
+  if (( ${#missing[@]} == 0 )); then
+    result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
+  else
+    result fail S2.18 "Omarchy's ${missing[*]} isn't there"
+  fi
+  if [[ $(screen settings power | jq -r '.ok' 2>/dev/null) == "true" ]]; then
+    result pass S2.18 "Settings opened at Power on the TV"
+  else
+    result fail S2.18 "Settings didn't open at Power on the TV"
+  fi
+  result manual S2.18 "on the TV, Power is in Settings now: Shut down asks first, then counts down from 10, and Cancel stops it. Choose it again and let it run: the box is off about 10 s after the countdown ends, and its power button turns it on again. Then Settings → Power → Restart: it's back on home in about a minute."
+}
+
 # ts_check <script> <id>: runs one of AgenTV's TypeScript checks, which
 # print their own pass, fail and manual lines for the id.
 ts_check() {
@@ -896,6 +956,7 @@ for id in "${checks[@]}"; do
     S2.11) s211 ;;
     S2.15) s215 ;;
     S2.16) s216 ;;
+    S2.18) s218 ;;
     S3.3 | S3.10) s33 ;;
     S3.6) s36 ;;
     S3.8) s38 ;;

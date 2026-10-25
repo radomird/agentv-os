@@ -275,12 +275,14 @@ jobs:
             s38="pass (layers 2 and 4: MET's symbol and the wind to a scene, from recorded replies; the live tile is the image layer's and the NUC's)"
             s39="pass (layers 2 and 4: today, tomorrow and seven days from recorded replies; the live tiles are the image layer's and the NUC's)"
             s310="pass (layers 2 and 4: the medium continue tile from the ledger, drawn with how far in; an entry opens through playback.open)"
+            s218="pass (layers 2 and 4: each question, the 10 s countdown and Cancel in Chromium, none for a kid or during an update; the screen daemon's guards, the polkit rules and the units' stop timeouts; the box going off is the image layer's)"
           else
             s33="fail (layer 2: $UNIT, layer 4: $UI)"
             s36="fail (layer 2: $UNIT, layer 4: $UI)"
             s38="fail (layer 2: $UNIT, layer 4: $UI)"
             s39="fail (layer 2: $UNIT, layer 4: $UI)"
             s310="fail (layer 2: $UNIT, layer 4: $UI)"
+            s218="fail (layer 2: $UNIT, layer 4: $UI)"
           fi
           # S3.1 here is every app in this repo; the official apps and the
           # private reference adapter run the same runner in their own repos.
@@ -290,4 +292,4 @@ jobs:
             s31="fail (layer 3: $CONTRACT, layer 2: $UNIT)"
           fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
-            "S2.12=$s212" "S2.13=$s213" "S3.1=$s31" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" >>"$GITHUB_STEP_SUMMARY"
+            "S2.12=$s212" "S2.13=$s213" "S2.18=$s218" "S3.1=$s31" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" >>"$GITHUB_STEP_SUMMARY"

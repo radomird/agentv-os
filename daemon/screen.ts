@@ -120,6 +120,15 @@ export interface Launcher {
   // Starts one of AgenTV's update units (ADR-025), which polkit lets the
   // person at the TV start: the check, or an install.
   startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service" | "agentv-go-back.service"): Promise<boolean>;
+  // Whether an install, going back or the check after an update is running.
+  updating(): Promise<boolean>;
+  // Whether an adult action may go ahead: agentv-pin-check, which asks for
+  // the PIN once stage 4 builds it (ADR-009) and lets everything through
+  // until then.
+  pinCheck(action: string): Promise<boolean>;
+  // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
+  // close the windows first. False when it couldn't start.
+  power(what: "restart" | "shutdown"): Promise<boolean>;
   // What there is to install at night, or null when the daemon doesn't
   // answer, and the install asked for tonight is done with.
   nightUpdates(): Promise<NightUpdates | null>;
@@ -673,9 +682,35 @@ export class Screen {
       case "desktop":
         this.launcher.desktop();
         return { ok: true };
+      // Settings → Power, after its question, and Shut down after its
+      // countdown (ADR-033).
+      case "power":
+        return this.power(request.what);
       default:
         return { ok: false, error: `unknown request: ${request?.cmd}` };
     }
+  }
+
+  // Restarts the box or shuts it down, through Omarchy's own commands. Never
+  // while an update runs (ADR-025), and only past the PIN, once there is one.
+  async power(what: unknown): Promise<object> {
+    if (what !== "restart" && what !== "shutdown") return { ok: false, error: "power restart or shutdown" };
+    if (await this.launcher.updating()) return { ok: false, error: "not while an update runs" };
+    if (!(await this.launcher.pinCheck("power"))) return { ok: false, error: "that needs the pin" };
+    this.log(what === "restart" ? "restarting the box from settings → power" : "shutting the box down from settings → power");
+    if (await this.launcher.power(what)) return { ok: true };
+    return { ok: false, error: what === "restart" ? "the box couldn't restart" : "the box couldn't shut down" };
+  }
+
+  // Settings on the TV, at a section, as from home (agentv screen settings):
+  // the image checks drive Settings → Power with keys from there.
+  async settings(section: string): Promise<object> {
+    if (!/^[a-z-]*$/.test(section)) return { ok: false, error: "which section of settings" };
+    await this.home("agentv screen settings");
+    const route = JSON.stringify(section ? `settings/${section}` : "settings");
+    const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${route}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    if (!reply.ok) return reply;
+    return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
   }
 
   // Home, from any input (ADR-031): the app in front pauses and goes out of
@@ -1319,6 +1354,10 @@ export class Screen {
       case "update":
         if (!["check", "install", "go-back"].includes(request.what)) return { ok: false, error: "update check, install or go-back" };
         return this.fromHome({ cmd: `update-${request.what}` });
+      case "power":
+        return this.power(request.what);
+      case "settings":
+        return this.settings(String(request.section ?? ""));
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
         return this.close(request.role);
@@ -1533,6 +1572,41 @@ export const launcher: Launcher = {
   startUnit(name) {
     return new Promise((resolve) => {
       execFile("systemctl", ["start", "--no-block", name], { timeout: 10_000 }, (error) => resolve(!error));
+    });
+  },
+
+  updating() {
+    // is-active says yes when any of them is running.
+    return new Promise((resolve) => {
+      execFile(
+        "systemctl",
+        ["is-active", "--quiet", "agentv-update-tv.service", "agentv-go-back.service", "agentv-update-after.service"],
+        { timeout: 5000 },
+        (error) => resolve(!error),
+      );
+    });
+  },
+
+  pinCheck(action) {
+    return new Promise((resolve) => {
+      execFile("agentv-pin-check", [action], { timeout: 120_000 }, (error) => resolve(!error));
+    });
+  },
+
+  power(what) {
+    // Omarchy's commands schedule the power-off in this session's systemd,
+    // and find themselves again through OMARCHY_PATH, which that systemd
+    // doesn't carry. polkit lets the owner do it from there (ADR-033).
+    const command = what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown";
+    return new Promise((resolve) => {
+      const child = spawn(command, [], {
+        stdio: "ignore",
+        detached: true,
+        env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" },
+      });
+      child.on("error", () => resolve(false));
+      child.on("exit", (code) => resolve(code === 0));
+      child.unref();
     });
   },
 

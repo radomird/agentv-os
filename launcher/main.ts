@@ -15,7 +15,8 @@ import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
 import { settings } from "./pages/settings.ts";
-import { checkView, drawUpdating, off, release, shown, whatsNew } from "./pages/updates.ts";
+import { power } from "./pages/power.ts";
+import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { Sounds } from "./sounds.ts";
 
 export interface View {
@@ -122,6 +123,8 @@ function viewFor(route: string): View {
   if (name === "whats-new") return whatsNew(ctx);
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
+  // Settings → Power's questions, for an adult only (ADR-033).
+  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
   if (name === "music") return music(ctx, arg);
   return home(ctx);
 }
@@ -192,8 +195,7 @@ function setUpdates(updates: Updates): void {
   ctx.updates = updates;
   const progress = updates.progress;
   const fresh = progress && Date.now() - new Date(progress.at).getTime() < 15 * 60_000;
-  const busy = progress?.state === "running" || progress?.state === "restarting" || progress?.state === "going-back";
-  if (progress && fresh && (busy || (progress.state === "failed" && updatingShown))) {
+  if (progress && (installing(updates) || (fresh && progress.state === "failed" && updatingShown))) {
     drawUpdating(updatingEl, progress);
     updatingEl.classList.add("on");
     updatingShown = true;

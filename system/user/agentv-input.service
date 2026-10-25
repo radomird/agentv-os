@@ -10,3 +10,6 @@ StartLimitIntervalSec=0
 ExecStart=/usr/bin/python3 /usr/share/agentv/daemon/input.py serve
 Restart=on-failure
 RestartSec=2
+# Stopped within a few seconds, so Restart and Shut down never wait on it
+# (ADR-033).
+TimeoutStopSec=5s
