@@ -117,6 +117,9 @@ export class Daemon {
   // The screen daemon, taking the phone's keys and text for the virtual
   // input device.
   private remotes = new Set<ServerResponse>();
+  // AgenTV's sign-in screen, while it's on the TV (ADR-032): the phone then
+  // offers fields its password manager fills.
+  private signingIn: { app: string; name: string } | null = null;
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
@@ -274,6 +277,33 @@ export class Daemon {
     return true;
   }
 
+  // The update notice the TV shows, for the phone (S4.8): what there is to
+  // install, What's new, and whether it's going in tonight.
+  private async phoneUpdate(): Promise<object | null> {
+    const state = await this.updates.read();
+    const status = state.status as {
+      agentv?: { installed?: string | null; available?: string | null };
+      omarchy?: { available?: string | null };
+      packages?: number;
+      waiting?: boolean;
+      notes?: { agentv?: string[] };
+    } | null;
+    const progress = state.progress as { state?: string; at?: string } | null;
+    const installing = Boolean(progress && ["running", "restarting", "going-back"].includes(progress.state ?? "") && Date.now() - Date.parse(progress.at ?? "") < 15 * 60_000);
+    const ready = Boolean(status && (status.agentv?.available || status.omarchy?.available || (status.packages ?? 0) > 0) && !status.waiting);
+    if (!ready && !installing) return null;
+    const version = status?.agentv?.available ?? "packages";
+    return {
+      version,
+      installed: status?.agentv?.installed ?? null,
+      omarchy: status?.omarchy?.available ?? null,
+      notes: status?.notes?.agentv ?? [],
+      tonight: state.tonight?.version === version,
+      later: state.seen?.later === version,
+      installing,
+    };
+  }
+
   // --- The phone companion, on the home network ------------------------------
 
   // Only the companion's page and its requests are here, never the TV's own.
@@ -291,6 +321,12 @@ export class Daemon {
 
     if (method === "GET" && (path === "/" || path === "/index.html")) {
       await this.file(response, join("companion-web", "index.html"));
+      return;
+    }
+    // The home screen's grid, which arrange home shares with the TV, and
+    // the icons both draw.
+    if (method === "GET" && (path === "/launcher/layout.ts" || path === "/launcher/glyphs.ts")) {
+      await this.file(response, join("launcher", path.slice("/launcher/".length)));
       return;
     }
     if (method === "GET" && path.startsWith("/companion-web/")) {
@@ -337,7 +373,109 @@ export class Daemon {
     if (method === "GET" && path === "/api/phone/state") {
       const viewer = await this.profiles.active();
       const pin = this.pin.status();
-      this.json(response, 200, { ok: true, phone, viewer, viewers: await this.profiles.list(), pin: { set: pin.set, locked: pin.locked } });
+      this.json(response, 200, {
+        ok: true,
+        phone,
+        viewer,
+        viewers: await this.profiles.list(),
+        pin: { set: pin.set, locked: pin.locked },
+        signIn: this.signingIn ? { name: this.signingIn.name } : null,
+        update: await this.phoneUpdate(),
+      });
+      return;
+    }
+
+    // Arrange home (S4.7): the viewer's grid and the apps that can go on it.
+    if (method === "GET" && path === "/api/phone/home") {
+      const viewer = await this.profiles.active();
+      const [apps, layout] = await Promise.all([this.home.apps(viewer), this.home.layout(viewer.id, viewer.role)]);
+      this.json(response, 200, {
+        ok: true,
+        viewer,
+        appsTile: APPS_TILE,
+        apps: apps.map((app) => ({ id: app.id, name: app.name, sizes: app.sizes })),
+        layout,
+      });
+      return;
+    }
+
+    // A tile moved, resized, pinned or unpinned on the phone: the TV follows
+    // within a second. A kid's home is an adult's to arrange, past the PIN.
+    if (method === "PUT" && path === "/api/phone/layout") {
+      if (!(await this.adult(request, response, "arranging home from a phone"))) return;
+      const body = (await this.body(request)) as { layout?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role);
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      const layout = await this.home.layout(viewer.id, viewer.role);
+      this.broadcast("layout", { viewer: viewer.id, layout });
+      this.json(response, 200, { ok: true, layout });
+      return;
+    }
+
+    // AgenTV's sign-in screen (ADR-032, S4.9): the name and the password the
+    // phone's password manager filled, typed into the service's form on the
+    // TV, with Tab between them and Enter after. Never logged.
+    if (method === "POST" && path === "/api/phone/sign-in") {
+      const body = (await this.body(request)) as { username?: unknown; password?: unknown } | undefined;
+      if (!this.signingIn) {
+        this.json(response, 409, { ok: false, error: "nothing is signing in on the tv" });
+        return;
+      }
+      const fits = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 200;
+      if (!fits(body?.username) || !fits(body?.password)) {
+        this.json(response, 400, { ok: false, error: "a name and a password, of up to 200 characters each" });
+        return;
+      }
+      const sent = [{ text: body!.username }, { key: "tab" }, { text: body!.password }, { key: "enter" }].every((event) => this.remote(event as Record<string, unknown>));
+      if (!sent) {
+        this.json(response, 503, { ok: false, error: "the tv session isn't on" });
+        return;
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
+    // The update notice (S4.8): Install tonight and Install now are an
+    // adult's, past the PIN once there is one; Later isn't.
+    if (method === "POST" && path === "/api/phone/updates/tonight") {
+      const change = (await this.body(request)) as { version?: unknown } | undefined;
+      if (change?.version !== null && !this.guarded(request, response, "install tonight from a phone")) return;
+      const why = await this.updates.setTonight(change);
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.broadcast("updates", await this.updates.read());
+      this.log(change?.version === null ? `tonight's install is off, from ${phone.name}` : `the update installs tonight, from ${phone.name}`);
+      this.json(response, 200, { ok: true, update: await this.phoneUpdate() });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/phone/updates/install") {
+      if (!this.guarded(request, response, "install now from a phone")) return;
+      if (!this.remote({ cmd: "update-install" })) {
+        this.json(response, 503, { ok: false, error: "the tv session isn't on" });
+        return;
+      }
+      this.log(`the update installs now, from ${phone.name}`);
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/phone/updates/later") {
+      const update = (await this.phoneUpdate()) as { version: string } | null;
+      if (!update) {
+        this.json(response, 404, { ok: false, error: "there's no update" });
+        return;
+      }
+      await this.updates.setTonight({ version: null });
+      await this.updates.markSeen({ later: update.version });
+      this.broadcast("updates", await this.updates.read());
+      this.json(response, 200, { ok: true, update: await this.phoneUpdate() });
       return;
     }
 
@@ -772,6 +910,14 @@ export class Daemon {
       this.log("a phone was forgotten");
       this.broadcast("phones", {});
       this.json(response, 200, { ok: true, phones: this.phones.list() });
+      return;
+    }
+
+    // The screen daemon, as AgenTV's sign-in screen comes and goes.
+    if (method === "POST" && path === "/api/sign-in-screen") {
+      const body = (await this.body(request)) as { app?: unknown; name?: unknown } | undefined;
+      this.signingIn = typeof body?.app === "string" ? { app: body.app, name: typeof body.name === "string" ? body.name : body.app } : null;
+      this.json(response, 200, { ok: true });
       return;
     }
 

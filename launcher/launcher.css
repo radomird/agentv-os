@@ -1227,6 +1227,9 @@ button {
 }
 
 .pin-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 92px;
   background: var(--darker-background);
   border: 3px solid var(--selection);
@@ -1299,6 +1302,17 @@ button {
 
 .profile-form .music-search {
   margin: 0;
+}
+
+/* AgenTV's UI icons (glyphs.ts), beside the words they go with. */
+.glyph {
+  flex: none;
+}
+
+.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 20px;
 }
 
 /* Pairing a phone: the QR code on white, and the code to type instead. */

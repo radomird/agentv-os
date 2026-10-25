@@ -7,6 +7,7 @@ import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { powerPanel } from "./power.ts";
+import { glyph } from "../glyphs.ts";
 import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
 import { profilesPanel } from "./profiles.ts";
@@ -210,7 +211,7 @@ export function settings(ctx: Ctx, open?: string): View {
     pinSet()
       ? [
           h("div", { class: "panel-title" }, "the parent pin"),
-          h("div", { class: "panel-big" }, "on"),
+          h("div", { class: "panel-big with-icon" }, glyph("lock", 72), h("span", {}, "on")),
           note("it guards omarchy's desktop, power and updates. the tv locks after it starts and after it's been off."),
           h("button", { class: "button", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "change the pin →"),
           h(
@@ -229,7 +230,7 @@ export function settings(ctx: Ctx, open?: string): View {
         ]
       : [
           h("div", { class: "panel-title" }, "the parent pin"),
-          h("div", { class: "panel-big" }, "off"),
+          h("div", { class: "panel-big with-icon" }, glyph("lock", 72), h("span", {}, "off")),
           note("a pin guards omarchy's desktop, power and updates, and locks the tv after it starts and after it's been off. a kid's profile needs one."),
           h("button", { class: "button primary", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "set a pin →"),
         ];

@@ -6,6 +6,7 @@
 
 import { daemon, type Viewer } from "../api.ts";
 import { h } from "../dom.ts";
+import { glyph } from "../glyphs.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -28,7 +29,7 @@ export function profilesPanel(ctx: Ctx): HTMLElement[] {
         h("span", { class: "button-value" }, [viewer.role === "kid" ? "kid" : "", viewer.id === ctx.state.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
-    h("button", { class: "button", "data-focus": true, "data-action": "add-profile", onclick: () => ctx.go("profile/new") }, "+ add a profile"),
+    h("button", { class: "button", "data-focus": true, "data-action": "add-profile", onclick: () => ctx.go("profile/new") }, h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "add a profile"))),
     h("p", { class: "panel-note" }, "a kid's profile needs the parent pin, and sees only the apps ticked for kids in their details."),
   ];
 }
