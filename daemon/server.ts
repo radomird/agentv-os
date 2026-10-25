@@ -23,6 +23,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
+import { ProviderKey } from "./key.ts";
 import { Pin } from "./pin.ts";
 import { Profiles } from "./profiles.ts";
 import { Updates } from "./updates.ts";
@@ -42,6 +43,10 @@ export interface DaemonOptions {
   running?: string;
   // This boot's id, which the PIN's lock goes by: the kernel's, by default.
   bootId?: () => string;
+  // Which provider has a key: /etc/agentv/key.json, which agentv-key-store
+  // writes, and how long that may take.
+  keyStatus?: string;
+  keyWaitMs?: number;
 }
 
 interface Setup {
@@ -82,6 +87,7 @@ export class Daemon {
   readonly updates: Updates;
   readonly pin: Pin;
   readonly profiles: Profiles;
+  readonly key: ProviderKey;
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
@@ -102,6 +108,7 @@ export class Daemon {
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
+    this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     // A kid's profile keeps the PIN on (ADR-009).
     const kids = () => (this.ledger.viewers().some((viewer) => viewer.role === "kid") ? "a kid's profile needs the pin, so it stays" : null);
     this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId, needed: kids });
@@ -521,6 +528,34 @@ export class Daemon {
         this.broadcast("pin", this.pin.status());
       }
       this.json(response, 200, { ok: true, ...this.pin.status() });
+      return;
+    }
+
+    // --- The provider key (ADR-009, S4.6) ------------------------------------
+
+    // Which provider has a key. The key itself never comes back.
+    if (method === "GET" && path === "/api/key") {
+      const { set, provider, error } = this.key.status();
+      this.json(response, 200, { ok: true, set, provider, ...(error ? { error } : {}) });
+      return;
+    }
+
+    // Settings → AI: a key for a provider, kept where only root can read it,
+    // or taken off. An adult's, past the PIN.
+    if ((method === "PUT" || method === "DELETE") && path === "/api/key") {
+      if (!this.guarded(request, response, "the provider key") || !(await this.adult(request, response, "the provider key"))) return;
+      const body = (method === "PUT" ? await this.body(request) : {}) as { provider?: unknown; key?: unknown } | undefined;
+      const provider = method === "DELETE" ? null : (body?.provider ?? "");
+      const why = await this.key.store(provider, body?.key);
+      if (why) {
+        this.log(`the provider key wasn't kept: ${why}`);
+        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        return;
+      }
+      const { set } = this.key.status();
+      this.log(set ? `a key for ${provider} is kept, root's alone` : "the provider key is off");
+      this.broadcast("key", { set, provider: this.key.status().provider });
+      this.json(response, 200, { ok: true, set, provider: this.key.status().provider });
       return;
     }
 

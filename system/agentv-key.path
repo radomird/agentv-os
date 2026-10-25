@@ -1,0 +1,13 @@
+# The provider key, handed over by AgenTV's daemon (ADR-009, S4.6): when it
+# leaves one in its private state, agentv-key.service moves it into
+# /etc/agentv/env as root.
+
+[Unit]
+Description=AgenTV provider key hand-over
+
+[Path]
+PathExists=/var/lib/private/agentv/daemon/key-drop/key.json
+Unit=agentv-key.service
+
+[Install]
+WantedBy=paths.target

@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# agentv:summary=Keep the provider key the TV was given where only root can read it
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# The provider key (ADR-009, S4.6). Settings → AI, or the phone, hands the
+# key to AgenTV's daemon, which can't write /etc. It leaves it in its own
+# private state, and agentv-key.path starts this as root to move it into
+# /etc/agentv/env (root's alone, 0600), where the router and the builder will
+# get it. The key is write-only: nothing shows it again, and nothing logs it.
+# /etc/agentv/key.json says which provider has a key, with no key in it, for
+# the TV.
+#
+# A drop with no provider takes the key off. One provider has a key at a
+# time, and the env file's other lines, such as a TMDB key, stay.
+
+set -euo pipefail
+
+AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
+DROP=${AGENTV_KEY_DROP:-/var/lib/private/agentv/daemon/key-drop/key.json}
+VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY)
+
+[[ -f $DROP ]] || exit 0
+provider=$(jq -r '.provider // empty' "$DROP" 2>/dev/null || true)
+key=$(jq -r '.key // empty' "$DROP" 2>/dev/null || true)
+rm -f "$DROP"
+
+status() {
+  local next="$AGENTV_ETC/.key.json.next"
+  jq -n --arg provider "$1" --arg error "${2:-}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
+    '{set: ($provider != ""), provider: (if $provider == "" then null else $provider end), at: $at} + (if $error == "" then {} else {error: $error} end)' >"$next"
+  chmod 644 "$next"
+  mv -f "$next" "$AGENTV_ETC/key.json"
+}
+
+install -d -m 755 "$AGENTV_ETC"
+case "$provider" in
+  claude) var=ANTHROPIC_API_KEY ;;
+  chatgpt) var=OPENAI_API_KEY ;;
+  gemini) var=GEMINI_API_KEY ;;
+  "") var="" ;;
+  *)
+    echo "agentv-key-store: no such provider; nothing changed" >&2
+    exit 1
+    ;;
+esac
+# A key goes in the env file as it is, so it can't hold anything the file
+# would read as something else.
+if [[ -n $var && ! $key =~ ^[A-Za-z0-9_.:-]{20,300}$ ]]; then
+  echo "agentv-key-store: that doesn't look like a key; nothing changed" >&2
+  status "$(jq -r '.provider // empty' "$AGENTV_ETC/key.json" 2>/dev/null || true)" "that doesn't look like a key"
+  exit 1
+fi
+
+umask 077
+next="$AGENTV_ETC/.env.next"
+: >"$next"
+if [[ -f $AGENTV_ETC/env ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    keep=1
+    for other in "${VARS[@]}"; do
+      [[ $line == "$other="* ]] && keep=0
+    done
+    (( keep )) && printf '%s\n' "$line" >>"$next"
+  done <"$AGENTV_ETC/env"
+fi
+[[ -n $var ]] && printf '%s=%s\n' "$var" "$key" >>"$next"
+chmod 600 "$next"
+mv -f "$next" "$AGENTV_ETC/env"
+status "$provider"
+if [[ -n $var ]]; then
+  echo "agentv-key-store: kept a key for $provider in $AGENTV_ETC/env"
+else
+  echo "agentv-key-store: took the key off"
+fi

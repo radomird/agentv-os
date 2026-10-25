@@ -7,6 +7,7 @@ import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { powerPanel } from "./power.ts";
+import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
 
@@ -295,7 +296,7 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
     { key: "profiles", label: "profiles", value: () => String(ctx.state.viewers.length), panel: () => profilesPanel(ctx) },
     { key: "parental", label: "parental", value: () => (pinSet() ? "[pin]" : "off"), panel: parentalPanel },
-    { key: "ai", label: "ai", value: () => "soon", panel: () => soon("connecting claude, chatgpt or gemini comes with tv setup.") },
+    { key: "ai", label: "ai", value: () => aiValue(ctx), panel: () => aiPanel(ctx) },
     { key: "usage", label: "usage", value: () => "soon", panel: () => soon("ai spending shows here once the agent builds apps.") },
     {
       key: "updates",
@@ -386,6 +387,17 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = found.name;
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "weather" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "weather")!);
+      }
+    })
+    .catch(() => {});
+  void daemon
+    .key()
+    .then((found) => {
+      setKeyState({ set: found.set, provider: found.provider });
+      const item = menu.querySelector<HTMLElement>('[data-key="ai"] .menu-value');
+      if (item) item.textContent = aiValue(ctx);
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "ai" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "ai")!);
       }
     })
     .catch(() => {});

@@ -18,6 +18,7 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
+import { keyPage } from "./pages/key.ts";
 import { profile } from "./pages/profiles.ts";
 import { Sounds } from "./sounds.ts";
 
@@ -253,6 +254,7 @@ function viewFor(route: string): View {
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
+  if (name === "key") return keyPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
   if (name === "music") return music(ctx, arg);

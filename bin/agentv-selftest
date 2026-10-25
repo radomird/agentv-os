@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10]...
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]...
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
@@ -57,6 +57,14 @@
 #         now, fetched live for the same place.
 #   S3.9  the medium and large weather tiles against MET's days.
 #
+# Stage 4, the box's side of the companions (S4 runs them all). Neither
+# changes the household's PIN or key:
+#
+#   S4.5  with a parent PIN set, the daemon refuses a guarded request that
+#         doesn't carry the PIN's grant. The PIN on the TV is manual.
+#   S4.6  with a key set in Settings → AI, it's root's alone in
+#         /etc/agentv/env, and this account can't read it.
+#
 # Stage 0:
 #
 #   S0.2  the root disk isn't encrypted, so there's no password at boot; the
@@ -79,11 +87,12 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]..."
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
+STAGE4=(S4.5 S4.6)
 checks=()
 for arg in "$@"; do
   case "$arg" in
@@ -92,6 +101,8 @@ for arg in "$@"; do
     [sS]2) checks+=("${STAGE2[@]}") ;;
     [sS]3.3 | [sS]3.6 | [sS]3.8 | [sS]3.9 | [sS]3.10) checks+=("S${arg:1}") ;;
     [sS]3) checks+=("${STAGE3[@]}") ;;
+    [sS]4.5 | [sS]4.6) checks+=("S${arg:1}") ;;
+    [sS]4) checks+=("${STAGE4[@]}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -768,6 +779,54 @@ s219() {
   result manual S2.19 "play something: it's as loud as the TV's remote says, with the TV well below its top. Settings → Sound → output volume changes the box's own level, and keeps it after a restart."
 }
 
+s45() {
+  local pin code
+
+  pin=$(curl -fsS --max-time 5 "$(home_url)api/pin" 2>/dev/null || true)
+  if [[ -z $pin ]]; then
+    result fail S4.5 "AgenTV's daemon didn't answer"
+    return 0
+  fi
+  if [[ $(jq -r '.set' <<<"$pin") != "true" ]]; then
+    result manual S4.5 "there's no parent PIN yet: set one in Settings → Parental, then run agentv selftest S4.5 again"
+    return 0
+  fi
+  # A version nothing installs, so a daemon that let it through still
+  # couldn't schedule anything.
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Content-Type: application/json'     -d '{"version":"selftest"}' "$(home_url)api/updates/tonight" 2>/dev/null || true)
+  if [[ $code == "403" ]]; then
+    result pass S4.5 "with the parent PIN set, installing tonight without it is refused"
+  else
+    result fail S4.5 "installing tonight without the PIN wasn't refused (HTTP ${code:-none})"
+  fi
+  result manual S4.5 "on the TV, Settings → Omarchy desktop asks for the PIN, and Esc leaves you on the TV. Restart the box: it comes back locked until the PIN is typed."
+}
+
+s46() {
+  local env="${AGENTV_ETC:-/etc/agentv}/env" key mode owner
+
+  key=$(curl -fsS --max-time 5 "$(home_url)api/key" 2>/dev/null || true)
+  if [[ $(jq -r '.set' <<<"$key" 2>/dev/null) != "true" ]]; then
+    result manual S4.6 "there's no key yet: add one in Settings → AI, then run agentv selftest S4.6 again"
+    return 0
+  fi
+  if ! systemctl is-active --quiet agentv-key.path; then
+    result fail S4.6 "agentv-key.path isn't running, so a new key wouldn't be kept"
+  elif [[ ! -e $env ]]; then
+    result fail S4.6 "Settings says there's a key, but $env isn't there"
+  elif (( EUID != 0 )) && [[ -r $env ]]; then
+    result fail S4.6 "this account can read $env"
+  else
+    mode=$(stat -c %a "$env")
+    owner=$(stat -c %U "$env")
+    if [[ $mode == "600" && $owner == "root" ]]; then
+      result pass S4.6 "the $(jq -r '.provider' <<<"$key") key is root's alone ($env, $mode), and this account can't read it"
+    else
+      result fail S4.6 "$env is $owner's with mode $mode, not root's with 600"
+    fi
+  fi
+}
+
 # ts_check <script> <id>: runs one of AgenTV's TypeScript checks, which
 # print their own pass, fail and manual lines for the id.
 ts_check() {
@@ -982,6 +1041,8 @@ for id in "${checks[@]}"; do
     S3.6) s36 ;;
     S3.8) s38 ;;
     S3.9) s39 ;;
+    S4.5) s45 ;;
+    S4.6) s46 ;;
   esac
 done
 

@@ -30,6 +30,9 @@ echo "$*" >>"$STATE/curl.log"
 if [[ $* == *"-X DELETE"* ]]; then echo "{\"ok\":true}"
 elif [[ $* == *api/ledger* ]]; then cat "$STATE/ledger" 2>/dev/null || echo "{\"ok\":true,\"rows\":[]}"
 elif [[ $* == *api/tile/* ]]; then cat "$STATE/tile" 2>/dev/null || echo "{\"ok\":true,\"tile\":null}"
+elif [[ $* == *api/pin* ]]; then cat "$STATE/pin" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
+elif [[ $* == *api/updates/tonight* ]]; then cat "$STATE/tonight-code" 2>/dev/null || echo 403
+elif [[ $* == *api/key* ]]; then cat "$STATE/key" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
 else cat "$STATE/health"; fi'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
 fake iw '
@@ -199,6 +202,7 @@ case "$*" in
   # How long the units may take to stop (S2.18), or one that waits.
   *"show -p TimeoutStopUSec --value agentv-"*)
     if [[ -f $STATE/slow-stop && $* == *agentv-screen* ]]; then echo "1min 30s"; else echo 5s; fi ;;
+  "is-active --quiet agentv-key.path") [[ ! -f $STATE/no-key-path ]] ;;
   *) exit 3 ;;
 esac'
 # polkit, with AgenTV's power rule there unless it isn't (S2.18).
@@ -521,3 +525,44 @@ echo '{"ok": false, "error": "music isn'"'"'t here"}' >"$state/music-scan"
 grep -qF "fail S3.6 Music couldn't read its sources: music isn't here" "$SCRATCH/out" || fail "it says Music couldn't read" "$(cat "$SCRATCH/out")"
 kill "$home_pid" 2>/dev/null || true
 pass "S3.6 fails with what to do when an album isn't there, doesn't play, or Music doesn't answer"
+
+# --- Stage 4 ---------------------------------------------------------------
+
+etc="$SCRATCH/etc"
+mkdir -p "$etc"
+run4() {
+  AGENTV_ETC="$etc" run1 "$@"
+}
+fake stat 'case "$*" in "-c %a "*) cat "$STATE/env-mode" ;; "-c %U "*) cat "$STATE/env-owner" ;; esac'
+
+run4 S4 || fail "with no pin and no key, stage 4's checks say what to do first" "$(cat "$SCRATCH/out")"
+grep -qF "manual S4.5 there's no parent PIN yet: set one in Settings → Parental" "$SCRATCH/out" || fail "it says to set a pin" "$(cat "$SCRATCH/out")"
+grep -qF "manual S4.6 there's no key yet: add one in Settings → AI" "$SCRATCH/out" || fail "it says to add a key" "$(cat "$SCRATCH/out")"
+pass "with no PIN and no key yet, S4.5 and S4.6 say what to set first"
+
+echo '{"ok":true,"set":true,"locked":false}' >"$state/pin"
+run4 S4.5 || fail "S4.5 passes when the daemon refuses without the pin" "$(cat "$SCRATCH/out")"
+grep -qF "pass S4.5 with the parent PIN set, installing tonight without it is refused" "$SCRATCH/out" || fail "it says what was refused" "$(cat "$SCRATCH/out")"
+{ grep -q 'api/updates/tonight' "$state/curl.log" && grep -q '"version":"selftest"' "$state/curl.log"; } || fail "it asks for a version nothing installs" "$(cat "$state/curl.log")"
+echo 400 >"$state/tonight-code"
+! run4 S4.5 || fail "S4.5 fails when the daemon lets it through"
+grep -qF "fail S4.5 installing tonight without the PIN wasn't refused (HTTP 400)" "$SCRATCH/out" || fail "it says it wasn't refused" "$(cat "$SCRATCH/out")"
+pass "S4.5 passes only when the daemon refuses a guarded request without the PIN"
+
+echo '{"ok":true,"set":true,"provider":"claude"}' >"$state/key"
+touch "$etc/env"
+chmod 000 "$etc/env"
+echo 600 >"$state/env-mode"
+echo root >"$state/env-owner"
+run4 S4.6 || fail "S4.6 passes with the key root's alone" "$(cat "$SCRATCH/out")"
+grep -qF "pass S4.6 the claude key is root's alone ($etc/env, 600), and this account can't read it" "$SCRATCH/out" || fail "it says whose it is" "$(cat "$SCRATCH/out")"
+echo 644 >"$state/env-mode"
+! run4 S4.6 || fail "S4.6 fails when anyone can read the key"
+grep -qF "fail S4.6 $etc/env is root's with mode 644, not root's with 600" "$SCRATCH/out" || fail "it says the mode" "$(cat "$SCRATCH/out")"
+echo 600 >"$state/env-mode"
+touch "$state/no-key-path"
+! run4 S4.6 || fail "S4.6 fails without the hand-over"
+grep -qF "fail S4.6 agentv-key.path isn't running" "$SCRATCH/out" || fail "it says the hand-over is off" "$(cat "$SCRATCH/out")"
+rm -f "$state/no-key-path" "$etc/env"
+! run4 S4.6 || fail "S4.6 fails with no env file"
+pass "S4.6 passes only with the key root's alone, mode 600, and the hand-over running"
