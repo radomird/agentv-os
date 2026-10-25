@@ -35,6 +35,9 @@ let weather: WeatherPlace | null = null;
 
 // The box's sound output and its volume (S2.19), the same way.
 let audio: AudioState | null = null;
+// The volume the last press asked for, until the screen daemon has set it,
+// so presses quicker than its replies each go one step further.
+let volumeTarget: number | null = null;
 
 // The output playing and its volume, when the screen daemon says.
 function playing(state: AudioState | null): { name: string; volume: number } | null {
@@ -123,13 +126,19 @@ export function settings(ctx: Ctx, open?: string): View {
     const outputs = audio?.outputs ?? [];
     if (outputs.length < 2) return;
     const at = outputs.findIndex((o) => o.name === audio?.output);
+    volumeTarget = null;
     void saveAudio({ output: outputs[(at + by + outputs.length) % outputs.length].name }, "output");
   };
   const stepVolume = (by: number) => {
     const now = playing(audio);
     if (!now) return;
-    const volume = Math.max(0, Math.min(1, Math.round((now.volume + by) * 20) / 20));
-    if (volume !== now.volume) void saveAudio({ volume }, "output-volume");
+    const from = volumeTarget ?? now.volume;
+    const volume = Math.max(0, Math.min(1, Math.round((from + by) * 20) / 20));
+    if (volume === from) return;
+    volumeTarget = volume;
+    void saveAudio({ volume }, "output-volume").then(() => {
+      if (volumeTarget === volume) volumeTarget = null;
+    });
   };
   const outputRows = (): HTMLElement[] => {
     const now = playing(audio);
