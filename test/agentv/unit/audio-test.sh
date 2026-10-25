@@ -23,7 +23,9 @@ export CALLS="$SCRATCH/calls"
 hdmi=alsa_output.pci-0000_00_1f.3.hdmi-stereo
 run() {
   : >"$CALLS"
-  PATH="$SCRATCH/bin:$PATH" HOME="$SCRATCH/home" XDG_RUNTIME_DIR="$SCRATCH" "$ROOT/bin/agentv-audio-default" >"$SCRATCH/out" 2>&1
+  PATH="$SCRATCH/bin:$PATH" HOME="$SCRATCH/home" XDG_RUNTIME_DIR="$SCRATCH" \
+    XDG_CONFIG_HOME="$SCRATCH/home/.config" XDG_STATE_HOME="$SCRATCH/home/.local/state" \
+    "$ROOT/bin/agentv-audio-default" >"$SCRATCH/out" 2>&1
 }
 
 FAKE_SINK=$hdmi run || fail "agentv-audio-default runs" "$(cat "$SCRATCH/out")"
