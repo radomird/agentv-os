@@ -4,6 +4,7 @@
 // lasts 10 minutes and pairs one phone.
 
 import { h } from "../dom.ts";
+import { glyph } from "../glyphs.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -58,12 +59,16 @@ export function phonesPanel(ctx: Ctx): HTMLElement[] {
       h(
         "button",
         { class: "button", "data-focus": true, "data-action": `phone-${phone.id}`, onclick: () => void forget(phone) },
-        h("span", {}, phone.name),
+        h("span", { class: "with-icon" }, glyph("phone", 32), h("span", {}, phone.name)),
         h("span", { class: "button-value" }, `since ${day(phone.pairedAt)} · forget`),
       ),
     ),
     phones && phones.length === 0 ? h("div", { class: "panel-big" }, "none yet") : null,
-    h("button", { class: `button${phones?.length ? "" : " primary"}`, "data-focus": true, "data-action": "pair", onclick: () => ctx.go("pair") }, "pair a phone →"),
+    h(
+      "button",
+      { class: `button${phones?.length ? "" : " primary"}`, "data-focus": true, "data-action": "pair", onclick: () => ctx.go("pair") },
+      h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "pair a phone →")),
+    ),
     h("p", { class: "panel-note" }, "a paired phone is a remote and a keyboard for the tv, on the same network."),
   );
   return parts.filter((el): el is HTMLElement => el !== null);

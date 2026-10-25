@@ -290,11 +290,14 @@ test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it bac
   // Later: not tonight, and home stops saying it's ready.
   await openUpdates(page);
   await page.locator('.panel [data-action="later"]').click();
+  // Later is two requests, and the first one's news redraws Settings, so
+  // the note can go before the second lands: wait for both.
   await page.waitForFunction(() => !document.querySelector(".tonight-note"));
+  for (let i = 0; i < 50 && (await api(page, "/api/updates")).seen.later !== "0.3.0-1"; i++) await page.waitForTimeout(50);
   const after = await api(page, "/api/updates");
   assert.equal(after.tonight, null);
   assert.equal(after.seen.later, "0.3.0-1");
-  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "tonight");
+  await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "tonight");
   await page.keyboard.press("Escape");
   await page.waitForSelector(".grid .tile");
   assert.doesNotMatch(await page.locator(".bar").innerText(), /is ready|installs tonight/);

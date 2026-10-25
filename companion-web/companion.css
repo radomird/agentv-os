@@ -112,10 +112,12 @@ h1 {
   color: var(--background);
 }
 
+/* Who's watching on top, and the three tabs in a row of their own under it. */
 .top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
 }
 
 .who {
@@ -145,12 +147,14 @@ h1 {
 .avatar-red { background: var(--red); }
 
 .tabs {
-  display: flex;
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 2px solid var(--selection);
 }
 
 .tab {
-  padding: 8px 12px;
+  padding: 10px 8px;
   border: 0;
   background: transparent;
   font-size: 13px;
@@ -227,4 +231,215 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .pad-key:active { transform: none; }
+}
+
+/* --- Who's watching, banners, the PIN pad, arrange home, updates ---------- */
+
+button.who {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.avatar.big {
+  width: 64px;
+  height: 64px;
+  font-size: 32px;
+}
+
+.banner {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.viewer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 0 14px;
+  border: 2px solid var(--selection);
+  background: var(--darker-background);
+  font-size: 17px;
+  text-align: left;
+}
+
+.viewer.on {
+  border-color: var(--accent);
+}
+
+.viewer-role {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--green);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--background);
+  overflow: auto;
+  z-index: 10;
+}
+
+.note.bad {
+  color: var(--red);
+}
+
+.pin-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.pin-box {
+  width: 44px;
+  height: 56px;
+  border: 2px solid var(--dark-foreground);
+}
+
+.pin-box.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pin-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pin-key {
+  height: 70px;
+  background: var(--darker-background);
+  border: 2px solid var(--selection);
+  font-size: 26px;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(3, 64px);
+  gap: 6px;
+}
+
+.mini-tile,
+.mini-empty {
+  min-width: 0;
+  padding: 6px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-tile {
+  background: var(--darker-background);
+  border: 2px solid var(--selection);
+}
+
+.mini-tile.picked {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--background);
+  font-weight: 800;
+}
+
+.mini-empty {
+  border: 2px dashed var(--muted);
+  background: transparent;
+  color: var(--dark-foreground);
+}
+
+.sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sizes .label {
+  flex-basis: 100%;
+}
+
+.chip {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--selection);
+  background: transparent;
+  font-size: 13px;
+}
+
+.chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip:disabled {
+  color: var(--dark-foreground);
+}
+
+.off {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.notes b {
+  color: var(--green);
+}
+
+#toast.ok {
+  border-left-color: var(--green);
+}
+
+/* AgenTV's UI icons (launcher/glyphs.ts), beside the words they go with. */
+.glyph {
+  flex: none;
+}
+
+.pad-key,
+.button,
+.tab,
+.chip,
+.banner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.banner {
+  justify-content: flex-start;
+}
+
+.note.with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pair-icons {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--accent);
 }

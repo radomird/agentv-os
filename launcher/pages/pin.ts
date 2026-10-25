@@ -6,6 +6,7 @@
 // and locks the TV after the box starts and after the TV has been off.
 
 import { h } from "../dom.ts";
+import { glyph } from "../glyphs.ts";
 import type { Action } from "../input.ts";
 
 export interface PadOptions {
@@ -85,7 +86,7 @@ export function pad(options: PadOptions, played: (sound: "select" | "confirm" | 
       ? h(
           "button",
           { class: `pin-key${key === "⌫" ? " pin-delete" : ""}`, "data-focus": true, "data-key": key === "⌫" ? "delete" : key, "aria-label": key === "⌫" ? "delete" : key, onclick: () => type(key) },
-          key,
+          key === "⌫" ? glyph("backspace", 48) : key,
         )
       : h("span", {}),
   );

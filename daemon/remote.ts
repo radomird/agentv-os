@@ -11,6 +11,9 @@ export interface RemoteOptions {
   url: string; // the daemon's stream: http://127.0.0.1:3000/api/remote
   // Hands one request to the virtual input device: {"key": "up"}, {"text": ...}.
   send?: (request: Record<string, unknown>) => Promise<void>;
+  // What the TV session does for a phone, past the PIN the daemon checked:
+  // {"cmd": "update-install"}, Install now from the phone (S4.8).
+  command?: (cmd: string) => Promise<void>;
   log?: (line: string) => void;
   retryMs?: number;
 }
@@ -38,6 +41,7 @@ export function sendInput(request: Record<string, unknown>, socket = join(proces
 export class RemoteInput {
   private url: string;
   private send: (request: Record<string, unknown>) => Promise<void>;
+  private command: (cmd: string) => Promise<void>;
   private log: (line: string) => void;
   private retryMs: number;
   private stopped = false;
@@ -49,6 +53,7 @@ export class RemoteInput {
   constructor(options: RemoteOptions) {
     this.url = options.url;
     this.send = options.send ?? ((request) => sendInput(request));
+    this.command = options.command ?? (async () => {});
     this.log = options.log ?? ((line) => console.log(line));
     this.retryMs = options.retryMs ?? 2000;
   }
@@ -102,8 +107,9 @@ export class RemoteInput {
     } catch {
       return;
     }
+    const cmd = typeof request.cmd === "string" ? request.cmd : null;
     this.chain = this.chain
-      .then(() => this.send(request))
+      .then(() => (cmd ? this.command(cmd) : this.send(request)))
       .then(() => {
         this.failed = "";
       })

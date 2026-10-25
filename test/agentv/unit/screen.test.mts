@@ -211,6 +211,10 @@ class FakeLauncher implements Launcher {
   async signInBar(name: string | null) {
     this.bars.push(name);
   }
+  signings: (string | null)[] = [];
+  async signingIn(app: { id: string; name: string } | null) {
+    this.signings.push(app?.id ?? null);
+  }
   desktops = 0;
   desktopGrants: (string | undefined)[] = [];
   async appTarget(id: string) {
@@ -681,6 +685,7 @@ test("ADR-032 a tile that says Sign in opens the app maximized over AgenTV's sig
   t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
   assert.deepEqual(await t.screen.fromHome({ cmd: "sign-in", app: "agentv.tube" }), { ok: true });
   assert.deepEqual(t.launcher.bars, ["Tube"]);
+  assert.deepEqual(t.launcher.signings, ["agentv.tube"], "the daemon hears it, for a paired phone's fields (S4.9)");
   assert.deepEqual(calls.started, ["agentv.tube"]);
   t.hypr.open("0xd", t.launcher.last("web").pid);
   await t.screen.idle();
@@ -691,6 +696,7 @@ test("ADR-032 a tile that says Sign in opens the app maximized over AgenTV's sig
   calls.done!(true);
   await t.screen.idle();
   assert.deepEqual(t.launcher.bars, ["Tube", null]);
+  assert.deepEqual(t.launcher.signings, ["agentv.tube", null]);
   assert.equal(t.hypr.get("0xd").fullscreen, 2, "full screen again once it's signed in");
   assert.deepEqual(t.launcher.toasts, ["signed in to tube"]);
 });

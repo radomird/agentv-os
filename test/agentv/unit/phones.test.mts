@@ -195,6 +195,52 @@ test("the PIN on the phone gives a grant, which switching from a kid to an adult
   assert.ok(lines.some((line) => line.endsWith("from android phone")));
 });
 
+test("S4.7 S4.8 S4.9 the phone arranges home, hears about an update, and signs in on the TV's sign-in screen", async () => {
+  // Back to an adult, so arranging home needs no PIN.
+  const grant = (await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).data.grant;
+  const owner = (await send(phone, "GET", "/api/phone/state", { token })).data.viewers.find((v: any) => v.role === "adult");
+  await send(phone, "POST", "/api/phone/viewer", { token, body: { id: owner.id }, grant });
+  const home = (await send(phone, "GET", "/api/phone/home", { token })).data;
+  assert.equal(home.appsTile, "apps");
+  assert.deepEqual(home.layout, [{ id: "apps", x: 0, y: 0, size: "s" }]);
+  const before = events.length;
+  const moved = await send(phone, "PUT", "/api/phone/layout", { token, body: { layout: [{ id: "apps", x: 3, y: 2, size: "s" }] } });
+  assert.deepEqual(moved.data.layout, [{ id: "apps", x: 3, y: 2, size: "s" }]);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(events.slice(before).some((e) => e.startsWith("layout ")), "the TV hears it at once");
+  assert.equal((await send(phone, "PUT", "/api/phone/layout", { token, body: { layout: [{ id: "apps", x: 9, y: 9, size: "s" }] } })).status, 400);
+
+  // No update, no notice.
+  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.update, null);
+  assert.equal((await send(phone, "POST", "/api/phone/updates/later", { token })).status, 404);
+
+  // Nothing signing in on the TV: the phone's fields aren't offered.
+  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.signIn, null);
+  assert.equal((await send(phone, "POST", "/api/phone/sign-in", { token, body: { username: "a@b.c", password: "pw" } })).status, 409);
+  assert.equal((await send(tv, "POST", "/api/sign-in-screen", { body: { app: "agentv.tube", name: "Tube" } })).status, 200);
+  assert.deepEqual((await send(phone, "GET", "/api/phone/state", { token })).data.signIn, { name: "Tube" });
+  const controller = new AbortController();
+  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-AgenTV-Screen": "1" }, signal: controller.signal });
+  const got: string[] = [];
+  void (async () => {
+    for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
+      for (const match of new TextDecoder().decode(chunk).matchAll(/data: (.*)/g)) got.push(match[1]);
+    }
+  })().catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal((await send(phone, "POST", "/api/phone/sign-in", { token, body: { username: "ana@example.org", password: "" } })).status, 400);
+  assert.deepEqual((await send(phone, "POST", "/api/phone/sign-in", { token, body: { username: "ana@example.org", password: "correct horse" } })).data, { ok: true });
+  // Install now from the phone goes to the TV session, past the PIN.
+  assert.equal((await send(phone, "POST", "/api/phone/updates/install", { token })).status, 403);
+  assert.equal((await send(phone, "POST", "/api/phone/updates/install", { token, grant })).status, 200);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(got, ['{"text":"ana@example.org"}', '{"key":"tab"}', '{"text":"correct horse"}', '{"key":"enter"}', '{"cmd":"update-install"}']);
+  assert.ok(!lines.join("\n").includes("correct horse") && !lines.join("\n").includes("ana@example.org"));
+  await send(tv, "POST", "/api/sign-in-screen", { body: { app: null } });
+  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.signIn, null);
+  controller.abort();
+});
+
 test("a phone Settings forgets can't do anything any more", async () => {
   const id = (await send(tv, "GET", "/api/phones")).data.phones[0].id;
   assert.equal((await send(tv, "DELETE", `/api/phones/${id}`)).status, 200);

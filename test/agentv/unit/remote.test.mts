@@ -89,6 +89,22 @@ test("each key and text from the phone goes to the virtual input device, in orde
   await back.close();
 });
 
+test("a command from the daemon, such as Install now from a phone, goes to the TV session, not the input device", async () => {
+  const fake = await daemon();
+  const sent: unknown[] = [];
+  const commands: string[] = [];
+  const remote = new RemoteInput({ url: fake.url, send: async (request) => void sent.push(request), command: async (cmd) => void commands.push(cmd), retryMs: 20 });
+  remote.start();
+  await until(() => fake.connected() === 1);
+  fake.say({ cmd: "update-install" });
+  fake.say({ key: "up" });
+  await until(() => sent.length === 1 && commands.length === 1);
+  assert.deepEqual(commands, ["update-install"]);
+  assert.deepEqual(sent, [{ key: "up" }]);
+  remote.stop();
+  await fake.close();
+});
+
 test("a key the virtual input device refuses is logged, and typed text never is", async () => {
   const fake = await daemon();
   const lines: string[] = [];

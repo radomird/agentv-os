@@ -117,6 +117,9 @@ export interface Launcher {
   // AgenTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
+  // Tells AgenTV's daemon the sign-in screen is up for an app, or gone, so
+  // a paired phone offers its fields (S4.9).
+  signingIn(app: { id: string; name: string } | null): Promise<void>;
   // Settings → Omarchy desktop: agentv desktop, which ends this session,
   // with the grant the home screen got for the PIN.
   desktop(grant?: string): void;
@@ -1113,6 +1116,7 @@ export class Screen {
       return opened.ok ? { ok: false, error: "that app didn't open" } : opened;
     }
     await this.launcher.signInBar(this.signingIn.name).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
+    await this.launcher.signingIn(this.signingIn).catch(() => {});
     // When it's open already, it's in front now: maximized from here on.
     await this.chain;
     if (entry.address && this.front()?.address === entry.address) await this.place(entry.address);
@@ -1150,6 +1154,7 @@ export class Screen {
     this.signIn?.stop(signing.id);
     this.log(`sign-in to ${signing.id} over: ${why}`);
     await this.launcher.signInBar(null).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
+    await this.launcher.signingIn(null).catch(() => {});
     const entry = this.opens.find((o) => o.id === signing.id);
     if (entry?.address && this.front()?.address === entry.address && !this.ending) await this.fullscreen(entry.address);
   }
@@ -1591,6 +1596,15 @@ export const launcher: Launcher = {
     });
   },
 
+  async signingIn(app) {
+    await fetch(`${HOME_URL}api/sign-in-screen`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(app ? { app: app.id, name: app.name } : { app: null }),
+      signal: AbortSignal.timeout(5000),
+    });
+  },
+
   toast(text) {
     return new Promise((resolve, reject) => {
       execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "toast", "show", text], { timeout: 5000 }, (error, stdout) => {
@@ -1836,8 +1850,14 @@ async function main(): Promise<void> {
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
   const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, signIn: signInWatch() });
-  // The paired phones' d-pad and keyboard, to the virtual input device.
-  new RemoteInput({ url: `${HOME_URL}api/remote` }).start();
+  // The paired phones' d-pad and keyboard, to the virtual input device, and
+  // Install now from a phone, which the daemon let past the PIN.
+  new RemoteInput({
+    url: `${HOME_URL}api/remote`,
+    command: async (cmd) => {
+      if (cmd === "update-install") await screen.fromHome({ cmd }, true);
+    },
+  }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
