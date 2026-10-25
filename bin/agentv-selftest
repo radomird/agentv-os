@@ -733,7 +733,7 @@ s218() {
     result fail S2.18 "these may hold up a shut down for longer than 5 s: ${slow[*]}"
   fi
   for command in omarchy-system-shutdown omarchy-system-reboot; do
-    command -v "$command" >/dev/null || missing+=("$command")
+    omarchy-cmd-present "$command" || missing+=("$command")
   done
   if (( ${#missing[@]} == 0 )); then
     result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
