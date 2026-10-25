@@ -10,6 +10,7 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { installedPackage } from "../../../daemon/identity.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { Updates } from "../../../daemon/updates.ts";
 
@@ -33,7 +34,7 @@ before(async () => {
   writeFileSync(join(root, "settings"), "AGENTV_VERSION=0.2.0\nAGENTV_CHANNEL=edge\n");
   writeFileSync(join(scratch, "secret.txt"), "not for the TV");
 
-  daemon = new Daemon({ root, state, port: 0, log: (line) => lines.push(line) });
+  daemon = new Daemon({ root, state, port: 0, log: (line) => lines.push(line), running: "0.2.0-3" });
   port = await daemon.listen();
   url = `http://127.0.0.1:${port}`;
 });
@@ -71,6 +72,22 @@ test("S0.1 /health starts on the welcome screen, not yet shown, as the placehold
     { ok: h.ok, service: h.service, version: h.version, channel: h.channel, screen: h.screen, shown: h.welcome_shown, count: h.welcome_shown_count },
     { ok: true, service: "agentv", version: "0.2.0", channel: "edge", screen: "welcome", shown: false, count: 0 },
   );
+});
+
+test("/health says which agentv this daemon runs, from when it started, beside what's on disk", async () => {
+  assert.equal((await health()).running, "0.2.0-3");
+  // An update puts a newer one on disk; the daemon still runs the one it started with.
+  writeFileSync(join(root, "settings"), "AGENTV_VERSION=0.3.0\nAGENTV_CHANNEL=edge\n");
+  const h = await health();
+  assert.deepEqual([h.version, h.running], ["0.3.0", "0.2.0-3"]);
+  writeFileSync(join(root, "settings"), "AGENTV_VERSION=0.2.0\nAGENTV_CHANNEL=edge\n");
+});
+
+test("the agentv package installed is read from pacman's own records, with its release", () => {
+  const db = join(scratch, "pacman");
+  for (const entry of ["agentv-keyring-20261020-1", "agentv-0.2.0.r84.g8651ebebc-99", "omarchy-4.0.6-1"]) mkdirSync(join(db, entry), { recursive: true });
+  assert.equal(installedPackage(db), "0.2.0.r84.g8651ebebc-99");
+  assert.equal(installedPackage(join(scratch, "no-pacman")), "dev");
 });
 
 test("S0.1 the welcome page is served, and each time it's drawn /health counts it", async () => {
