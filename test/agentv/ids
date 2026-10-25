@@ -33,3 +33,5 @@ S2.16 image     Back reaches the app in front, and Home works from the Home key,
 S2.8  manual    with the TV off mid-episode, playback pauses within 5 s, every app closes after 2 min, and home is on its ambient screen when it's back (layer 2 checks the policy, the image layer with agentv screen tv)
 S2.9  manual    when the TV comes back on, a key press brings the launcher back within 10 s (layer 2 checks the policy)
 S2.17 image     with no input and nothing playing, the ambient screen starts after the time Settings gives, and a paused film stays open behind it
+S3.8  image     the weather tile shows the same condition as MET Norway's current symbol for the box's city (layers 2 and 4 on recorded replies; agentv selftest S3.8 on the NUC)
+S3.9  image     the medium and large weather tiles match MET Norway's forecast for today, tomorrow and the next 7 days (agentv selftest S3.9 on the NUC)

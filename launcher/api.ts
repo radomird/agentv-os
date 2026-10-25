@@ -24,6 +24,7 @@ export interface App {
   sizes: SizeChoice[];
   reach: string[];
   needsSetup: boolean;
+  credit?: string;
 }
 
 export interface Settings {
@@ -108,6 +109,15 @@ export interface TileEntry {
   image?: string;
 }
 
+// Settings → Weather: the forecast's city, and the cities it can be.
+export interface WeatherPlace {
+  zone: string;
+  name: string;
+  units: "c" | "f";
+  chosen: boolean;
+  cities: { zone: string; name: string }[];
+}
+
 export interface TileData {
   headline?: TileEntry;
   entries?: TileEntry[];
@@ -133,6 +143,8 @@ export const daemon = {
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
   tonight: (version: string | null) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }),
+  weather: () => call<WeatherPlace>("GET", "/api/weather"),
+  saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }) => call<WeatherPlace>("POST", "/api/weather", change),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
 };
 

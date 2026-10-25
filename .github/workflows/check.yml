@@ -234,5 +234,12 @@ jobs:
               ;;
           esac
           [[ $UNIT == "success" ]] || s212="fail (layer 2: $UNIT)"
+          if [[ $UNIT == "success" && $UI == "success" ]]; then
+            s38="pass (layers 2 and 4: MET's symbol and the wind to a scene, from recorded replies; the live tile is the image layer's and the NUC's)"
+            s39="pass (layers 2 and 4: today, tomorrow and seven days from recorded replies; the live tiles are the image layer's and the NUC's)"
+          else
+            s38="fail (layer 2: $UNIT, layer 4: $UI)"
+            s39="fail (layer 2: $UNIT, layer 4: $UI)"
+          fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
-            "S2.12=$s212" "S2.13=$s213" >>"$GITHUB_STEP_SUMMARY"
+            "S2.12=$s212" "S2.13=$s213" "S3.8=$s38" "S3.9=$s39" >>"$GITHUB_STEP_SUMMARY"

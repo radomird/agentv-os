@@ -326,3 +326,30 @@ grep -q "^fail S1.5 the home screen draws at 41.5 fps on a 60 Hz screen, with 12
 grep -q "^fail S1.5 Steam isn't installed" "$SCRATCH/out" || fail "it says Steam isn't installed" "$(cat "$SCRATCH/out")"
 kill "$home_pid" 2>/dev/null || true
 pass "S1.2 and S1.5 fail without Widevine, on dropped frames and without Steam, and say what to do"
+
+# --- Stage 3: the checks written in TypeScript --------------------------------
+
+# A stand-in for daemon/weather-check.ts: it says what it was asked to, as
+# the real one does after comparing the tile with MET Norway.
+mkdir -p "$SCRATCH/agentv/daemon"
+cat >"$SCRATCH/agentv/daemon/weather-check.ts" <<'CHECK'
+const id = process.argv[2];
+if (process.env.STATE && require("node:fs").existsSync(`${process.env.STATE}/weather-off`)) {
+  console.log(`fail ${id} the tile shows cloudy for amsterdam (52.37, 4.9), but MET says rain`);
+} else {
+  console.log(`pass ${id} the tile matches MET for amsterdam (52.37, 4.9)`);
+  console.log(`manual ${id} on yr.no, amsterdam's forecast matches`);
+}
+CHECK
+run1 S3 || fail "S3 runs stage 3's checks" "$(cat "$SCRATCH/out")"
+for line in "pass S3.8 the tile matches MET for amsterdam (52.37, 4.9)" "manual S3.8 on yr.no" "pass S3.9 the tile matches MET" "manual S3.9 on yr.no"; do
+  grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
+done
+[[ $(tail -n 1 "$SCRATCH/out") == "S3.8 pass, S3.9 pass" ]] || fail "S3 runs only stage 3's checks" "$(cat "$SCRATCH/out")"
+touch "$state/weather-off"
+! run1 S3.8 || fail "a tile that doesn't match MET fails S3.8"
+grep -qF "fail S3.8 the tile shows cloudy for amsterdam (52.37, 4.9), but MET says rain" "$SCRATCH/out" || fail "it says what didn't match" "$(cat "$SCRATCH/out")"
+printf 'process.exit(3);\n' >"$SCRATCH/agentv/daemon/weather-check.ts"
+! run1 S3.9 || fail "a check that says nothing fails"
+grep -qF "fail S3.9 daemon/weather-check.ts said nothing" "$SCRATCH/out" || fail "it says the check said nothing" "$(cat "$SCRATCH/out")"
+pass "agentv selftest S3 runs the weather checks and passes on what they say"

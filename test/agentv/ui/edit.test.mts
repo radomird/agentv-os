@@ -143,7 +143,7 @@ test("S2.4 on a 720p TV, a dragged tile lands in the cell it was dropped on too"
 test("S2.4 the layout stays as it was left when the daemon starts again", async () => {
   await setLayout([...START.slice(0, 4), { id: "agentv.games", x: 3, y: 2, size: "s" }, { id: "apps", x: 0, y: 2, size: "s" }]);
   await daemon.close();
-  daemon = new Daemon({ root: ROOT, state, apps, port: 0, log: () => {} });
+  daemon = new Daemon({ root: ROOT, state, apps, port: 0, builtins: null, log: () => {} });
   url = `http://127.0.0.1:${await daemon.listen()}`;
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.goto(`${url}/`);

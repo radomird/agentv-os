@@ -60,6 +60,9 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
 
     const { manifest, problems } = validatePackage(checkout, entry.tier);
     if (!manifest) throw new IndexError(`${entry.id} doesn't pass the app contract's checks:\n  ${problems.join("\n  ")}`);
+    if (manifest.tv.runtime === "builtin") {
+      throw new IndexError(`${entry.id} says it's built in, and built-in apps only come with AgenTV itself`);
+    }
     if (manifest.id !== entry.id || manifest.version !== entry.version) {
       throw new IndexError(`${entry.id}'s manifest says ${manifest.id} ${manifest.version}, but the index lists ${entry.id} ${entry.version}`);
     }

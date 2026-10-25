@@ -5,7 +5,7 @@
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
-import { logo } from "./home.ts";
+import { logo, openBuiltin } from "./home.ts";
 import { bar, togglePin } from "./parts.ts";
 
 export function details(ctx: Ctx, id: string): View {
@@ -36,6 +36,10 @@ export function details(ctx: Ctx, id: string): View {
       class: "button primary",
       "data-focus": true,
       onclick: async () => {
+        if (app.tier === "built-in") {
+          openBuiltin(ctx, app);
+          return;
+        }
         const reply = await screen.open(id);
         if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
       },
@@ -78,6 +82,8 @@ export function details(ctx: Ctx, id: string): View {
           h("dd", {}, sizes),
           h("dt", {}, "version"),
           h("dd", {}, app.version),
+          app.credit ? h("dt", {}, "data") : null,
+          app.credit ? h("dd", {}, app.credit) : null,
         ),
         h("div", { class: "actions" }, open, toggle),
       ),

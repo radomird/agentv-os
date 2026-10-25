@@ -42,6 +42,8 @@ export interface Ctx {
   // it comes back there.
   remember(route: string): void;
   toast(text: string, kind?: "ok" | "fail"): void;
+  // The ambient screen, as the built-in Clock opens it.
+  ambient(): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
   saveSettings(change: Partial<Settings>): Promise<void>;
 }
@@ -92,6 +94,9 @@ const ctx: Ctx = {
       el.classList.add("leaving");
       setTimeout(() => el.remove(), 200);
     }, 5000);
+  },
+  ambient() {
+    setAmbient(true);
   },
   async saveLayout(layout) {
     try {
@@ -345,6 +350,10 @@ async function start(): Promise<void> {
     },
     setup: () => location.reload(),
     updates: (data) => setUpdates(data as Updates),
+    // The weather's city changed: its tiles ask again.
+    weather: () => {
+      if (history[history.length - 1] === "home") redraw();
+    },
   });
   void daemon.updates().then(setUpdates).catch(() => {});
   void sounds.load();

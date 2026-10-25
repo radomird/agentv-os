@@ -35,7 +35,9 @@ export type SetupStep = { type: "field"; key: string; label: string } | { type: 
 export interface TvBlock {
   contract: number;
   category: Category;
-  runtime: "web" | "native";
+  // builtin: one of AgenTV's own apps in apps/builtin/, which come with
+  // AgenTV and which the launcher opens itself (ADR-015, ADR-017)
+  runtime: "web" | "native" | "builtin";
   homeUrl?: string; // web: may start with a setup field, like "{serverUrl}/web/"
   package?: { pacman?: string; flatpak?: string }; // native
   exec?: string[]; // native: the command and its arguments
@@ -197,7 +199,7 @@ function checkId(id: string, author: unknown, tier: Tier, problem: (text: string
   }
 }
 
-function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>, problem: (text: string) => void): void {
+function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>, tier: Tier, problem: (text: string) => void): void {
   if (tv.contract !== CONTRACT) problem(`tv.contract has to be ${CONTRACT}`);
   if (!CATEGORIES.includes(tv.category as Category)) problem(`tv.category has to be one of ${CATEGORIES.join(", ")}`);
 
@@ -288,6 +290,13 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
       problem(`tv.exec starts with a command name, not '${tv.exec[0]}'`);
     }
     if (tv.homeUrl !== undefined) problem("a native app has no tv.homeUrl");
+  } else if (tv.runtime === "builtin") {
+    // Only AgenTV's own apps come built in, and the installer never takes
+    // one from the index (install.ts).
+    if (tier !== "official") problem("only AgenTV's own built-in apps have tv.runtime builtin");
+    if (tv.homeUrl !== undefined || tv.package !== undefined || tv.exec !== undefined) {
+      problem("a built-in app has no tv.homeUrl, tv.package or tv.exec");
+    }
   } else if (kinds.includes("tv-app")) {
     problem("tv.runtime has to be web or native");
   }
@@ -404,7 +413,7 @@ export function validatePackage(dir: string, tier: Tier = "community"): Result {
   if (!isObject(m.tv)) {
     problem("the manifest needs a tv block");
   } else {
-    checkTv(m.tv, kinds, files, problem);
+    checkTv(m.tv, kinds, files, tier, problem);
   }
 
   return problems.length ? { problems } : { manifest: m as unknown as Manifest, problems };

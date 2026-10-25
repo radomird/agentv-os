@@ -1,8 +1,10 @@
 // A box for the launcher's checks and for working on it without a TV: the
 // daemon with AgenTV's files from this checkout and a few apps from each
-// kind of maker, made from the sample app.
+// kind of maker, made from the sample app. With builtins, AgenTV's own
+// Clock and Weather too, in a time zone of the test's choosing, with the
+// weather's forecast from a server the test runs.
 
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Daemon } from "../../../daemon/server.ts";
@@ -65,7 +67,34 @@ function code(id: string): string {
   return readFileSync(join(SAMPLE, "app.ts"), "utf8").replace('id: "agentv.sample"', `id: "${id}"`);
 }
 
-export function makeBox(fixtures: Fixture[] = FIXTURES): { apps: string; state: string } {
+export interface BoxOptions {
+  builtins?: boolean;
+  zone?: string; // the box's time zone, "Europe/Amsterdam"
+  forecast?: string; // where Weather asks for its forecast instead of MET Norway
+}
+
+// AgenTV's built-ins, with the weather pointed at the test's own server.
+function builtins(dir: string, forecast?: string): string {
+  const target = join(dir, "builtin");
+  cpSync(join(ROOT, "apps/builtin"), target, { recursive: true });
+  if (forecast) {
+    const path = join(target, "agentv.weather/manifest.json");
+    const manifest = JSON.parse(readFileSync(path, "utf8"));
+    manifest.tv.origins = [new URL(forecast).origin];
+    writeFileSync(path, JSON.stringify(manifest, null, 2));
+  }
+  return target;
+}
+
+// The time zone, as the installer leaves it, and the cities zone.tab knows.
+export function useZone(dir: string, zone: string): void {
+  const link = join(dir, "localtime");
+  symlinkSync(`/usr/share/zoneinfo/${zone}`, link);
+  process.env.AGENTV_LOCALTIME = link;
+  process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
+}
+
+export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}): { apps: string; state: string; builtins?: string } {
   const dir = mkdtempSync(join(tmpdir(), "agentv-box-"));
   const apps = join(dir, "apps");
   const state = join(dir, "state");
@@ -86,19 +115,23 @@ export function makeBox(fixtures: Fixture[] = FIXTURES): { apps: string; state: 
   }
   writeFileSync(join(apps, "installed.json"), JSON.stringify(installed, null, 2));
   writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true }));
-  writeFileSync(join(state, "app-settings.json"), JSON.stringify({ "agentv.sample": { serverUrl: "http://127.0.0.1:1" } }));
-  return { apps, state };
+  const settings: Record<string, Record<string, string>> = { "agentv.sample": { serverUrl: "http://127.0.0.1:1" } };
+  if (options.forecast) settings["agentv.weather"] = { forecastUrl: options.forecast };
+  writeFileSync(join(state, "app-settings.json"), JSON.stringify(settings));
+  if (options.zone) useZone(dir, options.zone);
+  return { apps, state, builtins: options.builtins ? builtins(dir, options.forecast) : undefined };
 }
 
 export async function startBox(
   port = 0,
   fixtures = FIXTURES,
+  options: BoxOptions = {},
 ): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string }> {
-  const { apps, state } = makeBox(fixtures);
+  const { apps, state, builtins } = makeBox(fixtures, options);
   // What the update check and an install write, empty until a test fills it.
   const updates = join(state, "..", "update");
   mkdirSync(updates, { recursive: true });
-  const daemon = new Daemon({ root: ROOT, state, apps, updates, port, log: () => {} });
+  const daemon = new Daemon({ root: ROOT, state, apps, updates, port, builtins: builtins ?? null, log: () => {} });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates };
 }
