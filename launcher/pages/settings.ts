@@ -1,11 +1,12 @@
 // Settings (ADR-015, ADR-024, ADR-031): sections on the left, the focused one
-// on the right. Look, Sound, Weather and Omarchy desktop work now; the
+// on the right. Look, Sound, Weather, Omarchy desktop and Power work now; the
 // sections later stages build say so.
 
 import { daemon, screen, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { powerPanel } from "./power.ts";
 import { release, updatesPanel } from "./updates.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
@@ -192,13 +193,18 @@ export function settings(ctx: Ctx, open?: string): View {
         ),
       ],
     },
+    // Restart and Shut down (ADR-033): an adult's, so a kid's profile doesn't
+    // see it.
+    ...(ctx.state.viewer.role === "adult"
+      ? [{ key: "power", label: "power", value: () => "restart · shut down", panel: () => powerPanel(ctx) }]
+      : []),
     {
       key: "about",
       label: "about",
       value: () => "credits",
       panel: () => [
         h("div", { class: "panel-big" }, `agentv ${ctx.state.version}`),
-        note("the open-source tv os that writes its own app integrations. powered by omarchy."),
+        note("the world's first open-source agentic tv os. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),
         note("weather data from met norway, under cc by 4.0."),
       ],

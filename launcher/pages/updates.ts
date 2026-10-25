@@ -44,6 +44,14 @@ async function goBackNow(ctx: Ctx): Promise<void> {
   } else ctx.sounds.play("confirm");
 }
 
+// An install from the TV, or going back from one, is running: the Updating
+// screen is up, and nothing turns the box off (ADR-025, ADR-033).
+export function installing(updates: Updates): boolean {
+  const progress = updates.progress;
+  if (!progress || Date.now() - new Date(progress.at).getTime() >= 15 * 60_000) return false;
+  return progress.state === "running" || progress.state === "restarting" || progress.state === "going-back";
+}
+
 // Anything new: AgenTV, Omarchy or system packages.
 export function pending(status: UpdateStatus | null): boolean {
   return Boolean(status && (status.agentv.available || status.omarchy.available || status.packages > 0));

@@ -12,6 +12,9 @@ Environment=AGENTV_PATH=/usr/share/agentv
 Environment=AGENTV_DAEMON_STATE=/var/lib/agentv/daemon
 StateDirectory=agentv/daemon
 Restart=on-failure
+# Stopped within a few seconds, so Restart and Shut down never wait on it
+# (ADR-033).
+TimeoutStopSec=5s
 DynamicUser=yes
 ProtectSystem=strict
 ProtectHome=yes

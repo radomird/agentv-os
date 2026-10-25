@@ -231,6 +231,9 @@ export const screen = {
   goBack: () => ask({ cmd: "update-go-back" }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
+  // Settings → Power, after its question, and Shut down after its countdown
+  // (ADR-033): the PIN check, then Omarchy's own restart or shut down.
+  power: (what: "restart" | "shutdown") => ask({ cmd: "power", what }),
   // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // The built-in Music app's library and player, in the TV session (ADR-017).

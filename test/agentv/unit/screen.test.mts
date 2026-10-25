@@ -113,6 +113,8 @@ class FakeBrowser implements DevTools {
   async evaluate(_prefix: string, expression: string) {
     if (expression === HOME_UP) return this.up;
     this.evaluated.push(expression);
+    // The launcher's own go, for agentv screen settings.
+    if (expression.includes("window.agentvLauncher?.go")) return { went: true };
     return {};
   }
   async open(url: string) {
@@ -216,6 +218,24 @@ class FakeLauncher implements Launcher {
   async startUnit(name: string) {
     this.units.push(name);
     return true;
+  }
+  // Settings → Power (ADR-033): whether an update runs, what the PIN says,
+  // and what powering off was asked for.
+  updateRunning = false;
+  pinOk = true;
+  pins: string[] = [];
+  powered: string[] = [];
+  powerWorks = true;
+  async updating() {
+    return this.updateRunning;
+  }
+  async pinCheck(action: string) {
+    this.pins.push(action);
+    return this.pinOk;
+  }
+  async power(what: "restart" | "shutdown") {
+    this.powered.push(what);
+    return this.powerWorks;
   }
   // What the daemon says about updates, for the night.
   night: NightUpdates | null = null;
@@ -708,6 +728,37 @@ test("the home screen's Settings → Omarchy desktop runs agentv desktop", async
   assert.deepEqual(await screen.fromHome({ cmd: "desktop" }), { ok: true });
   assert.equal(launcher.desktops, 1);
   assert.equal((await screen.fromHome({ cmd: "rm" }) as { ok: boolean }).ok, false);
+});
+
+test("S2.18 Settings → Power restarts and shuts down through Omarchy's commands, past the PIN, never during an update", async () => {
+  const { launcher, screen } = await tv();
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: true });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: true });
+  assert.deepEqual(launcher.powered, ["restart", "shutdown"]);
+  assert.deepEqual(launcher.pins, ["power", "power"], "each asks agentv-pin-check first");
+  // agentv screen power does the same, over SSH too.
+  assert.deepEqual(await screen.handle({ cmd: "power", what: "restart" }), { ok: true });
+  assert.deepEqual(await screen.handle({ cmd: "power", what: "off" }), { ok: false, error: "power restart or shutdown" });
+  // Not while an update runs (ADR-025), and not past a PIN that says no.
+  launcher.powered = [];
+  launcher.updateRunning = true;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "not while an update runs" });
+  launcher.updateRunning = false;
+  launcher.pinOk = false;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "that needs the pin" });
+  assert.deepEqual(launcher.powered, []);
+  // When Omarchy's command couldn't start, the TV says so.
+  launcher.pinOk = true;
+  launcher.powerWorks = false;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: false, error: "the box couldn't restart" });
+});
+
+test("agentv screen settings opens Settings at a section on the home screen", async () => {
+  const { launcher, screen } = await tv();
+  assert.deepEqual(await screen.handle({ cmd: "settings", section: "power" }), { ok: true });
+  assert.ok(launcher.homeBrowser.evaluated.includes("window.agentvHome?.()"), "home comes to the front first");
+  assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('go("settings/power")')));
+  assert.deepEqual(await screen.handle({ cmd: "settings", section: "../x" }), { ok: false, error: "which section of settings" });
 });
 
 // --- Home and Back (ADR-031, stage 2) ----------------------------------------

@@ -1,0 +1,16 @@
+// AgenTV (ADR-033): Settings → Power restarts the box and shuts it down,
+// through Omarchy's own commands. The TV's screen daemon runs them as the
+// box's owner, from the TV session's own systemd, which isn't part of a
+// login session, so, as for the update units, the rule goes by the owner's
+// admin group (wheel). It allows restarting and powering off with another
+// session open, such as one over SSH, but never past something that blocks
+// it, such as an update.
+polkit.addRule(function (action, subject) {
+  if ((action.id == "org.freedesktop.login1.power-off" ||
+       action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+       action.id == "org.freedesktop.login1.reboot" ||
+       action.id == "org.freedesktop.login1.reboot-multiple-sessions") &&
+      subject.isInGroup("wheel")) {
+    return polkit.Result.YES;
+  }
+});
