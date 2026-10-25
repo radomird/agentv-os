@@ -6,7 +6,8 @@
 # give away, a viewer, its libraries, and the film half watched. Then each
 # request a TV app makes is recorded with its reply, in
 # test/agentv/fixtures/jellyfin/<name>.json as { request, status, headers,
-# body }. The server's access token is replaced with "fixture-token".
+# body }. The server's access token is replaced with "fixture-token", and
+# every id it made up with a plain numbered one (stable-ids).
 #
 # Usage: test/agentv/fixtures/record/jellyfin   (needs docker, ffmpeg, curl, jq)
 
@@ -118,4 +119,5 @@ record playback-info POST "/Items/$film/PlaybackInfo?userId=$user" '{}'
 
 jq -n --arg image "$IMAGE" --arg recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg user "$user" --arg film "$film" --arg episode "$episode" \
   '{image: $image, recorded: $recorded, user: $user, film: $film, episode: $episode}' >"$DIR/recording.json"
+"$ROOT/test/agentv/fixtures/record/stable-ids" "$DIR"
 echo "recorded Jellyfin from $IMAGE"

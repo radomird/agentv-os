@@ -8,7 +8,8 @@
 # Then each request a TV app makes is recorded with its reply, in
 # test/agentv/fixtures/immich/<name>.json as { request, status, headers,
 # body }, and a photo's preview as a .jpg beside it. The access token is
-# replaced with "fixture-token".
+# replaced with "fixture-token", and every id it made up with a plain
+# numbered one (stable-ids).
 #
 # Usage: test/agentv/fixtures/record/immich   (needs docker compose, ffmpeg, curl, jq)
 
@@ -26,7 +27,8 @@ work=$(mktemp -d)
 project="agentv-immich-$$"
 cleanup() {
   (cd "$work" && docker compose -p "$project" down -v >/dev/null 2>&1) || true
-  rm -rf "$work"
+  # The containers' files are root's.
+  sudo -n rm -rf "$work" 2>/dev/null || rm -rf "$work" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -98,7 +100,11 @@ for n in 1 2 3; do
   ids+=("$id")
 done
 album=$(api POST /api/albums "{\"albumName\":\"Autumn\",\"assetIds\":[\"${ids[0]}\",\"${ids[1]}\"]}" | jq -r .id)
-sleep 5
+# Immich makes each photo's thumbnails in the background after the upload.
+for _ in $(seq 1 120); do
+  [[ $(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$BASE/api/assets/${ids[0]}/thumbnail?size=preview") == 200 ]] && break
+  sleep 1
+done
 
 record server-version GET /api/server/version
 record users-me GET /api/users/me
@@ -110,4 +116,5 @@ record preview GET "/api/assets/${ids[0]}/thumbnail?size=preview"
 
 jq -n --arg version "$VERSION" --arg recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg album "$album" --args '{version: $version, recorded: $recorded, album: $album, assets: $ARGS.positional}' "${ids[@]}" \
   >"$DIR/recording.json"
+"$ROOT/test/agentv/fixtures/record/stable-ids" "$DIR"
 echo "recorded Immich $VERSION"
