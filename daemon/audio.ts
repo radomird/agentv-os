@@ -93,6 +93,8 @@ export class Audio {
   private timer?: ReturnType<typeof setTimeout>;
   private stopWatch?: () => void;
   private running: Promise<void> = Promise.resolve();
+  // The last thing that went wrong, said once rather than at every retry.
+  private failed = "";
 
   constructor(options: AudioOptions) {
     this.pulse = options.pulse;
@@ -117,7 +119,15 @@ export class Audio {
 
   // One look at a time, in order.
   check(): Promise<void> {
-    this.running = this.running.then(() => this.apply()).catch((error: Error) => this.log(`sound: ${error.message}`));
+    this.running = this.running
+      .then(() => this.apply())
+      .then(() => {
+        this.failed = "";
+      })
+      .catch((error: Error) => {
+        if (error.message !== this.failed) this.log(`sound: ${error.message}`);
+        this.failed = error.message;
+      });
     return this.running;
   }
 

@@ -184,6 +184,17 @@ test("S2.19 a filter or a virtual output someone made the default is left alone"
   audio.stop();
 });
 
+test("PipeWire that doesn't answer is said once, not at every retry", async () => {
+  const { pulse, audio, lines } = box([hdmi()], hdmi().name);
+  pulse.sinks = async () => {
+    throw new Error("pactl list: Connection failure");
+  };
+  audio.start();
+  for (let i = 0; i < 3; i++) await pulse.fire(audio);
+  assert.deepEqual(lines, ["sound: pactl list: Connection failure"]);
+  audio.stop();
+});
+
 test("pactl's sinks: real outputs only, their volume, and whether their port is plugged in", () => {
   const json = JSON.stringify([
     {
