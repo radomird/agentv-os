@@ -1,0 +1,339 @@
+#!/bin/bash
+
+# agentv:summary=Open or close the setup hotspot that a phone sets up the TV through
+# agentv:args=start|stop|status
+# agentv:requires-sudo=true
+
+# The setup hotspot (ADR-007, stage 4). On first boot with no network, the
+# box opens its own Wi-Fi network, AgenTV-<4 characters>, and the TV shows a
+# QR code for it. A phone that joins gets an address from dnsmasq, whose name
+# server answers every name with the box, and the box sends port 80 to the
+# daemon's captive page on port 3002, so the phone opens the page on its own.
+# There it picks the home Wi-Fi and types its password. The daemon can't
+# touch NetworkManager, so it hands them over the way it hands over the
+# provider key (agentv-hotspot.path), and this joins that network, or opens
+# the hotspot again with the reason it couldn't.
+#
+#   agentv hotspot start   open it, from a terminal
+#   agentv hotspot stop    close it
+#   agentv hotspot status  how it stands
+#
+# The rest is for AgenTV's own units, as root: run (agentv-hotspot.service),
+# down (after it stops), boot (agentv-hotspot-boot.service) and drop
+# (agentv-hotspot-drop.service). The home Wi-Fi's password never goes on a
+# command line or in a log: NetworkManager reads it from a file only root
+# can read.
+
+# shellcheck disable=SC2016 # the $names in jq's filters are jq's own
+
+set -euo pipefail
+
+RUN=${AGENTV_HOTSPOT_RUN:-/run/agentv-hotspot}
+DAEMON_STATE=${AGENTV_DAEMON_PRIVATE:-/var/lib/private/agentv/daemon}
+DROP=${AGENTV_HOTSPOT_DROP:-$DAEMON_STATE/hotspot-drop/request.json}
+CONNECTIONS=${AGENTV_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
+PORT=${AGENTV_SETUP_PORT:-3002}
+ADDRESS=10.42.0.1
+CONNECTION=agentv-setup
+TAG=agentv-setup-hotspot
+
+# The first Wi-Fi device NetworkManager knows, or nothing. The awk calls here
+# read to the end, so the command before them never writes into a closed pipe.
+wifi_device() {
+  nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '!found && $2 == "wifi" { print $1; found = 1 }'
+}
+
+state_get() {
+  jq -r "$1 // empty" "$RUN/state.json" 2>/dev/null || true
+}
+
+# state_set <jq filter> [jq args]: changes state.json, which the daemon and
+# the TV read. It's written whole, and anyone may read it: it has the
+# hotspot's own password, which the TV shows anyway, and never the home
+# Wi-Fi's.
+state_set() {
+  local filter=$1 current='{}' next="$RUN/.state.json.next"
+  shift
+  install -d -m 755 "$RUN"
+  [[ -s $RUN/state.json ]] && current=$(cat "$RUN/state.json")
+  jq -c "$@" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$filter | .at = \$at" <<<"$current" >"$next"
+  chmod 644 "$next"
+  mv -f "$next" "$RUN/state.json"
+}
+
+# random <characters> <length>
+random() {
+  local out
+  out=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc "$1")
+  printf '%s' "${out:0:$2}"
+}
+
+# The networks the radio can see, strongest first, as JSON. It looks before
+# it becomes an access point, because then it can't. nmcli's terse lines are
+# signal:security:name, with any colon in the name escaped.
+scan() {
+  {
+    nmcli -t -f SIGNAL,SECURITY,SSID device wifi list --rescan yes ifname "$1" ||
+      nmcli -t -f SIGNAL,SECURITY,SSID device wifi list --rescan no ifname "$1"
+  } 2>/dev/null | jq -Rcs '
+    split("\n")
+    | map(capture("^(?<signal>[0-9]*):(?<security>[^:]*):(?<ssid>.+)$")?)
+    | map(.ssid |= gsub("\\\\(?<c>.)"; .c))
+    | map(select(.ssid | startswith("AgenTV-") | not))
+    | map({
+        ssid,
+        signal: (.signal | tonumber? // 0),
+        secure: (.security != "" and .security != "--"),
+        sae: ((.security | test("WPA3")) and (.security | test("WPA2|WPA1") | not))
+      })
+    | group_by(.ssid) | map(max_by(.signal)) | sort_by(-.signal)'
+}
+
+# The holes the hotspot needs in Omarchy's firewall, on its own interface
+# and nowhere else: DHCP and DNS for the phone, and the captive page, with
+# port 80 sent to it. They go in ahead of ufw's own rules and come out by
+# their tag, so a run that ended badly leaves nothing behind once the next
+# one starts or stops.
+firewall_open() {
+  local device=$1 rule proto port
+  for rule in "udp 67" "udp 53" "tcp 53" "tcp $PORT"; do
+    read -r proto port <<<"$rule"
+    iptables -I INPUT 1 -i "$device" -p "$proto" --dport "$port" -m comment --comment "$TAG" -j ACCEPT
+  done
+  iptables -t nat -A PREROUTING -i "$device" -p tcp --dport 80 -m comment --comment "$TAG" -j REDIRECT --to-ports "$PORT"
+}
+
+firewall_close() {
+  local table rule parts
+  for table in filter nat; do
+    while rule=$(iptables -t "$table" -S 2>/dev/null | awk -v tag="--comment $TAG" '!found && index($0, tag) { print; found = 1 }') && [[ -n $rule ]]; do
+      read -ra parts <<<"${rule/#-A /-D }"
+      iptables -t "$table" "${parts[@]}" || break
+    done
+  done
+}
+
+run() {
+  local device ssid password networks
+
+  device=$(wifi_device)
+  if [[ -z $device ]]; then
+    state_set '.on = false | .error = "this box has no wi-fi"'
+    echo "agentv-hotspot: NetworkManager has no Wi-Fi device" >&2
+    exit 1
+  fi
+  nmcli radio wifi on >/dev/null 2>&1 || true
+  firewall_close
+  nmcli connection delete "$CONNECTION" >/dev/null 2>&1 || true
+
+  networks=$(scan "$device")
+  install -d -m 755 "$RUN"
+  printf '%s\n' "${networks:-[]}" >"$RUN/.networks.json.next"
+  chmod 644 "$RUN/.networks.json.next"
+  mv -f "$RUN/.networks.json.next" "$RUN/networks.json"
+
+  # One name and password for the whole boot, so a phone that joined once
+  # still knows it when the hotspot comes back after a wrong password.
+  ssid=$(state_get .ssid)
+  password=$(state_get .password)
+  if [[ $ssid != AgenTV-* || -z $password ]]; then
+    ssid="AgenTV-$(random 0123456789abcdef 4)"
+    password=$(random abcdefghjkmnpqrstuvwxyz23456789 10)
+  fi
+
+  # Kept in memory only, so nothing of it is left after a restart.
+  nmcli connection add save no type wifi ifname "$device" con-name "$CONNECTION" autoconnect no ssid "$ssid" \
+    802-11-wireless.mode ap 802-11-wireless.band bg \
+    wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp \
+    wifi-sec.pmf disable wifi-sec.psk "$password" \
+    ipv4.method manual ipv4.addresses "$ADDRESS/24" ipv6.method disabled >/dev/null
+  if ! nmcli --wait 45 connection up "$CONNECTION" >/dev/null; then
+    state_set '.on = false | .error = "the setup hotspot didn'"'"'t come up"'
+    echo "agentv-hotspot: NetworkManager didn't bring up the hotspot; journalctl -u NetworkManager says why" >&2
+    exit 1
+  fi
+  firewall_open "$device"
+  state_set '.on = true | .ssid = $ssid | .password = $password | .device = $device | .address = $address | .joining = null | .joined = null' \
+    --arg ssid "$ssid" --arg password "$password" --arg device "$device" --arg address "$ADDRESS"
+  echo "agentv-hotspot: $ssid is on, with the setup page at http://$ADDRESS/"
+
+  # Addresses for phones, and every name pointing at the box, which is how
+  # iOS and Android find out there's a page to open (RFC 8910 says so too).
+  exec dnsmasq --keep-in-foreground --conf-file=/dev/null --no-resolv --no-hosts --no-poll \
+    --interface="$device" --except-interface=lo --bind-interfaces \
+    --dhcp-range="10.42.0.10,10.42.0.250,255.255.255.0,10m" --dhcp-authoritative \
+    --dhcp-option=option:router,"$ADDRESS" --dhcp-option=option:dns-server,"$ADDRESS" \
+    --dhcp-option=114,"http://$ADDRESS/" \
+    --address="/#/$ADDRESS" --dhcp-leasefile="$RUN/dnsmasq.leases" --log-facility=-
+}
+
+down() {
+  nmcli connection down "$CONNECTION" >/dev/null 2>&1 || true
+  nmcli connection delete "$CONNECTION" >/dev/null 2>&1 || true
+  firewall_close
+  [[ -f $RUN/state.json ]] || return 0
+  if [[ ${SERVICE_RESULT:-success} == "success" ]]; then
+    state_set '.on = false'
+  else
+    state_set '.on = false | .error = (.error // "the setup hotspot stopped")'
+  fi
+}
+
+# Only when TV setup isn't done, the box has Wi-Fi, and once NetworkManager
+# has tried every connection it knows, none of them is up. Ethernet, or Wi-Fi
+# set up in the installer, goes straight to pairing.
+boot() {
+  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]] && return 0
+  nm-online -q -s -t 60 || true
+  [[ -n $(wifi_device) ]] || return 0
+  nm-online -q -x -t 5 && return 0
+  echo "agentv-hotspot: setup isn't done and there's no network, so the setup hotspot opens"
+  systemctl start --no-block agentv-hotspot.service
+}
+
+# A value as NetworkManager's key files read it: a backslash and every
+# space escaped, the way GLib's key files want them.
+keyfile_string() {
+  local value=${1//\\/\\\\}
+  printf '%s' "${value// /\\s}"
+}
+
+# A network's name as the bytes it's made of, which NetworkManager reads
+# whatever the name has in it.
+keyfile_bytes() {
+  printf '%s' "$1" | od -An -v -tu1 | tr -s ' \n' ';' | sed 's/^;//'
+}
+
+valid_ssid() {
+  local LC_ALL=C
+  [[ -n $1 && ${#1} -le 32 && ! $1 =~ [[:cntrl:]] ]]
+}
+
+valid_password() {
+  local LC_ALL=C
+  [[ -z $1 || $1 =~ ^[\ -~]{8,63}$ || $1 =~ ^[0-9a-fA-F]{64}$ ]]
+}
+
+# join <ssid> <password> <hidden>: the home Wi-Fi, in place of the hotspot.
+join() {
+  local ssid=$1 password=$2 hidden=$3 device uuid file keymgmt=wpa-psk output address error
+
+  device=$(state_get .device)
+  [[ -n $device ]] || device=$(wifi_device)
+  state_set '.joining = $ssid | .error = null' --arg ssid "$ssid"
+  systemctl stop agentv-hotspot.service
+
+  [[ $(jq -r --arg ssid "$ssid" 'map(select(.ssid == $ssid))[0].sae // false' "$RUN/networks.json" 2>/dev/null) == "true" ]] && keymgmt=sae
+  uuid=$(cat /proc/sys/kernel/random/uuid)
+  file="$CONNECTIONS/agentv-${uuid%%-*}.nmconnection"
+  install -d -m 700 "$CONNECTIONS"
+  (
+    umask 077
+    printf '[connection]\nid=%s\nuuid=%s\ntype=wifi\n\n[wifi]\nmode=infrastructure\nssid=%s\n' \
+      "$(keyfile_string "$ssid")" "$uuid" "$(keyfile_bytes "$ssid")"
+    [[ $hidden == "true" ]] && printf 'hidden=true\n'
+    [[ -n $password ]] && printf '\n[wifi-security]\nkey-mgmt=%s\npsk=%s\n' "$keymgmt" "$(keyfile_string "$password")"
+    printf '\n[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+  ) >"$file"
+  chmod 600 "$file"
+
+  if nmcli connection load "$file" >/dev/null 2>&1 && output=$(nmcli --wait 45 connection up uuid "$uuid" ifname "$device" 2>&1); then
+    address=$(nmcli -g IP4.ADDRESS device show "$device" 2>/dev/null | awk -F/ 'NR == 1 { print $1 }')
+    state_set '.on = false | .joining = null | .joined = {ssid: $ssid, address: (if $address == "" then null else $address end)} | .error = null' \
+      --arg ssid "$ssid" --arg address "$address"
+    echo "agentv-hotspot: the box is on $ssid${address:+ at $address}, and the setup hotspot is closed"
+    return 0
+  fi
+
+  nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
+  rm -f "$file"
+  [[ -n ${output:-} ]] || output="NetworkManager wouldn't load it"
+  case $output in
+    *"Secrets were required"*) error="that password didn't work for $ssid" ;;
+    *"could not be found"* | *"No network with SSID"*) error="the tv can't see $ssid from here" ;;
+    *) error="the tv couldn't join $ssid" ;;
+  esac
+  echo "agentv-hotspot: couldn't join $ssid: $output" >&2
+  state_set '.joining = null | .error = $error' --arg error "$error"
+  systemctl start agentv-hotspot.service
+  return 1
+}
+
+# What the daemon handed over: the home Wi-Fi to join, or to close the
+# hotspot as setup ends.
+drop() {
+  local request ssid password hidden
+
+  [[ -f $DROP ]] || return 0
+  request=$(cat "$DROP")
+  rm -f "$DROP"
+  if [[ $(jq -r '.stop // false' <<<"$request" 2>/dev/null) == "true" ]]; then
+    systemctl stop agentv-hotspot.service
+    echo "agentv-hotspot: closed, as setup ended"
+    return 0
+  fi
+  ssid=$(jq -r '.join.ssid // empty' <<<"$request" 2>/dev/null || true)
+  password=$(jq -r '.join.password // empty' <<<"$request" 2>/dev/null || true)
+  hidden=$(jq -r '.join.hidden // false' <<<"$request" 2>/dev/null || true)
+  if ! valid_ssid "$ssid" || ! valid_password "$password"; then
+    state_set '.error = "that isn'"'"'t a wi-fi network and password"'
+    echo "agentv-hotspot: that isn't a Wi-Fi network's name and password; nothing changed" >&2
+    return 1
+  fi
+  join "$ssid" "$password" "$hidden"
+}
+
+status() {
+  local on ssid password joined address error
+
+  on=$(state_get .on)
+  ssid=$(state_get .ssid)
+  password=$(state_get .password)
+  joined=$(state_get .joined.ssid)
+  address=$(state_get .joined.address)
+  error=$(state_get .error)
+  if [[ $on == "true" ]]; then
+    echo "The setup hotspot is on: $ssid, password $password. Phones that join get the setup page at http://$ADDRESS/."
+  elif [[ -n $(state_get .joining) ]]; then
+    echo "The box is joining $(state_get .joining)."
+  elif [[ -n $joined ]]; then
+    echo "The setup hotspot is closed. The box joined $joined${address:+ at $address}."
+  else
+    echo "The setup hotspot is off."
+  fi
+  [[ -n $error ]] && echo "The last try said: $error."
+  return 0
+}
+
+as_root() {
+  if (( EUID == 0 )); then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+case "${1:-}" in
+  start)
+    as_root systemctl start agentv-hotspot.service
+    for _ in $(seq 1 60); do
+      [[ $(state_get .on) == "true" ]] && break
+      systemctl is-active --quiet agentv-hotspot.service || break
+      sleep 1
+    done
+    status
+    ;;
+  stop)
+    as_root systemctl stop agentv-hotspot.service
+    status
+    ;;
+  status) status ;;
+  run) run ;;
+  down) down ;;
+  boot) boot ;;
+  drop) drop ;;
+  *)
+    echo "Usage: agentv hotspot start|stop|status" >&2
+    exit 1
+    ;;
+esac

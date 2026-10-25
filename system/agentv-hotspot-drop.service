@@ -1,0 +1,14 @@
+# Joins the home Wi-Fi the daemon was given on the setup hotspot's page, or
+# closes the hotspot as setup ends (bin/agentv-hotspot). agentv-hotspot.path
+# starts it.
+
+[Unit]
+Description=AgenTV setup hotspot: join the home Wi-Fi
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-hotspot drop
+UMask=0077
+ProtectHome=yes
+PrivateTmp=yes

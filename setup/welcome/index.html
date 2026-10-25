@@ -6,7 +6,9 @@
 <!--
   The TV setup welcome screen, as a placeholder (stage 0). The real setup
   (stage 5) follows the signed-off canvas. Terminal look (ADR-014), Tokyo
-  Night colours, nothing loaded from outside the box.
+  Night colours, nothing loaded from outside the box. With the setup hotspot
+  on (stage 4), it shows the QR code a phone joins it with, and once the box
+  is on the home Wi-Fi, the code that pairs the phone.
 -->
 <style>
   :root {
@@ -29,7 +31,7 @@
     padding: 0 10vw;
     box-sizing: border-box;
   }
-  img {
+  .logo {
     width: 30vw;
     min-width: 420px;
     image-rendering: pixelated;
@@ -52,13 +54,36 @@
     margin: 3vh 0 0;
     font-size: 36px;
   }
+  .with-qr {
+    display: flex;
+    align-items: center;
+    gap: 56px;
+    margin-top: 4vh;
+  }
+  .with-qr p {
+    margin: 0;
+    max-width: 1000px;
+  }
+  .qr {
+    width: 280px;
+    height: 280px;
+    padding: 16px;
+    background: #fff;
+    image-rendering: pixelated;
+  }
+  [hidden] {
+    display: none !important;
+  }
 </style>
 </head>
 <body>
-  <img src="/logo.svg" alt="AgenTV">
+  <img class="logo" src="/logo.svg" alt="AgenTV">
   <div class="prompt">~ <b>$</b> tv setup</div>
   <h1>Hi.</h1>
-  <p>TV setup starts here. It isn't built yet.</p>
+  <div class="with-qr">
+    <img class="qr" id="qr" alt="" hidden>
+    <p id="line">TV setup starts here. It isn't built yet.</p>
+  </div>
 <script>
   // Once the page and its logo are drawn, tell the daemon this screen is
   // really on the TV, for its /health.
@@ -70,7 +95,65 @@
 
   // When setup is marked done (agentv setup skip, until setup is built), the
   // home screen takes over.
-  new EventSource("/api/events").addEventListener("setup", () => location.reload());
+  const events = new EventSource("/api/events");
+  events.addEventListener("setup", () => location.reload());
+
+  // The setup hotspot (stage 4): its QR code while it's on, then the code
+  // that pairs the phone once the box is on the home Wi-Fi.
+  const qr = document.getElementById("qr");
+  const line = document.getElementById("line");
+  const placeholder = line.textContent;
+  let pairing = null;
+  let paired = null;
+
+  function show(text, image) {
+    line.textContent = text;
+    if (image) {
+      if (qr.getAttribute("src") !== image) qr.setAttribute("src", image);
+      qr.hidden = false;
+    } else {
+      qr.hidden = true;
+      qr.removeAttribute("src");
+    }
+  }
+
+  async function pair() {
+    if (pairing && Date.parse(pairing.until) > Date.now() + 5000) return pairing;
+    const response = await fetch("/api/phones/pair", { method: "POST" });
+    pairing = (await response.json()).pairing;
+    return pairing;
+  }
+
+  async function hotspot() {
+    let state;
+    try {
+      state = await (await fetch("/api/hotspot", { cache: "no-store" })).json();
+    } catch {
+      return;
+    }
+    if (state.on && state.ssid) {
+      show(
+        state.error ? `${state.error}. Scan this to try again.` : `Scan this with your phone's camera, or join ${state.ssid} with the password ${state.password}.`,
+        `/api/hotspot/qr?${encodeURIComponent(state.ssid)}`,
+      );
+    } else if (state.joining) {
+      show(`Joining ${state.joining}.`, null);
+    } else if (state.joined && paired) {
+      show(`${paired} is paired.`, null);
+    } else if (state.joined) {
+      const code = await pair().catch(() => null);
+      show(`The TV is on ${state.joined.ssid}. Scan this with your phone to pair it.`, code && code.url ? `/api/phones/qr?${code.code}` : null);
+    } else {
+      show(placeholder, null);
+    }
+  }
+  events.addEventListener("phones", (event) => {
+    const data = JSON.parse(event.data);
+    if (data.paired) paired = data.paired;
+    void hotspot();
+  });
+  void hotspot();
+  setInterval(hotspot, 2000);
 </script>
 </body>
 </html>

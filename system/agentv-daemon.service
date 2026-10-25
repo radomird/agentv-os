@@ -1,6 +1,8 @@
 # AgenTV's daemon (daemon/server.ts): the TV's pages and the state behind
-# them, on this box only for now. Node runs its TypeScript as it is. Its own
-# state, such as whether setup is done, lives in /var/lib/agentv/daemon.
+# them on this box, the phone companion on the home network (port 3001) and
+# the setup hotspot's captive page (port 3002). Node runs its TypeScript as
+# it is. Its own state, such as whether setup is done, lives in
+# /var/lib/agentv/daemon.
 
 [Unit]
 Description=AgenTV daemon

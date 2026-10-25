@@ -14,7 +14,7 @@ type -P node >/dev/null || exit 0
 flags=()
 [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
 port=$(node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
-AGENTV_PATH="$ROOT" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_APPS="$SCRATCH/apps" AGENTV_LAN_PORT=0 \
+AGENTV_PATH="$ROOT" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_APPS="$SCRATCH/apps" AGENTV_LAN_PORT=0 AGENTV_SETUP_PORT=0 \
   node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; rm -rf "$SCRATCH"' EXIT

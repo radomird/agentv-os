@@ -128,14 +128,33 @@ export async function startBox(
   port = 0,
   fixtures = FIXTURES,
   options: BoxOptions = {},
-): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string }> {
+): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string; hotspot: string }> {
   const { apps, state, builtins } = makeBox(fixtures, options);
   // What the update check and an install write, empty until a test fills it.
   const updates = join(state, "..", "update");
   mkdirSync(updates, { recursive: true });
-  // The phone companion too, on this computer only, as the box serves it on
-  // the home network.
-  const daemon = new Daemon({ root: ROOT, state, apps, updates, port, builtins: builtins ?? null, log: () => {}, lanPort: 0, lanHost: "127.0.0.1", address: () => "127.0.0.1" });
+  // What agentv-hotspot writes, empty until a test fills it.
+  const hotspot = join(state, "..", "hotspot");
+  mkdirSync(hotspot, { recursive: true });
+  // The phone companion and the setup hotspot's captive page too, on this
+  // computer only, as the box serves them on the home network and on its
+  // hotspot.
+  const daemon = new Daemon({
+    root: ROOT,
+    state,
+    apps,
+    updates,
+    port,
+    builtins: builtins ?? null,
+    log: () => {},
+    lanPort: 0,
+    lanHost: "127.0.0.1",
+    address: () => "127.0.0.1",
+    setupPort: 0,
+    setupHost: "127.0.0.1",
+    hotspotAddress: "127.0.0.1",
+    hotspotRun: hotspot,
+  });
   const listening = await daemon.listen();
-  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates };
+  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };
 }

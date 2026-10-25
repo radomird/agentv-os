@@ -1,7 +1,8 @@
 // AgenTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
-// pages and the state behind them on this box only (127.0.0.1:3000), and the
+// pages and the state behind them on this box only (127.0.0.1:3000), the
 // phone companion on the home network (port 3001), where only a paired phone
-// gets past pairing (stage 4).
+// gets past pairing, and the setup hotspot's captive page (port 3002), on
+// the hotspot's own address only (stage 4).
 //
 // - The welcome page until setup is done, and the home screen (launcher/)
 //   after it. Setup isn't built until stage 5, so `agentv setup skip` marks it
@@ -26,6 +27,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
+import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
 import { Pin } from "./pin.ts";
@@ -58,15 +60,23 @@ export interface DaemonOptions {
   address?: () => string | null;
   // qrencode, which draws the QR code.
   qrencode?: string;
+  // The setup hotspot's captive page: its port, which agentv-hotspot sends
+  // the phone's port 80 to (3002 on the box), or none; what agentv-hotspot
+  // writes (/run/agentv-hotspot); and the box's address on the hotspot,
+  // which the page answers on and nowhere else.
+  setupPort?: number;
+  setupHost?: string;
+  hotspotRun?: string;
+  hotspotAddress?: string;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
-// address, never a container's or a VM bridge's.
-export function lanAddress(): string | null {
-  const all = Object.entries(networkInterfaces()).filter(([name]) => !/^(lo|docker|br-|veth|virbr|tun|tap)/.test(name));
+// address, never a container's, a VM bridge's or its own setup hotspot's.
+export function lanAddress(interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces()): string | null {
+  const all = Object.entries(interfaces).filter(([name]) => !/^(lo|docker|br-|veth|virbr|tun|tap)/.test(name));
   all.sort(([a], [b]) => Number(/^(en|eth|wl)/.test(b)) - Number(/^(en|eth|wl)/.test(a)));
   for (const [, addresses] of all) {
-    const found = addresses?.find((a) => a.family === "IPv4" && !a.internal);
+    const found = addresses?.find((a) => a.family === "IPv4" && !a.internal && a.address !== HOTSPOT_ADDRESS);
     if (found) return found.address;
   }
   return null;
@@ -93,6 +103,8 @@ const TYPES: Record<string, string> = {
 
 // The folders the TV's pages come from, by their first path segment.
 const STATIC = ["launcher", "setup"];
+// All the captive page needs, and all a phone on the setup hotspot gets.
+const CAPTIVE_FILES = ["companion-web/setup.ts", "companion-web/lib.ts", "companion-web/companion.css", "launcher/glyphs.ts"];
 const MAX_BODY = 64 * 1024;
 
 function now(): string {
@@ -112,8 +124,11 @@ export class Daemon {
   readonly profiles: Profiles;
   readonly key: ProviderKey;
   readonly phones: Phones;
+  readonly hotspot: Hotspot;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
+  // The setup hotspot's captive page.
+  readonly captive?: Server;
   // The screen daemon, taking the phone's keys and text for the virtual
   // input device.
   private remotes = new Set<ServerResponse>();
@@ -142,10 +157,20 @@ export class Daemon {
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
+    this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     if (options.lanPort !== undefined) {
       this.lan = createServer((request, response) => {
         this.handlePhone(request, response).catch((error: Error) => {
           this.log(`error: phone ${request.method} ${new URL(request.url ?? "/", "http://phone").pathname}: ${error.message}`);
+          if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
+          else response.end();
+        });
+      });
+    }
+    if (options.setupPort !== undefined) {
+      this.captive = createServer((request, response) => {
+        this.handleCaptive(request, response).catch((error: Error) => {
+          this.log(`error: setup page ${request.method} ${new URL(request.url ?? "/", "http://setup").pathname}: ${error.message}`);
           if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
           else response.end();
         });
@@ -167,9 +192,11 @@ export class Daemon {
 
   listen(): Promise<number> {
     const lan = this.lan;
-    const phones = lan
-      ? new Promise<void>((resolve) => lan.listen(this.options.lanPort, this.options.lanHost ?? "0.0.0.0", () => resolve()))
-      : Promise.resolve();
+    const captive = this.captive;
+    const phones = Promise.all([
+      lan ? new Promise<void>((resolve) => lan.listen(this.options.lanPort, this.options.lanHost ?? "0.0.0.0", () => resolve())) : null,
+      captive ? new Promise<void>((resolve) => captive.listen(this.options.setupPort, this.options.setupHost ?? "0.0.0.0", () => resolve())) : null,
+    ]);
     return phones.then(
       () =>
         new Promise((resolve) => {
@@ -186,6 +213,12 @@ export class Daemon {
     return address && typeof address === "object" ? address.port : null;
   }
 
+  // The captive page's port, once it listens.
+  get setupPort(): number | null {
+    const address = this.captive?.address();
+    return address && typeof address === "object" ? address.port : null;
+  }
+
   // The ledger, opened the first time something needs it.
   get ledger(): Ledger {
     this.openLedger ??= new Ledger(this.ledgerPath);
@@ -196,6 +229,7 @@ export class Daemon {
     for (const stream of this.streams) stream.end();
     for (const stream of this.remotes) stream.end();
     this.lan?.close();
+    this.captive?.close();
     this.home.stop();
     this.updates.stop();
     this.openLedger?.close();
@@ -302,6 +336,78 @@ export class Daemon {
       later: state.seen?.later === version,
       installing,
     };
+  }
+
+  // --- The setup hotspot's captive page ---------------------------------------
+
+  // Answers on the hotspot's own address and nowhere else. A phone that joins
+  // the hotspot asks for a page it knows to find out whether it's online
+  // (iOS and Android each have one), and every name points here, so a
+  // request for any other name goes to the captive page, which the phone
+  // then opens on its own. The page lists the networks the box could see,
+  // and hands the one picked, with its password, to root.
+  private async handleCaptive(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const address = this.options.hotspotAddress ?? HOTSPOT_ADDRESS;
+    if ((request.socket.localAddress ?? "").replace(/^::ffff:/, "") !== address) {
+      request.socket.destroy();
+      return;
+    }
+    const url = new URL(request.url ?? "/", "http://setup");
+    const path = url.pathname;
+    const method = request.method;
+    if (String(request.headers.host ?? "").replace(/:\d+$/, "") !== address) {
+      response.writeHead(302, { Location: `http://${address}/`, "Cache-Control": "no-store" });
+      response.end();
+      return;
+    }
+    const origin = request.headers.origin;
+    if (method !== "GET" && origin !== undefined && origin !== `http://${request.headers.host}`) {
+      this.json(response, 403, { ok: false, error: "not from the setup page" });
+      return;
+    }
+
+    if (method === "GET" && (path === "/" || path === "/index.html")) {
+      await this.file(response, join("companion-web", "setup.html"));
+      return;
+    }
+    if (method === "GET" && CAPTIVE_FILES.includes(path.slice(1))) {
+      await this.file(response, path.slice(1));
+      return;
+    }
+    if (method === "GET" && path === "/api/theme.css") {
+      this.send(response, TYPES[".css"], await this.home.theme());
+      return;
+    }
+
+    // The networks the box could see before it opened its own.
+    if (method === "GET" && path === "/api/setup/networks") {
+      const hotspot = this.hotspot.status();
+      this.json(response, 200, { ok: true, hotspot: hotspot.ssid, networks: this.hotspot.networks() });
+      return;
+    }
+
+    // How joining goes, for a phone back on the hotspot after a wrong
+    // password.
+    if (method === "GET" && path === "/api/setup/state") {
+      const { on, joining, joined, error } = this.hotspot.status();
+      this.json(response, 200, { ok: true, on, joining, joined, error });
+      return;
+    }
+
+    // The home Wi-Fi to join. Its password goes to root and nowhere else.
+    if (method === "POST" && path === "/api/setup/wifi") {
+      const body = (await this.body(request)) as { ssid?: unknown; password?: unknown } | undefined;
+      const why = this.hotspot.join(body?.ssid, body?.password ?? "");
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.log(`a phone on the setup hotspot asked to join ${String(body?.ssid)}`);
+      this.json(response, 200, { ok: true, joining: body?.ssid });
+      return;
+    }
+
+    this.json(response, 404, { ok: false, error: "not found" });
   }
 
   // --- The phone companion, on the home network ------------------------------
@@ -688,6 +794,8 @@ export class Daemon {
       const setup: Setup = body.done ? { done: true, at: now() } : { done: false };
       await this.saveSetup(setup);
       this.log(body.done ? "setup marked done" : "setup reset");
+      // The setup hotspot closes as setup ends.
+      if (body.done && this.hotspot.status().on) this.hotspot.stop();
       this.broadcast("setup", setup);
       this.json(response, 200, { ok: true, setup });
       return;
@@ -871,6 +979,27 @@ export class Daemon {
         this.broadcast("pin", this.pin.status());
       }
       this.json(response, 200, { ok: true, ...this.pin.status() });
+      return;
+    }
+
+    // --- The setup hotspot (stage 4) ----------------------------------------
+
+    // For the welcome screen: the hotspot's name and password, which the TV
+    // shows, and how joining the home Wi-Fi went.
+    if (method === "GET" && path === "/api/hotspot") {
+      this.json(response, 200, { ok: true, ...this.hotspot.status() });
+      return;
+    }
+
+    // The QR code a phone's camera joins the hotspot with.
+    if (method === "GET" && path === "/api/hotspot/qr") {
+      const hotspot = this.hotspot.status();
+      const svg = hotspot.on && hotspot.ssid ? await this.qr(wifiQr(hotspot.ssid, hotspot.password)) : null;
+      if (!svg) {
+        this.json(response, 404, { ok: false, error: hotspot.on ? "there's no qr code without qrencode" : "the setup hotspot isn't on" });
+        return;
+      }
+      this.send(response, TYPES[".svg"], svg, { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" });
       return;
     }
 
@@ -1249,9 +1378,12 @@ async function main(): Promise<void> {
     updates: process.env.AGENTV_UPDATE_STATE ?? "/var/lib/agentv/update",
     port,
     lanPort: process.env.AGENTV_LAN_PORT === "off" ? undefined : Number(process.env.AGENTV_LAN_PORT ?? 3001),
+    setupPort: process.env.AGENTV_SETUP_PORT === "off" ? undefined : Number(process.env.AGENTV_SETUP_PORT ?? 3002),
   });
   const listening = await daemon.listen();
-  console.log(`agentv daemon on http://127.0.0.1:${listening}/${daemon.lanPort ? `, and for phones on port ${daemon.lanPort}` : ""}`);
+  const phones = daemon.lanPort ? `, for phones on port ${daemon.lanPort}` : "";
+  const captive = daemon.setupPort ? `, and for the setup hotspot on port ${daemon.setupPort}` : "";
+  console.log(`agentv daemon on http://127.0.0.1:${listening}/${phones}${captive}`);
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => void daemon.close().then(() => process.exit(0)));
   }

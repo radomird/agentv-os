@@ -443,3 +443,31 @@ button.who {
   gap: 14px;
   color: var(--accent);
 }
+
+/* --- The setup hotspot's page (companion-web/setup.ts) -------------------- */
+
+.network-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.network .glyph-wifi {
+  color: var(--accent);
+}
+
+.network .glyph-lock {
+  color: var(--dark-foreground);
+}
+
+h1.with-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--bright-foreground);
+}
+
+h1.with-icon .glyph {
+  color: var(--accent);
+}

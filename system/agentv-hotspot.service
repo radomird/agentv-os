@@ -1,0 +1,18 @@
+# The setup hotspot (ADR-007, stage 4): AgenTV's own Wi-Fi network, with
+# addresses and names from dnsmasq, for a phone to set up the TV through
+# (bin/agentv-hotspot). agentv-hotspot-boot.service starts it on first boot
+# when there's no network, and so does `agentv hotspot start`. It closes
+# once the box joins the home Wi-Fi or setup ends, and what it opened goes
+# with it, however it stops.
+
+[Unit]
+Description=AgenTV setup hotspot
+Requires=NetworkManager.service
+After=NetworkManager.service agentv-daemon.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/agentv-hotspot run
+ExecStopPost=/usr/bin/agentv-hotspot down
+ProtectHome=yes
+PrivateTmp=yes

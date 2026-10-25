@@ -1,0 +1,17 @@
+# Opens the setup hotspot on first boot, when TV setup isn't done, the box
+# has Wi-Fi and none of NetworkManager's connections came up (ADR-007). It
+# waits for NetworkManager in the background, so the TV doesn't wait for it.
+
+[Unit]
+Description=AgenTV setup hotspot on first boot
+Wants=NetworkManager.service
+After=NetworkManager.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/agentv-hotspot boot
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
