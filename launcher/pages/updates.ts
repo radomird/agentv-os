@@ -37,7 +37,10 @@ export function off(updates: Updates): AfterCheck | null {
 }
 
 async function goBackNow(ctx: Ctx): Promise<void> {
-  const reply = await screen.goBack();
+  const grant = await ctx.grant("going back");
+  if (grant === null) return;
+  const reply = await screen.goBack(grant);
+  if (reply.pin) ctx.forgetGrant();
   if (!reply.ok) {
     ctx.sounds.play("failure");
     ctx.toast(reply.error ?? "couldn't go back", "fail");
@@ -82,9 +85,12 @@ export function later(updates: Updates): boolean {
 
 async function chooseTonight(ctx: Ctx, route: string): Promise<void> {
   const version = what(ctx.updates.status);
+  const grant = await ctx.grant("installing tonight");
+  if (grant === null) return;
   try {
-    await daemon.tonight(version);
+    await daemon.tonight(version, grant);
   } catch (error) {
+    ctx.forgetGrant();
     ctx.sounds.play("failure");
     ctx.toast((error as Error).message, "fail");
     return;
@@ -143,7 +149,10 @@ function when(iso: string | null | undefined): string {
 }
 
 async function install(ctx: Ctx): Promise<void> {
-  const reply = await screen.installUpdate();
+  const grant = await ctx.grant("installing the update");
+  if (grant === null) return;
+  const reply = await screen.installUpdate(grant);
+  if (reply.pin) ctx.forgetGrant();
   if (!reply.ok) {
     ctx.sounds.play("failure");
     ctx.toast(reply.error ?? "the update didn't start", "fail");
@@ -222,9 +231,12 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
 }
 
 async function overnight(ctx: Ctx): Promise<void> {
+  const grant = await ctx.grant("updating overnight");
+  if (grant === null) return;
   try {
-    await ctx.saveSettings({ updateOvernight: !ctx.state.settings.updateOvernight });
+    await ctx.saveSettings({ updateOvernight: !ctx.state.settings.updateOvernight }, grant);
   } catch (error) {
+    ctx.forgetGrant();
     ctx.sounds.play("failure");
     ctx.toast((error as Error).message, "fail");
     return;

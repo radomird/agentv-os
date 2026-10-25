@@ -110,9 +110,13 @@ class FakeBrowser implements DevTools {
     return targetId;
   }
   async bind() {}
+  // What the page answers, for a test that needs more than an empty object.
+  answer?: (expression: string) => object | undefined;
   async evaluate(_prefix: string, expression: string) {
     if (expression === HOME_UP) return this.up;
     this.evaluated.push(expression);
+    const answer = this.answer?.(expression);
+    if (answer) return answer;
     // The launcher's own go, for agentv screen settings.
     if (expression.includes("window.agentvLauncher?.go")) return { went: true };
     return {};
@@ -208,11 +212,13 @@ class FakeLauncher implements Launcher {
     this.bars.push(name);
   }
   desktops = 0;
+  desktopGrants: (string | undefined)[] = [];
   async appTarget(id: string) {
     return this.targets.get(id) ?? null;
   }
-  desktop() {
+  desktop(grant?: string) {
     this.desktops++;
+    this.desktopGrants.push(grant);
   }
   units: string[] = [];
   async startUnit(name: string) {
@@ -220,18 +226,23 @@ class FakeLauncher implements Launcher {
     return true;
   }
   // Settings → Power (ADR-033): whether an update runs, what the PIN says,
-  // and what powering off was asked for.
+  // and what powering off was asked for. With pinOk false there's a PIN,
+  // and only the grant "good" gets past it.
   updateRunning = false;
   pinOk = true;
   pins: string[] = [];
+  locks = 0;
   powered: string[] = [];
   powerWorks = true;
   async updating() {
     return this.updateRunning;
   }
-  async pinCheck(action: string) {
+  async pinCheck(action: string, grant?: string) {
     this.pins.push(action);
-    return this.pinOk;
+    return this.pinOk || grant === "good";
+  }
+  async lock() {
+    this.locks++;
   }
   async power(what: "restart" | "shutdown") {
     this.powered.push(what);
@@ -755,7 +766,7 @@ test("S2.18 Settings → Power restarts and shuts down through Omarchy's command
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: true });
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: true });
   assert.deepEqual(launcher.powered, ["restart", "shutdown"]);
-  assert.deepEqual(launcher.pins, ["power", "power"], "each asks agentv-pin-check first");
+  assert.deepEqual(launcher.pins, ["power", "power"], "each asks whether the pin lets it");
   // agentv screen power does the same, over SSH too.
   assert.deepEqual(await screen.handle({ cmd: "power", what: "restart" }), { ok: true });
   assert.deepEqual(await screen.handle({ cmd: "power", what: "off" }), { ok: false, error: "power restart or shutdown" });
@@ -765,12 +776,49 @@ test("S2.18 Settings → Power restarts and shuts down through Omarchy's command
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "not while an update runs" });
   launcher.updateRunning = false;
   launcher.pinOk = false;
-  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "that needs the pin" });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "that needs the pin", pin: true });
   assert.deepEqual(launcher.powered, []);
   // When Omarchy's command couldn't start, the TV says so.
   launcher.pinOk = true;
   launcher.powerWorks = false;
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: false, error: "the box couldn't restart" });
+});
+
+test("S4.5 with a PIN set, the home screen's adult actions need its grant, and the owner's own commands don't", async () => {
+  const { launcher, screen } = await tv();
+  launcher.pinOk = false;
+  const refused = { ok: false, error: "that needs the pin", pin: true };
+  for (const cmd of ["desktop", "update-install", "update-go-back"]) assert.deepEqual(await screen.fromHome({ cmd }), refused, cmd);
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), refused);
+  assert.deepEqual(await screen.fromHome({ cmd: "desktop", grant: "stale" }), refused);
+  assert.equal(launcher.desktops, 0);
+  assert.deepEqual(launcher.units, []);
+  assert.deepEqual(launcher.powered, []);
+  assert.deepEqual(launcher.pins, ["desktop", "update", "go-back", "power", "desktop"]);
+  // Checking for updates isn't an adult action.
+  assert.deepEqual(await screen.fromHome({ cmd: "update-check" }), { ok: true });
+  // With the grant the page got for the PIN, they go ahead, and agentv
+  // desktop gets it to check again.
+  assert.deepEqual(await screen.fromHome({ cmd: "desktop", grant: "good" }), { ok: true });
+  assert.deepEqual(launcher.desktopGrants, ["good"]);
+  assert.deepEqual(await screen.fromHome({ cmd: "update-install", grant: "good" }), { ok: true });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart", grant: "good" }), { ok: true });
+  // agentv screen, over the owner's own socket, needs no PIN: it locks the
+  // TV, not a shell on the box.
+  assert.deepEqual(await screen.handle({ cmd: "update", what: "go-back" }), { ok: true });
+  assert.deepEqual(await screen.handle({ cmd: "power", what: "shutdown" }), { ok: true });
+  assert.deepEqual(launcher.units, ["agentv-update-check.service", "agentv-update-tv.service", "agentv-go-back.service"]);
+  assert.deepEqual(launcher.powered, ["restart", "shutdown"]);
+});
+
+test("S4.5 agentv screen pin asks for the PIN on the home screen, in front, and hands back its grant", async () => {
+  const { launcher, screen } = await tv();
+  launcher.homeBrowser.answer = (expression) => (expression.includes("askPin") ? { grant: "good" } : undefined);
+  assert.deepEqual(await screen.handle({ cmd: "pin", action: "desktop" }), { ok: true, grant: "good" });
+  assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('askPin?.("desktop")')));
+  launcher.homeBrowser.answer = (expression) => (expression.includes("askPin") ? { grant: null } : undefined);
+  assert.deepEqual(await screen.handle({ cmd: "pin", action: "desktop" }), { ok: false, error: "the pin wasn't entered" });
+  assert.deepEqual(await screen.handle({ cmd: "pin", action: "x; rm" }), { ok: false, error: "the pin for which action" });
 });
 
 test("agentv screen status says which agentv this screen daemon runs, from when it started", async () => {
@@ -1044,6 +1092,7 @@ test("S2.8 with the TV off, playback pauses at once, every app closes after a wh
   assert.deepEqual(t.launcher.browser.closed, [page]);
   assert.equal(t.screen.ambient, true);
   assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.launcher.locks, 1, "with a pin set, the tv is locked when it's back (S4.5)");
   // S2.9: the TV comes back on the ambient screen, and a key goes home.
   on = true;
   await sleep(60);
@@ -1070,6 +1119,7 @@ test("S2.8 a TV back on within two minutes keeps the paused app open", async () 
   assert.equal(t.screen.ambient, false);
   assert.equal(t.screen.front()?.address, "0xb");
   assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: true }]);
+  assert.equal(t.launcher.locks, 0, "and doesn't lock it");
   t.screen.stop();
 });
 

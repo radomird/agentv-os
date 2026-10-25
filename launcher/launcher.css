@@ -1163,6 +1163,88 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* The parent PIN's pad (ADR-009, board 07), over the page: four boxes that
+   fill, and 1 to 9, 0 and delete. */
+#pin {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--background);
+  z-index: 35;
+}
+
+#pin.on {
+  display: flex;
+}
+
+.pin-pad {
+  width: 1000px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.pin-pad .headline {
+  margin: 0;
+  font-size: 72px;
+  letter-spacing: -3px;
+}
+
+.pin-boxes,
+.pin-keys {
+  width: 720px;
+  align-self: center;
+}
+
+.pin-message.bad {
+  color: var(--red);
+}
+
+.pin-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  margin: 16px 0;
+}
+
+.pin-box {
+  width: 76px;
+  height: 96px;
+  border: 3px solid var(--dark-foreground);
+}
+
+.pin-box.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pin-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.pin-key {
+  height: 92px;
+  background: var(--darker-background);
+  border: 3px solid var(--selection);
+  color: var(--bright-foreground);
+  font-size: 44px;
+  text-align: center;
+}
+
+.pin-key.focused {
+  border-color: var(--accent);
+}
+
+.pin-delete {
+  background: transparent;
+  border-color: transparent;
+  color: var(--foreground);
+}
+
 /* --- Music (ADR-017) ---------------------------------------------------- */
 
 .hidden {

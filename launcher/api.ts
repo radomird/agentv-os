@@ -44,6 +44,8 @@ export interface HomeState {
   appsTile: string;
   layout: Placed[];
   settings: Settings;
+  // Whether there's a parent PIN, and whether the TV is locked (ADR-009).
+  pin: { set: boolean; locked: boolean };
 }
 
 // What the daily update check found (bin/agentv-update-check, ADR-025).
@@ -154,10 +156,11 @@ export interface TileData {
   entries?: TileEntry[];
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+// A request to the daemon. A guarded one sends the grant the PIN gave.
+async function call<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json();
@@ -168,14 +171,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
   saveLayout: (layout: Placed[]) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }),
-  saveSettings: (change: Partial<Settings>) => call<{ settings: Settings }>("POST", "/api/settings", change),
+  saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
   updates: () => call<Updates>("GET", "/api/updates"),
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
-  tonight: (version: string | null) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }),
+  tonight: (version: string | null, grant?: string) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }, grant),
   weather: () => call<WeatherPlace>("GET", "/api/weather"),
   saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }) => call<WeatherPlace>("POST", "/api/weather", change),
+  // The parent PIN (ADR-009, S4.5).
+  checkPin: (pin: string) => call<{ grant: string; until: string }>("POST", "/api/pin/check", { pin }),
+  setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),
+  removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),
+  lock: () => call<{ locked: boolean }>("POST", "/api/pin/lock"),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
 };
 
@@ -243,14 +251,15 @@ export const screen = {
   wake: () => ask({ cmd: "wake" }),
   // Settings → Updates: Check now and Install now.
   checkUpdates: () => ask({ cmd: "update-check" }),
-  installUpdate: () => ask({ cmd: "update-install" }),
+  // Each adult action sends the grant the PIN gave (ADR-009, S4.5).
+  installUpdate: (grant: string) => ask({ cmd: "update-install", grant }),
   // Go back to the version from before the last update.
-  goBack: () => ask({ cmd: "update-go-back" }),
-  // Settings → Omarchy desktop: the PIN check, then a log-out to it.
-  desktop: () => ask({ cmd: "desktop" }),
+  goBack: (grant: string) => ask({ cmd: "update-go-back", grant }),
+  // Settings → Omarchy desktop: a log-out to it.
+  desktop: (grant: string) => ask({ cmd: "desktop", grant }),
   // Settings → Power, after its question, and Shut down after its countdown
-  // (ADR-033): the PIN check, then Omarchy's own restart or shut down.
-  power: (what: "restart" | "shutdown") => ask({ cmd: "power", what }),
+  // (ADR-033): Omarchy's own restart or shut down.
+  power: (what: "restart" | "shutdown", grant: string) => ask({ cmd: "power", what, grant }),
   // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // The built-in Music app's library and player, in the TV session (ADR-017).

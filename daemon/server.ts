@@ -23,6 +23,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
+import { Pin } from "./pin.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -38,6 +39,8 @@ export interface DaemonOptions {
   log?: (line: string) => void;
   // The agentv package this daemon runs: the one installed as it starts.
   running?: string;
+  // This boot's id, which the PIN's lock goes by: the kernel's, by default.
+  bootId?: () => string;
 }
 
 interface Setup {
@@ -76,6 +79,7 @@ export class Daemon {
   private stripped = new Map<string, { mtime: number; code: string }>();
   readonly home: Home;
   readonly updates: Updates;
+  readonly pin: Pin;
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
@@ -94,6 +98,7 @@ export class Daemon {
       log: this.log,
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
+    this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId });
     this.ledgerPath = options.ledger ?? join(options.state, "ledger.db");
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.server = createServer((request, response) => {
@@ -186,6 +191,20 @@ export class Daemon {
       "X-Content-Type-Options": "nosniff",
     });
     response.end(body);
+  }
+
+  // The grant a page got for the PIN, sent with a guarded request.
+  private grant(request: IncomingMessage): string | undefined {
+    const grant = request.headers["x-agentv-grant"];
+    return typeof grant === "string" ? grant : undefined;
+  }
+
+  // A guarded request without a good grant gets this, and false.
+  private guarded(request: IncomingMessage, response: ServerResponse, what: string): boolean {
+    if (this.pin.allows(this.grant(request))) return true;
+    this.log(`refused ${what}: it needs the pin`);
+    this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
+    return false;
   }
 
   private async text(request: IncomingMessage): Promise<string> {
@@ -315,6 +334,7 @@ export class Daemon {
 
     if (method === "GET" && path === "/api/home") {
       const viewer = await this.home.viewer();
+      const pin = this.pin.status();
       const [info, setup, apps, layout, settings] = await Promise.all([
         this.settings(),
         this.setup(),
@@ -332,6 +352,7 @@ export class Daemon {
         appsTile: APPS_TILE,
         layout,
         settings,
+        pin: { set: pin.set, locked: pin.locked },
       });
       return;
     }
@@ -371,7 +392,11 @@ export class Daemon {
     // Install tonight (ADR-025), from Settings → Updates or the phone; the
     // screen daemon does it between 02:00 and 05:00.
     if (method === "POST" && path === "/api/updates/tonight") {
-      const why = await this.updates.setTonight(await this.body(request));
+      const change = await this.body(request);
+      // Choosing to install is an adult's, and needs the PIN; the screen
+      // daemon clears it once the night's install is done.
+      if ((change as { version?: unknown } | undefined)?.version !== null && !this.guarded(request, response, "install tonight")) return;
+      const why = await this.updates.setTonight(change);
       if (why) {
         this.json(response, 400, { ok: false, error: why });
         return;
@@ -403,7 +428,11 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/settings") {
-      const why = await this.home.saveSettings(await this.body(request));
+      const change = await this.body(request);
+      // Updating overnight installs on its own, so it needs the PIN too.
+      const overnight = (change as { updateOvernight?: unknown } | undefined)?.updateOvernight;
+      if (typeof overnight === "boolean" && overnight !== (await this.home.settings()).updateOvernight && !this.guarded(request, response, "updating overnight")) return;
+      const why = await this.home.saveSettings(change);
       if (why) {
         this.json(response, 400, { ok: false, error: why });
         return;
@@ -411,6 +440,70 @@ export class Daemon {
       const settings = await this.home.settings();
       this.broadcast("settings", settings);
       this.json(response, 200, { ok: true, settings });
+      return;
+    }
+
+    // --- The parent PIN (ADR-009, S4.5) ------------------------------------
+
+    if (method === "GET" && path === "/api/pin") {
+      this.json(response, 200, { ok: true, ...this.pin.status() });
+      return;
+    }
+
+    // The PIN, entered on the TV: a grant for the guarded actions, and the TV
+    // unlocked. The PIN itself is never logged.
+    if (method === "POST" && path === "/api/pin/check") {
+      const locked = this.pin.status().locked;
+      const body = (await this.body(request)) as { pin?: unknown } | undefined;
+      const checked = this.pin.check(body?.pin);
+      if (!checked.ok) {
+        this.log(checked.wait ? `a wrong pin; the next try waits ${checked.wait} s` : "a wrong pin");
+        this.json(response, 403, checked);
+        return;
+      }
+      if (locked) {
+        this.log("the tv is unlocked");
+        this.broadcast("pin", this.pin.status());
+      }
+      this.json(response, 200, checked);
+      return;
+    }
+
+    // Whether a grant is good, for the screen daemon and agentv-pin-check.
+    if (method === "POST" && path === "/api/pin/allows") {
+      const body = (await this.body(request)) as { grant?: unknown } | undefined;
+      if (!this.pin.allows(body?.grant)) {
+        this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
+        return;
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
+    // Settings → Parental: a PIN, or another one, which needs a grant from
+    // the one before.
+    if ((method === "PUT" || method === "DELETE") && path === "/api/pin") {
+      const body = (await this.body(request)) as { pin?: unknown } | undefined;
+      const why = method === "PUT" ? this.pin.set(body?.pin, this.grant(request)) : this.pin.remove(this.grant(request));
+      if (why) {
+        this.json(response, why === "that needs the pin" ? 403 : 400, { ok: false, error: why });
+        return;
+      }
+      this.log(method === "PUT" ? "the pin was set" : "the pin was taken off");
+      const status = this.pin.status();
+      this.broadcast("pin", status);
+      this.json(response, 200, { ok: true, ...status });
+      return;
+    }
+
+    // The TV locks: from Settings → Parental, and from the screen daemon once
+    // the TV has been off long enough for its apps to close.
+    if (method === "POST" && path === "/api/pin/lock") {
+      if (this.pin.lock()) {
+        this.log("the tv is locked");
+        this.broadcast("pin", this.pin.status());
+      }
+      this.json(response, 200, { ok: true, ...this.pin.status() });
       return;
     }
 

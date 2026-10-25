@@ -113,6 +113,24 @@
 :root.reduce-motion .page-back,
 :root.reduce-motion .toast { animation: fade-in var(--base) ease-out both; }
 
+/* A wrong PIN shakes the pad, once. Reduce motion leaves it still. */
+.pin-pad.shake {
+  animation: pin-shake 320ms var(--ease);
+}
+
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-16px); }
+  50% { transform: translateX(12px); }
+  75% { transform: translateX(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-pad.shake { animation: none; }
+}
+
+:root.reduce-motion .pin-pad.shake { animation: none; }
+
 /* The Updating screen's bar fills as the install goes. */
 .updating-fill {
   transition: transform var(--slow) var(--ease);

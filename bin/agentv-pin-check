@@ -1,15 +1,74 @@
 #!/bin/bash
 
-# agentv:summary=Ask for the PIN before an adult action
+# agentv:summary=Ask for the parent PIN before an adult action
 # agentv:args=<action>
 # agentv:hidden=true
 
-# A stand-in until stage 4 builds the PIN (ADR-009), which replaces this:
-# no PIN can be set yet, so every action goes ahead. It's the one place the
-# PIN will be asked for, so callers such as agentv desktop already use it.
+# The parent PIN (ADR-009, S4.5), before an adult action such as Omarchy's
+# desktop. Exits 0 when the action may go ahead, 1 when it may not.
 #
-# Exits 0 when the action may go ahead, 1 when it may not.
+# With no PIN set, everything goes ahead. With one, one of these has to say
+# yes:
+# - the grant the TV got for the PIN, in AGENTV_PIN_GRANT, which the screen
+#   daemon passes on from the home screen;
+# - the PIN typed here, when there's a terminal to type it in;
+# - the PIN entered on the TV, which this asks for there, as when
+#   Super+Ctrl+Home runs agentv desktop.
+#
+# The PIN and the grant never go on a command line, and nothing logs them.
 
 set -euo pipefail
 
-exit 0
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+action=${1:-}
+if [[ ! $action =~ ^[a-z-]{1,20}$ ]]; then
+  echo "Usage: agentv-pin-check <action>" >&2
+  exit 2
+fi
+url="http://127.0.0.1:${AGENTV_PORT:-3000}"
+
+# POSTs the JSON on stdin and prints the answer, so nothing secret is in
+# curl's arguments.
+post() {
+  curl -sS --max-time 10 -H 'Content-Type: application/json' --data-binary @- "$url$1" 2>/dev/null || true
+}
+
+allowed() {
+  [[ -n $1 ]] && [[ $(jq -Rc '{grant: .}' <<<"$1" | post /api/pin/allows | jq -r '.ok // false' 2>/dev/null) == "true" ]]
+}
+
+# Omarchy's desktop is how a box whose daemon is down gets fixed, so it goes
+# ahead without one. Nothing on the TV can stop the daemon.
+if ! status=$(curl -fsS --max-time 5 "$url/api/pin" 2>/dev/null); then
+  if [[ $action == "desktop" ]]; then
+    echo "AgenTV's daemon isn't answering, so there's no PIN to check." >&2
+    exit 0
+  fi
+  echo "AgenTV's daemon isn't answering, so the PIN can't be checked." >&2
+  exit 1
+fi
+[[ $(jq -r '.set' <<<"$status") == "true" ]] || exit 0
+
+if allowed "${AGENTV_PIN_GRANT:-}"; then
+  exit 0
+fi
+
+if [[ -t 0 && -t 2 ]]; then
+  for _ in 1 2 3; do
+    read -rsp "The parent PIN, for $action: " pin
+    echo >&2
+    reply=$(jq -Rc '{pin: .}' <<<"$pin" | post /api/pin/check)
+    [[ $(jq -r '.ok // false' <<<"$reply" 2>/dev/null) == "true" ]] && exit 0
+    error=$(jq -r '.error // "that is not the pin"' <<<"$reply" 2>/dev/null || echo "AgenTV's daemon didn't answer")
+    echo "${error^}." >&2
+    [[ $(jq -r '.wait // 0' <<<"$reply" 2>/dev/null) == "0" ]] || exit 1
+  done
+  exit 1
+fi
+
+# No terminal: the TV asks, in front, for up to 2 minutes.
+if reply=$(AGENTV_SCREEN_TIMEOUT=150 "${AGENTV_SCREEN:-$AGENTV_BIN_DIR/agentv-screen}" pin "$action" 2>/dev/null); then
+  allowed "$(jq -r '.grant // empty' <<<"$reply")" && exit 0
+fi
+echo "That needs the parent PIN." >&2
+exit 1

@@ -2,7 +2,7 @@
 // screen of its own. Restart goes right after its question. Shut down counts
 // down 10 seconds, which Cancel stops, then the screen daemon turns the box
 // off through Omarchy's own command. Only an adult gets here, never while an
-// update runs, and stage 4's PIN will ask first (ADR-009).
+// update runs, and the parent PIN, when there is one, asks first (ADR-009).
 
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
@@ -35,7 +35,7 @@ export function power(ctx: Ctx, what: "restart" | "shutdown"): View {
   const count = h("div", { class: "power-count hidden" });
   const choose = h(
     "button",
-    { class: "button primary", "data-focus": true, "data-action": what, onclick: () => (restart ? void go() : countdown()) },
+    { class: "button primary", "data-focus": true, "data-action": what, onclick: () => void askFirst() },
     restart ? "↵ restart" : "↵ shut down",
   );
   const cancel = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: () => stop() }, "cancel");
@@ -46,6 +46,16 @@ export function power(ctx: Ctx, what: "restart" | "shutdown"): View {
 
   let timer = 0;
   let going = false;
+  let grant = "";
+
+  // The PIN first, when there is one, then the restart or the countdown.
+  const askFirst = async () => {
+    const got = await ctx.grant(restart ? "restarting the box" : "shutting the box down");
+    if (got === null || !el.isConnected) return;
+    grant = got;
+    if (restart) void go();
+    else countdown();
+  };
 
   // Back to Settings → Power, with the countdown stopped.
   const stop = () => {
@@ -71,7 +81,8 @@ export function power(ctx: Ctx, what: "restart" | "shutdown"): View {
     actions.classList.add("hidden");
     title.textContent = restart ? "restarting." : "shutting down.";
     summary.textContent = restart ? "restarting now." : "shutting down now.";
-    const reply = await screen.power(what);
+    const reply = await screen.power(what, grant);
+    if (reply.pin) ctx.forgetGrant();
     if (reply.ok) {
       ctx.sounds.play("confirm");
       return;
