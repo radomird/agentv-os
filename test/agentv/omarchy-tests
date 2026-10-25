@@ -21,6 +21,18 @@ trap 'git worktree remove --force "$BASE_TREE" >/dev/null 2>&1 || true; rm -rf "
 
 git worktree add --quiet --detach "$BASE_TREE" "$base^{commit}"
 
+# As root, as in a cloud session, some of Omarchy's tests mount tmpfs over
+# /home, /run and /var, taking it that they're already in a namespace of
+# their own. So as root each test file gets one, and its mounts go with it:
+# otherwise they'd hide the session's own folders until it ends.
+isolate=()
+(( EUID == 0 )) && isolate=(unshare --mount --propagation private)
+
+# run_test <tree> <test file>
+run_test() {
+  (cd "$1" && timeout 120 ${isolate[@]+"${isolate[@]}"} bash "$2")
+}
+
 # run_suites <tree> <results file>: one "pass|fail <name>" line per test file.
 run_suites() {
   local tree="$1" results="$2" test name
@@ -29,7 +41,7 @@ run_suites() {
   for test in "$tree/test/cli" "$tree"/test/shell.d/*-test.sh; do
     name=${test#"$tree"/}
     [[ $name == "test/shell.d/base-test.sh" ]] && continue
-    if (cd "$tree" && timeout 120 bash "$test" >"$WORK/last.log" 2>&1); then
+    if run_test "$tree" "$test" >"$WORK/last.log" 2>&1; then
       printf 'pass %s\n' "$name" >>"$results"
     else
       printf 'fail %s\n' "$name" >>"$results"
@@ -52,7 +64,7 @@ passes_on_retry() {
   local _
 
   for _ in 1 2 3 4; do
-    (cd "$ROOT" && timeout 120 bash "$ROOT/$1" >/dev/null 2>&1) && return 0
+    run_test "$ROOT" "$ROOT/$1" >/dev/null 2>&1 && return 0
   done
   return 1
 }
