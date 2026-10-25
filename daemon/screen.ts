@@ -52,6 +52,7 @@ import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
 import { PlaybackWatch } from "./playback.ts";
+import { RemoteInput } from "./remote.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
 import { tvOn } from "./tv-power.ts";
@@ -1835,6 +1836,8 @@ async function main(): Promise<void> {
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
   const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, signIn: signInWatch() });
+  // The paired phones' d-pad and keyboard, to the virtual input device.
+  new RemoteInput({ url: `${HOME_URL}api/remote` }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);

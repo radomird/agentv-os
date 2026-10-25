@@ -19,6 +19,7 @@ import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { keyPage } from "./pages/key.ts";
+import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { Sounds } from "./sounds.ts";
 
@@ -255,6 +256,7 @@ function viewFor(route: string): View {
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
   if (name === "key") return keyPage(ctx);
+  if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
   if (name === "music") return music(ctx, arg);
@@ -540,6 +542,17 @@ async function start(): Promise<void> {
     // closes the apps open behind home that kids can't open.
     viewer: () => void switched(),
     viewers: () => void refresh(),
+    // A phone was paired or forgotten: pairing is done, and Settings says so.
+    phones: (data) => {
+      const paired = (data as { paired?: string }).paired;
+      if (paired) {
+        ctx.toast(`${paired} is paired`, "ok");
+        sounds.play("confirm");
+      }
+      const route = history[history.length - 1];
+      if (route === "pair" && paired) ctx.back();
+      else if (route.startsWith("settings")) redraw();
+    },
     // The PIN was set or taken off, or the TV was locked or unlocked.
     pin: (data) => {
       const status = data as { set: boolean; locked: boolean };
