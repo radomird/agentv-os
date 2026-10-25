@@ -5,10 +5,11 @@
 // the welcome screen at 1920 × 1080, with the hotspot's QR code while it's
 // on and the code that pairs the phone once the box is on the home Wi-Fi.
 // The radio, NetworkManager, dnsmasq and the firewall are the image layer's
-// and the NUC's.
+// and the NUC's, and so is qrencode: a stand-in draws the QR codes here.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
@@ -26,8 +27,13 @@ let state = "";
 let hotspot = "";
 let captive = "";
 const errors: string[] = [];
+const tools = mkdtempSync(join(tmpdir(), "agentv-setup-ui-"));
+const path = process.env.PATH;
 
 before(async () => {
+  writeFileSync(join(tools, "qrencode"), `#!/bin/bash\necho '<svg xmlns="http://www.w3.org/2000/svg" width="21" height="21"><rect width="21" height="21"/></svg>'\n`);
+  chmodSync(join(tools, "qrencode"), 0o755);
+  process.env.PATH = `${tools}:${path}`;
   ({ daemon, url, state, hotspot } = await startBox());
   captive = `http://127.0.0.1:${daemon.setupPort}`;
   writeFileSync(
@@ -44,6 +50,8 @@ before(async () => {
 after(async () => {
   await browser?.close();
   await daemon?.close();
+  process.env.PATH = path;
+  rmSync(tools, { recursive: true, force: true });
   assert.deepEqual(errors, []);
 });
 
