@@ -92,7 +92,7 @@ test("S4.2 Settings → Profiles lists who watches, and a profile's page switche
   await go(page, "settings/profiles");
   await page.waitForSelector('.menu-item.open[data-key="profiles"]');
   assert.match(await page.locator('.menu-item[data-key="profiles"]').innerText(), /profiles\s+2/);
-  assert.match(await page.locator(".panel").innerText(), /who watches\?\s+r\s+radomir\s+watching\s+a\s+ana[\s\S]*\+ add a profile/);
+  assert.match(await page.locator(".panel").innerText(), /who watches\?\s+r\s+radomir\s+watching\s+a\s+ana[\s\S]*add a profile/);
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowDown");
   const ana = await byName("ana");
