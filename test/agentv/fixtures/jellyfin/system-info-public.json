@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/System/Info/Public"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "LocalAddress": "http://172.17.0.2:8096",
+    "ServerName": "45913fe5800f",
+    "Version": "10.10.7",
+    "ProductName": "Jellyfin Server",
+    "OperatingSystem": "",
+    "Id": "bd17342de1c049e2822ab8617140a4b2",
+    "StartupWizardCompleted": true
+  }
+}

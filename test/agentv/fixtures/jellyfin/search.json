@@ -1,0 +1,49 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/Items?userId=dffc1f8821164a6b89292387bc7f3180&searchTerm=test&Recursive=true&IncludeItemTypes=Movie,Series,Episode&Limit=20"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "Items": [
+      {
+        "Name": "Test Pattern (2026)",
+        "ServerId": "bd17342de1c049e2822ab8617140a4b2",
+        "Id": "029b551d41d6cc1b0c87daf1b4a473e0",
+        "Container": "mkv",
+        "ChannelId": null,
+        "RunTimeTicks": 3600460000,
+        "ProductionYear": 2026,
+        "IsFolder": false,
+        "Type": "Movie",
+        "UserData": {
+          "PlayedPercentage": 41.66134327280403,
+          "PlaybackPositionTicks": 1500000000,
+          "PlayCount": 1,
+          "IsFavorite": false,
+          "LastPlayedDate": "2026-10-25T12:55:34.4660719Z",
+          "Played": false,
+          "Key": "029b551d-41d6-cc1b-0c87-daf1b4a473e0",
+          "ItemId": "00000000000000000000000000000000"
+        },
+        "VideoType": "VideoFile",
+        "ImageTags": {
+          "Primary": "6a9b3c096a85eb604781a779c1a80793"
+        },
+        "BackdropImageTags": [],
+        "ImageBlurHashes": {
+          "Primary": {
+            "6a9b3c096a85eb604781a779c1a80793": "W{KeG*QvVzGLkQH$t7NfXMWSj?VuslrXnlj[WEb]t6nijJbHazkC"
+          }
+        },
+        "LocationType": "FileSystem",
+        "MediaType": "Video"
+      }
+    ],
+    "TotalRecordCount": 1,
+    "StartIndex": 0
+  }
+}
