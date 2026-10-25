@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Makes the music folder the Music app's tests read (ADR-019, layer 3): two
+# short albums of tones, in every format the app plays (MP3, FLAC, Ogg
+# Vorbis, Opus, AAC and WAV), with tags, cover art in a file and embedded,
+# and a playlist. They're made here, so they're ours to give away: CC0.
+#
+# Usage: test/agentv/fixtures/music/make   (needs ffmpeg)
+
+set -euo pipefail
+
+DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+rm -rf "$DIR/Test Tones" "$DIR/Night Shift" "$DIR/evening.m3u"
+mkdir -p "$DIR/Test Tones" "$DIR/Night Shift"
+
+tone() {
+  ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=$1:duration=2:sample_rate=22050" -ac 1 "${@:2}"
+}
+
+# A 64 × 64 cover for each album.
+ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=64x64:duration=1" -frames:v 1 "$DIR/Test Tones/cover.jpg"
+ffmpeg -loglevel error -y -f lavfi -i "mandelbrot=size=64x64" -frames:v 1 "$DIR/night.jpg"
+
+common=(-metadata album="Test Tones" -metadata artist="AgenTV" -metadata album_artist="AgenTV" -metadata date=2026)
+tone 440 "${common[@]}" -metadata title="A" -metadata track=1/3 -b:a 32k -id3v2_version 3 "$DIR/Test Tones/01 A.mp3"
+tone 330 "${common[@]}" -metadata title="E" -metadata track=2/3 "$DIR/Test Tones/02 E.flac"
+tone 262 "${common[@]}" -metadata title="C" -metadata track=3/3 -c:a libvorbis -q:a 0 "$DIR/Test Tones/03 C.ogg"
+
+night=(-metadata album="Night Shift" -metadata artist="Pixel Band" -metadata album_artist="Pixel Band" -metadata date=2025)
+tone 196 "${night[@]}" -metadata title="Dusk" -metadata track=1 -c:a libopus -b:a 16k "$DIR/Night Shift/01 Dusk.opus"
+ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=247:duration=2:sample_rate=22050" -i "$DIR/night.jpg" -map 0:a -map 1:v -ac 1 \
+  -c:a aac -b:a 32k -c:v copy -disposition:v attached_pic "${night[@]}" -metadata title="Midnight" -metadata track=2 "$DIR/Night Shift/02 Midnight.m4a"
+tone 294 "${night[@]}" -metadata title="Dawn" -metadata track=3 "$DIR/Night Shift/03 Dawn.wav"
+rm "$DIR/night.jpg"
+
+printf '%s\n' "#EXTM3U" "#EXTINF:2,Pixel Band - Dusk" "Night Shift/01 Dusk.opus" "#EXTINF:2,AgenTV - A" "Test Tones/01 A.mp3" >"$DIR/evening.m3u"
+du -sh "$DIR"

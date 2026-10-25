@@ -187,6 +187,7 @@ interface Reply {
   ok: boolean;
   error?: string;
   apps?: Running[];
+  [key: string]: unknown;
 }
 
 const waiting = new Map<number, (reply: Reply) => void>();
@@ -229,4 +230,6 @@ export const screen = {
   goBack: () => ask({ cmd: "update-go-back" }),
   // Settings → Omarchy desktop: the PIN check, then a log-out to it.
   desktop: () => ask({ cmd: "desktop" }),
+  // The built-in Music app's library and player, in the TV session (ADR-017).
+  music: (op: string, args: Record<string, unknown> = {}) => ask({ cmd: "music", op, ...args }),
 };

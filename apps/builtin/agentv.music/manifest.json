@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.music",
+  "name": "Music",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "Your own music, from the box's folders, USB drives and NAS shares",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "music",
+    "runtime": "builtin",
+    "capabilities": ["launch", "tile"],
+    "icon": "icon.svg",
+    "tiles": { "s": "logo", "m": "now playing", "l": "now playing and recent" },
+    "kidsSafe": true
+  }
+}

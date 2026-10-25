@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.8|S3.9|S3.10]...
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.6|S3.8|S3.9|S3.10]...
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
@@ -44,6 +44,9 @@
 #         installed for the check and removed after it, with its rows.
 #   S3.10 the same stand-in, which has playback and no tile(), shows a
 #         medium continue tile from its row.
+#   S3.6  Music reads its sources again, then "play <album>" finds an album
+#         on a USB drive and one on a NAS share, and each plays. They have
+#         to be there first: a stick plugged in, and the share added.
 #   S3.8  the small weather tile's scene against MET Norway's forecast for
 #         now, fetched live for the same place.
 #   S3.9  the medium and large weather tiles against MET's days.
@@ -70,18 +73,18 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.8|S3.9|S3.10]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.6|S3.8|S3.9|S3.10]..."
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16)
-STAGE3=(S3.3 S3.8 S3.9 S3.10)
+STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 checks=()
 for arg in "$@"; do
   case "$arg" in
     [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
     [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16) checks+=("S${arg:1}") ;;
     [sS]2) checks+=("${STAGE2[@]}") ;;
-    [sS]3.3 | [sS]3.8 | [sS]3.9 | [sS]3.10) checks+=("S${arg:1}") ;;
+    [sS]3.3 | [sS]3.6 | [sS]3.8 | [sS]3.9 | [sS]3.10) checks+=("S${arg:1}") ;;
     [sS]3) checks+=("${STAGE3[@]}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -808,6 +811,63 @@ APP
   fi
 }
 
+# The built-in Music app, in the TV session. Reading a NAS again can take a
+# while, so it gets longer than other screen requests.
+music() {
+  AGENTV_SCREEN_TIMEOUT=${AGENTV_SCREEN_TIMEOUT:-300} "${AGENTV_MUSIC:-$AGENTV_BIN_DIR/agentv-music}" "$@" 2>/dev/null || true
+}
+
+# S3.6: "play <album>" finds an album on a USB drive and one on a NAS share,
+# and each plays. An album whose name is also elsewhere in the library can't
+# show that, so it takes one whose name is only on that drive or share.
+s36() {
+  local scan library kind where album title id reply now first second wait=${AGENTV_MUSIC_WAIT_S:-3}
+
+  tv_on S3.6 || return 0
+  scan=$(music scan)
+  if [[ $(jq -r '.ok // false' <<<"$scan" 2>/dev/null) != true ]]; then
+    result fail S3.6 "Music couldn't read its sources: $(jq -r '.error // "no answer"' <<<"$scan" 2>/dev/null || echo "no answer")"
+    return 0
+  fi
+  library=$(music library)
+  for kind in usb share; do
+    where=$([[ $kind == usb ]] && echo "a USB drive" || echo "a NAS share")
+    album=$(jq -c --arg kind "$kind" '
+      (.albums | map(.title | ascii_downcase)) as $names
+      | [.albums[] | select(.source | startswith($kind + ":"))
+         | select((.title | ascii_downcase) as $t | $names | map(select(. == $t)) | length == 1)]
+      | first // empty' <<<"$library" 2>/dev/null || true)
+    if [[ -z $album ]]; then
+      if [[ $kind == usb ]]; then
+        result fail S3.6 "there's no album on a USB drive whose name is only there; plug in a stick with an album on it and run agentv selftest S3.6 again"
+      else
+        result fail S3.6 "there's no album on a NAS share whose name is only there; add a share with agentv music add-share smb://<nas>/<share> (or Music → sources on the TV) and run agentv selftest S3.6 again"
+      fi
+      continue
+    fi
+    title=$(jq -r .title <<<"$album")
+    id=$(jq -r .id <<<"$album")
+    reply=$(music play album "$title")
+    if [[ $(jq -r '.playing.key // ""' <<<"$reply" 2>/dev/null) != "$id" ]]; then
+      result fail S3.6 "play $title didn't find the album on $where: $(jq -r '.playing.title // .error // "no answer"' <<<"$reply" 2>/dev/null || echo "no answer")"
+      continue
+    fi
+    sleep 1
+    first=$(music now | jq -r '.now.position // -1' 2>/dev/null || echo -1)
+    sleep "$wait"
+    now=$(music now)
+    second=$(jq -r '.now.position // -1' <<<"$now" 2>/dev/null || echo -1)
+    if [[ $(jq -r '.now.playing // false' <<<"$now" 2>/dev/null) == true && $(jq -r '.now.albumId // ""' <<<"$now") == "$id" ]] &&
+      awk -v a="$first" -v b="$second" 'BEGIN { exit !(b > a) }'; then
+      result pass S3.6 "play $title found the album on $where ($(jq -r '.source | sub("^[a-z]+:"; "")' <<<"$album")), and it plays: $(jq -r '.now | "\(.title) at \(.position | floor) s"' <<<"$now")"
+    else
+      result fail S3.6 "$title from $where didn't play: $(jq -c '.now' <<<"$now" 2>/dev/null || echo "no answer")"
+    fi
+  done
+  music stop >/dev/null
+  result manual S3.6 "listen: each album comes out of the TV's speakers. Then on the TV, Music → type each album's name in the search: it's the first result, and choosing it plays it"
+}
+
 s38() {
   ts_check daemon/weather-check.ts S3.8
 }
@@ -837,6 +897,7 @@ for id in "${checks[@]}"; do
     S2.15) s215 ;;
     S2.16) s216 ;;
     S3.3 | S3.10) s33 ;;
+    S3.6) s36 ;;
     S3.8) s38 ;;
     S3.9) s39 ;;
   esac

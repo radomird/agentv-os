@@ -59,6 +59,10 @@ const CREDITS: Record<string, string> = {
 
 const WEATHER = "agentv.weather";
 const CLOCK = "agentv.clock";
+// The built-ins on every home from the start (ADR-015). Music joins them
+// when it's the household's goal, which setup asks in stage 5 (ADR-017);
+// until then it's in Apps.
+const PINNED = [CLOCK, WEATHER];
 
 export interface TvSettings {
   sound: { on: boolean; volume: number };
@@ -425,7 +429,9 @@ export class Home {
   async layout(viewer: string): Promise<Placed[]> {
     const saved = (await readJson<Record<string, Placed[]>>(join(this.state, "layouts.json"), {}))[viewer];
     const sizes = await this.sizesById();
-    const builtins = (await this.builtinApps()).map(({ manifest }) => manifest.id);
+    const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
+    const builtins = all.filter((id) => PINNED.includes(id));
+    const unpinned = all.filter((id) => !PINNED.includes(id));
     const pinned = await readJson<Record<string, string[]>>(join(this.state, "builtins-pinned.json"), {});
     const fresh = builtins.filter((id) => !(pinned[viewer] ?? []).includes(id));
     if (saved) {
@@ -438,7 +444,7 @@ export class Home {
       }
     }
     let layout: Placed[] = [];
-    for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE).concat(APPS_TILE)) {
+    for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(APPS_TILE)) {
       layout = pin(layout, id) ?? layout;
     }
     if (fresh.length) await this.markPinned(viewer, fresh, saved ? layout : undefined);

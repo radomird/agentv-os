@@ -13,6 +13,7 @@ import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
+import { music } from "./pages/music.ts";
 import { settings } from "./pages/settings.ts";
 import { checkView, drawUpdating, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { Sounds } from "./sounds.ts";
@@ -121,6 +122,7 @@ function viewFor(route: string): View {
   if (name === "whats-new") return whatsNew(ctx);
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
+  if (name === "music") return music(ctx, arg);
   return home(ctx);
 }
 

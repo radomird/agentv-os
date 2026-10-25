@@ -1,7 +1,8 @@
 // AgenTV's built-in apps in the daemon (daemon/home.ts, daemon/place.ts):
-// Clock and Weather come with AgenTV, say so in their details, are pinned to
-// each viewer's home once, take where the box is from its time zone, and
-// Settings → Weather can pick another city (ADR-015, ADR-016, S3.8).
+// Clock, Music and Weather come with AgenTV and say so in their details;
+// Clock and Weather are pinned to each viewer's home once, take where the
+// box is from its time zone, and Settings → Weather can pick another city
+// (ADR-015, ADR-016, ADR-017, S3.8).
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -50,11 +51,11 @@ async function post(path: string, body: unknown): Promise<{ status: number; data
   return { status: response.status, data: await response.json() };
 }
 
-test("Clock and Weather come with AgenTV, first, and their details say they're built in", async () => {
+test("Clock, Music and Weather come with AgenTV, first, and their details say they're built in", async () => {
   const home = await get("/api/home");
-  assert.deepEqual(home.apps.slice(0, 2).map((app: any) => app.id), ["agentv.clock", "agentv.weather"]);
-  const [clock, weather] = home.apps;
-  for (const app of [clock, weather]) {
+  assert.deepEqual(home.apps.slice(0, 3).map((app: any) => app.id), ["agentv.clock", "agentv.music", "agentv.weather"]);
+  const [clock, music, weather] = home.apps;
+  for (const app of [clock, music, weather]) {
     assert.equal(app.tier, "built-in");
     assert.equal(app.maker, "built in");
     assert.equal(app.owner, undefined);
@@ -66,14 +67,18 @@ test("Clock and Weather come with AgenTV, first, and their details say they're b
   assert.equal(weather.credit, "weather data from met norway, under cc by 4.0");
   assert.deepEqual(weather.reach, ["127.0.0.1:" + new URL(met.url).port]);
   assert.deepEqual(clock.reach, ["nothing outside this tv"]);
+  assert.deepEqual(music.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m now playing", "l now playing and recent"]);
+  assert.equal(music.category, "music");
+  assert.deepEqual(music.reach, ["nothing outside this tv"]);
 });
 
-test("on a new box they're on home first, pinned small", async () => {
+test("on a new box Clock and Weather are on home first, pinned small, and Music waits in apps", async () => {
   const layout = (await get("/api/home")).layout;
   assert.deepEqual(layout.slice(0, 2), [
     { id: "agentv.clock", size: "s", x: 0, y: 0 },
     { id: "agentv.weather", size: "s", x: 1, y: 0 },
   ]);
+  assert.ok(!layout.some((tile: any) => tile.id === "agentv.music"));
 });
 
 test("S3.8 the weather tile shows the forecast for the time zone's city, asked for with its coordinates", async () => {
@@ -191,5 +196,6 @@ test("the check after an update loads the built-ins too", async () => {
   const { apps: checked } = await get("/api/apps/check");
   const byId = Object.fromEntries(checked.map((app: any) => [app.id, app]));
   assert.equal(byId["agentv.clock"].ok, true);
+  assert.equal(byId["agentv.music"].ok, true);
   assert.equal(byId["agentv.weather"].ok, true);
 });

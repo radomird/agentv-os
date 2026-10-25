@@ -34,6 +34,7 @@ S2.8  manual    with the TV off mid-episode, playback pauses within 5 s, every a
 S2.9  manual    when the TV comes back on, a key press brings the launcher back within 10 s (layer 2 checks the policy)
 S2.17 image     with no input and nothing playing, the ambient screen starts after the time Settings gives, and a paused film stays open behind it
 S3.3  image     a ledger row appears within 10 s of an app opening, and a second viewer gets a separate row (layer 2 checks viewers until stage 4's profiles; agentv selftest S3.3 on the NUC)
+S3.6  image     Music plays an album from a NAS share and one from a USB stick, and "play <album>" finds each (layers 2 and 4 on fixtures and stand-ins; the image layer plays the fixture album; agentv selftest S3.6 on the NUC)
 S3.8  image     the weather tile shows the same condition as MET Norway's current symbol for the box's city (layers 2 and 4 on recorded replies; agentv selftest S3.8 on the NUC)
 S3.9  image     the medium and large weather tiles match MET Norway's forecast for today, tomorrow and the next 7 days (agentv selftest S3.9 on the NUC)
 S3.10 image     an app with playback and no tile() shows a medium continue tile from the ledger (agentv selftest S3.10 on the NUC)
