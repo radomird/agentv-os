@@ -148,6 +148,22 @@ test("a commit the repo doesn't have isn't installed", async () => {
   await refused(installFromIndex("agentv.sample", index([sample("0".repeat(40))]), apps(), keyring), /couldn't fetch agentv\.sample/);
 });
 
+test("an app that says it's built in isn't installed from the index, since built-ins come only with AgenTV", async () => {
+  const path = join(repo, "manifest.json");
+  const before = readFileSync(path, "utf8");
+  const manifest = JSON.parse(before);
+  manifest.version = "1.0.2";
+  manifest.tv.runtime = "builtin";
+  delete manifest.tv.homeUrl;
+  writeFileSync(path, JSON.stringify(manifest, null, 2));
+  const builtin = commit("Sample 1.0.2, built in");
+  writeFileSync(path, before);
+  commit("Sample, back to 1.0.1");
+  const dir = apps();
+  await refused(installFromIndex("agentv.sample", index([sample(builtin, "1.0.2")]), dir, keyring), /built in/);
+  assert.deepEqual(await readInstalled(dir), {});
+});
+
 test("installing a newer version replaces the old one", async () => {
   const dir = apps();
   await installFromIndex("agentv.sample", index([sample()]), dir, keyring);

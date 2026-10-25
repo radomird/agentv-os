@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# Records MET Norway's Locationforecast replies for the places in
+# test/agentv/fixtures/met/cities, as fixtures for the weather app's tests
+# (S3.8, S3.9). Each file keeps the reply's body and the headers the app
+# reads: Expires and Last-Modified, which say when it may ask again.
+#
+# MET's terms ask for a User-Agent that says who's asking and how to reach
+# them. In CI that's this repo's address; elsewhere, set AGENTV_RECORD_CONTACT.
+#
+# Usage: test/agentv/fixtures/record/met
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
+DIR="$ROOT/test/agentv/fixtures/met"
+API=https://api.met.no/weatherapi/locationforecast/2.0/compact
+
+contact=${AGENTV_RECORD_CONTACT:-}
+if [[ -z $contact && -n ${GITHUB_REPOSITORY:-} ]]; then
+  contact="${GITHUB_SERVER_URL:-https://github.com}/$GITHUB_REPOSITORY"
+fi
+[[ -n $contact ]] || { echo "Set AGENTV_RECORD_CONTACT to a web address or email for MET's User-Agent" >&2; exit 2; }
+agent="AgenTV-fixtures/1 (+$contact)"
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+while read -r name lat lon zone; do
+  [[ -z $name || $name == \#* ]] && continue
+  url="$API?lat=$lat&lon=$lon"
+  status=$(curl -sS --retry 3 --retry-delay 5 -o "$work/body" -D "$work/headers" -w '%{http_code}' -H "User-Agent: $agent" "$url")
+  [[ $status == 200 ]] || { echo "MET answered $status for $name" >&2; exit 1; }
+  header() { tr -d '\r' <"$work/headers" | sed -n "s/^$1: //Ip" | tail -n 1; }
+  jq -n --arg name "$name" --arg zone "$zone" --arg url "$url" \
+    --arg recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg expires "$(header expires)" --arg modified "$(header last-modified)" --arg date "$(header date)" \
+    --slurpfile body "$work/body" '{
+      place: $name, zone: $zone, recorded: $recorded, url: $url, status: 200,
+      headers: {date: $date, expires: $expires, "last-modified": $modified},
+      body: $body[0]
+    }' >"$DIR/$name.json"
+  echo "recorded $name: $(jq '.properties.timeseries | length' "$work/body") forecast steps"
+  sleep 1
+done <"$DIR/cities"

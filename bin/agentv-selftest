@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16]...
-# agentv:examples=agentv selftest | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.8|S3.9]...
+# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
 # The acceptance checks CI can't see, run on the box itself (ADR-019, layer
@@ -38,6 +38,12 @@
 #         again to bring it back.
 #   S2.16 Home and Back from the keyboard, a gamepad and the mouse: manual.
 #
+# Stage 3, the reference apps (S3 runs them all):
+#
+#   S3.8  the small weather tile's scene against MET Norway's forecast for
+#         now, fetched live for the same place.
+#   S3.9  the medium and large weather tiles against MET's days.
+#
 # Stage 0:
 #
 #   S0.2  the root disk isn't encrypted, so there's no password at boot; the
@@ -56,19 +62,23 @@ AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 AGENTV_HEALTH_URL=${AGENTV_HEALTH_URL:-http://127.0.0.1:3000/health}
 AGENTV_SDDM_CONF=${AGENTV_SDDM_CONF:-/etc/sddm.conf}
 AGENTV_STATE=${AGENTV_STATE:-/var/lib/agentv}
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.8|S3.9]..."
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16)
+STAGE3=(S3.8 S3.9)
 checks=()
 for arg in "$@"; do
   case "$arg" in
     [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
     [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16) checks+=("S${arg:1}") ;;
     [sS]2) checks+=("${STAGE2[@]}") ;;
+    [sS]3.8 | [sS]3.9) checks+=("S${arg:1}") ;;
+    [sS]3) checks+=("${STAGE3[@]}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -671,6 +681,31 @@ s216() {
   result manual S2.16 "over a playing app: the keyboard's Home key, a gamepad's guide button and the mouse pushed into the top left corner, then a click on Home there, each show the home screen. Back reaches the app, and holding Back for a second goes home. In a game, the guide button stays the game's."
 }
 
+# ts_check <script> <id>: runs one of AgenTV's TypeScript checks, which
+# print their own pass, fail and manual lines for the id.
+ts_check() {
+  local flags=() line verdict what got=0
+
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  while IFS= read -r line; do
+    verdict=${line%% *}
+    what=${line#* }
+    what=${what#* }
+    case $verdict in
+      pass | fail | manual) result "$verdict" "$2" "$what"; got=1 ;;
+    esac
+  done < <(node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$AGENTV_PATH/$1" "$2" 2>&1 || true)
+  (( got )) || result fail "$2" "$1 said nothing"
+}
+
+s38() {
+  ts_check daemon/weather-check.ts S3.8
+}
+
+s39() {
+  ts_check daemon/weather-check.ts S3.9
+}
+
 echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 "$AGENTV_BIN_DIR/agentv-version" 2>/dev/null || true
 echo
@@ -691,6 +726,8 @@ for id in "${checks[@]}"; do
     S2.11) s211 ;;
     S2.15) s215 ;;
     S2.16) s216 ;;
+    S3.8) s38 ;;
+    S3.9) s39 ;;
   esac
 done
 

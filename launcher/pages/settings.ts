@@ -1,8 +1,8 @@
 // Settings (ADR-015, ADR-024, ADR-031): sections on the left, the focused one
-// on the right. Look and Sound work now, and so does Omarchy desktop; the
+// on the right. Look, Sound, Weather and Omarchy desktop work now; the
 // sections later stages build say so.
 
-import { screen } from "../api.ts";
+import { daemon, screen, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -26,6 +26,10 @@ function soon(what: string): HTMLElement[] {
   return [h("div", { class: "panel-big" }, "coming soon"), note(what)];
 }
 
+// The weather's city and units, kept between visits so the panel draws at
+// once, and asked for again each time Settings opens.
+let weather: WeatherPlace | null = null;
+
 export function settings(ctx: Ctx, open?: string): View {
   const s = ctx.state.settings;
   const save = async (change: Parameters<Ctx["saveSettings"]>[0], key: string, action: string) => {
@@ -40,6 +44,54 @@ export function settings(ctx: Ctx, open?: string): View {
       h("span", {}, label),
       h("span", { class: "button-value" }, on ? "[x]" : "[ ]"),
     );
+
+  // Settings → Weather (ADR-015): another city from the tz database, or the
+  // box's own, and the units.
+  const saveWeather = async (change: Parameters<typeof daemon.saveWeather>[0], action: string) => {
+    try {
+      weather = await daemon.saveWeather(change);
+      ctx.sounds.play("confirm");
+    } catch (error) {
+      ctx.toast((error as Error).message, "fail");
+      ctx.sounds.play("failure");
+    }
+    ctx.render("settings/weather", action);
+  };
+  const stepCity = (by: number) => {
+    if (!weather || weather.cities.length === 0) return;
+    const at = weather.cities.findIndex((city) => city.zone === weather!.zone);
+    const next = weather.cities[(at + by + weather.cities.length) % weather.cities.length];
+    void saveWeather({ zone: next.zone }, "city");
+  };
+  const weatherPanel = (): HTMLElement[] => {
+    if (!weather) return [h("div", { class: "panel-big" }, "…")];
+    const w = weather;
+    return [
+      h("div", { class: "panel-title" }, "the forecast is for"),
+      h("div", { class: "panel-big" }, w.name || "nowhere yet"),
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "city", "data-adjust": "city", onclick: () => stepCity(1) },
+        h("span", {}, "city"),
+        h("span", { class: "button-value" }, `‹ ${w.name || "none"} ›`),
+      ),
+      w.chosen
+        ? h(
+            "button",
+            { class: "button", "data-focus": true, "data-action": "own-city", onclick: () => saveWeather({ zone: null }, "city") },
+            "use the time zone's city",
+          )
+        : null,
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "units", onclick: () => saveWeather({ units: w.units === "c" ? "f" : "c" }, "units") },
+        h("span", {}, "degrees"),
+        h("span", { class: "button-value" }, w.units === "c" ? "°c" : "°f"),
+      ),
+      note("left and right pick another city. only its rough location goes to met norway."),
+      note("weather data from met norway, under cc by 4.0."),
+    ].filter((el): el is HTMLElement => el !== null);
+  };
 
   const sections: Section[] = [
     {
@@ -106,7 +158,7 @@ export function settings(ctx: Ctx, open?: string): View {
         note("left and right change the volume."),
       ],
     },
-    { key: "weather", label: "weather", value: () => "soon", panel: () => soon("the weather tile and its city come with the built-in apps.") },
+    { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
     { key: "profiles", label: "profiles", value: () => ctx.state.viewer.name, panel: () => soon("profiles for everyone who watches, kids too, come with the phone app.") },
     { key: "parental", label: "parental", value: () => "soon", panel: () => soon("the pin comes with profiles.") },
     { key: "ai", label: "ai", value: () => "soon", panel: () => soon("connecting claude, chatgpt or gemini comes with tv setup.") },
@@ -148,6 +200,7 @@ export function settings(ctx: Ctx, open?: string): View {
         h("div", { class: "panel-big" }, `agentv ${ctx.state.version}`),
         note("the open-source tv os that writes its own app integrations. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),
+        note("weather data from met norway, under cc by 4.0."),
       ],
     },
   ];
@@ -182,6 +235,18 @@ export function settings(ctx: Ctx, open?: string): View {
 
   const start = sections.find((section) => section.key === open) ?? sections[0];
   show(start);
+  void daemon
+    .weather()
+    .then((found) => {
+      const changed = JSON.stringify(found) !== JSON.stringify(weather);
+      weather = found;
+      const item = menu.querySelector<HTMLElement>('[data-key="weather"] .menu-value');
+      if (item) item.textContent = found.name;
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "weather" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "weather")!);
+      }
+    })
+    .catch(() => {});
   const el = h(
     "div",
     { class: "screen" },
@@ -204,6 +269,10 @@ export function settings(ctx: Ctx, open?: string): View {
       if (current?.dataset.adjust === "idle" && (action === "left" || action === "right")) {
         const at = Math.max(0, Math.min(IDLE.length - 1, IDLE.indexOf(s.idleMinutes) + (action === "right" ? 1 : -1)));
         void save({ idleMinutes: IDLE[at] }, "look", "idle");
+        return true;
+      }
+      if (current?.dataset.adjust === "city" && (action === "left" || action === "right")) {
+        stepCity(action === "right" ? 1 : -1);
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {

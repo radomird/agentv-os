@@ -263,42 +263,120 @@ button {
 .mono-4 { background: var(--bright-cyan); }
 .mono-5 { background: var(--yellow); }
 
-/* What an app's tile() sends, drawn here in the theme (ADR-016). */
+/* What an app's tile() sends, drawn here in the theme (ADR-016), with icons
+   from the launcher's own pixel set (pixels.ts). Laid out as canvas boards
+   25 and 26 have it: the app's name and what the content is of along the
+   top, the headline large, and the entries in columns. */
+.tile.has-content {
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 24px 28px;
+}
+
+.tile-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  font-size: 28px;
+  white-space: nowrap;
+}
+
+.tile-head-name {
+  flex: none;
+}
+
+.tile-head-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--foreground);
+}
+
+.ink-0 { color: var(--bright-magenta); }
+.ink-1 { color: var(--blue); }
+.ink-2 { color: var(--green); }
+.ink-3 { color: var(--bright-yellow); }
+.ink-4 { color: var(--bright-cyan); }
+.ink-5 { color: var(--yellow); }
+
 .tile-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 16px;
   min-height: 0;
 }
 
-.headline-label {
-  color: var(--accent);
+.tile-now {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.size-l .tile-now {
+  gap: 36px;
+}
+
+.tile-now-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pixel {
+  display: block;
+  flex: none;
 }
 
 .headline-value {
-  font-size: 88px;
+  font-size: 84px;
   font-weight: 800;
   letter-spacing: -3px;
   line-height: 1;
 }
 
+.size-l .headline-value {
+  font-size: 120px;
+  letter-spacing: -5px;
+}
+
 .headline-caption,
 .entry-caption {
   color: var(--foreground);
+  white-space: pre-line;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.headline-caption {
+  font-size: 28px;
 }
 
 .entries {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(var(--count, 1), minmax(0, 1fr));
   gap: 20px;
   min-width: 0;
 }
 
+.entries-2 { --count: 2; }
+.entries-3 { --count: 3; }
+.entries-4 { --count: 4; }
+.entries-5 { --count: 5; }
+.entries-6 { --count: 6; }
+.entries-7 { --count: 7; gap: 8px; }
+
 .entry {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  max-width: 220px;
 }
 
 .entry img {
@@ -309,9 +387,121 @@ button {
 }
 
 .entry-label {
+  font-weight: 700;
+  color: var(--foreground);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.entry-value {
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.entry-caption {
+  font-size: 24px;
+}
+
+/* A small tile's one entry is a line along its foot. */
+.size-s .entries {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.size-s .entry-caption {
+  font-size: 28px;
+}
+
+/* Medium: the entries side by side, each with its icon beside its text,
+   split by a rule, as today and tomorrow are. */
+.size-m .entry-icon {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  column-gap: 22px;
+}
+
+.size-m .entry-icon .entry-label {
+  grid-column: 1 / -1;
+}
+
+.size-m .entry-icon + .entry-icon {
+  padding-left: 28px;
+  border-left: 2px solid var(--selection);
+}
+
+.size-m .entry-icon .entry-value {
+  font-size: 72px;
+  letter-spacing: -3px;
+  line-height: 1;
+}
+
+.size-m .entries .entry-icon:first-child .entry-label {
+  color: var(--accent);
+}
+
+/* Large: a row of days under the headline, each a column. */
+.size-l .entries {
+  padding-top: 24px;
+  border-top: 2px solid var(--selection);
+}
+
+.size-l .entry-icon {
+  align-items: center;
+  text-align: center;
+}
+
+.size-l .entry-icon .entry-text {
+  align-items: center;
+}
+
+.size-l .entries .entry-icon:first-child .entry-label {
+  color: var(--accent);
+}
+
+/* The built-in Clock: the time ticks here (canvas board 26). */
+.clock-time {
+  font-size: 96px;
+  font-weight: 800;
+  letter-spacing: -4px;
+  line-height: 1;
+  margin-top: auto;
+}
+
+.clock-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: auto;
+}
+
+.size-m .clock-time,
+.size-l .clock-time {
+  font-size: 150px;
+  letter-spacing: -6px;
+}
+
+.clock-when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-size: 30px;
+  color: var(--foreground);
+}
+
+.clock-day {
+  font-weight: 700;
+  color: var(--bright-foreground);
 }
 
 /* --- Edit mode (ADR-015, ADR-016) ---------------------------------------- */

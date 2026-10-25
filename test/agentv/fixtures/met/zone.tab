@@ -1,0 +1,15 @@
+# A few lines of the tz database's zone.tab (public domain), for the tests:
+# the cities whose forecasts are recorded here, and a few neighbours.
+DE	+5230+01322	Europe/Berlin	most of Germany
+FR	+4852+00220	Europe/Paris
+GB	+513030-0000731	Europe/London
+JP	+353916+1394441	Asia/Tokyo
+NL	+5222+00454	Europe/Amsterdam
+NO	+5955+01045	Europe/Oslo
+NZ	-3652+17446	Pacific/Auckland	most of New Zealand
+PT	+3843-00908	Europe/Lisbon	Portugal (mainland)
+RS	+4450+02030	Europe/Belgrade
+SJ	+7800+01600	Arctic/Longyearbyen
+US	+404251-0740023	America/New_York	Eastern (most areas)
+US	+415100-0873900	America/Chicago	Central (most areas)
+US	+340308-1181434	America/Los_Angeles	Pacific

@@ -3,7 +3,10 @@
 // and fails with a typed AppError, never a retry: the TV says what went wrong
 // instead. The app is held to its manifest: a capability it declares has to
 // be in its module, and only the capabilities it declares can be called.
-// Its fetch reaches only its declared origins, with setup fields filled in.
+// Its fetch reaches only its declared origins, with setup fields filled in,
+// and says it comes from AgenTV and which app it is, unless the app says
+// otherwise: a service such as MET Norway asks every request to say who's
+// asking (ADR-015).
 
 import { fork, type ChildProcess } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -72,6 +75,7 @@ export interface AppHostOptions {
   manifest: Manifest;
   settings?: Record<string, string>;
   limits?: Partial<Record<string, number>>; // per-call time limits, for tests
+  userAgent?: string; // AgenTV's own, like "AgenTV/0.1.2 (+https://...)"
   log?: (line: string) => void;
 }
 
@@ -84,6 +88,7 @@ export class AppHost {
   private pending = new Map<number, Pending>();
   private nextId = 0;
   private limits: Partial<Record<string, number>>;
+  private userAgent: string;
   private log: (line: string) => void;
 
   constructor(options: AppHostOptions) {
@@ -91,6 +96,7 @@ export class AppHost {
     this.dir = resolve(options.dir);
     this.settings = { ...(options.settings ?? {}) };
     this.limits = options.limits ?? {};
+    this.userAgent = `${options.userAgent ?? "AgenTV"} ${options.manifest.id}/${options.manifest.version}`;
     this.log = options.log ?? (() => {});
   }
 
@@ -200,9 +206,11 @@ export class AppHost {
       this.log(`${this.manifest.id}: refused a fetch to ${url.origin}, which isn't one of its origins`);
       throw new Error(`${url.origin} isn't one of the app's origins`);
     }
+    const headers = new Headers(message.headers as [string, string][]);
+    if (!headers.has("user-agent")) headers.set("user-agent", this.userAgent);
     const response = await fetch(url, {
       method: String(message.method),
-      headers: message.headers as [string, string][],
+      headers,
       body: message.body ? new Uint8Array(message.body as Uint8Array) : undefined,
       redirect: "manual",
       signal: AbortSignal.timeout(FETCH_MS),

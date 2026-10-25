@@ -1,0 +1,52 @@
+name: Record fixtures
+
+# Records the replies AgenTV's tests use as fixtures (ADR-019, layer 3), from
+# the services themselves: MET Norway's forecasts for the weather app. A push
+# to a record/<anything> branch records them and pushes them back to that
+# branch, where someone copies them into a pull request and the branch is
+# deleted. Run by hand on any other branch, it keeps them as an artifact and
+# pushes nothing.
+
+on:
+  push:
+    branches: ["record/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: record-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: Record the fixtures
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: ${{ startsWith(github.ref, 'refs/heads/record/') }}
+
+      - name: MET Norway's forecasts
+        run: test/agentv/fixtures/record/met
+
+      - name: Keep them
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixtures-${{ github.run_id }}
+          path: test/agentv/fixtures/met/*.json
+          retention-days: 7
+
+      - name: Push them back to the record branch
+        if: startsWith(github.ref, 'refs/heads/record/')
+        run: |
+          git add test/agentv/fixtures/met/*.json
+          if git diff --cached --quiet; then
+            echo "Nothing new to push."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Recorded fixtures, run ${GITHUB_RUN_ID}"
+          git push origin "HEAD:${GITHUB_REF}"

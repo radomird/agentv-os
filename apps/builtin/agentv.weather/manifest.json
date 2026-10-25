@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.weather",
+  "name": "Weather",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "The forecast for your city, from MET Norway",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "utility",
+    "runtime": "builtin",
+    "capabilities": ["launch", "tile"],
+    "origins": ["https://api.met.no"],
+    "icon": "icon.svg",
+    "tiles": { "s": "now", "m": "today and tomorrow", "l": "7 days" },
+    "kidsSafe": true
+  }
+}

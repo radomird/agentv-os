@@ -16,6 +16,7 @@
 // or from no page at all (a command on the box), are answered. A web page
 // elsewhere can't change anything here.
 
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
@@ -29,6 +30,7 @@ export interface DaemonOptions {
   state: string; // the daemon's own state: /var/lib/agentv/daemon
   apps?: string; // the box's apps: /var/lib/agentv/apps
   updates?: string; // what the update check and an install write: /var/lib/agentv/update
+  builtins?: string | null; // AgenTV's own apps: <root>/apps/builtin, or null for none
   port: number;
   host?: string;
   log?: (line: string) => void;
@@ -61,6 +63,23 @@ function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
 }
 
+// What the apps' requests say they are (ADR-015): AgenTV, its version and
+// where to find it, from the package's settings, so no owner is written
+// here. "AgenTV/0.1.2 (+https://github.com/<owner>/agentv-os)".
+export function userAgent(root: string): string {
+  const text = (() => {
+    try {
+      return readFileSync(join(root, "settings"), "utf8");
+    } catch {
+      return "";
+    }
+  })();
+  const value = (key: string) => text.split("\n").find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1).trim();
+  const version = value("AGENTV_VERSION") ?? "dev";
+  const home = value("AGENTV_HOMEPAGE") ?? value("AGENTV_TESTED_URL")?.replace(/\/releases\/download\/tested$/, "");
+  return home ? `AgenTV/${version} (+${home})` : `AgenTV/${version}`;
+}
+
 export class Daemon {
   readonly server: Server;
   private options: DaemonOptions;
@@ -74,7 +93,13 @@ export class Daemon {
   constructor(options: DaemonOptions) {
     this.options = options;
     this.log = options.log ?? ((line) => console.log(line));
-    this.home = new Home({ appsDir: options.apps ?? "/var/lib/agentv/apps", state: options.state, log: this.log });
+    this.home = new Home({
+      appsDir: options.apps ?? "/var/lib/agentv/apps",
+      state: options.state,
+      builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
+      userAgent: userAgent(options.root),
+      log: this.log,
+    });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.server = createServer((request, response) => {
@@ -382,6 +407,24 @@ export class Daemon {
       const settings = await this.home.settings();
       this.broadcast("settings", settings);
       this.json(response, 200, { ok: true, settings });
+      return;
+    }
+
+    // Settings → Weather: the city the forecast is for, and the units.
+    if (method === "GET" && path === "/api/weather") {
+      this.json(response, 200, { ok: true, ...(await this.home.weather()) });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/weather") {
+      const why = await this.home.saveWeather(await this.body(request));
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      const weather = await this.home.weather();
+      this.broadcast("weather", { zone: weather.zone, name: weather.name, units: weather.units });
+      this.json(response, 200, { ok: true, ...weather });
       return;
     }
 

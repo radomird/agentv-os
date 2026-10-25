@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.clock",
+  "name": "Clock",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "The time and the date",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "utility",
+    "runtime": "builtin",
+    "capabilities": ["launch", "tile"],
+    "icon": "icon.svg",
+    "tiles": { "s": "time", "m": "time and date" },
+    "kidsSafe": true
+  }
+}
