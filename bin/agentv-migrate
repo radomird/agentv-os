@@ -9,6 +9,11 @@
 # file once it has finished. Omarchy's post-update hook calls this after every
 # update (ADR-025). A fresh install marks them all as done, since it already
 # is what they would migrate to.
+#
+# Then it restarts AgenTV's own services on the version just installed
+# (agentv-restart), so an update only restarts the box when it has to. It's
+# here rather than in the hook because the hook is a copy in the owner's
+# config, from first boot, while this comes with every update.
 
 set -euo pipefail
 
@@ -63,13 +68,17 @@ esac
 
 if (( ${#pending[@]} == 0 )); then
   echo "No AgenTV migrations to run"
-  exit 0
+else
+  mkdir -p "$STATE_DIR"
+  for name in "${pending[@]}"; do
+    echo -e "\e[32m\nRunning AgenTV migration (${name%.sh})\e[0m"
+    # A failed migration stops here unmarked, so the next update runs it
+    # again, and nothing restarts on code it hasn't migrated for.
+    AGENTV_PATH="$AGENTV_PATH" bash -euo pipefail "$MIGRATIONS_DIR/$name"
+    touch "$STATE_DIR/$name"
+  done
 fi
 
-mkdir -p "$STATE_DIR"
-for name in "${pending[@]}"; do
-  echo -e "\e[32m\nRunning AgenTV migration (${name%.sh})\e[0m"
-  # A failed migration stops here unmarked, so the next update runs it again.
-  AGENTV_PATH="$AGENTV_PATH" bash -euo pipefail "$MIGRATIONS_DIR/$name"
-  touch "$STATE_DIR/$name"
-done
+# A service that doesn't restart says so, and the update goes on: the check
+# after an update from the TV finds a daemon still on the old version.
+"${AGENTV_RESTART:-$(dirname -- "${BASH_SOURCE[0]}")/agentv-restart}" || true

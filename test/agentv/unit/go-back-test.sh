@@ -20,7 +20,7 @@ cat >"$SCRATCH/bin/curl" <<'SH'
 url=${*: -1}
 [[ ${FAKE_DAEMON:-up} == "up" ]] || exit 7
 case "$url" in
-  */health) echo '{"ok":true}' ;;
+  */health) echo "{\"ok\":true,\"running\":\"${FAKE_RUNNING:-0.3.0-1}\"}" ;;
   */launcher/main.ts) echo 'export {};' ;;
   */api/home) echo '{"ok":true}' ;;
   */api/apps/check) echo "${FAKE_APPS:-{\"ok\":true,\"apps\":[]}}" ;;
@@ -76,6 +76,12 @@ FAKE_CHROMIUM=1 check_after && fail "the check fails when Chromium doesn't start
 [[ $(jq -r '.checks[] | select(.name == "chromium and widevine") | .detail' "$after") == "chromium doesn't start" ]] ||
   fail "Chromium that doesn't start" "$(cat "$after")"
 pass "the check fails when Chromium doesn't start, or lost the Widevine it had"
+
+# The update restarts AgenTV's services, so the daemon runs the new version.
+FAKE_RUNNING=0.2.1-1 AGENTV_AFTER_WAIT=0 check_after && fail "the check fails when the daemon still runs the old version"
+[[ $(jq -r '.checks[] | select(.name == "daemon") | .detail' "$after") == "the daemon still runs agentv 0.2.1-1" ]] ||
+  fail "a daemon still on the version from before the update" "$(cat "$after")"
+pass "the check fails when the daemon still runs the version from before the update"
 
 FAKE_DAEMON=down AGENTV_AFTER_WAIT=0 check_after && fail "the check fails when the daemon is down"
 [[ $(jq -c '[.checks[] | select(.ok | not) | .name]' "$after") == '["daemon","home screen"]' ]] ||

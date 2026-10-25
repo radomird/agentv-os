@@ -46,7 +46,7 @@ import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
-import { userAgent } from "./identity.ts";
+import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
@@ -212,10 +212,14 @@ interface Options {
   // have played before one installs.
   nightTickMs?: number;
   nightQuietMs?: number;
+  // The agentv package this screen daemon runs: the one installed as it
+  // starts.
+  running?: string;
 }
 
 export class Screen {
   private hypr: Hyprland;
+  private runningPackage: string;
   private launcher: Launcher;
   private playback?: Playback;
   private music?: Music;
@@ -290,6 +294,7 @@ export class Screen {
     this.nightTickMs = options.nightTickMs ?? 60_000;
     this.nightQuietMs = options.nightQuietMs ?? 30 * 60_000;
     this.lastPlayed = this.now();
+    this.runningPackage = options.running ?? installedPackage();
   }
 
   // Runs one step at a time, in the order things happened.
@@ -1219,6 +1224,9 @@ export class Screen {
     const layers = await this.hypr.layers();
     return {
       ok: true,
+      // What this process runs, which after an update and before AgenTV's
+      // services restart is still the package from before (agentv-restart).
+      running: this.runningPackage,
       front: front ? summary(front, clients) : null,
       windows: [...this.windows.values()].map((w) => ({ ...summary(w, clients), front: w.address === front?.address })),
       apps: [...this.apps.values()].map((a) => ({ role: a.role, pid: a.pid, started_at: new Date(a.startedAt).toISOString() })),
