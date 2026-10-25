@@ -4,11 +4,17 @@ name: Check
 # push to agentv: Omarchy's files unchanged since .github/omarchy-base, no em
 # dashes, no secrets, no service automation, no owner in code, shellcheck,
 # AgenTV's unit tests, and Omarchy's own tests no worse than at the base.
-# A pull request that changes what the box installs, runs or migrates also
-# gets the image layer (layer 5). Other workflows reuse it.
+# A pull request that changes how the box installs, boots, migrates or drives
+# the screen, or carries the "image" label, also gets the image layer (layer
+# 5). Other workflows reuse it.
 
 on:
   pull_request:
+    # labeled: adding the "image" label asks for the image layer by hand, and
+    # adding it again runs it again. Any other label runs the gates again too,
+    # which is harmless: skipping them for it would let a label mark a red
+    # pull request's checks as skipped.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [agentv]
   workflow_dispatch:
@@ -114,11 +120,15 @@ jobs:
             "
           '
 
-  # ADR-019: install/, system/, config/hypr/, migrations/, the TV session
-  # (session/) and its daemon (daemon/) change the box itself, so a pull
-  # request touching them gets the image layer too. Not a fork's, which gets
-  # no signing key, and not a sync pull request, which omarchy-sync.yml
-  # already runs the image layer for.
+  # ADR-019: install/, system/, config/hypr/, migrations/ and the TV session
+  # (session/) change how the box installs, boots and draws, and the screen
+  # daemon's files that drive Hyprland and the input device do too, so a pull
+  # request touching them gets the image layer. The rest of daemon/, the
+  # launcher and the apps are covered by layers 2 to 4, and by the nightly
+  # run, which runs the whole image layer every night, as agentv-iso does on
+  # every release tag. A pull request with the "image" label gets it anyway.
+  # Not a fork's, which gets no signing key, and not a sync pull request,
+  # which omarchy-sync.yml already runs the image layer for.
   #
   # A change that needs new image checks or a new PKGBUILD goes in a branch
   # of the same name in agentv-iso or agentv-pkgs, and the image layer uses
@@ -142,23 +152,30 @@ jobs:
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           HEAD_REF: ${{ github.head_ref }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'image') }}
         run: |
+          paths=(install/ system/ config/hypr/ migrations/ session/ daemon/screen.ts daemon/hyprland.ts daemon/input.py)
+          where="install/, system/, config/hypr/, migrations/, session/ or the screen daemon's Hyprland and input files"
           # The checkout is the pull request merged into its base, so its
           # first parent is the base.
-          changed=$(git diff --name-only HEAD^1 HEAD -- install/ system/ config/hypr/ migrations/ session/ daemon/)
+          changed=$(git diff --name-only HEAD^1 HEAD -- "${paths[@]}")
           image=false
-          if [[ -z $changed ]]; then
-            why="nothing under install/, system/, config/hypr/, migrations/, session/ or daemon/ changed"
-          elif [[ $HEAD_REPO != "$GITHUB_REPOSITORY" ]]; then
+          if [[ $HEAD_REPO != "$GITHUB_REPOSITORY" ]]; then
             why="it's from a fork, which gets no signing key"
           elif [[ $HEAD_REF == omarchy-sync/* ]]; then
             why="it's an Omarchy sync, and omarchy-sync.yml runs the image layer for it"
-          else
+          elif [[ $LABELED == "true" ]]; then
             image=true
+            because="it has the image label"
+          elif [[ -n $changed ]]; then
+            image=true
+            because="it changes these under $where: $(paste -sd ' ' <<<"$changed")"
+          else
+            why="nothing under $where changed, and it doesn't have the image label. Tonight's nightly run will check it once it's merged"
           fi
           echo "image=$image" >>"$GITHUB_OUTPUT"
           if [[ $image == true ]]; then
-            echo "The image layer runs: $(wc -l <<<"$changed") changed files under install/, system/, config/hypr/, migrations/, session/ or daemon/." >>"$GITHUB_STEP_SUMMARY"
+            echo "The image layer runs: $because." >>"$GITHUB_STEP_SUMMARY"
           else
             echo "No image layer, because $why." >>"$GITHUB_STEP_SUMMARY"
           fi

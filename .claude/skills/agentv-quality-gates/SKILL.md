@@ -26,7 +26,7 @@ Layers 2 to 4 (unit, contract, UI) join the gate as their code lands. They shoul
 ## Pull requests
 
 - Layers 1 to 4 must be green, and the target is under 10 minutes.
-- Add layer 5, the image test, when the change touches `install/`, `system/`, `config/hypr/` or anything in `agentv-iso`. It runs in GitHub Actions on `ubuntu-26.04` with KVM, because the Mac can't run the x86_64 ISO. See `agentv-acceptance-tests`.
+- Layer 5, the image test, runs on a pull request that touches `install/`, `system/`, `config/hypr/`, `migrations/`, `session/` or the screen daemon's Hyprland and input files (`daemon/screen.ts`, `daemon/hyprland.ts`, `daemon/input.py`), and on every `agentv-iso` pull request. Anything else gets it from the "image" label (add it again to run it again), from the nightly run once it's merged, and from agentv-iso on every release tag. It runs in GitHub Actions on `ubuntu-26.04` with KVM, because the Mac can't run the x86_64 ISO. See `agentv-acceptance-tests`.
 
 ## Acceptance ids
 
