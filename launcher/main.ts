@@ -18,6 +18,7 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
+import { profile } from "./pages/profiles.ts";
 import { Sounds } from "./sounds.ts";
 
 export interface View {
@@ -48,6 +49,8 @@ export interface Ctx {
   // The ambient screen, as the built-in Clock opens it.
   ambient(): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
+  // The grant from the PIN entered earlier in this visit, while it lasts.
+  held(): string | undefined;
   saveSettings(change: Partial<Settings>, grant?: string): Promise<void>;
   // The grant for an adult action (ADR-009, S4.5): "" with no PIN set, the
   // one from the PIN entered earlier in this visit to Settings, or the PIN
@@ -73,6 +76,11 @@ const ctx: Ctx = {
   sounds,
   focus,
   go(route) {
+    // On a kid's profile, Settings is an adult's, past the PIN (ADR-009).
+    if (route.startsWith("settings") && kidWithPin() && !holding()) {
+      void grantFor("settings").then((grant) => grant !== null && ctx.go(route));
+      return;
+    }
     history.push(route);
     show(route, "forward");
     sounds.play("forward");
@@ -83,14 +91,20 @@ const ctx: Ctx = {
     show(history[history.length - 1], "back");
     sounds.play("back");
   },
-  // Edit mode, on the focused tile; only adults edit home (ADR-015).
+  // Edit mode, on the focused tile; only adults edit home (ADR-015). On a
+  // kid's profile, a parent can, past the PIN.
   edit() {
+    const tile = focus.get()?.dataset.id ?? "";
+    if (kidWithPin()) {
+      void grantFor("editing home").then((grant) => grant !== null && ctx.go(`edit/${tile}`));
+      return;
+    }
     if (ctx.state.viewer.role !== "adult") {
       ctx.toast("only an adult can edit home", "fail");
       sounds.play("failure");
       return;
     }
-    ctx.go(`edit/${focus.get()?.dataset.id ?? ""}`);
+    ctx.go(`edit/${tile}`);
   },
   remember(route) {
     history[history.length - 1] = route;
@@ -111,8 +125,10 @@ const ctx: Ctx = {
     setAmbient(true);
   },
   async saveLayout(layout) {
+    const grant = kidWithPin() ? await grantFor("changing home") : undefined;
+    if (grant === null) return false;
     try {
-      ctx.state.layout = (await daemon.saveLayout(layout)).layout;
+      ctx.state.layout = (await daemon.saveLayout(layout, grant)).layout;
       return true;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
@@ -120,8 +136,11 @@ const ctx: Ctx = {
     }
   },
   async saveSettings(change, grant) {
-    ctx.state.settings = (await daemon.saveSettings(change, grant)).settings;
+    ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
     apply(ctx.state.settings);
+  },
+  held() {
+    return holding() ? held!.token : undefined;
   },
   grant(what) {
     return grantFor(what);
@@ -146,6 +165,7 @@ let locking = false;
 let lockPad: Pad | null = null;
 
 const holding = () => Boolean(held && held.until - Date.now() > 15_000);
+const kidWithPin = () => ctx.state.viewer.role === "kid" && ctx.state.pin?.set === true;
 
 // One pad at a time; one asked for while another is up waits its turn, and
 // doesn't come at all when skip says by then it isn't needed.
@@ -232,6 +252,7 @@ function viewFor(route: string): View {
   if (name === "whats-new") return whatsNew(ctx);
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
+  if (name === "profile") return profile(ctx, arg);
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
   if (name === "music") return music(ctx, arg);
@@ -442,6 +463,21 @@ async function refresh(): Promise<void> {
   redraw();
 }
 
+async function switched(): Promise<void> {
+  held = null;
+  ctx.state = await daemon.home();
+  apply(ctx.state.settings);
+  const kid = ctx.state.viewer.role === "kid";
+  if (kid) {
+    for (const id of ctx.running.keys()) {
+      if (!ctx.state.apps.some((app) => app.id === id)) void screen.quit(id);
+    }
+  }
+  // Edit mode was the last viewer's home, and a kid starts on their own.
+  if (kid || history[history.length - 1].startsWith("edit")) history = ["home"];
+  redraw();
+}
+
 // The page again, in place, with the focus where it was.
 function redraw(): void {
   const current = focus.get();
@@ -498,6 +534,10 @@ async function start(): Promise<void> {
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
+    // Someone else is watching (S4.2): their home, at once. A kid's profile
+    // closes the apps open behind home that kids can't open.
+    viewer: () => void switched(),
+    viewers: () => void refresh(),
     // The PIN was set or taken off, or the TV was locked or unlocked.
     pin: (data) => {
       const status = data as { set: boolean; locked: boolean };

@@ -7,6 +7,7 @@ import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { powerPanel } from "./power.ts";
+import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
@@ -59,7 +60,7 @@ export function settings(ctx: Ctx, open?: string): View {
   // box's own, and the units.
   const saveWeather = async (change: Parameters<typeof daemon.saveWeather>[0], action: string) => {
     try {
-      weather = await daemon.saveWeather(change);
+      weather = await daemon.saveWeather(change, ctx.held());
       ctx.sounds.play("confirm");
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
@@ -218,7 +219,7 @@ export function settings(ctx: Ctx, open?: string): View {
       : [
           h("div", { class: "panel-title" }, "the parent pin"),
           h("div", { class: "panel-big" }, "off"),
-          note("a pin guards omarchy's desktop, power and updates, and locks the tv after it starts and after it's been off. kids' profiles will need one."),
+          note("a pin guards omarchy's desktop, power and updates, and locks the tv after it starts and after it's been off. a kid's profile needs one."),
           h("button", { class: "button primary", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "set a pin →"),
         ];
 
@@ -292,7 +293,7 @@ export function settings(ctx: Ctx, open?: string): View {
       ],
     },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
-    { key: "profiles", label: "profiles", value: () => ctx.state.viewer.name, panel: () => soon("profiles for everyone who watches, kids too, come with the phone app.") },
+    { key: "profiles", label: "profiles", value: () => String(ctx.state.viewers.length), panel: () => profilesPanel(ctx) },
     { key: "parental", label: "parental", value: () => (pinSet() ? "[pin]" : "off"), panel: parentalPanel },
     { key: "ai", label: "ai", value: () => "soon", panel: () => soon("connecting claude, chatgpt or gemini comes with tv setup.") },
     { key: "usage", label: "usage", value: () => "soon", panel: () => soon("ai spending shows here once the agent builds apps.") },

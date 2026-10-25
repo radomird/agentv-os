@@ -43,6 +43,9 @@ export interface AppSummary {
   // was asked, or it has a sign-in step and hasn't been asked yet.
   signIn?: "needed";
   credit?: string; // whose data it shows, for app details: "weather data from met norway"
+  // A kid's profile can open it (ADR-009): a parent ticked it, or its
+  // manifest says it's kids-safe and no one unticked it.
+  forKids: boolean;
 }
 
 // What Settings → Weather shows and changes: the city the forecast is for,
@@ -138,6 +141,8 @@ export interface HomeOptions {
   builtins?: string; // AgenTV's own apps: /usr/share/agentv/apps/builtin
   userAgent?: string; // what every app's requests say they are
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
+  // Who's watching now (daemon/profiles.ts). Without it, the box's owner.
+  viewer?: () => Promise<Viewer & { name: string; avatar?: string }>;
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
@@ -188,6 +193,7 @@ export class Home {
   private iconTried = new Map<string, number>();
   private changed: (event: string) => void;
   private log: (line: string) => void;
+  private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
 
   constructor(options: HomeOptions) {
     this.appsDir = options.appsDir;
@@ -197,13 +203,15 @@ export class Home {
     this.ledger = options.ledger;
     this.changed = options.changed ?? (() => {});
     this.log = options.log ?? (() => {});
+    this.viewerOf = options.viewer;
   }
 
   // --- The viewer -------------------------------------------------------
 
-  // Profiles come with stage 4. Until then the TV has one viewer, the person
-  // the box belongs to: the first ordinary user, as first boot finds them.
-  async viewer(): Promise<Viewer & { name: string }> {
+  // Who's watching now, from the profiles; without them, the person the box
+  // belongs to: the first ordinary user, as first boot finds them.
+  async viewer(): Promise<Viewer & { name: string; avatar?: string }> {
+    if (this.viewerOf) return this.viewerOf();
     const passwd = await readFile(process.env.AGENTV_PASSWD ?? "/etc/passwd", "utf8").catch(() => "");
     for (const line of passwd.split("\n")) {
       const [name, , uid, , , , shell] = line.split(":");
@@ -261,10 +269,12 @@ export class Home {
     return [...builtins, ...found];
   }
 
-  async apps(): Promise<AppSummary[]> {
+  // The apps on the box, or the ones a kid's profile can open.
+  async apps(viewer?: Viewer): Promise<AppSummary[]> {
     const settings = await this.appSettings();
     const signIns = await this.signIns();
-    return (await this.manifests()).map(({ manifest, tier }) => {
+    const kids = await this.kidsApps();
+    const all = (await this.manifests()).map(({ manifest, tier }): AppSummary => {
       const values = settings[manifest.id] ?? {};
       const builtin = tier === "built-in";
       const fields = (manifest.tv.setup ?? []).filter((step) => step.type === "field");
@@ -288,8 +298,37 @@ export class Home {
         needsSetup: fields.some((field) => field.type === "field" && !values[field.key]),
         signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
+        forKids: kids[manifest.id] ?? manifest.tv.kidsSafe === true,
       };
     });
+    return viewer?.role === "kid" ? all.filter((app) => app.forKids) : all;
+  }
+
+  // --- Kids' apps (ADR-009) -----------------------------------------------
+
+  // What a parent ticked or unticked for kids, by app.
+  private kidsApps(): Promise<Record<string, boolean>> {
+    return readJson(join(this.state, "kids-apps.json"), {});
+  }
+
+  // Ticks an app for kids, or unticks it. False when it isn't an app here.
+  async setForKids(id: string, allowed: boolean): Promise<boolean> {
+    if (!(await this.manifests()).some(({ manifest }) => manifest.id === id)) return false;
+    const all = await this.kidsApps();
+    all[id] = allowed;
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "kids-apps.json"), all);
+    return true;
+  }
+
+  // A profile that's gone takes its layout with it.
+  async forgetViewer(id: string): Promise<void> {
+    for (const name of ["layouts.json", "builtins-pinned.json"]) {
+      const all = await readJson<Record<string, unknown>>(join(this.state, name), {});
+      if (!(id in all)) continue;
+      delete all[id];
+      await writeJson(join(this.state, name), all);
+    }
   }
 
   // --- Sign-ins (ADR-032) -----------------------------------------------
@@ -475,10 +514,12 @@ export class Home {
   }
 
   // What opening an app means, for the screen daemon: its home address with
-  // its setup fields filled in, or its command.
-  async launch(id: string): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | null> {
+  // its setup fields filled in, or its command. Nothing, for an app a kid's
+  // profile can't open.
+  async launch(id: string, viewer?: Viewer): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
+    if (viewer?.role === "kid" && !(await this.apps(viewer)).some((app) => app.id === id)) return null;
     const tv = found.manifest.tv;
     const name = found.manifest.name;
     if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name };
@@ -495,9 +536,9 @@ export class Home {
 
   // --- Layouts and settings ---------------------------------------------
 
-  private async sizesById(): Promise<Map<string, Size[]>> {
+  private async sizesById(viewer?: Viewer): Promise<Map<string, Size[]>> {
     const sizes = new Map<string, Size[]>([[APPS_TILE, ["s"]]]);
-    for (const app of await this.apps()) sizes.set(app.id, app.sizes.map((choice) => choice.size));
+    for (const app of await this.apps(viewer)) sizes.set(app.id, app.sizes.map((choice) => choice.size));
     return sizes;
   }
 
@@ -505,10 +546,10 @@ export class Home {
   // the order it came, the built-ins first and all apps last. Tiles of apps
   // that have gone are dropped. A built-in is pinned for each viewer once,
   // when there's room (ADR-015), so a box from before it gets it too; one the
-  // viewer unpins stays off.
-  async layout(viewer: string): Promise<Placed[]> {
+  // viewer unpins stays off. A kid's has only the apps kids can open.
+  async layout(viewer: string, role: Viewer["role"] = "adult"): Promise<Placed[]> {
     const saved = (await readJson<Record<string, Placed[]>>(join(this.state, "layouts.json"), {}))[viewer];
-    const sizes = await this.sizesById();
+    const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
     const builtins = all.filter((id) => PINNED.includes(id));
     const unpinned = all.filter((id) => !PINNED.includes(id));
@@ -545,8 +586,8 @@ export class Home {
     await writeJson(join(this.state, "builtins-pinned.json"), pinned);
   }
 
-  async saveLayout(viewer: string, layout: unknown): Promise<string | null> {
-    const sizes = await this.sizesById();
+  async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult"): Promise<string | null> {
+    const sizes = await this.sizesById({ id: viewer, role });
     const why = problem(layout, (id) => sizes.get(id));
     if (why) return why;
     await mkdir(this.state, { recursive: true });

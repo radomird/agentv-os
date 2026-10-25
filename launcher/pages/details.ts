@@ -1,8 +1,9 @@
 // An app's details (ADR-018): the one place that says who made it, what it can
 // reach and which tile sizes it has, with the brand owner's note for an app
-// named after someone else's brand.
+// named after someone else's brand. An adult ticks it for kids here too
+// (ADR-009).
 
-import { screen } from "../api.ts";
+import { daemon, screen } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, openBuiltin } from "./home.ts";
@@ -29,6 +30,36 @@ export function details(ctx: Ctx, id: string): View {
     h("span", {}, "on home"),
     h("span", { class: "button-value" }, onHome ? "[x]" : "[ ]"),
   );
+
+  // Whether a kid's profile can open it, past the PIN once there is one.
+  const kids =
+    ctx.state.viewer.role === "adult"
+      ? h(
+          "button",
+          {
+            class: "button",
+            "data-focus": true,
+            "data-action": "kids",
+            onclick: async () => {
+              const grant = await ctx.grant("the apps kids can open");
+              if (grant === null) return;
+              try {
+                await daemon.forKids(id, !app.forKids, grant || undefined);
+              } catch (error) {
+                ctx.forgetGrant();
+                ctx.sounds.play("failure");
+                ctx.toast((error as Error).message, "fail");
+                return;
+              }
+              app.forKids = !app.forKids;
+              ctx.sounds.play("confirm");
+              ctx.render(`details/${id}`, "kids");
+            },
+          },
+          h("span", {}, "for kids"),
+          h("span", { class: "button-value" }, app.forKids ? "[x]" : "[ ]"),
+        )
+      : null;
 
   const open = h(
     "button",
@@ -85,7 +116,7 @@ export function details(ctx: Ctx, id: string): View {
           app.credit ? h("dt", {}, "data") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
-        h("div", { class: "actions" }, open, toggle),
+        h("div", { class: "actions" }, open, toggle, kids),
       ),
       app.owner ? h("p", { class: "owner" }, app.owner) : null,
     ),

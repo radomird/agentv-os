@@ -95,8 +95,7 @@ export class Ledger {
     this.db.exec(SCHEMA);
   }
 
-  // Adds or updates a viewer. Until profiles come (stage 4) that's the box's
-  // own person, an adult.
+  // Adds or updates a viewer (daemon/profiles.ts).
   viewer(viewer: LedgerViewer): void {
     this.db
       .prepare("INSERT INTO viewer (id, name, role, avatar) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, role = excluded.role, avatar = excluded.avatar")
@@ -108,6 +107,13 @@ export class Ledger {
       ...v,
       avatar: v.avatar ?? undefined,
     }));
+  }
+
+  // Takes a viewer off, and what they watched with them. False when there
+  // was no such viewer.
+  removeViewer(id: string): boolean {
+    this.db.prepare("DELETE FROM watch WHERE viewer_id = ?").run(id);
+    return Number(this.db.prepare("DELETE FROM viewer WHERE id = ?").run(id).changes) > 0;
   }
 
   // Where a viewer got to in an app: the same title, season and episode as
