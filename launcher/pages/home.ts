@@ -34,13 +34,16 @@ export function logo(app: App, big = false): HTMLElement {
   return el;
 }
 
-// What a small tile says about its app: open behind home, setup still
-// needed, or what it's for. A game still running has Quit (ADR-031).
+// What a small tile says about its app: open behind home, setup or a
+// sign-in still needed, or what it's for. A game still running has Quit
+// (ADR-031).
 function state(ctx: Ctx, app: App): HTMLElement {
   const open = ctx.running.get(app.id);
   if (open?.game) return h("span", { class: "tile-state" }, "running ", h("span", { class: "tile-quit" }, "· q quit"));
   if (open) return h("span", { class: "tile-state" }, open.paused ? "paused" : "open");
-  return app.needsSetup ? h("span", { class: "tile-state" }, "set up") : h("span", { class: "tile-label" }, app.category);
+  if (app.needsSetup) return h("span", { class: "tile-state" }, "set up");
+  if (app.signIn === "needed") return h("span", { class: "tile-state tile-sign-in" }, "sign in");
+  return h("span", { class: "tile-label" }, app.category);
 }
 
 async function quit(ctx: Ctx, app: App): Promise<void> {
@@ -221,6 +224,8 @@ async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
     if (app.id !== CLOCK) return;
   }
   if (!el.isConnected) return;
+  // A tile that says Sign in keeps saying so, with its logo.
+  if (app.signIn === "needed" && app.tier !== "built-in") return;
   if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
   else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
   else drawTile(el, app, placed.size, data);
@@ -260,6 +265,13 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
             }
             if (app.tier === "built-in") {
               openBuiltin(ctx, app);
+              return;
+            }
+            // Its service wants a sign-in: AgenTV's sign-in screen, over the
+            // service's own page (ADR-032, board 15).
+            if (app.signIn === "needed" && !app.needsSetup) {
+              const reply = await screen.signIn(app.id);
+              if (!reply.ok) ctx.toast(reply.error ?? `${app.name} can't sign in from here`, "fail");
               return;
             }
             const reply = await screen.open(app.id);

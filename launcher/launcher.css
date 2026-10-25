@@ -217,6 +217,10 @@ button {
   text-align: right;
 }
 
+.tile-sign-in {
+  color: var(--accent);
+}
+
 .tile-apps {
   border-style: dashed;
   border-color: var(--muted);

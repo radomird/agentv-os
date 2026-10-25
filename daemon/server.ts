@@ -86,6 +86,7 @@ export class Daemon {
       ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
+      changed: (event) => this.broadcast(event, {}),
       log: this.log,
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
@@ -454,6 +455,23 @@ export class Daemon {
       return;
     }
 
+    // What an app said when the screen daemon asked whether it's signed in
+    // (ADR-032), for its tile.
+    const signedIn = /^\/api\/apps\/([a-z0-9.-]+)\/signed-in$/.exec(path);
+    if (method === "POST" && signedIn) {
+      const body = (await this.body(request)) as { signedIn?: unknown } | undefined;
+      if (typeof body?.signedIn !== "boolean") {
+        this.json(response, 400, { ok: false, error: "signedIn is true or false" });
+        return;
+      }
+      if (!(await this.home.signedIn(signedIn[1], body.signedIn))) {
+        this.json(response, 404, { ok: false, error: "that isn't an app here that signs in" });
+        return;
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     const pkg = /^\/api\/apps\/([a-z0-9.-]+)\/package$/.exec(path);
     if (method === "GET" && pkg) {
       const found = await this.home.package(pkg[1]);
@@ -493,7 +511,7 @@ export class Daemon {
     const icon = /^\/api\/apps\/([a-z0-9.-]+)\/icon$/.exec(path);
     if (method === "GET" && icon) {
       const found = await this.home.icon(icon[1]);
-      const type = found ? TYPES[extname(found.path).toLowerCase()] : undefined;
+      const type = found ? (found.type ?? TYPES[extname(found.path).toLowerCase()]) : undefined;
       if (!found || !type?.startsWith("image/")) {
         this.json(response, 404, { ok: false, error: "not found" });
         return;

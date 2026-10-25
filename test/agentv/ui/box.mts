@@ -115,6 +115,8 @@ export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}
   }
   writeFileSync(join(apps, "installed.json"), JSON.stringify(installed, null, 2));
   writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true }));
+  // The sample app has a sign-in step, and it's done (ADR-032).
+  writeFileSync(join(state, "signins.json"), JSON.stringify({ "agentv.sample": { signedIn: true, at: "2026-10-25T12:00:00Z" } }));
   const settings: Record<string, Record<string, string>> = { "agentv.sample": { serverUrl: "http://127.0.0.1:1" } };
   if (options.forecast) settings["agentv.weather"] = { forecastUrl: options.forecast };
   writeFileSync(join(state, "app-settings.json"), JSON.stringify(settings));
