@@ -24,6 +24,7 @@ import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { Pin } from "./pin.ts";
+import { Profiles } from "./profiles.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -80,6 +81,7 @@ export class Daemon {
   readonly home: Home;
   readonly updates: Updates;
   readonly pin: Pin;
+  readonly profiles: Profiles;
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
@@ -94,11 +96,15 @@ export class Daemon {
       ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
+      viewer: () => this.profiles.active(),
       changed: (event) => this.broadcast(event, {}),
       log: this.log,
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
-    this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId });
+    this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
+    // A kid's profile keeps the PIN on (ADR-009).
+    const kids = () => (this.ledger.viewers().some((viewer) => viewer.role === "kid") ? "a kid's profile needs the pin, so it stays" : null);
+    this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId, needed: kids });
     this.ledgerPath = options.ledger ?? join(options.state, "ledger.db");
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.server = createServer((request, response) => {
@@ -205,6 +211,13 @@ export class Daemon {
     this.log(`refused ${what}: it needs the pin`);
     this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
     return false;
+  }
+
+  // On a kid's profile, Settings and home's layout are an adult's, past the
+  // PIN (ADR-009, ADR-015).
+  private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
+    if ((await this.profiles.active()).role !== "kid") return true;
+    return this.guarded(request, response, `${what} on a kid's profile`);
   }
 
   private async text(request: IncomingMessage): Promise<string> {
@@ -333,14 +346,15 @@ export class Daemon {
     // --- The home screen ---------------------------------------------------
 
     if (method === "GET" && path === "/api/home") {
-      const viewer = await this.home.viewer();
+      const viewer = await this.profiles.active();
       const pin = this.pin.status();
-      const [info, setup, apps, layout, settings] = await Promise.all([
+      const [info, setup, apps, layout, settings, viewers] = await Promise.all([
         this.settings(),
         this.setup(),
-        this.home.apps(),
-        this.home.layout(viewer.id),
+        this.home.apps(viewer),
+        this.home.layout(viewer.id, viewer.role),
         this.home.settings(),
+        this.profiles.list(),
       ]);
       this.json(response, 200, {
         ok: true,
@@ -348,6 +362,7 @@ export class Daemon {
         channel: info.AGENTV_CHANNEL,
         setup,
         viewer,
+        viewers,
         apps,
         appsTile: APPS_TILE,
         layout,
@@ -358,14 +373,15 @@ export class Daemon {
     }
 
     if (method === "PUT" && path === "/api/layout") {
+      if (!(await this.adult(request, response, "changing home"))) return;
       const body = (await this.body(request)) as { layout?: unknown } | undefined;
-      const viewer = await this.home.viewer();
-      const why = await this.home.saveLayout(viewer.id, body?.layout);
+      const viewer = await this.profiles.active();
+      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role);
       if (why) {
         this.json(response, 400, { ok: false, error: why });
         return;
       }
-      const layout = await this.home.layout(viewer.id);
+      const layout = await this.home.layout(viewer.id, viewer.role);
       this.broadcast("layout", { viewer: viewer.id, layout });
       this.json(response, 200, { ok: true, layout });
       return;
@@ -428,6 +444,7 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/settings") {
+      if (!(await this.adult(request, response, "settings"))) return;
       const change = await this.body(request);
       // Updating overnight installs on its own, so it needs the PIN too.
       const overnight = (change as { updateOvernight?: unknown } | undefined)?.updateOvernight;
@@ -507,9 +524,81 @@ export class Daemon {
       return;
     }
 
-    // The viewer, until profiles come (stage 4) the box's own person.
+    // --- Profiles (ADR-009, S4.2) -------------------------------------------
+
+    // Who's watching now, for the screen daemon's ledger and sign-ins.
     if (method === "GET" && path === "/api/viewer") {
-      this.json(response, 200, { ok: true, viewer: await this.home.viewer() });
+      this.json(response, 200, { ok: true, viewer: await this.profiles.active() });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/viewers") {
+      this.json(response, 200, { ok: true, viewers: await this.profiles.list(), active: (await this.profiles.active()).id });
+      return;
+    }
+
+    // Someone else watching: everything on the TV is theirs within a second.
+    // From a kid's profile to an adult's needs the PIN.
+    if (method === "POST" && path === "/api/viewer") {
+      const body = (await this.body(request)) as { id?: unknown } | undefined;
+      const all = await this.profiles.list();
+      const target = all.find((p) => p.id === body?.id);
+      if (!target) {
+        this.json(response, 404, { ok: false, error: "there's no such profile" });
+        return;
+      }
+      const now = await this.profiles.active();
+      if (now.role === "kid" && target.role === "adult" && !this.guarded(request, response, "switching to an adult")) return;
+      await this.profiles.switchTo(target.id);
+      if (now.id !== target.id) this.log(`${target.name} is watching now`);
+      this.broadcast("viewer", { id: target.id, role: target.role });
+      this.json(response, 200, { ok: true, viewer: target });
+      return;
+    }
+
+    // Settings → Profiles: adding, changing and taking off profiles needs
+    // the PIN once there is one, and a kid's profile needs one to exist.
+    const one = /^\/api\/viewers\/([a-z0-9._-]+)$/.exec(path);
+    if ((method === "POST" && path === "/api/viewers") || ((method === "PUT" || method === "DELETE") && one)) {
+      if (!this.guarded(request, response, "changing profiles")) return;
+      const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
+      if (method !== "DELETE" && body.role === "kid" && !this.pin.status().set) {
+        this.json(response, 400, { ok: false, error: "a kid's profile needs a parent pin. set one in settings → parental first" });
+        return;
+      }
+      let error: string | null | undefined;
+      let profile;
+      if (method === "POST") ({ profile, error } = await this.profiles.add(body));
+      else if (method === "PUT") ({ profile, error } = await this.profiles.edit(one![1], body));
+      else {
+        error = await this.profiles.remove(one![1]);
+        if (!error) await this.home.forgetViewer(one![1]);
+      }
+      if (error) {
+        this.json(response, error === "there's no such profile" ? 404 : 400, { ok: false, error });
+        return;
+      }
+      this.log(method === "POST" ? `a profile was added, ${profile!.role === "kid" ? "a kid" : "an adult"}` : method === "PUT" ? "a profile was changed" : "a profile was taken off");
+      this.broadcast("viewers", {});
+      this.json(response, 200, { ok: true, ...(profile ? { profile } : {}), viewers: await this.profiles.list(), active: (await this.profiles.active()).id });
+      return;
+    }
+
+    // An app ticked for kids, or unticked, from its details.
+    const forKids = /^\/api\/apps\/([a-z0-9.-]+)\/for-kids$/.exec(path);
+    if (method === "POST" && forKids) {
+      if (!this.guarded(request, response, "kids' apps") || !(await this.adult(request, response, "kids' apps"))) return;
+      const body = (await this.body(request)) as { allowed?: unknown } | undefined;
+      if (typeof body?.allowed !== "boolean") {
+        this.json(response, 400, { ok: false, error: "allowed is true or false" });
+        return;
+      }
+      if (!(await this.home.setForKids(forKids[1], body.allowed))) {
+        this.json(response, 404, { ok: false, error: "that isn't an app here" });
+        return;
+      }
+      this.broadcast("apps", {});
+      this.json(response, 200, { ok: true });
       return;
     }
 
@@ -590,6 +679,7 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/weather") {
+      if (!(await this.adult(request, response, "settings"))) return;
       const why = await this.home.saveWeather(await this.body(request));
       if (why) {
         this.json(response, 400, { ok: false, error: why });
@@ -623,7 +713,7 @@ export class Daemon {
 
     const launch = /^\/api\/apps\/([a-z0-9.-]+)\/launch$/.exec(path);
     if (method === "GET" && launch) {
-      const target = await this.home.launch(launch[1]);
+      const target = await this.home.launch(launch[1], await this.profiles.active());
       if (!target) {
         this.json(response, 404, { ok: false, error: "that app can't be opened yet" });
         return;

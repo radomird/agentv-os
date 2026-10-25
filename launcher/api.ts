@@ -26,6 +26,15 @@ export interface App {
   needsSetup: boolean;
   signIn?: "needed"; // its service wants a sign-in (ADR-032)
   credit?: string;
+  forKids: boolean; // a kid's profile can open it (ADR-009)
+}
+
+// Someone who watches (ADR-009): an avatar is a colour from the theme.
+export interface Viewer {
+  id: string;
+  name: string;
+  role: "adult" | "kid";
+  avatar: string;
 }
 
 export interface Settings {
@@ -39,7 +48,8 @@ export interface Settings {
 export interface HomeState {
   version: string;
   channel: string;
-  viewer: { id: string; name: string; role: "adult" | "kid" };
+  viewer: Viewer;
+  viewers: Viewer[];
   apps: App[];
   appsTile: string;
   layout: Placed[];
@@ -170,7 +180,7 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
 
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
-  saveLayout: (layout: Placed[]) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }),
+  saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
   updates: () => call<Updates>("GET", "/api/updates"),
@@ -178,7 +188,13 @@ export const daemon = {
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
   tonight: (version: string | null, grant?: string) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }, grant),
   weather: () => call<WeatherPlace>("GET", "/api/weather"),
-  saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }) => call<WeatherPlace>("POST", "/api/weather", change),
+  saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }, grant?: string) => call<WeatherPlace>("POST", "/api/weather", change, grant),
+  // Profiles (ADR-009, S4.2).
+  switchViewer: (id: string, grant?: string) => call<{ viewer: Viewer }>("POST", "/api/viewer", { id }, grant),
+  addViewer: (profile: Omit<Viewer, "id">, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
+  editViewer: (id: string, change: Partial<Omit<Viewer, "id">>, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
+  removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
+  forKids: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-kids`, { allowed }, grant),
   // The parent PIN (ADR-009, S4.5).
   checkPin: (pin: string) => call<{ grant: string; until: string }>("POST", "/api/pin/check", { pin }),
   setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),

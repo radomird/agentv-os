@@ -89,7 +89,7 @@ test("S4.5 Settings → Parental sets a PIN on its pad, chosen twice, with the a
   await go(page, "settings/parental");
   await page.waitForSelector('.menu-item.open[data-key="parental"]');
   assert.match(await page.locator('.menu-item[data-key="parental"]').innerText(), /parental\s+off/);
-  assert.match(await page.locator(".panel").innerText(), /off[\s\S]*kids' profiles will need one/);
+  assert.match(await page.locator(".panel").innerText(), /off[\s\S]*a kid's profile needs one/);
   await page.keyboard.press("Enter");
   assert.equal(await focused(page), "set-pin");
   await page.keyboard.press("Enter");

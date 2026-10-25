@@ -189,20 +189,22 @@ async function send(body: unknown): Promise<{ status: number; data: any }> {
 }
 
 test("S3.3 the daemon keeps what the screen daemon sends, for the viewer, one row per viewer", async () => {
-  assert.deepEqual((await (await fetch(`${url}/api/viewer`)).json()).viewer, { id: "radomir", name: "radomir", role: "adult" });
+  assert.deepEqual((await (await fetch(`${url}/api/viewer`)).json()).viewer, { id: "radomir", name: "radomir", role: "adult", avatar: "blue" });
   const first = await send({ app: "local.mytv", state: episode(4, 12) });
   assert.equal(first.status, 200);
   assert.deepEqual([first.data.row.viewer_id, first.data.row.kind, first.data.row.title, first.data.row.episode], ["radomir", "episode", "Sintel", 4]);
   // A film in a media app.
   const film = await send({ app: "agentv.sample", state: { title: "Spring", position: 1, duration: 464, playing: true } });
   assert.equal(film.data.row.kind, "film");
-  // Someone else on the box: until profiles come, the box's first user.
-  writeFileSync(passwd, "ana:x:1000:1000::/home/ana:/bin/bash\n");
+  // Someone else watching (S4.2) gets rows of their own.
+  const post = (path: string, body: unknown) => fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+  const ana = (await post("/api/viewers", { name: "ana", role: "adult" })).profile;
+  await post("/api/viewer", { id: ana.id });
   await send({ app: "local.mytv", state: episode(4, 3) });
   const rows = await (await fetch(`${url}/api/ledger`)).json();
-  assert.equal(rows.viewer, "ana");
-  assert.deepEqual(rows.rows.map((row: any) => [row.viewer_id, row.position_s]), [["ana", 3]]);
-  writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
+  assert.equal(rows.viewer, ana.id);
+  assert.deepEqual(rows.rows.map((row: any) => [row.viewer_id, row.position_s]), [[ana.id, 3]]);
+  await post("/api/viewer", { id: "radomir" });
   assert.deepEqual((await (await fetch(`${url}/api/ledger?app=local.mytv`)).json()).rows.map((row: any) => [row.viewer_id, row.position_s]), [["radomir", 12]]);
 });
 
