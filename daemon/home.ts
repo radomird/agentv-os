@@ -581,16 +581,17 @@ export class Home {
 
   // The content of an app's tile at a size, from its tile(), at most every
   // refreshMins (ADR-016), and again at once when its settings change, such
-  // as the weather's city or the box's time zone. A tile that doesn't answer
-  // in time keeps its last content; with none it's null, and the launcher
-  // draws it small.
-  async tile(id: string, size: Size, viewer: Viewer): Promise<unknown> {
+  // as the weather's city or the box's time zone, or when asked for a fresh
+  // one, as agentv selftest does to compare a tile with where it comes from.
+  // A tile that doesn't answer in time keeps its last content; with none
+  // it's null, and the launcher draws it small.
+  async tile(id: string, size: Size, viewer: Viewer, fresh = false): Promise<unknown> {
     const key = `${viewer.id}:${id}:${size}`;
     const settings = (await this.appSettings())[id] ?? {};
     const signature = JSON.stringify(settings);
     const cached = this.tiles.get(key);
     const refresh = Math.max(TILE_MIN, Number((cached?.tile as { refreshMins?: number })?.refreshMins) || TILE_DEFAULT);
-    if (cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return cached.tile;
+    if (!fresh && cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return cached.tile;
 
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;

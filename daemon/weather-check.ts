@@ -4,9 +4,11 @@
 // own code (apps/builtin/agentv.weather/met.ts). Prints lines that start
 // with pass, fail or manual and the check's id.
 //
-// A tile can be up to half an hour old, so the weather now may also match
-// the hour before. MET updates its forecast during the day, so a degree
-// either way still matches.
+// The tiles are drawn again for the check, so they come from the forecast
+// MET has now, as the check's own fetch does, rather than one the tile kept
+// for up to half an hour. The weather now may still match the hour before,
+// as the hour can turn between the two. MET updates its forecast during the
+// day, so a degree either way still matches.
 //
 // Usage: node weather-check.ts S3.8|S3.9
 // AGENTV_HOME_URL is the daemon (http://127.0.0.1:3000/), AGENTV_MET_URL
@@ -41,7 +43,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function tile(size: string): Promise<TileData | null> {
-  return (await json<{ tile: TileData | null }>(new URL(`api/tile/agentv.weather/${size}`, HOME).href)).tile;
+  return (await json<{ tile: TileData | null }>(new URL(`api/tile/agentv.weather/${size}?fresh=1`, HOME).href)).tile;
 }
 
 function near(shown: string | undefined, expected: string): boolean {

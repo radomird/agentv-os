@@ -106,6 +106,35 @@ test("S3.8 S3.9 agentv selftest compares the weather tiles with MET's forecast, 
   }
 });
 
+test("S3.9 agentv selftest compares MET's forecast with tiles drawn from it, not ones kept from before it changed", async () => {
+  // Tiles drawn from Amsterdam's forecast and kept, from a reply that said
+  // it was good until now: the weather moves to Oslo and back, so the app
+  // asks MET again. Then MET's forecast changes, to Oslo's heavy rain.
+  met.expiresIn(0);
+  await post("/api/weather", { zone: "Europe/Oslo" });
+  await get("/api/tile/agentv.weather/s");
+  await post("/api/weather", { zone: null });
+  for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}`);
+  const kept = (await get("/api/tile/agentv.weather/l")).tile;
+  met.serve("oslo");
+  try {
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+    assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows heavy-rain at /m);
+    assert.notDeepEqual((await get("/api/tile/agentv.weather/l")).tile, kept);
+  } finally {
+    met.serve("amsterdam");
+    for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
+    met.expiresIn(30 * 60_000);
+  }
+  // Without fresh, a tile is the one kept, for up to its refreshMins.
+  met.serve("oslo");
+  try {
+    assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.icon, "wind");
+  } finally {
+    met.serve("amsterdam");
+  }
+});
+
 test("Settings → Weather picks another city in the same part of the world, and the units", async () => {
   const place = await get("/api/weather");
   assert.equal(place.zone, "Europe/Amsterdam");
