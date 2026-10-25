@@ -205,28 +205,43 @@ test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Par
   await page.close();
 });
 
-test("S4.5 agentv-pin-check's ask on the TV brings up the pad and hands back a grant", async () => {
+test("S4.5 agentv-pin-check's ask on the TV brings up the pad each time, and its grant is for that action alone", async () => {
   setPin();
   const page = await tv();
   await home(page);
-  const asked = page.evaluate(() => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin("desktop"));
+  const ask = (action: string) => page.evaluate((a) => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin(a), action);
+  const asked = ask("desktop");
   await waitPad(page, true);
   assert.match(await padText(page), /for omarchy's desktop\./);
   await type(page, PIN);
   const { grant } = await asked;
   assert.ok(grant && daemon.pin.allows(grant));
-  const again = page.evaluate(() => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin("power"));
-  // Still within the grant, so it isn't asked again.
-  assert.equal((await again).grant, grant);
+  // Asked again, it asks again.
+  const again = ask("power");
+  await waitPad(page, true);
+  assert.match(await padText(page), /for restarting or shutting down\./);
+  await page.keyboard.press("Escape");
+  assert.equal((await again).grant, null);
+  // Nor does it stand in for Settings: Omarchy's desktop there asks.
+  await go(page, "settings/desktop");
+  await page.waitForSelector('.panel [data-action="desktop"]');
+  await page.locator('.panel [data-action="desktop"]').click();
+  await waitPad(page, true);
+  await page.keyboard.press("Escape");
+  await waitPad(page, false);
+  assert.deepEqual(await sent(page, "desktop"), []);
 
-  // Asked while the TV is locked, the PIN that unlocks it is enough.
+  // Asked while the TV is locked, the lock comes first, then the ask: the
+  // PIN that unlocks the TV doesn't also open the desktop.
+  await page.keyboard.press("Home");
   await fetch(`${url}/api/pin/lock`, { method: "POST" });
   await page.waitForFunction(() => /tv locked/.test(document.getElementById("pin")?.textContent ?? ""));
-  const locked = page.evaluate(() => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin("desktop"));
+  const locked = ask("desktop");
+  await type(page, PIN);
+  await page.waitForFunction(() => /for omarchy's desktop\./.test(document.getElementById("pin")?.textContent ?? ""));
   await type(page, PIN);
   const unlocked = await locked;
   assert.ok(unlocked.grant && daemon.pin.allows(unlocked.grant));
-  assert.equal(await padUp(page), false, "and no second pad comes");
   await page.close();
 });
 
