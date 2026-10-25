@@ -343,6 +343,14 @@ export class Home {
     return null;
   }
 
+  // Where an app's package is, how it was installed and its settings, for
+  // the screen daemon's worker that reads its playback while it's open.
+  async package(id: string): Promise<{ dir: string; tier: AppTier; category: string; settings: Record<string, string> } | null> {
+    const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
+    if (!found) return null;
+    return { dir: found.dir, tier: found.tier, category: found.manifest.tv.category, settings: (await this.appSettings())[id] ?? {} };
+  }
+
   async icon(id: string): Promise<{ path: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     return found?.manifest.tv.icon ? { path: join(found.dir, found.manifest.tv.icon) } : null;

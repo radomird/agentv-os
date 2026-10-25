@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.8|S3.9]...
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.8|S3.9]...
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
@@ -40,6 +40,8 @@
 #
 # Stage 3, the reference apps (S3 runs them all):
 #
+#   S3.3  a ledger row within 10 s of an app opening: a stand-in player app,
+#         installed for the check and removed after it, with its rows.
 #   S3.8  the small weather tile's scene against MET Norway's forecast for
 #         now, fetched live for the same place.
 #   S3.9  the medium and large weather tiles against MET's days.
@@ -66,18 +68,18 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.8|S3.9]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S3|S3.3|S3.8|S3.9]..."
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16)
-STAGE3=(S3.8 S3.9)
+STAGE3=(S3.3 S3.8 S3.9)
 checks=()
 for arg in "$@"; do
   case "$arg" in
     [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
     [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16) checks+=("S${arg:1}") ;;
     [sS]2) checks+=("${STAGE2[@]}") ;;
-    [sS]3.8 | [sS]3.9) checks+=("S${arg:1}") ;;
+    [sS]3.3 | [sS]3.8 | [sS]3.9) checks+=("S${arg:1}") ;;
     [sS]3) checks+=("${STAGE3[@]}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -698,6 +700,83 @@ ts_check() {
   (( got )) || result fail "$2" "$1 said nothing"
 }
 
+# The daemon's own address, from the health check's.
+home_url() {
+  printf '%s/' "${AGENTV_HEALTH_URL%/health}"
+}
+
+s33() {
+  local id=local.selftest-player work port server dir record rows started took="" wait=${AGENTV_LEDGER_WAIT_MS:-20000}
+
+  tv_on S3.3 || return 0
+  work=$(mktemp -d)
+  # A stand-in for a streaming service: a page whose player moves on each
+  # second, and an app that reads it from its page, as every web app does.
+  cat >"$work/index.html" <<'HTML'
+<!doctype html><meta charset="utf-8"><title>agentv selftest · S1 E1</title>
+<div id="player" data-position="0" data-duration="600"></div>
+<script>let t = 0; setInterval(() => { document.getElementById("player").dataset.position = ++t; }, 1000);</script>
+HTML
+  port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+  (cd "$work" && exec python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1) &
+  server=$!
+  mkdir -p "$work/app"
+  jq -n --arg url "http://127.0.0.1:$port" '{
+    schemaVersion: 1, id: "local.selftest-player", name: "Selftest player", version: "1.0.0", author: "agentv",
+    license: "MIT", description: "agentv selftest'"'"'s stand-in for a streaming service", kinds: ["tv-app"],
+    entryPoints: {tvApp: "app.ts"},
+    tv: {contract: 1, category: "streaming", runtime: "web", homeUrl: ($url + "/"), origins: [$url],
+      capabilities: ["launch", "playback"], kidsSafe: true}
+  }' >"$work/app/manifest.json"
+  cat >"$work/app/app.ts" <<'APP'
+export default {
+  id: "local.selftest-player",
+  async launch() {},
+  playback: {
+    async open() {},
+    async readPlaybackState(ctx) {
+      return ctx.page.evaluate(() => {
+        const player = document.querySelector("#player");
+        const [, title, season, episode] = /^(.*) · S(\d+) E(\d+)$/.exec(document.title) ?? [];
+        return player ? { title, season: Number(season), episode: Number(episode), position: Number(player.dataset.position), duration: 600, playing: true } : null;
+      });
+    },
+  },
+};
+APP
+  dir="$AGENTV_STATE/apps/$id"
+  record="$AGENTV_STATE/apps/installed.json"
+  sudo install -d -m 755 "$dir"
+  sudo install -m 644 "$work/app/manifest.json" "$work/app/app.ts" "$dir/"
+  sudo bash -c "[[ -f $record ]] || echo '{}' >$record; jq --arg id $id '. + {(\$id): {id: \$id, name: \"Selftest player\", version: \"1.0.0\", tier: \"local\", installedAt: (now | todate)}}' $record >$record.new && chmod 644 $record.new && mv $record.new $record"
+
+  started=$(date +%s%N)
+  screen app "$id" >/dev/null
+  while (( ($(date +%s%N) - started) / 1000000 < wait )); do
+    rows=$(curl -fsS --max-time 3 "$(home_url)api/ledger?app=$id&limit=1" 2>/dev/null || true)
+    if [[ $(jq -r '.rows | length' <<<"$rows" 2>/dev/null) == 1 ]]; then
+      took=$(( ($(date +%s%N) - started) / 1000000 ))
+      break
+    fi
+    sleep 0.25
+  done
+  if [[ -n $took ]] && (( took <= 10000 )); then
+    result pass S3.3 "a ledger row appeared $took ms after the app opened: $(jq -r '.rows[0] | "\(.viewer_id), \(.title) S\(.season) E\(.episode) at \(.position_s) s"' <<<"$rows")"
+  elif [[ -n $took ]]; then
+    result fail S3.3 "the ledger row took $took ms to appear, more than 10 s"
+  else
+    result fail S3.3 "no ledger row appeared within $(( wait / 1000 )).$(( wait % 1000 / 100 )) s of the app opening"
+  fi
+
+  screen quit "$id" >/dev/null
+  sudo rm -rf "$dir"
+  sudo bash -c "jq --arg id $id 'del(.[\$id])' $record >$record.new && chmod 644 $record.new && mv $record.new $record"
+  curl -fsS --max-time 3 -X DELETE "$(home_url)api/ledger?app=$id" >/dev/null 2>&1 || true
+  kill "$server" 2>/dev/null || true
+  rm -rf "$work"
+  result manual S3.3 "a second viewer's own row comes with profiles in stage 4 (layer 2 checks it now); until then, play something in an app on the TV and its row shows in curl -s $(home_url)api/ledger"
+}
+
 s38() {
   ts_check daemon/weather-check.ts S3.8
 }
@@ -726,6 +805,7 @@ for id in "${checks[@]}"; do
     S2.11) s211 ;;
     S2.15) s215 ;;
     S2.16) s216 ;;
+    S3.3) s33 ;;
     S3.8) s38 ;;
     S3.9) s39 ;;
   esac

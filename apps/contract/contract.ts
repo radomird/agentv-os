@@ -48,8 +48,15 @@ export interface Tile {
   refreshMins?: number; // 5 at least, 30 by default
 }
 
+// A web app's page in the services' Chromium: these of Playwright's Page,
+// and nothing else. Each call goes through the worker's loader, which holds
+// it to the app's declared origins, so a page that's moved off them answers
+// nothing. evaluate() takes a function, which runs in the page with its one
+// argument, or an expression; what it returns comes back as JSON.
+export type AppPage = Pick<Page, "url" | "title" | "goto" | "evaluate" | "waitForSelector" | "click" | "fill" | "press">;
+
 export interface AppContext {
-  page?: Page; // web apps: one page, declared origins only
+  page?: AppPage; // web apps: one page, declared origins only
   settings: Record<string, string>; // values from the manifest's setup fields
   viewer: { id: string; role: "adult" | "kid" };
 }

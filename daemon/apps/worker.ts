@@ -9,8 +9,9 @@
 // would need reading too.
 
 type Request =
-  | { type: "call"; id: number; path: string[]; args: unknown[]; settings: Record<string, string>; viewer: Viewer }
+  | { type: "call"; id: number; path: string[]; args: unknown[]; settings: Record<string, string>; viewer: Viewer; page?: { url: string } }
   | { type: "fetched"; id: number; response?: Fetched; error?: string }
+  | { type: "paged"; id: number; value?: unknown; url?: string; error?: string }
   | { type: "ping" };
 
 interface Viewer {
@@ -65,6 +66,55 @@ globals.fetch = async (input: string | URL | globalThis.Request, init?: RequestI
   });
 };
 
+// A web app's page (the contract's AppPage), through the loader, which holds
+// it to the app's origins and drives the real one. url() answers at once,
+// with where the page was after the last call.
+let nextPage = 0;
+const paging = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+function makePage(start: string) {
+  let current = start;
+  const rpc = (method: string, args: unknown[]) =>
+    new Promise<unknown>((resolve, reject) => {
+      const id = ++nextPage;
+      paging.set(id, { resolve, reject });
+      send({ type: "page", id, method, args });
+    });
+  const call = async (method: string, args: unknown[]) => {
+    const reply = (await rpc(method, args)) as { value: unknown; url: string };
+    current = reply.url;
+    return reply.value;
+  };
+  const selector = (value: unknown) => String(value);
+  const timeout = (options: unknown) => {
+    const ms = (options as { timeout?: unknown } | undefined)?.timeout;
+    return typeof ms === "number" ? ms : undefined;
+  };
+  return {
+    url: () => current,
+    title: () => call("title", []),
+    goto: async (url: unknown, options?: unknown) => {
+      await call("goto", [String(url), timeout(options)]);
+      return null;
+    },
+    evaluate: (fn: unknown, arg?: unknown) =>
+      call("evaluate", [typeof fn === "function" ? fn.toString() : String(fn), arg === undefined ? null : arg, typeof fn === "function"]),
+    waitForSelector: async (value: unknown, options?: unknown) => {
+      const state = (options as { state?: unknown } | undefined)?.state;
+      await call("waitForSelector", [selector(value), timeout(options), typeof state === "string" ? state : "visible"]);
+      return null;
+    },
+    click: async (value: unknown) => {
+      await call("click", [selector(value)]);
+    },
+    fill: async (value: unknown, text: unknown) => {
+      await call("fill", [selector(value), String(text)]);
+    },
+    press: async (value: unknown, key: unknown) => {
+      await call("press", [selector(value), String(key)]);
+    },
+  };
+}
+
 function resolvePath(app: Record<string, unknown>, path: string[]): ((...args: unknown[]) => unknown) | undefined {
   let target: unknown = app;
   let owner: unknown = app;
@@ -109,11 +159,16 @@ process.on("message", async (message: Request) => {
     fetching.delete(message.id);
     if (message.response) waiting?.resolve(message.response);
     else waiting?.reject(new TypeError(`fetch failed: ${message.error}`));
+  } else if (message.type === "paged") {
+    const waiting = paging.get(message.id);
+    paging.delete(message.id);
+    if (message.error === undefined) waiting?.resolve({ value: message.value, url: message.url ?? "" });
+    else waiting?.reject(new Error(message.error));
   } else if (message.type === "call") {
     const fn = resolvePath(app, message.path);
     try {
       if (!fn) throw new Error(`the app has no ${message.path.join(".")}`);
-      const ctx = { settings: message.settings, viewer: message.viewer };
+      const ctx = { settings: message.settings, viewer: message.viewer, ...(message.page ? { page: makePage(message.page.url) } : {}) };
       const value = await fn(ctx, ...message.args);
       try {
         send({ type: "result", id: message.id, value });
