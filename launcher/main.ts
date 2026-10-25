@@ -17,6 +17,7 @@ import { music } from "./pages/music.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
+import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { Sounds } from "./sounds.ts";
 
 export interface View {
@@ -47,7 +48,16 @@ export interface Ctx {
   // The ambient screen, as the built-in Clock opens it.
   ambient(): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
-  saveSettings(change: Partial<Settings>): Promise<void>;
+  saveSettings(change: Partial<Settings>, grant?: string): Promise<void>;
+  // The grant for an adult action (ADR-009, S4.5): "" with no PIN set, the
+  // one from the PIN entered earlier in this visit to Settings, or the PIN
+  // asked for now on its pad. Null when it wasn't entered.
+  grant(what: string): Promise<string | null>;
+  // Drops that grant, as when the daemon refused it.
+  forgetGrant(): void;
+  // A PIN pad over the page, as Settings → Parental chooses a new PIN with.
+  // True once submit took the digits.
+  pad(options: Omit<PadOptions, "cancel">): Promise<boolean>;
 }
 
 const page = document.getElementById("page")!;
@@ -109,10 +119,122 @@ const ctx: Ctx = {
       return false;
     }
   },
-  async saveSettings(change) {
-    ctx.state.settings = (await daemon.saveSettings(change)).settings;
+  async saveSettings(change, grant) {
+    ctx.state.settings = (await daemon.saveSettings(change, grant)).settings;
     apply(ctx.state.settings);
   },
+  grant(what) {
+    return grantFor(what);
+  },
+  forgetGrant() {
+    held = null;
+  },
+  pad(options) {
+    return openPad({ ...options, cancel: true });
+  },
+};
+
+// --- The parent PIN (ADR-009, S4.5) ------------------------------------------
+
+// The pad, over the page while it's open, and the keys go to it.
+const pinEl = document.getElementById("pin")!;
+let pinOpen: Pad | null = null;
+let pads: Promise<unknown> = Promise.resolve();
+// The grant from the last PIN entered, until home or until it runs out.
+let held: { token: string; until: number } | null = null;
+let locking = false;
+let lockPad: Pad | null = null;
+
+const holding = () => Boolean(held && held.until - Date.now() > 15_000);
+
+// One pad at a time; one asked for while another is up waits its turn, and
+// doesn't come at all when skip says by then it isn't needed.
+function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?: () => boolean): Promise<boolean> {
+  const run = async () => {
+    if (skip?.()) return true;
+    const before = focus.get();
+    // The page's focused element loses its mark while the pad has the focus.
+    before?.classList.remove("focused");
+    const pad = pinPad(options, (sound) => sounds.play(sound));
+    pinOpen = pad;
+    opened?.(pad);
+    pinEl.replaceChildren(pad.el);
+    pinEl.classList.add("on");
+    focus.setRoot(pad.el, pad.first);
+    const ok = await pad.done;
+    pinOpen = null;
+    opened?.(null);
+    pinEl.classList.remove("on");
+    pinEl.replaceChildren();
+    if (view) focus.setRoot(view.el, before?.isConnected ? before : view.first);
+    return ok;
+  };
+  const next = pads.then(run, run);
+  pads = next.catch(() => {});
+  return next;
+}
+
+// The PIN, checked by the daemon, which gives the grant: kept for the rest
+// of this visit to Settings with hold, and for this one action without.
+let checking = false;
+function checkPin(hold: boolean, got?: (grant: string) => void): (pin: string) => Promise<string | null> {
+  return async (pin) => {
+    checking = true;
+    try {
+      const reply = await daemon.checkPin(pin);
+      if (hold) held = { token: reply.grant, until: Date.parse(reply.until) };
+      got?.(reply.grant);
+      return null;
+    } finally {
+      checking = false;
+    }
+  };
+}
+
+// The launcher's own adult actions share a grant through a visit to
+// Settings. agentv-pin-check's ask (one) gets a grant for its action alone,
+// and always asks.
+async function grantFor(what: string, options: { idleMs?: number; one?: boolean } = {}): Promise<string | null> {
+  if (!ctx.state.pin?.set) return "";
+  let grant: string | null = null;
+  const ok = await openPad(
+    { command: "tv pin", title: "enter the parent pin", note: `for ${what}.`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
+    undefined,
+    options.one ? undefined : holding,
+  );
+  if (!ok) return null;
+  return grant ?? held?.token ?? null;
+}
+
+// The lock after the box starts and after the TV has been off: the pad with
+// no way past it but the PIN. Unlocking is all it does: an adult action
+// after it still asks.
+function setLock(locked: boolean): void {
+  if (locked && !locking) {
+    locking = true;
+    held = null;
+    void openPad(
+      { command: "tv locked", title: "enter the parent pin", note: "the tv locks after it starts and after it's been off.", cancel: false, submit: checkPin(false) },
+      (pad) => (lockPad = pad),
+      // Unlocked elsewhere while it waited its turn.
+      () => ctx.state.pin?.locked !== true,
+    ).then(() => {
+      locking = false;
+      if (ctx.state.pin) ctx.state.pin.locked = false;
+    });
+  } else if (!locked && !checking) {
+    // Unlocked elsewhere. The daemon says so before its answer to a PIN
+    // entered here, whose pad closes itself.
+    lockPad?.close();
+  }
+}
+
+// What agentv-pin-check asks on the TV, by action.
+const ACTIONS: Record<string, string> = {
+  desktop: "omarchy's desktop",
+  power: "restarting or shutting down",
+  update: "installing an update",
+  "go-back": "going back",
 };
 
 function viewFor(route: string): View {
@@ -132,6 +254,8 @@ function viewFor(route: string): View {
 // Draws a page. With a direction it slides in; an action names the element
 // focus goes back to, after a page is redrawn in place.
 function show(route: string, direction?: "forward" | "back", action?: string): void {
+  // Home ends a visit to Settings, and the PIN's grant with it.
+  if (route === "home") held = null;
   view = viewFor(route);
   const el = view.el;
   if (direction) {
@@ -141,6 +265,8 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     setTimeout(() => focus.release(), 400);
   }
   page.replaceChildren(el);
+  // Under a PIN pad, the page waits for it to close before it has the focus.
+  if (pinOpen) return;
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }
@@ -254,6 +380,15 @@ function act(action: Action): void {
     wake();
     return;
   }
+  // A PIN pad has the keys while it's up.
+  if (pinOpen) {
+    if (action === "up" || action === "down" || action === "left" || action === "right") focus.move(action);
+    else if (action === "ok") {
+      sounds.play("select");
+      focus.get()?.click();
+    } else pinOpen.act(action);
+    return;
+  }
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -302,7 +437,7 @@ document.addEventListener("pointermove", (event) => {
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
   const el = (event.target as Element | null)?.closest<HTMLElement>("[data-focus]");
-  if (el && view?.el.contains(el) && !view.busy?.()) focus.set(el);
+  if (el && (pinOpen ? pinEl.contains(el) : view?.el.contains(el) && !view.busy?.())) focus.set(el);
 });
 document.addEventListener("click", (event) => {
   if (event.detail === 0) return; // a click from the keyboard, already played
@@ -344,6 +479,18 @@ async function start(): Promise<void> {
   ctx.state = await daemon.home();
   apply(ctx.state.settings);
   show("home");
+  setLock(ctx.state.pin?.locked === true);
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (!pinOpen || ambient || updatingShown) return;
+      if (pinOpen.key(event.key)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true,
+  );
   listenInput(act);
   listen({
     layout: () => void refresh(),
@@ -364,6 +511,14 @@ async function start(): Promise<void> {
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
+    // The PIN was set or taken off, or the TV was locked or unlocked.
+    pin: (data) => {
+      const status = data as { set: boolean; locked: boolean };
+      ctx.state.pin = { set: status.set, locked: status.locked };
+      if (!status.set) held = null;
+      setLock(status.locked);
+      if (history[history.length - 1].startsWith("settings")) redraw();
+    },
   });
   void daemon.updates().then(setUpdates).catch(() => {});
   void sounds.load();
@@ -381,7 +536,14 @@ async function start(): Promise<void> {
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the
   // focus, and a page to go to.
-  w.agentvLauncher = { sounds, focus, go: (route: string) => ctx.go(route) };
+  w.agentvLauncher = {
+    sounds,
+    focus,
+    go: (route: string) => ctx.go(route),
+    // agentv-pin-check, when there's no terminal to type the PIN in, as for
+    // Super+Ctrl+Home: the pad, which gives up after 2 minutes with no key.
+    askPin: async (action: string) => ({ grant: await grantFor(ACTIONS[action] ?? action, { idleMs: 120_000, one: true }) }),
+  };
 }
 
 void start();

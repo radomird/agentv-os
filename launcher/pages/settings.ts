@@ -1,6 +1,6 @@
 // Settings (ADR-015, ADR-024, ADR-031): sections on the left, the focused one
-// on the right. Look, Sound, Weather, Omarchy desktop and Power work now; the
-// sections later stages build say so.
+// on the right. Look, Sound, Weather, Parental, Omarchy desktop and Power work
+// now; the sections later stages build say so.
 
 import { daemon, screen, type AudioState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
@@ -149,6 +149,79 @@ export function settings(ctx: Ctx, open?: string): View {
     ];
   };
 
+  // Settings → Parental (ADR-009, S4.5): the parent PIN, chosen twice on its
+  // pad, changed or taken off past the one before, and the TV locked now.
+  const pinSet = () => ctx.state.pin?.set === true;
+  const choosePin = async () => {
+    const grant = pinSet() ? await ctx.grant("changing the pin") : "";
+    if (grant === null) return;
+    let first = "";
+    const chosen = await ctx.pad({
+      command: "tv settings · pin",
+      title: pinSet() ? "choose a new pin" : "set a parent pin",
+      note: "4 digits, for settings, builds and the desktop.",
+      submit: async (pin) => {
+        first = pin;
+        return null;
+      },
+    });
+    if (!chosen) return;
+    const again = await ctx.pad({
+      command: "tv settings · pin",
+      title: "the same pin again",
+      note: "so a slip of the finger doesn't lock you out.",
+      submit: async (pin) => {
+        if (pin !== first) return "that's not the same pin";
+        await daemon.setPin(pin, grant || undefined);
+        return null;
+      },
+    });
+    if (!again) return;
+    ctx.toast(grant ? "the pin is changed" : "the pin is set", "ok");
+    ctx.render("settings/parental", "set-pin");
+  };
+  const removePin = async () => {
+    const grant = await ctx.grant("taking the pin off");
+    if (grant === null) return;
+    try {
+      await daemon.removePin(grant);
+    } catch (error) {
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+      return;
+    }
+    ctx.sounds.play("confirm");
+    ctx.toast("the pin is off", "ok");
+    ctx.render("settings/parental", "set-pin");
+  };
+  const parentalPanel = (): HTMLElement[] =>
+    pinSet()
+      ? [
+          h("div", { class: "panel-title" }, "the parent pin"),
+          h("div", { class: "panel-big" }, "on"),
+          note("it guards omarchy's desktop, power and updates. the tv locks after it starts and after it's been off."),
+          h("button", { class: "button", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "change the pin →"),
+          h(
+            "button",
+            {
+              class: "button",
+              "data-focus": true,
+              "data-action": "lock",
+              onclick: async () => {
+                await daemon.lock().catch(() => {});
+              },
+            },
+            "lock the tv now",
+          ),
+          h("button", { class: "button", "data-focus": true, "data-action": "remove-pin", onclick: () => void removePin() }, "take the pin off"),
+        ]
+      : [
+          h("div", { class: "panel-title" }, "the parent pin"),
+          h("div", { class: "panel-big" }, "off"),
+          note("a pin guards omarchy's desktop, power and updates, and locks the tv after it starts and after it's been off. kids' profiles will need one."),
+          h("button", { class: "button primary", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "set a pin →"),
+        ];
+
   const sections: Section[] = [
     {
       key: "home",
@@ -220,7 +293,7 @@ export function settings(ctx: Ctx, open?: string): View {
     },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
     { key: "profiles", label: "profiles", value: () => ctx.state.viewer.name, panel: () => soon("profiles for everyone who watches, kids too, come with the phone app.") },
-    { key: "parental", label: "parental", value: () => "soon", panel: () => soon("the pin comes with profiles.") },
+    { key: "parental", label: "parental", value: () => (pinSet() ? "[pin]" : "off"), panel: parentalPanel },
     { key: "ai", label: "ai", value: () => "soon", panel: () => soon("connecting claude, chatgpt or gemini comes with tv setup.") },
     { key: "usage", label: "usage", value: () => "soon", panel: () => soon("ai spending shows here once the agent builds apps.") },
     {
@@ -233,7 +306,7 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "desktop",
       label: "omarchy desktop",
-      value: () => "switch",
+      value: () => (pinSet() ? "[pin]" : "switch"),
       panel: () => [
         h("div", { class: "panel-title" }, "omarchy's own desktop"),
         note("for looking after the box. back to tv is super + ctrl + home there."),
@@ -244,7 +317,10 @@ export function settings(ctx: Ctx, open?: string): View {
             "data-focus": true,
             "data-action": "desktop",
             onclick: async () => {
-              const reply = await screen.desktop();
+              const grant = await ctx.grant("omarchy's desktop");
+              if (grant === null) return;
+              const reply = await screen.desktop(grant);
+              if (reply.pin) ctx.forgetGrant();
               if (!reply.ok) ctx.toast(reply.error ?? "the desktop didn't start", "fail");
             },
           },
@@ -255,7 +331,7 @@ export function settings(ctx: Ctx, open?: string): View {
     // Restart and Shut down (ADR-033): an adult's, so a kid's profile doesn't
     // see it.
     ...(ctx.state.viewer.role === "adult"
-      ? [{ key: "power", label: "power", value: () => "restart · shut down", panel: () => powerPanel(ctx) }]
+      ? [{ key: "power", label: "power", value: () => (pinSet() ? "[pin]" : "restart · shut down"), panel: () => powerPanel(ctx) }]
       : []),
     {
       key: "about",

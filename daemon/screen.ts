@@ -116,17 +116,20 @@ export interface Launcher {
   // AgenTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
-  // Settings → Omarchy desktop: agentv desktop, which ends this session.
-  desktop(): void;
+  // Settings → Omarchy desktop: agentv desktop, which ends this session,
+  // with the grant the home screen got for the PIN.
+  desktop(grant?: string): void;
   // Starts one of AgenTV's update units (ADR-025), which polkit lets the
   // person at the TV start: the check, or an install.
   startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service" | "agentv-go-back.service"): Promise<boolean>;
   // Whether an install, going back or the check after an update is running.
   updating(): Promise<boolean>;
-  // Whether an adult action may go ahead: agentv-pin-check, which asks for
-  // the PIN once stage 4 builds it (ADR-009) and lets everything through
-  // until then.
-  pinCheck(action: string): Promise<boolean>;
+  // Whether an adult action from the home screen may go ahead (ADR-009):
+  // always with no PIN set, and with one, only with the grant the page got
+  // for it, as AgenTV's daemon says.
+  pinCheck(action: string, grant?: string): Promise<boolean>;
+  // Locks the TV until the PIN is entered, once it has been off for a while.
+  lock(): Promise<void>;
   // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
   // close the windows first. False when it couldn't start.
   power(what: "restart" | "shutdown"): Promise<boolean>;
@@ -650,8 +653,17 @@ export class Screen {
   }
 
   // What the home screen asks for: an app in front, the apps open, quitting
-  // one, or Omarchy's desktop.
-  async fromHome(request: any): Promise<object> {
+  // one, or Omarchy's desktop. The adult actions need the grant the page got
+  // for the PIN, once there is one (ADR-009, S4.5). The owner's own commands
+  // over the socket (agentv screen) don't: the PIN locks the TV, and a shell
+  // on the box can do anything anyway.
+  async fromHome(request: any, owner = false): Promise<object> {
+    const guarded: Record<string, string> = { "update-install": "update", "update-go-back": "go-back", desktop: "desktop", power: "power" };
+    const action = guarded[request?.cmd];
+    if (action && !owner && !(await this.launcher.pinCheck(action, typeof request.grant === "string" ? request.grant : undefined))) {
+      this.log(`refused ${action} from home: it needs the pin`);
+      return { ok: false, error: "that needs the pin", pin: true };
+    }
     switch (request?.cmd) {
       case "open-app": {
         const id = String(request.app ?? "");
@@ -697,7 +709,7 @@ export class Screen {
       case "update-go-back":
         return (await this.launcher.startUnit("agentv-go-back.service")) ? { ok: true } : { ok: false, error: "couldn't go back" };
       case "desktop":
-        this.launcher.desktop();
+        this.launcher.desktop(typeof request.grant === "string" ? request.grant : undefined);
         return { ok: true };
       // Settings → Power, after its question, and Shut down after its
       // countdown (ADR-033).
@@ -709,14 +721,29 @@ export class Screen {
   }
 
   // Restarts the box or shuts it down, through Omarchy's own commands. Never
-  // while an update runs (ADR-025), and only past the PIN, once there is one.
+  // while an update runs (ADR-025). From home it's past the PIN already.
   async power(what: unknown): Promise<object> {
     if (what !== "restart" && what !== "shutdown") return { ok: false, error: "power restart or shutdown" };
     if (await this.launcher.updating()) return { ok: false, error: "not while an update runs" };
-    if (!(await this.launcher.pinCheck("power"))) return { ok: false, error: "that needs the pin" };
     this.log(what === "restart" ? "restarting the box from settings → power" : "shutting the box down from settings → power");
     if (await this.launcher.power(what)) return { ok: true };
     return { ok: false, error: what === "restart" ? "the box couldn't restart" : "the box couldn't shut down" };
+  }
+
+  // Brings home to the front and asks for the PIN there, for an action such
+  // as Omarchy's desktop. The grant comes back when it's entered.
+  async askPin(action: string): Promise<object> {
+    if (!/^[a-z-]{1,20}$/.test(action)) return { ok: false, error: "the pin for which action" };
+    await this.home("agentv screen pin");
+    const reply = (await this.inHome(`window.agentvLauncher?.askPin?.(${JSON.stringify(action)}) ?? { asked: false }`)) as {
+      ok: boolean;
+      grant?: string | null;
+      asked?: boolean;
+      error?: string;
+    };
+    if (!reply.ok) return reply;
+    if (reply.asked === false) return { ok: false, error: "the launcher isn't on the home screen" };
+    return reply.grant ? { ok: true, grant: reply.grant } : { ok: false, error: "the pin wasn't entered" };
   }
 
   // Settings on the TV, at a section, as from home (agentv screen settings):
@@ -1027,6 +1054,8 @@ export class Screen {
       this.log("the TV has been off for a while; closing every app");
       for (const entry of [...this.opens]) await this.closeOpen(entry);
       this.ambient = false;
+      // With a PIN set, the TV is locked when it's back (ADR-009).
+      await this.launcher.lock().catch(() => {});
     }).then(() => void this.showAmbient());
   }
 
@@ -1385,9 +1414,13 @@ export class Screen {
         return this.tv(request.on);
       case "update":
         if (!["check", "install", "go-back"].includes(request.what)) return { ok: false, error: "update check, install or go-back" };
-        return this.fromHome({ cmd: `update-${request.what}` });
+        return this.fromHome({ cmd: `update-${request.what}` }, true);
       case "power":
         return this.power(request.what);
+      // The PIN, asked for on the TV, for agentv-pin-check when there's no
+      // terminal to type it in, as with Super+Ctrl+Home.
+      case "pin":
+        return this.askPin(String(request.action ?? ""));
       case "settings":
         return this.settings(String(request.section ?? ""));
       case "close":
@@ -1577,8 +1610,9 @@ export const launcher: Launcher = {
     return null;
   },
 
-  desktop() {
-    spawn("agentv-desktop", [], { stdio: "ignore", detached: true }).unref();
+  desktop(grant) {
+    // agentv desktop checks the grant again with agentv-pin-check.
+    spawn("agentv-desktop", [], { stdio: "ignore", detached: true, env: { ...process.env, AGENTV_PIN_GRANT: grant ?? "" } }).unref();
   },
 
   async nightUpdates() {
@@ -1619,10 +1653,22 @@ export const launcher: Launcher = {
     });
   },
 
-  pinCheck(action) {
-    return new Promise((resolve) => {
-      execFile("agentv-pin-check", [action], { timeout: 120_000 }, (error) => resolve(!error));
-    });
+  async pinCheck(_action, grant) {
+    try {
+      const response = await fetch(`${HOME_URL}api/pin/allows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grant: grant ?? null }),
+        signal: AbortSignal.timeout(5000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async lock() {
+    await fetch(`${HOME_URL}api/pin/lock`, { method: "POST", signal: AbortSignal.timeout(5000) });
   },
 
   power(what) {

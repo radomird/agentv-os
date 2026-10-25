@@ -40,6 +40,10 @@ for bad in "back" "back left 1" "back down soon" "quit"; do
 done
 pass "agentv screen sends Back's presses and releases, and quit"
 
+[[ $(screen pin desktop) == '{"cmd":"pin","action":"desktop"}' ]] || fail "agentv screen pin names the action"
+if screen pin 'x; y' >/dev/null 2>&1; then fail "agentv screen pin takes only an action's name"; fi
+pass "S4.5 agentv screen pin asks for the PIN on the TV, for an action"
+
 [[ $(screen app local.player) == '{"cmd":"app","app":"local.player"}' ]] || fail "agentv screen app names the app"
 if screen app >/dev/null 2>&1; then fail "agentv screen app with no id is refused"; fi
 pass "agentv screen app opens an installed app by its id"
