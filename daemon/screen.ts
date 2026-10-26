@@ -159,6 +159,9 @@ export interface Launcher {
   firstRun(cli: "claude" | "codex" | "gemini"): Promise<{ version?: string; error?: string }>;
   // Tells AgenTV's daemon how the first run goes.
   cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }): Promise<void>;
+  // Sets an Omarchy theme with Omarchy's own omarchy-theme-set, as its
+  // desktop does: null once it's set, or why not.
+  setTheme(theme: string): Promise<string | null>;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -822,6 +825,9 @@ export class Screen {
       // Setup's AI step, once an adult accepted the provider's terms.
       case "cli-install":
         return this.installCli();
+      // Setup's look and Settings → Look (board 12).
+      case "theme-set":
+        return this.setTheme(request.theme);
       default:
         return { ok: false, error: `unknown request: ${request?.cmd}` };
     }
@@ -860,6 +866,25 @@ export class Screen {
         this.cliRun = null;
       });
     return { ok: true };
+  }
+
+  // An Omarchy theme, picked on the TV (board 12): Omarchy sets it, and its
+  // colours come back to the TV the way every theme change does (ADR-012).
+  // One at a time, as omarchy-theme-set itself does them.
+  private themeRun: string | null = null;
+
+  async setTheme(theme: unknown): Promise<object> {
+    if (typeof theme !== "string" || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(theme)) return { ok: false, error: "an omarchy theme's name" };
+    if (this.themeRun) return { ok: false, error: `${this.themeRun.replace(/-/g, " ")} is still being set` };
+    this.themeRun = theme;
+    this.log(`setting omarchy's theme to ${theme}`);
+    try {
+      const why = await this.launcher.setTheme(theme).catch((error: Error) => error.message);
+      if (why) this.log(`the theme didn't change: ${why}`);
+      return why ? { ok: false, error: why } : { ok: true };
+    } finally {
+      this.themeRun = null;
+    }
   }
 
   // Brings home to the front and asks for the PIN there, for an action such
@@ -1897,6 +1922,22 @@ export const launcher: Launcher = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason: "tv-off" }),
       signal: AbortSignal.timeout(5000),
+    });
+  },
+
+  setTheme(theme) {
+    // Omarchy's own command, as its theme menu runs it, which hands the new
+    // colours to the TV too.
+    return new Promise((resolve) => {
+      execFile(
+        "omarchy-theme-set",
+        [theme],
+        { timeout: 90_000, env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" } },
+        (error, stdout, stderr) => {
+          const said = `${stdout}\n${stderr}`.split("\n").map((line) => line.trim()).find((line) => /does not exist|invalid theme/i.test(line));
+          resolve(said ?? (error ? String(stderr).trim().split("\n")[0] || error.message.split("\n")[0] : null));
+        },
+      );
     });
   },
 

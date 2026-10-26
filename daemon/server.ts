@@ -36,6 +36,7 @@ import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
+import { currentTheme, previews } from "./themes.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -63,6 +64,8 @@ export interface DaemonOptions {
   setupAppsStatus?: string;
   setupAppsWaitMs?: number;
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
+  // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
+  omarchy?: string;
   // The phone companion's port on the home network, or none. 3001 on the box.
   lanPort?: number;
   lanHost?: string;
@@ -1761,6 +1764,14 @@ export class Daemon {
 
     if (method === "GET" && path === "/api/theme.css") {
       this.send(response, TYPES[".css"], await this.home.theme());
+      return;
+    }
+
+    // The looks setup and Settings offer (board 12), with the colours their
+    // previews draw, and which one the TV has.
+    if (method === "GET" && path === "/api/themes") {
+      const looks = await previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy");
+      this.json(response, 200, { ok: true, themes: looks, current: currentTheme(await this.home.theme(), looks) });
       return;
     }
 

@@ -19,7 +19,7 @@ import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { ROOT, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -718,13 +718,13 @@ test("apps: the goal's official apps come first, the ticked ones install past th
   await page.keyboard.press("Enter");
   assert.match(await page.locator('[data-app="agentv.steam"]').innerText(), /\[ \]/);
 
-  // Continue asks for the PIN, then the box installs it and setup is done.
+  // Continue asks for the PIN, then the box installs it and setup moves on
+  // to the look while it does.
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".pin-pad");
   for (const digit of "2468") await page.keyboard.press(digit);
-  await page.waitForSelector(".grid .tile", { timeout: 15_000 });
-  const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
-  assert.equal(setup.done, true);
+  await page.waitForSelector(".looks", { timeout: 15_000 });
+  assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme");
   await waitFor(async () => (await (await fetch(`${url}/api/home`)).json()).apps.some((app: { id: string }) => app.id === "agentv.immich"));
   assert.equal(existsSync(join(state, "..", "apps", "agentv.steam")), false, "only the ticked one");
   await page.close();
@@ -749,7 +749,54 @@ test("apps: add your own asks what to add, keeps it for the TV's agent, and noth
   await page.waitForFunction(() => /kept for later: a radio app/.test(document.querySelector(".app-note")?.textContent ?? ""));
   assert.deepEqual((await (await fetch(`${url}/api/setup`)).json()).setup.wishes, ["A radio app"]);
   await page.locator('[data-action="continue"]').click();
+  await page.waitForSelector(".looks", { timeout: 10_000 });
+  await page.close();
+});
+
+// The TV's colours as Omarchy renders AgenTV's template for one of its
+// themes, as agentv-theme-sync hands them over.
+function rendered(theme: string): string {
+  const colors: Record<string, string> = {};
+  for (const line of readFileSync(join(ROOT, "themes", theme, "colors.toml"), "utf8").split("\n")) {
+    const found = /^([a-z_]+) = "(#[0-9a-fA-F]+)"$/.exec(line.trim());
+    if (found) colors[found[1]] = found[2];
+  }
+  return readFileSync(join(ROOT, "config/omarchy/themed/launcher.css.tpl"), "utf8").replace(/\{\{ *([a-z_]+) *\}\}/g, (_, key) => colors[key] ?? "#000000");
+}
+
+test("S5.2 the look: three of Omarchy's themes in their own colours, OK sets one with Omarchy's command, and the whole TV follows", async () => {
+  await toApps("streaming");
+  await post("/api/setup/finish", { step: "apps" });
+  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  const page = await tv();
+  await page.waitForSelector(".looks .look");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a look.");
+  assert.match(await textOf(page, ".setup-page .prompt"), /omarchy theme/);
+  assert.deepEqual(await page.locator(".look .look-name").allInnerTexts(), ["tokyo night", "gruvbox", "catppuccin latte", "describe your own"]);
+  assert.match(await textOf(page, ".bar"), /6\/6 look/);
+  // Each preview is in its own theme's colours.
+  const backgrounds = await page.locator(".look:not(.look-own) .look-screen").evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
+  assert.deepEqual(backgrounds, ["rgb(26, 27, 38)", "rgb(40, 40, 40)", "rgb(239, 241, 245)"]);
+  assert.equal(await page.locator(".look.picked").getAttribute("data-theme"), "tokyo-night");
+  assert.equal(await page.locator(".look.focused").getAttribute("data-theme"), "tokyo-night");
+
+  // Describe your own waits for the TV's agent.
+  await page.locator('[data-theme="own"]').click();
+  await page.waitForFunction(() => /make themes soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+
+  // Gruvbox: Omarchy's own command sets it, and its colours come back as
+  // they do from Omarchy's desktop.
+  await page.locator('[data-theme="gruvbox"]').click();
+  await requested(page, "theme-set");
+  assert.equal(await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.find((r) => r.cmd === "theme-set")?.theme), "gruvbox");
+  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("gruvbox") });
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim() === "#282828", null, { timeout: 5000 });
+  await page.waitForSelector('.look.picked[data-theme="gruvbox"]');
+
+  await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".grid .tile", { timeout: 10_000 });
+  assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.done, true);
+  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
   await page.close();
 });
 

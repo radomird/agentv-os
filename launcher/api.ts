@@ -189,6 +189,16 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
   return data as T;
 }
 
+// One of Omarchy's themes setup and Settings offer (board 12), with the
+// colours its preview draws.
+export interface ThemePreview {
+  id: string;
+  name: string;
+  note: string;
+  mode: "light" | "dark";
+  colors: { background: string; dark_background: string; accent: string; selection: string; foreground: string; bright_foreground: string };
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
@@ -198,6 +208,8 @@ export const daemon = {
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
   tonight: (version: string | null, grant?: string) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }, grant),
+  // The looks setup and Settings → Look offer, and which one the TV has.
+  themes: () => call<{ themes: ThemePreview[]; current: string | null }>("GET", "/api/themes"),
   weather: () => call<WeatherPlace>("GET", "/api/weather"),
   saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }, grant?: string) => call<WeatherPlace>("POST", "/api/weather", change, grant),
   // Profiles (ADR-009, S4.2).
@@ -309,6 +321,9 @@ export const screen = {
   // Setup's AI step: the provider's agent CLI, fetched on its first run once
   // an adult accepted its terms (ADR-023).
   cliInstall: () => ask({ cmd: "cli-install" }),
+  // Sets one of Omarchy's themes, as its desktop does (board 12). Omarchy
+  // takes a few seconds; the colours arrive as a theme event.
+  setTheme: (theme: string) => ask({ cmd: "theme-set", theme }, 90_000),
   // Settings → Sound: the outputs and the volume, or another output or level
   // from now on (S2.19).
   audio: async (change: { output?: string; volume?: number } = {}) => (await ask({ cmd: "audio", ...change })) as AudioState,

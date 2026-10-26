@@ -86,8 +86,10 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   assert.equal((await store.finish("goal")).state?.goal, "music");
   assert.match((await store.go("nowhere")).error ?? "", /a step/);
   await store.finish("apps");
-  assert.equal((await store.read()).step, "apps", "the last step finished stays on it, for the page to mark setup done");
-  assert.deepEqual(STEPS, ["welcome", "ready", "ai", "people", "goal", "apps"]);
+  assert.equal((await store.read()).step, "theme");
+  await store.finish("theme");
+  assert.equal((await store.read()).step, "theme", "the last step finished stays on it, for the page to mark setup done");
+  assert.deepEqual(STEPS, ["welcome", "ready", "ai", "people", "goal", "apps", "theme"]);
 });
 
 test("getting ready keeps how bringing the box up to date goes, and when the check was asked for", async () => {
@@ -128,9 +130,10 @@ test("the box is online on a wired or Wi-Fi address that isn't its own setup hot
 test("the setup screens hear where setup is, how the box is online, the hotspot and the phones", async () => {
   const info = await (await fetch(`${url}/api/setup`)).json();
   assert.equal(info.setup.step, "welcome");
-  assert.deepEqual(info.steps, ["welcome", "ready", "ai", "people", "goal", "apps"]);
+  assert.deepEqual(info.steps, ["welcome", "ready", "ai", "people", "goal", "apps", "theme"]);
   assert.equal(info.parts.goal, "4/6 goal");
   assert.equal(info.parts.apps, "5/6 apps");
+  assert.equal(info.parts.theme, "6/6 look");
   assert.deepEqual(info.network, { online: true, via: "ethernet", name: null });
   assert.equal(info.hotspot.on, false);
   assert.deepEqual(info.phones, []);

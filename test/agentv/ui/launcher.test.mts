@@ -401,6 +401,17 @@ test("S2.17 Settings → Look changes how long the ambient screen waits", async 
   await page.close();
 });
 
+test("S5.2 Settings → Look offers Tokyo Night, Gruvbox and Catppuccin Latte, and picking one sets it with Omarchy's own command", async () => {
+  const page = await tv();
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.locator('.menu-item[data-key="look"]').click();
+  await page.waitForSelector('[data-action="theme-gruvbox"]');
+  assert.deepEqual(await page.locator('[data-action^="theme-"] span:first-child').allInnerTexts(), ["tokyo night", "gruvbox", "catppuccin latte"]);
+  await page.locator('[data-action="theme-gruvbox"]').click();
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
+  await page.close();
+});
+
 test("the launcher has no errors in its console", async () => {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   const errors: string[] = [];
