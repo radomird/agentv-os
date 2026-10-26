@@ -1,11 +1,12 @@
 // The background (board 13, ADR-012, S5.3): the theme's pixel field, the
 // household's photos sent from a phone, a shared folder, art from museum
-// archives, or art the TV's agent makes. The pixel field, the photos and the
-// archives are here now; the others are coming soon. A photo sent from the
-// phone, or a work picked, becomes the background at once, with its credit,
-// which the ambient screen shows.
+// archives, or art the TV's agent makes. The pixel field, the photos, a
+// folder or a share, and the archives are here now; the others are coming
+// soon. A photo sent from the phone, a folder picked or a work picked
+// becomes the background at once, with its credit, which the ambient screen
+// shows.
 
-import { daemon, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
+import { daemon, screen, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { setup } from "./api.ts";
@@ -23,7 +24,7 @@ interface Card {
 const CARDS: Card[] = [
   { id: "field", name: "pixel field", note: "default" },
   { id: "photos", name: "your photos", note: "sent from your phone", icon: "photo" },
-  { id: "folder", name: "shared folder", note: "nas or immich", icon: "grid", soon: "shared folders are coming soon" },
+  { id: "folder", name: "shared folder", note: "a folder or a nas", icon: "grid" },
   { id: "art", name: "art", note: "museum archives", icon: "spark" },
   { id: "made", name: "made for you", note: "your agent will draw it", icon: "spark", soon: "your tv's agent will draw backgrounds soon" },
 ];
@@ -49,7 +50,7 @@ export async function background(ctx: Ctx): Promise<View> {
       const id = card.dataset.background;
       card.classList.toggle("picked", id === now.source);
       const shot = card.querySelector<HTMLElement>(".back-shot")!;
-      const kind = id === "photos" ? "photo" : id === "art" ? "art" : null;
+      const kind = id === "photos" ? "photo" : id === "art" ? "art" : id === "folder" ? "folder" : null;
       const mine = now.items.filter((item) => item.kind === kind);
       const newest = mine.find((item) => item.id === now.current) ?? mine[0];
       if (id === "field" && !shot.firstChild) shot.append(field());
@@ -57,10 +58,13 @@ export async function background(ctx: Ctx): Promise<View> {
       else if (id !== "field" && !shot.firstChild) shot.append(glyph(CARDS.find((c) => c.id === id)!.icon!, 72));
     }
     const photos = now.items.filter((item) => item.kind === "photo").length;
+    const shown = shownPictures(now);
     line.textContent =
       now.source === "art"
-        ? (shownPictures(now).find((item) => item.id === now.current)?.credit.text ?? "art from the archives.")
-        : photos
+        ? (shown.find((item) => item.id === now.current)?.credit.text ?? "art from the archives.")
+        : now.source === "folder"
+          ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from ${shown[0]?.credit.from ?? "a folder"}.`
+          : photos
           ? `${photos === 1 ? "1 photo" : `${photos} photos`} from your phone. send more any time.`
           : "on your phone: the tv's page, then send a photo.";
   };
@@ -75,9 +79,9 @@ export async function background(ctx: Ctx): Promise<View> {
       ctx.open("background/photos");
       return;
     }
-    // The archives each time: there's always another work to pick.
-    if (card.id === "art") {
-      ctx.open("background/art");
+    // The archives and the folders each time: there's always another to pick.
+    if (card.id === "art" || card.id === "folder") {
+      ctx.open(`background/${card.id}`);
       return;
     }
     try {
@@ -257,4 +261,112 @@ export function art(ctx: Ctx): View {
       return true;
     },
   };
+}
+
+// A folder, a USB drive or a NAS share (ADR-012, ADR-038): Music's sources,
+// which the TV session reads. OK on one copies up to 60 of its pictures to
+// the box as the background. A share can be added here too, as in Music →
+// sources: its password is typed once and kept where only root can read it.
+interface FolderInfo {
+  id: string;
+  kind: "folder" | "usb" | "share";
+  name: string;
+  available: boolean;
+  error?: string;
+}
+
+export function folder(ctx: Ctx): View {
+  const list = h("div", { class: "chips archives" });
+  const line = h("span", { class: "setup-note" }, "…");
+  let copying = false;
+  const address = h("input", {
+    class: "text-field art-field",
+    "data-focus": true,
+    "data-action": "share",
+    type: "text",
+    placeholder: "smb://nas/photos or smb://you@nas/photos",
+    "aria-label": "a share's address",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const password = h("input", {
+    class: "text-field art-field",
+    "data-focus": true,
+    "data-action": "share-password",
+    type: "password",
+    placeholder: "its password, if it has a user name",
+    "aria-label": "the share's password",
+    autocomplete: "off",
+  }) as HTMLInputElement;
+
+  const draw = async () => {
+    const reply = await screen.music("sources", {});
+    const found = ((reply.sources as FolderInfo[] | undefined) ?? []).filter((one) => one.available);
+    list.replaceChildren(
+      ...found.map((one) =>
+        h("button", { class: "chip", "data-focus": true, "data-folder": one.id, onclick: () => void copy(one) }, `${one.kind === "folder" ? "folder" : one.kind} · ${one.name}`),
+      ),
+    );
+    line.textContent = found.length ? "ok on one copies up to 60 of its pictures." : "no folders, drives or shares yet. add a share, or plug in a usb drive.";
+    // The first source, rather than the share's field, once there's one.
+    const first = list.querySelector<HTMLElement>("[data-folder]");
+    if (first && ctx.focus.get() === address && !address.value) ctx.focus.set(first, false);
+  };
+
+  const copy = async (one: FolderInfo) => {
+    if (copying) return;
+    copying = true;
+    line.textContent = `copying pictures from ${one.name}…`;
+    const reply = await screen.backgroundFolder(one.id);
+    copying = false;
+    if (!reply.ok) {
+      ctx.sounds.play("failure");
+      ctx.toast(reply.error ?? `${one.name}'s pictures didn't come`, "fail");
+      line.textContent = "";
+      return;
+    }
+    ctx.sounds.play("confirm");
+    ctx.toast(`pictures from ${one.name} are the background now`, "ok");
+    ctx.open("background", "back");
+  };
+
+  const add = h(
+    "button",
+    {
+      class: "button",
+      "data-focus": true,
+      "data-action": "add-share",
+      onclick: async () => {
+        // The password leaves the page as it's sent.
+        const secret = password.value;
+        password.value = "";
+        line.textContent = "mounting the share…";
+        const reply = await screen.music("add-share", { uri: address.value.trim(), ...(secret ? { password: secret } : {}) });
+        if (!reply.ok) {
+          ctx.sounds.play("failure");
+          ctx.toast(reply.error ?? "that share didn't mount", "fail");
+          line.textContent = "";
+          return;
+        }
+        ctx.sounds.play("confirm");
+        address.value = "";
+        await draw();
+      },
+    },
+    "add the share",
+  );
+
+  void draw();
+  const el = h(
+    "div",
+    { class: "setup-page" },
+    h("div", {}, ...heading("tv background --folder", "pick a folder.", ctx.reduced())),
+    h(
+      "div",
+      { class: "art-page" },
+      h("div", { class: "art-side" }, list, line),
+      h("div", { class: "art-side" }, h("span", { class: "field-label" }, "a nas share"), address, password, h("span", { class: "setup-note" }, "a nas account that can only read is best, since the box keeps its password."), add),
+    ),
+  );
+  return { el, first: address, info: "↵ pick · esc back" };
 }

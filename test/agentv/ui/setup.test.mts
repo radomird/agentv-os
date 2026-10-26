@@ -154,18 +154,20 @@ async function fresh(): Promise<void> {
 
 // The TV's page, with a stand-in for the screen daemon that takes its
 // requests, as the home screen's window has it on the box.
-async function tv(options: { reducedMotion?: "reduce" } = {}): Promise<Page> {
+// With replies, by command (or "music:<op>"), in place of a plain { ok: true }.
+async function tv(options: { reducedMotion?: "reduce"; replies?: Record<string, unknown> } = {}): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: options.reducedMotion });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.addInitScript((replies: Record<string, unknown>) => {
     const w = window as unknown as { screenRequests: { cmd: string }[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
     w.screenRequests = [];
     w.agentvScreen = (json: string) => {
       const request = JSON.parse(json);
       w.screenRequests.push(request);
-      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true })), 0);
+      const reply = replies[request.cmd === "music" ? `music:${request.op}` : request.cmd] ?? { ok: true };
+      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(reply)), 0);
     };
-  });
+  }, options.replies ?? {});
   await page.goto(`${url}/`);
   await page.waitForFunction(() => (window as unknown as { agentvWelcome?: boolean }).agentvWelcome === true);
   return page;
@@ -817,9 +819,9 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "field");
   assert.match(await textOf(page, ".bar"), /6\/6 look/);
 
-  // A shared folder is coming soon.
-  await page.locator('[data-background="folder"]').click();
-  await page.waitForFunction(() => /coming soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+  // Art the TV's agent makes is coming soon.
+  await page.locator('[data-background="made"]').click();
+  await page.waitForFunction(() => /soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
 
   // Your photos, with none yet: send one from the phone.
   const had = (await (await fetch(`${url}/api/backgrounds`)).json()).items.length;
@@ -881,6 +883,44 @@ test("the background: art from a museum archive, searched through the daemon and
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "art");
   assert.equal(now.items.find((item: { id: string }) => item.id === now.current).credit.from, "wikimedia commons");
+  await post("/api/backgrounds", { source: "field" });
+  await page.close();
+});
+
+test("the background: a folder, a usb drive or a share, its pictures copied over by the tv session, and a share added here", async () => {
+  await toApps("streaming");
+  await post("/api/setup/finish", { step: "apps" });
+  await post("/api/setup/finish", { step: "theme" });
+  await post("/api/backgrounds", { source: "field" });
+  const sources = [
+    { id: "folder:/home/owner/Pictures", kind: "folder", name: "pictures", path: "/home/owner/Pictures", available: true },
+    { id: "share:smb://nas/photos", kind: "share", name: "nas/photos", path: "/run/agentv-shares/nas-photos", available: true },
+    { id: "share:smb://nas/old", kind: "share", name: "nas/old", path: null, available: false, error: "it needs its password again" },
+  ];
+  const page = await tv({ replies: { "music:sources": { ok: true, sources }, "music:add-share": { ok: true }, "background-folder": { ok: true, count: 1 } } });
+  await page.waitForSelector(".backs .back");
+  await page.locator('[data-background="folder"]').click();
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a folder.");
+  // Only the ones that are there, and the first has the focus.
+  await page.waitForSelector("[data-folder]");
+  assert.deepEqual(await page.locator("[data-folder]").allInnerTexts(), ["folder · pictures", "share · nas/photos"]);
+  assert.equal(await page.locator(".focused").getAttribute("data-folder"), "folder:/home/owner/Pictures");
+
+  // A share added here, as in Music → sources: the password leaves the page.
+  await page.locator('[data-action="share"]').fill("smb://me@nas/photos");
+  await page.locator('[data-action="share-password"]').fill("hunter2");
+  await page.locator('[data-action="add-share"]').click();
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; op?: string; uri?: string; password?: string }[] }).screenRequests.some((r) => r.op === "add-share" && r.uri === "smb://me@nas/photos" && r.password === "hunter2"));
+  assert.equal(await page.locator('[data-action="share-password"]').inputValue(), "");
+
+  // The TV session copies a share's pictures to the daemon, as picture-folder.ts does.
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
+  assert.equal((await fetch(`${url}/api/backgrounds/folder?from=nas%2Fphotos&first=1`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array(jpeg) })).status, 200);
+  await page.locator('[data-folder="share:smb://nas/photos"]').click();
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; source?: string }[] }).screenRequests.some((r) => r.cmd === "background-folder" && r.source === "share:smb://nas/photos"));
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
+  await page.waitForSelector('.back.picked[data-background="folder"]');
+  assert.match(await textOf(page, ".setup-note"), /1 picture from nas\/photos\./);
   await post("/api/backgrounds", { source: "field" });
   await page.close();
 });

@@ -28,7 +28,7 @@ import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
-import { Backgrounds, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
+import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
@@ -1921,6 +1921,30 @@ export class Daemon {
         return;
       }
       this.log(`background: ${work.art.archive} ${work.art.id}, from ${name}`);
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, background: result.item, ...result.state });
+      return;
+    }
+
+    // A folder's pictures, from the TV session, which can read the folders,
+    // USB drives and shares (picture-folder.ts): the first of a folder puts
+    // away the pictures of the one before.
+    if (method === "POST" && path === "/api/backgrounds/folder") {
+      if (!(await this.adult(request, response, "the background"))) return;
+      let body: Buffer;
+      try {
+        body = await this.raw(request, MAX_PHOTO);
+      } catch (error) {
+        this.json(response, 413, { ok: false, error: (error as Error).message });
+        return;
+      }
+      // Put away the folder before only for a picture that can take its place.
+      if (url.searchParams.get("first") === "1" && imageType(body)) await this.backgrounds.clear("folder");
+      const result = await this.backgrounds.add(body, { from: url.searchParams.get("from") ?? "a folder" }, "folder");
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
       this.broadcast("background", result.state);
       this.json(response, 200, { ok: true, background: result.item, ...result.state });
       return;
