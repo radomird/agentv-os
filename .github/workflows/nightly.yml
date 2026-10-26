@@ -14,8 +14,10 @@ name: Nightly
 #
 # Each release is checked with agentv-iso as it was tagged with it, so the
 # stable run doesn't hold a release to checks written for later work, such
-# as a stage it doesn't have yet. Edge is checked with agentv-iso's agentv
-# branch.
+# as a stage it doesn't have yet. Its update in place goes to tonight's
+# agentv, so that update is checked with agentv-iso's agentv branch, the
+# checks that go with what it updates to. Edge is checked with agentv-iso's
+# agentv branch.
 
 on:
   schedule:
@@ -49,11 +51,13 @@ jobs:
             if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" "refs/tags/v$stable" >/dev/null 2>&1; then
               checks="v$stable"
             fi
-            runs=$(jq -cn --arg checks "$checks" '[{packages: "stable", tested: true, iso: false, checks: $checks},
-              {packages: "edge", tested: false, iso: true, checks: "agentv"}]')
+            update=""
+            [[ $checks == "agentv" ]] || update=agentv
+            runs=$(jq -cn --arg checks "$checks" --arg update "$update" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update},
+              {packages: "edge", tested: false, iso: true, checks: "agentv", update: ""}]')
             echo "Testing AgenTV's stable release $stable with agentv-iso $checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           else
-            runs='[{"packages":"edge","tested":true,"iso":true,"checks":"agentv"}]'
+            runs='[{"packages":"edge","tested":true,"iso":true,"checks":"agentv","update":""}]'
             echo "Testing AgenTV's edge release (there's no stable one yet), and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
@@ -70,6 +74,7 @@ jobs:
       iso-ref: ${{ matrix.checks }}
       packages: ${{ matrix.packages }}
       update-test: true
+      update-checks: ${{ matrix.update }}
       nightly: ${{ matrix.tested }}
       keep-iso: ${{ matrix.iso }}
     secrets: inherit
