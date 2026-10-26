@@ -2,8 +2,10 @@
 // layer 4; stage 4), beside the TV at 1920 × 1080: who's watching, from the
 // phone (S4.2); arrange home, with the TV following within a second (S4.7);
 // the update notice and Install tonight (S4.8); the sign-in fields a phone's
-// password manager fills (S4.9); and the TV unlocked from the phone, with
-// the adult PIN on its pad (S4.5).
+// password manager fills (S4.9); the TV unlocked from the phone, with the
+// adult PIN on its pad (S4.5); and the remote following the TV (S4.10): the
+// TV's PIN pad on the phone within a second, the keyboard, playback and the
+// d-pad, every press shown and felt, no zoom, and Settings.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -76,6 +78,19 @@ async function phone(): Promise<Page> {
   return page;
 }
 
+const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
+
+// What the screen daemon and the virtual input device do with the phone's
+// keys while the TV's page is in front: each one, pressed there.
+const PRESSED: Record<string, string> = { backspace: "Backspace", back: "Escape", enter: "Enter" };
+async function forward(screen: Page, from: number, count: number): Promise<void> {
+  await until(() => remote.length >= from + count);
+  for (const line of remote.slice(from, from + count)) {
+    const key = (JSON.parse(line) as { key: string }).key;
+    await screen.keyboard.press(PRESSED[key] ?? key);
+  }
+}
+
 async function until(check: () => Promise<boolean> | boolean, ms = 3000): Promise<void> {
   const end = Date.now() + ms;
   while (!(await check())) {
@@ -89,7 +104,7 @@ test("the phone's buttons carry icons: the d-pad, the tabs, delete and enter", a
   for (const key of ["up", "down", "left", "right", "back", "home", "playpause"]) {
     assert.equal(await hand.locator(`[data-key="${key}"] svg.glyph`).count(), 1, key);
   }
-  assert.equal(await hand.locator(".tab svg.glyph").count(), 3);
+  assert.equal(await hand.locator(".tab svg.glyph").count(), 5);
   await hand.locator('[data-mode="type"]').tap();
   assert.equal(await hand.locator('[data-key="backspace"] svg.glyph-backspace').count(), 1);
   assert.equal(await hand.locator('[data-key="enter"] svg.glyph-enter').count(), 1);
@@ -245,17 +260,120 @@ test("S4.9 on the TV's sign-in screen, the phone offers fields its password mana
   await hand.close();
 });
 
-test("S4.5 the TV locked: the phone says so, and its PIN pad unlocks it", async () => {
+test("S4.5 S4.10 the TV locked: the phone says so and shows the TV's pad, and the PIN typed there unlocks it", async () => {
   const screen = await tv();
   const hand = await phone();
   await post("/api/pin/lock");
   await screen.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
-  await hand.waitForSelector('[data-action="unlock"]', { timeout: 6000 });
+  await hand.waitForSelector("#tv-pin", { timeout: 1500 });
   assert.equal(await hand.locator('[data-action="unlock"] svg.glyph-lock').count(), 1);
-  await hand.locator('[data-action="unlock"]').tap();
-  for (const digit of PIN) await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+  assert.match(await hand.locator("#tv-pin .note").innerText(), /the tv is locked\.|asks for it to open\./);
+  const from = remote.length;
+  for (const digit of PIN) await hand.locator(`#tv-pin [data-pin="${digit}"]`).tap();
+  await forward(screen, from, 4);
   await screen.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === false);
+  await hand.waitForSelector("#tv-pin", { state: "detached", timeout: 1500 });
   await hand.waitForFunction(() => !document.querySelector('[data-action="unlock"]'), undefined, { timeout: 6000 });
   await screen.close();
   await hand.close();
+});
+
+test("S4.10 when the TV asks for the PIN, the phone shows a pad within 1 s, and the PIN typed there does what the TV asked", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  const asked = screen.evaluate(() => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin("desktop"));
+  await screen.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
+  const shown = Date.now();
+  await hand.waitForSelector("#tv-pin", { timeout: 1000 });
+  assert.ok(Date.now() - shown <= 1000, `the pad took ${Date.now() - shown} ms`);
+  assert.deepEqual([await hand.locator("#tv-pin h1").innerText(), await hand.locator("#tv-pin .note").innerText()], ["enter the adult pin", "for omarchy's desktop."]);
+  // A digit and Delete, then two digits: the phone's boxes follow the TV's.
+  let from = remote.length;
+  for (const k of ["9", "delete", PIN[0], PIN[1]]) await hand.locator(`#tv-pin [data-pin="${k}"]`).tap();
+  await forward(screen, from, 4);
+  assert.deepEqual(remote.slice(from, from + 4), [`{"key":"9"}`, `{"key":"backspace"}`, `{"key":"${PIN[0]}"}`, `{"key":"${PIN[1]}"}`]);
+  await until(async () => (await hand.locator("#tv-pin .pin-box.filled").count()) === 2, 1500);
+  from = remote.length;
+  for (const k of PIN.slice(2)) await hand.locator(`#tv-pin [data-pin="${k}"]`).tap();
+  await forward(screen, from, 2);
+  const { grant } = await asked;
+  assert.ok(grant && daemon.pin.allows(grant), "what the TV asked for got its grant");
+  await hand.waitForSelector("#tv-pin", { state: "detached", timeout: 1500 });
+  // No digit of it went anywhere but the TV's pad.
+  assert.ok(!JSON.stringify(await (await fetch(`${phoneUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${await hand.evaluate(() => localStorage.getItem("agentv-phone-token"))}` } })).json()).includes(PIN));
+  await screen.close();
+  await hand.close();
+});
+
+test("S4.10 the remote follows the TV: the keyboard for a text field, playback while something plays, the d-pad again, and a switch by hand holds till the next change", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  const context = (body: object) => fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Screen": "1" }, body: JSON.stringify(body) });
+  // A text field with the focus on the TV: the keyboard.
+  await go(screen, "profile/new");
+  await screen.waitForSelector(".profile-name.focused");
+  await hand.waitForSelector("#tv-text", { timeout: 1000 });
+  assert.equal(await hand.locator("#tv-text").getAttribute("inputmode"), "text");
+  // Home, and something playing in front (the screen daemon says so).
+  await go(screen, "home");
+  await hand.waitForSelector(".dpad", { timeout: 1000 });
+  await context({ front: "app", playing: true });
+  await hand.waitForSelector('[data-key="next"]', { timeout: 1000 });
+  assert.equal(await hand.locator('[data-key="playpause"]').count(), 1);
+  // A switch by hand holds...
+  await hand.locator('[data-mode="type"]').tap();
+  await hand.waitForSelector("#tv-text");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(await hand.locator("#tv-text").count(), 1);
+  // ...until what's on the TV changes again.
+  await context({ front: "home", playing: false });
+  await hand.waitForSelector(".dpad", { timeout: 1000 });
+  await screen.close();
+  await hand.close();
+});
+
+test("S4.10 every press shows, clicks and buzzes, quick taps each count and never zoom, and Settings opens on the TV", async () => {
+  const screen = await tv();
+  await go(screen, "home");
+  const { pairing } = await post("/api/phones/pair");
+  const handheld = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  const hand = await handheld.newPage();
+  hand.on("pageerror", (error) => errors.push(error.message));
+  // Buzzes and presses, as they happen.
+  await hand.addInitScript(() => {
+    const w = window as unknown as { buzzes: number; pressedSeen: number };
+    w.buzzes = 0;
+    w.pressedSeen = 0;
+    Object.defineProperty(navigator, "vibrate", { value: () => ((w.buzzes += 1), true), configurable: true });
+    new MutationObserver((changes) => {
+      for (const change of changes) if ((change.target as Element).classList?.contains("pressed")) w.pressedSeen += 1;
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  });
+  await hand.goto(`${phoneUrl}/?code=${pairing.code}`);
+  await hand.waitForSelector(".dpad");
+  assert.match((await hand.getAttribute('meta[name="viewport"]', "content")) ?? "", /user-scalable=no/);
+  assert.equal(await hand.evaluate(() => getComputedStyle(document.body).touchAction), "manipulation");
+  const from = remote.length;
+  await hand.tap('[data-key="up"]');
+  await hand.tap('[data-key="up"]');
+  await hand.tap('[data-key="up"]');
+  await until(() => remote.length >= from + 3);
+  assert.deepEqual(remote.slice(from, from + 3), ['{"key":"up"}', '{"key":"up"}', '{"key":"up"}']);
+  assert.equal(await hand.evaluate(() => window.visualViewport?.scale), 1, "quick taps don't zoom");
+  const felt = await hand.evaluate(() => {
+    const w = window as unknown as { buzzes: number; pressedSeen: number };
+    return { buzzes: w.buzzes, pressedSeen: w.pressedSeen };
+  });
+  assert.ok(felt.buzzes >= 3 && felt.pressedSeen >= 3, JSON.stringify(felt));
+  // The switch turns the click and the buzz off; the look stays.
+  await hand.tap('[data-action="feel"]');
+  const before = await hand.evaluate(() => (window as unknown as { buzzes: number }).buzzes);
+  await hand.tap('[data-key="down"]');
+  assert.equal(await hand.evaluate(() => (window as unknown as { buzzes: number }).buzzes), before);
+  assert.equal(await hand.locator('[data-action="feel"] .feel-value').innerText(), "off");
+  // Settings, beside Back and Home, opens on the TV.
+  await hand.tap('[data-action="settings"]');
+  await screen.waitForSelector(".page.settings", { timeout: 1500 });
+  await screen.close();
+  await handheld.close();
 });

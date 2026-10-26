@@ -116,7 +116,7 @@ test("a phone the TV forgot goes back to pairing, and one that's paired stays pa
   await hand.waitForSelector(".dpad");
   const phones = (await (await fetch(`${url}/api/phones`)).json()).phones as { id: string }[];
   for (const p of phones) await fetch(`${url}/api/phones/${p.id}`, { method: "DELETE" });
-  await hand.locator('[data-key="up"]').tap();
-  await hand.waitForSelector(".field.code");
+  // Its ask for the state, waiting on the box, hears at once.
+  await hand.waitForSelector(".field.code", { timeout: 1500 });
   await hand.close();
 });

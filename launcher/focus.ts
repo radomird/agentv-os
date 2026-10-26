@@ -42,6 +42,8 @@ export class Focus {
   private held = false;
   // Called when the focus moves to a new element, by the arrows or a hover.
   onMove: (el: HTMLElement) => void = () => {};
+  // Called whenever an element gets the focus, a new page's first included.
+  onSet: (el: HTMLElement) => void = () => {};
 
   constructor(ring: HTMLElement) {
     this.ring = ring;
@@ -75,6 +77,7 @@ export class Focus {
     this.place(el, from !== undefined, from);
     el.classList.add("focused");
     if (el instanceof HTMLInputElement) el.focus({ preventScroll: true });
+    this.onSet(el);
     if (announce) this.onMove(el);
   }
 

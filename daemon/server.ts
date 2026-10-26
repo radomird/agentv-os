@@ -68,6 +68,8 @@ export interface DaemonOptions {
   setupHost?: string;
   hotspotRun?: string;
   hotspotAddress?: string;
+  // How long a phone's ask for the state waits for a change (25 s).
+  phoneWaitMs?: number;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -106,6 +108,32 @@ const STATIC = ["launcher", "setup"];
 // All the captive page needs, and all a phone on the setup hotspot gets.
 const CAPTIVE_FILES = ["companion-web/setup.ts", "companion-web/lib.ts", "companion-web/companion.css", "launcher/glyphs.ts"];
 const MAX_BODY = 64 * 1024;
+// How long a phone's ask for the state waits for something to change.
+const PHONE_WAIT_MS = 25_000;
+const FIELD_KINDS = ["text", "search", "email", "password", "number", "url"];
+
+// What's on the TV, for the phone's remote to follow (ADR-037). The TV's page
+// says what it shows: the PIN pad, what asks for it and how many digits are
+// in, a text field with the focus and its kind, and home, a menu or the
+// ambient screen. The screen daemon says what's in front and whether
+// something plays. The desktop's relay says when Omarchy's desktop is on.
+export interface TvContext {
+  pin: { title: string; for: string; digits: number; error: string | null } | null;
+  field: { kind: string } | null;
+  screen: "home" | "menu" | "ambient";
+  front: "home" | "app";
+  playing: boolean;
+  desktop: boolean;
+}
+
+// The page the phone's remote opens on, from what's on the TV.
+export function remoteView(tv: TvContext, signingIn: boolean): "trackpad" | "pin" | "keyboard" | "playback" | "remote" {
+  if (tv.desktop) return "trackpad";
+  if (tv.pin) return "pin";
+  if (tv.field || signingIn) return "keyboard";
+  if (tv.playing) return "playback";
+  return "remote";
+}
 
 function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
@@ -135,6 +163,14 @@ export class Daemon {
   // AgenTV's sign-in screen, while it's on the TV (ADR-032): the phone then
   // offers fields its password manager fills.
   private signingIn: { app: string; name: string } | null = null;
+  // What's on the TV for the phones (ADR-037), and a count that goes up with
+  // every change the phones should hear, which their asks for the state wait
+  // on.
+  private tv: TvContext = { pin: null, field: null, screen: "home", front: "home", playing: false, desktop: false };
+  private phoneVersion = 1;
+  private phoneWaiters = new Set<() => void>();
+  // Omarchy's desktop's relay for the phone's trackpad, while it's on.
+  private desktops = new Set<ServerResponse>();
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
@@ -264,9 +300,64 @@ export class Daemon {
     await rename(next, join(this.options.state, "setup.json"));
   }
 
-  // Tells every page that's listening what changed.
+  // Tells every page that's listening what changed, and the phones too.
   private broadcast(event: string, data: unknown): void {
     for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    this.phonesChanged();
+  }
+
+  // Wakes every phone waiting for the state to change.
+  private phonesChanged(): void {
+    this.phoneVersion++;
+    for (const wake of this.phoneWaiters) wake();
+    this.phoneWaiters.clear();
+  }
+
+  // What changed on the TV, from its page or the screen daemon. Only what's
+  // there and right is taken; the phones hear when something did change.
+  private tvChanged(change: Record<string, unknown>): void {
+    const next: TvContext = { ...this.tv };
+    if (change.pin === null) next.pin = null;
+    else if (change.pin && typeof change.pin === "object") {
+      const pin = change.pin as Record<string, unknown>;
+      if (typeof pin.for === "string") {
+        next.pin = {
+          title: typeof pin.title === "string" ? pin.title.slice(0, 60) : "enter the adult pin",
+          for: pin.for.slice(0, 120),
+          digits: Math.max(0, Math.min(4, Number(pin.digits) || 0)),
+          error: typeof pin.error === "string" ? pin.error.slice(0, 120) : null,
+        };
+      }
+    }
+    if (change.field === null) next.field = null;
+    else if (change.field && typeof change.field === "object") {
+      const kind = (change.field as Record<string, unknown>).kind;
+      next.field = { kind: typeof kind === "string" && FIELD_KINDS.includes(kind) ? kind : "text" };
+    }
+    if (change.screen === "home" || change.screen === "menu" || change.screen === "ambient") next.screen = change.screen;
+    if (change.front === "home" || change.front === "app") next.front = change.front;
+    if (typeof change.playing === "boolean") next.playing = change.playing;
+    if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
+    this.tv = next;
+    this.phonesChanged();
+  }
+
+  // The phone's state: who's watching, the lock, a sign-in, an update and
+  // what's on the TV, with the count it's at.
+  private async phoneState(phone: unknown): Promise<object> {
+    const viewer = await this.profiles.active();
+    const pin = this.pin.status(viewer.locked);
+    return {
+      ok: true,
+      version: this.phoneVersion,
+      phone,
+      viewer,
+      viewers: await this.profiles.list(),
+      pin: { set: pin.set, locked: pin.locked },
+      signIn: this.signingIn ? { name: this.signingIn.name } : null,
+      update: await this.phoneUpdate(),
+      tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
+    };
   }
 
   // --- Requests -----------------------------------------------------------
@@ -310,6 +401,15 @@ export class Daemon {
         resolve(error || !stdout.includes("<svg") ? null : stdout),
       );
     });
+  }
+
+  // Omarchy's desktop came or went: the phone's remote opens on the
+  // trackpad while it's on.
+  private desktopChanged(): void {
+    const desktop = this.desktops.size > 0;
+    if (desktop === this.tv.desktop) return;
+    this.tv = { ...this.tv, desktop };
+    this.phonesChanged();
   }
 
   // The phone's keys and text, to the screen daemon. False with no TV
@@ -485,18 +585,44 @@ export class Daemon {
       return;
     }
 
+    // The phone asks with the count it has, and the answer waits until
+    // something changes or 25 s go by, so what changes on the TV reaches it
+    // within a second (ADR-037). With no count, it answers at once.
     if (method === "GET" && path === "/api/phone/state") {
-      const viewer = await this.profiles.active();
-      const pin = this.pin.status(viewer.locked);
-      this.json(response, 200, {
-        ok: true,
-        phone,
-        viewer,
-        viewers: await this.profiles.list(),
-        pin: { set: pin.set, locked: pin.locked },
-        signIn: this.signingIn ? { name: this.signingIn.name } : null,
-        update: await this.phoneUpdate(),
-      });
+      const since = Number(url.searchParams.get("since"));
+      if (since === this.phoneVersion) {
+        await new Promise<void>((resolve) => {
+          const wake = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(() => {
+            this.phoneWaiters.delete(wake);
+            resolve();
+          }, this.options.phoneWaitMs ?? PHONE_WAIT_MS);
+          this.phoneWaiters.add(wake);
+          request.on("close", () => {
+            this.phoneWaiters.delete(wake);
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+        if (response.destroyed) return;
+      }
+      this.json(response, 200, await this.phoneState(phone));
+      return;
+    }
+
+    // The Settings button beside Home and Back (ADR-037): Settings opens on
+    // the TV, which asks for the PIN for each adult action in it, as always.
+    // A child's profile doesn't have it.
+    if (method === "POST" && path === "/api/phone/settings") {
+      if ((await this.profiles.active()).role !== "adult") {
+        this.json(response, 403, { ok: false, error: "settings aren't on a child's profile" });
+        return;
+      }
+      this.broadcast("page", { route: "settings" });
+      this.json(response, 200, { ok: true });
       return;
     }
 
@@ -599,11 +725,16 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/remote") {
       const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
       let event: Record<string, unknown> | null = null;
+      const whole = (value: unknown, most: number) => Number.isInteger(value) && Math.abs(value as number) <= most;
       if (typeof body.key === "string" && /^[a-z0-9-]{1,12}$/.test(body.key)) event = { key: body.key };
       else if (typeof body.hold === "string" && /^[a-z0-9-]{1,12}$/.test(body.hold)) event = { hold: body.hold, ms: Math.max(100, Math.min(3000, Number(body.ms) || 1200)) };
       else if (typeof body.text === "string" && body.text.length > 0 && body.text.length <= 500) event = { text: body.text };
+      // The trackpad (ADR-008, ADR-037): moves, clicks and scrolls.
+      else if (Array.isArray(body.move) && body.move.length === 2 && body.move.every((d) => whole(d, 2000))) event = { move: body.move };
+      else if (body.click === "left" || body.click === "right" || body.click === "middle") event = { click: body.click };
+      else if (whole(body.scroll, 50) && body.scroll !== 0) event = { scroll: body.scroll };
       if (!event) {
-        this.json(response, 400, { ok: false, error: "a key, a held key, or text of up to 500 characters" });
+        this.json(response, 400, { ok: false, error: "a key, a held key, text of up to 500 characters, or a move, click or scroll" });
         return;
       }
       if (!this.remote(event)) {
@@ -1080,24 +1211,46 @@ export class Daemon {
     if (method === "POST" && path === "/api/sign-in-screen") {
       const body = (await this.body(request)) as { app?: unknown; name?: unknown } | undefined;
       this.signingIn = typeof body?.app === "string" ? { app: body.app, name: typeof body.name === "string" ? body.name : body.app } : null;
+      this.phonesChanged();
       this.json(response, 200, { ok: true });
       return;
     }
 
-    // The screen daemon's stream of the phone's keys and text. A page can't
-    // open it: it needs a header no browser sends to another site.
+    // What's on the TV (ADR-037), from the TV's page or the screen daemon,
+    // for the phone's remote to follow. No digit of the PIN is in it.
+    if (method === "POST" && path === "/api/tv/context") {
+      const body = (await this.body(request)) as Record<string, unknown> | undefined;
+      if (!body || typeof body !== "object") {
+        this.json(response, 400, { ok: false, error: "what's on the tv, as json" });
+        return;
+      }
+      this.tvChanged(body);
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
+    // The screen daemon's stream of the phone's keys and text, or Omarchy's
+    // desktop's, which takes the trackpad and the keys while the desktop is
+    // on. A page can't open it: it needs a header no browser sends to
+    // another site.
     if (method === "GET" && path === "/api/remote") {
-      if (request.headers["x-agentv-screen"] !== "1") {
+      const who = request.headers["x-agentv-screen"];
+      if (who !== "1" && who !== "desktop") {
         this.json(response, 403, { ok: false, error: "only the screen daemon takes the phone's keys" });
         return;
       }
       response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
       response.write(": agentv remote\n\n");
       this.remotes.add(response);
+      if (who === "desktop") {
+        this.desktops.add(response);
+        this.desktopChanged();
+      }
       const beat = setInterval(() => response.write(": beat\n\n"), 25_000);
       request.on("close", () => {
         clearInterval(beat);
         this.remotes.delete(response);
+        if (this.desktops.delete(response)) this.desktopChanged();
       });
       return;
     }
