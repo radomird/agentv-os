@@ -228,15 +228,18 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   return grant ?? held?.token ?? null;
 }
 
-// The lock after the box starts and after the TV has been off: the pad with
-// no way past it but the PIN. Unlocking is all it does: an adult action
-// after it still asks.
+// The lock: by hand from Settings → Parental, and after the box starts and
+// after the TV has been off, for a profile that asks for the PIN to open
+// (ADR-034). The pad has no way past it but the PIN, or the phone switching
+// to someone else. Unlocking is all it does: an adult action after it still
+// asks.
 function setLock(locked: boolean): void {
   if (locked && !locking) {
     locking = true;
     held = null;
+    const viewer = ctx.state.viewer;
     void openPad(
-      { command: "tv locked", title: "enter the parent pin", note: "the tv locks after it starts and after it's been off.", cancel: false, submit: checkPin(false) },
+      { command: "tv locked", title: "enter the parent pin", note: viewer.locked ? `${viewer.name}'s profile asks for it to open.` : "the tv is locked.", cancel: false, submit: checkPin(false) },
       (pad) => (lockPad = pad),
       // Unlocked elsewhere while it waited its turn.
       () => ctx.state.pin?.locked !== true,

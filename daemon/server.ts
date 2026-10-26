@@ -30,8 +30,8 @@ import { badState, kindOf, Ledger } from "./ledger.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
-import { Pin } from "./pin.ts";
-import { Profiles } from "./profiles.ts";
+import { Pin, type PinStatus } from "./pin.ts";
+import { Profiles, type Profile } from "./profiles.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -176,9 +176,9 @@ export class Daemon {
         });
       });
     }
-    // A kid's profile keeps the PIN on (ADR-009).
-    const kids = () => (this.ledger.viewers().some((viewer) => viewer.role === "kid") ? "a kid's profile needs the pin, so it stays" : null);
-    this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId, needed: kids });
+    // A kid's profile, or one that asks for the PIN to open, keeps the PIN
+    // on (ADR-009, ADR-034): see DELETE /api/pin.
+    this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId });
     this.ledgerPath = options.ledger ?? join(options.state, "ledger.db");
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.server = createServer((request, response) => {
@@ -487,7 +487,7 @@ export class Daemon {
 
     if (method === "GET" && path === "/api/phone/state") {
       const viewer = await this.profiles.active();
-      const pin = this.pin.status();
+      const pin = this.pin.status(viewer.locked);
       this.json(response, 200, {
         ok: true,
         phone,
@@ -624,17 +624,19 @@ export class Daemon {
         return;
       }
       const now = await this.profiles.active();
-      if (now.role === "kid" && target.role === "adult" && !this.guarded(request, response, "switching to an adult from a phone")) return;
+      if (this.switchNeedsPin(now, target) && !this.guarded(request, response, `switching to ${target.locked ? "a locked profile" : "an adult"} from a phone`)) return;
+      const locked = this.pin.status(now.locked).locked;
       await this.profiles.switchTo(target.id);
       if (now.id !== target.id) this.log(`${target.name} is watching now, from ${phone.name}`);
       this.broadcast("viewer", { id: target.id, role: target.role });
+      await this.lockChanged(locked);
       this.json(response, 200, { ok: true, viewer: target });
       return;
     }
 
     // The parent PIN, entered on the phone: a grant, and the TV unlocked.
     if (method === "POST" && path === "/api/phone/pin") {
-      const locked = this.pin.status().locked;
+      const locked = (await this.pinStatus()).locked;
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
       const checked = this.pin.check(body?.pin);
       if (!checked.ok) {
@@ -644,7 +646,7 @@ export class Daemon {
       }
       if (locked) {
         this.log(`the tv is unlocked from ${phone.name}`);
-        this.broadcast("pin", this.pin.status());
+        this.broadcast("pin", await this.pinStatus());
       }
       this.json(response, 200, checked);
       return;
@@ -676,6 +678,28 @@ export class Daemon {
     this.log(`refused ${what}: it needs the pin`);
     this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
     return false;
+  }
+
+  // Switching needs the PIN from a kid's profile to an adult's, and to a
+  // profile that asks for it to open (ADR-034).
+  private switchNeedsPin(now: Profile, target: Profile): boolean {
+    if (now.id === target.id) return false;
+    return target.locked || (now.role === "kid" && target.role === "adult");
+  }
+
+  // Whether the TV is locked, for the profile on screen.
+  private async pinStatus(): Promise<PinStatus> {
+    return this.pin.status((await this.profiles.active()).locked);
+  }
+
+  // The TV and the phones hear when someone else watching, or a profile's
+  // lock, locked or unlocked the TV.
+  private async lockChanged(before: boolean): Promise<void> {
+    const status = await this.pinStatus();
+    if (status.locked !== before) {
+      this.log(status.locked ? "the tv is locked" : "the tv is unlocked");
+      this.broadcast("pin", status);
+    }
   }
 
   // On a kid's profile, Settings and home's layout are an adult's, past the
@@ -814,7 +838,7 @@ export class Daemon {
 
     if (method === "GET" && path === "/api/home") {
       const viewer = await this.profiles.active();
-      const pin = this.pin.status();
+      const pin = this.pin.status(viewer.locked);
       const [info, setup, apps, layout, settings, viewers] = await Promise.all([
         this.settings(),
         this.setup(),
@@ -930,14 +954,14 @@ export class Daemon {
     // --- The parent PIN (ADR-009, S4.5) ------------------------------------
 
     if (method === "GET" && path === "/api/pin") {
-      this.json(response, 200, { ok: true, ...this.pin.status() });
+      this.json(response, 200, { ok: true, ...(await this.pinStatus()) });
       return;
     }
 
     // The PIN, entered on the TV: a grant for the guarded actions, and the TV
     // unlocked. The PIN itself is never logged.
     if (method === "POST" && path === "/api/pin/check") {
-      const locked = this.pin.status().locked;
+      const locked = (await this.pinStatus()).locked;
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
       const checked = this.pin.check(body?.pin);
       if (!checked.ok) {
@@ -947,7 +971,7 @@ export class Daemon {
       }
       if (locked) {
         this.log("the tv is unlocked");
-        this.broadcast("pin", this.pin.status());
+        this.broadcast("pin", await this.pinStatus());
       }
       this.json(response, 200, checked);
       return;
@@ -968,26 +992,27 @@ export class Daemon {
     // the one before.
     if ((method === "PUT" || method === "DELETE") && path === "/api/pin") {
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
-      const why = method === "PUT" ? this.pin.set(body?.pin, this.grant(request)) : this.pin.remove(this.grant(request));
+      const why = method === "PUT" ? this.pin.set(body?.pin, this.grant(request)) : this.pin.remove(this.grant(request), await this.profiles.needPin());
       if (why) {
         this.json(response, why === "that needs the pin" ? 403 : 400, { ok: false, error: why });
         return;
       }
       this.log(method === "PUT" ? "the pin was set" : "the pin was taken off");
-      const status = this.pin.status();
+      const status = await this.pinStatus();
       this.broadcast("pin", status);
       this.json(response, 200, { ok: true, ...status });
       return;
     }
 
-    // The TV locks: from Settings → Parental, and from the screen daemon once
-    // the TV has been off long enough for its apps to close.
+    // The TV locks: by hand from Settings → Parental, whoever's watching,
+    // and from the screen daemon once the TV has been off long enough for its
+    // apps to close ("tv-off"), for a profile that asks for the PIN to open.
     if (method === "POST" && path === "/api/pin/lock") {
-      if (this.pin.lock()) {
-        this.log("the tv is locked");
-        this.broadcast("pin", this.pin.status());
-      }
-      this.json(response, 200, { ok: true, ...this.pin.status() });
+      const body = (await this.body(request)) as { reason?: unknown } | undefined;
+      const locked = (await this.pinStatus()).locked;
+      this.pin.lock(body?.reason !== "tv-off");
+      await this.lockChanged(locked);
+      this.json(response, 200, { ok: true, ...(await this.pinStatus()) });
       return;
     }
 
@@ -1129,16 +1154,19 @@ export class Daemon {
         return;
       }
       const now = await this.profiles.active();
-      if (now.role === "kid" && target.role === "adult" && !this.guarded(request, response, "switching to an adult")) return;
+      if (this.switchNeedsPin(now, target) && !this.guarded(request, response, `switching to ${target.locked ? "a locked profile" : "an adult"}`)) return;
+      const locked = this.pin.status(now.locked).locked;
       await this.profiles.switchTo(target.id);
       if (now.id !== target.id) this.log(`${target.name} is watching now`);
       this.broadcast("viewer", { id: target.id, role: target.role });
+      await this.lockChanged(locked);
       this.json(response, 200, { ok: true, viewer: target });
       return;
     }
 
     // Settings → Profiles: adding, changing and taking off profiles needs
-    // the PIN once there is one, and a kid's profile needs one to exist.
+    // the PIN once there is one, and a kid's profile, or one that asks for
+    // the PIN to open, needs one to exist.
     const one = /^\/api\/viewers\/([a-z0-9._-]+)$/.exec(path);
     if ((method === "POST" && path === "/api/viewers") || ((method === "PUT" || method === "DELETE") && one)) {
       if (!this.guarded(request, response, "changing profiles")) return;
@@ -1147,6 +1175,11 @@ export class Daemon {
         this.json(response, 400, { ok: false, error: "a kid's profile needs a parent pin. set one in settings → parental first" });
         return;
       }
+      if (method !== "DELETE" && body.locked === true && !this.pin.status().set) {
+        this.json(response, 400, { ok: false, error: "a locked profile needs a parent pin. set one in settings → parental first" });
+        return;
+      }
+      const locked = (await this.pinStatus()).locked;
       let error: string | null | undefined;
       let profile;
       if (method === "POST") ({ profile, error } = await this.profiles.add(body));
@@ -1161,6 +1194,7 @@ export class Daemon {
       }
       this.log(method === "POST" ? `a profile was added, ${profile!.role === "kid" ? "a kid" : "an adult"}` : method === "PUT" ? "a profile was changed" : "a profile was taken off");
       this.broadcast("viewers", {});
+      await this.lockChanged(locked);
       this.json(response, 200, { ok: true, ...(profile ? { profile } : {}), viewers: await this.profiles.list(), active: (await this.profiles.active()).id });
       return;
     }

@@ -3,7 +3,9 @@
 // switch from anywhere shows within a second, a profile is added with a
 // typed name and its role and colour, and a kid's profile has only kids'
 // apps, with Settings, edit mode and the switch back to an adult past the
-// PIN.
+// PIN. An adult's profile locks from its page (ADR-034): its row shows a
+// lock, switching to it asks for the PIN, and only it opens on the pad after
+// the box starts.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -210,5 +212,58 @@ test("S4.2 an adult ticks an app for kids in its details, past the PIN", async (
   await page.waitForFunction(() => document.querySelector('.grid .tile[data-id="agentv.sample"]') !== null);
   assert.equal(await page.locator('[data-action="kids"]').count(), 0, "a kid's details don't have it");
   await send("POST", "/api/viewer", { id: "radomir" }, await grant());
+  await page.close();
+});
+
+test("ADR-034 an adult locks their profile on its page: a lock on its row, the PIN to switch to it, and the pad after the box starts", async () => {
+  const ana = await byName("ana");
+  await send("POST", "/api/viewer", { id: "radomir" }, await grant());
+  const page = await tv();
+  await go(page, `profile/${ana.id}`);
+  await page.waitForSelector(".page.profile");
+  assert.match(await page.locator('[data-action="lock"]').innerText(), /ask for the pin to open\s+‹ no ›/);
+  await page.locator('[data-action="lock"]').click();
+  assert.match(await page.locator('[data-action="lock"]').innerText(), /‹ yes ›/);
+  await page.locator('[data-action="save"]').click();
+  await waitPad(page, true);
+  await type(page, PIN);
+  await waitPad(page, false);
+  await page.waitForFunction(() => /ana is saved/.test(document.body.textContent ?? ""));
+  assert.equal(((await byName("ana")) as unknown as { locked: boolean }).locked, true);
+
+  // Settings → Profiles shows the lock on her row, and only hers.
+  await go(page, "settings/profiles");
+  await page.waitForSelector(`.panel [data-action="viewer-${ana.id}"]`);
+  assert.equal(await page.locator(`.panel [data-action="viewer-${ana.id}"] svg.glyph-lock`).count(), 1);
+  assert.equal(await page.locator('.panel [data-action="viewer-radomir"] svg.glyph-lock').count(), 0);
+
+  // Watching as ana asks for the PIN, from an adult's profile too.
+  await go(page, `profile/${ana.id}`);
+  await page.waitForSelector('.page.profile [data-action="watch"]');
+  await page.locator('[data-action="watch"]').click();
+  await waitPad(page, true);
+  assert.match(await page.locator("#pin").innerText(), /for watching as ana\./);
+  await type(page, PIN);
+  await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
+  assert.equal((await send("GET", "/api/viewer")).viewer.id, ana.id);
+
+  // After the box starts again, a TV on ana's profile opens on the pad.
+  daemon.pin.lock(false);
+  const started = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  started.on("pageerror", (error) => errors.push(error.message));
+  await started.goto(`${url}/`);
+  await waitPad(started, true);
+  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the parent pin[\s\S]*ana's profile asks for it to open\./);
+  await type(started, PIN);
+  await waitPad(started, false);
+  await started.close();
+
+  // On radomir's, which doesn't ask, it opens on home.
+  await send("POST", "/api/viewer", { id: "radomir" });
+  daemon.pin.lock(false);
+  const home = await tv();
+  assert.equal(await home.evaluate(() => document.getElementById("pin")?.classList.contains("on") === true), false);
+  await home.close();
+  await send("PUT", `/api/viewers/${ana.id}`, { locked: false }, await grant());
   await page.close();
 });

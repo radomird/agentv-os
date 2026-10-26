@@ -113,6 +113,27 @@ test("S4.5 the TV is locked after another boot, and after it's been off, until t
   assert.equal(pin.allows(grant), false);
 });
 
+test("ADR-034 after another boot, only a profile that asks for the PIN is locked, and a lock by hand holds for anyone", () => {
+  const { pin, clock, make } = box();
+  pin.set("4826", undefined);
+  clock.boot = "boot-2";
+  const booted = make();
+  assert.equal(booted.status(false).locked, false, "a profile that doesn't ask opens");
+  assert.equal(booted.status(true).locked, true, "one that does is locked");
+  // The TV off for a while: the same.
+  granted(booted.check("4826"));
+  assert.equal(booted.lock(false), true);
+  assert.deepEqual([booted.status(false).locked, booted.status(true).locked], [false, true]);
+  // By hand, it's whoever's watching, until the PIN, and the TV going off
+  // doesn't undo it.
+  granted(booted.check("4826"));
+  assert.equal(booted.lock(), true);
+  booted.lock(false);
+  assert.deepEqual([booted.status(false).locked, booted.status(true).locked], [true, true]);
+  granted(booted.check("4826"));
+  assert.deepEqual([booted.status(false).locked, booted.status(true).locked], [false, false]);
+});
+
 // --- The daemon's requests ---------------------------------------------------
 
 test("S4.5 the daemon refuses a guarded request without the PIN's grant, and never logs the PIN", async () => {

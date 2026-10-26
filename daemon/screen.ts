@@ -1058,7 +1058,8 @@ export class Screen {
       this.log("the TV has been off for a while; closing every app");
       for (const entry of [...this.opens]) await this.closeOpen(entry);
       this.ambient = false;
-      // With a PIN set, the TV is locked when it's back (ADR-009).
+      // With a PIN set, a profile that asks for it to open is locked when
+      // the TV is back (ADR-009, ADR-034).
       await this.launcher.lock().catch(() => {});
     }).then(() => void this.showAmbient());
   }
@@ -1682,8 +1683,15 @@ export const launcher: Launcher = {
     }
   },
 
+  // After the TV has been off: it locks only a profile that asks for the PIN
+  // to open (ADR-034).
   async lock() {
-    await fetch(`${HOME_URL}api/pin/lock`, { method: "POST", signal: AbortSignal.timeout(5000) });
+    await fetch(`${HOME_URL}api/pin/lock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "tv-off" }),
+      signal: AbortSignal.timeout(5000),
+    });
   },
 
   power(what) {

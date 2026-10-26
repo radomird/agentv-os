@@ -212,7 +212,7 @@ export function settings(ctx: Ctx, open?: string): View {
       ? [
           h("div", { class: "panel-title" }, "the parent pin"),
           h("div", { class: "panel-big with-icon" }, glyph("lock", 72), h("span", {}, "on")),
-          note("it guards omarchy's desktop, power and updates. the tv locks after it starts and after it's been off."),
+          note("it guards omarchy's desktop, power and updates. a profile can ask for it to open, in settings → profiles."),
           h("button", { class: "button", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "change the pin →"),
           h(
             "button",
@@ -231,7 +231,7 @@ export function settings(ctx: Ctx, open?: string): View {
       : [
           h("div", { class: "panel-title" }, "the parent pin"),
           h("div", { class: "panel-big with-icon" }, glyph("lock", 72), h("span", {}, "off")),
-          note("a pin guards omarchy's desktop, power and updates, and locks the tv after it starts and after it's been off. a kid's profile needs one."),
+          note("a pin guards omarchy's desktop, power and updates, and can lock a profile. a kid's profile needs one."),
           h("button", { class: "button primary", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "set a pin →"),
         ];
 

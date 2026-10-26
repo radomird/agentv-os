@@ -216,10 +216,11 @@ function who(): HTMLElement {
         { type: "button", class: `viewer${viewer.id === state?.viewer.id ? " on" : ""}`, "data-viewer": viewer.id, onclick: () => void watch(viewer) },
         avatar(viewer),
         h("span", {}, viewer.name),
+        viewer.locked ? glyph("lock", 18) : null,
         h("span", { class: "viewer-role" }, [viewer.role === "kid" ? "kid" : "", viewer.id === state?.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
-    h("p", { class: "note" }, "from a kid's profile to an adult's needs the parent pin."),
+    h("p", { class: "note" }, "from a kid's profile to an adult's, or to a locked one, needs the parent pin."),
   );
 }
 
