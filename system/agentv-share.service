@@ -1,0 +1,15 @@
+# Keeps the passwords of Music's NAS shares where only root can read them,
+# and mounts or unmounts the shares (bin/agentv-share-store). agentv-share.path
+# starts it. It runs in the box's own mount namespace, with none of systemd's
+# file system sandboxing, since a mount made in a namespace of its own
+# wouldn't be seen by Music.
+
+[Unit]
+Description=AgenTV NAS shares
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-share-store
+UMask=0077
+NoNewPrivileges=yes

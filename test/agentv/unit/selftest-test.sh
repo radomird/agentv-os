@@ -217,12 +217,22 @@ fake steam 'exit 0'
 fake omarchy-cmd-present 'type -P "$1" >/dev/null'
 # The virtual input device, and the screen daemon's journal.
 fake agentv-input 'echo "$*" >>"$STATE/input.log"'
-# The Music app in the TV session (S3.6): its library, and a player whose
+# The Music app in the TV session (S3.6): a scan in the background that's
+# done at the second look, its library and sources, and a player whose
 # position moves on with each look, unless it's stuck.
 fake agentv-music '
 echo "$*" >>"$STATE/music.log"
 case "$1" in
-  scan) cat "$STATE/music-scan" 2>/dev/null || echo "{\"ok\":true,\"albums\":3,\"tracks\":9}" ;;
+  scan)
+    echo 0 >"$STATE/music-looks-scan"
+    if [[ -f $STATE/music-scan ]]; then cat "$STATE/music-scan"; else echo "{\"ok\":true,\"progress\":{\"scanning\":true,\"read\":0,\"found\":0,\"albums\":0}}"; fi ;;
+  progress)
+    looks=$(( $(cat "$STATE/music-looks-scan") + 1 ))
+    echo "$looks" >"$STATE/music-looks-scan"
+    if [[ -f $STATE/music-progress ]]; then cat "$STATE/music-progress"
+    elif (( looks < 2 )); then echo "{\"ok\":true,\"progress\":{\"scanning\":true,\"source\":\"nas/music\",\"read\":3,\"found\":9,\"albums\":1}}"
+    else echo "{\"ok\":true,\"progress\":{\"scanning\":false,\"read\":9,\"found\":9,\"albums\":3,\"finishedAt\":\"2026-10-26T12:00:00Z\"}}"; fi ;;
+  sources) cat "$STATE/music-sources" 2>/dev/null || echo "{\"ok\":true,\"sources\":[]}" ;;
   library) cat "$STATE/music-library" ;;
   play)
     shift
@@ -261,7 +271,7 @@ tv() {
     "2026-10-24T21:00:02+0200 nuc agentv-screen[812]: the TV went off; pausing" \
     "2026-10-24T21:02:02+0200 nuc agentv-screen[812]: the TV has been off for a while; closing every app" \
     "2026-10-24T21:03:10+0200 nuc agentv-screen[812]: the TV came back on" >"$state/journal"
-  rm -f "$state/input.log" "$state/music.log" "$state/music-playing" "$state/music-stuck" "$state/music-scan"
+  rm -f "$state/input.log" "$state/music.log" "$state/music-playing" "$state/music-stuck" "$state/music-scan" "$state/music-progress" "$state/music-sources"
   # A Music library with an album on the box, one on a stick and one on a share.
   echo '{"ok": true, "albums": [
     {"id": "f1", "title": "Test Tones", "artist": "AgenTV", "source": "folder:/home/radomir/Music"},
@@ -277,7 +287,7 @@ tv() {
 
 run1() {
   env PATH="$fakes:$PATH" STATE="$state" AGENTV_PATH="$SCRATCH/agentv" AGENTV_SDDM_CONF="$SCRATCH/sddm.conf" \
-    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_INPUT="$fakes/agentv-input" AGENTV_MUSIC="$fakes/agentv-music" AGENTV_MUSIC_WAIT_S=0 \
+    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_INPUT="$fakes/agentv-input" AGENTV_MUSIC="$fakes/agentv-music" AGENTV_MUSIC_WAIT_S=0 AGENTV_MUSIC_POLL_S=0 \
     AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
 }
 
@@ -500,6 +510,7 @@ for line in \
   grep -qF "$line" "$SCRATCH/out" || fail "it says: $line" "$(cat "$SCRATCH/out")"
 done
 grep -qx "scan" "$state/music.log" || fail "it reads the sources again first" "$(cat "$state/music.log")"
+[[ $(grep -c "^progress$" "$state/music.log") == 2 ]] || fail "and follows the scan's progress until it's done" "$(cat "$state/music.log")"
 grep -qx "play album Night Shift" "$state/music.log" || fail "it asks for the album by name" "$(cat "$state/music.log")"
 [[ $(tail -n 1 "$state/music.log") == stop ]] || fail "it stops the music after" "$(cat "$state/music.log")"
 [[ $(tail -n 1 "$SCRATCH/out") == "S3.6 pass" ]] || fail "S3.6 alone runs only S3.6" "$(cat "$SCRATCH/out")"
@@ -520,11 +531,33 @@ grep -qF "fail S3.6 there's no album on a NAS share whose name is only there; ad
 touch "$state/music-stuck"
 ! run1 S3.6 || fail "a player that doesn't move on fails S3.6"
 grep -qF "fail S3.6 Night Shift from a USB drive didn't play:" "$SCRATCH/out" || fail "it says it didn't play" "$(cat "$SCRATCH/out")"
+rm -f "$state/music-stuck"
+# The share's album is away: it isn't picked, and root's reason shows.
+echo '{"ok": true, "albums": [
+  {"id": "u1", "title": "Night Shift", "source": "usb:/dev/sdb1"},
+  {"id": "s1", "title": "Harbour Lights", "source": "share:smb://radomir@nas/music", "away": true}], "playlists": []}' >"$state/music-library"
+echo '{"ok": true, "sources": [{"id": "share:smb://radomir@nas/music", "kind": "share", "name": "nas/music", "available": false, "error": "the NAS didn'"'"'t take that user name and password"}]}' >"$state/music-sources"
+! run1 S3.6 || fail "an album that's away fails S3.6"
+grep -qF "fail S3.6 there's no album on a NAS share whose name is only there (nas/music is away: the NAS didn't take that user name and password); add a share" "$SCRATCH/out" ||
+  fail "it says the share is away, and why" "$(cat "$SCRATCH/out")"
+if grep -qx "play album Harbour Lights" "$state/music.log"; then fail "and doesn't try to play it"; fi
 echo '{"ok": false, "error": "music isn'"'"'t here"}' >"$state/music-scan"
-! run1 S3.6 || fail "Music not answering fails S3.6"
-grep -qF "fail S3.6 Music couldn't read its sources: music isn't here" "$SCRATCH/out" || fail "it says Music couldn't read" "$(cat "$SCRATCH/out")"
+! run1 S3.6 || fail "Music not starting a scan fails S3.6"
+grep -qF "fail S3.6 Music couldn't start reading its sources: music isn't here" "$SCRATCH/out" || fail "it says Music couldn't start" "$(cat "$SCRATCH/out")"
+# The NUC's empty reason: a scan that answers nothing says so.
+: >"$state/music-scan"
+! run1 S3.6 || fail "Music saying nothing fails S3.6"
+grep -qx "fail S3.6 Music couldn't start reading its sources: Music didn't answer" "$SCRATCH/out" || fail "it says Music didn't answer, not nothing" "$(cat "$SCRATCH/out")"
+rm -f "$state/music-scan"
+echo '{"ok": true, "progress": {"scanning": false, "read": 4, "found": 9, "albums": 1, "error": "the folder went away"}}' >"$state/music-progress"
+! run1 S3.6 || fail "a scan that stops fails S3.6"
+grep -qF "fail S3.6 Music couldn't read its sources: the folder went away" "$SCRATCH/out" || fail "it says why the scan stopped" "$(cat "$SCRATCH/out")"
+echo '{"ok": true, "progress": {"scanning": true, "source": "nas/music", "read": 1200, "found": 5000, "albums": 40}}' >"$state/music-progress"
+! AGENTV_MUSIC_SCAN_S=0 run1 S3.6 || fail "a scan still going at the ceiling fails S3.6"
+grep -qF "fail S3.6 Music was still reading its sources after 0 minutes, with 1200 of 5000 files read from nas/music and 40 albums so far. Music → sources says how far it's got" "$SCRATCH/out" ||
+  fail "it says how far the scan got" "$(cat "$SCRATCH/out")"
 kill "$home_pid" 2>/dev/null || true
-pass "S3.6 fails with what to do when an album isn't there, doesn't play, or Music doesn't answer"
+pass "S3.6 fails with what to do when an album isn't there or is away, doesn't play, or Music doesn't answer or doesn't finish reading"
 
 # --- Stage 4 ---------------------------------------------------------------
 

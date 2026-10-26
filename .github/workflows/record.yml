@@ -1,13 +1,12 @@
 name: Record fixtures
 
 # Records the replies AgenTV's tests use as fixtures (ADR-019, layer 3), from
-# the services themselves: MET Norway's forecasts for the weather app, and
-# Jellyfin's and Immich's replies from their official container images, for
-# their apps' contract tests. A push to record/met, record/jellyfin or
-# record/immich (or a branch starting with one of those) records that one
-# and pushes it back to the branch, where someone copies it into a pull
-# request. Run by hand, it records what it's asked for and keeps it as an
-# artifact, pushing nothing.
+# the services themselves: MET Norway's forecasts for the weather app. A push
+# to record/met (or a branch starting with it) records them and pushes them
+# back to the branch, where someone copies them into a pull request. Run by
+# hand, it records them and keeps them as an artifact, pushing nothing.
+# Jellyfin's and Immich's are recorded in agentv-apps, with their apps
+# (ADR-036).
 
 on:
   push:
@@ -17,7 +16,7 @@ on:
       what:
         description: "What to record"
         type: choice
-        options: [met, jellyfin, immich]
+        options: [met]
         default: met
 
 permissions:
@@ -46,16 +45,9 @@ jobs:
           what=${INPUT:-${BRANCH#record/}}
           case "$what" in
             met*) what=met ;;
-            jellyfin*) what=jellyfin ;;
-            immich*) what=immich ;;
-            *) echo "::error::a record branch is record/met, record/jellyfin or record/immich, not $BRANCH"; exit 1 ;;
+            *) echo "::error::a record branch is record/met, not $BRANCH"; exit 1 ;;
           esac
           echo "what=$what" >>"$GITHUB_OUTPUT"
-
-      # The test videos and photos are made with ffmpeg.
-      - name: ffmpeg
-        if: steps.which.outputs.what != 'met'
-        run: type -P ffmpeg >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
 
       - name: Record
         run: test/agentv/fixtures/record/${{ steps.which.outputs.what }}

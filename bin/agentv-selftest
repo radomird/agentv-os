@@ -950,37 +950,69 @@ APP
   fi
 }
 
-# The built-in Music app, in the TV session. Reading a NAS again can take a
-# while, so it gets longer than other screen requests.
+# The built-in Music app, in the TV session.
 music() {
-  AGENTV_SCREEN_TIMEOUT=${AGENTV_SCREEN_TIMEOUT:-300} "${AGENTV_MUSIC:-$AGENTV_BIN_DIR/agentv-music}" "$@" 2>/dev/null || true
+  "${AGENTV_MUSIC:-$AGENTV_BIN_DIR/agentv-music}" "$@" 2>/dev/null || true
+}
+
+# What a reply from Music says went wrong, or that it said nothing.
+music_error() {
+  if [[ -z $1 ]]; then
+    echo "Music didn't answer"
+  else
+    jq -r '.error // "it gave no reason"' <<<"$1" 2>/dev/null || echo "Music's answer couldn't be read"
+  fi
 }
 
 # S3.6: "play <album>" finds an album on a USB drive and one on a NAS share,
 # and each plays. An album whose name is also elsewhere in the library can't
 # show that, so it takes one whose name is only on that drive or share.
 s36() {
-  local scan library kind where album title id reply now first second wait=${AGENTV_MUSIC_WAIT_S:-3}
+  local scan progress started error away library kind where album title id reply now first second wait=${AGENTV_MUSIC_WAIT_S:-3}
+  local ceiling=${AGENTV_MUSIC_SCAN_S:-3600} poll=${AGENTV_MUSIC_POLL_S:-5}
 
   tv_on S3.6 || return 0
+  # Reading a big share takes a while, so the scan runs in the background,
+  # and this follows how far it's got, for up to an hour.
   scan=$(music scan)
   if [[ $(jq -r '.ok // false' <<<"$scan" 2>/dev/null) != true ]]; then
-    result fail S3.6 "Music couldn't read its sources: $(jq -r '.error // "no answer"' <<<"$scan" 2>/dev/null || echo "no answer")"
+    result fail S3.6 "Music couldn't start reading its sources: $(music_error "$scan")"
     return 0
   fi
+  started=$SECONDS
+  while :; do
+    progress=$(music progress)
+    [[ $(jq -r '.progress.scanning // false' <<<"$progress" 2>/dev/null) == true ]] || break
+    if (( SECONDS - started >= ceiling )); then
+      result fail S3.6 "Music was still reading its sources after $(( ceiling / 60 )) minutes, with $(jq -r '.progress | "\(.read) of \(.found) files read from \(.source // "them") and \(.albums) albums so far"' <<<"$progress"). Music → sources says how far it's got; run agentv selftest S3.6 again once it's done"
+      return 0
+    fi
+    sleep "$poll"
+  done
+  if [[ $(jq -r '.ok // false' <<<"$progress" 2>/dev/null) != true ]]; then
+    result fail S3.6 "Music stopped answering while it read its sources: $(music_error "$progress")"
+    return 0
+  fi
+  error=$(jq -r '.progress.error // empty' <<<"$progress" 2>/dev/null || true)
+  if [[ -n $error ]]; then
+    result fail S3.6 "Music couldn't read its sources: $error"
+    return 0
+  fi
+  # A share that isn't there, and why, when root mounts it.
+  away=$(music sources | jq -r '[.sources[]? | select(.kind == "share" and .available != true) | "\(.name) is away: \(.error // "not there")"] | join("; ")' 2>/dev/null || true)
   library=$(music library)
   for kind in usb share; do
     where=$([[ $kind == usb ]] && echo "a USB drive" || echo "a NAS share")
     album=$(jq -c --arg kind "$kind" '
       (.albums | map(.title | ascii_downcase)) as $names
-      | [.albums[] | select(.source | startswith($kind + ":"))
+      | [.albums[] | select(.away != true) | select(.source | startswith($kind + ":"))
          | select((.title | ascii_downcase) as $t | $names | map(select(. == $t)) | length == 1)]
       | first // empty' <<<"$library" 2>/dev/null || true)
     if [[ -z $album ]]; then
       if [[ $kind == usb ]]; then
         result fail S3.6 "there's no album on a USB drive whose name is only there; plug in a stick with an album on it and run agentv selftest S3.6 again"
       else
-        result fail S3.6 "there's no album on a NAS share whose name is only there; add a share with agentv music add-share smb://<nas>/<share> (or Music → sources on the TV) and run agentv selftest S3.6 again"
+        result fail S3.6 "there's no album on a NAS share whose name is only there${away:+ ($away)}; add a share with agentv music add-share smb://<nas>/<share> (or Music → sources on the TV) and run agentv selftest S3.6 again"
       fi
       continue
     fi

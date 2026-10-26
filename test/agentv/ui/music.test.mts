@@ -43,6 +43,12 @@ const LIBRARY = {
     { id: "folder:/home/omarchy/Music", kind: "folder", name: "music", path: "/home/omarchy/Music", available: true },
     { id: "usb:/dev/sdb1", kind: "usb", name: "STICK", path: "/run/media/omarchy/STICK", available: true },
     { id: "share:smb://nas/music", kind: "share", name: "nas/music", path: null, available: false },
+    { id: "share:smb://radomir@nas/films", kind: "share", name: "nas/films", path: null, available: false, error: "the NAS didn't take that user name and password" },
+  ],
+  // A big share half read, then done at the next look.
+  progress: [
+    { scanning: true, source: "nas/music", found: 5000, read: 1200, albums: 40, startedAt: "2026-10-26T12:00:00Z", finishedAt: null },
+    { scanning: false, source: null, found: 5000, read: 5000, albums: 412, startedAt: "2026-10-26T12:00:00Z", finishedAt: "2026-10-26T12:20:00Z" },
   ],
 };
 
@@ -80,6 +86,7 @@ async function tv(playing = true): Promise<Page> {
       type Request = { id: number; cmd: string; op?: string; key?: string; q?: string; uri?: string };
       const w = window as unknown as { screenRequests: Request[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
       w.screenRequests = [];
+      let looks = 0;
       const answer = (request: Request): object => {
         if (request.cmd !== "music") return { ok: true };
         switch (request.op) {
@@ -101,7 +108,7 @@ async function tv(playing = true): Promise<Page> {
           case "recent":
             return { ok: true, albums: library.albums.map(({ id, title, artist }) => ({ id, title, artist })) };
           case "sources":
-            return { ok: true, sources: library.sources };
+            return { ok: true, sources: library.sources, progress: library.progress[Math.min(looks++, library.progress.length - 1)] };
           case "play":
             return { ok: true, playing: { kind: "album", key: request.key, title: "Night Shift", tracks: 3 } };
           case "add-share":
@@ -269,7 +276,13 @@ test("S3.6 the sources page lists the folder, the USB stick and the share, and a
   await page.locator('[data-action="sources"]').click();
   await page.waitForSelector(".sources .source");
   const listed = await page.$$eval(".sources .source", (rows) => rows.map((row) => row.textContent));
-  assert.deepEqual(listed, ["folder · musicready", "usb · STICKready", "share · nas/musicnot there"]);
+  // A share root mounts says why it isn't there (ADR-038).
+  assert.deepEqual(listed, ["folder · musicready", "usb · STICKready", "share · nas/musicaway", "share · nas/filmsthe nas didn't take that user name and password"]);
+  // A big share half read says how far it's got, and the page follows it.
+  assert.equal(await page.textContent(".scan-progress"), "reading nas/music · 1,200 of 5,000 files · 40 albums so far");
+  await page.waitForFunction(() => document.querySelector(".scan-progress")?.textContent === "read 5,000 files · 412 albums", null, { timeout: 5000 });
+  // The box keeps the password, so it says a NAS account that can only read is best.
+  assert.match((await page.textContent(".page.music .hint")) ?? "", /a nas account that can only read is best/);
   await page.fill('[aria-label="a share\'s address"]', "smb://radomir@nas/music");
   await page.fill('[aria-label="the share\'s password"]', "hunter2");
   await page.locator('[data-action="add-share"]').click();
