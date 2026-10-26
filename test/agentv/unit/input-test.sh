@@ -45,6 +45,16 @@ assert events() == [
 ], "Hi!"
 print("ok - text is typed on a US layout, with Shift where it needs it")
 
+# A character at a time, with a pause after each: all at once, a long text on
+# a busy box overflows what the kernel keeps for the compositor.
+log = []
+paced = agentv_input.Device(lambda chunk: log.append("write"), lambda seconds: log.append(seconds))
+paced.handle({"text": "aB"})
+gap = agentv_input.TYPE_GAP
+assert log == ["write", "write", gap, "write", "write", "write", "write", gap], log
+assert 0.005 <= gap <= 0.05, gap
+print("ok - typed text pauses after each character, so the compositor keeps up")
+
 device.handle({"move": [5, -3]})
 assert events() == [(2, 0, 5), (2, 1, -3)], "move"
 device.handle({"click": "left"})
