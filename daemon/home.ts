@@ -74,6 +74,40 @@ export interface WeatherPlace {
   cities: { zone: string; name: string }[];
 }
 
+// An app's own setup, for its setup page: its fields and whether a sign-in
+// comes after them.
+export interface AppSetup {
+  id: string;
+  name: string;
+  fields: { key: string; label: string; value: string; address: boolean }[];
+  signIn: boolean;
+}
+
+// The fields an app's origins or home page start with, as {serverUrl}.
+function addressKeys(manifest: Manifest): Set<string> {
+  const keys = new Set<string>();
+  for (const template of [...(manifest.tv.origins ?? []), manifest.tv.homeUrl ?? ""]) {
+    const key = /^\{([A-Za-z][A-Za-z0-9]*)\}/.exec(template)?.[1];
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+// A server's address as typed, made whole: http when no scheme is given, no
+// sign-in in it, nothing after the path, and no slash at the end. Null when
+// it isn't one.
+export function asAddress(typed: string): string | null {
+  const value = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `http://${typed}`;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname || url.username || url.password || url.search || url.hash) return null;
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
 // Whose data a built-in app shows, as its terms ask.
 const CREDITS: Record<string, string> = {
   "agentv.weather": "weather data from met norway, under cc by 4.0",
@@ -571,6 +605,53 @@ export class Home {
       else return "the units are c or f";
     }
     all[WEATHER] = next;
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "app-settings.json"), all);
+    return null;
+  }
+
+  // --- An app's own setup ("Setup flow", ADR-011) -------------------------
+
+  // What an app asks for before it opens: its own fields, filled in as far
+  // as they are, and whether a sign-in comes after. Nothing for a built-in,
+  // whose settings are the TV's own.
+  async appSetup(id: string): Promise<AppSetup | null> {
+    const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
+    if (!found || found.tier === "built-in") return null;
+    const values = (await this.appSettings())[id] ?? {};
+    const steps = found.manifest.tv.setup ?? [];
+    const addresses = addressKeys(found.manifest);
+    return {
+      id,
+      name: found.manifest.name,
+      fields: steps.flatMap((step) => (step.type === "field" ? [{ key: step.key, label: step.label, value: values[step.key] ?? "", address: addresses.has(step.key) }] : [])),
+      signIn: steps.some((step) => step.type === "signIn"),
+    };
+  }
+
+  // Fills in an app's fields, from its setup page. A field its origins or
+  // home page start with is an address: http or https, and plain http when
+  // it's typed without, as a server on the home network usually is.
+  async saveAppSetup(id: string, change: unknown): Promise<string | null> {
+    const setup = await this.appSetup(id);
+    if (!setup) return "that isn't an app here with a setup";
+    if (typeof change !== "object" || change === null || Array.isArray(change)) return "send the fields to fill in";
+    const all = await readJson<Record<string, Record<string, string>>>(join(this.state, "app-settings.json"), {});
+    const next = { ...(all[id] ?? {}) };
+    for (const [key, raw] of Object.entries(change)) {
+      const field = setup.fields.find((f) => f.key === key);
+      if (!field) return `${setup.name.toLowerCase()} has no field called ${key.slice(0, 40)}`;
+      const value = typeof raw === "string" ? raw.trim() : "";
+      if (!value || value.length > 500) return `${field.label.toLowerCase()} is up to 500 characters, and not empty`;
+      if (!field.address) {
+        next[key] = value;
+        continue;
+      }
+      const address = asAddress(value);
+      if (!address) return `${field.label.toLowerCase()} is an address like http://192.168.1.20:8096`;
+      next[key] = address;
+    }
+    all[id] = next;
     await mkdir(this.state, { recursive: true });
     await writeJson(join(this.state, "app-settings.json"), all);
     return null;

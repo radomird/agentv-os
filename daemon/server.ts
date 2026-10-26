@@ -1680,6 +1680,33 @@ export class Daemon {
       return;
     }
 
+    // An app's own setup, from its tile ("Setup flow"): its fields, such as a
+    // server's address, then the sign-in. Filling them in is an adult's,
+    // past the PIN once there is one, since it says where the app goes.
+    const appSetup = /^\/api\/apps\/([a-z0-9.-]+)\/setup$/.exec(path);
+    if (method === "GET" && appSetup) {
+      const setup = await this.home.appSetup(appSetup[1]);
+      if (!setup) {
+        this.json(response, 404, { ok: false, error: "that isn't an app here with a setup" });
+        return;
+      }
+      this.json(response, 200, { ok: true, setup });
+      return;
+    }
+    if (method === "POST" && appSetup) {
+      if (!this.guarded(request, response, "setting up an app") || !(await this.adult(request, response, "setting up an app"))) return;
+      const body = (await this.body(request)) as { values?: unknown } | undefined;
+      const why = await this.home.saveAppSetup(appSetup[1], body?.values);
+      if (why) {
+        this.json(response, why.startsWith("that isn't") ? 404 : 400, { ok: false, error: why });
+        return;
+      }
+      this.log(`${appSetup[1]}: its setup fields are filled in`);
+      this.broadcast("apps", {});
+      this.json(response, 200, { ok: true, setup: await this.home.appSetup(appSetup[1]) });
+      return;
+    }
+
     // The ledger (S3.3): where the viewer got to in an app, from the screen
     // daemon every 10 s while the app is open, and the newest rows.
     if (method === "POST" && path === "/api/ledger") {

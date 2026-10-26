@@ -10,7 +10,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { installLocal, removeApp } from "../../../daemon/apps/install.ts";
-import { cleanTheme } from "../../../daemon/home.ts";
+import { asAddress, cleanTheme } from "../../../daemon/home.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "../ui/box.mts";
 
@@ -229,6 +229,63 @@ test("ADR-035 a box from before keeps the apps an adult ticked for children, fro
   }
 });
 
+
+test("a server's address is made whole, or turned down", () => {
+  assert.equal(asAddress("192.168.1.20:8096"), "http://192.168.1.20:8096");
+  assert.equal(asAddress("https://media.example/jellyfin/"), "https://media.example/jellyfin");
+  assert.equal(asAddress("HTTP://Jellyfin.local:8096/"), "http://jellyfin.local:8096");
+  for (const typed of ["ftp://media.example", "file:///etc/passwd", "javascript:alert(1)", "http://me:secret@media.example", "http://media.example/?x=1", "http://", "two words"]) {
+    assert.equal(asAddress(typed), null, typed);
+  }
+});
+
+test("an app's own setup, from its tile: its fields, then the sign-in, past the PIN once there is one", async () => {
+  const box = await startBox();
+  const call = async (method: string, path: string, body?: unknown, grant?: string) => {
+    const response = await fetch(`${box.url}${path}`, {
+      method,
+      headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: response.status, data: await response.json() };
+  };
+  try {
+    assert.deepEqual((await call("GET", "/api/apps/someone.radio/setup")).data.setup, {
+      id: "someone.radio",
+      name: "Radio",
+      fields: [{ key: "serverUrl", label: "Server address", value: "", address: true }],
+      signIn: true,
+    });
+    assert.equal((await call("GET", "/api/apps/agentv.nothing/setup")).status, 404);
+    for (const [values, why] of [
+      [{ serverUrl: "ftp://media.example" }, "server address is an address like http://192.168.1.20:8096"],
+      [{ serverUrl: "  " }, "server address is up to 500 characters, and not empty"],
+      [{ password: "hunter2" }, "radio has no field called password"],
+      [["serverUrl"], "send the fields to fill in"],
+    ] as const) {
+      assert.deepEqual(await call("POST", "/api/apps/someone.radio/setup", { values }), { status: 400, data: { ok: false, error: why } });
+    }
+    assert.equal((await call("POST", "/api/apps/agentv.nothing/setup", { values: { serverUrl: "media.example" } })).status, 404);
+
+    // With a PIN, it needs the PIN: it says where the app goes.
+    assert.equal((await call("PUT", "/api/pin", { pin: "4826" })).status, 200);
+    assert.equal((await call("POST", "/api/apps/someone.radio/setup", { values: { serverUrl: "192.168.1.20:8096/" } })).status, 403);
+    const grant = (await call("POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
+    const saved = await call("POST", "/api/apps/someone.radio/setup", { values: { serverUrl: "192.168.1.20:8096/" } }, grant);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.data.setup.fields[0].value, "http://192.168.1.20:8096");
+
+    // Set up: the tile no longer says so, the app can reach its server, and
+    // it opens there.
+    const radio = (await call("GET", "/api/home")).data.apps.find((app: any) => app.id === "someone.radio");
+    assert.equal(radio.needsSetup, false);
+    assert.deepEqual(radio.reach, ["192.168.1.20:8096"]);
+    assert.equal((await call("GET", "/api/apps/someone.radio/launch")).data.url, "http://192.168.1.20:8096/web/");
+    assert.deepEqual(JSON.parse(readFileSync(join(box.state, "app-settings.json"), "utf8"))["someone.radio"], { serverUrl: "http://192.168.1.20:8096" });
+  } finally {
+    await box.daemon.close();
+  }
+});
 
 test("ADR-039 an app installed or removed from the command line shows on the TV at once", async () => {
   const box = await startBox();

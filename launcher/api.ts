@@ -32,6 +32,15 @@ export interface App {
   profiles?: { names: string[]; forChildren: string | null };
 }
 
+// An app's own setup, from its tile: its fields, such as a server's
+// address, and whether a sign-in comes after them.
+export interface AppSetup {
+  id: string;
+  name: string;
+  fields: { key: string; label: string; value: string; address: boolean }[];
+  signIn: boolean;
+}
+
 // Someone who watches (ADR-009): an avatar is a colour from the theme.
 export interface Viewer {
   id: string;
@@ -244,6 +253,8 @@ export const daemon = {
   saveKey: (provider: string, key: string, grant?: string) => call<KeyState>("PUT", "/api/key", { provider, key }, grant),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
+  appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
+  saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),
   // The service's profile a child watching opens, or null for none (ADR-009).
   childProfile: (app: string, name: string | null, grant?: string) => call<{ ok: boolean }>("PUT", `/api/apps/${app}/child-profile`, { name }, grant),
   // The adult PIN (ADR-009, S4.5).

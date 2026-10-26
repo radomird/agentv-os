@@ -31,7 +31,7 @@ after(async () => {
 
 // A TV at 1080p, with the screen daemon's binding stood in for: each request
 // the launcher sends it lands in window.screenRequests.
-async function tv(options: { reducedMotion?: "reduce" | "no-preference" } = {}): Promise<Page> {
+async function tv(options: { reducedMotion?: "reduce" | "no-preference"; at?: string } = {}): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: options.reducedMotion ?? "no-preference" });
   await page.addInitScript(() => {
     const w = window as unknown as { screenRequests: unknown[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
@@ -42,7 +42,7 @@ async function tv(options: { reducedMotion?: "reduce" | "no-preference" } = {}):
       setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true })), 0);
     };
   });
-  await page.goto(`${url}/`);
+  await page.goto(`${options.at ?? url}/`);
   await page.waitForSelector(".grid .tile.focused");
   return page;
 }
@@ -410,6 +410,39 @@ test("S5.2 Settings → Look offers Tokyo Night, Gruvbox and Catppuccin Latte, a
   await page.locator('[data-action="theme-gruvbox"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
   await page.close();
+});
+
+test("an app's tile that says set up opens its setup: the server's address, typed, then its sign-in", async () => {
+  // A box of its own, since this one fills in Radio's server.
+  const box = await startBox();
+  try {
+    const page = await tv({ at: box.url });
+    await page.locator('.tile[data-id="someone.radio"] .tile-state:has-text("set up")').waitFor();
+    await page.locator('.tile[data-id="someone.radio"]').click();
+    const field = page.locator('input[data-field="serverUrl"]');
+    await field.waitFor();
+    assert.equal(await page.locator(".page h1.headline").innerText(), "set up radio");
+    // The field has the focus, and a url keyboard on the phone.
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.dataset.field), "serverUrl");
+    assert.equal(await field.getAttribute("type"), "url");
+    assert.equal(await page.locator('[data-action="save"]').innerText(), "save, then sign in");
+    // A wrong one says why, and stays.
+    await page.keyboard.type("ftp://media.example");
+    await page.keyboard.press("Enter");
+    await page.locator('.toast:has-text("server address is an address like")').waitFor();
+    await field.fill("");
+    await field.focus();
+    await page.keyboard.type("192.168.1.20:8096");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.some((r) => r.cmd === "sign-in" && r.app === "someone.radio"));
+    await page.locator('.tile[data-id="someone.radio"]').waitFor();
+    await page.waitForFunction(() => !document.querySelector('.tile[data-id="someone.radio"] .tile-state'));
+    const saved = await (await fetch(`${box.url}/api/apps/someone.radio/setup`)).json();
+    assert.equal(saved.setup.fields[0].value, "http://192.168.1.20:8096");
+    await page.close();
+  } finally {
+    await box.daemon.close();
+  }
 });
 
 test("the launcher has no errors in its console", async () => {
