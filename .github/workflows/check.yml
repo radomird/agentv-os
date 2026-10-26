@@ -157,6 +157,7 @@ jobs:
       image: ${{ steps.paths.outputs.image }}
       iso-ref: ${{ steps.pair.outputs.iso-ref }}
       pkgs-ref: ${{ steps.pair.outputs.pkgs-ref }}
+      from-disk: ${{ steps.disk.outputs.from-disk }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -208,6 +209,33 @@ jobs:
             fi
             echo "$repo-ref=$ref" >>"$GITHUB_OUTPUT"
           done
+      # Most changes start from the box the nightly run installed, with this
+      # change's packages put on it, which saves building an ISO and
+      # installing it (Q100). A change to what the installer does, or to the
+      # image layer itself, gets a fresh install, as the nightly run and
+      # agentv-iso's pull requests always do.
+      - id: disk
+        if: steps.paths.outputs.image == 'true'
+        env:
+          ISO_REF: ${{ steps.pair.outputs.iso-ref }}
+          PKGS_REF: ${{ steps.pair.outputs.pkgs-ref }}
+        run: |
+          paths=(install/ config/ branding/ .github/workflows/image.yml .github/workflows/nightly.yml)
+          changed=$(git diff --name-only HEAD^1 HEAD -- "${paths[@]}")
+          from=false
+          if [[ $ISO_REF != "agentv" || $PKGS_REF != "main" ]]; then
+            why="it comes with a branch of agentv-iso or agentv-pkgs, which can change the install"
+          elif [[ -n $changed ]]; then
+            why="it changes what the installer or the image layer does: $(paste -sd ' ' <<<"$changed")"
+          else
+            from=true
+          fi
+          echo "from-disk=$from" >>"$GITHUB_OUTPUT"
+          if [[ $from == true ]]; then
+            echo "It starts from the box the nightly run installed, with this change's packages put on it." >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "It builds the ISO and installs it, because $why." >>"$GITHUB_STEP_SUMMARY"
+          fi
   image:
     needs: changes
     if: needs.changes.outputs.image == 'true'
@@ -222,6 +250,7 @@ jobs:
       pkgs-ref: ${{ needs.changes.outputs.pkgs-ref }}
       packages: build
       update-test: true
+      from-disk: ${{ needs.changes.outputs.from-disk == 'true' }}
     secrets: inherit
 
   report:

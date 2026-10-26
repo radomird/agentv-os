@@ -18,7 +18,12 @@ name: Image
 # the release key and publishes it on this repo's "tested" release, then
 # checks that a box takes tonight's list and holds back anything else (S0.7).
 # With keep-iso, an ISO that passed every check is kept as a workflow
-# artifact: that's how the nightly run makes the edge ISO.
+# artifact: that's how the nightly run makes the edge ISO. With keep-disk,
+# the box it installed is kept too, as the installed-disk artifact, and a run
+# with from-disk starts from the newest one a run on agentv kept: it puts this
+# commit's packages on that box, the way an update does, instead of building
+# an ISO and installing it (Q100). With none to start from, it builds and
+# installs, as before.
 
 on:
   workflow_dispatch:
@@ -52,6 +57,18 @@ on:
         description: "Keep the ISO as an artifact when every check passes"
         type: boolean
         default: false
+      keep-disk:
+        description: "Keep the installed box as an artifact when every check passes, for runs that start from it"
+        type: boolean
+        default: false
+      from-disk:
+        description: "Start from the installed box a run on agentv kept, instead of building an ISO and installing it"
+        type: boolean
+        default: false
+      disk-run:
+        description: "With from-disk: the run whose kept box to start from (empty: the newest a run on agentv kept)"
+        type: string
+        default: ""
   workflow_call:
     inputs:
       ref:
@@ -76,6 +93,12 @@ on:
         type: boolean
         default: false
       keep-iso:
+        type: boolean
+        default: false
+      keep-disk:
+        type: boolean
+        default: false
+      from-disk:
         type: boolean
         default: false
     secrets:
@@ -183,10 +206,43 @@ jobs:
             echo "AGENTV_TEST_UPDATE_VERSION=$version" >>"$GITHUB_ENV"
           fi
 
+      - name: The night's installed box
+        id: disk
+        if: inputs.from-disk
+        env:
+          DISK_RUN: ${{ inputs.disk-run }}
+        run: |
+          if [[ -n $DISK_RUN ]]; then
+            query="actions/runs/$DISK_RUN/artifacts?name=installed-disk"
+            pick='.artifacts'
+          else
+            query="actions/artifacts?name=installed-disk&per_page=30"
+            pick='[.artifacts[] | select(.workflow_run.head_branch == "agentv")]'
+          fi
+          id=$(gh api "repos/$GITHUB_REPOSITORY/$query" --jq "$pick | map(select(.expired | not)) | sort_by(.created_at) | last | .id // empty")
+          if [[ -z $id ]]; then
+            echo "There's no installed box from a night's run to start from, so this run builds the ISO and installs it." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mkdir -p iso/test-runs/night-disk
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >disk.zip
+          unzip -q disk.zip -d iso/test-runs/night-disk
+          rm disk.zip
+          echo "found=true" >>"$GITHUB_OUTPUT"
+          echo "This run starts from the box a night's run installed ($(cat iso/test-runs/night-disk/iso-name)), with this commit's packages put on it." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Build, install, boot, check
         env:
           AGENTV_TEST_TESTED_OUT: ${{ inputs.nightly && '/w/test-runs/tested-packages.txt' || '' }}
-        run: set -o pipefail; iso/test/agentv/image/ci 2>&1 | tee image.log
+          AGENTV_TEST_KEEP_DISK: ${{ inputs.keep-disk && '/w/test-runs/installed-disk' || '' }}
+          FROM_DISK: ${{ steps.disk.outputs.found }}
+        run: |
+          set -o pipefail
+          if [[ $FROM_DISK == "true" ]]; then
+            iso/test/agentv/image/ci --from-disk iso/test-runs/night-disk 2>&1 | tee image.log
+          else
+            iso/test/agentv/image/ci 2>&1 | tee image.log
+          fi
 
       # The same ISO and installed box, lent to update-checks' harness for its
       # update checks, then handed back for the steps after this one.
@@ -260,6 +316,17 @@ jobs:
             iso/release/*.iso.sha256
           compression-level: 0
           retention-days: 7
+
+      # The installed box, for the runs that start from it. A few GB even
+      # compressed, so it's kept for three days: a night's run makes a new one.
+      - name: Keep the installed box
+        if: success() && inputs.keep-disk
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installed-disk
+          path: iso/test-runs/installed-disk/
+          compression-level: 0
+          retention-days: 3
 
       - name: Acceptance ids
         if: always()
