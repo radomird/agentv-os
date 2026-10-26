@@ -147,6 +147,9 @@ export interface Launcher {
   // Tells AgenTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037).
   tvContext(change: { front: "home" | "app"; playing: boolean }): Promise<void>;
+  // Stops Omarchy's shell, its bar and everything else it draws, and
+  // nothing of AgenTV's: the shell from $OMARCHY_PATH/shell, by its config.
+  stopOmarchyShell(): Promise<void>;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -237,6 +240,12 @@ interface Options {
   running?: string;
 }
 
+// Omarchy's shell draws every layer it has under an omarchy- name: its bar,
+// notifications, menus, OSD and the rest. AgenTV's own don't use it.
+export function isOmarchyShell(namespace: string): boolean {
+  return namespace.startsWith("omarchy-");
+}
+
 export class Screen {
   private hypr: Hyprland;
   private runningPackage: string;
@@ -280,6 +289,7 @@ export class Screen {
   private contextMs: number;
   private context = { said: "", at: 0, busy: false };
   private ending = false;
+  private stoppingShell = false;
   private chain: Promise<void> = Promise.resolve();
   private homeRestartMs: number;
   private homeDelay: number;
@@ -340,6 +350,7 @@ export class Screen {
       for (const client of await this.hypr.clients()) {
         this.remember(client);
       }
+      if ((await this.hypr.layers()).some((layer) => isOmarchyShell(layer.namespace))) await this.omarchyShell();
       const home = [...this.windows.values()].find((w) => w.role === "home");
       if (home) {
         await this.toFront(home.address);
@@ -417,6 +428,26 @@ export class Screen {
           this.queue(() => this.keepFullscreen());
         }
         break;
+      case "openlayer":
+        if (isOmarchyShell(data)) {
+          this.queue(() => this.omarchyShell());
+        }
+        break;
+    }
+  }
+
+  // Omarchy's shell has no place in the TV session (ADR-031): Omarchy's
+  // desktop is its own session. Omarchy's update ends by restarting the
+  // shell in whatever session is running, which put its bar over home after
+  // an update from the TV, so whatever starts it, it stops again here.
+  private async omarchyShell(): Promise<void> {
+    if (this.stoppingShell) return;
+    this.stoppingShell = true;
+    try {
+      this.log("Omarchy's shell came up in the TV session; stopping it");
+      await this.launcher.stopOmarchyShell();
+    } finally {
+      this.stoppingShell = false;
     }
   }
 
@@ -1766,6 +1797,18 @@ export const launcher: Launcher = {
     const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
     const minutes = (await response.json())?.settings?.idleMinutes;
     return typeof minutes === "number" && minutes > 0 ? minutes : 10;
+  },
+
+  // Each kill stops one instance and returns once it's gone, as Omarchy's
+  // own restart does it; its launcher takes the clean exit as a deliberate
+  // stop and doesn't start it again. AgenTV's toasts are a Quickshell of
+  // their own, from another config, so they stay.
+  async stopOmarchyShell() {
+    const shell = join(process.env.OMARCHY_PATH || "/usr/share/omarchy", "shell");
+    for (let i = 0; i < 5; i++) {
+      const killed = spawnSync("quickshell", ["kill", "-p", shell, "--any-display"], { stdio: "ignore", timeout: 30_000 });
+      if (killed.status !== 0) return;
+    }
   },
 
   parent(pid) {
