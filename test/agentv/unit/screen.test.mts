@@ -28,8 +28,9 @@ class FakeHyprland implements Hyprland {
     const special = this.specialShown ? HELD_WORKSPACE : "";
     return [{ name: "HDMI-A-1", width: 1920, height: 1080, refreshRate: 60, focused: true, specialWorkspace: { id: -98, name: special } }];
   }
+  layerList: Layer[] = [];
   async layers(): Promise<Layer[]> {
-    return [];
+    return structuredClone(this.layerList);
   }
   events(handler: (name: string, data: string) => void) {
     this.handler = handler;
@@ -248,6 +249,10 @@ class FakeLauncher implements Launcher {
   async lock() {
     this.locks++;
   }
+  shellStops = 0;
+  async stopOmarchyShell() {
+    this.shellStops++;
+  }
   async power(what: "restart" | "shutdown") {
     this.powered.push(what);
     return this.powerWorks;
@@ -354,6 +359,31 @@ test("S1.1 home whose page doesn't come up starts again, so the TV isn't left bl
   await sleep(50);
   assert.notEqual(launcher.last("home"), first);
   assert.equal(screen.homeRestarts, 1);
+});
+
+test("ADR-031 Omarchy's shell started in the TV session, as Omarchy's update does, is stopped again, and AgenTV's own layers stay", async () => {
+  const { hypr, launcher, screen, lines } = await tv();
+  hypr.emit("openlayer", "omarchy-bar");
+  await screen.idle();
+  assert.equal(launcher.shellStops, 1);
+  assert.ok(lines.includes("Omarchy's shell came up in the TV session; stopping it"));
+  for (const own of ["agentv-toast", "agentv-corner", "agentv-signin"]) hypr.emit("openlayer", own);
+  await screen.idle();
+  assert.equal(launcher.shellStops, 1, "AgenTV's toasts, corner and sign-in stay");
+  hypr.emit("openlayer", "omarchy-notifications");
+  await screen.idle();
+  assert.equal(launcher.shellStops, 2);
+});
+
+test("ADR-031 an Omarchy shell already up when the screen daemon starts is stopped too", async () => {
+  const hypr = new FakeHyprland();
+  hypr.layerList = [{ namespace: "agentv-toast", pid: 7 }, { namespace: "omarchy-bar", pid: 8 }];
+  const launcher = new FakeLauncher();
+  const screen = new Screen({ hyprland: hypr, launcher, log: () => {}, homeRestartMs: 10 });
+  screens.push(screen);
+  await screen.start();
+  await screen.idle();
+  assert.equal(launcher.shellStops, 1);
 });
 
 test("S1.6 a new window stays out of sight, and focus stays on the TV", async () => {
