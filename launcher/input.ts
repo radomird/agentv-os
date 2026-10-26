@@ -44,6 +44,9 @@ export function listen(act: (action: Action) => void): void {
   window.addEventListener("keydown", (event) => {
     const action = KEYS[event.key];
     if (!action) return;
+    // A key held with Super, Ctrl or Alt is a shortcut, such as Omarchy's
+    // Super+Return, not the remote's.
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.target instanceof HTMLInputElement && !FIELD_KEYS.includes(event.key)) return;
     event.preventDefault();
     act(action);

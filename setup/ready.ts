@@ -59,7 +59,9 @@ export function ready(ctx: Ctx): View {
   let leaving = 0;
   let timer = 0;
   // Whether the update ran while this screen was on, so it moves on by
-  // itself once it's done. Back to it later only shows continue.
+  // itself once it's done. The first time through it moves on by itself
+  // too, as after the page loaded again from the new release; back to it
+  // later only shows continue.
   let ran = false;
 
   async function next(): Promise<void> {
@@ -105,7 +107,7 @@ export function ready(ctx: Ctx): View {
       go.classList.remove("hidden");
       ctx.focus.set(go, false);
       ctx.sounds.play("confirm");
-      if (ran) leaving = window.setTimeout(() => void next(), ON_MS);
+      if (ran || !about.setup.finished.ready) leaving = window.setTimeout(() => void next(), ON_MS);
     }
   }
 

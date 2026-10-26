@@ -288,6 +288,17 @@ test("S5.6 an answer about setup's step that left before Enter moved setup on do
   await page.close();
 });
 
+test("a key held with Super, Ctrl or Alt is a shortcut, not the remote: Omarchy's Super+Return does nothing on the welcome screen", async () => {
+  await fresh();
+  const page = await tv();
+  await page.waitForSelector(".welcome");
+  for (const keys of ["Meta+Enter", "Control+Enter", "Alt+Enter"]) await page.keyboard.press(keys);
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator(".welcome").count(), 1);
+  assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "welcome");
+  await page.close();
+});
+
 test("S5.6 getting ready asks for the update check, installs the newer release with the TV's own install, and carries on once it's in", async () => {
   await fresh();
   const page = await tv();
@@ -326,6 +337,18 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   await page.close();
 });
 
+test("S5.6 getting ready that loads again with the update in already moves on by itself, as on the box after AgenTV restarts", async () => {
+  await fresh();
+  await post("/api/setup/finish", { step: "welcome" });
+  // The page before the restart saw the update in and said so, then went.
+  await post("/api/setup/ready", { update: "checking" });
+  await post("/api/setup/ready", { update: "done", from: "0.2.1-1", to: "0.3.0-1" });
+  const page = await tv();
+  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
+  await page.waitForSelector(".goals", { timeout: 5000 });
+  await page.close();
+});
+
 test("getting ready carries on with the version it has when there's nothing newer, and when the check doesn't work", async () => {
   await fresh();
   const page = await tv();
@@ -360,9 +383,14 @@ test("S5.6 setup picks up at the same step after the page loads again, as after 
   await page.reload();
   await page.waitForSelector(".goals");
   assert.equal((await (await fetch(`${url}/health`)).json()).setup_step, "goal");
-  // Back goes to getting ready, which is finished, and on again.
+  // Back goes to getting ready, which is finished, and it stays there:
+  // continue goes on.
   await page.keyboard.press("Escape");
   await page.waitForSelector(".ready-list");
+  await page.waitForTimeout(3000);
+  assert.equal(await page.locator(".goals").count(), 0, "back to getting ready later doesn't move on by itself");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".goals");
   await page.close();
 });
 
