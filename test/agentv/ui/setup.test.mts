@@ -865,21 +865,21 @@ test("the background: art from a museum archive, searched through the daemon and
   await page.locator('[data-action="words"]').fill("sea");
   await page.locator('[data-action="words"]').focus();
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => document.querySelectorAll(".works .work").length === 2);
-  assert.deepEqual(await page.locator(".work .look-name").allInnerTexts(), ["the sea", "the sea"]);
-  assert.deepEqual(await page.locator(".work .look-note").allInnerTexts(), ["gustave courbet, 1865 or later", "john frederick kensett, 1872"]);
-  assert.match(await textOf(page, ".setup-note"), /2 works from the met, free to show/);
+  await page.waitForFunction(() => document.querySelectorAll(".works .work").length === 6);
+  assert.deepEqual(await page.locator(".work .look-name").allInnerTexts(), ["ensuranai", "the sea", "sea storms", "sea monster", "calm sea", "sea monster"]);
+  assert.deepEqual((await page.locator(".work .look-note").allInnerTexts()).slice(0, 2), ["sea dayaks (iban), 19th century", "gustave courbet, 1865 or later"]);
+  assert.match(await textOf(page, ".setup-note"), /6 works from the met, free to show/);
   // Thumbnails come through the daemon.
   await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".work-shot img")].every((img) => img.complete && img.naturalWidth > 0));
   assert.ok((await page.locator(".work-shot img").first().getAttribute("src"))?.startsWith("/api/art/met/"));
 
   // Another archive, and a work picked.
   await page.locator('[data-archive="commons"]').click();
-  await page.waitForFunction(() => document.querySelector('.works .work[data-work="commons/90000002"]') !== null);
-  await page.locator('[data-work="commons/90000002"]').click();
+  await page.waitForFunction(() => document.querySelector('.works .work[data-work="commons/37658477"]') !== null);
+  await page.locator('[data-work="commons/37658477"]').click();
   await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
   await page.waitForSelector('.back.picked[data-background="art"]');
-  assert.match(await textOf(page, ".setup-note"), /Harbour at dusk · A\. Photographer, 2019-06-01 21:04:11 · cc by-sa 4\.0 · wikimedia commons/);
+  assert.match(await textOf(page, ".setup-note"), /Sète Harbour Sunset 04 · Christian Ferrer, 2014 · cc by 4\.0 · wikimedia commons/);
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "art");
   assert.equal(now.items.find((item: { id: string }) => item.id === now.current).credit.from, "wikimedia commons");

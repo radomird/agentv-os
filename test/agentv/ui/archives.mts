@@ -1,8 +1,7 @@
 // A stand-in for the museum archives the art picker asks (daemon/art.ts):
-// The Met's collection API with its recorded replies, and the Art Institute
-// of Chicago's and Wikimedia Commons' with replies written to their
-// documented shapes (test/agentv/fixtures/art/README.md). The pictures'
-// addresses point back here, and each one is a small JPEG.
+// The Met's collection API, the Art Institute of Chicago's and Wikimedia
+// Commons', with their recorded replies (test/agentv/fixtures/art/README.md).
+// The pictures' addresses point back here, and each one is a small JPEG.
 
 import { readFileSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders } from "node:http";
@@ -31,7 +30,8 @@ export async function startArchives(): Promise<Archives> {
     text
       .replaceAll("https://images.metmuseum.org/", `${here}/met-images/`)
       .replaceAll("https://www.artic.edu/iiif/2", `${here}/iiif/2`)
-      .replaceAll("https://upload.wikimedia.org/", `${here}/upload/`);
+      .replaceAll("https://upload.wikimedia.org/", `${here}/upload/`)
+      .replaceAll("https://thumb.wikimedia.org/", `${here}/thumb/`);
   const json = (response: import("node:http").ServerResponse, text: string) => response.writeHead(200, { "Content-Type": "application/json" }).end(local(text));
   const jpeg = (response: import("node:http").ServerResponse, name: string) => response.writeHead(200, { "Content-Type": "image/jpeg" }).end(readFileSync(join(FIXTURES, name)));
 
@@ -41,7 +41,8 @@ export async function startArchives(): Promise<Archives> {
     const api = /^\/(met|aic|commons)(\/|$)/.test(url.pathname);
     if (api && status) return void response.writeHead(status, { "Content-Type": "text/html" }).end("<html>no</html>");
 
-    // The Met: the search for "sea", and each recorded work.
+    // The Met: the search for "sea", and each recorded work, one of them
+    // not public domain.
     if (url.pathname === "/met/v1.1/search") {
       return void json(response, url.searchParams.get("q") === "sea" ? read("met-search.json") : '{"total":0,"objectIDs":null}');
     }
@@ -73,8 +74,7 @@ export async function startArchives(): Promise<Archives> {
     // The pictures.
     if (url.pathname.startsWith("/met-images/")) return void jpeg(response, "sea.jpg");
     if (url.pathname.startsWith("/iiif/2/")) return void jpeg(response, "lilies.jpg");
-    if (url.pathname.includes("Not_free") || url.pathname.endsWith(".svg.png")) return void response.writeHead(404).end();
-    if (url.pathname.startsWith("/upload/")) return void jpeg(response, url.pathname.includes("Harbour") ? "harbour.jpg" : "lilies.jpg");
+    if (url.pathname.startsWith("/upload/") || url.pathname.startsWith("/thumb/")) return void jpeg(response, "harbour.jpg");
     response.writeHead(404).end();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

@@ -9,7 +9,8 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { ArtArchives, commonsThumb, licenceOf, plain } from "../../../daemon/art.ts";
+import { readFileSync } from "node:fs";
+import { ArtArchives, commonsThumb, commonsUrl, commonsYear, licenceOf, person, plain } from "../../../daemon/art.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { startArchives, type Archives } from "../ui/archives.mts";
 
@@ -51,6 +52,7 @@ test("an archive's text is plain, and only free licences are shown", () => {
   assert.equal(plain('<a href="https://en.wikipedia.org/wiki/Claude_Monet" class="extiw">Claude Monet</a>&nbsp;'), "Claude Monet");
   assert.equal(plain("<script>alert(1)</script>Sea"), "alert(1) Sea");
   assert.equal(plain(""), null);
+  assert.equal(person('<a href="//commons.wikimedia.org/wiki/User:JJ_Harrison">JJ Harrison</a> ( https://www.jjharrison.com.au/ )'), "JJ Harrison");
   assert.equal(licenceOf("Public domain"), "public domain");
   assert.equal(licenceOf("CC0"), "cc0");
   assert.equal(licenceOf("CC BY-SA 4.0"), "cc by-sa 4.0");
@@ -59,37 +61,73 @@ test("an archive's text is plain, and only free licences are shown", () => {
   const original = "https://upload.wikimedia.org/wikipedia/commons/4/4f/Harbour_at_dusk.jpg";
   assert.equal(commonsThumb(original), "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Harbour_at_dusk.jpg/640px-Harbour_at_dusk.jpg");
   assert.equal(commonsThumb("https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/W.jpg/3840px-W.jpg"), "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/W.jpg/640px-W.jpg");
+  // As Commons gives them: with its tracking, and the day as words.
+  assert.equal(commonsUrl("https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/S.jpg/3840px-S.jpg?utm_source=commons.wikimedia.org&utm_content=thumbnail"), "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/S.jpg/3840px-S.jpg");
+  assert.equal(commonsYear("Taken on 30 January 2010"), "2010");
+  assert.equal(commonsYear("2019-06-11 20:48"), "2019");
+  assert.equal(commonsYear("unknown date"), null);
 });
 
-test("The Met: only its public-domain works, though its search lists others too, each with its credit", async () => {
+test("The Met: its public-domain works, each looked up and credited, and one that isn't left out", async () => {
   const { status, data } = await get("/api/art/search?archive=met&q=sea");
   assert.equal(status, 200);
   assert.deepEqual(
     data.items.map((work: { id: string; credit: string }) => [work.id, work.credit]),
     [
+      ["502724", "Ensuranai · Sea Dayaks (Iban), 19th century · the met"],
       ["436021", "The Sea · Gustave Courbet, 1865 or later · the met"],
-      ["11321", "The Sea · John Frederick Kensett, 1872 · the met"],
+      ["361765", "Sea Storms · Wenceslaus Hollar, 1665 · the met"],
+      ["195362", "Sea monster · Severo Calzetta da Ravenna, early 16th century · the met"],
+      ["437914", "Calm Sea · Simon de Vlieger, after 1640 · the met"],
+      ["207000", "Sea monster · Severo Calzetta da Ravenna, ca. 1500–1510 · the met"],
     ],
   );
-  assert.equal(data.items[0].page, "https://www.metmuseum.org/art/collection/search/436021");
+  // The search can list one that isn't public domain (267004 for "sea" one
+  // day): looked up, it isn't there to show.
+  assert.equal((await get("/api/art/met/267004/thumb")).status, 404);
+  assert.equal(data.items[1].page, "https://www.metmuseum.org/art/collection/search/436021");
   // The page gets no address of the archive's to fetch itself.
   assert.ok(data.items.every((work: object) => !("thumb" in work) && !("image" in work)));
   // AgenTV says who it is, as Wikimedia and the Art Institute ask.
   assert.match(String(archives.seen.find((one) => one.url.startsWith("/met/"))?.headers["user-agent"]), /^AgenTV\//);
 });
 
-test("the Art Institute and Commons: only works free to show, with the licence when one asks for a credit", async () => {
+test("the Art Institute and Commons: their works, with the licence when one asks for a credit", async () => {
   const aic = (await get("/api/art/search?archive=aic&q=water lilies")).data;
-  assert.deepEqual(aic.items.map((work: { id: string; credit: string }) => [work.id, work.credit]), [["900001", "Water Lilies · Claude Monet, 1906 · art institute of chicago"]]);
+  assert.equal(aic.items.length, 6);
+  assert.deepEqual([aic.items[0].id, aic.items[0].credit], ["16568", "Water Lilies · Claude Monet, 1906 · art institute of chicago"]);
+  assert.equal(aic.items[0].page, "https://www.artic.edu/artworks/16568");
   assert.match(String(archives.seen.find((one) => one.url.startsWith("/aic/artworks/search"))?.url), /query\[term\]\[is_public_domain\]=true/);
   const commons = (await get("/api/art/search?archive=commons&q=harbour")).data;
+  assert.equal(commons.items.length, 8);
   assert.deepEqual(
-    commons.items.map((work: { id: string; credit: string }) => [work.id, work.credit]),
+    commons.items.slice(0, 3).map((work: { id: string; credit: string }) => [work.id, work.credit]),
     [
-      ["90000001", "Water Lilies · Claude Monet, 1906 · public domain · wikimedia commons"],
-      ["90000002", "Harbour at dusk · A. Photographer, 2019-06-01 21:04:11 · cc by-sa 4.0 · wikimedia commons"],
+      ["9428075", "Sydney Harbour Bridge from Circular Quay · JJ Harrison, 2010 · cc by-sa 3.0 · wikimedia commons"],
+      ["37347823", "Puerto de Vestmannaeyjar, Heimaey, Islas Vestman, Suðurland, Islandia, 2014-08-17, DD 017-019 PAN · Diego Delso, 2014 · cc by-sa 4.0 · wikimedia commons"],
+      ["37658477", "Sète Harbour Sunset 04 · Christian Ferrer, 2014 · cc by 4.0 · wikimedia commons"],
     ],
   );
+  // Its thumbnail comes from Commons' thumbnail host, at the picker's width,
+  // without the tracking.
+  await get("/api/art/commons/37658477/thumb");
+  assert.ok(archives.seen.some((one) => one.url.startsWith("/thumb/wikipedia/commons/thumb/b/b2/S%C3%A8te_Harbour_Sunset_04.jpg/640px-") && !one.url.includes("utm_")));
+});
+
+test("Commons: a file under a licence that doesn't let the TV show it, or that isn't a photo, is left out", async () => {
+  const recorded = JSON.parse(readFileSync(join(import.meta.dirname, "../fixtures/art/commons-search.json"), "utf8"));
+  recorded.query.pages[0].imageinfo[0].extmetadata.LicenseShortName.value = "Fair use";
+  recorded.query.pages[1].imageinfo[0].mime = "image/svg+xml";
+  recorded.query.pages[2].imageinfo[0].extmetadata.LicenseShortName.value = "CC BY-NC 4.0";
+  // Commons' own hosts, as a box has them; only the search is asked.
+  const archive = new ArtArchives({
+    cache: join(scratch, "commons"),
+    userAgent: "AgenTV/test",
+    endpoints: { commons: "https://commons.example/w/api.php" },
+    fetch: async () => new Response(JSON.stringify(recorded), { headers: { "Content-Type": "application/json" } }),
+  });
+  const found = await archive.search("commons", "harbour");
+  assert.deepEqual(found.items?.map((work) => work.id), ["44007484", "57807690", "82284212", "85066612", "94814881"]);
 });
 
 test("a search says what's wrong: an archive it doesn't know, no words, or the archive not answering", async () => {
@@ -126,14 +164,14 @@ test("pictures come only from the archives' own image hosts", async () => {
 });
 
 test("a work picked becomes the background, fetched whole and kept with its credit, beside the photos", async () => {
-  const picked = await fetch(`${url}/api/backgrounds/art`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archive: "aic", id: "900001" }) });
+  const picked = await fetch(`${url}/api/backgrounds/art`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archive: "aic", id: "16568" }) });
   const data = await picked.json();
   assert.equal(picked.status, 200);
   assert.equal(data.source, "art");
   assert.deepEqual([data.background.kind, data.background.credit], ["art", { text: "Water Lilies · Claude Monet, 1906 · art institute of chicago", from: "art institute of chicago" }]);
   assert.equal(data.current, data.background.id);
   // The whole picture, at the largest size the Art Institute gives.
-  assert.ok(archives.seen.some((one) => one.url === "/iiif/2/00000000-0000-0000-0000-000000000001/full/1686,/0/default.jpg"));
+  assert.ok(archives.seen.some((one) => one.url === "/iiif/2/3c27b499-af56-f0d5-93b5-a7f2f1ad5813/full/1686,/0/default.jpg"));
   const file = await get(`/api/backgrounds/${data.background.id}`);
   assert.equal(file.status, 200);
 

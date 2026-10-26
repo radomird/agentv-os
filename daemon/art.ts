@@ -26,7 +26,9 @@ const ENDPOINTS: Record<ArchiveId, string> = {
   aic: "https://api.artic.edu/api/v1",
   commons: "https://commons.wikimedia.org/w/api.php",
 };
-const IMAGE_HOSTS = ["images.metmuseum.org", "www.artic.edu", "upload.wikimedia.org"];
+// Commons keeps its originals on upload. and its thumbnails, the TV's size
+// among them, on thumb.
+const IMAGE_HOSTS = ["images.metmuseum.org", "www.artic.edu", "upload.wikimedia.org", "thumb.wikimedia.org"];
 
 // A work the TV can show, as the picker lists it.
 export interface Art {
@@ -71,6 +73,17 @@ export function plain(value: unknown, most = 120): string | null {
   return text ? text.slice(0, most) : null;
 }
 
+// Who made a work, as a name: Commons' credits can carry the photographer's
+// web address too, which the TV doesn't show.
+export function person(value: unknown): string | null {
+  const text = plain(value, 200)
+    ?.replace(/\(\s*https?:\/\/[^)]*\)/g, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.slice(0, 80) : null;
+}
+
 function creditOf(title: string, artist: string | null, date: string | null, archive: ArchiveId, licence?: string): string {
   const who = [artist, date].filter(Boolean).join(", ");
   const name = ARCHIVES.find((one) => one.id === archive)!.name;
@@ -89,11 +102,23 @@ export function licenceOf(short: string | null): string | null {
   return cc ? `cc by${cc[1] ?? ""} ${cc[2]}` : null;
 }
 
+// A Commons picture's address without the tracking Commons adds to it
+// (?utm_source=...).
+export function commonsUrl(url: unknown): string | null {
+  return typeof url === "string" ? url.replace(/\?.*$/, "") : null;
+}
+
 // Commons makes a thumbnail at any width: from a thumbnail's address, or
 // from the original's, which a picture narrower than the TV comes as.
 export function commonsThumb(url: string, width = 640): string {
   if (/\/\d+px-[^/]+$/.test(url)) return url.replace(/\/\d+px-([^/]+)$/, `/${width}px-$1`);
   return url.replace(/\/wikipedia\/commons\/([0-9a-f])\/([0-9a-f]{2})\/([^/]+)$/, `/wikipedia/commons/thumb/$1/$2/$3/${width}px-$3`);
+}
+
+// The year a Commons picture was made, from what its page says, such as
+// "Taken on 30 January 2010" or "2019-06-11 20:48".
+export function commonsYear(text: string | null): string | null {
+  return text?.match(/\b(1[0-9]{3}|20[0-9]{2})\b/)?.[1] ?? null;
 }
 
 export interface ArtOptions {
@@ -254,12 +279,12 @@ export class ArtArchives {
     const meta = info?.extmetadata ?? {};
     const licence = licenceOf(plain(meta.LicenseShortName?.value, 40));
     if (!info || !licence || !/^image\/(jpeg|png|webp)$/.test(info.mime ?? "") || !Number.isInteger(page.pageid)) return null;
-    const image = typeof info.thumburl === "string" ? info.thumburl : info.url;
-    const thumb = typeof image === "string" ? commonsThumb(image) : null;
+    const image = commonsUrl(info.thumburl) ?? commonsUrl(info.url);
+    const thumb = image ? commonsThumb(image) : null;
     if (!this.allowed(image) || !this.allowed(thumb)) return null;
     const title = plain(meta.ObjectName?.value) ?? plain(String(page.title ?? "").replace(/^File:/, "").replace(/\.[a-z0-9]+$/i, "")) ?? "untitled";
-    const artist = plain(meta.Artist?.value, 80);
-    const date = plain(meta.DateTimeOriginal?.value, 40);
+    const artist = person(meta.Artist?.value);
+    const date = commonsYear(plain(meta.DateTimeOriginal?.value, 80));
     return {
       archive: "commons",
       id: String(page.pageid),

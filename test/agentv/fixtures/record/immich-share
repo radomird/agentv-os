@@ -1,0 +1,136 @@
+#!/bin/bash
+
+# Records what an Immich album's shared link answers, for the background
+# source that shows an album through its link (daemon/immich-album.ts): no
+# account and no password on the box, only the link the album's owner made.
+# Immich's own docker-compose.yml for a pinned release runs the server, its
+# database and its cache, with machine learning off, as agentv-apps' Immich
+# recorder does. A throwaway admin gets three photos made here with ffmpeg,
+# so they're ours to give away, an album of two, and a link to it. Then each
+# request made with the link alone is recorded with its reply, in
+# test/agentv/fixtures/immich-share/<name>.json as { request, status,
+# headers, body }, and a photo's preview as a .jpeg beside it. The link's key
+# is replaced with "fixture-key", and every id with a plain numbered one.
+#
+# Usage: test/agentv/fixtures/record/immich-share   (needs docker compose, curl, jq)
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
+DIR="$ROOT/test/agentv/fixtures/immich-share"
+VERSION=${AGENTV_IMMICH_VERSION:-v2.0.0}
+PORT=${AGENTV_IMMICH_PORT:-12283}
+BASE="http://127.0.0.1:$PORT"
+EMAIL=owner@fixtures.test
+PASSWORD=fixture-password
+FFMPEG_IMAGE=${AGENTV_FFMPEG_IMAGE:-jellyfin/jellyfin:10.10.7}
+
+mkdir -p "$DIR"
+work=$(mktemp -d)
+project="agentv-immich-share-$$"
+cleanup() {
+  (cd "$work" && docker compose -p "$project" down -v >/dev/null 2>&1) || true
+  sudo -n rm -rf "$work" 2>/dev/null || rm -rf "$work" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+cd "$work"
+curl -fsSL -o docker-compose.yml "https://github.com/immich-app/immich/releases/download/$VERSION/docker-compose.yml"
+curl -fsSL -o .env "https://github.com/immich-app/immich/releases/download/$VERSION/example.env"
+mkdir -p library postgres
+{
+  echo "IMMICH_VERSION=$VERSION"
+  echo "UPLOAD_LOCATION=$work/library"
+  echo "DB_DATA_LOCATION=$work/postgres"
+  echo "DB_PASSWORD=fixtures"
+} >>.env
+sed -i "s/- '\?2283:2283'\?/- '127.0.0.1:$PORT:2283'/" docker-compose.yml
+grep -q "127.0.0.1:$PORT:2283" docker-compose.yml || { echo "couldn't move Immich to port $PORT" >&2; exit 1; }
+services=$(docker compose config --services | grep -v machine-learning | tr '\n' ' ')
+for attempt in 1 2 3; do
+  # shellcheck disable=SC2086 # a list of services
+  docker compose -p "$project" pull -q $services && break
+  (( attempt < 3 )) || { echo "the images didn't pull" >&2; exit 1; }
+  sleep 30
+done
+# shellcheck disable=SC2086 # a list of services
+docker compose -p "$project" up -d $services >/dev/null
+
+for _ in $(seq 1 180); do
+  [[ $(curl -fsS "$BASE/api/server/ping" 2>/dev/null | jq -r .res 2>/dev/null) == "pong" ]] && break
+  sleep 1
+done
+[[ $(curl -fsS "$BASE/api/server/ping" 2>/dev/null | jq -r .res 2>/dev/null) == "pong" ]] ||
+  { docker compose -p "$project" logs --tail 40 >&2; echo "Immich never came up" >&2; exit 1; }
+
+token=""
+api() {
+  curl -fsS -X "$1" "$BASE$2" ${token:+-H "Authorization: Bearer $token"} -H "Content-Type: application/json" ${3:+--data "$3"}
+}
+
+key=""
+# record <name> <path> [2|4]: one GET made with the link alone, and its
+# reply, kept: a success, or with 4, a refusal of any kind. A reply that
+# isn't JSON, a picture, goes to <name>.<ext>.
+record() {
+  local status type file="" want=${3:-2}
+  status=$(curl -sS "$BASE$2" -o "$work/body" -D "$work/headers" -w '%{http_code}')
+  [[ $status == "$want"* ]] || { echo "Immich answered $status for $2, not ${want}xx" >&2; cat "$work/body" >&2; exit 1; }
+  type=$(tr -d '\r' <"$work/headers" | sed -n 's/^content-type: //Ip' | tail -n 1)
+  if [[ $type != application/json* ]]; then
+    file="$1.${type#image/}"
+    file=${file%%;*}
+    cp "$work/body" "$DIR/$file"
+    echo 'null' >"$work/body"
+  fi
+  jq -n --arg path "$2" --argjson status "$status" --arg type "$type" --arg file "$file" --arg key "$key" --slurpfile reply "$work/body" '
+      def clean: walk(if type == "string" and $key != "" then gsub($key; "fixture-key") else . end);
+      {request: {method: "GET", path: ($path | clean)}, status: $status, headers: {"content-type": $type}}
+        + (if $file == "" then {body: ($reply[0] | clean)} else {file: $file} end)' >"$DIR/$1.json"
+  echo "recorded $1: GET $2 ($status)"
+}
+
+api POST /api/auth/admin-sign-up "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"name\":\"Owner\"}" >/dev/null
+token=$(api POST /api/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" | jq -r .accessToken)
+
+ffmpeg() {
+  if type -P ffmpeg >/dev/null; then
+    command ffmpeg "$@"
+  else
+    docker run --rm -u "$(id -u):$(id -g)" -v "$work:$work" -w "$work" --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg "$FFMPEG_IMAGE" "$@"
+  fi
+}
+
+ids=()
+for n in 1 2 3; do
+  ffmpeg -loglevel error -y -f lavfi -i "testsrc=size=1280x720" -vf "hue=h=$((n * 100))" -frames:v 1 "$work/photo-$n.jpg"
+  id=$(curl -fsS -X POST "$BASE/api/assets" -H "Authorization: Bearer $token" \
+    -F "assetData=@$work/photo-$n.jpg" -F "deviceAssetId=fixture-$n" -F "deviceId=agentv-fixtures" \
+    -F "fileCreatedAt=2026-10-2${n}T18:00:00.000Z" -F "fileModifiedAt=2026-10-2${n}T18:00:00.000Z" | jq -r .id)
+  ids+=("$id")
+done
+album=$(api POST /api/albums "{\"albumName\":\"Autumn\",\"assetIds\":[\"${ids[0]}\",\"${ids[1]}\"]}" | jq -r .id)
+for _ in $(seq 1 120); do
+  [[ $(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$BASE/api/assets/${ids[0]}/thumbnail?size=preview") == 200 ]] && break
+  sleep 1
+done
+
+# The album's owner shares it with a link, as Immich's web app does.
+key=$(api POST /api/shared-links "{\"type\":\"ALBUM\",\"albumId\":\"$album\",\"allowDownload\":true,\"showMetadata\":true}" | jq -r .key)
+[[ -n $key && $key != null ]] || { echo "Immich made no shared link" >&2; exit 1; }
+token=""
+
+record shared-link "/api/shared-links/me?key=$key"
+record album "/api/albums/$album?key=$key"
+record asset "/api/assets/${ids[0]}?key=$key"
+record preview "/api/assets/${ids[0]}/thumbnail?size=preview&key=$key"
+# A photo that isn't in the album, and a key that isn't one.
+record not-shared "/api/assets/${ids[2]}/thumbnail?size=preview&key=$key" 4
+key_was=$key
+key=""
+record wrong-key "/api/shared-links/me?key=not-a-key" 4
+key=$key_was
+
+jq -n --arg version "$VERSION" --arg recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{version: $version, recorded: $recorded}' >"$DIR/recording.json"
+"$ROOT/test/agentv/fixtures/record/stable-ids" "$DIR"
+echo "recorded Immich $VERSION's shared link"
