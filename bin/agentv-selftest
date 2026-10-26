@@ -47,7 +47,9 @@
 # Stage 3, the reference apps (S3 runs them all):
 #
 #   S3.3  a ledger row within 10 s of an app opening: a stand-in player app,
-#         installed for the check and removed after it, with its rows.
+#         installed for the check with agentv app install --local and
+#         removed after it, with its rows. It asks for the adult PIN, when
+#         one is set, as any app install does.
 #   S3.10 the same stand-in, which has playback and no tile(), shows a
 #         medium continue tile from its row.
 #   S3.6  Music reads its sources again, then "play <album>" finds an album
@@ -854,10 +856,15 @@ wants() {
   [[ " ${checks[*]} " == *" $1 "* ]]
 }
 
+# agentv app install, list or remove.
+agentv_app() {
+  "${AGENTV_APP:-$AGENTV_BIN_DIR/agentv-app}-$1" "${@:2}"
+}
+
 # S3.3 and S3.10, with one stand-in player for both.
 ledger_ran=0
 s33() {
-  local id=local.selftest-player work port server dir record rows tile started took="" wait=${AGENTV_LEDGER_WAIT_MS:-20000} first
+  local id=local.selftest-player work port server rows tile started took="" wait=${AGENTV_LEDGER_WAIT_MS:-20000} first
 
   (( ledger_ran )) && return 0
   ledger_ran=1
@@ -899,11 +906,15 @@ export default {
   },
 };
 APP
-  dir="$AGENTV_STATE/apps/$id"
-  record="$AGENTV_STATE/apps/installed.json"
-  sudo install -d -m 755 "$dir"
-  sudo install -m 644 "$work/app/manifest.json" "$work/app/app.ts" "$dir/"
-  sudo bash -c "[[ -f $record ]] || echo '{}' >$record; jq --arg id $id '. + {(\$id): {id: \$id, name: \"Selftest player\", version: \"1.0.0\", tier: \"local\", installedAt: (now | todate)}}' $record >$record.new && chmod 644 $record.new && mv $record.new $record"
+  # Installed the way an app built on this box is (ADR-039), so the PIN, when
+  # there is one, is asked for here in the terminal.
+  if ! agentv_app install --local "$work/app" --yes >/dev/null; then
+    kill "$server" 2>/dev/null || true
+    rm -rf "$work"
+    wants S3.3 && result fail S3.3 "agentv app install --local didn't install the stand-in player"
+    wants S3.10 && result fail S3.10 "agentv app install --local didn't install the stand-in player"
+    return 0
+  fi
 
   started=$(date +%s%N)
   screen app "$id" >/dev/null
@@ -937,8 +948,7 @@ APP
   fi
 
   screen quit "$id" >/dev/null
-  sudo rm -rf "$dir"
-  sudo bash -c "jq --arg id $id 'del(.[\$id])' $record >$record.new && chmod 644 $record.new && mv $record.new $record"
+  agentv_app remove "$id" >/dev/null || true
   curl -fsS --max-time 3 -X DELETE "$(home_url)api/ledger?app=$id" >/dev/null 2>&1 || true
   kill "$server" 2>/dev/null || true
   rm -rf "$work"
