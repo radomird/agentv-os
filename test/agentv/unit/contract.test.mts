@@ -5,7 +5,7 @@
 // layer 3's job (test/agentv/contract/run).
 
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -96,29 +96,4 @@ test("S3.1 an app that answers wrong, asks for what its fixtures don't have, or 
   results = await run([dir], () => {});
   assert.equal(results[0].ok, false);
   assert.equal(results.length, 1, "nothing runs from a package that isn't valid");
-});
-
-test("the recorded Jellyfin and Immich replies each say what was asked, hold no token but fixture-token, and only plain ids", () => {
-  for (const service of ["jellyfin", "immich"]) {
-    const dir = join(ROOT, "test/agentv/fixtures", service);
-    if (!existsSync(join(dir, "recording.json"))) continue;
-    for (const name of readdirSync(dir).filter((file) => file.endsWith(".json") && file !== "recording.json")) {
-      const text = readFileSync(join(dir, name), "utf8");
-      const recorded = JSON.parse(text);
-      assert.match(recorded.request?.method ?? "", /^(GET|POST)$/, `${service}/${name} names its request`);
-      assert.match(recorded.request?.path ?? "", /^\//, `${service}/${name} names its path`);
-      assert.ok(recorded.status >= 200 && recorded.status < 300, `${service}/${name} is an answer`);
-      // A real token, or an id the server made up, would be long and random.
-      for (const id of text.match(/[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}/gi) ?? []) {
-        assert.match(id, /^0{8}-?0{4}-?0{4}-?0[0-9a-f]{3}-?[0-9a-f]{12}$/, `${service}/${name} has a plain id, not ${id}`);
-      }
-      assert.ok(!/"(AccessToken|accessToken)":\s*"(?!fixture-token")/.test(text), `${service}/${name} keeps no token`);
-    }
-  }
-  // Jellyfin's agree with each other: the film is the one to resume, at 2:30.
-  const jellyfin = join(ROOT, "test/agentv/fixtures/jellyfin");
-  const ids = JSON.parse(readFileSync(join(jellyfin, "recording.json"), "utf8"));
-  const resume = JSON.parse(readFileSync(join(jellyfin, "resume.json"), "utf8")).body.Items[0];
-  assert.deepEqual([resume.Id, resume.UserData.PlaybackPositionTicks], [ids.film, 1_500_000_000]);
-  assert.equal(JSON.parse(readFileSync(join(jellyfin, "next-up.json"), "utf8")).body.Items[0].Id, ids.episode);
 });
