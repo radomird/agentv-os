@@ -1,8 +1,8 @@
 // Profiles on the TV (ADR-009, S4.2, board 06): Settings → Profiles lists who
 // watches, each with their avatar, and a profile's own page switches to it,
-// renames it, makes it an adult or a kid, picks its colour, locks it or takes
+// renames it, makes it an adult or a child, picks its colour, locks it or takes
 // it off. The phone does the same once it's paired. Changing profiles needs
-// the PIN once there is one, and a kid's profile needs one to exist. A
+// the PIN once there is one, and a child's profile needs one to exist. A
 // locked profile (ADR-034) asks for the PIN to open after the box starts,
 // after the TV has been off and when someone switches to it, and shows a
 // lock beside its name.
@@ -29,11 +29,11 @@ export function profilesPanel(ctx: Ctx): HTMLElement[] {
         "button",
         { class: "button profile-row", "data-focus": true, "data-action": `viewer-${viewer.id}`, onclick: () => ctx.go(`profile/${viewer.id}`) },
         h("span", { class: "profile-who" }, avatar(viewer), h("span", {}, viewer.name), viewer.locked ? glyph("lock", 24) : null),
-        h("span", { class: "button-value" }, [viewer.role === "kid" ? "kid" : "", viewer.id === ctx.state.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
+        h("span", { class: "button-value" }, [viewer.role === "child" ? "child" : "", viewer.id === ctx.state.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
     h("button", { class: "button", "data-focus": true, "data-action": "add-profile", onclick: () => ctx.go("profile/new") }, h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "add a profile"))),
-    h("p", { class: "panel-note" }, "a kid's profile needs the parent pin, and sees only the apps ticked for kids in their details. a locked one asks for the pin to open."),
+    h("p", { class: "panel-note" }, "a child's profile needs the adult pin, and sees only the apps ticked for children in their details. a locked one asks for the pin to open."),
   ];
 }
 
@@ -57,7 +57,7 @@ export function profile(ctx: Ctx, id: string): View {
   const colourValue = value("");
   const lockValue = value("");
   const preview = h("span", {});
-  // Only an adult's profile locks; a kid's is guarded already.
+  // Only an adult's profile locks; a child's is guarded already.
   const lock = h(
     "button",
     { class: "button", "data-focus": true, "data-action": "lock", "data-adjust": "lock", onclick: () => step("lock", 1) },
@@ -68,14 +68,14 @@ export function profile(ctx: Ctx, id: string): View {
     roleValue.textContent = `‹ ${draft.role} ›`;
     colourValue.textContent = `‹ ${draft.avatar} ›`;
     lockValue.textContent = `‹ ${draft.locked ? "yes" : "no"} ›`;
-    lock.style.display = draft.role === "kid" ? "none" : "";
+    lock.style.display = draft.role === "child" ? "none" : "";
     preview.replaceChildren(avatar({ name: name.value.trim() || "?", avatar: draft.avatar }, true));
   };
   name.addEventListener("input", draw);
   const step = (what: "role" | "avatar" | "lock", by: number) => {
     if (what === "role") {
-      draft.role = draft.role === "adult" ? "kid" : "adult";
-      if (draft.role === "kid") draft.locked = false;
+      draft.role = draft.role === "adult" ? "child" : "adult";
+      if (draft.role === "child") draft.locked = false;
     } else if (what === "lock") draft.locked = !draft.locked;
     else draft.avatar = AVATARS[(AVATARS.indexOf(draft.avatar) + by + AVATARS.length) % AVATARS.length];
     ctx.sounds.play("move");
@@ -116,10 +116,10 @@ export function profile(ctx: Ctx, id: string): View {
     ctx.toast(`${found!.name} is gone, with what they watched`, "ok");
     ctx.back();
   };
-  // Watching as someone else: from a kid's profile to an adult's, or to a
+  // Watching as someone else: from a child's profile to an adult's, or to a
   // locked profile, needs the PIN.
   const watch = async () => {
-    const grant = found?.locked || (ctx.state.viewer.role === "kid" && found?.role === "adult") ? await ctx.grant(`watching as ${found!.name}`) : "";
+    const grant = found?.locked || (ctx.state.viewer.role === "child" && found?.role === "adult") ? await ctx.grant(`watching as ${found!.name}`) : "";
     if (grant === null) return;
     try {
       await daemon.switchViewer(id, grant || undefined);
@@ -142,7 +142,7 @@ export function profile(ctx: Ctx, id: string): View {
       { class: "page profile" },
       h("div", { class: "profile-head" }, preview, h("div", {}, ...heading("tv settings · profiles", fresh ? "a new profile" : found!.name))),
       h("div", { class: "profile-form" }, name, role, colour, lock, h("div", { class: "check-actions" }, ...buttons)),
-      h("p", { class: "panel-note" }, watching ? "watching now." : "a kid sees only the apps ticked for kids."),
+      h("p", { class: "panel-note" }, watching ? "watching now." : "a child sees only the apps ticked for children."),
     ),
     bar(ctx, "settings", "←→ change · ↵ select · esc back"),
   );

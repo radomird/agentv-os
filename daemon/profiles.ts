@@ -1,17 +1,17 @@
 // Profiles (ADR-009, S4.2): who watches on this box, each with a name, an
-// avatar and a role, adult or kid, kept in the ledger's viewer table. One
+// avatar and a role, adult or child, kept in the ledger's viewer table. One
 // viewer is active for the whole box at a time: home, its layout, Continue
 // and the ledger are theirs, and a switch shows on the TV within a second.
 // The box's owner, as first boot finds them, is the first adult.
 //
 // An adult's profile can ask for the PIN to open (ADR-034): after the box
 // starts and after the TV has been off, and when someone switches to it.
-// Its tile shows a lock. Kids' profiles don't; the PIN guards what they can
+// Its tile shows a lock. Children's profiles don't; the PIN guards what they can
 // reach already.
 //
 // The daemon decides what needs the PIN: changing profiles once there is
-// one, a kid's profile and a locked one need one to exist, and switching
-// from a kid to an adult, or to a locked profile, needs it too (server.ts).
+// one, a child's profile and a locked one need one to exist, and switching
+// from a child to an adult, or to a locked profile, needs it too (server.ts).
 
 import { readFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -101,15 +101,15 @@ export class Profiles {
     return all.find((p) => p.id === id) ?? all.find((p) => p.role === "adult") ?? all[0];
   }
 
-  async kids(): Promise<boolean> {
-    return (await this.list()).some((p) => p.role === "kid");
+  async children(): Promise<boolean> {
+    return (await this.list()).some((p) => p.role === "child");
   }
 
-  // Why the parent PIN has to stay, or null: a kid's profile, or one that
+  // Why the adult PIN has to stay, or null: a child's profile, or one that
   // asks for it to open.
   async needPin(): Promise<string | null> {
     const all = await this.list();
-    if (all.some((p) => p.role === "kid")) return "a kid's profile needs the pin, so it stays";
+    if (all.some((p) => p.role === "child")) return "a child's profile needs the pin, so it stays";
     if (all.some((p) => p.locked)) return "a locked profile needs the pin. unlock it in settings → profiles first";
     return null;
   }
@@ -121,10 +121,10 @@ export class Profiles {
       const name = input.name.trim().toLowerCase();
       if ((await this.list()).some((p) => p.id !== id && p.name.toLowerCase() === name)) return "someone here has that name already";
     }
-    if (input.role !== undefined && input.role !== "adult" && input.role !== "kid") return "adult or kid";
+    if (input.role !== undefined && input.role !== "adult" && input.role !== "child") return "adult or child";
     if (input.avatar !== undefined && (typeof input.avatar !== "string" || !AVATARS.includes(input.avatar))) return `a colour: ${AVATARS.join(", ")}`;
     if (input.locked !== undefined && typeof input.locked !== "boolean") return "locked is true or false";
-    if (input.locked === true && input.role === "kid") return "only an adult's profile locks";
+    if (input.locked === true && input.role === "child") return "only an adult's profile locks";
     return null;
   }
 
@@ -141,7 +141,7 @@ export class Profiles {
     const profile: Profile = {
       id: `v-${randomBytes(4).toString("hex")}`,
       name: String(input.name).trim(),
-      role: input.role === "kid" ? "kid" : "adult",
+      role: input.role === "child" ? "child" : "adult",
       avatar: typeof input.avatar === "string" ? input.avatar : (AVATARS.find((a) => !all.some((p) => p.avatar === a)) ?? AVATARS[all.length % AVATARS.length]),
       locked: input.locked === true,
     };
@@ -158,16 +158,16 @@ export class Profiles {
     const why = await this.problem(input, id);
     if (why) return { error: why };
     const role = input.role === undefined ? found.role : (input.role as Profile["role"]);
-    if (input.locked === true && role === "kid") return { error: "only an adult's profile locks" };
+    if (input.locked === true && role === "child") return { error: "only an adult's profile locks" };
     const profile: Profile = {
       ...found,
       name: input.name === undefined ? found.name : String(input.name).trim(),
       role,
       avatar: input.avatar === undefined ? found.avatar : String(input.avatar),
-      // A profile that becomes a kid's stops asking for the PIN.
-      locked: role === "kid" ? false : input.locked === undefined ? found.locked : input.locked === true,
+      // A profile that becomes a child's stops asking for the PIN.
+      locked: role === "child" ? false : input.locked === undefined ? found.locked : input.locked === true,
     };
-    if (found.role === "adult" && profile.role === "kid" && !all.some((p) => p.id !== id && p.role === "adult")) return { error: "the box needs an adult" };
+    if (found.role === "adult" && profile.role === "child" && !all.some((p) => p.id !== id && p.role === "adult")) return { error: "the box needs an adult" };
     this.keep(profile);
     if (profile.locked !== found.locked) await this.setLocked(id, profile.locked);
     return { profile };

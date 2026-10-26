@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# agentv:summary=Ask for the parent PIN before an adult action
+# agentv:summary=Ask for the adult PIN before an adult action
 # agentv:args=<action>
 # agentv:hidden=true
 
-# The parent PIN (ADR-009, S4.5), before an adult action such as Omarchy's
+# The adult PIN (ADR-009, S4.5), before an adult action such as Omarchy's
 # desktop. Exits 0 when the action may go ahead, 1 when it may not.
 #
 # With no PIN set, everything goes ahead. With one, one of these has to say
@@ -55,7 +55,7 @@ fi
 
 if [[ -t 0 && -t 2 ]]; then
   for _ in 1 2 3; do
-    read -rsp "The parent PIN, for $action: " pin
+    read -rsp "The adult PIN, for $action: " pin
     echo >&2
     reply=$(jq -Rc '{pin: .}' <<<"$pin" | post /api/pin/check)
     [[ $(jq -r '.ok // false' <<<"$reply" 2>/dev/null) == "true" ]] && exit 0
@@ -70,5 +70,5 @@ fi
 if reply=$(AGENTV_SCREEN_TIMEOUT=150 "${AGENTV_SCREEN:-$AGENTV_BIN_DIR/agentv-screen}" pin "$action" 2>/dev/null); then
   allowed "$(jq -r '.grant // empty' <<<"$reply")" && exit 0
 fi
-echo "That needs the parent PIN." >&2
+echo "That needs the adult PIN." >&2
 exit 1

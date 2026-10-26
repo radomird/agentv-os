@@ -1,5 +1,5 @@
-// The parent PIN on the TV in a real Chromium (ADR-019, layer 4; ADR-009,
-// S4.5): Settings → Parental sets it on its pad, chosen twice, from the
+// The adult PIN on the TV in a real Chromium (ADR-019, layer 4; ADR-009,
+// S4.5): Settings → Adult PIN sets it on its pad, chosen twice, from the
 // arrows or number keys; each adult action asks for it and is refused
 // without it; the TV locked shows only the pad; and agentv-pin-check's ask
 // on the TV hands back a grant. What the screen daemon and the daemon refuse
@@ -82,19 +82,19 @@ async function type(page: Page, digits: string): Promise<void> {
   for (const digit of digits) await page.keyboard.press(digit);
 }
 
-test("S4.5 Settings → Parental sets a PIN on its pad, chosen twice, with the arrows or number keys", async () => {
+test("S4.5 Settings → Adult PIN sets a PIN on its pad, chosen twice, with the arrows or number keys", async () => {
   removePin();
   const page = await tv();
   await home(page);
-  await go(page, "settings/parental");
-  await page.waitForSelector('.menu-item.open[data-key="parental"]');
-  assert.match(await page.locator('.menu-item[data-key="parental"]').innerText(), /parental\s+off/);
-  assert.match(await page.locator(".panel").innerText(), /off[\s\S]*a kid's profile needs one/);
+  await go(page, "settings/pin");
+  await page.waitForSelector('.menu-item.open[data-key="pin"]');
+  assert.match(await page.locator('.menu-item[data-key="pin"]').innerText(), /adult pin\s+off/);
+  assert.match(await page.locator(".panel").innerText(), /off[\s\S]*a child's profile needs one/);
   await page.keyboard.press("Enter");
   assert.equal(await focused(page), "set-pin");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /tv settings · pin[\s\S]*set a parent pin[\s\S]*4 digits, for settings, builds and the desktop/);
+  assert.match(await padText(page), /tv settings · pin[\s\S]*set an adult pin[\s\S]*4 digits, for settings, builds and the desktop/);
   assert.equal(await focused(page), "1", "the pad starts on 1");
 
   // The remote's arrows and OK: 4 is under 1.
@@ -119,7 +119,7 @@ test("S4.5 Settings → Parental sets a PIN on its pad, chosen twice, with the a
   await type(page, PIN);
   await waitPad(page, false);
   assert.equal(daemon.pin.status().set, true);
-  await page.waitForFunction(() => /\[pin\]/.test(document.querySelector('.menu-item[data-key="parental"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /adult pin\s*on/.test(document.querySelector('.menu-item[data-key="pin"]')?.textContent ?? ""));
   assert.match(await page.locator(".toast").last().innerText(), /the pin is set/);
   assert.match(await page.locator('.menu-item[data-key="desktop"]').innerText(), /omarchy desktop\s+\[pin\]/);
   await page.close();
@@ -135,7 +135,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /enter the parent pin[\s\S]*for omarchy's desktop\./);
+  assert.match(await padText(page), /enter the adult pin[\s\S]*for omarchy's desktop\./);
   await page.keyboard.press("Escape");
   await waitPad(page, false);
   assert.deepEqual(await sent(page, "desktop"), []);
@@ -177,15 +177,15 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.close();
 });
 
-test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Parental and at start", async () => {
+test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Adult PIN and at start", async () => {
   setPin();
   const page = await tv();
   await home(page);
-  await go(page, "settings/parental");
+  await go(page, "settings/pin");
   await page.waitForSelector('.panel [data-action="lock"]');
   await page.locator('.panel [data-action="lock"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /tv locked[\s\S]*enter the parent pin[\s\S]*the tv is locked\./);
+  assert.match(await padText(page), /tv locked[\s\S]*enter the adult pin[\s\S]*the tv is locked\./);
   // Back and Home don't get past it.
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");
@@ -249,7 +249,7 @@ test("S4.5 changing the PIN needs the one before, and so does taking it off", as
   setPin();
   const page = await tv();
   await home(page);
-  await go(page, "settings/parental");
+  await go(page, "settings/pin");
   await page.waitForSelector('.panel [data-action="set-pin"]');
   assert.match(await page.locator(".panel").innerText(), /on[\s\S]*change the pin →[\s\S]*lock the tv now[\s\S]*take the pin off/);
   await page.locator('.panel [data-action="set-pin"]').click();
@@ -267,13 +267,13 @@ test("S4.5 changing the PIN needs the one before, and so does taking it off", as
   // Taking it off, in a new visit, asks for the new one.
   await page.keyboard.press("Home");
   await home(page);
-  await go(page, "settings/parental");
+  await go(page, "settings/pin");
   await page.waitForSelector('.panel [data-action="remove-pin"]');
   await page.locator('.panel [data-action="remove-pin"]').click();
   await waitPad(page, true);
   await type(page, "1357");
   await waitPad(page, false);
-  await page.waitForFunction(() => /parental\s*off/.test(document.querySelector('.menu-item[data-key="parental"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /adult pin\s*off/.test(document.querySelector('.menu-item[data-key="pin"]')?.textContent ?? ""));
   assert.equal(daemon.pin.status().set, false);
   await page.close();
 });

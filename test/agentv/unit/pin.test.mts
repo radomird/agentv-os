@@ -1,4 +1,4 @@
-// The parent PIN (daemon/pin.ts, ADR-009, S4.5): only a hash kept, a wait
+// The adult PIN (daemon/pin.ts, ADR-009, S4.5): only a hash kept, a wait
 // after too many wrong tries, grants that run out, the TV locked after
 // another boot and after it's been off, and the daemon refusing a guarded
 // request without a grant.
@@ -62,18 +62,18 @@ test("S4.5 a guarded action needs a grant, which the right PIN gives and which r
   assert.equal(pin.allows(grant), false, "a grant lasts a few minutes");
 });
 
-test("S4.5 changing or taking off the PIN needs a grant, and a kid's profile keeps it on", () => {
-  let kids = false;
-  const { pin } = box(() => (kids ? "a kid's profile needs the pin, so it stays" : null));
+test("S4.5 changing or taking off the PIN needs a grant, and a child's profile keeps it on", () => {
+  let children = false;
+  const { pin } = box(() => (children ? "a child's profile needs the pin, so it stays" : null));
   pin.set("4826", undefined);
   assert.equal(pin.set("1111", undefined), "that needs the pin");
   assert.equal(pin.remove("made-up"), "that needs the pin");
   const grant = granted(pin.check("4826"));
   assert.equal(pin.set("1111", grant), null);
   assert.equal(pin.check("4826").ok, false, "the old one is gone");
-  kids = true;
-  assert.equal(pin.remove(grant), "a kid's profile needs the pin, so it stays");
-  kids = false;
+  children = true;
+  assert.equal(pin.remove(grant), "a child's profile needs the pin, so it stays");
+  children = false;
   assert.equal(pin.remove(grant), null);
   assert.equal(pin.status().set, false);
   assert.equal(pin.allows(undefined), true);

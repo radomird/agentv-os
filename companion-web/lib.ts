@@ -50,7 +50,7 @@ export function toast(text: string, ok = false): void {
 
 // The box said this phone isn't paired, or not any more.
 export class Unpaired extends Error {}
-// The box said this needs the parent PIN.
+// The box said this needs the adult PIN.
 export class NeedsPin extends Error {}
 
 export async function api<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
@@ -73,7 +73,7 @@ export async function api<T>(method: string, path: string, body?: unknown, grant
 export interface Viewer {
   id: string;
   name: string;
-  role: "adult" | "kid";
+  role: "adult" | "child";
   avatar: string;
   // An adult's profile that asks for the PIN to open (ADR-034).
   locked: boolean;

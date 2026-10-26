@@ -46,7 +46,7 @@ curl -fsS -o /dev/null -X PUT -H 'Content-Type: application/json' -d '{"pin":"48
 grant=$(curl -fsS -H 'Content-Type: application/json' -d '{"pin":"4826"}' "$url/api/pin/check" | jq -r .grant)
 
 if check desktop 2>"$SCRATCH/err"; then fail "S4.5 with a pin set, an action with no pin is refused"; fi
-[[ $(cat "$SCRATCH/err") == "That needs the parent PIN." ]] || fail "it says why" "$(cat "$SCRATCH/err")"
+[[ $(cat "$SCRATCH/err") == "That needs the adult PIN." ]] || fail "it says why" "$(cat "$SCRATCH/err")"
 [[ $(cat "$CALLS") == "pin desktop" ]] || fail "with no terminal, it asks on the TV" "$(cat "$CALLS")"
 pass "S4.5 with a PIN set and no terminal, agentv-pin-check asks on the TV, and refuses when it isn't entered"
 

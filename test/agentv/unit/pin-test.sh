@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards the parent PIN (daemon/pin.ts, ADR-009, S4.5): the hash, the wait
+# Guards the adult PIN (daemon/pin.ts, ADR-009, S4.5): the hash, the wait
 # after wrong tries, grants, the lock, and the daemon's guarded requests.
 
 set -euo pipefail

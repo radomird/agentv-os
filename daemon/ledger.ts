@@ -16,7 +16,7 @@ import type { ItemKind, PlaybackState } from "../apps/contract/contract.ts";
 export interface LedgerViewer {
   id: string;
   name: string;
-  role: "adult" | "kid";
+  role: "adult" | "child";
   avatar?: string;
 }
 
@@ -40,7 +40,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS viewer (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('adult', 'kid')),
+  role TEXT NOT NULL CHECK (role IN ('adult', 'child')),
   avatar TEXT
 );
 CREATE TABLE IF NOT EXISTS watch (
@@ -93,6 +93,30 @@ export class Ledger {
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  // A box from before ADR-035 called a child's profile 'kid', and its viewer
+  // table takes only 'adult' or 'kid'. SQLite can't change a CHECK, so the
+  // table is made again with 'child', its rows and their watch rows kept.
+  private migrate(): void {
+    const viewer = this.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'viewer'").get() as { sql?: string } | undefined;
+    if (!viewer?.sql?.includes("'kid'")) return;
+    this.db.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+      CREATE TABLE viewer_next (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('adult', 'child')),
+        avatar TEXT
+      );
+      INSERT INTO viewer_next SELECT id, name, CASE role WHEN 'kid' THEN 'child' ELSE role END, avatar FROM viewer;
+      DROP TABLE viewer;
+      ALTER TABLE viewer_next RENAME TO viewer;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
   }
 
   // Adds or updates a viewer (daemon/profiles.ts).

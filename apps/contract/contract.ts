@@ -58,7 +58,7 @@ export type AppPage = Pick<Page, "url" | "title" | "goto" | "evaluate" | "waitFo
 export interface AppContext {
   page?: AppPage; // web apps: one page, declared origins only
   settings: Record<string, string>; // values from the manifest's setup fields
-  viewer: { id: string; role: "adult" | "kid" };
+  viewer: { id: string; role: "adult" | "child" };
 }
 
 export interface TvApp {
@@ -86,7 +86,7 @@ export interface TvApp {
     next?(ctx: AppContext): Promise<void>;
   };
 
-  /** Kids (ADR-009): list the service's profiles once, then open the mapped one for kid viewers. */
+  /** Children (ADR-009): list the service's profiles once, then open the mapped one for child viewers. */
   profiles?: {
     list(ctx: AppContext): Promise<string[]>;
     select(ctx: AppContext, name: string): Promise<void>;

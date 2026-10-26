@@ -1,6 +1,6 @@
 // An app's details (ADR-018): the one place that says who made it, what it can
 // reach and which tile sizes it has, with the brand owner's note for an app
-// named after someone else's brand. An adult ticks it for kids here too
+// named after someone else's brand. An adult ticks it for children here too
 // (ADR-009).
 
 import { daemon, screen } from "../api.ts";
@@ -31,33 +31,33 @@ export function details(ctx: Ctx, id: string): View {
     h("span", { class: "button-value" }, onHome ? "[x]" : "[ ]"),
   );
 
-  // Whether a kid's profile can open it, past the PIN once there is one.
-  const kids =
+  // Whether a child's profile can open it, past the PIN once there is one.
+  const children =
     ctx.state.viewer.role === "adult"
       ? h(
           "button",
           {
             class: "button",
             "data-focus": true,
-            "data-action": "kids",
+            "data-action": "children",
             onclick: async () => {
-              const grant = await ctx.grant("the apps kids can open");
+              const grant = await ctx.grant("the apps children can open");
               if (grant === null) return;
               try {
-                await daemon.forKids(id, !app.forKids, grant || undefined);
+                await daemon.forChildren(id, !app.forChildren, grant || undefined);
               } catch (error) {
                 ctx.forgetGrant();
                 ctx.sounds.play("failure");
                 ctx.toast((error as Error).message, "fail");
                 return;
               }
-              app.forKids = !app.forKids;
+              app.forChildren = !app.forChildren;
               ctx.sounds.play("confirm");
-              ctx.render(`details/${id}`, "kids");
+              ctx.render(`details/${id}`, "children");
             },
           },
-          h("span", {}, "for kids"),
-          h("span", { class: "button-value" }, app.forKids ? "[x]" : "[ ]"),
+          h("span", {}, "for children"),
+          h("span", { class: "button-value" }, app.forChildren ? "[x]" : "[ ]"),
         )
       : null;
 
@@ -116,7 +116,7 @@ export function details(ctx: Ctx, id: string): View {
           app.credit ? h("dt", {}, "data") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
-        h("div", { class: "actions" }, open, toggle, kids),
+        h("div", { class: "actions" }, open, toggle, children),
       ),
       app.owner ? h("p", { class: "owner" }, app.owner) : null,
     ),

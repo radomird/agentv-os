@@ -26,14 +26,14 @@ export interface App {
   needsSetup: boolean;
   signIn?: "needed"; // its service wants a sign-in (ADR-032)
   credit?: string;
-  forKids: boolean; // a kid's profile can open it (ADR-009)
+  forChildren: boolean; // a child's profile can open it (ADR-009)
 }
 
 // Someone who watches (ADR-009): an avatar is a colour from the theme.
 export interface Viewer {
   id: string;
   name: string;
-  role: "adult" | "kid";
+  role: "adult" | "child";
   avatar: string;
   // An adult's profile that asks for the PIN to open (ADR-034).
   locked: boolean;
@@ -56,7 +56,7 @@ export interface HomeState {
   appsTile: string;
   layout: Placed[];
   settings: Settings;
-  // Whether there's a parent PIN, and whether the TV is locked (ADR-009).
+  // Whether there's an adult PIN, and whether the TV is locked (ADR-009).
   pin: { set: boolean; locked: boolean };
 }
 
@@ -206,8 +206,8 @@ export const daemon = {
   key: () => call<KeyState>("GET", "/api/key"),
   saveKey: (provider: string, key: string, grant?: string) => call<KeyState>("PUT", "/api/key", { provider, key }, grant),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
-  forKids: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-kids`, { allowed }, grant),
-  // The parent PIN (ADR-009, S4.5).
+  forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
+  // The adult PIN (ADR-009, S4.5).
   checkPin: (pin: string) => call<{ grant: string; until: string }>("POST", "/api/pin/check", { pin }),
   setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),
   removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),

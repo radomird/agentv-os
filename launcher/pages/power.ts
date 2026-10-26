@@ -2,7 +2,7 @@
 // screen of its own. Restart goes right after its question. Shut down counts
 // down 10 seconds, which Cancel stops, then the screen daemon turns the box
 // off through Omarchy's own command. Only an adult gets here, never while an
-// update runs, and the parent PIN, when there is one, asks first (ADR-009).
+// update runs, and the adult PIN, when there is one, asks first (ADR-009).
 
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
