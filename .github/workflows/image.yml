@@ -80,6 +80,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       OWNER: ${{ github.repository_owner }}
+      # The image checks two VMs at a time (agentv-iso's test/agentv/image/run).
+      AGENTV_TEST_LANES: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
