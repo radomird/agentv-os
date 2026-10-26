@@ -27,6 +27,9 @@ export interface App {
   signIn?: "needed"; // its service wants a sign-in (ADR-032)
   credit?: string;
   forChildren: boolean; // a child's profile can open it (ADR-009)
+  // An app with profiles: its service's own, once it has listed them, and
+  // the one picked for children (ADR-009).
+  profiles?: { names: string[]; forChildren: string | null };
 }
 
 // An app's own setup, from its tile: its fields, such as a server's
@@ -274,6 +277,8 @@ export const daemon = {
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
   saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),
+  // The service's profile a child watching opens, or null for none (ADR-009).
+  childProfile: (app: string, name: string | null, grant?: string) => call<{ ok: boolean }>("PUT", `/api/apps/${app}/child-profile`, { name }, grant),
   // The adult PIN (ADR-009, S4.5).
   checkPin: (pin: string) => call<{ grant: string; until: string }>("POST", "/api/pin/check", { pin }),
   setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),
@@ -361,6 +366,9 @@ export const screen = {
   power: (what: "restart" | "shutdown", grant: string) => ask({ cmd: "power", what, grant }),
   // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
+  // Someone else is watching: the apps open take the service's profile for
+  // them (ADR-009).
+  viewer: () => ask({ cmd: "viewer" }),
   // The built-in Music app's library and player, in the TV session (ADR-017).
   // Mounting a share can wait on a slow NAS, and on root for one with a
   // password, so it gets longer.
