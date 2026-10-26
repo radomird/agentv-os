@@ -64,6 +64,13 @@ UI_DEV_DESTROY = 0x5502
 
 NAME = b"AgenTV remote"
 
+# Typed text goes a character at a time, with a pause after each, so the
+# compositor reads the events as they come. The kernel keeps 128 events for
+# each reader of the device, about 30 characters; all at once, a long text on
+# a busy box can fill that, the kernel drops what it holds, and the text
+# arrives with characters missing. 12 ms is xdotool's own delay.
+TYPE_GAP = 0.012
+
 KEYS = {
     "esc": 1, "back": 1, "backspace": 14, "tab": 15, "enter": 28, "space": 57,
     "up": 103, "left": 105, "right": 106, "down": 108,
@@ -127,8 +134,9 @@ class Device:
     """Writes key and pointer events. The writer is the uinput file, or a
     stand-in in the unit tests."""
 
-    def __init__(self, write):
+    def __init__(self, write, pause=time.sleep):
         self.write = write
+        self.pause = pause
 
     def emit(self, *events):
         self.write(b"".join(events) + event(EV_SYN, SYN_REPORT, 0))
@@ -159,6 +167,7 @@ class Device:
         codes = [code_of_char(c) for c in text]
         for code, shift in codes:
             self.tap(code, shift)
+            self.pause(TYPE_GAP)
 
     def move(self, dx, dy):
         self.emit(event(EV_REL, REL_X, int(dx)), event(EV_REL, REL_Y, int(dy)))
