@@ -8,7 +8,7 @@ import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback,
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -317,6 +317,7 @@ async function tv(
     homeUp?: boolean;
     playback?: Playback;
     signIn?: SignIn;
+    profiles?: ProfilesForViewer;
     sound?: Sound;
     running?: string;
   } = {},
@@ -774,6 +775,65 @@ test("ADR-032 an installed web app is asked once as it opens whether it's signed
   assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.tube" }), { ok: false, error: "that app can't tell whether it's signed in" });
   assert.deepEqual(t.launcher.bars, ["agentv.tube", null], "named by its id when the daemon gives no name");
   assert.equal(t.hypr.get("0xd").fullscreen, 2);
+});
+
+// A stand-in for service-profiles.ts: which apps it was asked about, and
+// what it says, after ms.
+function fakeProfiles(said: Awaited<ReturnType<ProfilesForViewer["apply"]>>, ms = 0) {
+  const asked: string[] = [];
+  const profiles: ProfilesForViewer = {
+    async apply(id) {
+      asked.push(id);
+      await sleep(ms);
+      return said;
+    },
+  };
+  return { profiles, asked };
+}
+
+test("ADR-009 an installed app opens in the service's profile for who's watching, before an item plays in it", async () => {
+  const { profiles, asked } = fakeProfiles("selected", 60);
+  const played: string[] = [];
+  const t = await tv({ profiles, playback: { opened() {}, closed() {}, play: (id) => void played.push(id) } });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/" });
+  const item = { id: "ledger:1", kind: "episode", title: "Spring", season: 1, episode: 2 };
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube", item }), { ok: true });
+  assert.deepEqual(asked, ["agentv.tube"]);
+  assert.deepEqual(played, [], "the item waits for the profile");
+  await sleep(100);
+  assert.deepEqual(played, ["agentv.tube"]);
+  await t.screen.openWeb("https://elsewhere.example/");
+  assert.deepEqual(asked, ["agentv.tube"], "not a page opened by address");
+});
+
+test("ADR-009 someone else watching: the apps open take the service's profile for them, and the TV says when a child's can't", async () => {
+  const { profiles, asked } = fakeProfiles("not selected");
+  const t = await tv({ profiles });
+  await openApp(t, "agentv.tube", "0xd");
+  await sleep(10);
+  assert.deepEqual(t.launcher.toasts, ["agentv.tube couldn't open the profile for children"], "named by its id when the daemon gives no name");
+  await t.screen.openWeb("https://elsewhere.example/");
+  asked.length = 0;
+  assert.deepEqual(await t.screen.fromHome({ cmd: "viewer" }), { ok: true });
+  await sleep(10);
+  assert.deepEqual(asked, ["agentv.tube"], "each app open, and not a page opened by address");
+  assert.equal(t.launcher.toasts.length, 2);
+});
+
+test("ADR-009 signed in on the sign-in screen, an app lists its service's profiles for an adult to pick from", async () => {
+  const { profiles, asked } = fakeProfiles("listed");
+  const { signIn, calls } = fakeSignIn();
+  const t = await tv({ signIn, profiles });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
+  await t.screen.fromHome({ cmd: "sign-in", app: "agentv.tube" });
+  t.hypr.open("0xd", t.launcher.last("web").pid);
+  await t.screen.idle();
+  assert.deepEqual(asked, ["agentv.tube"], "as it opened");
+  calls.done!(true);
+  await t.screen.idle();
+  await sleep(10);
+  assert.deepEqual(asked, ["agentv.tube", "agentv.tube"], "and again once it's signed in");
+  assert.deepEqual(t.launcher.toasts, ["signed in to tube"]);
 });
 
 test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {

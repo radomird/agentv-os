@@ -7,7 +7,7 @@ import { daemon, screen } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, openBuiltin } from "./home.ts";
-import { bar, togglePin } from "./parts.ts";
+import { bar, childProfileButton, togglePin } from "./parts.ts";
 
 export function details(ctx: Ctx, id: string): View {
   const app = ctx.state.apps.find((a) => a.id === id);
@@ -116,7 +116,7 @@ export function details(ctx: Ctx, id: string): View {
           app.credit ? h("dt", {}, "data") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
-        h("div", { class: "actions" }, open, toggle, children),
+        h("div", { class: "actions" }, open, toggle, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile"))),
       ),
       app.owner ? h("p", { class: "owner" }, app.owner) : null,
     ),
