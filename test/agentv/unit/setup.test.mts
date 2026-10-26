@@ -173,10 +173,18 @@ test("a paired phone hears setup's step while it's on, and nothing once it's don
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
   const paired = await (await fetch(`${lanUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json();
   const phone = async () => (await fetch(`${lanUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${paired.token}` } })).json();
-  assert.deepEqual((await phone()).setup, { step: "welcome", part: "1/6 connect" });
+  assert.deepEqual((await phone()).setup, { step: "welcome", part: "1/6 connect", muted: false });
+  // The phone mutes the soundtrack, and the TV hears it.
+  const mute = await fetch(`${lanUrl}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${paired.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) });
+  assert.equal(mute.status, 200);
+  assert.equal((await phone()).setup.muted, true);
+  assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.muted, true);
+  assert.equal((await post("/api/setup/music", { muted: false })).status, 200, "and the TV's M plays it again");
+  assert.equal((await phone()).setup.muted, false);
   assert.deepEqual((await (await fetch(`${url}/api/setup`)).json()).phones, ["iphone"]);
   await post("/api/setup", { done: true });
   assert.equal((await phone()).setup, null);
+  assert.equal((await fetch(`${lanUrl}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${paired.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) })).status, 409, "nothing to mute once setup is done");
   await post("/api/setup", { done: false });
 });
 
@@ -224,4 +232,13 @@ test("an app asked for at add your own is kept for later, once, up to five", asy
   assert.match((await store.wish("six")).error ?? "", /5 for later already/);
   assert.equal((await new Setup({ path: join(scratch, "wishes.json") }).read()).wishes.length, 5);
   assert.deepEqual((await store.mark(false)).wishes, [], "setup started again forgets them");
+});
+
+test("S5.4 the soundtrack muted is kept, and only as yes or no", async () => {
+  const store = new Setup({ path: join(scratch, "muted.json") });
+  assert.equal((await store.read()).muted, false);
+  assert.match((await store.setMuted("yes")).error ?? "", /muted/);
+  assert.equal((await store.setMuted(true)).state?.muted, true);
+  assert.equal((await new Setup({ path: join(scratch, "muted.json") }).read()).muted, true, "after a restart too");
+  assert.equal((await store.mark(false)).muted, false, "setup started again plays it again");
 });

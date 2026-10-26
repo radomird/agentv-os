@@ -51,7 +51,8 @@ before(async () => {
       { ssid: "neighbours", signal: 30, secure: true },
     ]),
   );
-  browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
+  // As the box's home Chromium has it, so the soundtrack plays.
+  browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER, args: ["--autoplay-policy=no-user-gesture-required"] });
 });
 
 after(async () => {
@@ -836,6 +837,47 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.done, true);
   await page.waitForSelector("#backdrop img");
   await post("/api/backgrounds", { source: "field" });
+  await page.close();
+});
+
+const levels = (page: Page) => page.evaluate(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels());
+
+test("S5.4 the soundtrack plays from the welcome screen with its player, the equaliser moves with it, M and the phone mute it, and home has none", async () => {
+  await fresh();
+  await post("/api/setup/music", { muted: false });
+  const page = await tv();
+  await page.waitForSelector(".player");
+  assert.match(await textOf(page, ".player"), /setup soundtrack[\s\S]*m to mute/);
+  assert.equal(await page.locator(".eq .eq-bar").count(), 7);
+  // The stand-in's chord swells in: the bars rise with it.
+  await page.waitForFunction(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels().some((level) => level > 0.3), null, { timeout: 8000 });
+  const seen = new Set<string>();
+  for (let i = 0; i < 6; i++) {
+    seen.add((await levels(page)).map((level) => level.toFixed(2)).join(","));
+    await page.waitForTimeout(150);
+  }
+  assert.ok(seen.size > 1, "the equaliser moves with the music, it isn't a loop of its own");
+
+  // M mutes it, and setup keeps that.
+  await page.keyboard.press("m");
+  await page.waitForSelector(".player.muted");
+  assert.match(await textOf(page, ".player"), /muted · m to play/);
+  await page.waitForFunction(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels().every((level) => level <= 0.12));
+  await waitFor(async () => (await (await fetch(`${url}/api/setup`)).json()).setup.muted === true);
+
+  // The phone plays it again, and mutes it.
+  const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
+  const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
+  const fromPhone = (muted: boolean) => fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted }) });
+  assert.equal((await fromPhone(false)).status, 200);
+  await page.waitForSelector(".player:not(.muted)");
+  assert.equal((await fromPhone(true)).status, 200);
+  await page.waitForSelector(".player.muted");
+
+  // Setup done: home has no soundtrack.
+  await post("/api/setup", { done: true });
+  await page.waitForSelector(".grid .tile", { timeout: 10_000 });
+  assert.equal(await page.locator(".player").count(), 0);
   await page.close();
 });
 

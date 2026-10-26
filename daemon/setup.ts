@@ -67,6 +67,8 @@ export interface SetupState {
   // The apps asked for at "+ add your own", in the household's words, kept
   // for the TV's agent to build once it can (stage 6).
   wishes: string[];
+  // The setup soundtrack muted, from the TV's M or the phone (S5.4).
+  muted: boolean;
 }
 
 // How many wishes setup keeps, and how long each may be.
@@ -90,7 +92,7 @@ function now(): string {
 }
 
 function fresh(): SetupState {
-  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [] };
+  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [], muted: false };
 }
 
 // The box's network, from its interfaces: a wired or Wi-Fi address that
@@ -135,6 +137,7 @@ export class Setup {
       from: typeof ready.from === "string" && VERSION.test(ready.from) ? ready.from : null,
       to: typeof ready.to === "string" && VERSION.test(ready.to) ? ready.to : null,
     };
+    state.muted = data.muted === true;
     if (Array.isArray(data.wishes)) state.wishes = data.wishes.filter((w): w is string => typeof w === "string" && WISH.test(w)).slice(0, WISHES);
     return state;
   }
@@ -214,6 +217,14 @@ export class Setup {
       if (state.wishes.length >= WISHES) return { error: `that's ${WISHES} for later already` };
       state.wishes.push(words);
     }
+    return { state: await this.save(state) };
+  }
+
+  // The soundtrack muted or playing again.
+  async setMuted(muted: unknown): Promise<{ state?: SetupState; error?: string }> {
+    if (typeof muted !== "boolean") return { error: 'send {"muted": true} or {"muted": false}' };
+    const state = await this.read();
+    state.muted = muted;
     return { state: await this.save(state) };
   }
 }

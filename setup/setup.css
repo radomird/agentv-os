@@ -888,3 +888,76 @@
 .back .look-note {
   font-size: 20px;
 }
+
+/* --- The setup soundtrack's player (ADR-014, S5.4) ------------------------------ */
+
+.player {
+  position: absolute;
+  left: 32px;
+  bottom: 92px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 480px;
+  height: 96px;
+  padding: 14px 20px 14px 14px;
+  background: var(--dark-background);
+  border: 2px solid var(--selection);
+  color: var(--bright-foreground);
+  z-index: 5;
+}
+
+.player-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  background: var(--lighter-background);
+  color: var(--bright-magenta);
+}
+
+.player-text {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.player-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.player-note {
+  font-size: 16px;
+  color: var(--foreground);
+}
+
+/* The equaliser: seven bars, each scaled to its band's level as the music
+   plays (transform only, ADR-024). */
+.eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 40px;
+}
+
+.eq-bar {
+  display: block;
+  width: 6px;
+  height: 40px;
+  transform-origin: bottom;
+  transform: scaleY(0.12);
+}
+
+.eq-a { background: var(--accent); }
+.eq-b { background: var(--bright-cyan); }
+.eq-c { background: var(--bright-magenta); }
+
+.player.muted .eq-bar {
+  opacity: 0.5;
+}

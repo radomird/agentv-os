@@ -24,6 +24,7 @@ import { background, photos } from "./background.ts";
 import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
+import { Soundtrack } from "./music.ts";
 import { ready } from "./ready.ts";
 import { theme } from "./theme.ts";
 import { welcome, wifi } from "./welcome.ts";
@@ -83,6 +84,9 @@ export interface Ctx {
 const page = document.getElementById("page")!;
 const fieldEl = document.getElementById("field")!;
 const sounds = new Sounds();
+// The setup soundtrack and its player, from the welcome screen to the
+// background step (S5.4).
+const music = new Soundtrack();
 const focus = new Focus(document.getElementById("ring")!);
 // A text field with the focus opens the phone's keyboard (ADR-037).
 focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
@@ -366,6 +370,17 @@ async function start(): Promise<void> {
   ctx.updates = await daemon.updates().catch(() => ctx.updates);
   ctx.ai = await setup.ai().catch(() => undefined);
   show(ctx.info.setup.step);
+  document.body.append(music.el);
+  void music.start(ctx.info.setup.muted);
+  // M mutes the soundtrack, or plays it again, from a keyboard or the
+  // phone's keys, but not while typing.
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "m" && event.key !== "M") return;
+    if (event.target instanceof HTMLInputElement || event.metaKey || event.ctrlKey || event.altKey) return;
+    const muted = !music.isMuted();
+    music.mute(muted);
+    void setup.music(muted).catch(() => {});
+  });
   // Number keys, from a keyboard or the phone, go to the pad while it's up.
   window.addEventListener(
     "keydown",
@@ -389,6 +404,7 @@ async function start(): Promise<void> {
           return;
         }
         ctx.info.setup = next;
+        if (next.muted !== music.isMuted()) music.mute(next.muted);
         if (local === 0 && next.step !== route.split("/")[0]) show(next.step);
       },
       theme: (data) => {
@@ -451,7 +467,7 @@ async function start(): Promise<void> {
   const w = window as unknown as { agentvWelcome: boolean; agentvSetup: object };
   w.agentvWelcome = true;
   // For the UI checks and the image layer: the step, and the sounds.
-  w.agentvSetup = { sounds, focus, route: () => route };
+  w.agentvSetup = { sounds, focus, music, route: () => route };
   requestAnimationFrame(() => void fetch("/api/welcome-shown", { method: "POST" }).catch(() => {}));
 }
 
