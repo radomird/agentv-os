@@ -144,6 +144,9 @@ export interface Launcher {
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
+  // Tells AgenTV's daemon what's in front and whether something plays, for
+  // the phone's remote to follow (ADR-037).
+  tvContext(change: { front: "home" | "app"; playing: boolean }): Promise<void>;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -226,6 +229,9 @@ interface Options {
   // have played before one installs.
   nightTickMs?: number;
   nightQuietMs?: number;
+  // How often it looks at what's in front and what plays, for the phone's
+  // remote (ADR-037).
+  contextMs?: number;
   // The agentv package this screen daemon runs: the one installed as it
   // starts.
   running?: string;
@@ -270,6 +276,9 @@ export class Screen {
   private tvOffCloseMs: number;
   private tvTimer: ReturnType<typeof setTimeout> | null = null;
   private tvWatch: ReturnType<typeof setInterval> | null = null;
+  private contextWatch: ReturnType<typeof setInterval> | null = null;
+  private contextMs: number;
+  private context = { said: "", at: 0, busy: false };
   private ending = false;
   private chain: Promise<void> = Promise.resolve();
   private homeRestartMs: number;
@@ -309,6 +318,7 @@ export class Screen {
     this.homeCheckMs = options.homeCheckMs ?? 30_000;
     this.nightTickMs = options.nightTickMs ?? 60_000;
     this.nightQuietMs = options.nightQuietMs ?? 30 * 60_000;
+    this.contextMs = options.contextMs ?? 1000;
     this.lastPlayed = this.now();
     this.runningPackage = options.running ?? installedPackage();
   }
@@ -342,6 +352,35 @@ export class Screen {
     }
     this.nightWatch = setInterval(() => void this.night(), this.nightTickMs);
     this.nightWatch.unref?.();
+    this.contextWatch = setInterval(() => void this.tellContext(), this.contextMs);
+    this.contextWatch.unref?.();
+  }
+
+  // What's in front, an app or home, and whether something plays: an app's
+  // page or Music. The daemon hears when it changes, and every 30 s besides,
+  // so a daemon that restarted hears it too (ADR-037).
+  async tellContext(): Promise<void> {
+    if (this.context.busy) return;
+    this.context.busy = true;
+    try {
+      const front = this.front();
+      const app = Boolean(front && front.role !== "home") && !this.ambient;
+      let playing = app ? await this.playing() : false;
+      if (!playing && this.music) {
+        const now = (await this.music.handle({ op: "now" }).catch(() => null)) as { now?: { playing?: boolean } | null } | null;
+        playing = now?.now?.playing === true;
+      }
+      const change = { front: app ? ("app" as const) : ("home" as const), playing };
+      const said = JSON.stringify(change);
+      if (said === this.context.said && this.now() - this.context.at < 30_000) return;
+      await this.launcher.tvContext(change);
+      this.context.said = said;
+      this.context.at = this.now();
+    } catch {
+      // The daemon isn't there right now; it hears at the next look.
+    } finally {
+      this.context.busy = false;
+    }
   }
 
   // Stops the timers, for the tests.
@@ -350,6 +389,7 @@ export class Screen {
     for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer]) if (timer) clearTimeout(timer);
     if (this.tvWatch) clearInterval(this.tvWatch);
     if (this.nightWatch) clearInterval(this.nightWatch);
+    if (this.contextWatch) clearInterval(this.contextWatch);
   }
 
   event(name: string, data: string): void {
@@ -1594,6 +1634,15 @@ export const launcher: Launcher = {
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
         else resolve();
       });
+    });
+  },
+
+  async tvContext(change) {
+    await fetch(`${HOME_URL}api/tv/context`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(change),
+      signal: AbortSignal.timeout(3000),
     });
   },
 

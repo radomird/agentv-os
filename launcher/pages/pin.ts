@@ -19,6 +19,9 @@ export interface PadOptions {
   cancel: boolean;
   // Gives up after this long with no key, as when agentv-pin-check asks.
   idleMs?: number;
+  // How many digits are in, and what went wrong, as they change: for the
+  // phone's remote, which shows the pad too (ADR-037).
+  changed?(digits: number, error: string | null): void;
 }
 
 export interface Pad {
@@ -40,7 +43,11 @@ export function pad(options: PadOptions, played: (sound: "select" | "confirm" | 
   const done = new Promise<boolean>((resolve) => (finish = resolve));
   const boxes = Array.from({ length: 4 }, () => h("span", { class: "pin-box" }));
   const message = h("p", { class: "panel-note pin-message" }, options.note);
-  const draw = () => boxes.forEach((box, i) => box.classList.toggle("filled", i < digits.length));
+  let error: string | null = null;
+  const draw = () => {
+    boxes.forEach((box, i) => box.classList.toggle("filled", i < digits.length));
+    options.changed?.(digits.length, error);
+  };
 
   let timer = 0;
   const idle = () => {
@@ -64,6 +71,7 @@ export function pad(options: PadOptions, played: (sound: "select" | "confirm" | 
     }
     played("failure");
     digits = "";
+    error = why;
     draw();
     message.textContent = `${why}.`;
     message.classList.add("bad");

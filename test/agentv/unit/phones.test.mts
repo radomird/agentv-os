@@ -72,6 +72,7 @@ before(async () => {
     lanHost: "127.0.0.1",
     address: () => "192.168.1.20",
     qrencode,
+    phoneWaitMs: 400,
   });
   tv = `http://127.0.0.1:${await daemon.listen()}`;
   phone = `http://127.0.0.1:${daemon.lanPort}`;
@@ -193,6 +194,85 @@ test("the PIN on the phone gives a grant, which switching from a child to an adu
   assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: owner.id } })).status, 403);
   assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: owner.id }, grant })).status, 200);
   assert.ok(lines.some((line) => line.endsWith("from android phone")));
+});
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("ADR-037 S4.10 the phone hears what's on the TV within a second: its ask waits for a change, and the remote's view follows", async () => {
+  const first = (await send(phone, "GET", "/api/phone/state", { token })).data;
+  assert.equal(first.tv.view, "remote");
+  // An ask with the count it has waits, until the TV asks for the PIN.
+  const started = Date.now();
+  const waiting = send(phone, "GET", `/api/phone/state?since=${first.version}`, { token });
+  await sleep(100);
+  const pin = { title: "enter the adult pin", for: "for omarchy's desktop.", digits: 0, error: null };
+  assert.equal((await send(tv, "POST", "/api/tv/context", { body: { pin } })).status, 200);
+  const woke = (await waiting).data;
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+  assert.deepEqual([woke.tv.view, woke.tv.pin, woke.version > first.version], ["pin", pin, true]);
+  // A text field, something playing (the screen daemon's word), and back.
+  for (const [body, view] of [
+    [{ pin: { ...pin, digits: 2 } }, "pin"],
+    [{ pin: null, field: { kind: "number" } }, "keyboard"],
+    [{ field: null, front: "app", playing: true }, "playback"],
+    [{ front: "home", playing: false }, "remote"],
+  ] as const) {
+    await send(tv, "POST", "/api/tv/context", { body });
+    assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.tv.view, view, JSON.stringify(body));
+  }
+  // What doesn't fit is left out, and no PIN is in it.
+  await send(tv, "POST", "/api/tv/context", { body: { field: { kind: "<script>" }, screen: "nowhere", playing: "yes", pin: { for: 4 } } });
+  const tidy = (await send(phone, "GET", "/api/phone/state", { token })).data.tv;
+  assert.deepEqual([tidy.field, tidy.screen, tidy.playing, tidy.pin], [{ kind: "text" }, "home", false, null]);
+  // An ask with an old count answers at once; one with nothing to wait for
+  // answers after its wait.
+  const now = (await send(phone, "GET", "/api/phone/state", { token })).data;
+  let at = Date.now();
+  await send(phone, "GET", `/api/phone/state?since=${now.version - 1}`, { token });
+  assert.ok(Date.now() - at < 300);
+  at = Date.now();
+  assert.equal((await send(phone, "GET", `/api/phone/state?since=${now.version}`, { token })).data.version, now.version);
+  assert.ok(Date.now() - at >= 350, "it waited");
+  assert.equal((await send(tv, "POST", "/api/tv/context", { body: { playing: true }, origin: "https://evil.example" })).status, 403, "not from another site");
+  assert.equal((await send(phone, "POST", "/api/tv/context", { token, body: { playing: true } })).status, 404, "nor from a phone");
+  await send(tv, "POST", "/api/tv/context", { body: { field: null } });
+});
+
+test("ADR-037 the trackpad's moves, clicks and scrolls reach the stream, Omarchy's desktop's relay makes it the trackpad, and Settings opens on the TV for an adult", async () => {
+  const controller = new AbortController();
+  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-AgenTV-Screen": "desktop" }, signal: controller.signal });
+  const got: string[] = [];
+  void (async () => {
+    for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
+      for (const match of new TextDecoder().decode(chunk).matchAll(/data: (.*)/g)) got.push(match[1]);
+    }
+  })().catch(() => {});
+  await sleep(30);
+  assert.deepEqual([(await send(phone, "GET", "/api/phone/state", { token })).data.tv.view, (await send(phone, "GET", "/api/phone/state", { token })).data.tv.desktop], ["trackpad", true]);
+  for (const body of [{ move: [12, -7] }, { click: "left" }, { click: "right" }, { scroll: -3 }]) {
+    assert.deepEqual((await send(phone, "POST", "/api/phone/remote", { token, body })).data, { ok: true }, JSON.stringify(body));
+  }
+  for (const body of [{ move: [1] }, { move: [1, "2"] }, { move: [99_999, 0] }, { click: "double" }, { scroll: 0 }, { scroll: 1.5 }]) {
+    assert.equal((await send(phone, "POST", "/api/phone/remote", { token, body })).status, 400, JSON.stringify(body));
+  }
+  await sleep(30);
+  assert.deepEqual(got, ['{"move":[12,-7]}', '{"click":"left"}', '{"click":"right"}', '{"scroll":-3}']);
+  controller.abort();
+  await sleep(50);
+  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.tv.view, "remote", "the desktop's gone");
+
+  events.length = 0;
+  assert.deepEqual((await send(phone, "POST", "/api/phone/settings", { token })).data, { ok: true });
+  await sleep(30);
+  assert.ok(events.includes('page {"route":"settings"}'), events.join("\n"));
+  // A child's profile has no Settings.
+  const state = (await send(phone, "GET", "/api/phone/state", { token })).data;
+  const child = state.viewers.find((v: any) => v.role === "child");
+  const adult = state.viewer;
+  assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: child.id } })).status, 200);
+  assert.equal((await send(phone, "POST", "/api/phone/settings", { token })).status, 403);
+  const grant = (await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).data.grant;
+  assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: adult.id }, grant })).status, 200);
 });
 
 test("S4.7 S4.8 S4.9 the phone arranges home, hears about an update, and signs in on the TV's sign-in screen", async () => {

@@ -138,6 +138,11 @@ run "$ROOT/bin/agentv-desktop-hook"
 [[ -f $loader ]] || fail "the desktop's post-boot hook puts a missing loader back"
 grep -q "hyprctl eval dofile" "$calls" || fail "and this session gets the key straight away" "$(cat "$calls")"
 pass "a desktop that missed the loader gets it, and the key, when it starts"
+grep -qx "systemctl --user start agentv-input.service agentv-desktop-remote.service" "$calls" ||
+  fail "ADR-037 the desktop starts the phone's trackpad and keys" "$(cat "$calls")"
+grep -qx "PartOf=graphical-session.target" "$ROOT/system/user/agentv-desktop-remote.service" ||
+  fail "and its relay stops with the desktop's session"
+pass "ADR-037 the phone's remote works on Omarchy's desktop, through the virtual input device"
 
 grep -qx "agentv-desktop-hook" "$ROOT/config/omarchy/hooks/post-boot.d/agentv" ||
   fail "the desktop's post-boot hook runs agentv-desktop-hook"
