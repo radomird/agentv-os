@@ -270,6 +270,12 @@ class FakeLauncher implements Launcher {
     this.firstRuns.push(cli);
     return new Promise<{ version?: string; error?: string }>((resolve) => (this.firstRunDone = resolve));
   }
+  themes: string[] = [];
+  themeDone: (why: string | null) => void = () => {};
+  setTheme(theme: string) {
+    this.themes.push(theme);
+    return new Promise<string | null>((resolve) => (this.themeDone = resolve));
+  }
   async cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }) {
     this.cliStates.push(change);
   }
@@ -1354,4 +1360,21 @@ test("S5.5 the provider's agent CLI runs for the first time only once its terms 
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(t.launcher.cliStates[3], { state: "failed", error: "mise couldn't reach the internet" });
   assert.ok(t.lines.some((line) => line.includes("fetching claude on its first run")));
+});
+
+test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, one at a time, and says why when it isn't", async () => {
+  const t = await tv();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: "../../etc" }), { ok: false, error: "an omarchy theme's name" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set" }), { ok: false, error: "an omarchy theme's name" });
+  const first = t.screen.fromHome({ cmd: "theme-set", theme: "gruvbox" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: "catppuccin-latte" }), { ok: false, error: "gruvbox is still being set" });
+  t.launcher.themeDone(null);
+  assert.deepEqual(await first, { ok: true });
+  const second = t.screen.fromHome({ cmd: "theme-set", theme: "nowhere" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  t.launcher.themeDone("Theme 'nowhere' does not exist");
+  assert.deepEqual(await second, { ok: false, error: "Theme 'nowhere' does not exist" });
+  assert.deepEqual(t.launcher.themes, ["gruvbox", "nowhere"]);
+  assert.ok(t.lines.some((line) => line.includes("setting omarchy's theme to gruvbox")));
 });

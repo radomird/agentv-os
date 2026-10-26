@@ -1,0 +1,15 @@
+# The Omarchy theme's colours for the TV as soon as a theme changes (ADR-012,
+# S5.2). omarchy-theme-set writes the theme's name once the new theme is in
+# place, before its restarts and hooks, so the TV doesn't wait on them. It
+# works in every session of the owner's: the TV's, where setup and Settings
+# pick a look, and Omarchy's desktop.
+
+[Unit]
+Description=AgenTV: hand a new Omarchy theme's colours to the TV
+
+[Path]
+PathChanged=%h/.local/state/omarchy/current/theme.name
+Unit=agentv-theme.service
+
+[Install]
+WantedBy=default.target

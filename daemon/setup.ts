@@ -13,8 +13,8 @@ import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 // The steps, in order. The welcome screen covers the Wi-Fi and pairing,
 // getting ready brings the box up to date first (board 35), the AI
 // provider comes with its terms (ADR-023), then who watches (ADR-009), what
-// the TV is for and its apps (board 09).
-export const STEPS = ["welcome", "ready", "ai", "people", "goal", "apps"] as const;
+// the TV is for, its apps (board 09) and its look (board 12).
+export const STEPS = ["welcome", "ready", "ai", "people", "goal", "apps", "theme"] as const;
 export type Step = (typeof STEPS)[number];
 
 // How the status bar counts the steps: six parts, as on the canvas, with the
@@ -26,6 +26,7 @@ export const PARTS: Record<Step, string> = {
   people: "3/6 people",
   goal: "4/6 goal",
   apps: "5/6 apps",
+  theme: "6/6 look",
 };
 
 // What the TV is for (ADR-006): it orders the apps setup suggests and picks

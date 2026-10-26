@@ -2,7 +2,7 @@
 // on the right. Look, Sound, Weather, Adult PIN, Omarchy desktop and Power work
 // now; the sections later stages build say so.
 
-import { daemon, screen, type AudioState, type WeatherPlace } from "../api.ts";
+import { daemon, screen, type AudioState, type ThemePreview, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -37,6 +37,9 @@ let weather: WeatherPlace | null = null;
 
 // The box's sound output and its volume (S2.19), the same way.
 let audio: AudioState | null = null;
+// The looks Settings → Look offers (board 12), and which one the TV has.
+let looks: { themes: ThemePreview[]; current: string | null } | null = null;
+let settingLook: string | null = null;
 // The volume the last press asked for, until the screen daemon has set it,
 // so presses quicker than its replies each go one step further.
 let volumeTarget: number | null = null;
@@ -259,10 +262,18 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "look",
       label: "look",
-      value: () => "omarchy theme",
+      value: () => looks?.themes.find((look) => look.id === looks?.current)?.name ?? "omarchy theme",
       panel: () => [
         h("div", { class: "panel-title" }, "colours"),
-        note("they come from your omarchy theme. change it on omarchy's desktop, and the tv follows."),
+        ...(looks?.themes ?? []).map((look) =>
+          h(
+            "button",
+            { class: "button", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
+            h("span", {}, look.name),
+            h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
+          ),
+        ),
+        note("they come from your omarchy theme: one of these, or any other on omarchy's desktop, and the tv follows."),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         h(
           "button",
@@ -419,6 +430,34 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = aiValue(ctx);
       if (menu.querySelector(".open")?.getAttribute("data-key") === "ai" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "ai")!);
+      }
+    })
+    .catch(() => {});
+  const setLook = async (look: ThemePreview) => {
+    if (settingLook || look.id === looks?.current) return;
+    settingLook = look.id;
+    ctx.render("settings/look", `theme-${look.id}`);
+    const reply = await screen.setTheme(look.id);
+    settingLook = null;
+    if (!reply.ok) {
+      ctx.sounds.play("failure");
+      ctx.toast(reply.error ?? `${look.name} didn't set`, "fail");
+    } else {
+      ctx.sounds.play("confirm");
+      if (looks) looks = { ...looks, current: look.id };
+    }
+    // Still on Settings, after the few seconds Omarchy takes.
+    if (menu.isConnected) ctx.render("settings/look", `theme-${look.id}`);
+  };
+  void daemon
+    .themes()
+    .then((found) => {
+      const changed = JSON.stringify(found) !== JSON.stringify(looks);
+      looks = found;
+      const item = menu.querySelector<HTMLElement>('[data-key="look"] .menu-value');
+      if (item) item.textContent = sections.find((section) => section.key === "look")!.value();
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "look" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "look")!);
       }
     })
     .catch(() => {});

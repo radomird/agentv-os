@@ -736,3 +736,101 @@
   min-height: 72px;
   font-size: 28px;
 }
+
+/* --- The look (board 12) ------------------------------------------------------ */
+
+.looks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.look {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  color: var(--bright-foreground);
+  text-align: left;
+}
+
+/* The look the TV has fills with the accent, as on the canvas; the ring
+   shows where the focus is. */
+.look.picked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+}
+
+.look.setting .look-screen {
+  animation: look-setting 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes look-setting {
+  to { opacity: 0.55; }
+}
+
+.look-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 240px;
+  padding: 14px;
+}
+
+.look-dashed {
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--dark-foreground);
+  color: var(--accent);
+}
+
+.look-tiles {
+  flex-grow: 1;
+  display: flex;
+  gap: 10px;
+}
+
+.look-big {
+  flex-grow: 2;
+  border: 3px solid;
+}
+
+.look-side {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.look-small {
+  flex-grow: 1;
+  border: 2px solid;
+}
+
+.look-bar {
+  display: flex;
+  height: 18px;
+}
+
+.look-bar-accent {
+  width: 56px;
+}
+
+.look-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.look-name {
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.look-note {
+  font-size: 22px;
+  opacity: 0.8;
+}

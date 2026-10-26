@@ -2,7 +2,7 @@
 // done, in the Terminal look (ADR-014) and the Omarchy theme's colours. One
 // step at a time: the welcome screen (the Wi-Fi and pairing), getting ready
 // (the box brings itself up to date first, board 35), the AI provider and
-// its terms, who watches, what the TV is for, its apps, and home. The daemon keeps the step in setup.json, so a restart, an
+// its terms, who watches, what the TV is for, its apps, its look, and home. The daemon keeps the step in setup.json, so a restart, an
 // update or a reboot comes back to the same one (S5.6).
 //
 // Every input works here as on home: a keyboard, the phone's remote, a
@@ -23,6 +23,7 @@ import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
 import { ready } from "./ready.ts";
+import { theme } from "./theme.ts";
 import { welcome, wifi } from "./welcome.ts";
 
 export interface View {
@@ -244,6 +245,7 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "goal") return goal(ctx);
   if (to === "apps/add") return addYourOwn(ctx);
   if (to === "apps") return apps(ctx);
+  if (to === "theme") return theme(ctx);
   return welcome(ctx);
 }
 
@@ -385,9 +387,10 @@ async function start(): Promise<void> {
         ctx.info.setup = next;
         if (local === 0 && next.step !== route.split("/")[0]) show(next.step);
       },
-      theme: () => {
+      theme: (data) => {
         const link = document.getElementById("theme") as HTMLLinkElement;
         link.href = `/api/theme.css?at=${Date.now()}`;
+        view?.heard?.("theme", data);
       },
       updates: (data) => {
         ctx.updates = data as Updates;
