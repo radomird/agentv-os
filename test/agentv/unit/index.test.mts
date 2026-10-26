@@ -1,18 +1,19 @@
 // The signed app index and the installer (daemon/apps/index.ts, install.ts):
 // a sample app installs from a signed test index, from a repo of its own or
 // its folder in a repo of several (ADR-036), and a tampered index is refused
-// (S2.1). The index here is signed by a throwaway key made for the
+// (S2.1). An app built on this box installs from its folder, once an adult
+// says yes (ADR-039). The index here is signed by a throwaway key made for the
 // test, which stands in for AgenTV's own.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { IndexError, loadIndex, parseIndex } from "../../../daemon/apps/index.ts";
-import { installFromIndex, readInstalled, removeApp } from "../../../daemon/apps/install.ts";
+import { installFromIndex, installLocal, readInstalled, removeApp } from "../../../daemon/apps/install.ts";
 
 const SAMPLE = join(import.meta.dirname, "../fixtures/apps/sample");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-index-"));
@@ -258,4 +259,111 @@ test("the index can come from an address", async () => {
   } finally {
     server.close();
   }
+});
+
+// --- An app built on this box (ADR-039) -------------------------------------
+
+// A copy of the sample app as the builder would leave it: local.sample, with
+// its fixtures, a .git and the manifest changed by edit.
+function built(edit: (manifest: Record<string, any>) => void = () => {}): string {
+  const dir = join(scratch, `built-${++count}`);
+  cpSync(SAMPLE, dir, { recursive: true });
+  mkdirSync(join(dir, ".git"));
+  writeFileSync(join(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  manifest.id = "local.sample";
+  edit(manifest);
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
+  return dir;
+}
+
+const yes = async () => true;
+
+test("ADR-039 an app built on this box installs from its folder as a local app, without its fixtures", async () => {
+  const dir = apps();
+  const from = built();
+  let asked: string | undefined;
+  const installed = await installLocal(from, dir, async (manifest) => {
+    asked = manifest.id;
+    return true;
+  });
+  assert.equal(asked, "local.sample", "the adult is asked about the app the folder holds");
+  assert.equal(installed.tier, "local");
+  assert.equal(installed.source, from);
+  assert.deepEqual(readdirSync(join(dir, "local.sample")).sort(), ["app.ts", "icon.svg", "library.ts", "manifest.json"]);
+  assert.deepEqual(readdirSync(dir).sort(), ["installed.json", "local.sample"]);
+  const record = (await readInstalled(dir))["local.sample"];
+  assert.equal(record.tier, "local");
+  assert.equal(record.version, "1.0.0");
+  assert.ok(existsSync(join(from, "fixtures")), "the folder it came from keeps its fixtures");
+});
+
+test("ADR-039 every file of a local app is readable by the daemon, and none of them is a program", async () => {
+  const dir = apps();
+  const from = built();
+  chmodSync(join(from, "app.ts"), 0o700);
+  chmodSync(join(from, "library.ts"), 0o600);
+  await installLocal(from, dir, yes);
+  assert.equal(statSync(join(dir, "local.sample")).mode & 0o777, 0o755);
+  for (const name of ["app.ts", "library.ts", "manifest.json"]) {
+    assert.equal(statSync(join(dir, "local.sample", name)).mode & 0o777, 0o644, name);
+  }
+});
+
+// Only root can give a file away, so this runs where the tests run as root:
+// a cloud session, or the box.
+test("ADR-039 installed as root, all of a local app is root's, whoever's folder it came from", { skip: process.getuid?.() !== 0 && "it needs root" }, async () => {
+  const dir = apps();
+  const from = built();
+  for (const name of ["", "app.ts", "library.ts", "manifest.json"]) chownSync(join(from, name), 65534, 65534);
+  await installLocal(from, dir, yes);
+  for (const name of ["", "app.ts", "library.ts", "manifest.json"]) {
+    const found = statSync(join(dir, "local.sample", name));
+    assert.deepEqual([found.uid, found.gid], [0, 0], name || "its folder");
+  }
+});
+
+test("ADR-039 nothing is installed without the adult's yes", async () => {
+  const dir = apps();
+  await refused(installLocal(built(), dir, async () => false), /local\.sample wasn't approved, so nothing was installed/);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("ADR-039 a folder that fails the checks as a local app isn't installed, and nobody is asked", async () => {
+  let asked = false;
+  const ask = async () => (asked = true);
+  const dir = apps();
+  await refused(installLocal(built((m) => (m.id = "agentv.sample")), dir, ask), /starts with local\./);
+  await refused(installLocal(built((m) => (m.tv.runtime = "builtin")), dir, ask), /built-in apps have tv.runtime builtin/);
+  const linked = built();
+  symlinkSync("/etc/passwd", join(linked, "passwd"));
+  await refused(installLocal(linked, dir, ask), /symlinks aren't allowed in an app package: passwd/);
+  await refused(installLocal(join(scratch, "nowhere"), dir, ask), /there's no app folder at/);
+  const empty = join(scratch, `empty-${++count}`);
+  mkdirSync(empty);
+  await refused(installLocal(empty, dir, ask), /has no manifest\.json/);
+  assert.equal(asked, false);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("ADR-039 installing a local app again replaces the old one, and it can be removed", async () => {
+  const dir = apps();
+  await installLocal(built(), dir, yes);
+  await installLocal(built((m) => (m.version = "1.0.1")), dir, yes);
+  assert.equal(JSON.parse(readFileSync(join(dir, "local.sample", "manifest.json"), "utf8")).version, "1.0.1");
+  assert.equal((await readInstalled(dir))["local.sample"].version, "1.0.1");
+  assert.deepEqual(readdirSync(dir).sort(), ["installed.json", "local.sample"]);
+  await removeApp("local.sample", dir);
+  assert.deepEqual(await readInstalled(dir), {});
+  assert.deepEqual(readdirSync(dir), ["installed.json"]);
+});
+
+test("ADR-039 a local app sits beside the index's apps without touching them", async () => {
+  const dir = apps();
+  await installFromIndex("agentv.sample", index([sample()]), dir, keyring);
+  await installLocal(built(), dir, yes);
+  const record = await readInstalled(dir);
+  assert.deepEqual(Object.keys(record).sort(), ["agentv.sample", "local.sample"]);
+  assert.equal(record["agentv.sample"].tier, "official");
+  assert.equal(record["local.sample"].tier, "local");
 });
