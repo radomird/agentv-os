@@ -1,0 +1,13 @@
+# A NAS share with a password, handed over by Music in the TV session
+# (ADR-038): when it leaves a request in the drop folder, agentv-share.service
+# keeps the password and mounts the share as root.
+
+[Unit]
+Description=AgenTV NAS share hand-over
+
+[Path]
+DirectoryNotEmpty=/var/lib/agentv/share-drop
+Unit=agentv-share.service
+
+[Install]
+WantedBy=paths.target

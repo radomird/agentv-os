@@ -1,0 +1,18 @@
+# Mounts Music's NAS shares that have a password, read-only, as the box
+# starts (ADR-038), trying a few times while the network and the NAS come up.
+# Nothing waits for it.
+
+[Unit]
+Description=AgenTV NAS shares at boot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-share-store mount-all
+TimeoutStartSec=5min
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

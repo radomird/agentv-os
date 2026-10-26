@@ -1495,6 +1495,44 @@ button {
   border: 2px solid var(--selection);
 }
 
+/* A share that isn't there: away, or root's reason, which wants doing. */
+.source .button-value.away {
+  color: var(--dark-foreground);
+}
+
+.source .button-value.problem {
+  color: var(--yellow);
+}
+
+.scan-progress:not(:empty) {
+  margin-top: 16px;
+  color: var(--dark-foreground);
+}
+
+/* The page has no scroll, so a share's address and password sit side by
+   side, as do the two buttons. */
+.share-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.share-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.sources ~ .hint {
+  margin-top: 8px;
+  color: var(--dark-foreground);
+}
+
+/* An album on a share that isn't there now. */
+.album-tile.away {
+  opacity: 0.5;
+}
+
 /* Music's tile on home: what's playing, and the albums played last. */
 .music-tile .tile-now .album-cover {
   width: 150px;

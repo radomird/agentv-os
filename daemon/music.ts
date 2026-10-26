@@ -23,6 +23,10 @@ export const AUDIO = [".mp3", ".m4a", ".aac", ".flac", ".ogg", ".oga", ".opus", 
 const PLAYLISTS = [".m3u", ".m3u8"];
 const COVERS = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png"];
 const COVER_PX = 320;
+// A big share is read a few files at a time, and the library is saved as it
+// goes, so albums show while it's read.
+const PROBES = 4;
+const SAVE_MS = 3000;
 
 export interface Track {
   id: string;
@@ -49,6 +53,9 @@ export interface Album {
   cover: string | null; // a small JPEG in the library's folder
   tracks: string[]; // track ids, in order
   source: string;
+  // On a share or folder that isn't there now (ADR-038): kept, so it isn't
+  // read from scratch when it's back, but it can't play until then.
+  away?: boolean;
 }
 
 export interface Playlist {
@@ -104,6 +111,36 @@ function number(value: string | undefined): number {
   return Number.parseInt((value ?? "").split("/")[0], 10) || 0;
 }
 
+// How far a scan has got, for Music → sources and agentv music scan.
+export interface ScanProgress {
+  scanning: boolean;
+  source: string | null; // the one being read now, by name
+  found: number; // music files found so far
+  read: number; // of those, read, or known from before
+  albums: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error?: string;
+}
+
+export type ScanStep = Pick<ScanProgress, "found" | "read" | "albums"> & { source: string };
+
+export interface ScanOptions {
+  away?: Source[]; // sources that aren't there now: their albums stay, marked away
+  progress?: (step: ScanStep) => void;
+  probes?: number; // files read at a time
+  saveEvery?: number; // ms between saves while it reads
+}
+
+// Runs work on each item, a few at a time.
+async function pool<T>(items: T[], size: number, work: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await work(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
+}
+
 export interface MusicOptions {
   dir?: string; // where the index and covers go
   run?: Run;
@@ -138,86 +175,72 @@ export class MusicLibrary {
   }
 
   // Reads every source again. A file that hasn't changed keeps what was read
-  // of it before; one that's gone goes, as do the albums left empty.
-  async scan(sources: { source: Source; path: string }[]): Promise<Library> {
+  // of it before; one that's gone goes, as do the albums left empty. The
+  // albums of a source that's away stay, marked away. While it reads, the
+  // library is saved every few seconds with what it has so far, and what's
+  // still to read keeps what was read of it before.
+  async scan(sources: { source: Source; path: string }[], options: ScanOptions = {}): Promise<Library> {
     const before = await this.load();
     const known = new Map(Object.values(before.tracks).map((track) => [track.path, track]));
+    const away = new Set((options.away ?? []).map((source) => source.id));
+    const pending = new Set(sources.map(({ source }) => source.id));
+    const seen = new Set<string>();
     const tracks: Record<string, Track> = {};
-    const albums: Record<string, Album & { years: string[] }> = {};
+    const albumIds = new Set<string>();
     const playlistFiles: { path: string; source: string }[] = [];
     const pictures = new Map<string, string>(); // album id -> a file with a picture
+    const saveEvery = options.saveEvery ?? SAVE_MS;
+    let found = 0;
+    let read = 0;
+    let savedAt = Date.now();
+    let saving = false;
+
+    // What stays from before: the tracks of a source that's away, and those
+    // of the sources the scan hasn't got to, or hasn't finished.
+    const kept = (): Record<string, Track> => {
+      const keep: Record<string, Track> = {};
+      for (const track of Object.values(before.tracks)) {
+        if (away.has(track.source) || (pending.has(track.source) && !seen.has(track.path))) keep[track.id] = track;
+      }
+      return keep;
+    };
 
     for (const { source, path: root } of sources) {
-      for (const file of await walk(root)) {
-        const ext = extname(file).toLowerCase();
-        if (PLAYLISTS.includes(ext)) {
-          playlistFiles.push({ path: file, source: source.id });
-          continue;
+      const files = await walk(root);
+      const audio = files.filter((file) => AUDIO.includes(extname(file).toLowerCase()));
+      for (const file of files) if (PLAYLISTS.includes(extname(file).toLowerCase())) playlistFiles.push({ path: file, source: source.id });
+      found += audio.length;
+      options.progress?.({ source: source.name, found, read, albums: albumIds.size });
+      await pool(audio, options.probes ?? PROBES, async (file) => {
+        seen.add(file);
+        const got = await this.read(file, source, known.get(file));
+        read++;
+        if (got) {
+          tracks[got.track.id] = got.track;
+          albumIds.add(got.track.albumId);
+          if (got.picture && !pictures.has(got.track.albumId)) pictures.set(got.track.albumId, file);
         }
-        if (!AUDIO.includes(ext)) continue;
-        const info = await stat(file).catch(() => null);
-        if (!info) continue;
-        let track = known.get(file);
-        let picture = false;
-        if (!track || track.size !== info.size || track.mtime !== info.mtimeMs) {
-          let probe: Probe = {};
-          try {
-            probe = JSON.parse(
-              await this.run("ffprobe", ["-v", "error", "-show_entries", "format=duration:format_tags:stream=codec_type:stream_tags:stream_disposition=attached_pic", "-of", "json", file]),
-            );
-          } catch {
-            continue; // not something ffprobe can read
-          }
-          const read = tagsOf(probe);
-          const { tags, duration } = read;
-          picture = read.picture;
-          const artist = tags.album_artist ?? tags.albumartist ?? tags.artist ?? "unknown artist";
-          const album = tags.album ?? basename(dirname(file));
-          track = {
-            id: hash(file),
-            path: file,
-            title: tags.title ?? basename(file, extname(file)).replace(/^\d+[\s.-]*/, ""),
-            artist: tags.artist ?? artist,
-            album,
-            albumArtist: artist,
-            albumId: hash(`${source.id}\n${words(artist)}\n${words(album)}`),
-            year: (tags.date ?? tags.year ?? "").slice(0, 4),
-            number: number(tags.track),
-            disc: number(tags.disc) || 1,
-            duration,
-            source: source.id,
-            size: info.size,
-            mtime: info.mtimeMs,
-          };
+        options.progress?.({ source: source.name, found, read, albums: albumIds.size });
+        if (!saving && Date.now() - savedAt >= saveEvery) {
+          saving = true;
+          const all = { ...kept(), ...tracks };
+          await this.save({ scannedAt: before.scannedAt, tracks: all, albums: this.albumsOf(all, before, away), playlists: before.playlists }).finally(() => {
+            savedAt = Date.now();
+            saving = false;
+          });
         }
-        tracks[track.id] = track;
-        const album = (albums[track.albumId] ??= {
-          id: track.albumId,
-          title: track.album,
-          artist: track.albumArtist,
-          year: "",
-          cover: before.albums[track.albumId]?.cover ?? null,
-          tracks: [],
-          source: track.source,
-          years: [],
-        });
-        album.tracks.push(track.id);
-        if (track.year) album.years.push(track.year);
-        if (picture && !pictures.has(track.albumId)) pictures.set(track.albumId, file);
-      }
+      });
+      pending.delete(source.id);
     }
 
-    const finished: Record<string, Album> = {};
+    const all = { ...kept(), ...tracks };
+    const albums = this.albumsOf(all, before, away);
     for (const album of Object.values(albums)) {
-      album.tracks.sort((a, b) => tracks[a].disc - tracks[b].disc || tracks[a].number - tracks[b].number || tracks[a].path.localeCompare(tracks[b].path));
-      const { years, ...rest } = album;
-      rest.year = years.sort()[0] ?? before.albums[album.id]?.year ?? "";
-      rest.cover = await this.cover(album, tracks, pictures.get(album.id));
-      finished[album.id] = rest;
+      if (!album.away) album.cover = await this.cover(album, all, pictures.get(album.id));
     }
 
     const playlists: Record<string, Playlist> = {};
-    const byPath = new Map(Object.values(tracks).map((track) => [track.path, track.id]));
+    const byPath = new Map(Object.values(all).map((track) => [track.path, track.id]));
     for (const { path } of playlistFiles) {
       const text = await readFile(path, "utf8").catch(() => "");
       const ids = text
@@ -231,10 +254,81 @@ export class MusicLibrary {
         playlists[id] = { id, name: basename(path, extname(path)), path, tracks: ids };
       }
     }
+    // A playlist on a share that's away stays with its tracks.
+    for (const playlist of Object.values(before.playlists)) {
+      if (!playlists[playlist.id] && playlist.tracks.some((id) => all[id] && away.has(all[id].source))) playlists[playlist.id] = playlist;
+    }
 
-    const library: Library = { scannedAt: new Date().toISOString(), tracks, albums: finished, playlists };
+    const library: Library = { scannedAt: new Date().toISOString(), tracks: all, albums, playlists };
     await this.save(library);
     return library;
+  }
+
+  // One file: what was read of it before if it hasn't changed, else its tags
+  // from ffprobe. Null for something ffprobe can't read.
+  private async read(file: string, source: Source, before?: Track): Promise<{ track: Track; picture: boolean } | null> {
+    const info = await stat(file).catch(() => null);
+    if (!info) return null;
+    if (before && before.size === info.size && before.mtime === info.mtimeMs && before.source === source.id) return { track: before, picture: false };
+    let probe: Probe;
+    try {
+      probe = JSON.parse(
+        await this.run("ffprobe", ["-v", "error", "-show_entries", "format=duration:format_tags:stream=codec_type:stream_tags:stream_disposition=attached_pic", "-of", "json", file]),
+      );
+    } catch {
+      return null;
+    }
+    const { tags, duration, picture } = tagsOf(probe);
+    const artist = tags.album_artist ?? tags.albumartist ?? tags.artist ?? "unknown artist";
+    const album = tags.album ?? basename(dirname(file));
+    return {
+      picture,
+      track: {
+        id: hash(file),
+        path: file,
+        title: tags.title ?? basename(file, extname(file)).replace(/^\d+[\s.-]*/, ""),
+        artist: tags.artist ?? artist,
+        album,
+        albumArtist: artist,
+        albumId: hash(`${source.id}\n${words(artist)}\n${words(album)}`),
+        year: (tags.date ?? tags.year ?? "").slice(0, 4),
+        number: number(tags.track),
+        disc: number(tags.disc) || 1,
+        duration,
+        source: source.id,
+        size: info.size,
+        mtime: info.mtimeMs,
+      },
+    };
+  }
+
+  // The albums the tracks make: each in order, named by its first track, with
+  // its earliest year and the cover it had before, and marked away when its
+  // source is.
+  private albumsOf(tracks: Record<string, Track>, before: Library, away: Set<string>): Record<string, Album> {
+    const grouped = new Map<string, Track[]>();
+    for (const track of Object.values(tracks)) {
+      const list = grouped.get(track.albumId);
+      if (list) list.push(track);
+      else grouped.set(track.albumId, [track]);
+    }
+    const albums: Record<string, Album> = {};
+    for (const [id, list] of grouped) {
+      list.sort((a, b) => a.disc - b.disc || a.number - b.number || a.path.localeCompare(b.path));
+      const first = list[0];
+      const years = list.map((track) => track.year).filter(Boolean).sort();
+      albums[id] = {
+        id,
+        title: first.album,
+        artist: first.albumArtist,
+        year: years[0] ?? before.albums[id]?.year ?? "",
+        cover: before.albums[id]?.cover ?? null,
+        tracks: list.map((track) => track.id),
+        source: first.source,
+        ...(away.has(first.source) ? { away: true } : {}),
+      };
+    }
+    return albums;
   }
 
   // A small cover for an album: a picture file beside its first track, else
@@ -265,11 +359,11 @@ export class MusicLibrary {
 
   // What matches a request like "play night shift": albums, artists, tracks
   // and playlists, best first, by their words.
-  async search(query: string, limit = 20): Promise<{ kind: "album" | "track" | "playlist"; id: string; title: string; subtitle: string }[]> {
+  async search(query: string, limit = 20): Promise<SearchResult[]> {
     const library = await this.load();
     const wanted = words(query);
     if (!wanted) return [];
-    const scored: { score: number; kind: "album" | "track" | "playlist"; id: string; title: string; subtitle: string }[] = [];
+    const scored: (SearchResult & { score: number })[] = [];
     const score = (text: string) => {
       const w = words(text);
       if (w === wanted) return 3;
@@ -278,17 +372,21 @@ export class MusicLibrary {
     };
     for (const album of Object.values(library.albums)) {
       const s = Math.max(score(album.title) + 1, score(album.artist));
-      if (s > 1 || score(album.title) > 0) scored.push({ score: s, kind: "album", id: album.id, title: album.title, subtitle: album.artist });
+      if (s > 1 || score(album.title) > 0) scored.push({ score: s, kind: "album", id: album.id, title: album.title, subtitle: album.artist, ...(album.away ? { away: true } : {}) });
     }
     for (const track of Object.values(library.tracks)) {
       const s = score(track.title);
-      if (s > 0) scored.push({ score: s, kind: "track", id: track.id, title: track.title, subtitle: `${track.artist} · ${track.album}` });
+      if (s > 0) scored.push({ score: s, kind: "track", id: track.id, title: track.title, subtitle: `${track.artist} · ${track.album}`, ...(library.albums[track.albumId]?.away ? { away: true } : {}) });
     }
     for (const playlist of Object.values(library.playlists)) {
       const s = score(playlist.name);
       if (s > 0) scored.push({ score: s, kind: "playlist", id: playlist.id, title: playlist.name, subtitle: `${playlist.tracks.length} tracks` });
     }
-    return scored.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title)).slice(0, limit).map(({ score: _score, ...rest }) => rest);
+    // What can play comes before what's away.
+    return scored
+      .sort((a, b) => Number(Boolean(a.away)) - Number(Boolean(b.away)) || b.score - a.score || a.title.localeCompare(b.title))
+      .slice(0, limit)
+      .map(({ score: _score, ...rest }) => rest);
   }
 
   // The files to play for an album, a track or a playlist, in order.
@@ -332,6 +430,14 @@ async function walk(root: string, depth = 0): Promise<string[]> {
     else if (entry.isFile()) files.push(full);
   }
   return files.sort();
+}
+
+export interface SearchResult {
+  kind: "album" | "track" | "playlist";
+  id: string;
+  title: string;
+  subtitle: string;
+  away?: boolean;
 }
 
 // --- mpv ---------------------------------------------------------------------
@@ -558,6 +664,7 @@ export class MusicApp {
   private timer?: ReturnType<typeof setInterval>;
   private scanning?: Promise<Library>;
   private again?: Promise<Library>;
+  private state: ScanProgress = { scanning: false, source: null, found: 0, read: 0, albums: 0, startedAt: null, finishedAt: null };
   private every: number;
 
   constructor(options: MusicAppOptions) {
@@ -569,9 +676,15 @@ export class MusicApp {
     this.log = options.log ?? (() => {});
   }
 
+  // How far the scan has got. One waiting to run after it counts as running.
+  progress(): ScanProgress {
+    return { ...this.state, scanning: this.state.scanning || this.again !== undefined };
+  }
+
   // Reads every source again, mounting the USB drives plugged in and the
-  // shares that need no password first. One scan at a time: one asked for
-  // while another runs comes after it, so it sees a source added meanwhile.
+  // shares that are away first. A folder or share that's still away keeps
+  // its albums, marked away. One scan at a time: one asked for while another
+  // runs comes after it, so it sees a source added meanwhile.
   scan(): Promise<Library> {
     if (this.scanning) {
       this.again ??= this.scanning
@@ -582,22 +695,31 @@ export class MusicApp {
         });
       return this.again;
     }
+    this.state = { scanning: true, source: null, found: 0, read: 0, albums: 0, startedAt: new Date().toISOString(), finishedAt: null };
     this.scanning = (async () => {
       for (const source of await this.storage.sources()) {
         if (source.available) continue;
         try {
           if (source.kind === "usb") await this.storage.mountUsb(source.id.slice("usb:".length));
-          if (source.kind === "share" && !new URL(source.id.slice("share:".length)).username) await this.storage.mountShare(source.id.slice("share:".length));
+          if (source.kind === "share") await this.storage.mountShare(source.id.slice("share:".length));
         } catch (error) {
           this.log(`music: ${source.name} isn't there: ${(error as Error).message}`);
         }
       }
-      const library = await this.library.scan(await this.storage.paths());
-      this.log(`music: ${Object.keys(library.albums).length} albums, ${Object.keys(library.tracks).length} tracks`);
+      const away = (await this.storage.sources()).filter((source) => !source.available && source.kind !== "usb");
+      const library = await this.library.scan(await this.storage.paths(), { away, progress: (step) => Object.assign(this.state, step) });
+      const albums = Object.keys(library.albums).length;
+      this.state = { ...this.state, scanning: false, source: null, albums, finishedAt: new Date().toISOString() };
+      this.log(`music: ${albums} albums, ${Object.keys(library.tracks).length} tracks`);
       return library;
-    })().finally(() => {
-      this.scanning = undefined;
-    });
+    })()
+      .catch((error: Error) => {
+        this.state = { ...this.state, scanning: false, source: null, finishedAt: new Date().toISOString(), error: error.message };
+        throw error;
+      })
+      .finally(() => {
+        this.scanning = undefined;
+      });
     return this.scanning;
   }
 
@@ -659,6 +781,9 @@ export class MusicApp {
         }
         const tracks = await this.library.queue(kind, id);
         if (tracks.length === 0) return { ok: false, error: "there's nothing to play there" };
+        const library = await this.library.load();
+        const awayAlbum = tracks.map((track) => library.albums[track.albumId]).find((album) => album?.away);
+        if (awayAlbum) return { ok: false, error: `${awayAlbum.title} is on a share that isn't there right now` };
         await this.player.play(tracks, Number(request.from) || 0);
         await this.played(tracks[0].albumId);
         this.watch();
@@ -684,21 +809,30 @@ export class MusicApp {
         return { ok: true, albums: albums.map((album) => ({ id: album.id, title: album.title, artist: album.artist })) };
       }
       case "sources":
-        return { ok: true, sources: await this.storage.sources() };
+        return { ok: true, sources: await this.storage.sources(), progress: this.progress() };
+      // A scan runs in the background; Music → sources and agentv music
+      // scan --wait follow it with progress. With wait, the answer waits for
+      // it, which only the tests ask for.
       case "scan": {
-        const library = await this.scan();
-        return { ok: true, albums: Object.keys(library.albums).length, tracks: Object.keys(library.tracks).length };
+        if (request.wait === true) {
+          const library = await this.scan();
+          return { ok: true, albums: Object.keys(library.albums).length, tracks: Object.keys(library.tracks).length };
+        }
+        this.scan().catch(() => {});
+        return { ok: true, progress: this.progress() };
       }
+      case "progress":
+        return { ok: true, progress: this.progress() };
       case "mount":
         return { ok: true, path: await this.storage.mountUsb(text("device")) };
       case "add-share": {
         const source = await this.storage.addShare(text("uri"), request.password === undefined ? undefined : text("password"));
-        void this.scan();
+        this.scan().catch(() => {});
         return { ok: true, source };
       }
       case "add-folder": {
         const source = await this.storage.addFolder(text("path"));
-        void this.scan();
+        this.scan().catch(() => {});
         return { ok: true, source };
       }
       case "remove":
