@@ -200,19 +200,37 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
 export interface Background {
   id: string;
   type: string;
+  kind: "photo" | "art";
   credit: { text: string | null; from: string };
   added: string;
 }
 
 export interface Backgrounds {
-  source: "field" | "photos";
+  source: "field" | "photos" | "art";
   current: string | null;
   items: Background[];
 }
 
+// A work from a museum archive, as the art picker lists it.
+export interface Art {
+  archive: "met" | "aic" | "commons";
+  id: string;
+  title: string;
+  artist: string | null;
+  date: string | null;
+  credit: string;
+  page: string | null;
+}
+
 // What the ambient screen says under a picture.
 export function creditLine(item: Background): string {
-  return item.credit.text ?? `photo · ${item.credit.from}`;
+  return item.credit.text ?? (item.kind === "art" ? item.credit.from : `photo · ${item.credit.from}`);
+}
+
+// The pictures the chosen source shows: the photos, or the art.
+export function shownPictures(backgrounds: Backgrounds | null): Background[] {
+  const kind = backgrounds?.source === "photos" ? "photo" : backgrounds?.source === "art" ? "art" : null;
+  return kind ? backgrounds!.items.filter((item) => item.kind === kind) : [];
 }
 
 // One of Omarchy's themes setup and Settings offer (board 12), with the
@@ -236,6 +254,10 @@ export const daemon = {
   tonight: (version: string | null, grant?: string) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }, grant),
   backgrounds: () => call<Backgrounds>("GET", "/api/backgrounds"),
   chooseBackground: (source: Backgrounds["source"], current?: string) => call<Backgrounds>("POST", "/api/backgrounds", { source, current }),
+  // Art from museum archives: a search of one, and a work picked.
+  archives: () => call<{ archives: { id: Art["archive"]; name: string }[] }>("GET", "/api/art").then((r) => r.archives),
+  searchArt: (archive: Art["archive"], words: string) => call<{ items: Art[] }>("GET", `/api/art/search?archive=${archive}&q=${encodeURIComponent(words)}`).then((r) => r.items),
+  pickArt: (archive: Art["archive"], id: string) => call<Backgrounds & { background: Background }>("POST", "/api/backgrounds/art", { archive, id }),
   // The looks setup and Settings → Look offer, and which one the TV has.
   themes: () => call<{ themes: ThemePreview[]; current: string | null }>("GET", "/api/themes"),
   weather: () => call<WeatherPlace>("GET", "/api/weather"),

@@ -74,6 +74,8 @@ export interface BoxOptions {
   interfaces?: () => Record<string, unknown[]>;
   zone?: string; // the box's time zone, "Europe/Amsterdam"
   forecast?: string; // where Weather asks for its forecast instead of MET Norway
+  // The museum archives' stand-in (archives.mts), for the art picker.
+  art?: { endpoints: Record<"met" | "aic" | "commons", string>; imageHosts: string[] };
 }
 
 // AgenTV's built-ins, with the weather pointed at the test's own server.
@@ -228,6 +230,7 @@ export async function startBox(
     // Omarchy's themes, from this checkout, for setup's look.
     omarchy: ROOT,
     backgrounds: join(state, "..", "backgrounds"),
+    art: options.art,
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };

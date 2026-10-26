@@ -1,0 +1,26 @@
+{
+  "preference": null,
+  "pagination": { "total": 2, "limit": 12, "offset": 0, "total_pages": 1, "current_page": 1 },
+  "data": [
+    {
+      "_score": 120.5,
+      "id": 900001,
+      "title": "Water Lilies",
+      "image_id": "00000000-0000-0000-0000-000000000001",
+      "artist_title": "Claude Monet",
+      "date_display": "1906",
+      "is_public_domain": true
+    },
+    {
+      "_score": 98.1,
+      "id": 900002,
+      "title": "A work still in copyright",
+      "image_id": "00000000-0000-0000-0000-000000000002",
+      "artist_title": "Someone living",
+      "date_display": "2001",
+      "is_public_domain": false
+    }
+  ],
+  "info": { "license_text": "The `description` field in this response is licensed under a Creative Commons Attribution 4.0 Generic License (CC-By) and the Terms and Conditions of artic.edu. All other data in this response is licensed under a Creative Commons Zero (CC0) 1.0 designation and the Terms and Conditions of artic.edu.", "version": "1.13" },
+  "config": { "iiif_url": "https://www.artic.edu/iiif/2", "website_url": "http://www.artic.edu" }
+}

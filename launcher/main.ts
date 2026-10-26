@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { creditLine, daemon, listen, screen, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
+import { creditLine, daemon, listen, screen, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
@@ -320,13 +320,14 @@ function apply(settings: Settings): void {
   document.documentElement.classList.toggle("reduce-motion", settings.reduceMotion);
 }
 
-// The background (ADR-012, S5.3): the photo chosen, behind home, dimmed so
-// the tiles read over it; or the theme's own colour with none.
+// The background (ADR-012, S5.3): the photo or work chosen, behind home,
+// dimmed so the tiles read over it; or the theme's own colour with none.
 const backdropEl = document.getElementById("backdrop")!;
 let backgrounds: Backgrounds | null = null;
 
 function drawBackdrop(): void {
-  const item = backgrounds?.source === "photos" ? backgrounds.items.find((one) => one.id === backgrounds?.current) : undefined;
+  const pictures = shownPictures(backgrounds);
+  const item = pictures.find((one) => one.id === backgrounds?.current) ?? pictures[0];
   const shown = backdropEl.querySelector("img")?.dataset.id;
   if (item && item.id !== shown) backdropEl.replaceChildren(h("img", { class: "backdrop-picture", src: `/api/backgrounds/${item.id}`, alt: "", "data-id": item.id }));
   else if (!item) backdropEl.replaceChildren();
@@ -338,7 +339,7 @@ async function loadBackgrounds(): Promise<void> {
   drawBackdrop();
 }
 
-// The ambient screen (ADR-012, ADR-031): the photos one after another, each
+// The ambient screen (ADR-012, ADR-031): the photos or works one after another, each
 // with its credit, slowly drifting, or the theme's pixel field with none,
 // and the time and the day. The screen daemon shows it after a while with
 // no input, or once the TV has been off for a while; any key, click or mouse
@@ -359,7 +360,7 @@ function setAmbient(on: boolean): void {
     const time = h("div", { class: "ambient-time" }, clock());
     const pictures = h("div", { class: "ambient-pictures" });
     const credit = h("div", { class: "ambient-credit" });
-    const photos = backgrounds?.source === "photos" ? backgrounds.items : [];
+    const photos = shownPictures(backgrounds);
     let at = Math.max(0, photos.findIndex((item) => item.id === backgrounds?.current));
     const next = () => {
       const item = photos[at % photos.length];

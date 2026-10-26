@@ -1,0 +1,88 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 90000001,
+        "ns": 6,
+        "title": "File:Claude Monet - Water Lilies - 1906, Ryerson.jpg",
+        "index": 1,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Claude_Monet_-_Water_Lilies_-_1906%2C_Ryerson.jpg/3840px-Claude_Monet_-_Water_Lilies_-_1906%2C_Ryerson.jpg",
+            "thumbwidth": 3840,
+            "thumbheight": 3492,
+            "url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Claude_Monet_-_Water_Lilies_-_1906%2C_Ryerson.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Claude_Monet_-_Water_Lilies_-_1906,_Ryerson.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "ObjectName": { "value": "Water Lilies", "source": "commons-desc-page" },
+              "Artist": { "value": "<a href=\"https://en.wikipedia.org/wiki/Claude_Monet\" class=\"extiw\" title=\"en:Claude Monet\">Claude Monet</a>&nbsp;", "source": "commons-desc-page" },
+              "DateTimeOriginal": { "value": "1906", "source": "commons-desc-page" },
+              "LicenseShortName": { "value": "Public domain", "source": "commons-desc-page", "hidden": "" }
+            }
+          }
+        ]
+      },
+      {
+        "pageid": 90000002,
+        "ns": 6,
+        "title": "File:Harbour at dusk.jpg",
+        "index": 2,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Harbour_at_dusk.jpg",
+            "thumbwidth": 2400,
+            "thumbheight": 1600,
+            "url": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Harbour_at_dusk.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Harbour_at_dusk.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "Artist": { "value": "<bdi>A. Photographer</bdi>", "source": "commons-desc-page" },
+              "DateTimeOriginal": { "value": "2019-06-01 21:04:11", "source": "commons-desc-page" },
+              "LicenseShortName": { "value": "CC BY-SA 4.0", "source": "commons-desc-page", "hidden": "" }
+            }
+          }
+        ]
+      },
+      {
+        "pageid": 90000003,
+        "ns": 6,
+        "title": "File:Not free.jpg",
+        "index": 3,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Not_free.jpg/3840px-Not_free.jpg",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/1/12/Not_free.jpg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Not_free.jpg",
+            "mime": "image/jpeg",
+            "extmetadata": {
+              "LicenseShortName": { "value": "Fair use", "source": "commons-desc-page" }
+            }
+          }
+        ]
+      },
+      {
+        "pageid": 90000004,
+        "ns": 6,
+        "title": "File:A drawing.svg",
+        "index": 4,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/A_drawing.svg/3840px-A_drawing.svg.png",
+            "url": "https://upload.wikimedia.org/wikipedia/commons/2/23/A_drawing.svg",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:A_drawing.svg",
+            "mime": "image/svg+xml",
+            "extmetadata": {
+              "LicenseShortName": { "value": "CC0", "source": "commons-desc-page" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

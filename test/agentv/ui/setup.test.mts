@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
+import { startArchives, type Archives } from "./archives.mts";
 import { ROOT, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -32,6 +33,7 @@ let hotspot = "";
 let captive = "";
 let updates = "";
 let online = true;
+let archives: Archives;
 const errors: string[] = [];
 const tools = mkdtempSync(join(tmpdir(), "agentv-setup-ui-"));
 const path = process.env.PATH;
@@ -41,7 +43,8 @@ before(async () => {
   chmodSync(join(tools, "qrencode"), 0o755);
   process.env.PATH = `${tools}:${path}`;
   const wired = { eth0: [{ address: "192.168.1.20", netmask: "255.255.255.0", family: "IPv4", mac: "00:00:00:00:00:01", internal: false, cidr: "192.168.1.20/24" }] };
-  ({ daemon, url, state, hotspot, updates } = await startBox(0, undefined, { interfaces: () => (online ? wired : {}) }));
+  archives = await startArchives();
+  ({ daemon, url, state, hotspot, updates } = await startBox(0, undefined, { interfaces: () => (online ? wired : {}), art: archives.options }));
   captive = `http://127.0.0.1:${daemon.setupPort}`;
   writeFileSync(
     join(hotspot, "networks.json"),
@@ -58,6 +61,7 @@ before(async () => {
 after(async () => {
   await browser?.close();
   await daemon?.close();
+  archives?.close();
   process.env.PATH = path;
   rmSync(tools, { recursive: true, force: true });
   assert.deepEqual(errors, []);
@@ -813,8 +817,8 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "field");
   assert.match(await textOf(page, ".bar"), /6\/6 look/);
 
-  // The others are coming soon.
-  await page.locator('[data-background="art"]').click();
+  // A shared folder is coming soon.
+  await page.locator('[data-background="folder"]').click();
   await page.waitForFunction(() => /coming soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
 
   // Your photos, with none yet: send one from the phone.
@@ -837,6 +841,46 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   await page.waitForSelector(".grid .tile", { timeout: 10_000 });
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.done, true);
   await page.waitForSelector("#backdrop img");
+  await post("/api/backgrounds", { source: "field" });
+  await page.close();
+});
+
+test("the background: art from a museum archive, searched through the daemon and picked, becomes it with its credit", async () => {
+  await toApps("streaming");
+  await post("/api/setup/finish", { step: "apps" });
+  await post("/api/setup/finish", { step: "theme" });
+  await post("/api/backgrounds", { source: "field" });
+  const page = await tv();
+  await page.waitForSelector(".backs .back");
+  await page.locator('[data-background="art"]').click();
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a work.");
+  assert.deepEqual(await page.locator(".archive").allInnerTexts(), ["the met", "art institute of chicago", "wikimedia commons"]);
+  assert.equal(await page.locator(".archive.picked").getAttribute("data-archive"), "met");
+  // The first words find nothing in the stand-in; the page says so.
+  await page.waitForFunction(() => /nothing from the met for that/.test(document.querySelector(".setup-note")?.textContent ?? ""));
+
+  // Words of your own, typed here: Enter looks.
+  await page.locator('[data-action="words"]').fill("sea");
+  await page.locator('[data-action="words"]').focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelectorAll(".works .work").length === 2);
+  assert.deepEqual(await page.locator(".work .look-name").allInnerTexts(), ["the sea", "the sea"]);
+  assert.deepEqual(await page.locator(".work .look-note").allInnerTexts(), ["gustave courbet, 1865 or later", "john frederick kensett, 1872"]);
+  assert.match(await textOf(page, ".setup-note"), /2 works from the met, free to show/);
+  // Thumbnails come through the daemon.
+  await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".work-shot img")].every((img) => img.complete && img.naturalWidth > 0));
+  assert.ok((await page.locator(".work-shot img").first().getAttribute("src"))?.startsWith("/api/art/met/"));
+
+  // Another archive, and a work picked.
+  await page.locator('[data-archive="commons"]').click();
+  await page.waitForFunction(() => document.querySelector('.works .work[data-work="commons/90000002"]') !== null);
+  await page.locator('[data-work="commons/90000002"]').click();
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
+  await page.waitForSelector('.back.picked[data-background="art"]');
+  assert.match(await textOf(page, ".setup-note"), /Harbour at dusk · A\. Photographer, 2019-06-01 21:04:11 · cc by-sa 4\.0 · wikimedia commons/);
+  const now = await (await fetch(`${url}/api/backgrounds`)).json();
+  assert.equal(now.source, "art");
+  assert.equal(now.items.find((item: { id: string }) => item.id === now.current).credit.from, "wikimedia commons");
   await post("/api/backgrounds", { source: "field" });
   await page.close();
 });

@@ -1,14 +1,15 @@
 // Backgrounds (ADR-012, board 13, S5.3): the pictures behind home and on
 // the ambient screen, each kept with its credit, which the ambient screen
-// shows. The first source is the household's own photos, sent from a phone
-// (Share → TV on the web companion), kept in /var/lib/agentv/backgrounds.
-// With none chosen, the TV keeps its theme's pixel field.
+// shows: the household's own photos, sent from a phone (Share → TV on the
+// web companion), and works picked from museum archives (art.ts), each kept
+// in /var/lib/agentv/backgrounds. With none chosen, the TV keeps its
+// theme's pixel field.
 
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export const SOURCES = ["field", "photos"] as const;
+export const SOURCES = ["field", "photos", "art"] as const;
 export type Source = (typeof SOURCES)[number];
 
 export type ImageType = "image/jpeg" | "image/png" | "image/webp";
@@ -24,6 +25,8 @@ export interface Credit {
 export interface Background {
   id: string;
   type: ImageType;
+  // A photo from a phone, or a work from an archive.
+  kind: "photo" | "art";
   credit: Credit;
   added: string;
 }
@@ -35,7 +38,8 @@ export interface BackgroundState {
   items: Background[];
 }
 
-// A photo is at most this big, and the box keeps this many, the newest.
+// A picture is at most this big, and the box keeps this many photos and as
+// many works, the newest.
 export const MAX_BYTES = 15 * 1024 * 1024;
 export const MAX_PHOTOS = 60;
 
@@ -51,11 +55,14 @@ export function imageType(body: Buffer): ImageType | null {
 }
 
 // A credit line as people type it: one line, plain text, not too long.
-export function creditText(text: unknown): string | null {
+export function creditText(text: unknown, most = 120): string | null {
   if (typeof text !== "string") return null;
   const clean = text.replace(/[\u0000-\u001f\u007f<>]/g, " ").replace(/\s+/g, " ").trim();
-  return clean ? clean.slice(0, 120) : null;
+  return clean ? clean.slice(0, most) : null;
 }
+
+// The kind of picture a source shows.
+const KIND: Record<Source, Background["kind"] | null> = { field: null, photos: "photo", art: "art" };
 
 function fresh(): BackgroundState {
   return { source: "field", current: null, items: [] };
@@ -75,12 +82,14 @@ export class Backgrounds {
     } catch {
       return fresh();
     }
-    const items = (Array.isArray(data.items) ? data.items : []).filter(
-      (item): item is Background => typeof item?.id === "string" && ID.test(item.id) && item.type in EXTENSIONS && typeof item.credit?.from === "string",
-    );
-    const source = SOURCES.includes(data.source as Source) ? (data.source as Source) : "field";
+    // A box from before art kept only photos, with no kind.
+    const items = (Array.isArray(data.items) ? data.items : [])
+      .filter((item): item is Background => typeof item?.id === "string" && ID.test(item.id) && item.type in EXTENSIONS && typeof item.credit?.from === "string")
+      .map((item) => ({ ...item, kind: item.kind === "art" ? ("art" as const) : ("photo" as const) }));
+    const chosen = SOURCES.includes(data.source as Source) ? (data.source as Source) : "field";
+    const source = KIND[chosen] && !items.some((item) => item.kind === KIND[chosen]) ? "field" : chosen;
     const current = items.some((item) => item.id === data.current) ? (data.current as string) : (items[0]?.id ?? null);
-    return { source: source === "photos" && items.length === 0 ? "field" : source, current, items };
+    return { source, current, items };
   }
 
   private async save(state: BackgroundState): Promise<BackgroundState> {
@@ -91,9 +100,10 @@ export class Backgrounds {
     return state;
   }
 
-  // A photo from a phone becomes the background, newest first; the oldest
-  // goes once there are more than the box keeps.
-  async add(body: Buffer, credit: { text?: unknown; from: string }): Promise<{ item?: Background; state?: BackgroundState; error?: string }> {
+  // A photo from a phone, or a work from an archive, becomes the
+  // background, newest first; the oldest of its kind goes once there are
+  // more than the box keeps.
+  async add(body: Buffer, credit: { text?: unknown; from: string }, kind: Background["kind"] = "photo"): Promise<{ item?: Background; state?: BackgroundState; error?: string }> {
     if (body.length > MAX_BYTES) return { error: "that photo is too big: 15 mb at most" };
     const type = imageType(body);
     if (!type) return { error: "a photo the tv can show: jpeg, png or webp" };
@@ -101,23 +111,29 @@ export class Backgrounds {
     const item: Background = {
       id: randomBytes(8).toString("hex"),
       type,
-      credit: { text: creditText(credit.text), from: creditText(credit.from) ?? "a phone" },
+      kind,
+      credit: { text: creditText(credit.text, kind === "art" ? 200 : 120), from: creditText(credit.from) ?? "a phone" },
       added: new Date().toISOString(),
     };
     await mkdir(this.dir, { recursive: true });
     await writeFile(join(this.dir, `${item.id}.${EXTENSIONS[type]}`), body);
     state.items.unshift(item);
-    for (const old of state.items.splice(MAX_PHOTOS)) await rm(join(this.dir, `${old.id}.${EXTENSIONS[old.type]}`), { force: true });
-    state.source = "photos";
+    const same = state.items.filter((one) => one.kind === kind);
+    for (const old of same.slice(MAX_PHOTOS)) {
+      state.items = state.items.filter((one) => one !== old);
+      await rm(join(this.dir, `${old.id}.${EXTENSIONS[old.type]}`), { force: true });
+    }
+    state.source = kind === "art" ? "art" : "photos";
     state.current = item.id;
     return { item, state: await this.save(state) };
   }
 
-  // The source the TV shows: its pixel field, or the photos.
+  // The source the TV shows: its pixel field, the photos or the art.
   async choose(source: unknown, current?: unknown): Promise<{ state?: BackgroundState; error?: string }> {
-    if (!SOURCES.includes(source as Source)) return { error: `a source: ${SOURCES.join(" or ")}` };
+    if (!SOURCES.includes(source as Source)) return { error: `a source: ${SOURCES.join(", ")}` };
     const state = await this.read();
-    if (source === "photos" && state.items.length === 0) return { error: "send a photo from your phone first" };
+    if (source === "photos" && !state.items.some((item) => item.kind === "photo")) return { error: "send a photo from your phone first" };
+    if (source === "art" && !state.items.some((item) => item.kind === "art")) return { error: "pick a work from an archive first" };
     state.source = source as Source;
     if (typeof current === "string" && state.items.some((item) => item.id === current)) state.current = current;
     return { state: await this.save(state) };
@@ -130,7 +146,7 @@ export class Backgrounds {
     state.items = state.items.filter((one) => one !== item);
     await rm(join(this.dir, `${item.id}.${EXTENSIONS[item.type]}`), { force: true });
     if (state.current === item.id) state.current = state.items[0]?.id ?? null;
-    if (state.items.length === 0) state.source = "field";
+    if (KIND[state.source] && !state.items.some((one) => one.kind === KIND[state.source])) state.source = "field";
     return { state: await this.save(state) };
   }
 

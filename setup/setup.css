@@ -961,3 +961,90 @@
 .player.muted .eq-bar {
   opacity: 0.5;
 }
+
+/* --- Art from museum archives (ADR-012) ------------------------------------------ */
+
+/* The archives and the words on the left, the works on the right, clear of
+   the soundtrack's player in the bottom-left corner. */
+.art-page {
+  display: grid;
+  grid-template-columns: 560px minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.art-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.chips.archives {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.chip {
+  padding: 10px 22px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  color: var(--bright-foreground);
+  font: inherit;
+  font-size: 24px;
+}
+
+.chip.picked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+}
+
+.works {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  color: var(--bright-foreground);
+  text-align: left;
+  overflow: hidden;
+}
+
+.work-shot {
+  height: 110px;
+  overflow: hidden;
+  background: var(--dark-background);
+}
+
+.work-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.work .look-name {
+  font-size: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.work .look-note {
+  font-size: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

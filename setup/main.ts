@@ -20,7 +20,7 @@ import { Sounds } from "../launcher/sounds.ts";
 import { aiStep, cliLine, path } from "./ai.ts";
 import { setup, type AiInfo, type Installs, type Provider, type SetupInfo, type Step } from "./api.ts";
 import { addYourOwn, apps, installLine } from "./apps.ts";
-import { background, photos } from "./background.ts";
+import { art, background, photos } from "./background.ts";
 import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
@@ -253,6 +253,7 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "apps") return apps(ctx);
   if (to === "theme") return theme(ctx);
   if (to === "background/photos") return photos(ctx);
+  if (to === "background/art") return art(ctx);
   if (to === "background") return background(ctx);
   return welcome(ctx);
 }
