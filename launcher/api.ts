@@ -215,12 +215,16 @@ export const daemon = {
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
 };
 
-// Things that changed, as the daemon tells them.
-export function listen(handlers: Record<string, (data: unknown) => void>): void {
+// Things that changed, as the daemon tells them. opened runs each time the
+// stream opens: the first time, a moment after the page asked for what it
+// shows, and again after a drop, such as the daemon restarting. Whatever
+// changed in between came with no event the page heard.
+export function listen(handlers: Record<string, (data: unknown) => void>, opened?: () => void): void {
   const source = new EventSource("/api/events");
   for (const [event, handler] of Object.entries(handlers)) {
     source.addEventListener(event, (message) => handler(JSON.parse((message as MessageEvent).data)));
   }
+  if (opened) source.addEventListener("open", () => opened());
 }
 
 // --- The screen daemon ------------------------------------------------------

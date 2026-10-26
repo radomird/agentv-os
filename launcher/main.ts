@@ -508,6 +508,17 @@ async function switched(): Promise<void> {
   redraw();
 }
 
+// What changed while the page wasn't hearing the daemon's events: another
+// viewer, as a switch from the phone, or anything else on home.
+async function catchUp(): Promise<void> {
+  const was = ctx.state.viewer.id;
+  const state = await daemon.home();
+  if (state.viewer.id !== was) return switched();
+  await refresh();
+  setLock(ctx.state.pin?.locked === true);
+  void daemon.updates().then(setUpdates).catch(() => {});
+}
+
 // The page again, in place, with the focus where it was.
 function redraw(): void {
   const current = focus.get();
@@ -592,7 +603,7 @@ async function start(): Promise<void> {
       setLock(status.locked);
       if (history[history.length - 1].startsWith("settings")) redraw();
     },
-  });
+  }, () => void catchUp().catch(() => {}));
   void daemon.updates().then(setUpdates).catch(() => {});
   void sounds.load();
   // The screen daemon calls these: Home when the home screen is already in
