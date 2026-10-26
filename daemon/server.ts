@@ -383,7 +383,7 @@ export class Daemon {
       update: await this.phoneUpdate(),
       tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
       // TV setup's step, while it's on (stage 5): the phone says where it is.
-      setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step] },
+      setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step], muted: setup.muted },
       // What setup's AI step asks of the phone (ADR-023): the provider's
       // terms for an adult to accept, then the key.
       ai: await this.aiAsk(setup),
@@ -695,6 +695,23 @@ export class Daemon {
       const layout = await this.home.layout(viewer.id, viewer.role);
       this.broadcast("layout", { viewer: viewer.id, layout });
       this.json(response, 200, { ok: true, layout });
+      return;
+    }
+
+    // The setup soundtrack, muted or playing again from the phone (S5.4),
+    // while setup is on.
+    if (method === "POST" && path === "/api/phone/setup-music") {
+      if ((await this.setup()).done) {
+        this.json(response, 409, { ok: false, error: "setup is done" });
+        return;
+      }
+      const result = await this.setupState.setMuted(((await this.body(request)) as { muted?: unknown } | undefined)?.muted);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("setup", result.state);
+      this.json(response, 200, { ok: true, muted: result.state.muted });
       return;
     }
 
@@ -1154,6 +1171,22 @@ export class Daemon {
       const setup = await this.setup();
       const list = await this.setupApps.list(setup.goal, await this.home.apps());
       this.json(response, 200, { ok: true, goal: setup.goal, wishes: setup.wishes, ...list });
+      return;
+    }
+
+    // The setup soundtrack muted with the TV's M, or playing again.
+    if (method === "POST" && path === "/api/setup/music") {
+      if ((await this.setup()).done) {
+        this.json(response, 409, { ok: false, error: "setup is done" });
+        return;
+      }
+      const result = await this.setupState.setMuted(((await this.body(request)) as { muted?: unknown } | undefined)?.muted);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("setup", result.state);
+      this.json(response, 200, { ok: true, setup: result.state });
       return;
     }
 

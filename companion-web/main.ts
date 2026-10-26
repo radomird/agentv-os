@@ -51,7 +51,7 @@ interface State {
   update: Update | null;
   tv: Tv;
   // TV setup's step, while it's on (stage 5).
-  setup: { step: string; part: string } | null;
+  setup: { step: string; part: string; muted: boolean } | null;
   // What setup's AI step asks of the phone (ADR-023): the provider's terms
   // for an adult to accept, then the key.
   ai: Ask | null;
@@ -567,6 +567,27 @@ function draw(): void {
   // During TV setup, where the TV is: the remote and the keyboard drive it.
   if (state.setup) {
     banners.push(h("p", { class: "note with-icon setup-step", "data-setup": state.setup.step }, glyph("tv", 16), h("span", {}, `tv setup · ${state.setup.part}`)));
+  }
+  // The setup soundtrack, muted from here or playing again (S5.4).
+  if (state.setup) {
+    const muted = state.setup.muted;
+    banners.push(
+      h(
+        "button",
+        {
+          type: "button",
+          class: "banner",
+          "data-action": "setup-music",
+          onclick: () =>
+            void api("POST", "/api/phone/setup-music", { muted: !muted }).then(
+              () => refresh(true),
+              (error) => failed(error),
+            ),
+        },
+        glyph("music", 18),
+        h("span", {}, muted ? "play the setup music ›" : "mute the setup music ›"),
+      ),
+    );
   }
   // Setup's background: a photo from here.
   if (state.setup?.step === "background" && mode !== "photo") {

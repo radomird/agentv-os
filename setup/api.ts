@@ -15,6 +15,8 @@ export interface SetupState {
   ready: { asked: string | null; update: UpdateFirst | null; from: string | null; to: string | null };
   // The apps asked for at "+ add your own", kept for later.
   wishes: string[];
+  // The soundtrack muted (S5.4).
+  muted: boolean;
 }
 
 export interface Hotspot {
@@ -122,6 +124,7 @@ export const setup = {
   ai: () => call<AiInfo>("GET", "/api/ai"),
   choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
   key: (provider: Provider, key: string) => call<{ set: boolean }>("PUT", "/api/key", { provider, key }),
+  music: async (muted: boolean) => (await call<{ setup: SetupState }>("POST", "/api/setup/music", { muted })).setup,
   apps: () => call<SetupApps>("GET", "/api/setup/apps"),
   install: async (ids: string[], grant?: string) => (await call<{ apps: Installs }>("POST", "/api/setup/apps", { install: ids }, grant)).apps,
   wish: (text: string) => call<{ setup: SetupState }>("POST", "/api/setup/wish", { text }),
