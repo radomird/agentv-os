@@ -24,7 +24,7 @@ interface Card {
 const CARDS: Card[] = [
   { id: "field", name: "pixel field", note: "default" },
   { id: "photos", name: "your photos", note: "sent from your phone", icon: "photo" },
-  { id: "folder", name: "shared folder", note: "a folder or a nas", icon: "grid" },
+  { id: "folder", name: "shared folder", note: "nas or immich", icon: "grid" },
   { id: "art", name: "art", note: "museum archives", icon: "spark" },
   { id: "made", name: "made for you", note: "your agent will draw it", icon: "spark", soon: "your tv's agent will draw backgrounds soon" },
 ];
@@ -267,6 +267,8 @@ export function art(ctx: Ctx): View {
 // which the TV session reads. OK on one copies up to 60 of its pictures to
 // the box as the background. A share can be added here too, as in Music →
 // sources: its password is typed once and kept where only root can read it.
+// Or an Immich album, through the link its owner shares it with, which the
+// box doesn't keep.
 interface FolderInfo {
   id: string;
   kind: "folder" | "usb" | "share";
@@ -298,6 +300,43 @@ export function folder(ctx: Ctx): View {
     "aria-label": "the share's password",
     autocomplete: "off",
   }) as HTMLInputElement;
+
+  const link = h("input", {
+    class: "text-field art-field",
+    "data-focus": true,
+    "data-action": "immich",
+    type: "url",
+    placeholder: "https://photos.example/share/…",
+    "aria-label": "an immich album's shared link",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const album = h(
+    "button",
+    {
+      class: "button",
+      "data-focus": true,
+      "data-action": "use-album",
+      onclick: async () => {
+        if (copying) return;
+        copying = true;
+        line.textContent = "getting the album's photos…";
+        try {
+          const got = await daemon.immichAlbum(link.value.trim());
+          ctx.sounds.play("confirm");
+          ctx.toast(`photos from ${got.album.toLowerCase()} are the background now`, "ok");
+          ctx.open("background", "back");
+        } catch (error) {
+          ctx.sounds.play("failure");
+          ctx.toast((error as Error).message, "fail");
+          line.textContent = "";
+        } finally {
+          copying = false;
+        }
+      },
+    },
+    "use the album",
+  );
 
   const draw = async () => {
     const reply = await screen.music("sources", {});
@@ -365,7 +404,18 @@ export function folder(ctx: Ctx): View {
       "div",
       { class: "art-page" },
       h("div", { class: "art-side" }, list, line),
-      h("div", { class: "art-side" }, h("span", { class: "field-label" }, "a nas share"), address, password, h("span", { class: "setup-note" }, "a nas account that can only read is best, since the box keeps its password."), add),
+      h(
+        "div",
+        { class: "art-side" },
+        h("span", { class: "field-label" }, "a nas share"),
+        address,
+        password,
+        h("span", { class: "setup-note" }, "a read-only nas account is best."),
+        add,
+        h("span", { class: "field-label" }, "an immich album's shared link"),
+        link,
+        album,
+      ),
     ),
   );
   return { el, first: address, info: "↵ pick · esc back" };

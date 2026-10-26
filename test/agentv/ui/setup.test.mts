@@ -20,6 +20,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startArchives, type Archives } from "./archives.mts";
+import { startImmichShare } from "./immich-share.mts";
 import { ROOT, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -923,6 +924,38 @@ test("the background: a folder, a usb drive or a share, its pictures copied over
   assert.match(await textOf(page, ".setup-note"), /1 picture from nas\/photos\./);
   await post("/api/backgrounds", { source: "field" });
   await page.close();
+});
+
+test("the background: an immich album through its shared link, with no account on the box", async () => {
+  const immich = await startImmichShare();
+  try {
+    await toApps("streaming");
+    await post("/api/setup/finish", { step: "apps" });
+    await post("/api/setup/finish", { step: "theme" });
+    await post("/api/backgrounds", { source: "field" });
+    const page = await tv({ replies: { "music:sources": { ok: true, sources: [] } } });
+    await page.waitForSelector(".backs .back");
+    assert.match(await textOf(page, '[data-background="folder"] .look-note'), /nas or immich/);
+    await page.locator('[data-background="folder"]').click();
+    await page.waitForSelector('[data-action="immich"]');
+    // The phone's keyboard opens for a link.
+    assert.equal(await page.locator('[data-action="immich"]').getAttribute("type"), "url");
+
+    // Not a link to an album: it says so, and stays.
+    await page.locator('[data-action="immich"]').fill(`${immich.url}/share/not-the-key`);
+    await page.locator('[data-action="use-album"]').click();
+    await page.waitForFunction(() => /immich didn't take that link: invalid share key/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+
+    await page.locator('[data-action="immich"]').fill(immich.link);
+    await page.locator('[data-action="use-album"]').click();
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
+    await page.waitForSelector('.back.picked[data-background="folder"]');
+    assert.match(await textOf(page, ".setup-note"), /2 pictures from Autumn · immich\./);
+    await post("/api/backgrounds", { source: "field" });
+    await page.close();
+  } finally {
+    immich.close();
+  }
 });
 
 const levels = (page: Page) => page.evaluate(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels());

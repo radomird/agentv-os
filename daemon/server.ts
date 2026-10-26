@@ -29,6 +29,7 @@ import { installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
+import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
@@ -174,6 +175,8 @@ export class Daemon {
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
   private art: ArtArchives;
+  private immich: ImmichAlbum;
+  private immichBusy = false;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -220,6 +223,7 @@ export class Daemon {
     this.ai = new Ai({ state: options.state });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
+    this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -1947,6 +1951,39 @@ export class Daemon {
       }
       this.broadcast("background", result.state);
       this.json(response, 200, { ok: true, background: result.item, ...result.state });
+      return;
+    }
+
+    // An Immich album through the link its owner shared it with: its photos
+    // take the place of a folder's, credited to the album. The link isn't
+    // kept. One album at a time.
+    if (method === "POST" && path === "/api/backgrounds/immich") {
+      if (!(await this.adult(request, response, "the background"))) return;
+      if (this.immichBusy) {
+        this.json(response, 409, { ok: false, error: "an album's photos are still coming" });
+        return;
+      }
+      const body = ((await this.body(request)) ?? {}) as { link?: unknown };
+      this.immichBusy = true;
+      let first = true;
+      try {
+        const result = await this.immich.pictures(body.link, async ({ body: picture, album }) => {
+          if (!imageType(picture)) return false;
+          if (first) await this.backgrounds.clear("folder");
+          first = false;
+          return Boolean((await this.backgrounds.add(picture, { from: `${album} · immich` }, "folder")).state);
+        });
+        if (!result.count) {
+          this.json(response, 400, { ok: false, error: result.error });
+          return;
+        }
+        this.log(`background: ${result.count} photos from immich`);
+        const state = await this.backgrounds.read();
+        this.broadcast("background", state);
+        this.json(response, 200, { ok: true, album: result.album, count: result.count, ...state });
+      } finally {
+        this.immichBusy = false;
+      }
       return;
     }
 

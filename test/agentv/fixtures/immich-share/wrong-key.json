@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/shared-links/me?key=not-a-key"
+  },
+  "status": 401,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "message": "Invalid share key",
+    "error": "Unauthorized",
+    "statusCode": 401,
+    "correlationId": "lw228xqc"
+  }
+}
