@@ -609,3 +609,130 @@
   display: flex;
   gap: 20px;
 }
+
+/* --- Apps (board 09) and add your own (board 10) ------------------------------- */
+
+.apps-page {
+  gap: 40px;
+}
+
+.app-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-head {
+  font-size: 24px;
+  color: var(--foreground);
+}
+
+.app-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.app-pick,
+.app-add {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 150px;
+  padding: 0 32px;
+  text-align: left;
+}
+
+.app-pick {
+  width: 440px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  color: var(--bright-foreground);
+}
+
+.app-add {
+  width: 520px;
+  background: var(--magenta);
+  color: var(--background);
+}
+
+.app-pick.focused {
+  border-color: var(--accent);
+}
+
+.app-mark {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.app-pick.on .app-mark {
+  color: var(--green);
+}
+
+.app-pick.bad .app-mark {
+  color: var(--red);
+}
+
+.app-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--background);
+}
+
+.app-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.app-name {
+  font-size: 40px;
+  font-weight: 800;
+}
+
+.app-note-line {
+  font-size: 22px;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-add .app-note-line {
+  color: var(--background);
+}
+
+.wish-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 56px;
+  font-weight: 800;
+}
+
+.wish-caret {
+  color: var(--green);
+}
+
+.wish-field {
+  flex-grow: 1;
+  font-size: 48px;
+}
+
+.wish-actions {
+  display: flex;
+  gap: 24px;
+}
+
+.wish-actions .button {
+  min-height: 72px;
+  font-size: 28px;
+}

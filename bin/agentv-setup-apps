@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# agentv:summary=Install the official apps picked in TV setup
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# TV setup's apps (board 09). The setup screens hand the official apps the
+# household picked to AgenTV's daemon, which can't write the apps folder. It
+# leaves their ids in its own private state, and agentv-setup-apps.path
+# starts this as root to install each one with `agentv app install`, from
+# the signed index, one after the other. /run/agentv-setup-apps/state.json
+# says how each is going, for the TV: queued, installing, installed or
+# failed, with why.
+
+set -euo pipefail
+
+DROP=${AGENTV_SETUP_APPS_DROP:-/var/lib/private/agentv/daemon/apps-drop/install.json}
+STATUS=${AGENTV_SETUP_APPS_STATUS:-/run/agentv-setup-apps/state.json}
+INSTALL=${AGENTV_APP_INSTALL:-agentv-app-install}
+
+[[ -f $DROP ]] || exit 0
+mapfile -t apps < <(jq -r '.apps[]? | strings' "$DROP" 2>/dev/null || true)
+rm -f "$DROP"
+
+install -d -m 755 "$(dirname -- "$STATUS")"
+[[ -f $STATUS ]] && jq -e '.apps | type == "object"' "$STATUS" >/dev/null 2>&1 || echo '{"apps":{}}' >"$STATUS"
+
+# set_state <id> <state> [why]: one app's line in the status file.
+set_state() {
+  local next="$STATUS.next"
+  jq --arg id "$1" --arg state "$2" --arg error "${3:-}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
+    '.apps[$id] = ({state: $state, at: $at} + (if $error == "" then {} else {error: $error} end)) | .at = $at' "$STATUS" >"$next"
+  chmod 644 "$next"
+  mv -f "$next" "$STATUS"
+}
+
+wanted=()
+for id in "${apps[@]}"; do
+  if [[ ! $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]]; then
+    echo "agentv-setup-apps: '$id' isn't an app id; left out" >&2
+    continue
+  fi
+  wanted+=("$id")
+  set_state "$id" queued
+done
+
+for id in "${wanted[@]}"; do
+  set_state "$id" installing
+  if out=$("$INSTALL" "$id" 2>&1); then
+    set_state "$id" installed
+    echo "agentv-setup-apps: installed $id"
+  else
+    # The installer's own last line says why, as "Couldn't do it: ...".
+    why=$(printf '%s\n' "$out" | grep -v '^\s*$' | tail -n 1 | sed -E 's/^(Couldn.t do it|Something went wrong): //; s/\.$//' | cut -c1-200)
+    [[ -n $why ]] || why="it didn't install"
+    set_state "$id" failed "$why"
+    echo "agentv-setup-apps: $id didn't install: $why" >&2
+  fi
+done

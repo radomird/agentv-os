@@ -85,7 +85,9 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   await store.setGoal("music");
   assert.equal((await store.finish("goal")).state?.goal, "music");
   assert.match((await store.go("nowhere")).error ?? "", /a step/);
-  assert.deepEqual(STEPS, ["welcome", "ready", "ai", "people", "goal"]);
+  await store.finish("apps");
+  assert.equal((await store.read()).step, "apps", "the last step finished stays on it, for the page to mark setup done");
+  assert.deepEqual(STEPS, ["welcome", "ready", "ai", "people", "goal", "apps"]);
 });
 
 test("getting ready keeps how bringing the box up to date goes, and when the check was asked for", async () => {
@@ -126,8 +128,9 @@ test("the box is online on a wired or Wi-Fi address that isn't its own setup hot
 test("the setup screens hear where setup is, how the box is online, the hotspot and the phones", async () => {
   const info = await (await fetch(`${url}/api/setup`)).json();
   assert.equal(info.setup.step, "welcome");
-  assert.deepEqual(info.steps, ["welcome", "ready", "ai", "people", "goal"]);
+  assert.deepEqual(info.steps, ["welcome", "ready", "ai", "people", "goal", "apps"]);
   assert.equal(info.parts.goal, "4/6 goal");
+  assert.equal(info.parts.apps, "5/6 apps");
   assert.deepEqual(info.network, { online: true, via: "ethernet", name: null });
   assert.equal(info.hotspot.on, false);
   assert.deepEqual(info.phones, []);
@@ -203,4 +206,17 @@ test("with music as the goal, Music is on home from the start", async () => {
   } finally {
     await box.close();
   }
+});
+
+test("an app asked for at add your own is kept for later, once, up to five", async () => {
+  const store = new Setup({ path: join(scratch, "wishes.json") });
+  assert.match((await store.wish("")).error ?? "", /a few words/);
+  assert.match((await store.wish("x".repeat(81))).error ?? "", /a few words/);
+  assert.match((await store.wish("<script>")).error ?? "", /a few words/);
+  assert.deepEqual((await store.wish("  a radio   app ")).state?.wishes, ["a radio app"]);
+  assert.deepEqual((await store.wish("A radio app")).state?.wishes, ["a radio app"], "the same words again are kept once");
+  for (const app of ["one", "two", "three", "four"]) await store.wish(app);
+  assert.match((await store.wish("six")).error ?? "", /5 for later already/);
+  assert.equal((await new Setup({ path: join(scratch, "wishes.json") }).read()).wishes.length, 5);
+  assert.deepEqual((await store.mark(false)).wishes, [], "setup started again forgets them");
 });

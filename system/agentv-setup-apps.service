@@ -1,0 +1,22 @@
+# Installs the official apps picked in TV setup from the signed index, one
+# after the other (bin/agentv-setup-apps). agentv-setup-apps.path starts it.
+# It writes only the apps folder, its own status in /run and the daemon's
+# drop, and fetches each app's exact commit over https.
+
+[Unit]
+Description=AgenTV setup's apps
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-setup-apps
+TimeoutStartSec=30min
+StateDirectory=agentv/apps
+StateDirectoryMode=0755
+RuntimeDirectory=agentv-setup-apps
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/private/agentv/daemon
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

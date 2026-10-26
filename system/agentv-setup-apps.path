@@ -1,0 +1,13 @@
+# TV setup's apps, handed over by AgenTV's daemon (board 09): when it leaves
+# the ones the household picked in its private state, agentv-setup-apps.service
+# installs them as root.
+
+[Unit]
+Description=AgenTV setup's apps hand-over
+
+[Path]
+PathExists=/var/lib/private/agentv/daemon/apps-drop/install.json
+Unit=agentv-setup-apps.service
+
+[Install]
+WantedBy=paths.target

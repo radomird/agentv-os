@@ -400,7 +400,7 @@ test("S5.6 setup picks up at the same step after the page loads again, as after 
   await page.close();
 });
 
-test("what the tv is for: OK on one picks it, setup is done, and home takes over", async () => {
+test("what the tv is for: OK on one picks it, and setup moves on to its apps", async () => {
   await fresh();
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
@@ -417,9 +417,10 @@ test("what the tv is for: OK on one picks it, setup is done, and home takes over
   await page.keyboard.press("ArrowRight");
   assert.equal(await page.locator(".goal.focused").getAttribute("data-goal"), "gaming");
   await page.keyboard.press("Enter");
-  await page.waitForSelector(".grid .tile", { timeout: 10_000 });
+  await page.waitForSelector(".apps-page");
   const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
-  assert.deepEqual([setup.done, setup.goal], [true, "gaming"]);
+  assert.deepEqual([setup.done, setup.goal, setup.step], [false, "gaming", "apps"]);
+  assert.match(await textOf(page, ".apps-page .prompt"), /tv apps --for gaming/);
   await page.close();
 });
 
@@ -677,6 +678,77 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   assert.equal(await page.locator(".pin-pad").count(), 0);
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".goals");
+  await page.close();
+});
+
+// To the apps step, with what the TV is for.
+async function toApps(goal: string): Promise<void> {
+  await toPeople();
+  await post("/api/setup/finish", { step: "people" });
+  await post("/api/setup/goal", { goal });
+  await post("/api/setup/finish", { step: "goal" });
+}
+
+test("apps: the goal's official apps come first, the ticked ones install past the PIN, setup is done, and home has them", async () => {
+  await toApps("media");
+  assert.equal((await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
+  const page = await tv();
+  await page.waitForSelector(".apps-page .app-pick");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick your apps.");
+  assert.match(await textOf(page, ".apps-page .prompt"), /tv apps --for media/);
+  assert.deepEqual(await page.locator(".app-head").allInnerTexts(), ["# for photos", "# more"]);
+  const row = (n: number) => page.locator(".app-row").nth(n);
+  assert.match(await row(0).locator(".app-add").innerText(), /\+ add your own\s+your tv builds it/);
+  assert.deepEqual(await row(0).locator(".app-pick .app-name").allInnerTexts(), ["jellyfin", "immich"]);
+  // This box has no built-in apps; the daemon's tests have Music among them.
+  assert.deepEqual(await row(1).locator(".app-pick .app-name").allInnerTexts(), ["steam"]);
+  assert.match(await row(0).locator('[data-app="agentv.jellyfin"]').innerText(), /\[ \][\s\S]*your own server/);
+  assert.match(await textOf(page, ".bar"), /5\/6 apps[\s\S]*←↑↓→ move · ↵ tick/);
+  assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.jellyfin");
+
+  // Immich ticked, Steam ticked and unticked again.
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-app="agentv.immich"].on');
+  assert.match(await page.locator('[data-app="agentv.immich"]').innerText(), /\[x\]/);
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.steam");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  assert.match(await page.locator('[data-app="agentv.steam"]').innerText(), /\[ \]/);
+
+  // Continue asks for the PIN, then the box installs it and setup is done.
+  await page.locator('[data-action="continue"]').click();
+  await page.waitForSelector(".pin-pad");
+  for (const digit of "2468") await page.keyboard.press(digit);
+  await page.waitForSelector(".grid .tile", { timeout: 15_000 });
+  const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
+  assert.equal(setup.done, true);
+  await waitFor(async () => (await (await fetch(`${url}/api/home`)).json()).apps.some((app: { id: string }) => app.id === "agentv.immich"));
+  assert.equal(existsSync(join(state, "..", "apps", "agentv.steam")), false, "only the ticked one");
+  await page.close();
+  const grant = await pinGrant();
+  await fetch(`${url}/api/pin`, { method: "DELETE", headers: { "X-AgenTV-Grant": grant! } });
+});
+
+test("apps: add your own asks what to add, keeps it for the TV's agent, and nothing is ticked to install", async () => {
+  await toApps("streaming");
+  const page = await tv();
+  await page.waitForSelector(".apps-page .app-pick");
+  assert.deepEqual(await page.locator(".app-row").nth(0).locator(".app-pick .app-name").allInnerTexts(), ["jellyfin"], "Plex isn't in the index yet");
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await page.locator(".focused").getAttribute("data-action"), "add");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".wish-field");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "add your own.");
+  assert.match(await textOf(page, ".setup-page"), /what should I add\?[\s\S]*\$5 cap/);
+  await page.keyboard.type("A radio app");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".apps-page .app-note");
+  await page.waitForFunction(() => /kept for later: a radio app/.test(document.querySelector(".app-note")?.textContent ?? ""));
+  assert.deepEqual((await (await fetch(`${url}/api/setup`)).json()).setup.wishes, ["A radio app"]);
+  await page.locator('[data-action="continue"]').click();
+  await page.waitForSelector(".grid .tile", { timeout: 10_000 });
   await page.close();
 });
 

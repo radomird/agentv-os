@@ -1,8 +1,8 @@
 // TV setup (stage 5, PHASE-1-PLAN.md "Setup flow"), on the TV until it's
 // done, in the Terminal look (ADR-014) and the Omarchy theme's colours. One
 // step at a time: the welcome screen (the Wi-Fi and pairing), getting ready
-// (the box brings itself up to date first, board 35), then what the TV is
-// for, and home. The daemon keeps the step in setup.json, so a restart, an
+// (the box brings itself up to date first, board 35), the AI provider and
+// its terms, who watches, what the TV is for, its apps, and home. The daemon keeps the step in setup.json, so a restart, an
 // update or a reboot comes back to the same one (S5.6).
 //
 // Every input works here as on home: a keyboard, the phone's remote, a
@@ -17,7 +17,8 @@ import { listen as listenInput, type Action } from "../launcher/input.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "../launcher/pages/pin.ts";
 import { Sounds } from "../launcher/sounds.ts";
 import { aiStep, cliLine, path } from "./ai.ts";
-import { setup, type AiInfo, type Provider, type SetupInfo, type Step } from "./api.ts";
+import { setup, type AiInfo, type Installs, type Provider, type SetupInfo, type Step } from "./api.ts";
+import { addYourOwn, apps, installLine } from "./apps.ts";
 import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
@@ -46,6 +47,11 @@ export interface Ctx {
   info: SetupInfo;
   // The AI provider, its terms and its CLI, once the daemon has said.
   ai?: AiInfo;
+  // The apps ticked at the apps step and not handed over yet, how the ones
+  // handed over are installing, and their names.
+  picked?: string[];
+  installs: Installs;
+  names: Record<string, string>;
   updates: Updates;
   sounds: Sounds;
   focus: Focus;
@@ -125,6 +131,8 @@ function openPad(options: Omit<PadOptions, "changed">): Promise<boolean> {
 const ctx: Ctx = {
   info: undefined as unknown as SetupInfo,
   updates: { status: null, progress: null, toasted: null },
+  installs: {},
+  names: {},
   sounds,
   focus,
   reduced: () => reduceMotion || matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -234,6 +242,8 @@ function viewFor(to: string): View | Promise<View> {
   if (step === "people" && sub) return person(ctx, sub);
   if (to === "people") return people(ctx);
   if (to === "goal") return goal(ctx);
+  if (to === "apps/add") return addYourOwn(ctx);
+  if (to === "apps") return apps(ctx);
   return welcome(ctx);
 }
 
@@ -258,10 +268,11 @@ function show(to: string, direction?: "forward" | "back"): void {
 }
 
 // The status bar's right side: what the screen says, and after the AI step,
-// the provider's CLI arriving in the background.
+// the provider's CLI arriving in the background, as the apps do after theirs.
 function barInfo(step: string, info: string): string {
   const cli = step !== "ai" && ctx.ai ? cliLine(ctx.ai) : null;
-  return [info, cli].filter(Boolean).join(" · ");
+  const installing = step !== "apps" ? installLine(ctx.installs, ctx.names) : null;
+  return [info, cli, installing].filter(Boolean).join(" · ");
 }
 
 function put(to: string, next: View, direction?: "forward" | "back"): void {
@@ -398,6 +409,11 @@ async function start(): Promise<void> {
       key: (data) => {
         if (ctx.ai) ctx.ai = { ...ctx.ai, key: data as AiInfo["key"] };
         view?.heard?.("key", data);
+      },
+      "setup-apps": (data) => {
+        ctx.installs = data as Installs;
+        view?.heard?.("setup-apps", data);
+        if (route.split("/")[0] !== "apps" && view) ctx.status(view.info ?? "");
       },
       settings: () =>
         void daemon.home().then((home) => {
