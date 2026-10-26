@@ -168,6 +168,9 @@ let pads: Promise<unknown> = Promise.resolve();
 let held: { token: string; until: number } | null = null;
 let locking = false;
 let lockPad: Pad | null = null;
+// How many times the daemon has said the PIN changed, so an answer that left
+// before the last time doesn't undo it.
+let pinEvents = 0;
 
 const holding = () => Boolean(held && held.until - Date.now() > 15_000);
 const childWithPin = () => ctx.state.viewer.role === "child" && ctx.state.pin?.set === true;
@@ -483,10 +486,19 @@ document.addEventListener("click", (event) => {
   if (el) sounds.play("select");
 });
 
+// The daemon's home. If it said the PIN changed while the answer was on its
+// way, the lock is as it said: the answer can be older than that.
+async function homeState(): Promise<HomeState> {
+  const heard = pinEvents;
+  const state = await daemon.home();
+  if (pinEvents !== heard) state.pin = ctx.state.pin;
+  return state;
+}
+
 // Draws the page again when something changed somewhere else, such as on
 // the phone. A change this page made itself is already on the screen.
 async function refresh(): Promise<void> {
-  const state = await daemon.home();
+  const state = await homeState();
   if (JSON.stringify(state) === JSON.stringify(ctx.state)) return;
   ctx.state = state;
   apply(ctx.state.settings);
@@ -495,7 +507,7 @@ async function refresh(): Promise<void> {
 
 async function switched(): Promise<void> {
   held = null;
-  ctx.state = await daemon.home();
+  ctx.state = await homeState();
   apply(ctx.state.settings);
   const child = ctx.state.viewer.role === "child";
   if (child) {
@@ -512,7 +524,7 @@ async function switched(): Promise<void> {
 // viewer, as a switch from the phone, or anything else on home.
 async function catchUp(): Promise<void> {
   const was = ctx.state.viewer.id;
-  const state = await daemon.home();
+  const state = await homeState();
   if (state.viewer.id !== was) return switched();
   await refresh();
   setLock(ctx.state.pin?.locked === true);
@@ -598,6 +610,7 @@ async function start(): Promise<void> {
     // The PIN was set or taken off, or the TV was locked or unlocked.
     pin: (data) => {
       const status = data as { set: boolean; locked: boolean };
+      pinEvents++;
       ctx.state.pin = { set: status.set, locked: status.locked };
       if (!status.set) held = null;
       setLock(status.locked);
