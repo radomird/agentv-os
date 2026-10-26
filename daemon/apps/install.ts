@@ -1,12 +1,15 @@
 // Installs apps from the signed index into /var/lib/agentv/apps/<id>/ (ADR-010,
 // PHASE-1-PLAN.md). The index pins each app to an exact commit of its public
-// repo. The installer fetches that commit and nothing else, checks the package
-// against the app contract as the tier the index gives it, and only then puts
-// it in place, so a box never holds half an app or one the index didn't name.
+// repo, and names its folder there when the repo holds more than one app
+// (ADR-036). The installer fetches that commit and nothing else, takes the
+// app's folder from it, leaves out its fixtures/ (they're for its tests, never
+// for a box), checks the package against the app contract as the tier the
+// index gives it, and only then puts it in place, so a box never holds half an
+// app or one the index didn't name.
 // Which tier an app has comes from where it came from, recorded in
 // installed.json beside the apps, never from its manifest.
 
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Tier } from "../../apps/contract/manifest.ts";
 import { IndexError, loadIndex, run, type IndexEntry } from "./index.ts";
@@ -18,6 +21,7 @@ export interface Installed {
   tier: Tier;
   repo?: string;
   commit?: string;
+  path?: string;
   installedAt: string;
 }
 
@@ -58,7 +62,16 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
     if (head !== entry.commit) throw new IndexError(`${entry.id}'s repo gave a different commit than the index pins`);
     await rm(join(checkout, ".git"), { recursive: true, force: true });
 
-    const { manifest, problems } = validatePackage(checkout, entry.tier);
+    // The app's own folder, each step of the way a real folder, not a link.
+    let pkg = checkout;
+    for (const name of entry.path ? entry.path.split("/") : []) {
+      pkg = join(pkg, name);
+      const found = await lstat(pkg).catch(() => null);
+      if (!found?.isDirectory()) throw new IndexError(`${entry.id}'s repo has no folder ${entry.path} at the commit the index pins`);
+    }
+    await rm(join(pkg, "fixtures"), { recursive: true, force: true });
+
+    const { manifest, problems } = validatePackage(pkg, entry.tier);
     if (!manifest) throw new IndexError(`${entry.id} doesn't pass the app contract's checks:\n  ${problems.join("\n  ")}`);
     if (manifest.tv.runtime === "builtin") {
       throw new IndexError(`${entry.id} says it's built in, and built-in apps only come with AgenTV itself`);
@@ -72,7 +85,7 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
     await rename(target, old).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
     });
-    await rename(checkout, target).catch(async (error) => {
+    await rename(pkg, target).catch(async (error) => {
       await rename(old, target).catch(() => {});
       throw error;
     });
@@ -85,6 +98,7 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
       tier: entry.tier,
       repo: entry.repo,
       commit: entry.commit,
+      ...(entry.path ? { path: entry.path } : {}),
       installedAt: new Date().toISOString(),
     };
     await writeInstalled(appsDir, record);
