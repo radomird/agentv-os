@@ -1,5 +1,7 @@
 // AgenTV's signed app index (ADR-010): which apps exist, their tier, and the
-// exact commit of the public repo each one installs from. The index counts
+// exact commit of the public repo each one installs from, and the app's folder
+// in that repo when it shares one with others, as the official apps share
+// agentv-apps (ADR-036). The index counts
 // only with a good signature from AgenTV's key, the same key the box already
 // holds for its packages and tested.json (agentv-keyring), checked with gpgv
 // against a keyring that holds that key alone.
@@ -17,6 +19,7 @@ export interface IndexEntry {
   description?: string;
   repo: string; // the app's public git repo, https:// (file:// for tests)
   commit: string; // the exact commit that was checked (ADR-010)
+  path?: string; // the app's folder in the repo, like apps/jellyfin; the repo itself without it
 }
 
 export interface AppIndex {
@@ -67,6 +70,8 @@ export async function verifySignature(file: string, sig: string, keyring = DEFAU
 
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
 const COMMIT = /^[0-9a-f]{40}$/;
+// A folder in the repo: plain names joined by slashes, none of them . or ..
+const PATH = /^(?!\.{1,2}(\/|$))[A-Za-z0-9_][A-Za-z0-9._-]*(\/(?!\.{1,2}(\/|$))[A-Za-z0-9_][A-Za-z0-9._-]*)*$/;
 
 // The index's own shape. Anything off is refused as a whole, so a box never
 // installs from half an index.
@@ -94,6 +99,9 @@ export function parseIndex(text: string): AppIndex {
     }
     if (typeof entry.repo !== "string" || !/^(https|file):\/\//.test(entry.repo)) {
       throw new IndexError(`${id}'s repo in the app index isn't an https:// address`);
+    }
+    if (entry.path !== undefined && (typeof entry.path !== "string" || !PATH.test(entry.path))) {
+      throw new IndexError(`${id}'s folder in the app index isn't a plain folder in its repo`);
     }
   }
   return index as AppIndex;

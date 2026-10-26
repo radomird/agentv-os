@@ -191,7 +191,9 @@ export class Fixtures {
     const headers = Object.fromEntries(new Headers(init?.headers).entries());
     const answer = this.answer(init?.method ?? "GET", address, headers);
     if (!answer) return new Response("not in the app's fixtures", { status: 404 });
-    return new Response(new Uint8Array(answer.body), { status: answer.status, headers: answer.headers });
+    // A 204 or 304 carries no body, as the server sent it.
+    const empty = [101, 103, 204, 205, 304].includes(answer.status);
+    return new Response(empty ? null : new Uint8Array(answer.body), { status: answer.status, headers: answer.headers });
   };
 
   // The same for its page in Chromium. The tab's own favicon is Chromium's
