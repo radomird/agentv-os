@@ -180,6 +180,8 @@ interface Open {
   // Its service's profile for who's watching, once it's settled as the app
   // opened; an item to play waits for it (service-profiles.ts).
   ready?: Promise<unknown>;
+  // What that did, for agentv screen status: undefined while it's going.
+  profile?: ProfileOutcome;
 }
 
 // What reads each open app's playback state for the ledger, and opens an
@@ -1248,7 +1250,9 @@ export class Screen {
   // The service's profile for whoever's watching: a child's opens the one
   // picked for children, and the TV says so when it can't.
   private async serviceProfile(entry: Open): Promise<void> {
-    const said = await this.profiles?.apply(entry.id, this.pageOf(entry)).catch(() => null);
+    delete entry.profile;
+    const said = (await this.profiles?.apply(entry.id, this.pageOf(entry)).catch(() => null)) ?? null;
+    entry.profile = said;
     if (said === "not selected") {
       const name = (await this.launcher.appTarget(entry.id).catch(() => null))?.name ?? entry.id;
       await this.toast(`${name.toLowerCase()} couldn't open the profile for children`);
@@ -1404,7 +1408,15 @@ export class Screen {
       front: front ? summary(front, clients) : null,
       windows: [...this.windows.values()].map((w) => ({ ...summary(w, clients), front: w.address === front?.address })),
       apps: [...this.apps.values()].map((a) => ({ role: a.role, pid: a.pid, started_at: new Date(a.startedAt).toISOString() })),
-      open: this.opens.map((o) => ({ id: o.id, role: o.role, paused: o.paused, front: o.address !== undefined && o.address === front?.address })),
+      open: this.opens.map((o) => ({
+        id: o.id,
+        role: o.role,
+        paused: o.paused,
+        front: o.address !== undefined && o.address === front?.address,
+        // The service's profile for who's watching: "pending" while it's
+        // going, what it did, or null with nothing to do (ADR-009).
+        profile: o.ready && o.profile === undefined ? "pending" : (o.profile ?? null),
+      })),
       home_restarts: this.homeRestarts,
       ambient: this.ambient,
       tv: this.tvOff ? "off" : "on",
@@ -1521,8 +1533,12 @@ export class Screen {
       case "signed-in":
         return this.signedInNow();
       // An installed app, as its tile opens it.
-      case "app":
-        return this.fromHome({ cmd: "open-app", app: String(request.app ?? "") });
+      case "app": {
+        // With an item, the app opens it through its playback.open, as a
+        // tile's entry does (agentv selftest S3.2).
+        const item = request.item && typeof request.item === "object" ? request.item : undefined;
+        return this.fromHome({ cmd: "open-app", app: String(request.app ?? ""), ...(item ? { item } : {}) });
+      }
       case "quit":
         return this.quit(String(request.app ?? ""));
       case "idle":

@@ -28,6 +28,12 @@ fake loginctl 'echo "2 1000 radomir seat0 1234 user tty1 no -"'
 fake curl '
 echo "$*" >>"$STATE/curl.log"
 if [[ $* == *"-X DELETE"* ]]; then echo "{\"ok\":true}"
+elif [[ $* == *api/apps/*/package* ]]; then cat "$STATE/package" 2>/dev/null || echo "{\"ok\":false}"
+elif [[ $* == *api/apps/*/profiles* ]]; then cat "$STATE/profiles" 2>/dev/null || echo "{\"ok\":false}"
+elif [[ $* == *api/viewer* ]]; then cat "$STATE/viewer" 2>/dev/null || echo "{\"ok\":true,\"viewer\":{\"id\":\"radomir\",\"role\":\"adult\"}}"
+# A player app playing since the check opened it (S3.2): its row moves on.
+elif [[ $* == *api/ledger*app=local.player* && -f $STATE/playing ]]; then
+  echo "{\"ok\":true,\"rows\":[{\"title\":\"Spring\",\"season\":1,\"episode\":2,\"position_s\":$(( $(date +%s) - $(cat "$STATE/playing") + 60 )),\"updated_at\":\"$(date -u +%Y-%m-%dT%H:%M:%S).123Z\"}]}"
 elif [[ $* == *api/ledger* ]]; then cat "$STATE/ledger" 2>/dev/null || echo "{\"ok\":true,\"rows\":[]}"
 elif [[ $* == *api/tile/* ]]; then cat "$STATE/tile" 2>/dev/null || echo "{\"ok\":true,\"tile\":null}"
 elif [[ $* == *api/pin* ]]; then cat "$STATE/pin" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
@@ -184,8 +190,15 @@ case "$1" in
   toast) jq ".layers += [\"agentv-toast\"]" "$status" >"$status.new" && mv "$status.new" "$status"; echo "{\"ok\":true}" ;;
   close) echo "{\"ok\":true}" ;;
   # An installed app opens, and the daemon gets its playback, unless the
-  # check says it does not.
+  # check says it does not. The player app (S3.2, S3.4) plays an item from
+  # now, and opens with what the service profile step did.
   app)
+    if [[ $2 == local.player ]]; then
+      [[ -n ${3:-} ]] && date +%s >"$STATE/playing"
+      jq --arg profile "$(cat "$STATE/profile-outcome" 2>/dev/null)" ".open = [{id: \"local.player\", role: \"web\", profile: \$profile}]" "$status" >"$status.new" && mv "$status.new" "$status"
+      echo "{\"ok\":true}"
+      exit 0
+    fi
     cp -r "$AGENTV_STATE/apps/$2" "$STATE/seen-app"
     jq -c ".[\"$2\"]" "$AGENTV_STATE/apps/installed.json" >"$STATE/seen-record"
     [[ -f $STATE/no-ledger ]] || echo "{\"ok\":true,\"rows\":[{\"viewer_id\":\"radomir\",\"title\":\"agentv selftest\",\"season\":1,\"episode\":1,\"position_s\":3}]}" >"$STATE/ledger"
@@ -518,6 +531,54 @@ grep -q "^fail S3.10 agentv app install --local didn't install the stand-in play
 rm -f "$state/pin"
 kill "$home_pid" 2>/dev/null || true
 pass "S3.3 installs its stand-in only once an adult says yes, as any app install"
+
+# --- S3.2 and S3.4: a named app's episode and its profile for children --------
+
+mkdir -p "$SCRATCH/player"
+echo '{"tv": {"capabilities": ["launch", "playback", "profiles"]}}' >"$SCRATCH/player/manifest.json"
+item='{"kind":"episode","title":"spring","season":1,"episode":2}'
+
+tv
+echo "{\"ok\": true, \"dir\": \"$SCRATCH/player\"}" >"$state/package"
+run1 S3.2 S3.4 || fail "with no app named, S3.2 and S3.4 say how and pass nothing" "$(cat "$SCRATCH/out")"
+grep -q "^manual S3.2 name the app and a known episode: agentv selftest S3.2 --app <id> --item" "$SCRATCH/out" || fail "S3.2 says how to name them" "$(cat "$SCRATCH/out")"
+grep -q "^manual S3.4 name the app: agentv selftest S3.4 --app <id>" "$SCRATCH/out" || fail "S3.4 says how to name it" "$(cat "$SCRATCH/out")"
+! run1 S3.2 --item '"spring"' || fail "an item that isn't an object is a usage error"
+! run1 S3.2 --app '../x' || fail "an app that isn't an id is a usage error"
+
+rm -f "$state/playing"
+run1 S3.2 --app local.player --item "$item" || fail "S3.2 passes when the episode plays and its position moves" "$(cat "$SCRATCH/out")"
+grep -qE "^pass S3.2 local.player opened it through its playback.open, and its playback state read Spring S1 E2 at 6[0-2] s, then Spring S1 E2 at 6[1-9] s$" "$SCRATCH/out" ||
+  fail "it says what it read, twice" "$(cat "$SCRATCH/out")"
+grep -qx "local.player" "$state/quit" || fail "the app is closed first, so it opens fresh"
+pass "S3.2 opens the named episode in the named app and reads a moving position from its rows"
+
+rm -f "$state/playing"
+! AGENTV_PLAYBACK_WAIT_S=3 run1 S3.2 --app local.player --item '{"kind":"episode","title":"spring","season":1,"episode":3}' || fail "another episode fails S3.2"
+grep -q "^fail S3.2 local.player didn't play spring within 3 s of opening it; its newest row says Spring S1 E2 at" "$SCRATCH/out" || fail "it says what played instead" "$(cat "$SCRATCH/out")"
+echo '{"tv": {"capabilities": ["launch"]}}' >"$SCRATCH/player/manifest.json"
+! run1 S3.2 --app local.player --item "$item" || fail "an app without playback fails S3.2"
+grep -q "^fail S3.2 local.player isn't an app on this box with playback" "$SCRATCH/out" || fail "it says it has no playback" "$(cat "$SCRATCH/out")"
+echo '{"tv": {"capabilities": ["launch", "playback", "profiles"]}}' >"$SCRATCH/player/manifest.json"
+pass "S3.2 fails on another episode, and on an app without playback"
+
+run1 S3.4 --app local.player || fail "with an adult watching, S3.4 says to switch to a child" "$(cat "$SCRATCH/out")"
+grep -q "^manual S3.4 switch to a child's profile on the TV or the phone, then run agentv selftest S3.4 --app local.player again" "$SCRATCH/out" || fail "it says to switch" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"viewer":{"id":"v-mila","role":"child"}}' >"$state/viewer"
+echo '{"ok":true,"names":["Grown","Little"],"forChildren":null}' >"$state/profiles"
+! run1 S3.4 --app local.player || fail "with nothing picked for children, S3.4 fails"
+grep -q "^fail S3.4 no profile is picked for children in local.player: an adult picks it in the app's details" "$SCRATCH/out" || fail "it says to pick one" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"names":["Grown","Little"],"forChildren":"Little"}' >"$state/profiles"
+echo selected >"$state/profile-outcome"
+run1 S3.4 --app local.player || fail "S3.4 passes when the profile for children opens" "$(cat "$SCRATCH/out")"
+grep -qx "pass S3.4 with a child watching, local.player opened the profile picked for children" "$SCRATCH/out" || fail "it says so" "$(cat "$SCRATCH/out")"
+! grep -q "Little" "$SCRATCH/out" || fail "S3.4 never says the profile's name" "$(cat "$SCRATCH/out")"
+echo "not selected" >"$state/profile-outcome"
+! AGENTV_PROFILE_WAIT_S=2 run1 S3.4 --app local.player || fail "a profile that didn't open fails S3.4"
+grep -qx "fail S3.4 with a child watching, local.player said: not selected" "$SCRATCH/out" || fail "it says what the screen daemon said" "$(cat "$SCRATCH/out")"
+rm -f "$state/viewer" "$state/profiles" "$state/profile-outcome" "$state/playing"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.4 checks, with a child watching, that the named app opened the profile for children, and never names it"
 
 # --- S3.6: an album from a stick and one from a share ---------------------------
 
