@@ -71,7 +71,7 @@ jobs:
       - run: node --version
       # Music reads tags and covers with ffprobe and ffmpeg, as the box does.
       - name: ffmpeg, for the Music tests
-        run: type -P ffprobe >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
+        uses: ./.github/actions/ffmpeg
       - name: The daemon's TypeScript type-checks
         run: test/agentv/types
       - run: test/agentv/unit/run
@@ -86,7 +86,7 @@ jobs:
           persist-credentials: false
       # Music's fixture folder is read with ffprobe and ffmpeg, as on the box.
       - name: ffmpeg, for Music's fixture folder
-        run: type -P ffprobe >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
+        uses: ./.github/actions/ffmpeg
       - name: The built-ins and the test apps, each in its own worker, with its page in Chromium
         run: test/agentv/contract/run
 
