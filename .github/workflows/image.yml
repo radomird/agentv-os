@@ -19,11 +19,11 @@ name: Image
 # checks that a box takes tonight's list and holds back anything else (S0.7).
 # With keep-iso, an ISO that passed every check is kept as a workflow
 # artifact: that's how the nightly run makes the edge ISO. With keep-disk,
-# the box it installed is kept too, as the installed-disk artifact, and a run
-# with from-disk starts from the newest one a run on agentv kept: it puts this
-# commit's packages on that box, the way an update does, instead of building
-# an ISO and installing it (Q100). With none to start from, it builds and
-# installs, as before.
+# the box it installed is kept too, in the Actions cache, and a run with
+# from-disk starts from the newest one kept on agentv (or on its own branch):
+# it puts this commit's packages on that box, the way an update does, instead
+# of building an ISO and installing it (Q100). With none to start from, it
+# builds and installs, as before.
 
 on:
   workflow_dispatch:
@@ -58,17 +58,13 @@ on:
         type: boolean
         default: false
       keep-disk:
-        description: "Keep the installed box as an artifact when every check passes, for runs that start from it"
+        description: "Keep the installed box in the Actions cache when every check passes, for runs that start from it"
         type: boolean
         default: false
       from-disk:
-        description: "Start from the installed box a run on agentv kept, instead of building an ISO and installing it"
+        description: "Start from the newest installed box a run kept in the cache, instead of building an ISO and installing it"
         type: boolean
         default: false
-      disk-run:
-        description: "With from-disk: the run whose kept box to start from (empty: the newest a run on agentv kept)"
-        type: string
-        default: ""
   workflow_call:
     inputs:
       ref:
@@ -105,10 +101,8 @@ on:
       AGENTV_SIGNING_KEY:
         required: true
 
-# actions: read finds and fetches the installed box a night's run kept.
 permissions:
   contents: write
-  actions: read
 
 jobs:
   image:
@@ -210,53 +204,31 @@ jobs:
             echo "AGENTV_TEST_UPDATE_VERSION=$version" >>"$GITHUB_ENV"
           fi
 
+      # The newest box kept in the cache. A pull request reads the ones runs
+      # on agentv kept, and a run on a branch its own too. The cache, unlike
+      # an artifact, hands back a few GB in about a minute: an artifact took
+      # 20 minutes for the box's 4.7 GB, which ate what starting from it saves.
       - name: The night's installed box
         id: disk
         if: inputs.from-disk
-        env:
-          DISK_RUN: ${{ inputs.disk-run }}
-        run: |
-          if [[ -n $DISK_RUN ]]; then
-            query="actions/runs/$DISK_RUN/artifacts?name=installed-disk"
-            pick='.artifacts'
-          else
-            query="actions/artifacts?name=installed-disk&per_page=30"
-            pick='[.artifacts[] | select(.workflow_run.head_branch == "agentv")]'
-          fi
-          found=$(gh api "repos/$GITHUB_REPOSITORY/$query" --jq "$pick | map(select(.expired | not)) | sort_by(.created_at) | last | select(. != null) | \"\\(.id) \\(.workflow_run.id)\"")
-          if [[ -z $found ]]; then
-            echo "There's no installed box from a night's run to start from, so this run builds the ISO and installs it." | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          read -r id run <<<"$found"
-          echo "id=$id" >>"$GITHUB_OUTPUT"
-          echo "run=$run" >>"$GITHUB_OUTPUT"
-
-      # The action fetches it in parallel. One stream, through the API, took
-      # 20 minutes for its 4.7 GB.
-      - name: Fetch the night's installed box
-        if: steps.disk.outputs.id
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          artifact-ids: ${{ steps.disk.outputs.id }}
-          run-id: ${{ steps.disk.outputs.run }}
-          github-token: ${{ github.token }}
-          path: iso/test-runs/night-disk
+          path: iso/test-runs/installed-disk
+          key: installed-disk-none
+          restore-keys: installed-disk-
 
       - name: Start from the night's installed box
         id: night
-        if: steps.disk.outputs.id
+        if: inputs.from-disk
+        env:
+          KEPT: ${{ steps.disk.outputs.cache-matched-key }}
         run: |
-          # One artifact fetched by its id lands in the folder itself; older
-          # releases of the action put it in a folder named after it.
-          if [[ -d iso/test-runs/night-disk/installed-disk ]]; then
-            mv iso/test-runs/night-disk/installed-disk/* iso/test-runs/night-disk/
-            rmdir iso/test-runs/night-disk/installed-disk
+          if [[ -z $KEPT || ! -f iso/test-runs/installed-disk/base.qcow2 || ! -f iso/test-runs/installed-disk/iso-name ]]; then
+            echo "There's no installed box from a night's run to start from, so this run builds the ISO and installs it." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          [[ -f iso/test-runs/night-disk/base.qcow2 && -f iso/test-runs/night-disk/iso-name ]] ||
-            { echo "::error::the night's box came without its disk or its ISO's name"; exit 1; }
           echo "found=true" >>"$GITHUB_OUTPUT"
-          echo "This run starts from the box a night's run installed ($(cat iso/test-runs/night-disk/iso-name)), with this commit's packages put on it." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "This run starts from the box a night's run installed ($(cat iso/test-runs/installed-disk/iso-name), kept as $KEPT), with this commit's packages put on it." | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Build, install, boot, check
         env:
@@ -266,7 +238,7 @@ jobs:
         run: |
           set -o pipefail
           if [[ $FROM_DISK == "true" ]]; then
-            iso/test/agentv/image/ci --from-disk iso/test-runs/night-disk 2>&1 | tee image.log
+            iso/test/agentv/image/ci --from-disk iso/test-runs/installed-disk 2>&1 | tee image.log
           else
             iso/test/agentv/image/ci 2>&1 | tee image.log
           fi
@@ -344,16 +316,15 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-      # The installed box, for the runs that start from it. A few GB even
-      # compressed, so it's kept for three days: a night's run makes a new one.
+      # The installed box, for the runs that start from it, under a key of
+      # its own each night. The cache drops the ones no run has read for a
+      # week, and the oldest first when it's full.
       - name: Keep the installed box
         if: success() && inputs.keep-disk
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: installed-disk
-          path: iso/test-runs/installed-disk/
-          compression-level: 0
-          retention-days: 3
+          path: iso/test-runs/installed-disk
+          key: installed-disk-${{ github.run_id }}
 
       - name: Acceptance ids
         if: always()
