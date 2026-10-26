@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]...
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]... [--app <id>] [--item <json>]
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
 # agentv:requires-sudo=true
 
@@ -44,10 +44,20 @@
 #   S2.19 the sound output playing, and its volume: 100%, or the level
 #         Settings → Sound chose for it. How loud the TV is stays manual.
 #
-# Stage 3, the reference apps (S3 runs them all):
+# Stage 3, the reference apps (S3 runs them all; S3.2 and S3.4 when an app
+# is named):
 #
+#   S3.2  an app opens a known episode through its playback.open, and its
+#         playback state, read from its page for the ledger, has the same
+#         title, season and episode, with a position that moves. --app names
+#         the app and --item the episode, as JSON: AgenTV names no service.
+#   S3.4  with a child's profile watching, the app named with --app opens
+#         the service's profile an adult picked for children, as the screen
+#         daemon says. It reads neither the profile's name nor the page.
 #   S3.3  a ledger row within 10 s of an app opening: a stand-in player app,
-#         installed for the check and removed after it, with its rows.
+#         installed for the check with agentv app install --local and
+#         removed after it, with its rows. It asks for the adult PIN, when
+#         one is set, as any app install does.
 #   S3.10 the same stand-in, which has playback and no tile(), shows a
 #         medium continue tile from its row.
 #   S3.6  Music reads its sources again, then "play <album>" finds an album
@@ -87,15 +97,22 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.3|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]..."
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]... [--app <id>] [--item <json>]"
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 STAGE4=(S4.5 S4.6)
 checks=()
-for arg in "$@"; do
+app_id=""
+app_item=""
+while (( $# )); do
+  arg=$1
+  shift
   case "$arg" in
+    --app) app_id=${1:-}; shift || true; [[ $app_id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || { usage >&2; exit 2; } ;;
+    --item) app_item=${1:-}; shift || true; jq -e 'type == "object" and (.title | type) == "string"' <<<"$app_item" >/dev/null 2>&1 || { usage >&2; exit 2; } ;;
+    [sS]3.2 | [sS]3.4) checks+=("S${arg:1}") ;;
     [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
     [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16 | [sS]2.18 | [sS]2.19) checks+=("S${arg:1}") ;;
     [sS]2) checks+=("${STAGE2[@]}") ;;
@@ -108,6 +125,10 @@ for arg in "$@"; do
   esac
 done
 (( ${#checks[@]} )) || checks=(S1.1 S1.2 S1.5 S1.6 S1.7 "${STAGE2[@]}")
+# S3 runs S3.2 and S3.4 too when an app is named.
+if [[ -n $app_id && " ${checks[*]} " == *" S3.3 "* && " ${checks[*]} " != *" S3.2 "* ]]; then
+  checks=(S3.2 S3.4 "${checks[@]}")
+fi
 
 failed=" "
 current=""
@@ -854,10 +875,15 @@ wants() {
   [[ " ${checks[*]} " == *" $1 "* ]]
 }
 
+# agentv app install, list or remove.
+agentv_app() {
+  "${AGENTV_APP:-$AGENTV_BIN_DIR/agentv-app}-$1" "${@:2}"
+}
+
 # S3.3 and S3.10, with one stand-in player for both.
 ledger_ran=0
 s33() {
-  local id=local.selftest-player work port server dir record rows tile started took="" wait=${AGENTV_LEDGER_WAIT_MS:-20000} first
+  local id=local.selftest-player work port server rows tile started took="" wait=${AGENTV_LEDGER_WAIT_MS:-20000} first
 
   (( ledger_ran )) && return 0
   ledger_ran=1
@@ -899,11 +925,15 @@ export default {
   },
 };
 APP
-  dir="$AGENTV_STATE/apps/$id"
-  record="$AGENTV_STATE/apps/installed.json"
-  sudo install -d -m 755 "$dir"
-  sudo install -m 644 "$work/app/manifest.json" "$work/app/app.ts" "$dir/"
-  sudo bash -c "[[ -f $record ]] || echo '{}' >$record; jq --arg id $id '. + {(\$id): {id: \$id, name: \"Selftest player\", version: \"1.0.0\", tier: \"local\", installedAt: (now | todate)}}' $record >$record.new && chmod 644 $record.new && mv $record.new $record"
+  # Installed the way an app built on this box is (ADR-039), so the PIN, when
+  # there is one, is asked for here in the terminal.
+  if ! agentv_app install --local "$work/app" --yes >/dev/null; then
+    kill "$server" 2>/dev/null || true
+    rm -rf "$work"
+    wants S3.3 && result fail S3.3 "agentv app install --local didn't install the stand-in player"
+    wants S3.10 && result fail S3.10 "agentv app install --local didn't install the stand-in player"
+    return 0
+  fi
 
   started=$(date +%s%N)
   screen app "$id" >/dev/null
@@ -937,8 +967,7 @@ APP
   fi
 
   screen quit "$id" >/dev/null
-  sudo rm -rf "$dir"
-  sudo bash -c "jq --arg id $id 'del(.[\$id])' $record >$record.new && chmod 644 $record.new && mv $record.new $record"
+  agentv_app remove "$id" >/dev/null || true
   curl -fsS --max-time 3 -X DELETE "$(home_url)api/ledger?app=$id" >/dev/null 2>&1 || true
   kill "$server" 2>/dev/null || true
   rm -rf "$work"
@@ -948,6 +977,114 @@ APP
   if wants S3.10; then
     result manual S3.10 "on the TV, an app with playback and no tile of its own, made medium in edit home, shows what you last watched in it, with how far in"
   fi
+}
+
+# The newest ledger row of an app, as JSON, or nothing.
+newest_row() {
+  curl -fsS --max-time 3 "$(home_url)api/ledger?app=$1&limit=1" 2>/dev/null | jq -c '.rows[0] // empty' 2>/dev/null || true
+}
+
+# When a ledger row was last written, in seconds since 1970.
+row_time() {
+  jq -r '.updated_at | sub("\\.[0-9]+Z$"; "Z") | fromdate' <<<"$1" 2>/dev/null || echo 0
+}
+
+# Whether a row is the item's: the same title, any case, and the same season
+# and episode when the item has them.
+row_is_item() {
+  jq -e --argjson item "$app_item" '(.title | ascii_downcase) == ($item.title | ascii_downcase)
+    and (($item.season // null) == null or .season == $item.season)
+    and (($item.episode // null) == null or .episode == $item.episode)' <<<"$1" >/dev/null 2>&1
+}
+
+# What a row says, for a line.
+row_says() {
+  jq -r '"\(.title)\(if .season then " S\(.season)" else "" end)\(if .episode then " E\(.episode)" else "" end) at \(.position_s) s"' <<<"$1" 2>/dev/null || echo "nothing"
+}
+
+# S3.2: the app named opens the item named through its playback.open, and
+# the screen daemon reads its playback state for the ledger every 10 s.
+s32() {
+  local id=$app_id started row first="" second="" wait=${AGENTV_PLAYBACK_WAIT_S:-90} manifest
+
+  if [[ -z $id || -z $app_item ]]; then
+    result manual S3.2 "name the app and a known episode: agentv selftest S3.2 --app <id> --item '{\"kind\":\"episode\",\"title\":\"<series>\",\"season\":1,\"episode\":2}'"
+    return 0
+  fi
+  tv_on S3.2 || return 0
+  manifest=$(curl -fsS --max-time 5 "$(home_url)api/apps/$id/package" 2>/dev/null | jq -r '.dir // empty' 2>/dev/null || true)
+  if [[ -z $manifest ]] || ! jq -e '.tv.capabilities | index("playback")' "$manifest/manifest.json" >/dev/null 2>&1; then
+    result fail S3.2 "$id isn't an app on this box with playback"
+    return 0
+  fi
+
+  screen quit "$id" >/dev/null
+  started=$(date +%s)
+  screen app "$id" "$app_item" >/dev/null
+  # Its first row for the item, written after it opened, then a later one.
+  while (( $(date +%s) - started < wait )); do
+    row=$(newest_row "$id")
+    if [[ -n $row ]] && (( $(row_time "$row") >= started )) && row_is_item "$row"; then
+      if [[ -z $first ]]; then
+        first=$row
+      elif (( $(row_time "$row") > $(row_time "$first") )); then
+        second=$row
+        break
+      fi
+    fi
+    sleep 1
+  done
+  screen home >/dev/null
+
+  if [[ -z $first ]]; then
+    row=$(newest_row "$id")
+    result fail S3.2 "$id didn't play $(jq -r .title <<<"$app_item") within $wait s of opening it; its newest row says $(row_says "$row")"
+  elif [[ -z $second ]]; then
+    result fail S3.2 "$id read $(row_says "$first") once, and no second time within $wait s"
+  elif jq -e --argjson first "$first" '.position_s > $first.position_s' <<<"$second" >/dev/null 2>&1; then
+    result pass S3.2 "$id opened it through its playback.open, and its playback state read $(row_says "$first"), then $(row_says "$second")"
+  else
+    result fail S3.2 "$id read $(row_says "$first"), then $(row_says "$second"): the position didn't move"
+  fi
+  result manual S3.2 "on the TV, it was that episode playing, and Home paused it"
+}
+
+# S3.4: with a child watching, the app named opens the service's profile an
+# adult picked for children (ADR-009), as the screen daemon says it did.
+s34() {
+  local id=$app_id role picked started profile="" wait=${AGENTV_PROFILE_WAIT_S:-60}
+
+  if [[ -z $id ]]; then
+    result manual S3.4 "name the app: agentv selftest S3.4 --app <id>, with a child's profile watching"
+    return 0
+  fi
+  tv_on S3.4 || return 0
+  role=$(curl -fsS --max-time 5 "$(home_url)api/viewer" 2>/dev/null | jq -r '.viewer.role // empty' 2>/dev/null || true)
+  if [[ $role != "child" ]]; then
+    result manual S3.4 "switch to a child's profile on the TV or the phone, then run agentv selftest S3.4 --app $id again. Switching back to an adult asks for the PIN"
+    return 0
+  fi
+  picked=$(curl -fsS --max-time 5 "$(home_url)api/apps/$id/profiles" 2>/dev/null | jq -r '.forChildren != null' 2>/dev/null || true)
+  if [[ $picked != "true" ]]; then
+    result fail S3.4 "no profile is picked for children in $id: an adult picks it in the app's details, under profile for children"
+    return 0
+  fi
+
+  screen quit "$id" >/dev/null
+  screen app "$id" >/dev/null
+  started=$(date +%s)
+  while (( $(date +%s) - started < wait )); do
+    profile=$(front "[.open[]? | select(.id == \"$id\") | .profile][0] // \"\"")
+    [[ -n $profile && $profile != "pending" ]] && break
+    sleep 1
+  done
+  case $profile in
+    selected) result pass S3.4 "with a child watching, $id opened the profile picked for children" ;;
+    "") result fail S3.4 "$id didn't open for the child: is it ticked for children in its details?" ;;
+    pending) result fail S3.4 "$id was still opening the profile for children after $wait s" ;;
+    *) result fail S3.4 "with a child watching, $id said: $profile" ;;
+  esac
+  result manual S3.4 "on the TV, it's the service's profile for children; then switch back to an adult"
 }
 
 # The built-in Music app, in the TV session.
@@ -1069,6 +1206,8 @@ for id in "${checks[@]}"; do
     S2.16) s216 ;;
     S2.18) s218 ;;
     S2.19) s219 ;;
+    S3.2) s32 ;;
+    S3.4) s34 ;;
     S3.3 | S3.10) s33 ;;
     S3.6) s36 ;;
     S3.8) s38 ;;
