@@ -2,7 +2,8 @@
 // done, in the Terminal look (ADR-014) and the Omarchy theme's colours. One
 // step at a time: the welcome screen (the Wi-Fi and pairing), getting ready
 // (the box brings itself up to date first, board 35), the AI provider and
-// its terms, who watches, what the TV is for, its apps, its look, and home. The daemon keeps the step in setup.json, so a restart, an
+// its terms, who watches, what the TV is for, its apps, its look and its
+// background, and home. The daemon keeps the step in setup.json, so a restart, an
 // update or a reboot comes back to the same one (S5.6).
 //
 // Every input works here as on home: a keyboard, the phone's remote, a
@@ -19,6 +20,7 @@ import { Sounds } from "../launcher/sounds.ts";
 import { aiStep, cliLine, path } from "./ai.ts";
 import { setup, type AiInfo, type Installs, type Provider, type SetupInfo, type Step } from "./api.ts";
 import { addYourOwn, apps, installLine } from "./apps.ts";
+import { background, photos } from "./background.ts";
 import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
@@ -246,6 +248,8 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "apps/add") return addYourOwn(ctx);
   if (to === "apps") return apps(ctx);
   if (to === "theme") return theme(ctx);
+  if (to === "background/photos") return photos(ctx);
+  if (to === "background") return background(ctx);
   return welcome(ctx);
 }
 
@@ -413,6 +417,7 @@ async function start(): Promise<void> {
         if (ctx.ai) ctx.ai = { ...ctx.ai, key: data as AiInfo["key"] };
         view?.heard?.("key", data);
       },
+      background: (data) => view?.heard?.("background", data),
       "setup-apps": (data) => {
         ctx.installs = data as Installs;
         view?.heard?.("setup-apps", data);

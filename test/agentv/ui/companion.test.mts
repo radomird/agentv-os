@@ -377,3 +377,44 @@ test("S4.10 every press shows, clicks and buzzes, quick taps each count and neve
   await screen.close();
   await handheld.close();
 });
+
+// A real picture for the phone to send: 4 × 4 red pixels, as a PNG.
+const RED_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP4z8AARwzEcQCukw/x0F8jngAAAABJRU5ErkJggg==", "base64");
+
+test("S5.3 a photo shared from the phone becomes the TV's background, with its credit on the ambient screen", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await hand.locator('[data-mode="home"]').tap();
+  await hand.locator('button[data-action="photo"]').tap();
+  await hand.waitForSelector(".photo-page");
+  assert.equal(await hand.locator('[data-action="send-photo"]').isDisabled(), true, "nothing to send before a photo is picked");
+  await hand.locator("#photo-file").setInputFiles({ name: "red.png", mimeType: "image/png", buffer: RED_PNG });
+  await hand.waitForSelector(".photo-preview:not(.hidden)");
+  await hand.locator("#photo-credit").fill("photo by the layer 4 test");
+  await hand.locator('[data-action="send-photo"]').tap();
+  await hand.waitForFunction(() => /background now/.test(document.getElementById("toast")?.textContent ?? ""));
+
+  const now = await (await fetch(`${url}/api/backgrounds`)).json();
+  assert.equal(now.source, "photos");
+  assert.equal(now.items[0].credit.text, "photo by the layer 4 test");
+  assert.match(now.items[0].credit.from, / on iphone$|on phone$/);
+  assert.equal(now.items[0].type, "image/jpeg", "the phone drew it again as a JPEG, so nothing else of the file went along");
+
+  // Home has it behind the tiles, and the ambient screen shows it with its
+  // credit.
+  await screen.waitForSelector(`#backdrop img[data-id="${now.current}"]`, { timeout: 5000 });
+  await screen.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(true));
+  await screen.waitForSelector("#ambient.on.photos .ambient-picture.on", { timeout: 5000 });
+  assert.equal(await screen.locator(".ambient-credit").innerText(), "photo by the layer 4 test");
+  await screen.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(false));
+
+  // Back to the pixel field: no backdrop, and the ambient screen draws the field.
+  await post("/api/backgrounds", { source: "field" });
+  await screen.waitForFunction(() => !document.querySelector("#backdrop img"), null, { timeout: 5000 });
+  await screen.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(true));
+  await screen.waitForSelector("#ambient.on .pixel-field");
+  assert.equal(await screen.locator(".ambient-credit").innerText(), "");
+  await screen.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(false));
+  await hand.close();
+  await screen.close();
+});

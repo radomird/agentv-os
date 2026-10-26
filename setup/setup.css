@@ -834,3 +834,57 @@
   font-size: 22px;
   opacity: 0.8;
 }
+
+/* --- The background (board 13) ------------------------------------------------ */
+
+.backs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.back {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  color: var(--bright-foreground);
+  text-align: left;
+}
+
+.back.picked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+}
+
+.back.soon {
+  opacity: 0.6;
+}
+
+.back-shot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 180px;
+  overflow: hidden;
+  background: var(--dark-background);
+  color: var(--accent);
+}
+
+.back-shot img,
+.back-shot .pixel-field {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.back .look-name {
+  font-size: 28px;
+}
+
+.back .look-note {
+  font-size: 20px;
+}

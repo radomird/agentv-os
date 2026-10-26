@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { daemon, listen, screen, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
+import { creditLine, daemon, listen, screen, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
@@ -23,6 +23,7 @@ import { keyPage } from "./pages/key.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { Sounds } from "./sounds.ts";
+import { field } from "../setup/frame.ts";
 
 export interface View {
   el: HTMLElement;
@@ -318,12 +319,34 @@ function apply(settings: Settings): void {
   document.documentElement.classList.toggle("reduce-motion", settings.reduceMotion);
 }
 
-// The ambient screen (ADR-031): a placeholder until the backgrounds come in
-// stage 5. The screen daemon shows it after a while with no input, or once
-// the TV has been off for a while; any key, click or mouse move ends it.
+// The background (ADR-012, S5.3): the photo chosen, behind home, dimmed so
+// the tiles read over it; or the theme's own colour with none.
+const backdropEl = document.getElementById("backdrop")!;
+let backgrounds: Backgrounds | null = null;
+
+function drawBackdrop(): void {
+  const item = backgrounds?.source === "photos" ? backgrounds.items.find((one) => one.id === backgrounds?.current) : undefined;
+  const shown = backdropEl.querySelector("img")?.dataset.id;
+  if (item && item.id !== shown) backdropEl.replaceChildren(h("img", { class: "backdrop-picture", src: `/api/backgrounds/${item.id}`, alt: "", "data-id": item.id }));
+  else if (!item) backdropEl.replaceChildren();
+  document.body.classList.toggle("with-backdrop", Boolean(item));
+}
+
+async function loadBackgrounds(): Promise<void> {
+  backgrounds = await daemon.backgrounds().catch(() => backgrounds);
+  drawBackdrop();
+}
+
+// The ambient screen (ADR-012, ADR-031): the photos one after another, each
+// with its credit, slowly drifting, or the theme's pixel field with none,
+// and the time and the day. The screen daemon shows it after a while with
+// no input, or once the TV has been off for a while; any key, click or mouse
+// move ends it.
 const ambientEl = document.getElementById("ambient")!;
 let ambient = false;
 let ambientPointer: { x: number; y: number } | null = null;
+// How long each photo stays.
+const PHOTO_MS = 60_000;
 
 function setAmbient(on: boolean): void {
   if (on === ambient) return;
@@ -333,13 +356,38 @@ function setAmbient(on: boolean): void {
   if (on) {
     const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }).toLowerCase();
     const time = h("div", { class: "ambient-time" }, clock());
+    const pictures = h("div", { class: "ambient-pictures" });
+    const credit = h("div", { class: "ambient-credit" });
+    const photos = backgrounds?.source === "photos" ? backgrounds.items : [];
+    let at = Math.max(0, photos.findIndex((item) => item.id === backgrounds?.current));
+    const next = () => {
+      const item = photos[at % photos.length];
+      at++;
+      const img = h("img", { class: "ambient-picture", src: `/api/backgrounds/${item.id}`, alt: "" });
+      img.addEventListener("load", () => {
+        for (const old of pictures.querySelectorAll(".ambient-picture.on")) {
+          old.classList.remove("on");
+          setTimeout(() => old.remove(), 2000);
+        }
+        requestAnimationFrame(() => img.classList.add("on"));
+        credit.textContent = creditLine(item);
+      });
+      pictures.append(img);
+    };
+    if (photos.length) next();
+    else pictures.append(field());
     const timer = setInterval(() => {
       if (!ambient) clearInterval(timer);
       else time.textContent = clock();
     }, 10_000);
-    ambientEl.replaceChildren(
-      h("div", { class: "ambient-drift" }, time, h("div", { class: "ambient-day" }, day), h("div", { class: "ambient-note" }, "backgrounds are coming soon. any key to go back.")),
-    );
+    if (photos.length > 1) {
+      const turn = setInterval(() => {
+        if (!ambient) clearInterval(turn);
+        else next();
+      }, PHOTO_MS);
+    }
+    ambientEl.classList.toggle("photos", photos.length > 0);
+    ambientEl.replaceChildren(pictures, h("div", { class: "ambient-drift" }, time, h("div", { class: "ambient-day" }, day)), credit);
   }
   ambientEl.classList.toggle("on", on);
 }
@@ -557,6 +605,7 @@ async function start(): Promise<void> {
   });
   ctx.state = await daemon.home();
   apply(ctx.state.settings);
+  await loadBackgrounds();
   show("home");
   setLock(ctx.state.pin?.locked === true);
   window.addEventListener(
@@ -585,6 +634,8 @@ async function start(): Promise<void> {
     weather: () => {
       if (history[history.length - 1] === "home") redraw();
     },
+    // A photo came from a phone, or another source was chosen.
+    background: () => void loadBackgrounds(),
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },

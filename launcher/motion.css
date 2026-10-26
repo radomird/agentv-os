@@ -91,6 +91,20 @@
   to { transform: translate(48px, 32px); }
 }
 
+/* Each photo fades in over the last, and drifts in slowly while it's on. */
+.ambient-picture {
+  transition: opacity 2s ease-in-out;
+}
+
+.ambient-picture.on {
+  animation: ambient-pan 60s ease-in-out both;
+}
+
+@keyframes ambient-pan {
+  from { transform: scale(1.02) translate(-12px, 0); }
+  to { transform: scale(1.08) translate(12px, -8px); }
+}
+
 /* Reduce motion, from the system or Settings → Look: movement becomes plain
    fades. */
 @media (prefers-reduced-motion: reduce) {
@@ -101,14 +115,16 @@
   .page-forward,
   .page-back,
   .toast { animation: fade-in var(--base) ease-out both; }
-  .ambient-drift { animation: none; }
+  .ambient-drift,
+  .ambient-picture.on { animation: none; }
 }
 
 :root.reduce-motion .tile.focused,
 :root.reduce-motion .tile.pressed,
 :root.reduce-motion .button.pressed { transform: none; }
 :root.reduce-motion #ring { transition: opacity var(--fast) ease-out; }
-:root.reduce-motion .ambient-drift { animation: none; }
+:root.reduce-motion .ambient-drift,
+:root.reduce-motion .ambient-picture.on { animation: none; }
 :root.reduce-motion .page-forward,
 :root.reduce-motion .page-back,
 :root.reduce-motion .toast { animation: fade-in var(--base) ease-out both; }

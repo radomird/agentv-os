@@ -227,6 +227,7 @@ export async function startBox(
     setupCatalog: async () => OFFICIAL,
     // Omarchy's themes, from this checkout, for setup's look.
     omarchy: ROOT,
+    backgrounds: join(state, "..", "backgrounds"),
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };

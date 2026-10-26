@@ -794,9 +794,49 @@ test("S5.2 the look: three of Omarchy's themes in their own colours, OK sets one
   await page.waitForSelector('.look.picked[data-theme="gruvbox"]');
 
   await page.locator('[data-action="continue"]').click();
+  await page.waitForSelector(".backs", { timeout: 10_000 });
+  assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "background");
+  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  await page.close();
+});
+
+test("S5.3 the background: the pixel field by default, and a photo sent from the phone becomes it, then setup is done", async () => {
+  await toApps("streaming");
+  await post("/api/setup/finish", { step: "apps" });
+  await post("/api/setup/finish", { step: "theme" });
+  await post("/api/backgrounds", { source: "field" });
+  const page = await tv();
+  await page.waitForSelector(".backs .back");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a background.");
+  assert.deepEqual(await page.locator(".back .look-name").allInnerTexts(), ["pixel field", "your photos", "shared folder", "art", "made for you"]);
+  assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "field");
+  assert.match(await textOf(page, ".bar"), /6\/6 look/);
+
+  // The others are coming soon.
+  await page.locator('[data-background="art"]').click();
+  await page.waitForFunction(() => /coming soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+
+  // Your photos, with none yet: send one from the phone.
+  const had = (await (await fetch(`${url}/api/backgrounds`)).json()).items.length;
+  if (had === 0) {
+    await page.locator('[data-background="photos"]').click();
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "send a photo.");
+    const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
+    const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
+    assert.equal((await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/background?credit=photo%20by%20the%20test`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" }, body: new Uint8Array(jpeg) })).status, 200);
+    await page.waitForSelector(".backs .back");
+  } else {
+    await page.locator('[data-background="photos"]').click();
+  }
+  await page.waitForSelector('.back.picked[data-background="photos"]');
+  assert.equal((await (await fetch(`${url}/api/backgrounds`)).json()).source, "photos");
+
+  await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".grid .tile", { timeout: 10_000 });
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.done, true);
-  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  await page.waitForSelector("#backdrop img");
+  await post("/api/backgrounds", { source: "field" });
   await page.close();
 });
 

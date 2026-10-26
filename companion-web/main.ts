@@ -7,7 +7,8 @@
 //   password the phone's password manager can fill;
 // - playback while something plays, and a trackpad for Omarchy's desktop;
 // - who's watching, arrange home, the update notice with Install tonight,
-//   and the adult PIN, which also unlocks the TV.
+//   and the adult PIN, which also unlocks the TV;
+// - Share → TV: a photo from the phone for the TV's background (S5.3).
 // It follows the TV (ADR-037): a PIN pad whenever the TV asks for the PIN,
 // the keyboard for a text field, playback while something plays, the
 // trackpad on the desktop, and the d-pad otherwise. Every press shows,
@@ -19,6 +20,7 @@ import { arrange } from "./arrange.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
+import { photoPage } from "./photo.ts";
 
 const app = document.getElementById("app")!;
 
@@ -67,9 +69,12 @@ interface Ask {
   keyUrl: string;
 }
 
-type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update";
+type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo";
 let state: State | null = null;
 let mode: Mode = "remote";
+// The photo page stays as it is while the page draws again around it, so a
+// photo picked isn't lost when something changes on the TV.
+let photoEl: HTMLElement | null = null;
 
 // The page each thing on the TV opens. The PIN pad comes over whatever page
 // is showing.
@@ -563,6 +568,25 @@ function draw(): void {
   if (state.setup) {
     banners.push(h("p", { class: "note with-icon setup-step", "data-setup": state.setup.step }, glyph("tv", 16), h("span", {}, `tv setup · ${state.setup.part}`)));
   }
+  // Setup's background: a photo from here.
+  if (state.setup?.step === "background" && mode !== "photo") {
+    banners.push(
+      h(
+        "button",
+        {
+          type: "button",
+          class: "banner",
+          "data-action": "photo",
+          onclick: () => {
+            mode = "photo";
+            draw();
+          },
+        },
+        glyph("photo", 18),
+        h("span", {}, "send a photo for the tv's background ›"),
+      ),
+    );
+  }
   if (state.pin.locked) {
     banners.push(
       h(
@@ -601,7 +625,26 @@ function draw(): void {
     );
   }
   const body = h("div", {});
-  if (mode === "home") void arrange(body);
+  if (mode === "home") {
+    void arrange(body).then(() =>
+      body.append(
+        h(
+          "button",
+          {
+            type: "button",
+            class: "button",
+            "data-action": "photo",
+            onclick: () => {
+              mode = "photo";
+              draw();
+            },
+          },
+          glyph("photo", 18),
+          h("span", {}, "send a photo for the background ›"),
+        ),
+      ),
+    );
+  } else if (mode === "photo") body.append((photoEl ??= photoPage(failed)));
   else if (mode === "who") body.append(who());
   else if (mode === "update" && state.update) body.append(updatePage(state.update));
   else if (mode === "type") body.append(typing());

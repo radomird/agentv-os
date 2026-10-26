@@ -189,6 +189,26 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
   return data as T;
 }
 
+// The backgrounds (ADR-012, board 13): the TV's pixel field, or the
+// household's photos, each with who to thank for it.
+export interface Background {
+  id: string;
+  type: string;
+  credit: { text: string | null; from: string };
+  added: string;
+}
+
+export interface Backgrounds {
+  source: "field" | "photos";
+  current: string | null;
+  items: Background[];
+}
+
+// What the ambient screen says under a picture.
+export function creditLine(item: Background): string {
+  return item.credit.text ?? `photo · ${item.credit.from}`;
+}
+
 // One of Omarchy's themes setup and Settings offer (board 12), with the
 // colours its preview draws.
 export interface ThemePreview {
@@ -208,6 +228,8 @@ export const daemon = {
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
   tonight: (version: string | null, grant?: string) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }, grant),
+  backgrounds: () => call<Backgrounds>("GET", "/api/backgrounds"),
+  chooseBackground: (source: Backgrounds["source"], current?: string) => call<Backgrounds>("POST", "/api/backgrounds", { source, current }),
   // The looks setup and Settings → Look offer, and which one the TV has.
   themes: () => call<{ themes: ThemePreview[]; current: string | null }>("GET", "/api/themes"),
   weather: () => call<WeatherPlace>("GET", "/api/weather"),
