@@ -1,0 +1,57 @@
+name: ffmpeg
+description: >-
+  ffprobe and ffmpeg for the Music tests, as the box has them. Ubuntu's
+  mirror is sometimes slow enough that ffmpeg's 66 MB of packages outlast a
+  job's 10 minutes before any test runs, so the packages are kept in
+  GitHub's cache, keyed on exactly what apt would fetch. The push runs on
+  agentv save it, and pull requests read it from there.
+
+runs:
+  using: composite
+  steps:
+    - name: What apt would fetch for ffmpeg
+      id: debs
+      shell: bash
+      run: |
+        if type -P ffprobe >/dev/null; then
+          echo "need=false" >>"$GITHUB_OUTPUT"
+          exit 0
+        fi
+        sudo apt-get update -q
+        apt-get install -qq --print-uris --no-install-recommends ffmpeg >"$RUNNER_TEMP/ffmpeg-uris"
+        echo "need=true" >>"$GITHUB_OUTPUT"
+        echo "key=ffmpeg-debs-$(lsb_release -cs)-$(sha256sum <"$RUNNER_TEMP/ffmpeg-uris" | cut -c1-16)" >>"$GITHUB_OUTPUT"
+
+    - name: ffmpeg's packages, from the cache
+      id: restore
+      if: steps.debs.outputs.need == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/ffmpeg-debs
+        key: ${{ steps.debs.outputs.key }}
+        restore-keys: ffmpeg-debs-
+
+    - name: ffmpeg, from the cache or the mirror
+      if: steps.debs.outputs.need == 'true'
+      shell: bash
+      run: |
+        debs=$HOME/ffmpeg-debs
+        mkdir -p "$debs/partial"
+        sudo apt-get install -yq --no-install-recommends \
+          -o Dir::Cache::archives="$debs/" -o APT::Keep-Downloaded-Packages=true -o Acquire::Retries=3 ffmpeg
+        sudo chown -R "$(id -u):$(id -g)" "$debs"
+        rm -rf "$debs/partial" "$debs/lock"
+        # Only what this install needed goes back in the cache, so an older
+        # copy from restore-keys doesn't keep growing.
+        for deb in "$debs"/*.deb; do
+          [[ -e $deb ]] || continue
+          grep -qF " $(basename "$deb") " "$RUNNER_TEMP/ffmpeg-uris" || rm -f "$deb"
+        done
+        ffprobe -version | head -1
+
+    - name: ffmpeg's packages, into the cache
+      if: steps.debs.outputs.need == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/ffmpeg-debs
+        key: ${{ steps.debs.outputs.key }}
