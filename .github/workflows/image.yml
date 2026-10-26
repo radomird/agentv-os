@@ -221,15 +221,38 @@ jobs:
             query="actions/artifacts?name=installed-disk&per_page=30"
             pick='[.artifacts[] | select(.workflow_run.head_branch == "agentv")]'
           fi
-          id=$(gh api "repos/$GITHUB_REPOSITORY/$query" --jq "$pick | map(select(.expired | not)) | sort_by(.created_at) | last | .id // empty")
-          if [[ -z $id ]]; then
+          found=$(gh api "repos/$GITHUB_REPOSITORY/$query" --jq "$pick | map(select(.expired | not)) | sort_by(.created_at) | last | select(. != null) | \"\\(.id) \\(.workflow_run.id)\"")
+          if [[ -z $found ]]; then
             echo "There's no installed box from a night's run to start from, so this run builds the ISO and installs it." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          mkdir -p iso/test-runs/night-disk
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >disk.zip
-          unzip -q disk.zip -d iso/test-runs/night-disk
-          rm disk.zip
+          read -r id run <<<"$found"
+          echo "id=$id" >>"$GITHUB_OUTPUT"
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+
+      # The action fetches it in parallel. One stream, through the API, took
+      # 20 minutes for its 4.7 GB.
+      - name: Fetch the night's installed box
+        if: steps.disk.outputs.id
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.disk.outputs.id }}
+          run-id: ${{ steps.disk.outputs.run }}
+          github-token: ${{ github.token }}
+          path: iso/test-runs/night-disk
+
+      - name: Start from the night's installed box
+        id: night
+        if: steps.disk.outputs.id
+        run: |
+          # One artifact fetched by its id lands in the folder itself; older
+          # releases of the action put it in a folder named after it.
+          if [[ -d iso/test-runs/night-disk/installed-disk ]]; then
+            mv iso/test-runs/night-disk/installed-disk/* iso/test-runs/night-disk/
+            rmdir iso/test-runs/night-disk/installed-disk
+          fi
+          [[ -f iso/test-runs/night-disk/base.qcow2 && -f iso/test-runs/night-disk/iso-name ]] ||
+            { echo "::error::the night's box came without its disk or its ISO's name"; exit 1; }
           echo "found=true" >>"$GITHUB_OUTPUT"
           echo "This run starts from the box a night's run installed ($(cat iso/test-runs/night-disk/iso-name)), with this commit's packages put on it." | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -237,7 +260,7 @@ jobs:
         env:
           AGENTV_TEST_TESTED_OUT: ${{ inputs.nightly && '/w/test-runs/tested-packages.txt' || '' }}
           AGENTV_TEST_KEEP_DISK: ${{ inputs.keep-disk && '/w/test-runs/installed-disk' || '' }}
-          FROM_DISK: ${{ steps.disk.outputs.found }}
+          FROM_DISK: ${{ steps.night.outputs.found }}
         run: |
           set -o pipefail
           if [[ $FROM_DISK == "true" ]]; then
