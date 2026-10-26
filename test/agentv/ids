@@ -53,3 +53,9 @@ S4.7  check     a tile moved or resized in arrange home changes on the TV within
 S4.8  check     the phone shows the same update notice as the TV, and Install tonight from the phone installs it overnight (layer 4)
 S4.9  manual    on an iPhone, the sign-in field offers AutoFill and signs in to a service on the TV; the web companion's fields do the same in a phone browser, with no password in AgenTV's logs (the image layer checks the web companion's fields and the logs)
 S4.10 check     when the TV asks for the PIN, a paired phone shows a pad within 1 s and the PIN typed there does what the TV asked; the remote follows the TV to the keyboard, playback and the d-pad, each press shows and clicks (and buzzes on Android), and quick taps never zoom (layers 2 and 4; real phones by hand)
+S5.1  manual    a household member doing it for the first time finishes setup in under 10 minutes of their own time, without help
+S5.2  image     changing the theme as Omarchy's desktop does reaches the TV within 2 s, timed on the box (layer 2 checks the hand-over comes before Omarchy's hooks)
+S5.3  image     a photo shared from the phone becomes the background, and the ambient screen shows its credit (layer 4 too)
+S5.4  image     the soundtrack plays from the welcome screen and muting it from the phone stops it; its equaliser moves with the music (layer 4)
+S5.5  image     picking Claude shows Anthropic's terms for the way in picked, nothing installs until an adult accepts on the phone, and the box records it (layers 2 and 4 too)
+S5.6  image     setup started from the previous release updates itself at getting ready, and picks up at the same step after a restart (layer 4 too)
