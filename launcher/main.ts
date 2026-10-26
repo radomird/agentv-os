@@ -5,6 +5,7 @@
 // its sound (ADR-024).
 
 import { daemon, listen, screen, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
+import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
@@ -68,6 +69,8 @@ export interface Ctx {
 const page = document.getElementById("page")!;
 const sounds = new Sounds();
 const focus = new Focus(document.getElementById("ring")!);
+// A text field with the focus opens the phone's keyboard (ADR-037).
+focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
 let history: string[] = ["home"];
 let view: View | undefined;
 
@@ -177,7 +180,11 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
     const before = focus.get();
     // The page's focused element loses its mark while the pad has the focus.
     before?.classList.remove("focused");
-    const pad = pinPad(options, (sound) => sounds.play(sound));
+    // The phone's remote shows the pad too, with what it's for and how
+    // many digits are in (ADR-037).
+    const pin = (digits: number, error: string | null) => tell({ pin: { title: options.title, for: options.note, digits, error } });
+    const pad = pinPad({ ...options, changed: pin }, (sound) => sounds.play(sound));
+    pin(0, null);
     pinOpen = pad;
     opened?.(pad);
     pinEl.replaceChildren(pad.el);
@@ -185,6 +192,7 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
     focus.setRoot(pad.el, pad.first);
     const ok = await pad.done;
     pinOpen = null;
+    tell({ pin: null });
     opened?.(null);
     pinEl.classList.remove("on");
     pinEl.replaceChildren();
@@ -284,6 +292,7 @@ function viewFor(route: string): View {
 function show(route: string, direction?: "forward" | "back", action?: string): void {
   // Home ends a visit to Settings, and the PIN's grant with it.
   if (route === "home") held = null;
+  tell({ screen: route === "home" ? "home" : "menu" });
   view = viewFor(route);
   const el = view.el;
   if (direction) {
@@ -315,6 +324,7 @@ let ambientPointer: { x: number; y: number } | null = null;
 function setAmbient(on: boolean): void {
   if (on === ambient) return;
   ambient = on;
+  tell({ screen: on ? "ambient" : history[history.length - 1] === "home" ? "home" : "menu" });
   ambientPointer = null;
   if (on) {
     const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }).toLowerCase();
@@ -557,6 +567,11 @@ async function start(): Promise<void> {
     // Someone else is watching (S4.2): their home, at once. A child's profile
     // closes the apps open behind home that children can't open.
     viewer: () => void switched(),
+    // The phone's Settings button (ADR-037), for an adult's profile. (Not
+    // "open", which EventSource sends itself.)
+    page: (data) => {
+      if ((data as { route?: string }).route === "settings" && ctx.state.viewer.role === "adult") ctx.go("settings");
+    },
     viewers: () => void refresh(),
     // A phone was paired or forgotten: pairing is done, and Settings says so.
     phones: (data) => {

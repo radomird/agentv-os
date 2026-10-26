@@ -216,6 +216,10 @@ class FakeLauncher implements Launcher {
   async signingIn(app: { id: string; name: string } | null) {
     this.signings.push(app?.id ?? null);
   }
+  contexts: { front: "home" | "app"; playing: boolean }[] = [];
+  async tvContext(change: { front: "home" | "app"; playing: boolean }) {
+    this.contexts.push(change);
+  }
   desktops = 0;
   desktopGrants: (string | undefined)[] = [];
   async appTarget(id: string) {
@@ -887,6 +891,24 @@ async function openApp(t: Awaited<ReturnType<typeof tv>>, id: string, address: s
 async function open(screen: Screen): Promise<any[]> {
   return ((await screen.handle({ cmd: "status" })) as any).open;
 }
+
+test("ADR-037 the daemon hears what's in front and whether something plays when it changes, for the phone's remote", async () => {
+  const t = await tv();
+  await t.screen.tellContext();
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts, [{ front: "home", playing: false }], "said once, until it changes");
+  const page = await openApp(t, "agentv.tube", "0xb");
+  await t.screen.tellContext();
+  t.launcher.browser.playing.set(page, true);
+  await t.screen.tellContext();
+  await t.screen.handle({ cmd: "home" });
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.slice(1), [
+    { front: "app", playing: false },
+    { front: "app", playing: true },
+    { front: "home", playing: false },
+  ]);
+});
 
 test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it again plays it where it was", async () => {
   const t = await tv();

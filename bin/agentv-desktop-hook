@@ -8,7 +8,9 @@
 # opens there. When the desktop starts, Omarchy's post-boot hook runs this
 # (config/omarchy/hooks/post-boot.d/agentv):
 #   - Omarchy's first-run notices stay off it, as before (ADR-029);
-#   - Super+Ctrl+Home goes back to the TV.
+#   - Super+Ctrl+Home goes back to the TV;
+#   - the phone's remote works here as a trackpad and keyboard (ADR-037),
+#     through the virtual input device and the desktop's relay.
 #
 # The key comes from a one-line loader in Omarchy's toggles folder
 # (~/.local/state/omarchy/toggles/hypr/), which Omarchy's Hyprland loads with
@@ -47,6 +49,10 @@ fi
 if ! omarchy-done check first-run-user 2>/dev/null; then
   setsid -f "$AGENTV_BIN_DIR/agentv-quiet-first-run" >/dev/null 2>&1
 fi
+
+# The phone's trackpad and keys, here too. The relay stops with the
+# desktop's session.
+systemctl --user start agentv-input.service agentv-desktop-remote.service >/dev/null 2>&1 || true
 
 # A box that missed the loader gets it now, and this session gets the key
 # straight away.

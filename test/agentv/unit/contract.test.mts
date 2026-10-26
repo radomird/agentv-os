@@ -42,6 +42,15 @@ test("recorded times move so the one named is the start of this hour, in JSON an
   assert.deepEqual(fixtures.missing, ["POST https://api.test/x", "GET https://elsewhere.test/x"]);
 });
 
+test("a recorded 204 comes back with no body, as the server sent it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentv-contract-"));
+  writeFileSync(join(dir, "none.json"), JSON.stringify({ status: 204, headers: { "content-type": "" }, body: null }));
+  const fixtures = new Fixtures(dir, { routes: [{ url: "https://api.test/play", method: "POST", reply: "none.json" }], checks: [] });
+  const response = await fixtures.fetch("https://api.test/play", { method: "POST" });
+  assert.equal(response.status, 204);
+  assert.equal(await response.text(), "");
+});
+
 test("every app here with fixtures is found: the built-ins and the test apps", () => {
   const found = appsHere().map((dir) => dir.slice(ROOT.length + 1));
   for (const dir of ["apps/builtin/agentv.clock", "apps/builtin/agentv.music", "apps/builtin/agentv.weather", "test/agentv/fixtures/apps/sample"]) {
