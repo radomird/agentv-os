@@ -229,6 +229,7 @@ jobs:
             "S1.1=$(result S1.1)" "S1.3=$(result S1.3)" "S1.6=$(result S1.6)" "S1.7=$(result S1.7)" \
             "S2.14=$(result S2.14)" "S2.15=$(result S2.15)" "S2.16=$(result S2.16)" "S2.17=$(result S2.17)" "S2.18=$(result S2.18)" "S2.19=$(result S2.19)" \
             "S3.3=$(result S3.3)" "S3.6=$(result S3.6)" "S3.8=$(result S3.8)" "S3.9=$(result S3.9)" "S3.10=$(result S3.10)" \
+            "S4.4=$(result S4.4)" "S4.5=$(result S4.5)" "S4.6=$(result S4.6)" \
             >>"$GITHUB_STEP_SUMMARY"
 
       - name: Keep the screenshots and logs
