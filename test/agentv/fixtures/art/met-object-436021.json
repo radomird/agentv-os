@@ -1,11 +1,102 @@
 {
   "objectID": 436021,
+  "isHighlight": false,
+  "accessionNumber": "22.27.1",
+  "accessionYear": "1922",
   "isPublicDomain": true,
   "primaryImage": "https://images.metmuseum.org/CRDImages/ep/original/DP-24650-001.jpg",
   "primaryImageSmall": "https://images.metmuseum.org/CRDImages/ep/web-large/DP-24650-001.jpg",
+  "additionalImages": [],
+  "constituents": [
+    {
+      "constituentID": 161790,
+      "role": "Artist",
+      "name": "Gustave Courbet",
+      "constituentULAN_URL": "http://vocab.getty.edu/page/ulan/500010927",
+      "constituentWikidata_URL": "https://www.wikidata.org/wiki/Q34618",
+      "gender": ""
+    }
+  ],
+  "department": "European Paintings",
+  "objectName": "Painting",
   "title": "The Sea",
+  "culture": "",
+  "period": "",
+  "dynasty": "",
+  "reign": "",
+  "portfolio": "",
+  "artistRole": "Artist",
+  "artistPrefix": "",
   "artistDisplayName": "Gustave Courbet",
+  "artistDisplayBio": "French, Ornans 1819–1877 La Tour-de-Peilz",
+  "artistSuffix": "",
+  "artistAlphaSort": "Courbet, Gustave",
+  "artistNationality": "French",
+  "artistBeginDate": "1819",
+  "artistEndDate": "1877",
+  "artistGender": "",
+  "artistWikidata_URL": "https://www.wikidata.org/wiki/Q34618",
+  "artistULAN_URL": "http://vocab.getty.edu/page/ulan/500010927",
   "objectDate": "1865 or later",
+  "objectBeginDate": 1865,
+  "objectEndDate": 1877,
+  "medium": "Oil on canvas",
+  "dimensions": "20 x 24 in. (50.8 x 61 cm)",
+  "measurements": [
+    {
+      "elementName": "Overall",
+      "elementDescription": null,
+      "elementMeasurements": {
+        "Height": 50.8,
+        "Width": 61
+      }
+    },
+    {
+      "elementName": "Framed",
+      "elementDescription": null,
+      "elementMeasurements": {
+        "Depth": 7.62,
+        "Height": 78.7402,
+        "Width": 88.9002
+      }
+    }
+  ],
+  "creditLine": "Purchase, Dikran G. Kelekian Gift, 1922",
+  "geographyType": "",
+  "city": "",
+  "state": "",
+  "county": "",
+  "country": "",
+  "region": "",
+  "subregion": "",
+  "locale": "",
+  "locus": "",
+  "excavation": "",
+  "river": "",
+  "classification": "Paintings",
+  "rightsAndReproduction": "",
+  "linkResource": "",
+  "metadataDate": "2026-04-10T04:57:39.74Z",
+  "repository": "Metropolitan Museum of Art, New York, NY",
   "objectURL": "https://www.metmuseum.org/art/collection/search/436021",
-  "creditLine": "Purchase, Dikran G. Kelekian Gift, 1922"
+  "tags": [
+    {
+      "term": "Sky",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300263064",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q527"
+    },
+    {
+      "term": "Seascapes",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300117546",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q158607"
+    },
+    {
+      "term": "Clouds",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300343840",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q8074"
+    }
+  ],
+  "objectWikidata_URL": "https://www.wikidata.org/wiki/Q20168315",
+  "isTimelineWork": false,
+  "GalleryNumber": ""
 }

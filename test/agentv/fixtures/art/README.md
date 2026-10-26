@@ -1,6 +1,9 @@
 # Museum archive replies
 
-What the art picker's tests (`test/agentv/unit/art.test.mts`) serve in place of each archive's API, with the pictures' addresses pointed at the test's own server.
+What the art picker's tests (`test/agentv/unit/art.test.mts`, `test/agentv/ui/setup.test.mts`) serve in place of each archive's API, through `test/agentv/ui/archives.mts`, with the pictures' addresses pointed at the test's own server.
 
-- `met-search.json` and `met-object-*.json` are The Met's own replies, recorded on 2026-10-26 from `collectionapi.metmuseum.org` for "sea" (`/public/collection/v1.1/search?hasImages=true&isPublicDomain=true`) and three of its works, cut down to the fields AgenTV reads. The search lists works that aren't public domain even so (267004 here), which is why each work is checked again.
-- `aic-search.json` and `commons-search.json` are written to the shapes the Art Institute of Chicago's and Wikimedia's API documentation give. Neither answered from the machine they were made on (a bot challenge and a rate limit), so they'll be replaced by recorded replies from the NUC. The works in them that aren't free to show (not public domain, "Fair use", an SVG) are there to be left out.
+- `met-search.json`, `aic-search.json`, `commons-search.json` and the `met-object-*.json` for the works The Met's search lists are the archives' own replies, recorded by `test/agentv/fixtures/record/art` from GitHub's runners (`recorded.txt` says when). To record them again, push a branch named `record/art`: the Record fixtures workflow pushes fresh ones back to it.
+- `met-object-267004.json` was recorded by hand from the same API on 2026-10-26. The Met's search can list works that aren't public domain even with `isPublicDomain=true`, as it did for "sea" that day, and this is one of them, so the tests can show it's left out.
+- `sea.jpg`, `lilies.jpg` and `harbour.jpg` are made with ImageMagick for these tests, not any archive's pictures.
+
+What the recordings showed: Commons keeps its thumbnails on `thumb.wikimedia.org` and its originals on `upload.wikimedia.org`, adds `utm_` tracking to both addresses, and writes when a photo was taken as "Taken on 30 January 2010".

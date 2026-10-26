@@ -1,0 +1,84 @@
+{
+  "objectID": 207000,
+  "isHighlight": false,
+  "accessionNumber": "1982.60.95",
+  "accessionYear": "1982",
+  "isPublicDomain": true,
+  "primaryImage": "https://images.metmuseum.org/CRDImages/es/original/DP-12420-001.jpg",
+  "primaryImageSmall": "https://images.metmuseum.org/CRDImages/es/web-large/DP-12420-001.jpg",
+  "additionalImages": [
+    "https://images.metmuseum.org/CRDImages/es/original/DP-12420-002.jpg"
+  ],
+  "constituents": [
+    {
+      "constituentID": 165173,
+      "role": "Artist",
+      "name": "Workshop of Severo Calzetta da Ravenna",
+      "constituentULAN_URL": "http://vocab.getty.edu/page/ulan/500006878",
+      "constituentWikidata_URL": "https://www.wikidata.org/wiki/Q3958521",
+      "gender": ""
+    }
+  ],
+  "department": "European Sculpture and Decorative Arts",
+  "objectName": "Statuette",
+  "title": "Sea monster",
+  "culture": "",
+  "period": "",
+  "dynasty": "",
+  "reign": "",
+  "portfolio": "",
+  "artistRole": "Artist",
+  "artistPrefix": "Workshop of",
+  "artistDisplayName": "Severo Calzetta da Ravenna",
+  "artistDisplayBio": "Italian, active by 1496, died before 1543",
+  "artistSuffix": "",
+  "artistAlphaSort": "Ravenna, Severo Calzetta da",
+  "artistNationality": "Italian",
+  "artistBeginDate": "1496",
+  "artistEndDate": "1543",
+  "artistGender": "",
+  "artistWikidata_URL": "https://www.wikidata.org/wiki/Q3958521",
+  "artistULAN_URL": "http://vocab.getty.edu/page/ulan/500006878",
+  "objectDate": "ca. 1500–1510",
+  "objectBeginDate": 1495,
+  "objectEndDate": 1515,
+  "medium": "Bronze",
+  "dimensions": "Length: 10 in. (25.4 cm)",
+  "measurements": [
+    {
+      "elementName": "Length",
+      "elementDescription": null,
+      "elementMeasurements": {
+        "Length": 25.400051
+      }
+    }
+  ],
+  "creditLine": "The Jack and Belle Linsky Collection, 1982",
+  "geographyType": "",
+  "city": "",
+  "state": "",
+  "county": "",
+  "country": "",
+  "region": "",
+  "subregion": "",
+  "locale": "",
+  "locus": "",
+  "excavation": "",
+  "river": "",
+  "classification": "Sculpture-Bronze",
+  "rightsAndReproduction": "",
+  "linkResource": "",
+  "metadataDate": "2025-01-31T04:54:36.6Z",
+  "repository": "Metropolitan Museum of Art, New York, NY",
+  "objectURL": "https://www.metmuseum.org/art/collection/search/207000",
+  "tags": [
+    {
+      "term": "Monsters",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300412118",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q276453"
+    }
+  ],
+  "objectWikidata_URL": "https://www.wikidata.org/wiki/Q116240672",
+  "isTimelineWork": false,
+  "GalleryNumber": "537"
+}
