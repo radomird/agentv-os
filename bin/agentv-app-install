@@ -1,12 +1,18 @@
 #!/bin/bash
 
-# agentv:summary=Install an app from AgenTV's signed app index
-# agentv:args=<app-id> [--index <folder-or-url>]
+# agentv:summary=Install an app from AgenTV's signed app index, or one built on this box
+# agentv:args=<app-id> [--index <folder-or-url>] | --local <folder> [--yes]
+# agentv:examples=agentv app install agentv.jellyfin | agentv app install --local ~/my-app
 # agentv:requires-sudo=true
 
 # Fetches the app's exact commit from the repo the signed index pins it to,
 # checks it against the app contract and puts it in /var/lib/agentv/apps/.
 # The index counts only with a good signature from AgenTV's key (ADR-010).
+#
+# With --local, the app comes from a folder on this box instead, as one the
+# box's agent built (ADR-039): it's copied without its fixtures, checked as
+# a local app, and installed once an adult says yes to what it can reach,
+# with the adult PIN when one is set. --yes answers the question, not the PIN.
 
 set -euo pipefail
 
@@ -24,5 +30,6 @@ fi
 flags=()
 [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
 
-export AGENTV_PATH AGENTV_STATE
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+export AGENTV_PATH AGENTV_STATE AGENTV_BIN_DIR
 exec node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$AGENTV_PATH/daemon/apps/cli.ts" install "$@"
