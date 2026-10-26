@@ -8,7 +8,7 @@ import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback,
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -339,6 +339,7 @@ async function tv(
     homeUp?: boolean;
     playback?: Playback;
     signIn?: SignIn;
+    profiles?: ProfilesForViewer;
     sound?: Sound;
     music?: Music;
     pictures?: Pictures;
@@ -800,6 +801,80 @@ test("ADR-032 an installed web app is asked once as it opens whether it's signed
   assert.equal(t.hypr.get("0xd").fullscreen, 2);
 });
 
+// A stand-in for service-profiles.ts: which apps it was asked about, and
+// what it says, after ms.
+function fakeProfiles(said: Awaited<ReturnType<ProfilesForViewer["apply"]>>, ms = 0) {
+  const asked: string[] = [];
+  const profiles: ProfilesForViewer = {
+    async apply(id) {
+      asked.push(id);
+      await sleep(ms);
+      return said;
+    },
+  };
+  return { profiles, asked };
+}
+
+test("ADR-009 an installed app opens in the service's profile for who's watching, before an item plays in it", async () => {
+  const { profiles, asked } = fakeProfiles("selected", 60);
+  const played: string[] = [];
+  const t = await tv({ profiles, playback: { opened() {}, closed() {}, play: (id) => void played.push(id) } });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/" });
+  const item = { id: "ledger:1", kind: "episode", title: "Spring", season: 1, episode: 2 };
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube", item }), { ok: true });
+  assert.deepEqual(asked, ["agentv.tube"]);
+  assert.deepEqual(played, [], "the item waits for the profile");
+  await sleep(100);
+  assert.deepEqual(played, ["agentv.tube"]);
+  await t.screen.openWeb("https://elsewhere.example/");
+  assert.deepEqual(asked, ["agentv.tube"], "not a page opened by address");
+});
+
+test("ADR-009 someone else watching: the apps open take the service's profile for them, and the TV says when a child's can't", async () => {
+  const { profiles, asked } = fakeProfiles("not selected");
+  const t = await tv({ profiles });
+  await openApp(t, "agentv.tube", "0xd");
+  await sleep(10);
+  assert.deepEqual(t.launcher.toasts, ["agentv.tube couldn't open the profile for children"], "named by its id when the daemon gives no name");
+  await t.screen.openWeb("https://elsewhere.example/");
+  asked.length = 0;
+  assert.deepEqual(await t.screen.fromHome({ cmd: "viewer" }), { ok: true });
+  await sleep(10);
+  assert.deepEqual(asked, ["agentv.tube"], "each app open, and not a page opened by address");
+  assert.equal(t.launcher.toasts.length, 2);
+});
+
+test("ADR-009 agentv screen status says what the service's profile step did for each app open, and agentv screen app opens an item", async () => {
+  const { profiles } = fakeProfiles("selected", 60);
+  const played: [string, unknown][] = [];
+  const t = await tv({ profiles, playback: { opened() {}, closed() {}, play: (id, item) => void played.push([id, item]) } });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/" });
+  const item = { id: "agentv-screen", kind: "episode", title: "Spring", season: 1, episode: 2 };
+  assert.deepEqual(await t.screen.handle({ cmd: "app", app: "agentv.tube", item }), { ok: true });
+  assert.equal((await open(t.screen))[0].profile, "pending");
+  await sleep(100);
+  assert.equal((await open(t.screen))[0].profile, "selected");
+  assert.deepEqual(played, [["agentv.tube", item]]);
+  await t.screen.openWeb("https://elsewhere.example/");
+  assert.equal((await open(t.screen))[1].profile, null, "a page opened by address has none");
+});
+
+test("ADR-009 signed in on the sign-in screen, an app lists its service's profiles for an adult to pick from", async () => {
+  const { profiles, asked } = fakeProfiles("listed");
+  const { signIn, calls } = fakeSignIn();
+  const t = await tv({ signIn, profiles });
+  t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
+  await t.screen.fromHome({ cmd: "sign-in", app: "agentv.tube" });
+  t.hypr.open("0xd", t.launcher.last("web").pid);
+  await t.screen.idle();
+  assert.deepEqual(asked, ["agentv.tube"], "as it opened");
+  calls.done!(true);
+  await t.screen.idle();
+  await sleep(10);
+  assert.deepEqual(asked, ["agentv.tube", "agentv.tube"], "and again once it's signed in");
+  assert.deepEqual(t.launcher.toasts, ["signed in to tube"]);
+});
+
 test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {
   const { launcher, screen } = await tv();
   assert.deepEqual(await screen.fromHome({ cmd: "desktop" }), { ok: true });
@@ -945,7 +1020,7 @@ test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it 
   assert.equal(t.launcher.browser.playing.get(page), false);
   // Paused and out of sight, not closed.
   assert.equal(t.hypr.get("0xb").workspace.name, HELD_WORKSPACE);
-  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: false }]);
+  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: false, profile: null }]);
   // The home screen hears about it, for the tile.
   assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes("agentvRunning") && e.includes("agentv.tube") && e.includes("paused\\\":true")));
   const before = t.launcher.started.length;
@@ -954,7 +1029,7 @@ test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it 
   assert.equal(t.launcher.browser.playing.get(page), true);
   // Nothing new started: the same window came back.
   assert.equal(t.launcher.started.length, before);
-  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: false, front: true }]);
+  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: false, front: true, profile: null }]);
 });
 
 test("S2.15 Home leaves alone what the viewer paused, and it stays paused", async () => {
@@ -1200,7 +1275,7 @@ test("S2.8 a TV back on within two minutes keeps the paused app open", async () 
   assert.deepEqual(t.launcher.browser.closed, []);
   assert.equal(t.screen.ambient, false);
   assert.equal(t.screen.front()?.address, "0xb");
-  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: true }]);
+  assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: true, profile: null }]);
   assert.equal(t.launcher.locks, 0, "and doesn't lock it");
   t.screen.stop();
 });
