@@ -31,7 +31,7 @@ grep -q "agentv daemon on http://127.0.0.1:$port/" "$SCRATCH/daemon.log" || fail
 pass "S0.1 the daemon runs as its unit runs it, and /health starts on the welcome screen"
 
 page=$(curl -fsS "$url/")
-[[ $page == *"<h1>Hi.</h1>"* && $page == *"/api/welcome-shown"* ]] || fail "the welcome page is served, and reports itself"
+[[ $page == *"<title>AgenTV setup</title>"* && $(curl -fsS "$url/setup/main.ts") == *"/api/welcome-shown"* ]] || fail "setup's page is served, and reports itself"
 curl -fsS -o /dev/null -X POST "$url/api/welcome-shown" || fail "the welcome page can say it's drawn"
 [[ $(curl -fsS "$url/health" | jq -r '.welcome_shown_count') == 1 ]] || fail "/health counts each time the welcome page is drawn"
 pass "the welcome page is served, and /health counts each time it's drawn"

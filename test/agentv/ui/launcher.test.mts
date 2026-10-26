@@ -414,7 +414,7 @@ test("the launcher has no errors in its console", async () => {
   await page.close();
 });
 
-test("S1.1 the screen daemon can tell home's page came up, on home and on the welcome page", async () => {
+test("S1.1 the screen daemon can tell home's page came up, on home and on setup's page", async () => {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
@@ -424,8 +424,10 @@ test("S1.1 the screen daemon can tell home's page came up, on home and on the we
   await setup(false);
   try {
     await page.waitForFunction(() => document.title === "AgenTV setup" && document.readyState === "complete");
-    await page.waitForFunction(HOME_UP);
-    assert.equal(await page.evaluate(HOME_UP), true, "the welcome page");
+    // The screen daemon asks over DevTools, which setup's content policy
+    // doesn't stop; Playwright's string predicate would need eval.
+    for (let i = 0; i < 50 && (await page.evaluate(HOME_UP)) !== true; i++) await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(HOME_UP), true, "setup's page");
   } finally {
     await setup(true);
     await page.close();

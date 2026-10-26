@@ -1,0 +1,295 @@
+// TV setup (stage 5, PHASE-1-PLAN.md "Setup flow"), on the TV until it's
+// done, in the Terminal look (ADR-014) and the Omarchy theme's colours. One
+// step at a time: the welcome screen (the Wi-Fi and pairing), getting ready
+// (the box brings itself up to date first, board 35), then what the TV is
+// for, and home. The daemon keeps the step in setup.json, so a restart, an
+// update or a reboot comes back to the same one (S5.6).
+//
+// Every input works here as on home: a keyboard, the phone's remote, a
+// gamepad and a mouse. Pages slide 24 px, headings type out, and the UI
+// sounds play (ADR-024). The phone's remote follows the screen (ADR-037).
+
+import { daemon, listen, type Updates } from "../launcher/api.ts";
+import { fieldKind, tell } from "../launcher/context.ts";
+import { fit, h } from "../launcher/dom.ts";
+import { Focus } from "../launcher/focus.ts";
+import { listen as listenInput, type Action } from "../launcher/input.ts";
+import { Sounds } from "../launcher/sounds.ts";
+import { setup, type SetupInfo, type Step } from "./api.ts";
+import { bar, field } from "./frame.ts";
+import { goal } from "./goal.ts";
+import { ready } from "./ready.ts";
+import { welcome, wifi } from "./welcome.ts";
+
+export interface View {
+  el: HTMLElement;
+  first?: HTMLElement;
+  // The status bar's right side: what's going on.
+  info?: string;
+  // The pixel field shows at full strength behind this screen.
+  bright?: boolean;
+  act?(action: Action): boolean;
+  // Something the daemon said, such as a phone paired or an update's
+  // progress.
+  heard?(event: string, data: unknown): void;
+  // Back is held, as while the box updates itself.
+  stay?(): boolean;
+  stop?(): void;
+}
+
+export interface Ctx {
+  info: SetupInfo;
+  updates: Updates;
+  sounds: Sounds;
+  focus: Focus;
+  reduced(): boolean;
+  // A step is finished: setup moves on to the next one, or home after the
+  // last.
+  finish(step: Step, change?: { keyboard?: boolean }): Promise<void>;
+  // A page of the step on screen, such as the welcome screen's Wi-Fi list.
+  open(route: string): void;
+  back(): void;
+  toast(text: string, kind?: "ok" | "fail"): void;
+  // The status bar's right side again, as what's going on changes.
+  status(info: string): void;
+  refresh(): Promise<SetupInfo>;
+}
+
+const page = document.getElementById("page")!;
+const fieldEl = document.getElementById("field")!;
+const sounds = new Sounds();
+const focus = new Focus(document.getElementById("ring")!);
+// A text field with the focus opens the phone's keyboard (ADR-037).
+focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
+let route = "welcome";
+let view: View | undefined;
+// How many times this page has moved, and how many of its own moves are on
+// their way to the daemon. What the daemon said about where setup is only
+// moves the page when nothing here moved it since it was asked: an answer
+// that left before Enter moved setup on mustn't take it back.
+let moves = 0;
+let local = 0;
+let reduceMotion = false;
+let barEl: HTMLElement | null = null;
+
+const ctx: Ctx = {
+  info: undefined as unknown as SetupInfo,
+  updates: { status: null, progress: null, toasted: null },
+  sounds,
+  focus,
+  reduced: () => reduceMotion || matchMedia("(prefers-reduced-motion: reduce)").matches,
+  async finish(step, change) {
+    let next;
+    local++;
+    try {
+      next = await setup.finish(step, change);
+    } catch (error) {
+      ctx.toast((error as Error).message, "fail");
+      sounds.play("failure");
+      return;
+    } finally {
+      local--;
+    }
+    ctx.info.setup = next;
+    const steps = ctx.info.steps;
+    if (step === steps[steps.length - 1]) {
+      // The last step: setup is done, and the page loads again as home.
+      sounds.play("confirm");
+      await setup.done().catch((error) => ctx.toast((error as Error).message, "fail"));
+      return;
+    }
+    show(next.step, "forward");
+    sounds.play("forward");
+  },
+  open(to) {
+    show(to, "forward");
+    sounds.play("forward");
+  },
+  back() {
+    if (view?.stay?.()) return;
+    const [step, sub] = route.split("/");
+    if (sub) {
+      show(step, "back");
+      sounds.play("back");
+      return;
+    }
+    const steps = ctx.info.steps;
+    const at = steps.indexOf(step as Step);
+    if (at <= 0) return;
+    local++;
+    void setup
+      .go(steps[at - 1])
+      .then(
+        (next) => {
+          ctx.info.setup = next;
+          show(next.step, "back");
+          sounds.play("back");
+        },
+        () => {},
+      )
+      .finally(() => local--);
+  },
+  toast(text, kind) {
+    const el = h("div", { class: `toast${kind ? ` ${kind}` : ""}` }, text);
+    document.getElementById("toasts")!.append(el);
+    setTimeout(() => {
+      el.classList.add("leaving");
+      setTimeout(() => el.remove(), 200);
+    }, 5000);
+  },
+  status(info) {
+    const el = barEl?.querySelector(".bar-info");
+    if (el) el.textContent = info;
+  },
+  async refresh() {
+    const at = moves;
+    const info = await setup.info();
+    if (moves === at) ctx.info = info;
+    else ctx.info = { ...info, setup: ctx.info.setup };
+    return ctx.info;
+  },
+};
+
+function viewFor(to: string): View {
+  if (to === "welcome/wifi") return wifi(ctx);
+  if (to === "ready") return ready(ctx);
+  if (to === "goal") return goal(ctx);
+  return welcome(ctx);
+}
+
+// Draws a page. With a direction it slides in, and setup's steps take the
+// slow token (ADR-024).
+function show(to: string, direction?: "forward" | "back"): void {
+  view?.stop?.();
+  moves++;
+  route = to;
+  view = viewFor(to);
+  const step = to.split("/")[0] as Step;
+  barEl = bar(ctx.info.parts[step] ?? "", view.info ?? "");
+  const el = h("div", { class: "screen setup-screen" }, view.el, barEl);
+  fieldEl.classList.toggle("dim", !view.bright);
+  tell({ screen: "menu" });
+  if (direction) {
+    el.classList.add(direction === "forward" ? "step-forward" : "step-back");
+    focus.hold();
+    el.addEventListener("animationend", () => focus.release(), { once: true });
+    setTimeout(() => focus.release(), 500);
+  }
+  page.replaceChildren(el);
+  focus.setRoot(el, view.first);
+}
+
+function act(action: Action): void {
+  if (view?.act?.(action)) return;
+  if (action === "up" || action === "down" || action === "left" || action === "right") {
+    focus.move(action);
+  } else if (action === "ok") {
+    const el = focus.get();
+    if (!el) return;
+    el.classList.add("pressed");
+    setTimeout(() => el.classList.remove("pressed"), 120);
+    sounds.play("select");
+    el.click();
+  } else if (action === "back") {
+    ctx.back();
+  }
+}
+
+focus.onMove = () => sounds.play("move");
+
+// A mouse moves the focus by hovering, and a click is OK (ADR-015). Only a
+// real move counts: Chromium also sends one when the page changes under a
+// still mouse.
+let pointer = { x: -1, y: -1 };
+let hide = 0;
+document.body.classList.add("pointer-hidden");
+document.addEventListener("pointermove", (event) => {
+  if (event.clientX === pointer.x && event.clientY === pointer.y) return;
+  pointer = { x: event.clientX, y: event.clientY };
+  document.body.classList.remove("pointer-hidden");
+  clearTimeout(hide);
+  hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
+  const el = (event.target as Element | null)?.closest<HTMLElement>("[data-focus]");
+  if (el && view?.el.contains(el)) focus.set(el);
+});
+document.addEventListener("click", (event) => {
+  if (event.detail === 0) return; // a click from the keyboard, already played
+  if ((event.target as Element | null)?.closest("[data-focus]")) sounds.play("select");
+});
+
+async function start(): Promise<void> {
+  fit();
+  window.addEventListener("resize", () => {
+    fit();
+    focus.refresh();
+  });
+  fieldEl.append(field());
+  ctx.info = await setup.info();
+  // Settings → Sound and Look apply here too.
+  await daemon
+    .home()
+    .then((home) => {
+      sounds.on = home.settings.sound.on;
+      sounds.volume = home.settings.sound.volume;
+      reduceMotion = home.settings.reduceMotion;
+      document.documentElement.classList.toggle("reduce-motion", reduceMotion);
+    })
+    .catch(() => {});
+  ctx.updates = await daemon.updates().catch(() => ctx.updates);
+  show(ctx.info.setup.step);
+  listenInput(act);
+  listen(
+    {
+      // Setup done, from the last step or agentv setup skip: home takes over.
+      // Started again or moved on elsewhere: the step it's on now.
+      setup: (data) => {
+        const next = data as SetupInfo["setup"];
+        if (next.done) {
+          location.reload();
+          return;
+        }
+        ctx.info.setup = next;
+        if (local === 0 && next.step !== route.split("/")[0]) show(next.step);
+      },
+      theme: () => {
+        const link = document.getElementById("theme") as HTMLLinkElement;
+        link.href = `/api/theme.css?at=${Date.now()}`;
+      },
+      updates: (data) => {
+        ctx.updates = data as Updates;
+        view?.heard?.("updates", data);
+      },
+      phones: (data) => view?.heard?.("phones", data),
+      settings: () =>
+        void daemon.home().then((home) => {
+          sounds.on = home.settings.sound.on;
+          sounds.volume = home.settings.sound.volume;
+        }),
+    },
+    // The stream opened again, as after the daemon restarted: whatever
+    // changed in between.
+    () => {
+      const at = moves;
+      void setup.info().then(
+        (info) => {
+          if (info.setup.done) location.reload();
+          else if (moves === at && local === 0 && info.setup.step !== route.split("/")[0]) {
+            ctx.info = info;
+            show(info.setup.step);
+          }
+        },
+        () => {},
+      );
+    },
+  );
+  void sounds.load();
+  // The screen daemon reads this to know the page came up, and /health says
+  // the welcome screen is on the TV once it's drawn (S0.1).
+  const w = window as unknown as { agentvWelcome: boolean; agentvSetup: object };
+  w.agentvWelcome = true;
+  // For the UI checks and the image layer: the step, and the sounds.
+  w.agentvSetup = { sounds, focus, route: () => route };
+  requestAnimationFrame(() => void fetch("/api/welcome-shown", { method: "POST" }).catch(() => {}));
+}
+
+void start();

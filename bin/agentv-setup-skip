@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# agentv:summary=Skip TV setup and go to the home screen, until setup is built
+# agentv:summary=Skip TV setup and go to the home screen
 
-# Marks TV setup as done, so the TV shows the home screen instead of the welcome
-# page. TV setup itself comes in stage 5; until then this is the way home.
+# Marks TV setup as done, so the TV shows the home screen instead of setup,
+# whichever step it's on. What setup has done so far stays done.
 
 set -euo pipefail
 

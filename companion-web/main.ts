@@ -48,6 +48,8 @@ interface State {
   signIn: { name: string } | null;
   update: Update | null;
   tv: Tv;
+  // TV setup's step, while it's on (stage 5).
+  setup: { step: string; part: string } | null;
 }
 
 type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update";
@@ -476,6 +478,10 @@ function draw(): void {
     ),
   );
   const banners: HTMLElement[] = [];
+  // During TV setup, where the TV is: the remote and the keyboard drive it.
+  if (state.setup) {
+    banners.push(h("p", { class: "note with-icon setup-step", "data-setup": state.setup.step }, glyph("tv", 16), h("span", {}, `tv setup · ${state.setup.part}`)));
+  }
   if (state.pin.locked) {
     banners.push(
       h(

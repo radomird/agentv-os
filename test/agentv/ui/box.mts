@@ -69,6 +69,9 @@ function code(id: string): string {
 
 export interface BoxOptions {
   builtins?: boolean;
+  // The box's network interfaces, as setup sees them: the machine's own
+  // unless a test says otherwise.
+  interfaces?: () => Record<string, unknown[]>;
   zone?: string; // the box's time zone, "Europe/Amsterdam"
   forecast?: string; // where Weather asks for its forecast instead of MET Norway
 }
@@ -154,6 +157,7 @@ export async function startBox(
     setupHost: "127.0.0.1",
     hotspotAddress: "127.0.0.1",
     hotspotRun: hotspot,
+    interfaces: options.interfaces as never,
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };
