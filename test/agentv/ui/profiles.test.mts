@@ -1,7 +1,7 @@
 // Profiles on the TV in a real Chromium (ADR-019, layer 4; ADR-009, S4.2):
 // Settings → Profiles lists who watches, a profile's page switches to it, a
 // switch from anywhere shows within a second, a profile is added with a
-// typed name and its role and colour, and a kid's profile has only kids'
+// typed name and its role and colour, and a child's profile has only children's
 // apps, with Settings, edit mode and the switch back to an adult past the
 // PIN. An adult's profile locks from its page (ADR-034): its row shows a
 // lock, switching to it asks for the PIN, and only it opens on the pad after
@@ -137,16 +137,16 @@ test("S4.2 a profile is added on the TV: a typed name, then its role and colour 
   await page.keyboard.press("ArrowDown");
   assert.equal(await focused(page), "role");
   await page.keyboard.press("ArrowRight");
-  assert.match(await page.locator('[data-action="role"]').innerText(), /‹ kid ›/);
+  assert.match(await page.locator('[data-action="role"]').innerText(), /‹ child ›/);
   // The colour starts on the next one no one has, and right goes on.
   assert.match(await page.locator('[data-action="avatar"]').innerText(), /‹ magenta ›/);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowRight");
   assert.match(await page.locator('[data-action="avatar"]').innerText(), /‹ yellow ›/);
   assert.equal(await page.locator(".profile-head .avatar.avatar-yellow").innerText(), "l");
-  // With no PIN, a kid's profile can't be added, and the TV says why.
+  // With no PIN, a child's profile can't be added, and the TV says why.
   await page.locator('[data-action="save"]').click();
-  await page.waitForFunction(() => /needs a parent pin/.test(document.querySelector(".toast")?.textContent ?? ""));
+  await page.waitForFunction(() => /needs an adult pin/.test(document.querySelector(".toast")?.textContent ?? ""));
   assert.equal((await viewers()).length, 2);
 
   // With one, it asks for it first.
@@ -158,13 +158,13 @@ test("S4.2 a profile is added on the TV: a typed name, then its role and colour 
   await waitPad(page, false);
   await page.waitForFunction(() => /leo is here now/.test(document.body.textContent ?? ""));
   const leo = await byName("leo");
-  assert.deepEqual([leo.role, (leo as unknown as { avatar: string }).avatar], ["kid", "yellow"]);
+  assert.deepEqual([leo.role, (leo as unknown as { avatar: string }).avatar], ["child", "yellow"]);
   await page.close();
 });
 
-test("S4.2 S4.5 on a kid's profile: only kids' apps, the apps kids can't open closed, and adult things past the PIN", async () => {
+test("S4.2 S4.5 on a child's profile: only children's apps, the apps children can't open closed, and adult things past the PIN", async () => {
   const page = await tv();
-  // An app open behind home that kids can't open.
+  // An app open behind home that children can't open.
   await page.evaluate(() => (window as unknown as { agentvRunning: (json: string) => void }).agentvRunning(JSON.stringify([{ id: "agentv.tube", game: false, paused: true }])));
   const leo = await byName("leo");
   await send("POST", "/api/viewer", { id: leo.id });
@@ -185,7 +185,7 @@ test("S4.2 S4.5 on a kid's profile: only kids' apps, the apps kids can't open cl
   await type(page, PIN);
   await waitPad(page, false);
   await page.waitForSelector(".page.settings");
-  // Power isn't there on a kid's profile, even past the PIN.
+  // Power isn't there on a child's profile, even past the PIN.
   assert.equal(await page.locator('.menu-item[data-key="power"]').count(), 0);
   // Back to an adult, in the same visit: the PIN already entered does.
   await go(page, `profile/radomir`);
@@ -197,20 +197,20 @@ test("S4.2 S4.5 on a kid's profile: only kids' apps, the apps kids can't open cl
   await page.close();
 });
 
-test("S4.2 an adult ticks an app for kids in its details, past the PIN", async () => {
+test("S4.2 an adult ticks an app for children in its details, past the PIN", async () => {
   const page = await tv();
   await go(page, "details/agentv.sample");
-  await page.waitForSelector('[data-action="kids"]');
-  assert.match(await page.locator('[data-action="kids"]').innerText(), /for kids\s+\[ \]/);
-  await page.locator('[data-action="kids"]').click();
+  await page.waitForSelector('[data-action="children"]');
+  assert.match(await page.locator('[data-action="children"]').innerText(), /for children\s+\[ \]/);
+  await page.locator('[data-action="children"]').click();
   await waitPad(page, true);
   await type(page, PIN);
   await waitPad(page, false);
-  await page.waitForFunction(() => /\[x\]/.test(document.querySelector('[data-action="kids"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /\[x\]/.test(document.querySelector('[data-action="children"]')?.textContent ?? ""));
   const leo = await byName("leo");
   await send("POST", "/api/viewer", { id: leo.id });
   await page.waitForFunction(() => document.querySelector('.grid .tile[data-id="agentv.sample"]') !== null);
-  assert.equal(await page.locator('[data-action="kids"]').count(), 0, "a kid's details don't have it");
+  assert.equal(await page.locator('[data-action="children"]').count(), 0, "a child's details don't have it");
   await send("POST", "/api/viewer", { id: "radomir" }, await grant());
   await page.close();
 });
@@ -253,7 +253,7 @@ test("ADR-034 an adult locks their profile on its page: a lock on its row, the P
   started.on("pageerror", (error) => errors.push(error.message));
   await started.goto(`${url}/`);
   await waitPad(started, true);
-  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the parent pin[\s\S]*ana's profile asks for it to open\./);
+  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the adult pin[\s\S]*ana's profile asks for it to open\./);
   await type(started, PIN);
   await waitPad(started, false);
   await started.close();

@@ -16,6 +16,6 @@
     "capabilities": ["launch", "signIn", "search", "playback"],
     "setup": [{ "type": "field", "key": "serverUrl", "label": "Server address" }, { "type": "signIn" }],
     "origins": ["{serverUrl}"],
-    "kidsSafe": true
+    "childSafe": true
   }
 }

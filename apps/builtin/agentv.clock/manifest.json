@@ -15,6 +15,6 @@
     "capabilities": ["launch", "tile"],
     "icon": "icon.svg",
     "tiles": { "s": "time", "m": "time and date" },
-    "kidsSafe": true
+    "childSafe": true
   }
 }

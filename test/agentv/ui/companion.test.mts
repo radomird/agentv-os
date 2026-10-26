@@ -3,7 +3,7 @@
 // phone (S4.2); arrange home, with the TV following within a second (S4.7);
 // the update notice and Install tonight (S4.8); the sign-in fields a phone's
 // password manager fills (S4.9); and the TV unlocked from the phone, with
-// the parent PIN on its pad (S4.5).
+// the adult PIN on its pad (S4.5).
 
 import assert from "node:assert/strict";
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -97,7 +97,7 @@ test("the phone's buttons carry icons: the d-pad, the tabs, delete and enter", a
   await hand.close();
 });
 
-test("S4.2 who's watching, from the phone: the TV follows within a second, and a kid to an adult takes the PIN on the phone", async () => {
+test("S4.2 who's watching, from the phone: the TV follows within a second, and a child to an adult takes the PIN on the phone", async () => {
   await post("/api/viewers", { name: "ana", role: "adult" });
   const screen = await tv();
   const hand = await phone();
@@ -111,16 +111,16 @@ test("S4.2 who's watching, from the phone: the TV follows within a second, and a
   assert.ok(Date.now() - at < 1000, `the TV showed ana in ${Date.now() - at} ms`);
   await hand.waitForFunction(() => /ana/.test(document.querySelector(".who")?.textContent ?? ""));
 
-  // A kid's profile, then back to an adult: the phone asks for the PIN.
+  // A child's profile, then back to an adult: the phone asks for the PIN.
   await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: PIN }) });
   const grant = (await post("/api/pin/check", { pin: PIN })).grant;
-  const kid = (await post("/api/viewers", { name: "mila", role: "kid" }, grant)).profile;
-  await post("/api/viewer", { id: kid.id });
+  const child = (await post("/api/viewers", { name: "mila", role: "child" }, grant)).profile;
+  await post("/api/viewer", { id: child.id });
   await hand.waitForFunction(() => /mila/.test(document.querySelector(".who")?.textContent ?? ""), undefined, { timeout: 5000 });
   await hand.locator('[data-action="who"]').tap();
   await hand.locator('[data-viewer="radomir"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
-  assert.match(await hand.locator(".overlay").innerText(), /enter the parent pin[\s\S]*for watching as radomir\./);
+  assert.match(await hand.locator(".overlay").innerText(), /enter the adult pin[\s\S]*for watching as radomir\./);
   assert.equal(await hand.locator('.overlay [data-pin="delete"] svg.glyph-backspace').count(), 1);
   for (const digit of "0000") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
   await hand.waitForFunction(() => /that's not the pin\./.test(document.querySelector(".overlay")?.textContent ?? ""));
@@ -144,7 +144,7 @@ test("ADR-034 the phone shows a lock on a locked profile, and switching to it ta
   await hand.waitForSelector(".viewer");
   assert.equal(await hand.locator(`[data-viewer="${ana.id}"] svg.glyph-lock`).count(), 1);
   assert.equal(await hand.locator('[data-viewer="radomir"] svg.glyph-lock').count(), 0);
-  assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the parent pin/);
+  assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the adult pin/);
   await hand.locator(`[data-viewer="${ana.id}"]`).tap();
   await hand.waitForSelector(".overlay .pin-keys");
   assert.match(await hand.locator(".overlay").innerText(), /for watching as ana\./);

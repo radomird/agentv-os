@@ -71,7 +71,7 @@ jobs:
       - run: node --version
       # Music reads tags and covers with ffprobe and ffmpeg, as the box does.
       - name: ffmpeg, for the Music tests
-        run: type -P ffprobe >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
+        uses: ./.github/actions/ffmpeg
       - name: The daemon's TypeScript type-checks
         run: test/agentv/types
       - run: test/agentv/unit/run
@@ -86,7 +86,7 @@ jobs:
           persist-credentials: false
       # Music's fixture folder is read with ffprobe and ffmpeg, as on the box.
       - name: ffmpeg, for Music's fixture folder
-        run: type -P ffprobe >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg; }
+        uses: ./.github/actions/ffmpeg
       - name: The built-ins and the test apps, each in its own worker, with its page in Chromium
         run: test/agentv/contract/run
 
@@ -275,9 +275,9 @@ jobs:
             s38="pass (layers 2 and 4: MET's symbol and the wind to a scene, from recorded replies; the live tile is the image layer's and the NUC's)"
             s39="pass (layers 2 and 4: today, tomorrow and seven days from recorded replies; the live tiles are the image layer's and the NUC's)"
             s310="pass (layers 2 and 4: the medium continue tile from the ledger, drawn with how far in; an entry opens through playback.open)"
-            s218="pass (layers 2 and 4: each question, the 10 s countdown and Cancel in Chromium, none for a kid or during an update; the screen daemon's guards, the polkit rules and the units' stop timeouts; the box going off is the image layer's)"
+            s218="pass (layers 2 and 4: each question, the 10 s countdown and Cancel in Chromium, none for a child or during an update; the screen daemon's guards, the polkit rules and the units' stop timeouts; the box going off is the image layer's)"
             s219="pass (layers 2 and 4: full volume on each new default output, a level chosen in Settings kept for its output, the connected HDMI or DisplayPort output picked; Settings → Sound's rows in Chromium; the real sink is the image layer's)"
-            s42="pass (layers 2 and 4: a switch from the TV and from outside shows within a second; kids' homes and the PIN's rules)"
+            s42="pass (layers 2 and 4: a switch from the TV and from outside shows within a second; children's homes and the PIN's rules)"
             s47="pass (layers 2 and 4: a tile moved on the phone's miniature grid moves on the TV within a second; the phone on the box's address is the image layer's)"
             s48="pass (layers 2 and 4: the phone's update notice with What's new, and Install tonight past the PIN; the night's install is the update check's, as from the TV)"
           else

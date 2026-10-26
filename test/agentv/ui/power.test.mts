@@ -1,7 +1,7 @@
 // Settings → Power in a real Chromium (ADR-019, layer 4; ADR-033, S2.18):
 // each choice asks first, Restart goes right after its question, Shut down
 // counts down 10 seconds that Cancel stops and then asks the TV session to
-// shut down, and Power isn't there on a kid's profile or while an update
+// shut down, and Power isn't there on a child's profile or while an update
 // runs. The box turning off is the image layer's and the NUC's.
 
 import assert from "node:assert/strict";
@@ -35,8 +35,8 @@ after(async () => {
 type Request = { cmd: string; what?: string; at: number };
 
 // A TV whose screen daemon answers every request with ok and remembers it,
-// with when, and the viewer as the daemon says, or a kid.
-async function tv(role: "adult" | "kid" = "adult"): Promise<Page> {
+// with when, and the viewer as the daemon says, or a child.
+async function tv(role: "adult" | "child" = "adult"): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -48,11 +48,11 @@ async function tv(role: "adult" | "kid" = "adult"): Promise<Page> {
       setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true })), 0);
     };
   });
-  if (role === "kid") {
+  if (role === "child") {
     await page.route(`${url}/api/home`, async (route) => {
       const reply = await route.fetch();
       const state = await reply.json();
-      await route.fulfill({ response: reply, json: { ...state, viewer: { ...state.viewer, role: "kid" } } });
+      await route.fulfill({ response: reply, json: { ...state, viewer: { ...state.viewer, role: "child" } } });
     });
   }
   await page.goto(`${url}/`);
@@ -146,16 +146,16 @@ test("S2.18 Shut down counts down 10 seconds, which Cancel stops, then asks the 
   assert.deepEqual(errors, []);
 });
 
-test("S2.18 Power isn't on a kid's profile or offered while an update runs, and an update stops a countdown", async () => {
-  // A kid's Settings has no Power, and its questions don't open.
-  const kid = await tv("kid");
-  await go(kid, "settings");
-  await kid.waitForSelector(".menu-item");
-  assert.equal(await kid.locator('.menu-item[data-key="power"]').count(), 0);
-  await go(kid, "power/shutdown");
-  await kid.waitForSelector(".grid .tile");
-  assert.equal(await kid.locator(".page.power").count(), 0);
-  await kid.close();
+test("S2.18 Power isn't on a child's profile or offered while an update runs, and an update stops a countdown", async () => {
+  // A child's Settings has no Power, and its questions don't open.
+  const child = await tv("child");
+  await go(child, "settings");
+  await child.waitForSelector(".menu-item");
+  assert.equal(await child.locator('.menu-item[data-key="power"]').count(), 0);
+  await go(child, "power/shutdown");
+  await child.waitForSelector(".grid .tile");
+  assert.equal(await child.locator(".page.power").count(), 0);
+  await child.close();
 
   // A countdown stops when an install starts, and Power says why it's not
   // there while it runs.

@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -17,13 +18,13 @@ import { FIXTURES, startBox } from "../ui/box.mts";
 
 const episode = (episode: number, position: number): PlaybackState => ({ title: "Sintel", season: 1, episode, position, duration: 888, playing: true });
 
-test("the ledger's tables are the plan's, and a viewer is an adult or a kid", () => {
+test("the ledger's tables are the plan's, and a viewer is an adult or a child", () => {
   const ledger = new Ledger(":memory:");
   ledger.viewer({ id: "radomir", name: "Radomir", role: "adult" });
-  ledger.viewer({ id: "ana", name: "Ana", role: "kid", avatar: "fox" });
-  ledger.viewer({ id: "ana", name: "Ana", role: "kid", avatar: "owl" });
+  ledger.viewer({ id: "ana", name: "Ana", role: "child", avatar: "fox" });
+  ledger.viewer({ id: "ana", name: "Ana", role: "child", avatar: "owl" });
   assert.deepEqual(ledger.viewers(), [
-    { id: "ana", name: "Ana", role: "kid", avatar: "owl" },
+    { id: "ana", name: "Ana", role: "child", avatar: "owl" },
     { id: "radomir", name: "Radomir", role: "adult", avatar: undefined },
   ]);
   assert.throws(() => ledger.viewer({ id: "x", name: "X", role: "teen" as "adult" }), /CHECK constraint/);
@@ -32,10 +33,36 @@ test("the ledger's tables are the plan's, and a viewer is an adult or a kid", ()
   ledger.close();
 });
 
+test("ADR-035 a ledger from before calls a child's profile 'kid', and opening it makes it a child's, with what they watched kept", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "agentv-ledger-before-")), "ledger.db");
+  const old = new DatabaseSync(path);
+  old.exec(`
+    CREATE TABLE viewer (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('adult', 'kid')), avatar TEXT);
+    CREATE TABLE watch (id INTEGER PRIMARY KEY, viewer_id TEXT NOT NULL REFERENCES viewer(id), app_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
+      season INTEGER, episode INTEGER, position_s INTEGER, duration_s INTEGER, started_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    INSERT INTO viewer VALUES ('radomir', 'Radomir', 'adult', NULL), ('mila', 'Mila', 'kid', 'yellow');
+    INSERT INTO watch (viewer_id, app_id, kind, title, started_at, updated_at) VALUES ('mila', 'agentv.tube', 'film', 'Sintel', '2026-10-25T20:00:00Z', '2026-10-25T20:00:00Z');
+  `);
+  old.close();
+  const ledger = new Ledger(path);
+  assert.deepEqual(ledger.viewers(), [
+    { id: "mila", name: "Mila", role: "child", avatar: "yellow" },
+    { id: "radomir", name: "Radomir", role: "adult", avatar: undefined },
+  ]);
+  assert.deepEqual(ledger.recent("mila", {}).map((row) => row.title), ["Sintel"]);
+  assert.throws(() => ledger.viewer({ id: "x", name: "X", role: "kid" as "child" }), /CHECK constraint/);
+  assert.throws(() => ledger.record("nobody", "agentv.tube", "film", episode(1, 0)), /FOREIGN KEY/, "watch rows still need a viewer");
+  ledger.close();
+  // Opened again, there's nothing more to do.
+  const again = new Ledger(path);
+  assert.equal(again.viewers().length, 2);
+  again.close();
+});
+
 test("S3.3 a second viewer gets a separate row, and the same episode moves its row on", () => {
   const ledger = new Ledger(":memory:");
   ledger.viewer({ id: "radomir", name: "Radomir", role: "adult" });
-  ledger.viewer({ id: "ana", name: "Ana", role: "kid" });
+  ledger.viewer({ id: "ana", name: "Ana", role: "child" });
   const first = ledger.record("radomir", "agentv.tube", "episode", episode(1, 10), new Date("2026-10-25T20:00:00Z"));
   const again = ledger.record("radomir", "agentv.tube", "episode", episode(1, 20.6), new Date("2026-10-25T20:00:10Z"));
   assert.equal(again.id, first.id);

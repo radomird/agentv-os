@@ -46,7 +46,7 @@ export interface TvBlock {
   origins?: string[]; // everything the app may reach, as origins or a setup field
   icon?: string;
   tiles?: Partial<Record<TileSize, string>>;
-  kidsSafe?: boolean;
+  childSafe?: boolean;
 }
 
 export interface Manifest {
@@ -338,7 +338,7 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
     }
   }
 
-  if (tv.kidsSafe !== undefined && typeof tv.kidsSafe !== "boolean") problem("tv.kidsSafe is true or false");
+  if (tv.childSafe !== undefined && typeof tv.childSafe !== "boolean") problem("tv.childSafe is true or false");
 }
 
 // Checks the app package in dir as an app of the given tier.

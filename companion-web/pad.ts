@@ -1,4 +1,4 @@
-// The parent PIN on the phone (ADR-009, board 07): four boxes and a pad,
+// The adult PIN on the phone (ADR-009, board 07): four boxes and a pad,
 // over the page. The box checks it and gives a grant for what asked.
 
 import { glyph } from "../launcher/glyphs.ts";
@@ -41,12 +41,12 @@ export function askPin(what: string): Promise<string | null> {
     };
     const overlay = h(
       "div",
-      { class: "overlay", role: "dialog", "aria-label": "the parent pin" },
+      { class: "overlay", role: "dialog", "aria-label": "the adult pin" },
       h(
         "div",
         { class: "page" },
         prompt("tv pin"),
-        h("h1", {}, "enter the parent pin"),
+        h("h1", {}, "enter the adult pin"),
         message,
         h("div", { class: "pin-boxes" }, ...boxes),
         h(
