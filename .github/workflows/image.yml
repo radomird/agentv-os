@@ -7,7 +7,13 @@ name: Image
 # The ISO carries either packages built and signed from the commit itself
 # (what a pull request needs) or the ones published on a channel (what the
 # nightly run tests). With update-test, a second build of the same commit
-# with a higher pkgrel is what the box updates to (S0.5). With nightly, a
+# with a higher pkgrel is what the box updates to (S0.5). With update-checks,
+# the checks that run that update (s0.5-update and update-tv) come from that
+# agentv-iso ref rather than iso-ref's: the nightly run updates the stable
+# release to tonight's agentv, so what happens after the update is the
+# newer version's to check, while the rest of the release is checked as it
+# was tagged. iso-ref's own update checks stand down, as they do when
+# there's nothing to update to, so every update check runs once. With nightly, a
 # passing run lists every package on the box, signs it as tested.json with
 # the release key and publishes it on this repo's "tested" release, then
 # checks that a box takes tonight's list and holds back anything else (S0.7).
@@ -38,6 +44,10 @@ on:
         description: "Also update the box to a newer agentv (S0.5)"
         type: boolean
         default: true
+      update-checks:
+        description: "agentv-iso ref whose update checks run the update, when it isn't iso-ref (empty: iso-ref's)"
+        type: string
+        default: ""
       keep-iso:
         description: "Keep the ISO as an artifact when every check passes"
         type: boolean
@@ -59,6 +69,9 @@ on:
       update-test:
         type: boolean
         default: true
+      update-checks:
+        type: string
+        default: ""
       nightly:
         type: boolean
         default: false
@@ -102,6 +115,15 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.update-test && inputs.update-checks != ''
+        with:
+          repository: ${{ github.repository_owner }}/agentv-iso
+          ref: ${{ inputs.update-checks }}
+          path: iso-next
+          submodules: recursive
+          persist-credentials: false
+
       - name: Make room on the disk
         run: |
           avail() { df -BG --output=avail / | tail -1 | tr -dc 0-9; }
@@ -137,9 +159,11 @@ jobs:
       # Something newer to update to: the same commit with pkgrel 99, signed,
       # in a repository the VM reaches through QEMU's network.
       - name: A newer agentv for the update test (S0.5)
+        id: update
         if: inputs.update-test
         env:
           AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
+          UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
           sha=$(git -C os rev-parse HEAD)
           update=iso/test-runs/update-repo
@@ -151,13 +175,34 @@ jobs:
             ghcr.io/archlinux/archlinux:latest /src/bin/build /repo
           version=$(find "$update" -maxdepth 1 -name 'agentv-[0-9]*-99-any.pkg.tar.zst' -printf '%f\n' |
             sed -E 's/^agentv-(.*)-any\.pkg\.tar\.zst$/\1/')
-          echo "AGENTV_TEST_UPDATE_REPO=/w/test-runs/update-repo" >>"$GITHUB_ENV"
-          echo "AGENTV_TEST_UPDATE_VERSION=$version" >>"$GITHUB_ENV"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          # With update-checks, only the step that runs those checks gets the
+          # repository, so iso-ref's own update checks stand down.
+          if [[ -z $UPDATE_CHECKS ]]; then
+            echo "AGENTV_TEST_UPDATE_REPO=/w/test-runs/update-repo" >>"$GITHUB_ENV"
+            echo "AGENTV_TEST_UPDATE_VERSION=$version" >>"$GITHUB_ENV"
+          fi
 
       - name: Build, install, boot, check
         env:
           AGENTV_TEST_TESTED_OUT: ${{ inputs.nightly && '/w/test-runs/tested-packages.txt' || '' }}
         run: set -o pipefail; iso/test/agentv/image/ci 2>&1 | tee image.log
+
+      # The same ISO and installed box, lent to update-checks' harness for its
+      # update checks, then handed back for the steps after this one.
+      - name: The update, checked as the version it updates to does (S0.5, S2.12)
+        if: inputs.update-test && inputs.update-checks != ''
+        env:
+          AGENTV_TEST_UPDATE_REPO: /w/test-runs/update-repo
+          AGENTV_TEST_UPDATE_VERSION: ${{ steps.update.outputs.version }}
+          UPDATE_CHECKS: ${{ inputs.update-checks }}
+        run: |
+          set -o pipefail
+          mv iso/test-runs iso-next/test-runs
+          mv iso/release iso-next/release
+          trap 'mv iso-next/test-runs iso/test-runs; mv iso-next/release iso/release' EXIT
+          echo "The update to agentv $AGENTV_TEST_UPDATE_VERSION, checked with agentv-iso $UPDATE_CHECKS" | tee -a "$GITHUB_STEP_SUMMARY"
+          iso-next/test/agentv/image/ci --again s0.5-update update-tv 2>&1 | tee -a image.log
 
       # Only a night where every check passed becomes tested.json.
       - name: Sign and publish tested.json
