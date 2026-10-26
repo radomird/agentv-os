@@ -5,7 +5,7 @@
 // runs on the home screen.
 
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
@@ -46,7 +46,21 @@ export interface AppSummary {
   // A child's profile can open it (ADR-009): an adult ticked it, or its
   // manifest says it's child-safe and no one unticked it.
   forChildren: boolean;
+  // An app with profiles: its service's own profiles, once it has listed
+  // them, and the one an adult picked for children (ADR-009).
+  profiles?: ServiceProfiles;
 }
+
+// An app's service's own profiles, as it listed them, and the one an adult
+// picked for children, which a child watching opens. Null until one is
+// picked.
+export interface ServiceProfiles {
+  names: string[];
+  forChildren: string | null;
+}
+
+const PROFILE_NAMES_MAX = 20;
+const PROFILE_NAME_MAX = 60;
 
 // What Settings → Weather shows and changes: the city the forecast is for,
 // and the cities it can be.
@@ -280,6 +294,7 @@ export class Home {
     const settings = await this.appSettings();
     const signIns = await this.signIns();
     const children = await this.childrenApps();
+    const profiles = await this.allServiceProfiles();
     const all = (await this.manifests()).map(({ manifest, tier }): AppSummary => {
       const values = settings[manifest.id] ?? {};
       const builtin = tier === "built-in";
@@ -305,6 +320,7 @@ export class Home {
         signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
         forChildren: children[manifest.id] ?? manifest.tv.childSafe === true,
+        profiles: manifest.tv.capabilities.includes("profiles") ? { names: profiles[manifest.id]?.names ?? [], forChildren: profiles[manifest.id]?.forChildren ?? null } : undefined,
       };
     });
     return viewer?.role === "child" ? all.filter((app) => app.forChildren) : all;
@@ -361,6 +377,61 @@ export class Home {
     await writeJson(join(this.state, "signins.json"), all);
     this.changed("apps");
     return true;
+  }
+
+  // --- The service's own profiles (ADR-009) ------------------------------
+
+  // For each app with profiles: its service's profiles, as it listed them
+  // the first time an adult opened it, and the one an adult picked for
+  // children. The services' Chromium is the box's, so they are too, and
+  // none of it goes in the ledger.
+  private allServiceProfiles(): Promise<Record<string, ServiceProfiles & { listedAt?: string }>> {
+    return readJson(join(this.state, "service-profiles.json"), {});
+  }
+
+  private async hasProfiles(id: string): Promise<boolean> {
+    const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
+    return found?.manifest.tv.capabilities.includes("profiles") === true;
+  }
+
+  // An app's, or null when it isn't an app here with profiles.
+  async serviceProfiles(id: string): Promise<ServiceProfiles | null> {
+    if (!(await this.hasProfiles(id))) return null;
+    const found = (await this.allServiceProfiles())[id];
+    return { names: found?.names ?? [], forChildren: found?.forChildren ?? null };
+  }
+
+  // Keeps the profiles an app listed, from the screen daemon. Says what's
+  // wrong with them, or null once they're kept. The pick for children stays,
+  // even when the service no longer lists it: opening it then fails, and the
+  // TV says so, rather than a child getting whichever profile is there.
+  async listedProfiles(id: string, names: unknown): Promise<string | null> {
+    if (!(await this.hasProfiles(id))) return "that isn't an app here with profiles";
+    if (!Array.isArray(names) || names.length > PROFILE_NAMES_MAX) return `names is a list of up to ${PROFILE_NAMES_MAX} profiles`;
+    const clean = [...new Set(names.map((name) => (typeof name === "string" ? name.trim() : "")))];
+    if (clean.some((name) => !name || name.length > PROFILE_NAME_MAX || /[\u0000-\u001f]/.test(name))) {
+      return `each profile is a name of up to ${PROFILE_NAME_MAX} characters`;
+    }
+    const all = await this.allServiceProfiles();
+    all[id] = { names: clean, forChildren: all[id]?.forChildren ?? null, listedAt: new Date().toISOString() };
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "service-profiles.json"), all);
+    this.changed("apps");
+    return null;
+  }
+
+  // An adult's pick of the profile children open, one the app listed, or
+  // null for none. Says what's wrong, or null once it's kept.
+  async setChildProfile(id: string, name: unknown): Promise<string | null> {
+    if (!(await this.hasProfiles(id))) return "that isn't an app here with profiles";
+    const all = await this.allServiceProfiles();
+    const known = all[id]?.names ?? [];
+    if (name !== null && (typeof name !== "string" || !known.includes(name))) return "that isn't one of the app's profiles";
+    all[id] = { names: known, forChildren: name, ...(all[id]?.listedAt ? { listedAt: all[id].listedAt } : {}) };
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "service-profiles.json"), all);
+    this.changed("apps");
+    return null;
   }
 
   // --- Site icons ---------------------------------------------------------
@@ -713,8 +784,59 @@ export class Home {
     return true;
   }
 
+  // --- Installs from the command line -----------------------------------
+
+  private watcher: FSWatcher | null = null;
+  private watchSoon?: NodeJS.Timeout;
+  private watchAgain?: NodeJS.Timeout;
+
+  // Calls changed("apps") shortly after an app is installed or removed
+  // outside the daemon, as agentv app install and remove do as root
+  // (ADR-039), so the launcher shows it at once. An app that changed starts
+  // its worker again from its new package. On a box with no apps yet the
+  // folder isn't there until the first install, so it looks for it every
+  // few seconds, and once it's there, says what came before it looked.
+  watchApps(every = 5_000): void {
+    const soon = (_event?: string, name?: string | Buffer | null) => {
+      if (name && String(name) !== "installed.json") return;
+      if (this.watchSoon) clearTimeout(this.watchSoon);
+      this.watchSoon = setTimeout(() => void this.appsChanged(), 200);
+    };
+    const attach = (first: boolean) => {
+      if (this.watcher) return;
+      try {
+        this.watcher = watch(this.appsDir, soon);
+        this.watcher.on("error", () => {
+          this.watcher?.close();
+          this.watcher = null;
+        });
+        if (!first) soon();
+      } catch {
+        this.watcher = null;
+      }
+    };
+    attach(true);
+    this.watchAgain = setInterval(() => attach(false), every);
+    this.watchAgain.unref();
+  }
+
+  private async appsChanged(): Promise<void> {
+    const builtins = new Set((await this.builtinApps()).map(({ manifest }) => manifest.id));
+    for (const [id, host] of this.hosts) {
+      if (builtins.has(id)) continue;
+      host.stop();
+      this.hosts.delete(id);
+      for (const key of this.tiles.keys()) if (key.includes(`:${id}:`)) this.tiles.delete(key);
+    }
+    this.checked = undefined;
+    this.changed("apps");
+  }
+
   stop(): void {
     for (const host of this.hosts.values()) host.stop();
+    this.watcher?.close();
+    if (this.watchSoon) clearTimeout(this.watchSoon);
+    if (this.watchAgain) clearInterval(this.watchAgain);
   }
 }
 

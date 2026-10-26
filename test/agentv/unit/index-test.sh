@@ -76,3 +76,121 @@ out=$(unset AGENTV_INDEX_URL; app install agentv.sample 2>&1) || status=$?
 (( status == 1 )) || fail "agentv app install without an index fails" "exit $status: $out"
 [[ $out == "Couldn't do it: this box has no app index set up yet." ]] || fail "agentv app install without an index says so" "$out"
 pass "agentv app install without an index says so"
+
+# --- agentv app install --local (ADR-039) --------------------------------------
+
+# The sample app as the box's agent would leave it, and a stand-in for
+# agentv-pin-check that says yes, or no once told to.
+cp -R "$ROOT/test/agentv/fixtures/apps/sample" "$SCRATCH/built"
+jq '.id = "local.sample"' "$ROOT/test/agentv/fixtures/apps/sample/manifest.json" >"$SCRATCH/built/manifest.json"
+cat >"$SCRATCH/pin-check" <<'PIN'
+#!/bin/bash
+echo "$*${XDG_RUNTIME_DIR:+ in $XDG_RUNTIME_DIR}" >>"$PIN_LOG"
+[[ ! -f $PIN_NO ]]
+PIN
+chmod +x "$SCRATCH/pin-check"
+export PIN_LOG="$SCRATCH/pin.log" PIN_NO="$SCRATCH/pin-no"
+
+local_app() {
+  env -u XDG_RUNTIME_DIR AGENTV_PIN_CHECK="$SCRATCH/pin-check" AGENTV_PATH="$ROOT" AGENTV_STATE="$SCRATCH/state" \
+    "$ROOT/bin/agentv-app-install" --local "$@"
+}
+
+# Runs agentv app install --local in a terminal of its own, answering the
+# question with $1.
+in_terminal() {
+  local answer=$1
+  shift
+  python3 - "$answer" env -u XDG_RUNTIME_DIR AGENTV_PATH="$ROOT" AGENTV_STATE="$SCRATCH/state" AGENTV_PIN_CHECK="$SCRATCH/pin-check" \
+    "$ROOT/bin/agentv-app-install" --local "$@" <<'PY'
+import os, pty, sys
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(sys.argv[2], sys.argv[2:])
+os.write(fd, (sys.argv[1] + "\n").encode())
+out = b""
+while True:
+    try:
+        data = os.read(fd, 4096)
+    except OSError:
+        break
+    if not data:
+        break
+    out += data
+_, status = os.waitpid(pid, 0)
+sys.stdout.write(out.decode().replace("\r", ""))
+sys.exit(os.waitstatus_to_exitcode(status))
+PY
+}
+
+: >"$PIN_LOG"
+out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || fail "ADR-039 agentv app install --local installs an app built on this box" "$out"
+[[ $out == "Sample 1.0.0 (local.sample), from $SCRATCH/built."*"It can reach the addresses its setup asks you for, and nothing else."* ]] ||
+  fail "it says what the app is, where it's from and what it can reach, before it asks" "$out"
+[[ $(tail -n 1 <<<"$out") == "Installed Sample 1.0.0 (local.sample). It's in Apps on the TV, where its details put it on home." ]] ||
+  fail "it says what it installed, and where to find it on the TV" "$out"
+[[ $(cat "$PIN_LOG") == "app-install" ]] || fail "--yes answers the question, and the adult PIN is still asked for" "$(cat "$PIN_LOG")"
+[[ -f $SCRATCH/state/apps/local.sample/manifest.json && ! -e $SCRATCH/state/apps/local.sample/fixtures ]] ||
+  fail "the app lands in the box's apps folder, without its fixtures" "$(ls -R "$SCRATCH/state/apps")"
+[[ $(app list) == "local.sample 1.0.0 local" ]] || fail "agentv app list shows it as a local app" "$(app list)"
+pass "ADR-039 agentv app install --local installs an app built on this box as a local app, after the adult PIN"
+
+out=$(app remove local.sample 2>&1) || fail "agentv app remove removes a local app" "$out"
+[[ ! -e $SCRATCH/state/apps/local.sample && -z $(app list) ]] || fail "agentv app remove leaves nothing of the local app"
+pass "ADR-039 agentv app remove takes a local app off the box"
+
+touch "$PIN_NO"
+status=0
+out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || status=$?
+(( status == 1 )) || fail "ADR-039 without the adult PIN, nothing is installed" "exit $status: $out"
+[[ $(tail -n 1 <<<"$out") == "Couldn't do it: that needs the adult PIN, so nothing was installed." ]] || fail "it says the PIN was needed" "$out"
+[[ ! -e $SCRATCH/state/apps/local.sample && -z $(app list) ]] || fail "nothing of the app is on the box without the PIN"
+rm -f "$PIN_NO"
+pass "ADR-039 agentv app install --local installs nothing without the adult PIN"
+
+# Through sudo with no terminal, the PIN is asked for on the TV of whoever ran
+# sudo, since root has no TV session of its own.
+: >"$PIN_LOG"
+out=$(SUDO_UID=4242 local_app "$SCRATCH/built" --yes </dev/null 2>&1) || fail "an install through sudo works" "$out"
+[[ $(cat "$PIN_LOG") == "app-install in /run/user/4242" ]] || fail "the PIN is asked for in sudo's person's TV session" "$(cat "$PIN_LOG")"
+app remove local.sample >/dev/null
+pass "ADR-039 through sudo, the adult PIN is asked for on the TV of the person who ran it"
+
+: >"$PIN_LOG"
+status=0
+out=$(local_app "$SCRATCH/built" </dev/null 2>&1) || status=$?
+(( status == 1 )) || fail "with no terminal and no --yes, nothing is installed" "exit $status: $out"
+[[ $(tail -n 1 <<<"$out") == "Couldn't do it: there's no terminal to ask in, so add --yes to install it without the question." ]] ||
+  fail "it says to add --yes" "$out"
+[[ ! -s $PIN_LOG && -z $(app list) ]] || fail "it asks for nothing and installs nothing"
+pass "ADR-039 with no terminal to ask in, agentv app install --local needs --yes"
+
+if type -P python3 >/dev/null; then
+  status=0
+  out=$(in_terminal n "$SCRATCH/built" 2>&1) || status=$?
+  (( status == 1 )) || fail "no to the question installs nothing" "exit $status: $out"
+  grep -q "Install it? \[y/N\]" <<<"$out" || fail "it asks in the terminal" "$out"
+  grep -q "Couldn't do it: local.sample wasn't approved, so nothing was installed." <<<"$out" || fail "it says nothing was installed" "$out"
+  [[ ! -s $PIN_LOG && -z $(app list) ]] || fail "a no asks for no PIN and installs nothing"
+  out=$(in_terminal y "$SCRATCH/built" 2>&1) || fail "yes to the question installs it" "$out"
+  [[ $(app list) == "local.sample 1.0.0 local" && $(cat "$PIN_LOG") == "app-install" ]] || fail "a yes, then the PIN, installs it" "$out"
+  app remove local.sample >/dev/null
+  pass "ADR-039 in a terminal, agentv app install --local asks first, and installs only on a yes"
+else
+  [[ -n ${CI:-} ]] && fail "python3 is installed" "the terminal check needs python3"
+  echo "skip - agentv app install --local in a terminal (python3 isn't installed)"
+fi
+
+jq '.id = "agentv.sample"' "$ROOT/test/agentv/fixtures/apps/sample/manifest.json" >"$SCRATCH/built/manifest.json"
+: >"$PIN_LOG"
+status=0
+out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || status=$?
+(( status == 1 )) || fail "a folder that isn't a local app isn't installed" "exit $status: $out"
+grep -q "an app built on this box has an id that starts with local., not 'agentv.sample'" <<<"$out" || fail "it says why" "$out"
+[[ ! -s $PIN_LOG && -z $(app list) ]] || fail "it asks for nothing and installs nothing"
+pass "ADR-039 agentv app install --local checks the folder as a local app before anyone is asked"
+
+status=0
+out=$(app install --local 2>&1) || status=$?
+(( status == 2 )) || fail "agentv app install --local with no folder is a usage error" "exit $status: $out"
+pass "agentv app install --local with no folder says how to use it"
