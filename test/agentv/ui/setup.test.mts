@@ -379,13 +379,16 @@ test("S5.6 setup picks up at the same step after the page loads again, as after 
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
   await post("/api/setup/finish", { step: "ai" });
+  await post("/api/setup/finish", { step: "people" });
   const page = await tv();
   await page.waitForSelector(".goals");
   await page.reload();
   await page.waitForSelector(".goals");
   assert.equal((await (await fetch(`${url}/health`)).json()).setup_step, "goal");
-  // Back goes to the AI step, which is finished, then to getting ready,
-  // which stays there: continue goes on.
+  // Back goes to who watches and the AI step, which are finished, then to
+  // getting ready, which stays there: continue goes on.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".people");
   await page.keyboard.press("Escape");
   await page.waitForSelector(".providers");
   await page.keyboard.press("Escape");
@@ -403,6 +406,7 @@ test("what the tv is for: OK on one picks it, setup is done, and home takes over
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
   await post("/api/setup/finish", { step: "ai" });
+  await post("/api/setup/finish", { step: "people" });
   const page = await tv();
   await page.waitForSelector(".goals");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick one.");
@@ -548,7 +552,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
   await page.waitForFunction(() => /claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   await page.keyboard.press("Enter");
-  await page.waitForSelector(".goals");
+  await page.waitForSelector(".people");
   assert.match(await textOf(page, ".bar"), /claude code ready/, "the CLI's state stays in the bar");
   await page.close();
 });
@@ -566,11 +570,123 @@ test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on 
   await page.keyboard.press("Escape");
   await page.waitForSelector(".providers");
   await page.locator('[data-action="later"]').click();
-  await page.waitForSelector(".goals");
+  await page.waitForSelector(".people");
   const ai = await (await fetch(`${url}/api/ai`)).json();
   assert.equal(ai.provider, null);
   await page.close();
 });
+
+// To who watches, with no PIN and only the box's owner.
+async function toPeople(): Promise<void> {
+  await toAi();
+  for (const viewer of (await (await fetch(`${url}/api/viewers`)).json()).viewers.slice(1)) {
+    const grant = await pinGrant();
+    await fetch(`${url}/api/viewers/${viewer.id}`, { method: "DELETE", headers: grant ? { "X-AgenTV-Grant": grant } : {} });
+  }
+  const grant = await pinGrant();
+  if (grant) await fetch(`${url}/api/pin`, { method: "DELETE", headers: { "X-AgenTV-Grant": grant } });
+  await post("/api/setup/finish", { step: "ai" });
+}
+
+// A grant for the test's own clean-up, when a PIN is set: the tests' PIN.
+async function pinGrant(): Promise<string | undefined> {
+  if (!(await (await fetch(`${url}/api/pin`)).json()).set) return undefined;
+  return (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
+}
+
+test("who watches: a child's profile asks for the adult PIN first, chosen twice on its pad, which the phone's remote shows too", async () => {
+  await toPeople();
+  const page = await tv();
+  await page.waitForSelector(".people");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "who watches?");
+  assert.match(await textOf(page, ".bar"), /3\/6 people/);
+  assert.equal(await page.locator(".person[data-viewer]").count(), 1, "the box's owner");
+  assert.equal(await textOf(page, ".pin-switch"), "□ off");
+
+  // A phone follows the TV.
+  const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
+  const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
+  const phoneTv = async () => (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/state`, { headers: { Authorization: `Bearer ${token}` } })).json()).tv;
+
+  await page.locator('[data-action="add"]').click();
+  await page.waitForSelector(".person-field.focused");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "someone new.");
+  // The name's field takes the phone's keyboard.
+  await waitFor(async () => (await phoneTv()).view === "keyboard");
+  await page.keyboard.type("Mia");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".focused").getAttribute("data-action"), "role");
+  await page.keyboard.press("ArrowRight");
+  assert.match(await textOf(page, '[data-action="role"]'), /‹ child ›/);
+  assert.equal(await page.locator('[data-action="lock"].hidden').count(), 1, "a child's profile doesn't lock");
+  await page.locator('[data-action="save"]').click();
+
+  // The PIN first, twice.
+  await page.waitForSelector(".pin-pad");
+  assert.equal(await textOf(page, ".pin-pad h1"), "set the adult pin");
+  await waitFor(async () => (await phoneTv()).pin?.title === "set the adult pin");
+  assert.equal((await phoneTv()).view, "pin");
+  await page.keyboard.type("2468");
+  await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "the same pin again");
+  await page.keyboard.type("1357");
+  await page.waitForFunction(() => /that's not the same pin/.test(document.querySelector(".pin-message")?.textContent ?? ""));
+  await page.keyboard.type("2468");
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person[data-viewer]").length === 2);
+  assert.equal(await textOf(page, ".pin-switch"), "■ on");
+  const viewers = (await (await fetch(`${url}/api/viewers`)).json()).viewers;
+  assert.deepEqual(viewers.map((v: { name: string; role: string }) => [v.name, v.role]).slice(1), [["Mia", "child"]]);
+  assert.equal(await page.locator(".person-tag").count(), 1);
+  assert.equal((await phoneTv()).pin, null, "the pad's gone from the phone too");
+  await page.close();
+});
+
+test("who watches: an adult's profile asks for the PIN to open and shows a lock, past the PIN entered once", async () => {
+  await toPeople();
+  const page = await tv();
+  await page.waitForSelector(".people");
+  // The PIN, from its switch.
+  await page.locator('[data-action="pin"]').click();
+  await page.waitForSelector(".pin-pad");
+  await page.keyboard.type("2468");
+  await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "the same pin again");
+  await page.keyboard.type("2468");
+  await page.waitForFunction(() => document.querySelector(".pin-switch")?.textContent === "■ on");
+  await page.reload();
+  await page.waitForSelector(".people");
+
+  // The owner's own page: lock it. The PIN is asked for once, then held.
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  assert.match(await textOf(page, '[data-action="lock"]'), /‹ yes ›/);
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".pin-pad");
+  assert.equal(await textOf(page, ".pin-pad h1"), "enter the adult pin");
+  await page.keyboard.type("2468");
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 1);
+
+  // And off again, with no second ask.
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
+  assert.equal(await page.locator(".pin-pad").count(), 0);
+  await page.locator('[data-action="continue"]').click();
+  await page.waitForSelector(".goals");
+  await page.close();
+});
+
+async function waitFor(check: () => Promise<boolean>, ms = 5000): Promise<void> {
+  const until = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > until) throw new Error("it didn't happen in time");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
 
 test("the phone's remote says which setup step the TV is on", async () => {
   await fresh();

@@ -2,7 +2,7 @@
 // is, how the box is online, the setup hotspot and the phones, and each step
 // moving on.
 
-export type Step = "welcome" | "ready" | "ai" | "goal";
+export type Step = "welcome" | "ready" | "ai" | "people" | "goal";
 export type Goal = "streaming" | "music" | "media" | "gaming";
 export type UpdateFirst = "checking" | "installing" | "done" | "none" | "failed" | "skipped";
 
