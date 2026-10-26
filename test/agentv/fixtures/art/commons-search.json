@@ -1,85 +1,360 @@
 {
   "batchcomplete": true,
+  "continue": {
+    "gsroffset": 8,
+    "continue": "gsroffset||"
+  },
   "query": {
     "pages": [
       {
-        "pageid": 90000001,
+        "pageid": 9428075,
         "ns": 6,
-        "title": "File:Claude Monet - Water Lilies - 1906, Ryerson.jpg",
+        "title": "File:Sydney Harbour Bridge from Circular Quay.jpg",
+        "index": 5,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Sydney_Harbour_Bridge_from_Circular_Quay.jpg/3840px-Sydney_Harbour_Bridge_from_Circular_Quay.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 1750,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Sydney_Harbour_Bridge_from_Circular_Quay.jpg/3840px-Sydney_Harbour_Bridge_from_Circular_Quay.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 1750
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/d/d1/Sydney_Harbour_Bridge_from_Circular_Quay.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Sydney_Harbour_Bridge_from_Circular_Quay.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=9428075",
+            "extmetadata": {
+              "ObjectName": {
+                "value": "Sydney Harbour Bridge from Circular Quay",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "Taken on 30 January 2010",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:JJ_Harrison\" title=\"User:JJ Harrison\">JJ Harrison</a> (<a rel=\"nofollow\" class=\"external free\" href=\"https://www.jjharrison.com.au/\">https://www.jjharrison.com.au/</a>)",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY-SA 3.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      {
+        "pageid": 37347823,
+        "ns": 6,
+        "title": "File:Puerto de Vestmannaeyjar, Heimaey, Islas Vestman, Suðurland, Islandia, 2014-08-17, DD 017-019 PAN.JPG",
         "index": 1,
         "imagerepository": "local",
         "imageinfo": [
           {
-            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Claude_Monet_-_Water_Lilies_-_1906%2C_Ryerson.jpg/3840px-Claude_Monet_-_Water_Lilies_-_1906%2C_Ryerson.jpg",
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/eb/Puerto_de_Vestmannaeyjar%2C_Heimaey%2C_Islas_Vestman%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-17%2C_DD_017-019_PAN.JPG/3840px-Puerto_de_Vestmannaeyjar%2C_Heimaey%2C_Islas_Vestman%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-17%2C_DD_017-019_PAN.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
             "thumbwidth": 3840,
-            "thumbheight": 3492,
-            "url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Claude_Monet_-_Water_Lilies_-_1906%2C_Ryerson.jpg",
-            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Claude_Monet_-_Water_Lilies_-_1906,_Ryerson.jpg",
-            "mime": "image/jpeg",
+            "thumbheight": 1135,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/eb/Puerto_de_Vestmannaeyjar%2C_Heimaey%2C_Islas_Vestman%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-17%2C_DD_017-019_PAN.JPG/3840px-Puerto_de_Vestmannaeyjar%2C_Heimaey%2C_Islas_Vestman%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-17%2C_DD_017-019_PAN.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 1135
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/e/eb/Puerto_de_Vestmannaeyjar%2C_Heimaey%2C_Islas_Vestman%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-17%2C_DD_017-019_PAN.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Puerto_de_Vestmannaeyjar,_Heimaey,_Islas_Vestman,_Su%C3%B0urland,_Islandia,_2014-08-17,_DD_017-019_PAN.JPG",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=37347823",
             "extmetadata": {
-              "ObjectName": { "value": "Water Lilies", "source": "commons-desc-page" },
-              "Artist": { "value": "<a href=\"https://en.wikipedia.org/wiki/Claude_Monet\" class=\"extiw\" title=\"en:Claude Monet\">Claude Monet</a>&nbsp;", "source": "commons-desc-page" },
-              "DateTimeOriginal": { "value": "1906", "source": "commons-desc-page" },
-              "LicenseShortName": { "value": "Public domain", "source": "commons-desc-page", "hidden": "" }
-            }
+              "ObjectName": {
+                "value": "Puerto de Vestmannaeyjar, Heimaey, Islas Vestman, Suðurland, Islandia, 2014-08-17, DD 017-019 PAN",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "Taken on 17 August 2014, 10:31:42",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<bdi><a href=\"https://www.wikidata.org/wiki/Q28147777\" class=\"extiw\" title=\"d:Q28147777\"><span title=\"Spanish photographer\">Diego Delso</span></a></bdi>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY-SA 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
           }
         ]
       },
       {
-        "pageid": 90000002,
+        "pageid": 37658477,
         "ns": 6,
-        "title": "File:Harbour at dusk.jpg",
-        "index": 2,
-        "imagerepository": "local",
-        "imageinfo": [
-          {
-            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Harbour_at_dusk.jpg",
-            "thumbwidth": 2400,
-            "thumbheight": 1600,
-            "url": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Harbour_at_dusk.jpg",
-            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Harbour_at_dusk.jpg",
-            "mime": "image/jpeg",
-            "extmetadata": {
-              "Artist": { "value": "<bdi>A. Photographer</bdi>", "source": "commons-desc-page" },
-              "DateTimeOriginal": { "value": "2019-06-01 21:04:11", "source": "commons-desc-page" },
-              "LicenseShortName": { "value": "CC BY-SA 4.0", "source": "commons-desc-page", "hidden": "" }
-            }
-          }
-        ]
-      },
-      {
-        "pageid": 90000003,
-        "ns": 6,
-        "title": "File:Not free.jpg",
-        "index": 3,
-        "imagerepository": "local",
-        "imageinfo": [
-          {
-            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Not_free.jpg/3840px-Not_free.jpg",
-            "url": "https://upload.wikimedia.org/wikipedia/commons/1/12/Not_free.jpg",
-            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Not_free.jpg",
-            "mime": "image/jpeg",
-            "extmetadata": {
-              "LicenseShortName": { "value": "Fair use", "source": "commons-desc-page" }
-            }
-          }
-        ]
-      },
-      {
-        "pageid": 90000004,
-        "ns": 6,
-        "title": "File:A drawing.svg",
+        "title": "File:Sète Harbour Sunset 04.jpg",
         "index": 4,
         "imagerepository": "local",
         "imageinfo": [
           {
-            "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/A_drawing.svg/3840px-A_drawing.svg.png",
-            "url": "https://upload.wikimedia.org/wikipedia/commons/2/23/A_drawing.svg",
-            "descriptionurl": "https://commons.wikimedia.org/wiki/File:A_drawing.svg",
-            "mime": "image/svg+xml",
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b2/S%C3%A8te_Harbour_Sunset_04.jpg/3840px-S%C3%A8te_Harbour_Sunset_04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 1159,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b2/S%C3%A8te_Harbour_Sunset_04.jpg/3840px-S%C3%A8te_Harbour_Sunset_04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 1159
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/b/b2/S%C3%A8te_Harbour_Sunset_04.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:S%C3%A8te_Harbour_Sunset_04.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=37658477",
             "extmetadata": {
-              "LicenseShortName": { "value": "CC0", "source": "commons-desc-page" }
-            }
+              "ObjectName": {
+                "value": "Sète Harbour Sunset 04",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "Taken on 20 December 2014, 08:32:34",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Christian_Ferrer\" title=\"User:Christian Ferrer\">Christian Ferrer</a>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      {
+        "pageid": 44007484,
+        "ns": 6,
+        "title": "File:First sun rays in the Harbour of Sète 01.jpg",
+        "index": 3,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dd/First_sun_rays_in_the_Harbour_of_S%C3%A8te_01.jpg/3840px-First_sun_rays_in_the_Harbour_of_S%C3%A8te_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 2886,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dd/First_sun_rays_in_the_Harbour_of_S%C3%A8te_01.jpg/3840px-First_sun_rays_in_the_Harbour_of_S%C3%A8te_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 2886
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/d/dd/First_sun_rays_in_the_Harbour_of_S%C3%A8te_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:First_sun_rays_in_the_Harbour_of_S%C3%A8te_01.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=44007484",
+            "extmetadata": {
+              "ObjectName": {
+                "value": "First sun rays in the Harbour of Sète 01",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "Taken on 26 September 2015, 07:46:05",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Christian_Ferrer\" title=\"User:Christian Ferrer\">Christian Ferrer</a>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      {
+        "pageid": 57807690,
+        "ns": 6,
+        "title": "File:Harbour of Sète at dawn cf01.jpg",
+        "index": 2,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/86/Harbour_of_S%C3%A8te_at_dawn_cf01.jpg/3840px-Harbour_of_S%C3%A8te_at_dawn_cf01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 2400,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/86/Harbour_of_S%C3%A8te_at_dawn_cf01.jpg/3840px-Harbour_of_S%C3%A8te_at_dawn_cf01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 2400
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/8/86/Harbour_of_S%C3%A8te_at_dawn_cf01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Harbour_of_S%C3%A8te_at_dawn_cf01.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=57807690",
+            "extmetadata": {
+              "ObjectName": {
+                "value": "Harbour of Sète at dawn cf01",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "Taken on 8 April 2017, 07:17:12",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Christian_Ferrer\" title=\"User:Christian Ferrer\">Christian Ferrer</a>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      {
+        "pageid": 82284212,
+        "ns": 6,
+        "title": "File:Hong Kong Harbour Night 2019-06-11.jpg",
+        "index": 6,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a4/Hong_Kong_Harbour_Night_2019-06-11.jpg/3840px-Hong_Kong_Harbour_Night_2019-06-11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 1816,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a4/Hong_Kong_Harbour_Night_2019-06-11.jpg/3840px-Hong_Kong_Harbour_Night_2019-06-11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 1816
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/a/a4/Hong_Kong_Harbour_Night_2019-06-11.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Hong_Kong_Harbour_Night_2019-06-11.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=82284212",
+            "extmetadata": {
+              "ObjectName": {
+                "value": "Hong Kong Harbour Night 2019-06-11",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "2019-06-11 20:48",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Benh\" title=\"User:Benh\">Benh LIEU SONG</a> (<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/75729488@N03\">Flickr</a>)",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY-SA 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      {
+        "pageid": 85066612,
+        "ns": 6,
+        "title": "File:Sydney (AU), Darling Harbour -- 2019 -- 3193-5.jpg",
+        "index": 7,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Sydney_%28AU%29%2C_Darling_Harbour_--_2019_--_3193-5.jpg/3840px-Sydney_%28AU%29%2C_Darling_Harbour_--_2019_--_3193-5.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 2560,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Sydney_%28AU%29%2C_Darling_Harbour_--_2019_--_3193-5.jpg/3840px-Sydney_%28AU%29%2C_Darling_Harbour_--_2019_--_3193-5.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 2560
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/7/7d/Sydney_%28AU%29%2C_Darling_Harbour_--_2019_--_3193-5.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Sydney_(AU),_Darling_Harbour_--_2019_--_3193-5.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=85066612",
+            "extmetadata": {
+              "ObjectName": {
+                "value": "Sydney (AU), Darling Harbour -- 2019 -- 3193-5",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "Taken on 25 October 2019, 21:41",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<bdi><a href=\"https://www.wikidata.org/wiki/Q34788025\" class=\"extiw\" title=\"d:Q34788025\"><span title=\"German photographer and mathematician\">Dietmar Rabich</span></a></bdi>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY-SA 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
+          }
+        ]
+      },
+      {
+        "pageid": 94814881,
+        "ns": 6,
+        "title": "File:Lyttelton Harbour (Whakaraupō) from Mt Ada, Canterbury, New Zealand.jpg",
+        "index": 8,
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/10/Lyttelton_Harbour_%28Whakaraup%C5%8D%29_from_Mt_Ada%2C_Canterbury%2C_New_Zealand.jpg/3840px-Lyttelton_Harbour_%28Whakaraup%C5%8D%29_from_Mt_Ada%2C_Canterbury%2C_New_Zealand.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+            "thumbwidth": 3840,
+            "thumbheight": 897,
+            "thumbattribs": {
+              "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/10/Lyttelton_Harbour_%28Whakaraup%C5%8D%29_from_Mt_Ada%2C_Canterbury%2C_New_Zealand.jpg/3840px-Lyttelton_Harbour_%28Whakaraup%C5%8D%29_from_Mt_Ada%2C_Canterbury%2C_New_Zealand.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "decoding": "async",
+              "loading": "lazy",
+              "width": 3840,
+              "height": 897
+            },
+            "url": "https://upload.wikimedia.org/wikipedia/commons/1/10/Lyttelton_Harbour_%28Whakaraup%C5%8D%29_from_Mt_Ada%2C_Canterbury%2C_New_Zealand.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:Lyttelton_Harbour_(Whakaraup%C5%8D)_from_Mt_Ada,_Canterbury,_New_Zealand.jpg",
+            "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=94814881",
+            "extmetadata": {
+              "ObjectName": {
+                "value": "Lyttelton Harbour (Whakaraupō) from Mt Ada, Canterbury, New Zealand",
+                "source": "mediawiki-metadata"
+              },
+              "DateTimeOriginal": {
+                "value": "2020-09-27 13:03:08",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"//commons.wikimedia.org/wiki/User:Podzemnik\" title=\"User:Podzemnik\">Michal Klajban</a>",
+                "source": "commons-desc-page"
+              },
+              "LicenseShortName": {
+                "value": "CC BY-SA 4.0",
+                "source": "commons-desc-page",
+                "hidden": ""
+              }
+            },
+            "mime": "image/jpeg"
           }
         ]
       }
