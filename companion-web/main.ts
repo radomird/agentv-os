@@ -50,6 +50,21 @@ interface State {
   tv: Tv;
   // TV setup's step, while it's on (stage 5).
   setup: { step: string; part: string } | null;
+  // What setup's AI step asks of the phone (ADR-023): the provider's terms
+  // for an adult to accept, then the key.
+  ai: Ask | null;
+}
+
+interface Ask {
+  ask: "terms" | "key";
+  provider: string;
+  path: "plan" | "key";
+  name: string;
+  maker: string;
+  plan: string;
+  terms: { id: string; name: string; url: string }[];
+  summary: string;
+  keyUrl: string;
 }
 
 type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update";
@@ -293,6 +308,72 @@ function tvPad(pin: NonNullable<Tv["pin"]>): HTMLElement {
       ),
       h("button", { type: "button", class: "button", "data-action": "back", onclick: () => void send({ key: "back" }) }, "back"),
     ),
+  );
+}
+
+// Setup's AI step (ADR-023): the provider's terms, with a summary and a link
+// to each, for an adult to read and accept here before anything of it
+// installs. The TV keeps who accepted, on which phone, and when.
+function termsPage(ask: Ask): HTMLElement {
+  const accept = async () => {
+    try {
+      const done = await withPin("accepting the terms", (grant) => api("POST", "/api/phone/terms", { provider: ask.provider, path: ask.path }, grant));
+      if (done === null) return;
+      toast("accepted. the tv carries on.", true);
+      await refresh(true);
+    } catch (error) {
+      failed(error);
+    }
+  };
+  return h(
+    "div",
+    { class: "page" },
+    prompt("tv setup · ai"),
+    h("h1", {}, `${ask.name} terms`),
+    h("p", { class: "note" }, ask.summary),
+    h("ul", { class: "terms" }, ...ask.terms.map((t) => h("li", {}, h("a", { href: t.url, target: "_blank", rel: "noopener noreferrer", "data-terms": t.id }, t.name)))),
+    h("button", { class: "button primary", type: "button", "data-action": "accept", onclick: () => void accept() }, glyph("check", 20), h("span", {}, "i accept")),
+    h("p", { class: "note" }, `you accept them as ${state?.viewer.name ?? "an adult"}. the tv keeps who, on which phone, and when.`),
+  );
+}
+
+// The key (board 05): pasted here, kept where only root can read it, and
+// never shown again.
+function keyPage(ask: Ask): HTMLElement {
+  const field = h("input", { class: "field", id: "api-key", type: "password", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "paste it here" }) as HTMLInputElement;
+  const save = async () => {
+    if (!field.value) return;
+    const key = field.value;
+    field.value = "";
+    try {
+      const done = await withPin("the provider key", (grant) => api("POST", "/api/phone/key", { key }, grant));
+      if (done === null) return;
+      toast("the key is kept.", true);
+      await refresh(true);
+    } catch (error) {
+      failed(error);
+    }
+  };
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") void save();
+  });
+  // Pasting from a button needs a secure page, which a box on the home
+  // network isn't; the field takes a long-press paste either way.
+  const clipboard = (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+  const paste = window.isSecureContext && clipboard?.readText
+    ? h("button", { class: "button", type: "button", "data-action": "paste", onclick: () => void clipboard.readText().then((text) => (field.value = text.trim()), () => {}) }, "paste")
+    : null;
+  return h(
+    "div",
+    { class: "page" },
+    prompt("tv setup · ai"),
+    h("h1", {}, `${ask.name} api key`),
+    h("p", { class: "note" }, "stays on your tv. nobody sees it again, not even you."),
+    h("label", { for: "api-key", class: "label" }, "key"),
+    h("div", { class: "key-row" }, field, paste),
+    h("a", { href: ask.keyUrl, target: "_blank", rel: "noopener noreferrer", class: "link" }, "get a key →"),
+    h("div", { class: "limits" }, h("b", {}, "ai spending limits"), h("span", {}, "$5 per app it builds, $20 a month. your streaming subscriptions aren't affected.")),
+    h("button", { class: "button primary", type: "button", "data-action": "save-key", onclick: () => void save() }, glyph("lock", 20), h("span", {}, "save key")),
   );
 }
 
@@ -542,13 +623,30 @@ function draw(): void {
     state.viewer.name,
   );
   app.replaceChildren(h("div", { class: "page" }, h("div", { class: "top" }, viewer, tabs), ...banners, body));
+  drawAsk();
   drawPad();
 }
 
-// The TV's PIN pad, over whatever's showing while the TV asks.
+// The TV's PIN pad, over whatever's showing while the TV asks, and setup's
+// AI step under it.
 function drawPad(): void {
   document.getElementById("tv-pin")?.remove();
   if (state?.tv.pin) document.body.append(tvPad(state.tv.pin));
+}
+
+// What setup's AI step asks, over the remote while it does. Not drawn again
+// while its field is being typed in.
+let asked = "";
+function drawAsk(): void {
+  const now = state?.ai ? JSON.stringify(state.ai) : "";
+  if (now === asked && document.getElementById("tv-ask")) return;
+  asked = now;
+  document.getElementById("tv-ask")?.remove();
+  const ask = state?.ai;
+  if (!ask) return;
+  const page = ask.ask === "terms" ? termsPage(ask) : keyPage(ask);
+  page.classList.add("ask");
+  document.body.append(h("div", { class: "overlay", id: "tv-ask", role: "dialog", "aria-label": ask.ask === "terms" ? `${ask.name}'s terms` : `the ${ask.name} api key` }, page));
 }
 
 // Who's watching, the lock, a sign-in, an update and what's on the TV. With
@@ -582,7 +680,10 @@ async function refresh(force = false, wait = false): Promise<void> {
   }
   const typingNow = document.activeElement instanceof HTMLInputElement;
   if (force || (changed && !typingNow && mode !== "home")) draw();
-  else if (JSON.stringify(next.tv.pin) !== JSON.stringify(before?.tv.pin)) drawPad();
+  else {
+    if (JSON.stringify(next.ai) !== JSON.stringify(before?.ai)) drawAsk();
+    if (JSON.stringify(next.tv.pin) !== JSON.stringify(before?.tv.pin)) drawPad();
+  }
 }
 
 // Asks the box over and over, each ask waiting for the next change, while

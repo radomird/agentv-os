@@ -15,7 +15,8 @@ import { fit, h } from "../launcher/dom.ts";
 import { Focus } from "../launcher/focus.ts";
 import { listen as listenInput, type Action } from "../launcher/input.ts";
 import { Sounds } from "../launcher/sounds.ts";
-import { setup, type SetupInfo, type Step } from "./api.ts";
+import { aiStep, cliLine, path } from "./ai.ts";
+import { setup, type AiInfo, type Provider, type SetupInfo, type Step } from "./api.ts";
 import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
 import { ready } from "./ready.ts";
@@ -34,11 +35,15 @@ export interface View {
   heard?(event: string, data: unknown): void;
   // Back is held, as while the box updates itself.
   stay?(): boolean;
+  // Back of the page's own: true when it took it.
+  back?(): boolean;
   stop?(): void;
 }
 
 export interface Ctx {
   info: SetupInfo;
+  // The AI provider, its terms and its CLI, once the daemon has said.
+  ai?: AiInfo;
   updates: Updates;
   sounds: Sounds;
   focus: Focus;
@@ -47,7 +52,7 @@ export interface Ctx {
   // last.
   finish(step: Step, change?: { keyboard?: boolean }): Promise<void>;
   // A page of the step on screen, such as the welcome screen's Wi-Fi list.
-  open(route: string): void;
+  open(route: string, direction?: "forward" | "back"): void;
   back(): void;
   toast(text: string, kind?: "ok" | "fail"): void;
   // The status bar's right side again, as what's going on changes.
@@ -101,12 +106,13 @@ const ctx: Ctx = {
     show(next.step, "forward");
     sounds.play("forward");
   },
-  open(to) {
-    show(to, "forward");
-    sounds.play("forward");
+  open(to, direction = "forward") {
+    show(to, direction);
+    sounds.play(direction);
   },
   back() {
     if (view?.stay?.()) return;
+    if (view?.back?.()) return;
     const [step, sub] = route.split("/");
     if (sub) {
       show(step, "back");
@@ -139,7 +145,7 @@ const ctx: Ctx = {
   },
   status(info) {
     const el = barEl?.querySelector(".bar-info");
-    if (el) el.textContent = info;
+    if (el) el.textContent = barInfo(route.split("/")[0], info);
   },
   async refresh() {
     const at = moves;
@@ -150,9 +156,12 @@ const ctx: Ctx = {
   },
 };
 
-function viewFor(to: string): View {
+function viewFor(to: string): View | Promise<View> {
+  const [step, sub] = to.split("/");
   if (to === "welcome/wifi") return wifi(ctx);
   if (to === "ready") return ready(ctx);
+  if (step === "ai" && sub) return path(ctx, sub as Provider);
+  if (to === "ai") return aiStep(ctx);
   if (to === "goal") return goal(ctx);
   return welcome(ctx);
 }
@@ -163,9 +172,31 @@ function show(to: string, direction?: "forward" | "back"): void {
   view?.stop?.();
   moves++;
   route = to;
-  view = viewFor(to);
+  const next = viewFor(to);
+  if (next instanceof Promise) {
+    // A step that asks the daemon first where it picks up.
+    const at = moves;
+    view = undefined;
+    void next.then((ready) => {
+      if (moves === at) put(to, ready, direction);
+      else ready.stop?.();
+    });
+    return;
+  }
+  put(to, next, direction);
+}
+
+// The status bar's right side: what the screen says, and after the AI step,
+// the provider's CLI arriving in the background.
+function barInfo(step: string, info: string): string {
+  const cli = step !== "ai" && ctx.ai ? cliLine(ctx.ai) : null;
+  return [info, cli].filter(Boolean).join(" · ");
+}
+
+function put(to: string, next: View, direction?: "forward" | "back"): void {
+  view = next;
   const step = to.split("/")[0] as Step;
-  barEl = bar(ctx.info.parts[step] ?? "", view.info ?? "");
+  barEl = bar(ctx.info.parts[step] ?? "", barInfo(step, view.info ?? ""));
   const el = h("div", { class: "screen setup-screen" }, view.el, barEl);
   fieldEl.classList.toggle("dim", !view.bright);
   tell({ screen: "menu" });
@@ -236,6 +267,7 @@ async function start(): Promise<void> {
     })
     .catch(() => {});
   ctx.updates = await daemon.updates().catch(() => ctx.updates);
+  ctx.ai = await setup.ai().catch(() => undefined);
   show(ctx.info.setup.step);
   listenInput(act);
   listen(
@@ -260,6 +292,15 @@ async function start(): Promise<void> {
         view?.heard?.("updates", data);
       },
       phones: (data) => view?.heard?.("phones", data),
+      ai: (data) => {
+        if (ctx.ai) ctx.ai = { ...ctx.ai, ...(data as Partial<AiInfo>) };
+        view?.heard?.("ai", data);
+        if (route.split("/")[0] !== "ai" && view) ctx.status(view.info ?? "");
+      },
+      key: (data) => {
+        if (ctx.ai) ctx.ai = { ...ctx.ai, key: data as AiInfo["key"] };
+        view?.heard?.("key", data);
+      },
       settings: () =>
         void daemon.home().then((home) => {
           sounds.on = home.settings.sound.on;

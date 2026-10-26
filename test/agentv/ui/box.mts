@@ -4,7 +4,7 @@
 // Clock and Weather too, in a time zone of the test's choosing, with the
 // weather's forecast from a server the test runs.
 
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Daemon } from "../../../daemon/server.ts";
@@ -127,6 +127,22 @@ export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}
   return { apps, state, builtins: options.builtins ? builtins(dir, options.forecast) : undefined };
 }
 
+// What agentv-key-store does as root, for a box with no root: it takes the
+// daemon's drop and says which provider has a key, never the key.
+function keyMover(state: string, status: string): void {
+  const drop = join(state, "key-drop", "key.json");
+  setInterval(() => {
+    let request: { provider: string | null };
+    try {
+      request = JSON.parse(readFileSync(drop, "utf8"));
+    } catch {
+      return;
+    }
+    rmSync(drop, { force: true });
+    writeFileSync(status, JSON.stringify({ set: request.provider !== null, provider: request.provider, at: new Date().toISOString() }));
+  }, 50).unref();
+}
+
 export async function startBox(
   port = 0,
   fixtures = FIXTURES,
@@ -139,6 +155,8 @@ export async function startBox(
   // What agentv-hotspot writes, empty until a test fills it.
   const hotspot = join(state, "..", "hotspot");
   mkdirSync(hotspot, { recursive: true });
+  const keyStatus = join(state, "..", "key.json");
+  keyMover(state, keyStatus);
   // The phone companion and the setup hotspot's captive page too, on this
   // computer only, as the box serves them on the home network and on its
   // hotspot.
@@ -158,6 +176,7 @@ export async function startBox(
     hotspotAddress: "127.0.0.1",
     hotspotRun: hotspot,
     interfaces: options.interfaces as never,
+    keyStatus,
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };

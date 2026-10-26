@@ -2,7 +2,7 @@
 // is, how the box is online, the setup hotspot and the phones, and each step
 // moving on.
 
-export type Step = "welcome" | "ready" | "goal";
+export type Step = "welcome" | "ready" | "ai" | "goal";
 export type Goal = "streaming" | "music" | "media" | "gaming";
 export type UpdateFirst = "checking" | "installing" | "done" | "none" | "failed" | "skipped";
 
@@ -37,6 +37,36 @@ export interface SetupInfo {
   pin: boolean;
 }
 
+export type Provider = "claude" | "chatgpt" | "gemini";
+export type Path = "plan" | "key";
+
+export interface Terms {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface Offer {
+  provider: Provider;
+  name: string;
+  maker: string;
+  cli: string;
+  cliName: string;
+  plan: { offered: boolean; name: string };
+  keyUrl: string;
+  terms: Record<Path, Terms[]>;
+  summary: Record<Path, string>;
+}
+
+export interface AiInfo {
+  provider: Provider | null;
+  path: Path | null;
+  accepted: { terms: Terms[]; by: { phone: string; viewer: string }; at: string } | null;
+  cli: { state: "installing" | "ready" | "failed"; cli: string; version: string | null; error: string | null } | null;
+  offers: Record<Provider, Offer>;
+  key: { set: boolean; provider: string | null };
+}
+
 export interface Network {
   ssid: string;
   signal: number;
@@ -64,5 +94,8 @@ export const setup = {
   done: () => call<{ setup: SetupState }>("POST", "/api/setup", { done: true }),
   networks: async () => (await call<{ networks: Network[] }>("GET", "/api/setup/networks")).networks,
   wifi: (ssid: string, password: string) => call<{ joining: string }>("POST", "/api/setup/wifi", { ssid, password }),
+  ai: () => call<AiInfo>("GET", "/api/ai"),
+  choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
+  key: (provider: Provider, key: string) => call<{ set: boolean }>("PUT", "/api/key", { provider, key }),
   pair: async () => (await call<{ pairing: { code: string; until: string; url: string | null } | null }>("POST", "/api/phones/pair")).pairing,
 };

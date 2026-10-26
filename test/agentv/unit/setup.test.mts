@@ -72,6 +72,9 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   assert.match((await store.finish("ready")).error ?? "", /welcome isn't finished yet/);
   await store.finish("welcome");
   await store.finish("ready");
+  assert.equal((await store.read()).step, "ai");
+  assert.match((await store.go("goal")).error ?? "", /ai isn't finished yet/);
+  await store.finish("ai");
   assert.equal((await store.read()).step, "goal");
   assert.equal((await store.go("welcome")).state?.step, "welcome");
   assert.equal((await store.go("goal")).state?.step, "goal");
@@ -80,7 +83,7 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   await store.setGoal("music");
   assert.equal((await store.finish("goal")).state?.goal, "music");
   assert.match((await store.go("nowhere")).error ?? "", /a step/);
-  assert.deepEqual(STEPS, ["welcome", "ready", "goal"]);
+  assert.deepEqual(STEPS, ["welcome", "ready", "ai", "goal"]);
 });
 
 test("getting ready keeps how bringing the box up to date goes, and when the check was asked for", async () => {
@@ -121,7 +124,7 @@ test("the box is online on a wired or Wi-Fi address that isn't its own setup hot
 test("the setup screens hear where setup is, how the box is online, the hotspot and the phones", async () => {
   const info = await (await fetch(`${url}/api/setup`)).json();
   assert.equal(info.setup.step, "welcome");
-  assert.deepEqual(info.steps, ["welcome", "ready", "goal"]);
+  assert.deepEqual(info.steps, ["welcome", "ready", "ai", "goal"]);
   assert.equal(info.parts.goal, "4/6 goal");
   assert.deepEqual(info.network, { online: true, via: "ethernet", name: null });
   assert.equal(info.hotspot.on, false);
@@ -146,6 +149,7 @@ test("S5.6 each step moved on is broadcast, kept, and said in /health, and setup
   assert.equal((await post("/api/setup/finish", { step: "goal" })).status, 400, "ready isn't finished yet");
   assert.equal((await post("/api/setup/ready", { update: "none", to: "0.2.1" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "ready" })).status, 200);
+  assert.equal((await post("/api/setup/finish", { step: "ai" })).status, 200);
   assert.equal((await post("/api/setup/goal", { goal: "streaming" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "goal" })).status, 200);
   assert.equal((await post("/api/setup", { done: true })).status, 200);
@@ -187,6 +191,7 @@ test("with music as the goal, Music is on home from the start", async () => {
     await send("/api/setup/finish", { step: "welcome" });
     await send("/api/setup/ready", { update: "none" });
     await send("/api/setup/finish", { step: "ready" });
+    await send("/api/setup/finish", { step: "ai" });
     await send("/api/setup/goal", { goal: "music" });
     await send("/api/setup", { done: true });
     const home = await (await fetch(`${at}/api/home`)).json();

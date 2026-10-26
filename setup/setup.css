@@ -365,3 +365,134 @@
 .goal.focused .glyph {
   color: var(--background);
 }
+
+/* --- The AI provider (board 04) --------------------------------------------- */
+
+.providers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.providers.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.provider {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 280px;
+  padding: 36px 40px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  color: var(--bright-foreground);
+}
+
+.provider.focused {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+}
+
+.provider.off {
+  opacity: 0.5;
+}
+
+.provider-index {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.provider:nth-child(3) .provider-index {
+  color: var(--bright-magenta);
+}
+
+.provider.focused .provider-index {
+  color: var(--background);
+}
+
+.provider-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.provider-name {
+  font-size: 80px;
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 1;
+}
+
+.provider-maker {
+  font-size: 26px;
+  color: var(--foreground);
+}
+
+.provider.focused .provider-maker {
+  color: var(--background);
+}
+
+.setup-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.setup-note {
+  font-size: 30px;
+  color: var(--foreground);
+}
+
+.setup-foot .button {
+  min-height: 64px;
+  font-size: 26px;
+}
+
+/* The terms: a summary, their names, and a code for a phone. */
+.terms {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 64px;
+}
+
+.terms-left {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 1200px;
+}
+
+.terms-summary {
+  margin: 0;
+  font-size: 36px;
+}
+
+.terms-list {
+  width: auto;
+}
+
+.welcome-qr.small .qr-box {
+  width: 320px;
+  height: 320px;
+  padding: 20px;
+}
+
+.welcome-qr.small .qr-box .qr {
+  width: 280px;
+  height: 280px;
+}
+
+/* The key, typed on the TV with a keyboard. */
+.key-row {
+  display: flex;
+  gap: 24px;
+  width: 1200px;
+}
+
+.key-field {
+  flex-grow: 1;
+}
