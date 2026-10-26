@@ -72,12 +72,24 @@ export function cdpPage(cdp: Pick<DevTools, "evaluateIn">, target: () => string 
       if (method === "goto") {
         const url = String(args[0]);
         const until = Date.now() + (typeof args[1] === "number" ? args[1] : WAIT_MS * 3);
-        await on(`(location.assign(${JSON.stringify(url)}), null)`);
+        // The page it leaves gets a mark, so the wait is for a page without
+        // it: until a navigation has begun, and on a reload, the old page is
+        // still there and loaded. A change of hash alone keeps the page, and
+        // it's done by the time location.assign returns.
+        const mark = `agentv-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const same = await on(`(() => {
+          const next = new URL(${JSON.stringify(url)}, location.href);
+          const same = next.hash !== "" && next.href.split("#")[0] === location.href.split("#")[0];
+          if (!same) window.__agentvLeaving = ${JSON.stringify(mark)};
+          location.assign(next.href);
+          return same;
+        })()`);
+        if (same === true) return null;
+        const loaded = `window.__agentvLeaving !== ${JSON.stringify(mark)} && location.href !== "about:blank" && document.readyState === "complete"`;
         // Until the new page has loaded, or the time is up.
         while (Date.now() < until) {
           await sleep(STEP_MS * 2);
-          const ready = await on(`location.href !== "about:blank" && document.readyState === "complete" ? location.href : ""`).catch(() => "");
-          if (ready) return null;
+          if ((await on(loaded).catch(() => false)) === true) return null;
         }
         throw new Error(`the page didn't load ${url} in time`);
       }

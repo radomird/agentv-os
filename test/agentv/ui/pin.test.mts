@@ -6,6 +6,7 @@
 // on their own is layer 2's.
 
 import assert from "node:assert/strict";
+import type { ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
@@ -202,6 +203,48 @@ test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Adu
   // The other TV page hears it's unlocked, and its pad goes.
   await waitPad(page, false);
   await fresh.close();
+  await page.close();
+});
+
+test("S4.5 an answer about the lock that comes in after the TV was unlocked doesn't bring the pad back", async () => {
+  setPin();
+  const page = await tv();
+  await home(page);
+  await go(page, "settings/pin");
+  await page.waitForSelector('.panel [data-action="lock"]');
+  await page.locator('.panel [data-action="lock"]').click();
+  await waitPad(page, true);
+
+  // Home catches up when its event stream opens again, and asks for the
+  // state twice. The second answer leaves while the TV is locked, and is
+  // held until it has been unlocked from elsewhere, as a slow box can.
+  let asked = 0;
+  let fulfilled = 0;
+  let onHeld = () => {};
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (onHeld = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/home", async (route) => {
+    const answer = await route.fetch();
+    if (++asked === 2) {
+      onHeld();
+      await released;
+    }
+    await route.fulfill({ response: answer });
+    fulfilled++;
+  });
+  // The stream drops, as when the daemon starts again, and home opens it again.
+  for (const stream of (daemon as unknown as { streams: Set<ServerResponse> }).streams) stream.end();
+  await held;
+  const unlocked = await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: PIN }) });
+  assert.equal(unlocked.status, 200);
+  await waitPad(page, false);
+  release();
+  while (fulfilled < 2) await new Promise((resolve) => setTimeout(resolve, 50));
+  await page.waitForTimeout(500);
+  assert.equal(await padUp(page), false);
+  assert.equal(daemon.pin.status().locked, false);
+  await page.unroute("**/api/home");
   await page.close();
 });
 
