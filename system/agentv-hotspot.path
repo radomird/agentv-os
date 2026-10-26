@@ -1,0 +1,13 @@
+# The home Wi-Fi a phone picked on the setup hotspot's page, handed over by
+# AgenTV's daemon (stage 4): when it leaves one in its private state,
+# agentv-hotspot-drop.service joins it as root.
+
+[Unit]
+Description=AgenTV setup hotspot hand-over
+
+[Path]
+PathExists=/var/lib/private/agentv/daemon/hotspot-drop/request.json
+Unit=agentv-hotspot-drop.service
+
+[Install]
+WantedBy=paths.target

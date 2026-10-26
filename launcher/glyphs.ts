@@ -28,6 +28,7 @@ const GLYPHS = {
   "check": "M10 2h2v1h-2zM9 3h2v1h-2zM8 4h2v1h-2zM1 5h2v1h-2zM7 5h2v1h-2zM2 6h2v1h-2zM6 6h2v1h-2zM3 7h4v1h-4zM4 8h2v1h-2z",
   "plus": "M5 1h2v1h-2zM5 2h2v1h-2zM5 3h2v1h-2zM5 4h2v1h-2zM1 5h10v1h-10zM1 6h10v1h-10zM5 7h2v1h-2zM5 8h2v1h-2zM5 9h2v1h-2zM5 10h2v1h-2z",
   "minus": "M1 5h10v1h-10zM1 6h10v1h-10z",
+  "wifi": "M2 1h8v1h-8zM1 2h2v1h-2zM9 2h2v1h-2zM0 3h2v1h-2zM10 3h2v1h-2zM3 4h6v1h-6zM2 5h2v1h-2zM8 5h2v1h-2zM4 7h4v1h-4zM3 8h2v1h-2zM7 8h2v1h-2zM5 10h2v1h-2zM5 11h2v1h-2z",
 } as const;
 
 export type Glyph = keyof typeof GLYPHS;
