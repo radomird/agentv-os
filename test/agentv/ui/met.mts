@@ -17,6 +17,9 @@ export interface Met {
   // Another place's recorded reply from now on, as when MET updates its
   // forecast, and how long each reply says it's good for.
   serve(place: string): void;
+  // The same, but only after the next reply: MET publishing a new forecast
+  // just after someone asked.
+  serveAfterNext(place: string): void;
   expiresIn(ms: number): void;
   close(): void;
 }
@@ -36,6 +39,7 @@ export function shifted(body: unknown, at = Date.now()): unknown {
 export async function startMet(place = "amsterdam"): Promise<Met> {
   let reply = recordedReply(place);
   const seen: Met["seen"] = [];
+  let next: ReturnType<typeof recordedReply> | null = null;
   let isDown = false;
   let expiresMs = 30 * 60_000;
   const server = createServer((request, response) => {
@@ -46,6 +50,10 @@ export async function startMet(place = "amsterdam"): Promise<Met> {
     }
     response.writeHead(200, { "Content-Type": "application/json", Expires: new Date(Date.now() + expiresMs).toUTCString() });
     response.end(JSON.stringify(shifted(reply.body)));
+    if (next) {
+      reply = next;
+      next = null;
+    }
   });
   const port = await new Promise<number>((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
   return {
@@ -56,6 +64,9 @@ export async function startMet(place = "amsterdam"): Promise<Met> {
     },
     serve: (other) => {
       reply = recordedReply(other);
+    },
+    serveAfterNext: (other) => {
+      next = recordedReply(other);
     },
     expiresIn: (ms) => {
       expiresMs = ms;
