@@ -47,3 +47,7 @@ pass "S4.5 agentv screen pin asks for the PIN on the TV, for an action"
 [[ $(screen app local.player) == '{"cmd":"app","app":"local.player"}' ]] || fail "agentv screen app names the app"
 if screen app >/dev/null 2>&1; then fail "agentv screen app with no id is refused"; fi
 pass "agentv screen app opens an installed app by its id"
+[[ $(screen app local.player '{"kind":"episode","title":"Spring","season":1,"episode":2}') == '{"cmd":"app","app":"local.player","item":{"id":"agentv-screen","kind":"episode","title":"Spring","season":1,"episode":2}}' ]] ||
+  fail "agentv screen app passes an item on, with an id" "$(screen app local.player '{"kind":"episode","title":"Spring","season":1,"episode":2}')"
+if screen app local.player '"Spring"' >/dev/null 2>&1; then fail "an item that isn't an object with a title is refused"; fi
+pass "agentv screen app opens an item in an app through its playback.open (S3.2)"
