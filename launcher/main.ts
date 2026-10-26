@@ -519,6 +519,8 @@ async function switched(): Promise<void> {
   // Edit mode was the last viewer's home, and a child starts on their own.
   if (child || history[history.length - 1].startsWith("edit")) history = ["home"];
   redraw();
+  // The apps still open take the service's profile for who's watching now.
+  void screen.viewer();
 }
 
 // What changed while the page wasn't hearing the daemon's events: another

@@ -46,7 +46,21 @@ export interface AppSummary {
   // A child's profile can open it (ADR-009): an adult ticked it, or its
   // manifest says it's child-safe and no one unticked it.
   forChildren: boolean;
+  // An app with profiles: its service's own profiles, once it has listed
+  // them, and the one an adult picked for children (ADR-009).
+  profiles?: ServiceProfiles;
 }
+
+// An app's service's own profiles, as it listed them, and the one an adult
+// picked for children, which a child watching opens. Null until one is
+// picked.
+export interface ServiceProfiles {
+  names: string[];
+  forChildren: string | null;
+}
+
+const PROFILE_NAMES_MAX = 20;
+const PROFILE_NAME_MAX = 60;
 
 // What Settings → Weather shows and changes: the city the forecast is for,
 // and the cities it can be.
@@ -274,6 +288,7 @@ export class Home {
     const settings = await this.appSettings();
     const signIns = await this.signIns();
     const children = await this.childrenApps();
+    const profiles = await this.allServiceProfiles();
     const all = (await this.manifests()).map(({ manifest, tier }): AppSummary => {
       const values = settings[manifest.id] ?? {};
       const builtin = tier === "built-in";
@@ -299,6 +314,7 @@ export class Home {
         signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
         forChildren: children[manifest.id] ?? manifest.tv.childSafe === true,
+        profiles: manifest.tv.capabilities.includes("profiles") ? { names: profiles[manifest.id]?.names ?? [], forChildren: profiles[manifest.id]?.forChildren ?? null } : undefined,
       };
     });
     return viewer?.role === "child" ? all.filter((app) => app.forChildren) : all;
@@ -355,6 +371,61 @@ export class Home {
     await writeJson(join(this.state, "signins.json"), all);
     this.changed("apps");
     return true;
+  }
+
+  // --- The service's own profiles (ADR-009) ------------------------------
+
+  // For each app with profiles: its service's profiles, as it listed them
+  // the first time an adult opened it, and the one an adult picked for
+  // children. The services' Chromium is the box's, so they are too, and
+  // none of it goes in the ledger.
+  private allServiceProfiles(): Promise<Record<string, ServiceProfiles & { listedAt?: string }>> {
+    return readJson(join(this.state, "service-profiles.json"), {});
+  }
+
+  private async hasProfiles(id: string): Promise<boolean> {
+    const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
+    return found?.manifest.tv.capabilities.includes("profiles") === true;
+  }
+
+  // An app's, or null when it isn't an app here with profiles.
+  async serviceProfiles(id: string): Promise<ServiceProfiles | null> {
+    if (!(await this.hasProfiles(id))) return null;
+    const found = (await this.allServiceProfiles())[id];
+    return { names: found?.names ?? [], forChildren: found?.forChildren ?? null };
+  }
+
+  // Keeps the profiles an app listed, from the screen daemon. Says what's
+  // wrong with them, or null once they're kept. The pick for children stays,
+  // even when the service no longer lists it: opening it then fails, and the
+  // TV says so, rather than a child getting whichever profile is there.
+  async listedProfiles(id: string, names: unknown): Promise<string | null> {
+    if (!(await this.hasProfiles(id))) return "that isn't an app here with profiles";
+    if (!Array.isArray(names) || names.length > PROFILE_NAMES_MAX) return `names is a list of up to ${PROFILE_NAMES_MAX} profiles`;
+    const clean = [...new Set(names.map((name) => (typeof name === "string" ? name.trim() : "")))];
+    if (clean.some((name) => !name || name.length > PROFILE_NAME_MAX || /[\u0000-\u001f]/.test(name))) {
+      return `each profile is a name of up to ${PROFILE_NAME_MAX} characters`;
+    }
+    const all = await this.allServiceProfiles();
+    all[id] = { names: clean, forChildren: all[id]?.forChildren ?? null, listedAt: new Date().toISOString() };
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "service-profiles.json"), all);
+    this.changed("apps");
+    return null;
+  }
+
+  // An adult's pick of the profile children open, one the app listed, or
+  // null for none. Says what's wrong, or null once it's kept.
+  async setChildProfile(id: string, name: unknown): Promise<string | null> {
+    if (!(await this.hasProfiles(id))) return "that isn't an app here with profiles";
+    const all = await this.allServiceProfiles();
+    const known = all[id]?.names ?? [];
+    if (name !== null && (typeof name !== "string" || !known.includes(name))) return "that isn't one of the app's profiles";
+    all[id] = { names: known, forChildren: name, ...(all[id]?.listedAt ? { listedAt: all[id].listedAt } : {}) };
+    await mkdir(this.state, { recursive: true });
+    await writeJson(join(this.state, "service-profiles.json"), all);
+    this.changed("apps");
+    return null;
   }
 
   // --- Site icons ---------------------------------------------------------

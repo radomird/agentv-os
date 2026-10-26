@@ -53,6 +53,7 @@ import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
 import { PlaybackWatch } from "./playback.ts";
 import { RemoteInput } from "./remote.ts";
+import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
 import { tvOn } from "./tv-power.ts";
@@ -176,6 +177,9 @@ interface Open {
   usedAt: number;
   // Home paused it, so choosing it again plays it.
   paused: boolean;
+  // Its service's profile for who's watching, once it's settled as the app
+  // opened; an item to play waits for it (service-profiles.ts).
+  ready?: Promise<unknown>;
 }
 
 // What reads each open app's playback state for the ledger, and opens an
@@ -192,6 +196,12 @@ export interface SignIn {
   start(id: string, page: PageBroker, done: (signedIn: boolean) => void): Promise<boolean>;
   now(id: string): Promise<boolean | null>;
   stop(id: string): void;
+}
+
+// What opens the service's profile for a child, or lists the profiles for
+// an adult (service-profiles.ts).
+export interface ProfilesForViewer {
+  apply(id: string, page: PageBroker): Promise<ProfileOutcome>;
 }
 
 // The built-in Music app's library and player (music.ts).
@@ -212,6 +222,7 @@ interface Options {
   music?: Music;
   sound?: Sound;
   signIn?: SignIn;
+  profiles?: ProfilesForViewer;
   now?: () => number;
   log?: (line: string) => void;
   homeRestartMs?: number;
@@ -254,6 +265,7 @@ export class Screen {
   private music?: Music;
   private sound?: Sound;
   private signIn?: SignIn;
+  private profiles?: ProfilesForViewer;
   // The app whose sign-in screen is up, with its name for the bar.
   private signingIn: { id: string; name: string } | null = null;
   private now: () => number;
@@ -315,6 +327,7 @@ export class Screen {
     this.music = options.music;
     this.sound = options.sound;
     this.signIn = options.signIn;
+    this.profiles = options.profiles;
     this.now = options.now ?? Date.now;
     this.log = options.log ?? ((line) => console.log(line));
     this.homeRestartMs = options.homeRestartMs ?? 500;
@@ -754,12 +767,18 @@ export class Screen {
         if (!target) return { ok: false, error: "that app can't be opened yet" };
         if (target.runtime === "web") {
           const reply = await this.openWeb(target.url, id);
-          if (item) this.playback?.play?.(id, item);
+          // For a child, in the profile for children.
+          const ready = this.opens.find((o) => o.id === id)?.ready;
+          if (item) void Promise.resolve(ready).then(() => this.playback?.play?.(id, item));
           return reply;
         }
         if (target.exec[0] === "steam") return this.openSteam(id);
         return { ok: false, error: "that app can't be opened from the tv yet" };
       }
+      // Someone else is watching (S4.2): an open app takes the service's
+      // profile for them (ADR-009).
+      case "viewer":
+        return this.viewerChanged();
       // A tile that says Sign in: AgenTV's sign-in screen (ADR-032).
       case "sign-in":
         return this.startSignIn(String(request.app ?? ""));
@@ -1165,6 +1184,8 @@ export class Screen {
       if (id !== url) this.playback?.opened(id, this.pageOf(entry));
       // And an app with signIn says whether it's signed in, for its tile.
       if (id !== url && this.signingIn?.id !== id) void this.signIn?.check(id, this.pageOf(entry)).catch(() => null);
+      // A child watching gets the service's profile for children.
+      if (id !== url) entry.ready = this.serviceProfile(entry);
       await this.makeRoom(id);
     }).then(() => ({ ok: true }));
   }
@@ -1216,6 +1237,31 @@ export class Screen {
     const name = this.signingIn.name;
     await this.endSignIn(signedIn ? "signed in" : "it gave up");
     if (signedIn) await this.toast(`signed in to ${name.toLowerCase()}`);
+    // Signed in now, it can list its service's profiles for an adult to
+    // pick from, as setup will ask which one is for children.
+    const entry = this.opens.find((o) => o.id === id);
+    if (signedIn && entry) entry.ready = this.serviceProfile(entry);
+  }
+
+  // --- The service's own profiles (ADR-009) -------------------------------
+
+  // The service's profile for whoever's watching: a child's opens the one
+  // picked for children, and the TV says so when it can't.
+  private async serviceProfile(entry: Open): Promise<void> {
+    const said = await this.profiles?.apply(entry.id, this.pageOf(entry)).catch(() => null);
+    if (said === "not selected") {
+      const name = (await this.launcher.appTarget(entry.id).catch(() => null))?.name ?? entry.id;
+      await this.toast(`${name.toLowerCase()} couldn't open the profile for children`);
+    }
+  }
+
+  // Someone else is watching, with apps open behind home or in front.
+  private async viewerChanged(): Promise<object> {
+    await this.chain;
+    for (const entry of this.opens) {
+      if (entry.role === "web" && !/^(https?|data):/.test(entry.id)) entry.ready = this.serviceProfile(entry);
+    }
+    return { ok: true };
   }
 
   // The bar goes, and the app goes back to full screen if it's in front.
@@ -1924,6 +1970,43 @@ export function signInWatch(home = HOME_URL, log: (line: string) => void = conso
   });
 }
 
+// Opens the service's profile for children when a child is watching, and
+// hands the daemon the profiles an app lists for an adult (ADR-009).
+export function serviceProfiles(home = HOME_URL, log: (line: string) => void = console.log): ServiceProfiles {
+  const get = async (path: string) => {
+    const response = await fetch(`${home}${path}`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error(`${path} answered ${response.status}`);
+    return response.json();
+  };
+  return new ServiceProfiles({
+    async host(id) {
+      const found = await get(`api/apps/${encodeURIComponent(id)}/package`).catch(() => null);
+      if (!found?.dir) return null;
+      const tier: Tier = found.tier === "built-in" ? "official" : found.tier;
+      const { manifest } = validatePackage(found.dir, tier);
+      if (!manifest?.tv.capabilities.includes("profiles") || manifest.tv.runtime !== "web") return null;
+      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log });
+    },
+    async viewer() {
+      return (await get("api/viewer")).viewer;
+    },
+    async known(id) {
+      const found = await get(`api/apps/${encodeURIComponent(id)}/profiles`);
+      return { names: found.names ?? [], forChildren: found.forChildren ?? null };
+    },
+    async listed(id, names) {
+      const response = await fetch(`${home}api/apps/${encodeURIComponent(id)}/profiles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error(`the daemon said ${(await response.json().catch(() => ({}))).error ?? response.status}`);
+    },
+    log,
+  });
+}
+
 // The built-in Music app (ADR-017): its sources, library and player, here
 // in the TV session, and what plays handed to the daemon's ledger.
 export function musicApp(home = HOME_URL, log: (line: string) => void = console.log): MusicApp {
@@ -1949,7 +2032,7 @@ async function main(): Promise<void> {
   // Full volume on each new default output, or the level Settings chose.
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, signIn: signInWatch() });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN.
   new RemoteInput({

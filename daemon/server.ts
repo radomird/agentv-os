@@ -1430,6 +1430,35 @@ export class Daemon {
       return;
     }
 
+    // An app's service's own profiles (ADR-009): the screen daemon reads
+    // them, and the one picked for children, as the app opens, and hands
+    // over the list the app gave it. An adult picks the one for children,
+    // past the PIN, from the app's details.
+    const profiles = /^\/api\/apps\/([a-z0-9.-]+)\/profiles$/.exec(path);
+    if (method === "GET" && profiles) {
+      const found = await this.home.serviceProfiles(profiles[1]);
+      if (!found) {
+        this.json(response, 404, { ok: false, error: "that isn't an app here with profiles" });
+        return;
+      }
+      this.json(response, 200, { ok: true, ...found });
+      return;
+    }
+    if (method === "POST" && profiles) {
+      const body = (await this.body(request)) as { names?: unknown } | undefined;
+      const why = await this.home.listedProfiles(profiles[1], body?.names);
+      this.json(response, why ? 400 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
+    const childProfile = /^\/api\/apps\/([a-z0-9.-]+)\/child-profile$/.exec(path);
+    if (method === "PUT" && childProfile) {
+      if (!this.guarded(request, response, "the profile for children") || !(await this.adult(request, response, "the profile for children"))) return;
+      const body = (await this.body(request)) as { name?: unknown } | undefined;
+      const why = body && "name" in body ? await this.home.setChildProfile(childProfile[1], body.name) : "name is a profile, or null";
+      this.json(response, why ? 400 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
+
     const pkg = /^\/api\/apps\/([a-z0-9.-]+)\/package$/.exec(path);
     if (method === "GET" && pkg) {
       const found = await this.home.package(pkg[1]);
