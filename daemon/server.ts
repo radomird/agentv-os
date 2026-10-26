@@ -27,6 +27,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
+import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
@@ -34,6 +35,7 @@ import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
+import { SetupApps } from "./setup-apps.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -55,6 +57,12 @@ export interface DaemonOptions {
   // writes, and how long that may take.
   keyStatus?: string;
   keyWaitMs?: number;
+  // Setup's apps: what agentv-setup-apps writes as it installs them
+  // (/run/agentv-setup-apps/state.json), how long it may take to start, and
+  // the official apps in the index, in place of the signed index itself.
+  setupAppsStatus?: string;
+  setupAppsWaitMs?: number;
+  setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // The phone companion's port on the home network, or none. 3001 on the box.
   lanPort?: number;
   lanHost?: string;
@@ -154,6 +162,7 @@ export class Daemon {
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
   readonly ai: Ai;
+  readonly setupApps: SetupApps;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -198,6 +207,19 @@ export class Daemon {
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
     this.ai = new Ai({ state: options.state });
+    this.setupApps = new SetupApps({
+      state: options.state,
+      status: options.setupAppsStatus,
+      source: async () => process.env.AGENTV_INDEX_URL || (await this.settings()).AGENTV_INDEX_URL || undefined,
+      catalog: options.setupCatalog,
+      waitMs: options.setupAppsWaitMs,
+      // The setup screens hear each install move on, and home gets each
+      // app as it lands.
+      onChange: (apps) => {
+        this.broadcast("setup-apps", apps);
+        this.broadcast("apps", {});
+      },
+    });
     if (options.lanPort !== undefined) {
       this.lan = createServer((request, response) => {
         this.handlePhone(request, response).catch((error: Error) => {
@@ -273,6 +295,7 @@ export class Daemon {
     this.captive?.close();
     this.home.stop();
     this.updates.stop();
+    this.setupApps.stop();
     this.openLedger?.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
@@ -280,7 +303,7 @@ export class Daemon {
   // --- State --------------------------------------------------------------
 
   private async settings(): Promise<Record<string, string>> {
-    const values: Record<string, string> = { AGENTV_VERSION: "dev", AGENTV_CHANNEL: "dev" };
+    const values: Record<string, string> = { AGENTV_VERSION: "dev", AGENTV_CHANNEL: "dev", AGENTV_INDEX_URL: "" };
     const text = await readFile(join(this.options.root, "settings"), "utf8").catch(() => "");
     for (const line of text.split("\n")) {
       const at = line.indexOf("=");
@@ -1074,6 +1097,43 @@ export class Daemon {
       if (what === "finish") this.log(`setup: ${String(body.step)} is finished, on to ${result.state.step}`);
       this.broadcast("setup", result.state);
       this.json(response, 200, { ok: true, setup: result.state });
+      return;
+    }
+
+    // Setup's apps (board 09): the official apps, the goal's first, and how
+    // the ones picked are installing, with the apps asked for at "+ add your
+    // own". Picking goes past the PIN once there is one.
+    if (method === "GET" && path === "/api/setup/apps") {
+      const setup = await this.setup();
+      const list = await this.setupApps.list(setup.goal, await this.home.apps());
+      this.json(response, 200, { ok: true, goal: setup.goal, wishes: setup.wishes, ...list });
+      return;
+    }
+
+    if (method === "POST" && (path === "/api/setup/apps" || path === "/api/setup/wish")) {
+      if ((await this.setup()).done) {
+        this.json(response, 409, { ok: false, error: "setup is done" });
+        return;
+      }
+      const body = ((await this.body(request)) ?? {}) as { install?: unknown; text?: unknown };
+      if (path === "/api/setup/wish") {
+        const result = await this.setupState.wish(body.text);
+        if (!result.state) {
+          this.json(response, 400, { ok: false, error: result.error });
+          return;
+        }
+        this.broadcast("setup", result.state);
+        this.json(response, 200, { ok: true, setup: result.state });
+        return;
+      }
+      if (!this.guarded(request, response, "installing apps")) return;
+      const why = await this.setupApps.install(body.install);
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.log(`setup: installing ${(body.install as string[]).join(", ")}`);
+      this.json(response, 200, { ok: true, apps: this.setupApps.status() });
       return;
     }
 

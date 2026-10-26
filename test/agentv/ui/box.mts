@@ -143,6 +143,50 @@ function keyMover(state: string, status: string): void {
   }, 50).unref();
 }
 
+// The official apps setup offers, as the signed index lists them.
+export const OFFICIAL = [
+  { id: "agentv.jellyfin", name: "Jellyfin", description: "Your Jellyfin library on the TV" },
+  { id: "agentv.immich", name: "Immich", description: "Your Immich photos on the TV" },
+  { id: "agentv.steam", name: "Steam", description: "Steam Big Picture on the TV, full screen" },
+].map((app) => ({ ...app, tier: "official" as const, version: "1.0.0", repo: "https://example.invalid/agentv-apps.git", commit: "c73732a1416f35af05b89bf1f3586cf2810b5aaa", path: `apps/${app.name.toLowerCase()}` }));
+
+// What agentv-setup-apps does as root, for a box with no root: it takes the
+// daemon's drop, puts each app in the apps folder (the sample app, named for
+// it) and says how each went.
+function appsMover(state: string, apps: string, status: string): void {
+  const drop = join(state, "apps-drop", "install.json");
+  setInterval(() => {
+    let ids: string[];
+    try {
+      ids = JSON.parse(readFileSync(drop, "utf8")).apps;
+    } catch {
+      return;
+    }
+    rmSync(drop, { force: true });
+    const said: Record<string, { state: string }> = {};
+    const write = () => writeFileSync(status, JSON.stringify({ apps: said }));
+    for (const id of ids) said[id] = { state: "installing" };
+    write();
+    setTimeout(() => {
+      const installed = JSON.parse(readFileSync(join(apps, "installed.json"), "utf8"));
+      for (const id of ids) {
+        const app = OFFICIAL.find((a) => a.id === id)!;
+        const target = join(apps, id);
+        cpSync(SAMPLE, target, { recursive: true });
+        const manifest = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
+        manifest.id = id;
+        manifest.name = app.name;
+        writeFileSync(join(target, "manifest.json"), JSON.stringify(manifest, null, 2));
+        writeFileSync(join(target, "app.ts"), code(id));
+        installed[id] = { id, name: app.name, version: "1.0.0", tier: "official", installedAt: new Date().toISOString() };
+        said[id] = { state: "installed" };
+      }
+      writeFileSync(join(apps, "installed.json"), JSON.stringify(installed, null, 2));
+      write();
+    }, 400);
+  }, 50).unref();
+}
+
 export async function startBox(
   port = 0,
   fixtures = FIXTURES,
@@ -157,6 +201,8 @@ export async function startBox(
   mkdirSync(hotspot, { recursive: true });
   const keyStatus = join(state, "..", "key.json");
   keyMover(state, keyStatus);
+  const setupAppsStatus = join(state, "..", "setup-apps.json");
+  appsMover(state, apps, setupAppsStatus);
   // The phone companion and the setup hotspot's captive page too, on this
   // computer only, as the box serves them on the home network and on its
   // hotspot.
@@ -177,6 +223,8 @@ export async function startBox(
     hotspotRun: hotspot,
     interfaces: options.interfaces as never,
     keyStatus,
+    setupAppsStatus,
+    setupCatalog: async () => OFFICIAL,
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };

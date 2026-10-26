@@ -12,8 +12,9 @@ import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 
 // The steps, in order. The welcome screen covers the Wi-Fi and pairing,
 // getting ready brings the box up to date first (board 35), the AI
-// provider comes with its terms (ADR-023), then who watches (ADR-009).
-export const STEPS = ["welcome", "ready", "ai", "people", "goal"] as const;
+// provider comes with its terms (ADR-023), then who watches (ADR-009), what
+// the TV is for and its apps (board 09).
+export const STEPS = ["welcome", "ready", "ai", "people", "goal", "apps"] as const;
 export type Step = (typeof STEPS)[number];
 
 // How the status bar counts the steps: six parts, as on the canvas, with the
@@ -24,6 +25,7 @@ export const PARTS: Record<Step, string> = {
   ai: "2/6 ai",
   people: "3/6 people",
   goal: "4/6 goal",
+  apps: "5/6 apps",
 };
 
 // What the TV is for (ADR-006): it orders the apps setup suggests and picks
@@ -59,7 +61,14 @@ export interface SetupState {
   keyboard: boolean;
   goal: Goal | null;
   ready: Ready;
+  // The apps asked for at "+ add your own", in the household's words, kept
+  // for the TV's agent to build once it can (stage 6).
+  wishes: string[];
 }
+
+// How many wishes setup keeps, and how long each may be.
+export const WISHES = 5;
+const WISH = /^[^\u0000-\u001f\u007f<>]{1,80}$/u;
 
 // How the box is online, for the welcome screen and getting ready.
 export interface NetworkState {
@@ -78,7 +87,7 @@ function now(): string {
 }
 
 function fresh(): SetupState {
-  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null } };
+  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [] };
 }
 
 // The box's network, from its interfaces: a wired or Wi-Fi address that
@@ -123,6 +132,7 @@ export class Setup {
       from: typeof ready.from === "string" && VERSION.test(ready.from) ? ready.from : null,
       to: typeof ready.to === "string" && VERSION.test(ready.to) ? ready.to : null,
     };
+    if (Array.isArray(data.wishes)) state.wishes = data.wishes.filter((w): w is string => typeof w === "string" && WISH.test(w)).slice(0, WISHES);
     return state;
   }
 
@@ -188,6 +198,19 @@ export class Setup {
       from: typeof c.from === "string" ? c.from : c.from === null ? null : state.ready.from,
       to: typeof c.to === "string" ? c.to : c.to === null ? null : state.ready.to,
     };
+    return { state: await this.save(state) };
+  }
+
+  // An app asked for at "+ add your own", kept for later. The same words
+  // twice are kept once.
+  async wish(text: unknown): Promise<{ state?: SetupState; error?: string }> {
+    const words = typeof text === "string" ? text.trim().replace(/\s+/g, " ") : "";
+    if (!WISH.test(words)) return { error: "a few words, up to 80 letters, for the app to add" };
+    const state = await this.read();
+    if (!state.wishes.some((w) => w.toLowerCase() === words.toLowerCase())) {
+      if (state.wishes.length >= WISHES) return { error: `that's ${WISHES} for later already` };
+      state.wishes.push(words);
+    }
     return { state: await this.save(state) };
   }
 }

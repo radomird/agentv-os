@@ -2,7 +2,7 @@
 // is, how the box is online, the setup hotspot and the phones, and each step
 // moving on.
 
-export type Step = "welcome" | "ready" | "ai" | "people" | "goal";
+export type Step = "welcome" | "ready" | "ai" | "people" | "goal" | "apps";
 export type Goal = "streaming" | "music" | "media" | "gaming";
 export type UpdateFirst = "checking" | "installing" | "done" | "none" | "failed" | "skipped";
 
@@ -13,6 +13,8 @@ export interface SetupState {
   keyboard: boolean;
   goal: Goal | null;
   ready: { asked: string | null; update: UpdateFirst | null; from: string | null; to: string | null };
+  // The apps asked for at "+ add your own", kept for later.
+  wishes: string[];
 }
 
 export interface Hotspot {
@@ -67,16 +69,39 @@ export interface AiInfo {
   key: { set: boolean; provider: string | null };
 }
 
+// Setup's apps (board 09): the official apps, the goal's first, the built-in
+// ones beside them, and how each install the TV asked for is going.
+export type InstallState = "queued" | "installing" | "installed" | "failed";
+export type Installs = Record<string, { state: InstallState; error?: string }>;
+
+export interface SetupApp {
+  id: string;
+  name: string;
+  description: string;
+  builtin: boolean;
+  installed: boolean;
+  state: InstallState | null;
+  error?: string;
+}
+
+export interface SetupApps {
+  goal: Goal | null;
+  wishes: string[];
+  for: SetupApp[];
+  more: SetupApp[];
+  error?: string;
+}
+
 export interface Network {
   ssid: string;
   signal: number;
   secure: boolean;
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
@@ -97,5 +122,8 @@ export const setup = {
   ai: () => call<AiInfo>("GET", "/api/ai"),
   choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
   key: (provider: Provider, key: string) => call<{ set: boolean }>("PUT", "/api/key", { provider, key }),
+  apps: () => call<SetupApps>("GET", "/api/setup/apps"),
+  install: async (ids: string[], grant?: string) => (await call<{ apps: Installs }>("POST", "/api/setup/apps", { install: ids }, grant)).apps,
+  wish: (text: string) => call<{ setup: SetupState }>("POST", "/api/setup/wish", { text }),
   pair: async () => (await call<{ pairing: { code: string; until: string; url: string | null } | null }>("POST", "/api/phones/pair")).pairing,
 };

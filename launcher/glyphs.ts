@@ -37,6 +37,8 @@ const GLYPHS = {
   "music": "M6 0h4v1h-4zM4 1h6v1h-6zM4 2h2v1h-2zM9 2h1v1h-1zM4 3h1v1h-1zM9 3h1v1h-1zM4 4h1v1h-1zM9 4h1v1h-1zM4 5h1v1h-1zM9 5h1v1h-1zM4 6h1v1h-1zM9 6h1v1h-1zM2 7h3v1h-3zM7 7h3v1h-3zM1 8h4v1h-4zM6 8h4v1h-4zM1 9h4v1h-4zM6 9h4v1h-4zM2 10h2v1h-2zM7 10h2v1h-2z",
   "photo": "M0 1h12v1h-12zM0 2h1v1h-1zM11 2h1v1h-1zM0 3h1v1h-1zM8 3h2v1h-2zM11 3h1v1h-1zM0 4h1v1h-1zM8 4h2v1h-2zM11 4h1v1h-1zM0 5h1v1h-1zM4 5h1v1h-1zM11 5h1v1h-1zM0 6h1v1h-1zM3 6h3v1h-3zM11 6h1v1h-1zM0 7h1v1h-1zM2 7h5v1h-5zM9 7h1v1h-1zM11 7h1v1h-1zM0 8h12v1h-12zM0 9h12v1h-12z",
   "gamepad": "M1 2h10v1h-10zM0 3h12v1h-12zM0 4h2v1h-2zM3 4h5v1h-5zM10 4h2v1h-2zM0 5h1v1h-1zM4 5h8v1h-8zM0 6h2v1h-2zM3 6h4v1h-4zM9 6h3v1h-3zM0 7h12v1h-12zM0 8h4v1h-4zM8 8h4v1h-4zM0 9h3v1h-3zM9 9h3v1h-3zM0 10h2v1h-2zM10 10h2v1h-2z",
+  // Setup's "+ add your own" (board 09): the TV builds it.
+  "spark": "M5 0h2v1h-2zM5 1h2v1h-2zM4 2h4v1h-4zM4 3h4v1h-4zM1 4h10v1h-10zM0 5h12v1h-12zM1 6h10v1h-10zM4 7h4v1h-4zM4 8h4v1h-4zM5 9h2v1h-2zM5 10h2v1h-2z",
 } as const;
 
 export type Glyph = keyof typeof GLYPHS;
