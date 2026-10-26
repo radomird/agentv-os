@@ -1,4 +1,4 @@
-// AgenTV's daemon (daemon/server.ts): the welcome page and /health as the
+// AgenTV's daemon (daemon/server.ts): TV setup's page and /health as the
 // stage 0 placeholder had them (S0.1, S1.3 and S1.6 read them), the home
 // screen once setup is done, the launcher's TypeScript as JavaScript, and
 // nothing for a request that isn't addressed to this box or comes from
@@ -90,10 +90,11 @@ test("the agentv package installed is read from pacman's own records, with its r
   assert.equal(installedPackage(join(scratch, "no-pacman")), "dev");
 });
 
-test("S0.1 the welcome page is served, and each time it's drawn /health counts it", async () => {
+test("S0.1 setup's page is served, and each time it's drawn /health counts it", async () => {
   const page = await (await fetch(`${url}/`)).text();
-  assert.match(page, /<h1>Hi\.<\/h1>/);
-  assert.match(page, /\/api\/welcome-shown/);
+  assert.match(page, /<title>AgenTV setup<\/title>/);
+  assert.match(page, /\/setup\/main\.ts/);
+  assert.match(await (await fetch(`${url}/setup/main.ts`)).text(), /\/api\/welcome-shown/);
   assert.equal((await fetch(`${url}/logo.svg`)).headers.get("content-type"), "image/svg+xml");
 
   for (let i = 0; i < 2; i++) {
@@ -106,7 +107,7 @@ test("S0.1 the welcome page is served, and each time it's drawn /health counts i
   assert.match(String(h.welcome_shown_at), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$/);
 });
 
-test("once setup is done, the home screen takes the place of the welcome page, and it can go back", async () => {
+test("once setup is done, the home screen takes the place of setup, and it can go back", async () => {
   const events = await fetch(`${url}/api/events`);
   const reader = events.body!.getReader();
   assert.equal((await setup(true)).status, 200);
@@ -121,7 +122,7 @@ test("once setup is done, the home screen takes the place of the welcome page, a
 
   assert.equal((await setup(false)).status, 200);
   assert.equal((await health()).screen, "welcome");
-  assert.match(await (await fetch(`${url}/`)).text(), /<h1>Hi\.<\/h1>/);
+  assert.match(await (await fetch(`${url}/`)).text(), /<title>AgenTV setup<\/title>/);
 });
 
 test("setup takes only a done of true or false, as JSON", async () => {

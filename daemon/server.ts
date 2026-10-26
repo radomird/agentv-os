@@ -4,9 +4,9 @@
 // gets past pairing, and the setup hotspot's captive page (port 3002), on
 // the hotspot's own address only (stage 4).
 //
-// - The welcome page until setup is done, and the home screen (launcher/)
-//   after it. Setup isn't built until stage 5, so `agentv setup skip` marks it
-//   done for now.
+// - TV setup (setup/) until it's done, and the home screen (launcher/) after
+//   it. Setup keeps its step in setup.json (daemon/setup.ts), and `agentv
+//   setup skip` marks it done.
 // - /health, which CI's image checks and `agentv selftest` read. The page on
 //   the TV tells the daemon each time it has been drawn, so /health can say the
 //   welcome screen is really on the TV (S0.1, S1.3, S1.6).
@@ -32,6 +32,7 @@ import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
+import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -58,6 +59,8 @@ export interface DaemonOptions {
   lanHost?: string;
   // The box's address on the home network, for the pairing QR code.
   address?: () => string | null;
+  // Its network interfaces, which say whether setup is online.
+  interfaces?: () => ReturnType<typeof networkInterfaces>;
   // qrencode, which draws the QR code.
   qrencode?: string;
   // The setup hotspot's captive page: its port, which agentv-hotspot sends
@@ -82,11 +85,6 @@ export function lanAddress(interfaces: ReturnType<typeof networkInterfaces> = ne
     if (found) return found.address;
   }
   return null;
-}
-
-interface Setup {
-  done: boolean;
-  at?: string;
 }
 
 const TYPES: Record<string, string> = {
@@ -153,6 +151,7 @@ export class Daemon {
   readonly key: ProviderKey;
   readonly phones: Phones;
   readonly hotspot: Hotspot;
+  readonly setupState: Setup;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -186,6 +185,7 @@ export class Daemon {
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
       viewer: () => this.profiles.active(),
+      goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
       log: this.log,
     });
@@ -194,6 +194,7 @@ export class Daemon {
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
+    this.setupState = new Setup({ path: join(options.state, "setup.json") });
     if (options.lanPort !== undefined) {
       this.lan = createServer((request, response) => {
         this.handlePhone(request, response).catch((error: Error) => {
@@ -284,20 +285,8 @@ export class Daemon {
     return values;
   }
 
-  async setup(): Promise<Setup> {
-    try {
-      const setup = JSON.parse(await readFile(join(this.options.state, "setup.json"), "utf8"));
-      return { done: setup.done === true, at: setup.at };
-    } catch {
-      return { done: false };
-    }
-  }
-
-  private async saveSetup(setup: Setup): Promise<void> {
-    await mkdir(this.options.state, { recursive: true });
-    const next = join(this.options.state, ".setup.json.next");
-    await writeFile(next, `${JSON.stringify(setup, null, 2)}\n`);
-    await rename(next, join(this.options.state, "setup.json"));
+  setup(): Promise<SetupState> {
+    return this.setupState.read();
   }
 
   // Tells every page that's listening what changed, and the phones too.
@@ -347,6 +336,7 @@ export class Daemon {
   private async phoneState(phone: unknown): Promise<object> {
     const viewer = await this.profiles.active();
     const pin = this.pin.status(viewer.locked);
+    const setup = await this.setup();
     return {
       ok: true,
       version: this.phoneVersion,
@@ -357,6 +347,8 @@ export class Daemon {
       signIn: this.signingIn ? { name: this.signingIn.name } : null,
       update: await this.phoneUpdate(),
       tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
+      // TV setup's step, while it's on (stage 5): the phone says where it is.
+      setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step] },
     };
   }
 
@@ -926,6 +918,8 @@ export class Daemon {
         // services restart is still the package from before (agentv-restart).
         running: this.running,
         screen: setup.done ? "home" : "welcome",
+        // The setup step on the TV, while setup isn't done.
+        setup_step: setup.done ? null : setup.step,
         welcome_shown: this.welcome.shownAt !== null,
         welcome_shown_at: this.welcome.shownAt,
         welcome_last_shown_at: this.welcome.lastShownAt,
@@ -955,13 +949,85 @@ export class Daemon {
         this.json(response, 400, { ok: false, error: 'send {"done": true} or {"done": false} as JSON' });
         return;
       }
-      const setup: Setup = body.done ? { done: true, at: now() } : { done: false };
-      await this.saveSetup(setup);
+      const setup = await this.setupState.mark(body.done);
       this.log(body.done ? "setup marked done" : "setup reset");
       // The setup hotspot closes as setup ends.
       if (body.done && this.hotspot.status().on) this.hotspot.stop();
       this.broadcast("setup", setup);
       this.json(response, 200, { ok: true, setup });
+      return;
+    }
+
+    // --- TV setup (stage 5) -------------------------------------------------
+
+    // Where setup is, how the box is online, the setup hotspot and the
+    // phones paired, for the setup screens.
+    if (method === "GET" && path === "/api/setup") {
+      const hotspot = this.hotspot.status();
+      this.json(response, 200, {
+        ok: true,
+        // The AgenTV this box has now, which getting ready brings up to date,
+        // and the package this daemon runs, with its release: an update
+        // restarts it on the new one.
+        version: (await this.settings()).AGENTV_VERSION,
+        running: this.running,
+        setup: await this.setup(),
+        steps: STEPS,
+        parts: PARTS,
+        network: network(hotspot, this.options.interfaces?.()),
+        hotspot,
+        phones: this.phones.list().map((phone) => phone.name),
+        pin: this.pin.status().set,
+      });
+      return;
+    }
+
+    // The setup screens moving on: to a step, a step finished, what the TV
+    // is for, and how bringing the box up to date goes. Not once setup is
+    // done.
+    const setupChange = /^\/api\/setup\/(step|finish|goal|ready)$/.exec(path);
+    if (method === "POST" && setupChange) {
+      if ((await this.setup()).done) {
+        this.json(response, 409, { ok: false, error: "setup is done" });
+        return;
+      }
+      const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
+      const what = setupChange[1];
+      const result =
+        what === "step"
+          ? await this.setupState.go(body.step)
+          : what === "finish"
+            ? await this.setupState.finish(body.step, { keyboard: body.keyboard })
+            : what === "goal"
+              ? await this.setupState.setGoal(body.goal)
+              : await this.setupState.setReady(body);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      if (what === "finish") this.log(`setup: ${String(body.step)} is finished, on to ${result.state.step}`);
+      this.broadcast("setup", result.state);
+      this.json(response, 200, { ok: true, setup: result.state });
+      return;
+    }
+
+    // The keyboard's way onto the home Wi-Fi at the welcome screen, with no
+    // phone: the networks the setup hotspot saw, and the one picked, which
+    // goes to root as the captive page's does.
+    if (method === "GET" && path === "/api/setup/networks") {
+      this.json(response, 200, { ok: true, hotspot: this.hotspot.status().ssid, networks: this.hotspot.networks() });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/setup/wifi") {
+      const body = (await this.body(request)) as { ssid?: unknown; password?: unknown } | undefined;
+      const why = this.hotspot.join(body?.ssid, body?.password ?? "");
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.log(`the tv's keyboard asked to join ${String(body?.ssid)}`);
+      this.json(response, 200, { ok: true, joining: body?.ssid });
       return;
     }
 
@@ -1537,7 +1603,7 @@ export class Daemon {
       const setup = await this.setup();
       const home = join("launcher", "index.html");
       const hasHome = await stat(join(this.options.root, home)).then((info) => info.isFile(), () => false);
-      await this.file(response, setup.done && hasHome ? home : join("setup", "welcome", "index.html"));
+      await this.file(response, setup.done && hasHome ? home : join("setup", "index.html"));
       return;
     }
 

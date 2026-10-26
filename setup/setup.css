@@ -1,0 +1,367 @@
+/* TV setup, in the Terminal look (ADR-014), over the launcher's own styles:
+   the pixel field behind every screen, big shell-prompt headings, and the
+   status bar along the bottom. Every colour is the Omarchy theme's. Sizes are
+   for a 1080p screen, as on home. The canvas's "Terminal · full flow" page
+   is the reference: boards 02, 08 and 35 for these screens. */
+
+/* --- The pixel field ------------------------------------------------------ */
+
+#field {
+  position: absolute;
+  inset: 0;
+  transition: opacity var(--slow) ease-out;
+}
+
+#field.dim {
+  opacity: 0.4;
+}
+
+.pixel-field {
+  display: block;
+}
+
+.field-1 { fill: var(--lighter-background); }
+.field-2 { fill: color-mix(in srgb, var(--accent) 22%, var(--background)); }
+.field-3 { fill: color-mix(in srgb, var(--accent) 45%, var(--background)); }
+.field-4 { fill: var(--accent); }
+
+/* --- A setup screen ------------------------------------------------------- */
+
+.setup-screen {
+  position: absolute;
+  inset: 0;
+}
+
+.setup-page {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(1080px - var(--bar));
+  padding: 96px 160px 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.setup-page.center {
+  padding-top: 110px;
+  justify-content: center;
+  gap: 44px;
+}
+
+.setup-page .prompt {
+  font-size: 28px;
+}
+
+.setup-headline {
+  margin: 14px 0 0;
+  font-size: 112px;
+  min-height: 112px;
+  white-space: pre;
+}
+
+.setup-headline .untyped {
+  opacity: 0;
+}
+
+.setup-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.setup-top .button.primary {
+  min-height: 72px;
+  font-size: 28px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Setup's steps take the slow token: forward slides in 24 px from the right,
+   back from the left (ADR-024). Reduce motion makes both a fade. */
+.step-forward {
+  animation: page-forward var(--slow) var(--ease) both;
+}
+
+.step-back {
+  animation: page-back var(--slow) var(--ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-forward,
+  .step-back { animation: fade-in var(--base) ease-out both; }
+}
+
+:root.reduce-motion .step-forward,
+:root.reduce-motion .step-back { animation: fade-in var(--base) ease-out both; }
+
+/* --- Welcome (board 02) ----------------------------------------------------- */
+
+.welcome {
+  padding: 110px 160px 220px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.welcome-left {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 1000px;
+}
+
+.hi-1 { fill: var(--bright-foreground); }
+.hi-2 { fill: var(--accent); }
+.hi-3 { fill: color-mix(in srgb, var(--accent) 50%, var(--background)); }
+
+.welcome-line {
+  margin: 0;
+  font-size: 40px;
+}
+
+.enter {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 18px;
+  padding: 8px;
+  color: var(--foreground);
+}
+
+.enter .key {
+  display: inline-flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 18px;
+  border: 2px solid var(--foreground);
+  color: var(--bright-foreground);
+}
+
+.welcome-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.welcome-qr.away {
+  visibility: hidden;
+}
+
+.qr-frame {
+  position: relative;
+  display: block;
+  padding: 36px;
+}
+
+.qr-corner {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  border: 0 solid var(--accent);
+}
+
+.qr-corner.tl { left: 0; top: 0; border-left-width: 4px; border-top-width: 4px; }
+.qr-corner.tr { right: 0; top: 0; border-right-width: 4px; border-top-width: 4px; }
+.qr-corner.bl { left: 0; bottom: 0; border-left-width: 4px; border-bottom-width: 4px; }
+.qr-corner.br { right: 0; bottom: 0; border-right-width: 4px; border-bottom-width: 4px; }
+
+.qr-box {
+  display: block;
+  width: 400px;
+  height: 400px;
+  padding: 26px;
+  background: #fff;
+}
+
+.qr-box .qr {
+  display: block;
+  width: 348px;
+  height: 348px;
+  image-rendering: pixelated;
+}
+
+.qr-label {
+  font-size: 26px;
+  color: var(--foreground);
+}
+
+/* The keyboard's Wi-Fi list. */
+.wifi {
+  display: flex;
+  gap: 48px;
+}
+
+.networks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 900px;
+}
+
+.network {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 80px;
+  padding: 0 28px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  font-size: 32px;
+}
+
+.network-name {
+  flex-grow: 1;
+}
+
+.network-bars {
+  color: var(--green);
+}
+
+.network-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 640px;
+}
+
+.field-label {
+  font-size: 24px;
+  color: var(--foreground);
+}
+
+.text-field {
+  height: 80px;
+  padding: 0 24px;
+  border: 2px solid var(--muted);
+  background: var(--dark-background);
+  color: var(--bright-foreground);
+  font: inherit;
+  font-size: 32px;
+  outline: none;
+}
+
+.text-field.focused {
+  border-color: var(--accent);
+}
+
+/* --- Getting ready (board 35) ----------------------------------------------- */
+
+.ready-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ready-line {
+  margin: 14px 0 0;
+  font-size: 40px;
+}
+
+.ready-list {
+  width: 1100px;
+  padding: 28px 36px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--dark-background) 92%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 30px;
+}
+
+.ready-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.ready-row b {
+  font-weight: 400;
+}
+
+.mark-done b { color: var(--green); }
+.mark-now b { color: var(--accent); }
+.mark-todo b { color: var(--foreground); }
+.mark-bad b { color: var(--red); }
+
+.blocks {
+  letter-spacing: 1px;
+  color: var(--selection);
+}
+
+.blocks b {
+  color: var(--green);
+}
+
+.ready-go {
+  align-self: flex-start;
+  min-height: 72px;
+}
+
+/* --- Goal (board 08) ---------------------------------------------------------- */
+
+.goals {
+  flex-grow: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.goal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 36px 48px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  color: var(--bright-foreground);
+}
+
+/* The focused one fills with the accent, as on the canvas; the ring glides
+   between them. */
+.goal.focused {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+}
+
+.goal-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.goal-index {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.goal.focused .goal-index {
+  color: var(--background);
+}
+
+.goal-name {
+  font-size: 76px;
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 1;
+}
+
+.goal-note {
+  font-size: 24px;
+  opacity: 0.85;
+}
+
+.goal .glyph {
+  color: var(--accent);
+}
+
+.goal.focused .glyph {
+  color: var(--background);
+}

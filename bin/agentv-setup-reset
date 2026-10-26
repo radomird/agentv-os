@@ -2,7 +2,8 @@
 
 # agentv:summary=Start TV setup again from the welcome page
 
-# Marks TV setup as not done, so the TV shows the welcome page again.
+# Marks TV setup as not done, so the TV starts it again from the welcome
+# screen. Profiles, phones and the PIN stay as they are.
 
 set -euo pipefail
 

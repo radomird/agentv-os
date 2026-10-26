@@ -68,9 +68,10 @@ const CREDITS: Record<string, string> = {
 const WEATHER = "agentv.weather";
 const CLOCK = "agentv.clock";
 // The built-ins on every home from the start (ADR-015). Music joins them
-// when it's the household's goal, which setup asks in stage 5 (ADR-017);
-// until then it's in Apps.
+// when it's the household's goal, which setup asks (ADR-017); otherwise it's
+// in Apps.
 const PINNED = [CLOCK, WEATHER];
+const MUSIC_APP = "agentv.music";
 
 export interface TvSettings {
   sound: { on: boolean; volume: number };
@@ -143,6 +144,9 @@ export interface HomeOptions {
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
   // Who's watching now (daemon/profiles.ts). Without it, the box's owner.
   viewer?: () => Promise<Viewer & { name: string; avatar?: string }>;
+  // What the TV is for, from setup (ADR-006): Music is on home from the
+  // start when it's music.
+  goal?: () => Promise<string | null>;
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
@@ -194,6 +198,7 @@ export class Home {
   private changed: (event: string) => void;
   private log: (line: string) => void;
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
+  private goal?: () => Promise<string | null>;
 
   constructor(options: HomeOptions) {
     this.appsDir = options.appsDir;
@@ -204,6 +209,7 @@ export class Home {
     this.changed = options.changed ?? (() => {});
     this.log = options.log ?? (() => {});
     this.viewerOf = options.viewer;
+    this.goal = options.goal;
   }
 
   // --- The viewer -------------------------------------------------------
@@ -555,8 +561,10 @@ export class Home {
     const saved = (await readJson<Record<string, Placed[]>>(join(this.state, "layouts.json"), {}))[viewer];
     const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
-    const builtins = all.filter((id) => PINNED.includes(id));
-    const unpinned = all.filter((id) => !PINNED.includes(id));
+    const goal = (await this.goal?.().catch(() => null)) ?? null;
+    const first = goal === "music" ? [...PINNED, MUSIC_APP] : PINNED;
+    const builtins = all.filter((id) => first.includes(id));
+    const unpinned = all.filter((id) => !first.includes(id));
     const pinned = await readJson<Record<string, string[]>>(join(this.state, "builtins-pinned.json"), {});
     const fresh = builtins.filter((id) => !(pinned[viewer] ?? []).includes(id));
     if (saved) {

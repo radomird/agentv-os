@@ -32,6 +32,11 @@ const GLYPHS = {
   "settings": "M5 0h2v1h-2zM1 1h2v1h-2zM4 1h4v1h-4zM9 1h2v1h-2zM1 2h10v1h-10zM2 3h3v1h-3zM7 3h3v1h-3zM1 4h3v1h-3zM8 4h3v1h-3zM0 5h4v1h-4zM8 5h4v1h-4zM0 6h4v1h-4zM8 6h4v1h-4zM1 7h3v1h-3zM8 7h3v1h-3zM2 8h3v1h-3zM7 8h3v1h-3zM1 9h10v1h-10zM1 10h2v1h-2zM4 10h4v1h-4zM9 10h2v1h-2zM5 11h2v1h-2z",
   "pointer": "M2 0h2v1h-2zM2 1h3v1h-3zM2 2h4v1h-4zM2 3h5v1h-5zM2 4h6v1h-6zM2 5h7v1h-7zM2 6h8v1h-8zM2 7h5v1h-5zM2 8h2v1h-2zM5 8h3v1h-3zM2 9h1v1h-1zM6 9h3v1h-3zM7 10h3v1h-3zM8 11h2v1h-2z",
   "wifi": "M2 1h8v1h-8zM1 2h2v1h-2zM9 2h2v1h-2zM0 3h2v1h-2zM10 3h2v1h-2zM3 4h6v1h-6zM2 5h2v1h-2zM8 5h2v1h-2zM4 7h4v1h-4zM3 8h2v1h-2zM7 8h2v1h-2zM5 10h2v1h-2zM5 11h2v1h-2z",
+  // What the TV is for, from setup's goal screen (board 08).
+  "film": "M2 1h1v1h-1zM2 2h2v1h-2zM2 3h3v1h-3zM2 4h4v1h-4zM2 5h5v1h-5zM2 6h5v1h-5zM2 7h4v1h-4zM2 8h3v1h-3zM2 9h2v1h-2zM2 10h1v1h-1z",
+  "music": "M6 0h4v1h-4zM4 1h6v1h-6zM4 2h2v1h-2zM9 2h1v1h-1zM4 3h1v1h-1zM9 3h1v1h-1zM4 4h1v1h-1zM9 4h1v1h-1zM4 5h1v1h-1zM9 5h1v1h-1zM4 6h1v1h-1zM9 6h1v1h-1zM2 7h3v1h-3zM7 7h3v1h-3zM1 8h4v1h-4zM6 8h4v1h-4zM1 9h4v1h-4zM6 9h4v1h-4zM2 10h2v1h-2zM7 10h2v1h-2z",
+  "photo": "M0 1h12v1h-12zM0 2h1v1h-1zM11 2h1v1h-1zM0 3h1v1h-1zM8 3h2v1h-2zM11 3h1v1h-1zM0 4h1v1h-1zM8 4h2v1h-2zM11 4h1v1h-1zM0 5h1v1h-1zM4 5h1v1h-1zM11 5h1v1h-1zM0 6h1v1h-1zM3 6h3v1h-3zM11 6h1v1h-1zM0 7h1v1h-1zM2 7h5v1h-5zM9 7h1v1h-1zM11 7h1v1h-1zM0 8h12v1h-12zM0 9h12v1h-12z",
+  "gamepad": "M1 2h10v1h-10zM0 3h12v1h-12zM0 4h2v1h-2zM3 4h5v1h-5zM10 4h2v1h-2zM0 5h1v1h-1zM4 5h8v1h-8zM0 6h2v1h-2zM3 6h4v1h-4zM9 6h3v1h-3zM0 7h12v1h-12zM0 8h4v1h-4zM8 8h4v1h-4zM0 9h3v1h-3zM9 9h3v1h-3zM0 10h2v1h-2zM10 10h2v1h-2z",
 } as const;
 
 export type Glyph = keyof typeof GLYPHS;
