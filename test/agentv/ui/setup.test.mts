@@ -637,7 +637,8 @@ test("who watches: a child's profile asks for the adult PIN first, chosen twice 
   const viewers = (await (await fetch(`${url}/api/viewers`)).json()).viewers;
   assert.deepEqual(viewers.map((v: { name: string; role: string }) => [v.name, v.role]).slice(1), [["Mia", "child"]]);
   assert.equal(await page.locator(".person-tag").count(), 1);
-  assert.equal((await phoneTv()).pin, null, "the pad's gone from the phone too");
+  // The TV tells the daemon a moment after its page changes.
+  await waitFor(async () => (await phoneTv()).pin === null).catch(() => assert.fail("the pad's gone from the phone too"));
   await page.close();
 });
 
