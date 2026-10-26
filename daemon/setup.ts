@@ -11,9 +11,9 @@ import { dirname, join } from "node:path";
 import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 
 // The steps, in order. The welcome screen covers the Wi-Fi and pairing,
-// getting ready brings the box up to date first (board 35), and each later
-// stage of setup adds its own.
-export const STEPS = ["welcome", "ready", "goal"] as const;
+// getting ready brings the box up to date first (board 35), and the AI
+// provider comes with its terms (ADR-023).
+export const STEPS = ["welcome", "ready", "ai", "goal"] as const;
 export type Step = (typeof STEPS)[number];
 
 // How the status bar counts the steps: six parts, as on the canvas, with the
@@ -21,6 +21,7 @@ export type Step = (typeof STEPS)[number];
 export const PARTS: Record<Step, string> = {
   welcome: "1/6 connect",
   ready: "1/6 getting ready",
+  ai: "2/6 ai",
   goal: "4/6 goal",
 };
 

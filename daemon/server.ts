@@ -26,6 +26,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
+import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
@@ -152,6 +153,7 @@ export class Daemon {
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
+  readonly ai: Ai;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -195,6 +197,7 @@ export class Daemon {
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
+    this.ai = new Ai({ state: options.state });
     if (options.lanPort !== undefined) {
       this.lan = createServer((request, response) => {
         this.handlePhone(request, response).catch((error: Error) => {
@@ -349,7 +352,21 @@ export class Daemon {
       tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
       // TV setup's step, while it's on (stage 5): the phone says where it is.
       setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step] },
+      // What setup's AI step asks of the phone (ADR-023): the provider's
+      // terms for an adult to accept, then the key.
+      ai: await this.aiAsk(setup),
     };
+  }
+
+  private async aiAsk(setup: SetupState): Promise<object | null> {
+    if (setup.done || setup.step !== "ai") return null;
+    const ai = await this.ai.read();
+    if (!ai.provider || !ai.path) return null;
+    const key = this.key.status();
+    const ask = !ai.accepted ? "terms" : ai.path === "key" && !(key.set && key.provider === ai.provider) ? "key" : null;
+    if (!ask) return null;
+    const offer = OFFERS[ai.provider];
+    return { ask, provider: ai.provider, path: ai.path, name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms[ai.path], summary: offer.summary[ai.path], keyUrl: offer.keyUrl };
   }
 
   // --- Requests -----------------------------------------------------------
@@ -754,6 +771,54 @@ export class Daemon {
       this.broadcast("viewer", { id: target.id, role: target.role });
       await this.lockChanged(locked);
       this.json(response, 200, { ok: true, viewer: target });
+      return;
+    }
+
+    // Setup's AI step (ADR-023): an adult accepts the provider's terms on
+    // the phone before anything of it installs, past the PIN once there is
+    // one. The box records who, on which phone, and when.
+    if (method === "POST" && path === "/api/phone/terms") {
+      const viewer = await this.profiles.active();
+      if (viewer.role !== "adult") {
+        this.json(response, 403, { ok: false, error: "an adult accepts the terms" });
+        return;
+      }
+      if (!this.guarded(request, response, "accepting the provider's terms from a phone")) return;
+      const body = (await this.body(request)) as { provider?: unknown; path?: unknown } | undefined;
+      const result = await this.ai.accept(body?.provider, body?.path, { phone: phone.name, viewer: viewer.name });
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.log(`${viewer.name} accepted ${result.state.provider}'s terms for ${result.state.path === "plan" ? "a plan" : "a key"}, on ${phone.name}`);
+      this.broadcast("ai", result.state);
+      this.json(response, 200, { ok: true, accepted: result.state.accepted });
+      return;
+    }
+
+    // The key, pasted on the phone (board 05), once its terms are accepted:
+    // root's alone, as from Settings → AI (S4.6).
+    if (method === "POST" && path === "/api/phone/key") {
+      if ((await this.profiles.active()).role !== "adult") {
+        this.json(response, 403, { ok: false, error: "the key is an adult's" });
+        return;
+      }
+      if (!this.guarded(request, response, "the provider key from a phone")) return;
+      const ai = await this.ai.read();
+      if (!ai.provider || !ai.accepted) {
+        this.json(response, 409, { ok: false, error: "accept the provider's terms first" });
+        return;
+      }
+      const body = (await this.body(request)) as { key?: unknown } | undefined;
+      const why = await this.key.store(ai.provider, body?.key);
+      if (why) {
+        this.log(`the provider key from ${phone.name} wasn't kept: ${why}`);
+        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        return;
+      }
+      this.log(`a key for ${ai.provider} is kept, root's alone, from ${phone.name}`);
+      this.broadcast("key", { set: true, provider: ai.provider });
+      this.json(response, 200, { ok: true, provider: ai.provider });
       return;
     }
 
@@ -1346,6 +1411,44 @@ export class Daemon {
       this.log(set ? `a key for ${provider} is kept, root's alone` : "the provider key is off");
       this.broadcast("key", { set, provider: this.key.status().provider });
       this.json(response, 200, { ok: true, set, provider: this.key.status().provider });
+      return;
+    }
+
+    // --- The AI provider and its terms (ADR-022, ADR-023) --------------------
+
+    // Which provider, by plan or key, whether its terms are accepted, how the
+    // first run of its CLI went, and what each provider offers.
+    if (method === "GET" && path === "/api/ai") {
+      const { set, provider } = this.key.status();
+      this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: OFFERS, read: TERMS_READ, key: { set, provider } });
+      return;
+    }
+
+    // The provider and path picked on the TV, or none, to pick again. A
+    // child's profile can't, past the PIN.
+    if (method === "POST" && path === "/api/ai") {
+      if (!(await this.adult(request, response, "the ai provider"))) return;
+      const body = (await this.body(request)) as { provider?: unknown; path?: unknown } | undefined;
+      const result = await this.ai.choose(body?.provider ?? null, body?.path);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("ai", result.state);
+      this.json(response, 200, { ok: true, ...result.state });
+      return;
+    }
+
+    // How the CLI's first run goes, from the screen daemon, which runs it only
+    // once the terms are accepted.
+    if (method === "POST" && path === "/api/ai/cli") {
+      const result = await this.ai.setCli(await this.body(request));
+      if (!result.state) {
+        this.json(response, 409, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("ai", result.state);
+      this.json(response, 200, { ok: true, cli: result.state.cli });
       return;
     }
 

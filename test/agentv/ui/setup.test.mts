@@ -331,9 +331,9 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
   assert.match(await textOf(page, ".ready-list"), /\[x\] agentv 0\.3\.0/);
   // Then on, by itself.
-  await page.waitForSelector(".goals", { timeout: 5000 });
+  await page.waitForSelector(".providers", { timeout: 5000 });
   const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
-  assert.deepEqual([setup.step, setup.ready.update, setup.ready.from, setup.ready.to], ["goal", "done", "0.2.1-1", "0.3.0-1"]);
+  assert.deepEqual([setup.step, setup.ready.update, setup.ready.from, setup.ready.to], ["ai", "done", "0.2.1-1", "0.3.0-1"]);
   await page.close();
 });
 
@@ -345,7 +345,7 @@ test("S5.6 getting ready that loads again with the update in already moves on by
   await post("/api/setup/ready", { update: "done", from: "0.2.1-1", to: "0.3.0-1" });
   const page = await tv();
   await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
-  await page.waitForSelector(".goals", { timeout: 5000 });
+  await page.waitForSelector(".providers", { timeout: 5000 });
   await page.close();
 });
 
@@ -357,7 +357,7 @@ test("getting ready carries on with the version it has when there's nothing newe
   writeFileSync(join(updates, "status.json"), JSON.stringify({ checked_at: now(), ok: true, channel: "stable", waiting: true, agentv: { installed: "0.2.1-1", available: "0.3.0-1" }, omarchy: { installed: "4.0.6-1", available: null }, packages: 0, security: false, notes: { agentv: [], agentv_date: null, omarchy: [] } }));
   await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "already up to date.", null, { timeout: 10_000 });
   assert.match(await textOf(page, ".ready-list"), /\[x\] agentv 0\.2\.1 · up to date/, "an update the nightly run hasn't passed waits");
-  await page.waitForSelector(".goals", { timeout: 5000 });
+  await page.waitForSelector(".providers", { timeout: 5000 });
   await page.close();
 
   await fresh();
@@ -369,7 +369,7 @@ test("getting ready carries on with the version it has when there's nothing newe
   assert.match(await textOf(again, ".ready-list"), /\[!\] agentv 0\.2\.1 · couldn't update/);
   // Enter carries on at once.
   await again.keyboard.press("Enter");
-  await again.waitForSelector(".goals", { timeout: 5000 });
+  await again.waitForSelector(".providers", { timeout: 5000 });
   await again.close();
 });
 
@@ -378,19 +378,22 @@ test("S5.6 setup picks up at the same step after the page loads again, as after 
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "ai" });
   const page = await tv();
   await page.waitForSelector(".goals");
   await page.reload();
   await page.waitForSelector(".goals");
   assert.equal((await (await fetch(`${url}/health`)).json()).setup_step, "goal");
-  // Back goes to getting ready, which is finished, and it stays there:
-  // continue goes on.
+  // Back goes to the AI step, which is finished, then to getting ready,
+  // which stays there: continue goes on.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".providers");
   await page.keyboard.press("Escape");
   await page.waitForSelector(".ready-list");
   await page.waitForTimeout(3000);
-  assert.equal(await page.locator(".goals").count(), 0, "back to getting ready later doesn't move on by itself");
+  assert.equal(await page.locator(".providers").count(), 0, "back to getting ready later doesn't move on by itself");
   await page.keyboard.press("Enter");
-  await page.waitForSelector(".goals");
+  await page.waitForSelector(".providers");
   await page.close();
 });
 
@@ -399,6 +402,7 @@ test("what the tv is for: OK on one picks it, setup is done, and home takes over
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "ai" });
   const page = await tv();
   await page.waitForSelector(".goals");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick one.");
@@ -451,7 +455,7 @@ test("setup's motion only moves transform and opacity, headings type out, and re
   // The heading types out: part of it is still to come right after it shows.
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
-  await page.waitForSelector(".goals");
+  await page.waitForSelector(".providers");
   await page.waitForFunction(() => document.querySelector(".setup-headline")?.textContent === "pick one.", null, { timeout: 2000 });
   assert.deepEqual(await check(page), []);
   await page.close();
@@ -465,6 +469,107 @@ test("setup's motion only moves transform and opacity, headings type out, and re
   assert.equal(await still.evaluate(() => document.querySelector(".setup-headline")?.textContent), "getting ready.", "no typing");
   await still.close();
   await post("/api/setup", { done: true });
+});
+
+// To setup's AI step, with nothing picked and nothing accepted yet.
+async function toAi(): Promise<void> {
+  await fresh();
+  await post("/api/ai", { provider: null });
+  await post("/api/setup/finish", { step: "welcome" });
+  await post("/api/setup/ready", { update: "none" });
+  await post("/api/setup/finish", { step: "ready" });
+}
+
+const screenAsked = (page: Page, cmd: string) => page.evaluate((c) => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.filter((r) => r.cmd === c).length, cmd);
+
+test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing installs until an adult accepts on the phone, and the box records it", async () => {
+  await toAi();
+  const page = await tv();
+  await page.waitForSelector(".providers");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick one.");
+  assert.deepEqual(await page.locator(".provider-name").allInnerTexts(), ["claude", "chatgpt", "gemini"]);
+  assert.match(await textOf(page, ".bar"), /2\/6 ai/);
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-path="plan"]');
+  assert.equal(await page.locator(".provider.focused").getAttribute("data-path"), "plan");
+  assert.match(await textOf(page, '[data-path="plan"]'), /my plan[\s\S]*claude pro or max/);
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".terms-list");
+  assert.deepEqual(await page.locator(".terms-list [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-consumer-terms", "anthropic-usage-policy", "claude-code-legal"]);
+
+  // Back, and an API key instead: Anthropic's commercial terms.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".providers");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-path="key"]');
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".terms-list");
+  assert.deepEqual(await page.locator(".terms-list [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-commercial-terms", "anthropic-usage-policy", "claude-code-legal"]);
+  assert.match(await textOf(page, ".terms-left"), /an adult accepts them on the phone\. nothing installs before that\./);
+  await page.waitForFunction(() => /^\/api\/phones\/qr/.test(document.querySelector(".terms .qr")?.getAttribute("src") ?? ""));
+  assert.equal(await screenAsked(page, "cli-install"), 0, "nothing installs before the terms are accepted");
+
+  // An adult on a phone reads them and accepts.
+  const code = (await (await fetch(`${url}/api/phones`)).json()).pairing.code;
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148" });
+  phone.on("pageerror", (error) => errors.push(error.message));
+  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+  await phone.waitForSelector("#tv-ask");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
+  assert.match(await phone.locator("#tv-ask").innerText(), /anthropic's commercial terms and usage policy/);
+  assert.deepEqual(await phone.locator("#tv-ask [data-terms]").evaluateAll((links) => links.map((a) => a.getAttribute("href"))), [
+    "https://www.anthropic.com/legal/commercial-terms",
+    "https://www.anthropic.com/legal/aup",
+    "https://code.claude.com/docs/en/legal-and-compliance",
+  ]);
+  await phone.locator('[data-action="accept"]').tap();
+
+  // The TV moves on to the key, and only now asks for the CLI.
+  await page.waitForSelector(".key-row", { timeout: 5000 });
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "cli-install"));
+  const ai = await (await fetch(`${url}/api/ai`)).json();
+  assert.deepEqual([ai.accepted.provider, ai.accepted.path, ai.accepted.by.phone], ["claude", "key", "iphone"]);
+  assert.match(ai.accepted.at, /^\d{4}-/);
+
+  // The key, pasted on the phone (board 05).
+  await phone.waitForSelector("#api-key");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude api key");
+  assert.match(await phone.locator(".limits").innerText(), /\$5 per app it builds, \$20 a month/);
+  await phone.locator("#api-key").fill(`sk-ant-${"k".repeat(40)}`);
+  await phone.locator('[data-action="save-key"]').tap();
+  await page.waitForSelector('[data-action="continue"]', { timeout: 10_000 });
+  assert.match(await textOf(page, ".ready-list"), /\[x\] terms accepted · [\s\S]* on iphone[\s\S]*\[x\] key kept · root's alone[\s\S]*claude code installing/);
+  await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 30_000 });
+  assert.equal(await phone.locator("#api-key").count(), 0);
+  await phone.close();
+
+  // The CLI's first run, as the screen daemon tells it.
+  await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
+  await page.waitForFunction(() => /claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".goals");
+  assert.match(await textOf(page, ".bar"), /claude code ready/, "the CLI's state stays in the bar");
+  await page.close();
+});
+
+test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on with none", async () => {
+  await toAi();
+  const page = await tv();
+  await page.waitForSelector(".providers");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-path="key"]');
+  assert.match(await textOf(page, '[data-path="plan"]'), /chatgpt plus or pro · coming soon/);
+  assert.equal(await page.locator('[data-path="plan"][data-focus]').count(), 0, "it can't be picked");
+  assert.equal(await page.locator(".provider.focused").getAttribute("data-path"), "key");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".providers");
+  await page.locator('[data-action="later"]').click();
+  await page.waitForSelector(".goals");
+  const ai = await (await fetch(`${url}/api/ai`)).json();
+  assert.equal(ai.provider, null);
+  await page.close();
 });
 
 test("the phone's remote says which setup step the TV is on", async () => {

@@ -298,6 +298,9 @@ export const screen = {
   // Mounting a share can wait on a slow NAS, and on root for one with a
   // password, so it gets longer.
   music: (op: string, args: Record<string, unknown> = {}) => ask({ cmd: "music", op, ...args }, op === "add-share" ? 60_000 : 30_000),
+  // Setup's AI step: the provider's agent CLI, fetched on its first run once
+  // an adult accepted its terms (ADR-023).
+  cliInstall: () => ask({ cmd: "cli-install" }),
   // Settings → Sound: the outputs and the volume, or another output or level
   // from now on (S2.19).
   audio: async (change: { output?: string; volume?: number } = {}) => (await ask({ cmd: "audio", ...change })) as AudioState,

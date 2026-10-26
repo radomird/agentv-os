@@ -529,3 +529,49 @@ h1.with-icon {
 h1.with-icon .glyph {
   color: var(--accent);
 }
+
+/* Setup's AI step on the phone (ADR-023, board 05): the provider's terms,
+   then the key. */
+.ask {
+  gap: 20px;
+}
+
+.terms {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.terms a,
+.link {
+  color: var(--accent);
+  font-size: 15px;
+}
+
+.key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.key-row .field {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.limits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 2px solid var(--selection);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.limits b {
+  color: var(--yellow);
+}

@@ -150,6 +150,14 @@ export interface Launcher {
   // Stops Omarchy's shell, its bar and everything else it draws, and
   // nothing of AgenTV's: the shell from $OMARCHY_PATH/shell, by its config.
   stopOmarchyShell(): Promise<void>;
+  // The agent CLI of the provider whose terms an adult accepted, from
+  // AgenTV's daemon, or null while none are (ADR-023).
+  acceptedCli(): Promise<"claude" | "codex" | "gemini" | null>;
+  // Runs that CLI once, through Omarchy's own wrapper, which fetches it on
+  // its first run: the version it says, or why not.
+  firstRun(cli: "claude" | "codex" | "gemini"): Promise<{ version?: string; error?: string }>;
+  // Tells AgenTV's daemon how the first run goes.
+  cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }): Promise<void>;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -790,6 +798,9 @@ export class Screen {
       // countdown (ADR-033).
       case "power":
         return this.power(request.what);
+      // Setup's AI step, once an adult accepted the provider's terms.
+      case "cli-install":
+        return this.installCli();
       default:
         return { ok: false, error: `unknown request: ${request?.cmd}` };
     }
@@ -803,6 +814,31 @@ export class Screen {
     this.log(what === "restart" ? "restarting the box from settings → power" : "shutting the box down from settings → power");
     if (await this.launcher.power(what)) return { ok: true };
     return { ok: false, error: what === "restart" ? "the box couldn't restart" : "the box couldn't shut down" };
+  }
+
+  // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
+  // fetches Anthropic's, OpenAI's or Google's published binary on the first
+  // run (ADR-023). Only once AgenTV's daemon says an adult accepted that
+  // provider's terms, in the background, one run at a time, and the daemon
+  // hears how it goes.
+  private cliRun: Promise<void> | null = null;
+
+  async installCli(): Promise<object> {
+    const cli = await this.launcher.acceptedCli().catch(() => null);
+    if (!cli) return { ok: false, error: "the provider's terms aren't accepted yet" };
+    if (this.cliRun) return { ok: true, running: true };
+    this.log(`fetching ${cli} on its first run, now its provider's terms are accepted`);
+    await this.launcher.cliState({ state: "installing" }).catch(() => {});
+    this.cliRun = this.launcher
+      .firstRun(cli)
+      .then(async (run) => {
+        this.log(run.error ? `${cli} didn't run: ${run.error}` : `${cli} is here: ${run.version}`);
+        await this.launcher.cliState(run.error ? { state: "failed", error: run.error } : { state: "ready", version: run.version }).catch(() => {});
+      })
+      .finally(() => {
+        this.cliRun = null;
+      });
+    return { ok: true };
   }
 
   // Brings home to the front and asks for the PIN there, for an action such
@@ -1727,6 +1763,34 @@ export const launcher: Launcher = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ version: null }),
+      signal: AbortSignal.timeout(5000),
+    });
+  },
+
+  async acceptedCli() {
+    const ai = await (await fetch(`${HOME_URL}api/ai`, { signal: AbortSignal.timeout(5000) })).json();
+    const cli = ai?.accepted && ai.provider ? ai.offers?.[ai.provider]?.cli : null;
+    return cli === "claude" || cli === "codex" || cli === "gemini" ? cli : null;
+  },
+
+  firstRun(cli) {
+    // Omarchy's wrapper in the owner's ~/.local/bin, which mise fills in on
+    // its first run. Its download can take a while on a slow line.
+    const wrapper = join(process.env.HOME ?? "", ".local", "bin", cli);
+    return new Promise((resolve) => {
+      execFile(wrapper, ["--version"], { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
+        const first = (text: string) => text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+        if (error) resolve({ error: first(stderr) || error.message.split("\n")[0] });
+        else resolve({ version: first(stdout) });
+      });
+    });
+  },
+
+  async cliState(change) {
+    await fetch(`${HOME_URL}api/ai/cli`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(change),
       signal: AbortSignal.timeout(5000),
     });
   },

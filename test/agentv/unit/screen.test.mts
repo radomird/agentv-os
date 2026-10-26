@@ -257,6 +257,22 @@ class FakeLauncher implements Launcher {
   async stopOmarchyShell() {
     this.shellStops++;
   }
+  // The provider whose terms are accepted, the CLI's first runs, and what
+  // the daemon heard about them.
+  accepted: "claude" | "codex" | "gemini" | null = null;
+  firstRuns: string[] = [];
+  cliStates: { state: string; version?: string; error?: string }[] = [];
+  firstRunDone: (run: { version?: string; error?: string }) => void = () => {};
+  async acceptedCli() {
+    return this.accepted;
+  }
+  firstRun(cli: "claude" | "codex" | "gemini") {
+    this.firstRuns.push(cli);
+    return new Promise<{ version?: string; error?: string }>((resolve) => (this.firstRunDone = resolve));
+  }
+  async cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }) {
+    this.cliStates.push(change);
+  }
   async power(what: "restart" | "shutdown") {
     this.powered.push(what);
     return this.powerWorks;
@@ -1318,4 +1334,24 @@ test("S2.12 at night, nothing installs without Tonight or overnight, while waiti
   t.launcher.night = { status: { ...READY, checked_at: answered }, progress: { state: "running" }, tonight: null, overnight: true };
   await t.screen.night();
   assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "not while an install runs");
+});
+
+test("S5.5 the provider's agent CLI runs for the first time only once its terms are accepted, once at a time, and the daemon hears how it went", async () => {
+  const t = await tv();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: false, error: "the provider's terms aren't accepted yet" });
+  assert.deepEqual(t.launcher.firstRuns, [], "nothing installs before an adult accepts");
+  t.launcher.accepted = "claude";
+  assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: true });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: true, running: true }, "one run at a time");
+  assert.deepEqual(t.launcher.firstRuns, ["claude"]);
+  assert.deepEqual(t.launcher.cliStates, [{ state: "installing" }]);
+  t.launcher.firstRunDone({ version: "2.1.30 (Claude Code)" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(t.launcher.cliStates[1], { state: "ready", version: "2.1.30 (Claude Code)" });
+  // A run that fails says why, and the next ask runs it again.
+  assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: true });
+  t.launcher.firstRunDone({ error: "mise couldn't reach the internet" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(t.launcher.cliStates[3], { state: "failed", error: "mise couldn't reach the internet" });
+  assert.ok(t.lines.some((line) => line.includes("fetching claude on its first run")));
 });
