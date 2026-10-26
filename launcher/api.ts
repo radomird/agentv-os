@@ -251,7 +251,7 @@ let next = 0;
   waiting.delete(id);
 };
 
-function ask(request: Record<string, unknown>): Promise<Reply> {
+function ask(request: Record<string, unknown>, ms = 30_000): Promise<Reply> {
   const binding = (window as ScreenWindow).agentvScreen;
   if (!binding) return Promise.resolve({ ok: false, error: "that works on the TV" });
   const id = ++next;
@@ -260,7 +260,7 @@ function ask(request: Record<string, unknown>): Promise<Reply> {
     binding(JSON.stringify({ ...request, id }));
     setTimeout(() => {
       if (waiting.delete(id)) resolve({ ok: false, error: "the TV didn't answer" });
-    }, 30_000);
+    }, ms);
   });
 }
 
@@ -291,7 +291,9 @@ export const screen = {
   // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // The built-in Music app's library and player, in the TV session (ADR-017).
-  music: (op: string, args: Record<string, unknown> = {}) => ask({ cmd: "music", op, ...args }),
+  // Mounting a share can wait on a slow NAS, and on root for one with a
+  // password, so it gets longer.
+  music: (op: string, args: Record<string, unknown> = {}) => ask({ cmd: "music", op, ...args }, op === "add-share" ? 60_000 : 30_000),
   // Settings → Sound: the outputs and the volume, or another output or level
   // from now on (S2.19).
   audio: async (change: { output?: string; volume?: number } = {}) => (await ask({ cmd: "audio", ...change })) as AudioState,

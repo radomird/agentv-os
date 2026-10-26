@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Play and find the box's own music, and set up where it comes from
-# agentv:args=[now] | library | sources | scan | search <words> | play [album|track|playlist] <words> | pause | next | stop | add-folder <path> | add-share <smb://...|nfs://...> | mount <device>
+# agentv:args=[now] | library | sources | scan [--wait] | progress | search <words> | play [album|track|playlist] <words> | pause | next | stop | add-folder <path> | add-share <smb://...|nfs://...> | mount <device>
 # agentv:examples=agentv music play night shift | agentv music add-share smb://nas/music | agentv music search dusk
 
 # The built-in Music app's library and player (ADR-017), which run in the TV
@@ -12,14 +12,17 @@
 #   now             what's playing
 #   library         every album and playlist, and where each album is
 #   sources         the folders, USB drives and shares, and whether each is there
-#   scan            read every source again (USB drives and shares mount first)
+#   scan            read every source again, in the background (USB drives and
+#                   shares mount first). With --wait, follows it to the end
+#   progress        how far reading the sources has got
 #   search <words>  albums, tracks and playlists that match
 #   play <words>    the best match, or the best album, track or playlist
 #   pause | next | stop
 #   add-folder <path>   a folder on the box
 #   add-share <uri>     a NAS share, smb:// or nfs://. With a user name in it
-#                   (smb://me@nas/music), the password is read from stdin and
-#                   only handed to the mount, never kept
+#                   (smb://me@nas/music), the password is read from stdin.
+#                   The box keeps it where only root can read it, and mounts
+#                   the share with it after every restart (ADR-038)
 #   mount <device>  a USB drive, through udisks2
 
 set -euo pipefail
@@ -34,9 +37,30 @@ command=${1:-now}
 (( $# )) && shift
 
 case "$command" in
-  now | library | sources | scan | pause | next | stop)
+  now | library | sources | progress | pause | next | stop)
     (( $# == 0 )) || { usage >&2; exit 2; }
     request=$(jq -cn --arg op "$command" '{cmd: "music", op: $op}')
+    ;;
+  scan)
+    if [[ ${1:-} == "--wait" ]]; then
+      shift
+      (( $# == 0 )) || { usage >&2; exit 2; }
+      # Starts the scan, then follows its progress until it's done, however
+      # long a big share takes.
+      node "$AGENTV_PATH/daemon/screen-call.ts" '{"cmd":"music","op":"scan"}' >/dev/null || exit $?
+      while :; do
+        reply=$(node "$AGENTV_PATH/daemon/screen-call.ts" '{"cmd":"music","op":"progress"}') || exit $?
+        [[ $(jq -r '.progress.scanning' <<<"$reply") == "true" ]] || break
+        [[ -t 2 ]] && jq -r '.progress | "\r\(.source // "finding the music"): \(.read) of \(.found) files, \(.albums) albums"' <<<"$reply" | tr -d '\n' >&2
+        sleep 2
+      done
+      [[ -t 2 ]] && echo >&2
+      jq -c '{ok: (.progress.error == null), albums: .progress.albums, files: .progress.read} + (if .progress.error then {error: .progress.error} else {} end)' <<<"$reply"
+      [[ $(jq -r '.progress.error // empty' <<<"$reply") == "" ]]
+      exit
+    fi
+    (( $# == 0 )) || { usage >&2; exit 2; }
+    request='{"cmd":"music","op":"scan"}'
     ;;
   search)
     (( $# >= 1 )) || { usage >&2; exit 2; }
@@ -70,6 +94,8 @@ case "$command" in
     else
       request=$(jq -cn --arg uri "$1" '{cmd: "music", op: "add-share", uri: $uri}')
     fi
+    # A slow NAS, and root mounting one with a password, can take a while.
+    export AGENTV_SCREEN_TIMEOUT=${AGENTV_SCREEN_TIMEOUT:-90}
     ;;
   mount)
     (( $# == 1 )) || { usage >&2; exit 2; }
