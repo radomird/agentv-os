@@ -949,9 +949,34 @@ button {
   color: var(--red);
 }
 
-/* The ambient screen (ADR-031): a placeholder until the backgrounds come in
-   stage 5. The clock drifts slowly, so nothing stays in one place on the TV
-   for long. */
+/* The background (ADR-012, S5.3): the photo chosen, behind home and its
+   pages, dimmed with the theme's own colour so the tiles read over it. */
+#backdrop {
+  position: fixed;
+  inset: 0;
+}
+
+.backdrop-picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#backdrop:not(:empty)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--background) 62%, transparent);
+}
+
+body.with-backdrop {
+  background: var(--darker-background);
+}
+
+/* The ambient screen (ADR-012, ADR-031): the photos, one after another,
+   each with its credit, or the theme's pixel field. The clock drifts
+   slowly, so nothing stays in one place on the TV for long. */
 #ambient {
   position: fixed;
   inset: 0;
@@ -960,10 +985,47 @@ button {
   justify-content: center;
   background: var(--darker-background);
   z-index: 30;
+  overflow: hidden;
 }
 
 #ambient.on {
   display: flex;
+}
+
+.ambient-pictures {
+  position: absolute;
+  inset: 0;
+}
+
+.ambient-pictures .pixel-field {
+  width: 100%;
+  height: 100%;
+  opacity: 0.45;
+}
+
+.ambient-pictures .field-1 { fill: var(--lighter-background); }
+.ambient-pictures .field-2 { fill: color-mix(in srgb, var(--accent) 22%, var(--background)); }
+.ambient-pictures .field-3 { fill: color-mix(in srgb, var(--accent) 45%, var(--background)); }
+.ambient-pictures .field-4 { fill: var(--accent); }
+
+.ambient-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+}
+
+.ambient-picture.on {
+  opacity: 1;
+}
+
+.ambient-drift {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .ambient-time {
@@ -980,10 +1042,43 @@ button {
   color: var(--foreground);
 }
 
-.ambient-note {
-  margin-top: 64px;
+/* Over a photo, the time is smaller and in a corner, and the credit in the
+   other, each on a dark band so it reads over any picture. */
+#ambient.photos {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+#ambient.photos .ambient-drift {
+  margin: 72px 96px;
+  padding: 18px 28px;
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--darker-background) 72%, transparent);
+}
+
+#ambient.photos .ambient-time {
+  font-size: 120px;
+  letter-spacing: -5px;
+}
+
+#ambient.photos .ambient-day {
+  margin-top: 8px;
+  font-size: 32px;
+}
+
+.ambient-credit {
+  position: absolute;
+  left: 96px;
+  bottom: 72px;
+  max-width: 1200px;
+  padding: 12px 20px;
   font-size: 28px;
-  color: var(--dark-foreground);
+  color: var(--bright-foreground);
+  background: color-mix(in srgb, var(--darker-background) 72%, transparent);
+}
+
+.ambient-credit:empty {
+  display: none;
 }
 
 /* Updates (ADR-025, boards 29 to 32). */

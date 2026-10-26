@@ -2,7 +2,8 @@
 # them on this box, the phone companion on the home network (port 3001) and
 # the setup hotspot's captive page (port 3002). Node runs its TypeScript as
 # it is. Its own state, such as whether setup is done, lives in
-# /var/lib/agentv/daemon.
+# /var/lib/agentv/daemon, and the backgrounds with their credits in
+# /var/lib/agentv/backgrounds.
 
 [Unit]
 Description=AgenTV daemon
@@ -12,7 +13,7 @@ After=network.target
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/daemon/server.ts --port 3000
 Environment=AGENTV_PATH=/usr/share/agentv
 Environment=AGENTV_DAEMON_STATE=/var/lib/agentv/daemon
-StateDirectory=agentv/daemon
+StateDirectory=agentv/daemon agentv/backgrounds
 Restart=on-failure
 # Stopped within a few seconds, so Restart and Shut down never wait on it
 # (ADR-033).

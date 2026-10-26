@@ -27,6 +27,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
+import { Backgrounds, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
@@ -66,6 +67,8 @@ export interface DaemonOptions {
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
+  // The backgrounds and their credits: /var/lib/agentv/backgrounds.
+  backgrounds?: string;
   // The phone companion's port on the home network, or none. 3001 on the box.
   lanPort?: number;
   lanHost?: string;
@@ -166,6 +169,7 @@ export class Daemon {
   readonly setupState: Setup;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
+  readonly backgrounds: Backgrounds;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -210,6 +214,7 @@ export class Daemon {
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
     this.ai = new Ai({ state: options.state });
+    this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -692,6 +697,33 @@ export class Daemon {
       return;
     }
 
+    // Share → TV (ADR-012, S5.3): a photo from the phone becomes the TV's
+    // background, with the credit line it came with. Not from a child's
+    // profile, which doesn't change the TV's look (ADR-009).
+    if (method === "POST" && path === "/api/phone/background") {
+      const viewer = await this.profiles.active();
+      if (viewer.role !== "adult") {
+        this.json(response, 403, { ok: false, error: "an adult changes the tv's background" });
+        return;
+      }
+      let body: Buffer;
+      try {
+        body = await this.raw(request, MAX_PHOTO);
+      } catch (error) {
+        this.json(response, 413, { ok: false, error: (error as Error).message });
+        return;
+      }
+      const result = await this.backgrounds.add(body, { text: url.searchParams.get("credit"), from: `${viewer.name.toLowerCase()} on ${phone.name}` });
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.log(`${phone.name} sent a photo for the background`);
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, background: result.item });
+      return;
+    }
+
     // AgenTV's sign-in screen (ADR-032, S4.9): the name and the password the
     // phone's password manager filled, typed into the service's form on the
     // TV, with Tab between them and Enter after. Never logged.
@@ -932,6 +964,18 @@ export class Daemon {
       chunks.push(chunk as Buffer);
     }
     return Buffer.concat(chunks).toString("utf8");
+  }
+
+  // A body that isn't JSON, such as a photo, up to limit bytes.
+  private async raw(request: IncomingMessage, limit: number): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of request) {
+      size += (chunk as Buffer).length;
+      if (size > limit) throw new Error(`that's too big: ${Math.round(limit / 1024 / 1024)} mb at most`);
+      chunks.push(chunk as Buffer);
+    }
+    return Buffer.concat(chunks);
   }
 
   private async body(request: IncomingMessage): Promise<unknown> {
@@ -1734,6 +1778,49 @@ export class Daemon {
 
     if (method === "GET" && path === "/api/theme.css") {
       this.send(response, TYPES[".css"], await this.home.theme());
+      return;
+    }
+
+    // The backgrounds (ADR-012, board 13): which source the TV shows, the
+    // photos with their credits, and each picture.
+    if (method === "GET" && path === "/api/backgrounds") {
+      this.json(response, 200, { ok: true, ...(await this.backgrounds.read()) });
+      return;
+    }
+
+    const picture = /^\/api\/backgrounds\/([0-9a-f]{16})$/.exec(path);
+    if (method === "GET" && picture) {
+      const found = await this.backgrounds.file(picture[1]);
+      const body = found ? await readFile(found.path).catch(() => null) : null;
+      if (!found || !body) {
+        this.json(response, 404, { ok: false, error: "no such picture" });
+        return;
+      }
+      this.send(response, found.type, body, { "Cache-Control": "private, max-age=86400" });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/backgrounds") {
+      const body = ((await this.body(request)) ?? {}) as { source?: unknown; current?: unknown };
+      const result = await this.backgrounds.choose(body.source, body.current);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, ...result.state });
+      return;
+    }
+
+    if (method === "DELETE" && picture) {
+      if (!this.guarded(request, response, "taking a photo off the tv")) return;
+      const result = await this.backgrounds.remove(picture[1]);
+      if (!result.state) {
+        this.json(response, 404, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, ...result.state });
       return;
     }
 
