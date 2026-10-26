@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, chownSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -307,6 +307,19 @@ test("ADR-039 every file of a local app is readable by the daemon, and none of t
   assert.equal(statSync(join(dir, "local.sample")).mode & 0o777, 0o755);
   for (const name of ["app.ts", "library.ts", "manifest.json"]) {
     assert.equal(statSync(join(dir, "local.sample", name)).mode & 0o777, 0o644, name);
+  }
+});
+
+// Only root can give a file away, so this runs where the tests run as root:
+// a cloud session, or the box.
+test("ADR-039 installed as root, all of a local app is root's, whoever's folder it came from", { skip: process.getuid?.() !== 0 && "it needs root" }, async () => {
+  const dir = apps();
+  const from = built();
+  for (const name of ["", "app.ts", "library.ts", "manifest.json"]) chownSync(join(from, name), 65534, 65534);
+  await installLocal(from, dir, yes);
+  for (const name of ["", "app.ts", "library.ts", "manifest.json"]) {
+    const found = statSync(join(dir, "local.sample", name));
+    assert.deepEqual([found.uid, found.gid], [0, 0], name || "its folder");
   }
 });
 
