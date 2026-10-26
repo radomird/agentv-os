@@ -105,8 +105,10 @@ on:
       AGENTV_SIGNING_KEY:
         required: true
 
+# actions: read finds and fetches the installed box a night's run kept.
 permissions:
   contents: write
+  actions: read
 
 jobs:
   image:

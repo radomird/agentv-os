@@ -239,10 +239,12 @@ jobs:
   image:
     needs: changes
     if: needs.changes.outputs.image == 'true'
-    # image.yml asks for contents: write, for the nightly run's tested.json.
-    # A pull request's run never publishes it.
+    # image.yml asks for contents: write, for the nightly run's tested.json,
+    # which a pull request's run never publishes, and actions: read, for the
+    # installed box a night's run kept.
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/image.yml
     with:
       ref: ${{ github.event.pull_request.head.sha }}
