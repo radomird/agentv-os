@@ -75,6 +75,8 @@ export interface Viewer {
   name: string;
   role: "adult" | "kid";
   avatar: string;
+  // An adult's profile that asks for the PIN to open (ADR-034).
+  locked: boolean;
 }
 
 export function avatar(viewer: Pick<Viewer, "name" | "avatar">, big = false): HTMLElement {

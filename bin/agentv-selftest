@@ -799,7 +799,7 @@ s45() {
   else
     result fail S4.5 "installing tonight without the PIN wasn't refused (HTTP ${code:-none})"
   fi
-  result manual S4.5 "on the TV, Settings → Omarchy desktop asks for the PIN, and Esc leaves you on the TV. Restart the box: it comes back locked until the PIN is typed."
+  result manual S4.5 "on the TV, Settings → Omarchy desktop asks for the PIN, and Esc leaves you on the TV. Lock your profile in Settings → Profiles and restart the box: it comes back locked until the PIN is typed. A profile that isn't locked opens without it."
 }
 
 s46() {

@@ -185,7 +185,7 @@ test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Par
   await page.waitForSelector('.panel [data-action="lock"]');
   await page.locator('.panel [data-action="lock"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /tv locked[\s\S]*enter the parent pin[\s\S]*the tv locks after it starts and after it's been off/);
+  assert.match(await padText(page), /tv locked[\s\S]*enter the parent pin[\s\S]*the tv is locked\./);
   // Back and Home don't get past it.
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");

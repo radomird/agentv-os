@@ -130,6 +130,36 @@ test("S4.2 who's watching, from the phone: the TV follows within a second, and a
   await hand.close();
 });
 
+test("ADR-034 the phone shows a lock on a locked profile, and switching to it takes the PIN", async () => {
+  const ana = (await (await fetch(`${url}/api/viewers`)).json()).viewers.find((v: { name: string }) => v.name === "ana");
+  const locking = await fetch(`${url}/api/viewers/${ana.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-AgenTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant },
+    body: JSON.stringify({ locked: true }),
+  });
+  assert.equal(locking.status, 200);
+  const screen = await tv();
+  const hand = await phone();
+  await hand.locator('[data-action="who"]').tap();
+  await hand.waitForSelector(".viewer");
+  assert.equal(await hand.locator(`[data-viewer="${ana.id}"] svg.glyph-lock`).count(), 1);
+  assert.equal(await hand.locator('[data-viewer="radomir"] svg.glyph-lock').count(), 0);
+  assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the parent pin/);
+  await hand.locator(`[data-viewer="${ana.id}"]`).tap();
+  await hand.waitForSelector(".overlay .pin-keys");
+  assert.match(await hand.locator(".overlay").innerText(), /for watching as ana\./);
+  for (const digit of PIN) await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+  await screen.waitForFunction(() => document.querySelector(".bar-right span")?.textContent === "ana");
+  await post("/api/viewer", { id: "radomir" });
+  await fetch(`${url}/api/viewers/${ana.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-AgenTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant },
+    body: JSON.stringify({ locked: false }),
+  });
+  await screen.close();
+  await hand.close();
+});
+
 test("S4.7 arrange home on the phone: tap a tile, then where it goes, and the TV follows within a second", async () => {
   const screen = await tv();
   const hand = await phone();

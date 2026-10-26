@@ -35,6 +35,8 @@ export interface Viewer {
   name: string;
   role: "adult" | "kid";
   avatar: string;
+  // An adult's profile that asks for the PIN to open (ADR-034).
+  locked: boolean;
 }
 
 export interface Settings {
@@ -197,7 +199,7 @@ export const daemon = {
   saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }, grant?: string) => call<WeatherPlace>("POST", "/api/weather", change, grant),
   // Profiles (ADR-009, S4.2).
   switchViewer: (id: string, grant?: string) => call<{ viewer: Viewer }>("POST", "/api/viewer", { id }, grant),
-  addViewer: (profile: Omit<Viewer, "id">, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
+  addViewer: (profile: Omit<Viewer, "id" | "locked"> & { locked?: boolean }, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
   editViewer: (id: string, change: Partial<Omit<Viewer, "id">>, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
   // The provider key (S4.6): which provider has one, never the key.

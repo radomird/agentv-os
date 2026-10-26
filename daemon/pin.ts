@@ -1,9 +1,11 @@
 // The parent PIN (ADR-009, S4.5): four digits, and optional until a kid's
-// profile needs one. Once it's set, it locks the TV after the box starts and
-// after the TV has been off long enough for its apps to close, and it guards
-// the adult actions: Omarchy's desktop, Settings → Power, installing an
-// update or going back from one, and Settings → Parental itself. AI, the
-// spend caps and kids' profiles join them as they're built.
+// profile needs one. It guards the adult actions: Omarchy's desktop,
+// Settings → Power, installing an update or going back from one, and
+// Settings → Parental itself. AI, the spend caps and kids' profiles join
+// them as they're built. It locks the TV when someone locks it by hand, and
+// after the box starts and after the TV has been off long enough for its
+// apps to close, when the profile on screen asks for the PIN to open
+// (ADR-034).
 //
 // Only a hash is kept, in the daemon's own state, which the box's user
 // account can't read. Five wrong tries in a row make it wait 30 seconds, and
@@ -32,8 +34,10 @@ interface Stored {
   fails?: number;
   waitUntil?: number;
   // The boot the TV was last unlocked in. Another boot, or the TV off for a
-  // while, locks it.
+  // while, locks a profile that asks for the PIN to open.
   unlockedBoot?: string;
+  // Locked by hand, from Settings → Parental, whoever's watching.
+  byHand?: boolean;
 }
 
 export interface PinStatus {
@@ -106,10 +110,13 @@ export class Pin {
     return Math.max(0, Math.ceil(((stored.waitUntil ?? 0) - this.now()) / 1000));
   }
 
-  status(): PinStatus {
+  // Whether the TV is locked, for a profile on screen that asks for the PIN
+  // to open (profileLocked) or doesn't. A lock by hand holds either way.
+  status(profileLocked = true): PinStatus {
     const stored = this.read();
     const set = typeof stored.hash === "string";
-    return { set, locked: set && stored.unlockedBoot !== this.boot(), wait: set ? this.wait(stored) : 0 };
+    const locked = set && (stored.byHand === true || (profileLocked && stored.unlockedBoot !== this.boot()));
+    return { set, locked, wait: set ? this.wait(stored) : 0 };
   }
 
   // The PIN, from the TV or the phone: a grant for the guarded actions, and
@@ -158,24 +165,28 @@ export class Pin {
     return null;
   }
 
-  // Takes the PIN off, with a grant, unless something needs it.
-  remove(grant: unknown): string | null {
+  // Takes the PIN off, with a grant, unless something needs it: why, or the
+  // reason the needed option gives.
+  remove(grant: unknown, needed?: string | null): string | null {
     if (!this.read().hash) return "there's no pin to remove";
     if (!this.allows(grant)) return "that needs the pin";
-    const why = this.needed();
+    const why = needed === undefined ? this.needed() : needed;
     if (why) return why;
     this.write({});
     this.grants.clear();
     return null;
   }
 
-  // Locks the TV until the PIN is entered, and ends every grant. False with
-  // no PIN set.
-  lock(): boolean {
+  // Locks the TV until the PIN is entered, and ends every grant. By hand, it
+  // locks whoever's watching. Otherwise, as when the TV has been off, it
+  // locks only a profile that asks for the PIN to open. False with no PIN
+  // set.
+  lock(byHand = true): boolean {
     const stored = this.read();
     if (!stored.hash) return false;
     this.grants.clear();
-    if (stored.unlockedBoot !== undefined) this.write({ ...stored, unlockedBoot: undefined });
+    const next: Stored = { ...stored, unlockedBoot: undefined, byHand: stored.byHand || byHand || undefined };
+    if (next.unlockedBoot !== stored.unlockedBoot || next.byHand !== stored.byHand) this.write(next);
     return true;
   }
 }

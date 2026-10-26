@@ -189,7 +189,7 @@ async function send(body: unknown): Promise<{ status: number; data: any }> {
 }
 
 test("S3.3 the daemon keeps what the screen daemon sends, for the viewer, one row per viewer", async () => {
-  assert.deepEqual((await (await fetch(`${url}/api/viewer`)).json()).viewer, { id: "radomir", name: "radomir", role: "adult", avatar: "blue" });
+  assert.deepEqual((await (await fetch(`${url}/api/viewer`)).json()).viewer, { id: "radomir", name: "radomir", role: "adult", avatar: "blue", locked: false });
   const first = await send({ app: "local.mytv", state: episode(4, 12) });
   assert.equal(first.status, 200);
   assert.deepEqual([first.data.row.viewer_id, first.data.row.kind, first.data.row.title, first.data.row.episode], ["radomir", "episode", "Sintel", 4]);

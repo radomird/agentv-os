@@ -4,16 +4,21 @@
 // and the ledger are theirs, and a switch shows on the TV within a second.
 // The box's owner, as first boot finds them, is the first adult.
 //
+// An adult's profile can ask for the PIN to open (ADR-034): after the box
+// starts and after the TV has been off, and when someone switches to it.
+// Its tile shows a lock. Kids' profiles don't; the PIN guards what they can
+// reach already.
+//
 // The daemon decides what needs the PIN: changing profiles once there is
-// one, a kid's profile needs one to exist, and switching from a kid to an
-// adult needs it too (server.ts).
+// one, a kid's profile and a locked one need one to exist, and switching
+// from a kid to an adult, or to a locked profile, needs it too (server.ts).
 
 import { readFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import type { Ledger, LedgerViewer } from "./ledger.ts";
 
-export type Profile = LedgerViewer & { avatar: string };
+export type Profile = LedgerViewer & { avatar: string; locked: boolean };
 
 // An avatar is a colour from the Omarchy theme, behind the name's first
 // letter (board 06).
@@ -43,10 +48,16 @@ export class Profiles {
     for (const line of passwd.split("\n")) {
       const [name, , uid, , , , shell] = line.split(":");
       if (Number(uid) >= 1000 && Number(uid) < 60000 && !/nologin|false/.test(shell ?? "")) {
-        return { id: name, name, role: "adult", avatar: AVATARS[0] };
+        return { id: name, name, role: "adult", avatar: AVATARS[0], locked: false };
       }
     }
-    return { id: "you", name: "you", role: "adult", avatar: AVATARS[0] };
+    return { id: "you", name: "you", role: "adult", avatar: AVATARS[0], locked: false };
+  }
+
+  // What the ledger keeps of a profile: all but the lock, which is the
+  // daemon's own, in viewer.json.
+  private keep(profile: Profile): void {
+    this.ledger().viewer({ id: profile.id, name: profile.name, role: profile.role, avatar: profile.avatar });
   }
 
   // Everyone, in the order they were added, the owner first. A box with no
@@ -54,16 +65,20 @@ export class Profiles {
   async list(): Promise<Profile[]> {
     let viewers = this.ledger().viewers();
     if (viewers.length === 0) {
-      this.ledger().viewer(await this.owner());
+      this.keep(await this.owner());
       viewers = this.ledger().viewers();
     }
-    const order = await this.order();
+    const { order = [], locked = [] } = await this.saved();
     return viewers
-      .map((viewer) => ({ ...viewer, avatar: viewer.avatar && AVATARS.includes(viewer.avatar) ? viewer.avatar : AVATARS[0] }))
+      .map((viewer) => ({
+        ...viewer,
+        avatar: viewer.avatar && AVATARS.includes(viewer.avatar) ? viewer.avatar : AVATARS[0],
+        locked: viewer.role === "adult" && locked.includes(viewer.id),
+      }))
       .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id) || a.id.localeCompare(b.id));
   }
 
-  private async saved(): Promise<{ active?: string; order?: string[] }> {
+  private async saved(): Promise<{ active?: string; order?: string[]; locked?: string[] }> {
     try {
       const data = JSON.parse(await readFile(join(this.state, "viewer.json"), "utf8"));
       return data && typeof data === "object" ? data : {};
@@ -72,15 +87,11 @@ export class Profiles {
     }
   }
 
-  private async save(change: { active?: string; order?: string[] }): Promise<void> {
+  private async save(change: { active?: string; order?: string[]; locked?: string[] }): Promise<void> {
     const next = { ...(await this.saved()), ...change };
     await mkdir(this.state, { recursive: true });
     await writeFile(join(this.state, ".viewer.json.next"), `${JSON.stringify(next, null, 2)}\n`);
     await rename(join(this.state, ".viewer.json.next"), join(this.state, "viewer.json"));
-  }
-
-  private async order(): Promise<string[]> {
-    return (await this.saved()).order ?? [];
   }
 
   // Who's watching now: the one switched to last, else the first adult.
@@ -94,6 +105,15 @@ export class Profiles {
     return (await this.list()).some((p) => p.role === "kid");
   }
 
+  // Why the parent PIN has to stay, or null: a kid's profile, or one that
+  // asks for it to open.
+  async needPin(): Promise<string | null> {
+    const all = await this.list();
+    if (all.some((p) => p.role === "kid")) return "a kid's profile needs the pin, so it stays";
+    if (all.some((p) => p.locked)) return "a locked profile needs the pin. unlock it in settings → profiles first";
+    return null;
+  }
+
   // Why a name, role and avatar can't be a profile, or null.
   private async problem(input: Record<string, unknown>, id?: string): Promise<string | null> {
     if (input.name !== undefined) {
@@ -103,7 +123,14 @@ export class Profiles {
     }
     if (input.role !== undefined && input.role !== "adult" && input.role !== "kid") return "adult or kid";
     if (input.avatar !== undefined && (typeof input.avatar !== "string" || !AVATARS.includes(input.avatar))) return `a colour: ${AVATARS.join(", ")}`;
+    if (input.locked !== undefined && typeof input.locked !== "boolean") return "locked is true or false";
+    if (input.locked === true && input.role === "kid") return "only an adult's profile locks";
     return null;
+  }
+
+  private async setLocked(id: string, on: boolean): Promise<void> {
+    const locked = ((await this.saved()).locked ?? []).filter((l) => l !== id);
+    await this.save({ locked: on ? [...locked, id] : locked });
   }
 
   async add(input: Record<string, unknown>): Promise<{ profile?: Profile; error?: string }> {
@@ -116,9 +143,11 @@ export class Profiles {
       name: String(input.name).trim(),
       role: input.role === "kid" ? "kid" : "adult",
       avatar: typeof input.avatar === "string" ? input.avatar : (AVATARS.find((a) => !all.some((p) => p.avatar === a)) ?? AVATARS[all.length % AVATARS.length]),
+      locked: input.locked === true,
     };
-    this.ledger().viewer(profile);
+    this.keep(profile);
     await this.save({ order: [...all.map((p) => p.id), profile.id] });
+    if (profile.locked) await this.setLocked(profile.id, true);
     return { profile };
   }
 
@@ -128,14 +157,19 @@ export class Profiles {
     if (!found) return { error: "there's no such profile" };
     const why = await this.problem(input, id);
     if (why) return { error: why };
+    const role = input.role === undefined ? found.role : (input.role as Profile["role"]);
+    if (input.locked === true && role === "kid") return { error: "only an adult's profile locks" };
     const profile: Profile = {
       ...found,
       name: input.name === undefined ? found.name : String(input.name).trim(),
-      role: input.role === undefined ? found.role : (input.role as Profile["role"]),
+      role,
       avatar: input.avatar === undefined ? found.avatar : String(input.avatar),
+      // A profile that becomes a kid's stops asking for the PIN.
+      locked: role === "kid" ? false : input.locked === undefined ? found.locked : input.locked === true,
     };
     if (found.role === "adult" && profile.role === "kid" && !all.some((p) => p.id !== id && p.role === "adult")) return { error: "the box needs an adult" };
-    this.ledger().viewer(profile);
+    this.keep(profile);
+    if (profile.locked !== found.locked) await this.setLocked(id, profile.locked);
     return { profile };
   }
 
@@ -147,7 +181,11 @@ export class Profiles {
     if (found.role === "adult" && !all.some((p) => p.id !== id && p.role === "adult")) return "the box needs an adult";
     this.ledger().removeViewer(id);
     const saved = await this.saved();
-    await this.save({ order: (saved.order ?? []).filter((o) => o !== id), active: saved.active === id ? undefined : saved.active });
+    await this.save({
+      order: (saved.order ?? []).filter((o) => o !== id),
+      active: saved.active === id ? undefined : saved.active,
+      locked: (saved.locked ?? []).filter((l) => l !== id),
+    });
     return null;
   }
 
