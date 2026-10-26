@@ -496,3 +496,116 @@
 .key-field {
   flex-grow: 1;
 }
+
+/* --- Who watches (board 06) ------------------------------------------------- */
+
+.people {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  margin-left: -8px;
+}
+
+/* The ring sits 8 px outside the face, as on the canvas, so it shows on a
+   face of the accent's own colour too. */
+.person {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 8px;
+  color: var(--bright-foreground);
+}
+
+.person-face {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 240px;
+  height: 240px;
+  color: var(--background);
+  font-size: 120px;
+  font-weight: 800;
+}
+
+.person.add .person-face {
+  width: 236px;
+  height: 236px;
+  border: 2px dashed var(--dark-foreground);
+  color: var(--foreground);
+  font-size: 72px;
+  font-weight: 400;
+}
+
+.person-name {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.person.add .person-name {
+  color: var(--foreground);
+  font-weight: 400;
+}
+
+.person-tag {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 6px 14px;
+  background: var(--yellow);
+  color: var(--background);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.person-lock {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  color: var(--background);
+}
+
+.pin-line {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 30px;
+}
+
+.pin-switch {
+  display: inline-flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 18px;
+  border: 2px solid var(--muted);
+  color: var(--foreground);
+  font-weight: 800;
+}
+
+.pin-switch.on {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--background);
+}
+
+.person-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 48px;
+}
+
+.person-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 960px;
+}
+
+.person-field {
+  font-size: 36px;
+}
+
+.person-actions {
+  display: flex;
+  gap: 20px;
+}

@@ -14,11 +14,13 @@ import { fieldKind, tell } from "../launcher/context.ts";
 import { fit, h } from "../launcher/dom.ts";
 import { Focus } from "../launcher/focus.ts";
 import { listen as listenInput, type Action } from "../launcher/input.ts";
+import { pad as pinPad, type Pad, type PadOptions } from "../launcher/pages/pin.ts";
 import { Sounds } from "../launcher/sounds.ts";
 import { aiStep, cliLine, path } from "./ai.ts";
 import { setup, type AiInfo, type Provider, type SetupInfo, type Step } from "./api.ts";
 import { bar, field } from "./frame.ts";
 import { goal } from "./goal.ts";
+import { people, person } from "./people.ts";
 import { ready } from "./ready.ts";
 import { welcome, wifi } from "./welcome.ts";
 
@@ -58,6 +60,15 @@ export interface Ctx {
   // The status bar's right side again, as what's going on changes.
   status(info: string): void;
   refresh(): Promise<SetupInfo>;
+  // The grant for an adult action (ADR-009): "" with no PIN set, the one
+  // from the PIN entered earlier in setup while it lasts, or the PIN asked
+  // for now on its pad. Null when it wasn't entered.
+  grant(what: string): Promise<string | null>;
+  // Keeps a grant for the rest of setup, as after the PIN was just chosen.
+  hold(grant: string, until: string): void;
+  // A PIN pad over the page, as choosing the adult PIN. True once submit
+  // took the digits.
+  pad(options: Omit<PadOptions, "cancel" | "changed">): Promise<boolean>;
 }
 
 const page = document.getElementById("page")!;
@@ -76,6 +87,40 @@ let moves = 0;
 let local = 0;
 let reduceMotion = false;
 let barEl: HTMLElement | null = null;
+
+// --- The adult PIN's pad (ADR-009, ADR-037) -----------------------------------
+
+// The pad, over the page while it's open; the keys go to it, and the phone's
+// remote shows it too, with how many digits are in.
+const pinEl = document.getElementById("pin")!;
+let pinOpen: Pad | null = null;
+let pads: Promise<unknown> = Promise.resolve();
+let held: { token: string; until: number } | null = null;
+const holding = () => Boolean(held && held.until - Date.now() > 15_000);
+
+function openPad(options: Omit<PadOptions, "changed">): Promise<boolean> {
+  const run = async () => {
+    const before = focus.get();
+    before?.classList.remove("focused");
+    const tellPin = (digits: number, error: string | null) => tell({ pin: { title: options.title, for: options.note, digits, error } });
+    const pad = pinPad({ ...options, changed: tellPin }, (sound) => sounds.play(sound));
+    tellPin(0, null);
+    pinOpen = pad;
+    pinEl.replaceChildren(pad.el);
+    pinEl.classList.add("on");
+    focus.setRoot(pad.el, pad.first);
+    const ok = await pad.done;
+    pinOpen = null;
+    tell({ pin: null });
+    pinEl.classList.remove("on");
+    pinEl.replaceChildren();
+    if (view) focus.setRoot(view.el, before?.isConnected ? before : view.first);
+    return ok;
+  };
+  const next = pads.then(run, run);
+  pads = next.catch(() => {});
+  return next;
+}
 
 const ctx: Ctx = {
   info: undefined as unknown as SetupInfo,
@@ -147,6 +192,30 @@ const ctx: Ctx = {
     const el = barEl?.querySelector(".bar-info");
     if (el) el.textContent = barInfo(route.split("/")[0], info);
   },
+  async grant(what) {
+    if (!ctx.info.pin) return "";
+    if (holding()) return held!.token;
+    let grant: string | null = null;
+    const ok = await openPad({
+      command: "tv setup · pin",
+      title: "enter the adult pin",
+      note: `for ${what}.`,
+      cancel: true,
+      submit: async (pin) => {
+        const reply = await daemon.checkPin(pin);
+        held = { token: reply.grant, until: Date.parse(reply.until) };
+        grant = reply.grant;
+        return null;
+      },
+    });
+    return ok ? grant : null;
+  },
+  hold(grant, until) {
+    held = { token: grant, until: Date.parse(until) };
+  },
+  pad(options) {
+    return openPad({ ...options, cancel: true });
+  },
   async refresh() {
     const at = moves;
     const info = await setup.info();
@@ -162,6 +231,8 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "ready") return ready(ctx);
   if (step === "ai" && sub) return path(ctx, sub as Provider);
   if (to === "ai") return aiStep(ctx);
+  if (step === "people" && sub) return person(ctx, sub);
+  if (to === "people") return people(ctx);
   if (to === "goal") return goal(ctx);
   return welcome(ctx);
 }
@@ -211,6 +282,15 @@ function put(to: string, next: View, direction?: "forward" | "back"): void {
 }
 
 function act(action: Action): void {
+  // A PIN pad has the keys while it's up.
+  if (pinOpen) {
+    if (action === "up" || action === "down" || action === "left" || action === "right") focus.move(action);
+    else if (action === "ok") {
+      sounds.play("select");
+      focus.get()?.click();
+    } else pinOpen.act(action);
+    return;
+  }
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -241,7 +321,7 @@ document.addEventListener("pointermove", (event) => {
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
   const el = (event.target as Element | null)?.closest<HTMLElement>("[data-focus]");
-  if (el && view?.el.contains(el)) focus.set(el);
+  if (el && (pinOpen ? pinEl.contains(el) : view?.el.contains(el))) focus.set(el);
 });
 document.addEventListener("click", (event) => {
   if (event.detail === 0) return; // a click from the keyboard, already played
@@ -269,6 +349,17 @@ async function start(): Promise<void> {
   ctx.updates = await daemon.updates().catch(() => ctx.updates);
   ctx.ai = await setup.ai().catch(() => undefined);
   show(ctx.info.setup.step);
+  // Number keys, from a keyboard or the phone, go to the pad while it's up.
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (pinOpen?.key(event.key)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    },
+    true,
+  );
   listenInput(act);
   listen(
     {
@@ -292,6 +383,13 @@ async function start(): Promise<void> {
         view?.heard?.("updates", data);
       },
       phones: (data) => view?.heard?.("phones", data),
+      pin: (data) => {
+        const status = data as { set: boolean };
+        ctx.info.pin = status.set;
+        if (!status.set) held = null;
+        view?.heard?.("pin", data);
+      },
+      viewers: (data) => view?.heard?.("viewers", data),
       ai: (data) => {
         if (ctx.ai) ctx.ai = { ...ctx.ai, ...(data as Partial<AiInfo>) };
         view?.heard?.("ai", data);
