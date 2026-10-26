@@ -6,9 +6,11 @@
 //
 // The tiles are drawn again for the check, so they come from the forecast
 // MET has now, as the check's own fetch does, rather than one the tile kept
-// for up to half an hour. The weather now may still match the hour before,
-// as the hour can turn between the two. MET updates its forecast during the
-// day, so a degree either way still matches.
+// for up to half an hour. MET can publish a new forecast between the check's
+// fetch and the tile's, so the check asks MET again once the tiles are drawn,
+// and either forecast matches. The weather now may still match the hour
+// before, as the hour can turn between the two. MET updates its forecast
+// during the day, so a degree either way still matches.
 //
 // Usage: node weather-check.ts S3.8|S3.9
 // AGENTV_HOME_URL is the daemon (http://127.0.0.1:3000/), AGENTV_MET_URL
@@ -59,20 +61,22 @@ async function main(id: string): Promise<void> {
     return;
   }
   const where = `${place.name} (${place.lat}, ${place.lon})`;
-  const body = await json<unknown>(`${MET}?lat=${place.lat}&lon=${place.lon}`, { headers: { "User-Agent": `${userAgent(ROOT)} agentv-selftest` } });
-  const all = steps(body);
+  const forecast = async () =>
+    steps(await json<unknown>(`${MET}?lat=${place.lat}&lon=${place.lon}`, { headers: { "User-Agent": `${userAgent(ROOT)} agentv-selftest` } }));
+  const all = await forecast();
   const at = new Date();
 
   if (id === "S3.8") {
     const shown = await tile("s");
-    const current = now(all, at);
-    const before = now(all, new Date(at.getTime() - 30 * 60_000));
+    const later = await forecast();
+    const current = now(later, at);
     if (!shown?.headline || !current) {
       say("fail", id, `the weather tile for ${where} has nothing to show yet; is the box online?`);
       return;
     }
     const scene = shown.headline.icon;
-    const matches = [current, before].find((step) => step && step.scene === scene);
+    const half = new Date(at.getTime() - 30 * 60_000);
+    const matches = [now(all, at), now(all, half), current, now(later, half)].find((step) => step && step.scene === scene);
     if (matches) {
       say("pass", id, `the tile shows ${scene} at ${shown.headline.value} for ${where}, as MET's ${matches.symbol} with ${matches.wind} m/s of wind does (${degrees(matches.temp, place.units)})`);
     } else {
@@ -82,10 +86,9 @@ async function main(id: string): Promise<void> {
     return;
   }
 
-  const week = days(all, place.zone, at, 7);
-  const problems: string[] = [];
   // Today's column shows the weather now, with today's high and low under
   // it; every other day its scene, its high, and its low.
+  let problems: string[] = [];
   const check = (what: string, entry: Entry | undefined, day: Day | undefined, today: boolean) => {
     if (!entry || !day) {
       problems.push(`${what} is missing`);
@@ -101,10 +104,17 @@ async function main(id: string): Promise<void> {
     if (!near(shownLow, low)) problems.push(`${what}'s low is ${shownLow ?? "missing"}, MET says ${low}`);
   };
   const medium = await tile("m");
-  check("medium: today", medium?.entries?.[0], week[0], true);
-  check("medium: tomorrow", medium?.entries?.[1], week[1], false);
   const large = await tile("l");
-  for (let i = 0; i < 7; i++) check(`large: ${large?.entries?.[i]?.label ?? `day ${i + 1}`}`, large?.entries?.[i], week[i], false);
+  const later = await forecast();
+  let week: Day[] = [];
+  for (const one of [all, later]) {
+    week = days(one, place.zone, at, 7);
+    problems = [];
+    check("medium: today", medium?.entries?.[0], week[0], true);
+    check("medium: tomorrow", medium?.entries?.[1], week[1], false);
+    for (let i = 0; i < 7; i++) check(`large: ${large?.entries?.[i]?.label ?? `day ${i + 1}`}`, large?.entries?.[i], week[i], false);
+    if (!problems.length) break;
+  }
   if (problems.length) say("fail", id, `the weather tiles don't match MET for ${where}: ${problems.join("; ")}`);
   else say("pass", id, `the medium and large weather tiles match MET's forecast for ${where}: ${week.map((day) => `${day.scene} ${degrees(day.high, place.units)}/${degrees(day.low, place.units)}`).join(", ")}`);
   say("manual", id, `on yr.no, ${place.name}'s next 7 days: each day's picture and high and low match the large weather tile's (resize it in edit home)`);

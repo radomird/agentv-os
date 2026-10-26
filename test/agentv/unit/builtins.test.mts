@@ -135,6 +135,24 @@ test("S3.9 agentv selftest compares MET's forecast with tiles drawn from it, not
   }
 });
 
+test("S3.8 S3.9 a forecast MET publishes while the tiles are drawn still matches, since the check asks MET again after", async () => {
+  // The check's first ask gets Amsterdam's forecast; the tiles' asks, and
+  // the check's second, get Oslo's heavy rain, as when MET publishes a new
+  // forecast in between.
+  met.expiresIn(0);
+  try {
+    met.serveAfterNext("oslo");
+    assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows heavy-rain at /m);
+    met.serve("amsterdam");
+    met.serveAfterNext("oslo");
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+  } finally {
+    met.serve("amsterdam");
+    for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
+    met.expiresIn(30 * 60_000);
+  }
+});
+
 test("Settings → Weather picks another city in the same part of the world, and the units", async () => {
   const place = await get("/api/weather");
   assert.equal(place.zone, "Europe/Amsterdam");
