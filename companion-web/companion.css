@@ -34,6 +34,8 @@ body {
   color: var(--bright-foreground);
   font-family: var(--font);
   -webkit-text-size-adjust: 100%;
+  /* No double-tap zoom, so quick taps each count (ADR-037). */
+  touch-action: manipulation;
 }
 
 button {
@@ -41,6 +43,17 @@ button {
   color: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Every press shows, even a quick tap (feel.ts). */
+button.pressed {
+  border-color: var(--accent);
+  transform: scale(0.97);
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .page {
@@ -149,12 +162,14 @@ h1 {
 .tabs {
   align-self: stretch;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 2px solid var(--selection);
 }
 
 .tab {
-  padding: 10px 8px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 2px;
   border: 0;
   background: transparent;
   font-size: 13px;
@@ -211,6 +226,48 @@ h1 {
   font-size: 17px;
 }
 
+/* Playback: play or pause and next, big. */
+.pad-key.big {
+  flex: 1;
+  height: 120px;
+}
+
+.row.play {
+  margin-top: 24px;
+}
+
+/* Omarchy's desktop: drag to move, tap to click. */
+.trackpad {
+  height: 360px;
+  margin-top: 8px;
+  background: var(--darker-background);
+  border: 2px solid var(--selection);
+  touch-action: none;
+}
+
+.feel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 2px solid var(--selection);
+  background: transparent;
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+.feel-value {
+  color: var(--green);
+}
+
+.pin-key.pin-ok {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+  font-weight: 800;
+}
+
 #toast {
   position: fixed;
   left: 22px;
@@ -231,6 +288,7 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .pad-key:active { transform: none; }
+  button.pressed { transform: none; }
 }
 
 /* --- Who's watching, banners, the PIN pad, arrange home, updates ---------- */

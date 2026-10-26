@@ -1,16 +1,22 @@
-// AgenTV's phone companion (ADR-008, ADR-023, ADR-032, stage 4): the page a
-// phone opens from the TV's QR code, on the same network. It pairs with the
-// code the TV shows and keeps the token the box gives it. Then it's:
-// - a remote: a d-pad, Back, Home and play or pause;
+// AgenTV's phone companion (ADR-008, ADR-023, ADR-032, ADR-037, stage 4): the
+// page a phone opens from the TV's QR code, on the same network. It pairs
+// with the code the TV shows and keeps the token the box gives it. Then it's:
+// - a remote: a d-pad, Back, Home, play or pause and Settings;
 // - a keyboard: what's typed in its text box goes to the TV, the phone
 //   keyboard's dictation too, and on AgenTV's sign-in screen, a name and a
 //   password the phone's password manager can fill;
+// - playback while something plays, and a trackpad for Omarchy's desktop;
 // - who's watching, arrange home, the update notice with Install tonight,
 //   and the adult PIN, which also unlocks the TV.
+// It follows the TV (ADR-037): a PIN pad whenever the TV asks for the PIN,
+// the keyboard for a text field, playback while something plays, the
+// trackpad on the desktop, and the d-pad otherwise. Every press shows,
+// clicks and buzzes where the phone allows it, and nothing zooms.
 // It works in any phone's browser; the iOS app will do more.
 
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { arrange } from "./arrange.ts";
+import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
 
@@ -26,18 +32,31 @@ interface Update {
   installing: boolean;
 }
 
+// What's on the TV (ADR-037), and the page the remote opens on for it.
+interface Tv {
+  view: "trackpad" | "pin" | "keyboard" | "playback" | "remote";
+  pin: { title: string; for: string; digits: number; error: string | null } | null;
+  field: { kind: string } | null;
+}
+
 interface State {
+  version: number;
   phone: { id: string; name: string };
   viewer: Viewer;
   viewers: Viewer[];
   pin: { set: boolean; locked: boolean };
   signIn: { name: string } | null;
   update: Update | null;
+  tv: Tv;
 }
 
-type Mode = "remote" | "type" | "home" | "who" | "update";
+type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update";
 let state: State | null = null;
 let mode: Mode = "remote";
+
+// The page each thing on the TV opens. The PIN pad comes over whatever page
+// is showing.
+const FOLLOW: Record<Tv["view"], Mode | null> = { remote: "remote", keyboard: "type", playback: "play", trackpad: "mouse", pin: null };
 
 // A version as people read it: no package release or build after it.
 const shown = (version: string) => version.replace(/\.r\d+\.g[0-9a-f]+/, "").replace(/-\d+$/, "");
@@ -97,10 +116,11 @@ function pairView(): void {
 
 // --- The remote and the keyboard ----------------------------------------------
 
+// A key, text, or the trackpad's moves, to the TV. The press itself already
+// showed, clicked and buzzed (feel.ts).
 async function send(event: Record<string, unknown>): Promise<void> {
   try {
     await api("POST", "/api/phone/remote", event);
-    navigator.vibrate?.(8);
   } catch (error) {
     failed(error);
   }
@@ -111,11 +131,44 @@ function iconButton(icon: Glyph, label: string, props: Record<string, unknown>, 
   return h("button", { type: "button", ...props }, glyph(icon, size), label ? h("span", {}, label) : null);
 }
 
+function key(name: string, icon: Glyph | null, label: string, extra = "", aria = name): HTMLButtonElement {
+  return icon
+    ? iconButton(icon, label, { class: `pad-key ${extra}`, "aria-label": aria, "data-key": name, onclick: () => void send({ key: name }) }, label ? 24 : 36)
+    : h("button", { class: `pad-key ${extra}`, type: "button", "aria-label": aria, "data-key": name, onclick: () => void send({ key: name }) }, label);
+}
+
+// Settings on the TV (ADR-037), beside Back and Home. Not on a child's
+// profile.
+function settingsKey(): HTMLButtonElement | null {
+  if (state?.viewer.role !== "adult") return null;
+  return iconButton("settings", "", {
+    class: "pad-key wide",
+    "aria-label": "settings",
+    "data-action": "settings",
+    onclick: () => void api("POST", "/api/phone/settings").catch(failed),
+  }, 28);
+}
+
+// The switch for the click and the buzz.
+function feelSwitch(): HTMLElement {
+  const button = h(
+    "button",
+    {
+      type: "button",
+      class: "feel",
+      "data-action": "feel",
+      onclick: () => {
+        setFeel(!feelOn());
+        button.querySelector(".feel-value")!.textContent = feelOn() ? "on" : "off";
+      },
+    },
+    h("span", {}, "click and buzz on each press"),
+    h("span", { class: "feel-value" }, feelOn() ? "on" : "off"),
+  );
+  return button;
+}
+
 function remote(): HTMLElement {
-  const key = (name: string, icon: Glyph | null, label: string, extra = "", aria = name) =>
-    icon
-      ? iconButton(icon, label, { class: `pad-key ${extra}`, "aria-label": aria, "data-key": name, onclick: () => void send({ key: name }) }, label ? 24 : 36)
-      : h("button", { class: `pad-key ${extra}`, type: "button", "aria-label": aria, "data-key": name, onclick: () => void send({ key: name }) }, label);
   return h(
     "div",
     { class: "remote" },
@@ -132,7 +185,112 @@ function remote(): HTMLElement {
       key("down", "down", ""),
       h("span", {}),
     ),
-    h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), key("playpause", "play-pause", "", "wide", "play or pause")),
+    h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), key("playpause", "play-pause", "", "wide", "play or pause"), settingsKey()),
+    feelSwitch(),
+  );
+}
+
+// While something plays on the TV: play or pause, next, and Back.
+function playback(): HTMLElement {
+  return h(
+    "div",
+    { class: "remote" },
+    h("p", { class: "label" }, "playing on the tv"),
+    h("div", { class: "row play" }, key("playpause", "play-pause", "", "big", "play or pause"), key("next", "next", "", "big", "next")),
+    h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), settingsKey()),
+    feelSwitch(),
+  );
+}
+
+// Omarchy's desktop (ADR-008): drag to move the pointer, tap to click, and
+// buttons for a right click and scrolling.
+function trackpad(): HTMLElement {
+  const area = h("div", { class: "trackpad", role: "application", "aria-label": "trackpad", "data-action": "trackpad" });
+  let last: { x: number; y: number } | null = null;
+  let travelled = 0;
+  let downAt = 0;
+  let owed = [0, 0];
+  let flushing = 0;
+  const flush = () => {
+    flushing = 0;
+    const [dx, dy] = owed.map(Math.round);
+    owed = [0, 0];
+    if (dx || dy) void send({ move: [dx, dy] });
+  };
+  area.addEventListener("pointerdown", (event) => {
+    area.setPointerCapture(event.pointerId);
+    last = { x: event.clientX, y: event.clientY };
+    travelled = 0;
+    downAt = Date.now();
+  });
+  area.addEventListener("pointermove", (event) => {
+    if (!last) return;
+    // Twice the finger's way, so a phone's width crosses the TV.
+    const dx = (event.clientX - last.x) * 2;
+    const dy = (event.clientY - last.y) * 2;
+    last = { x: event.clientX, y: event.clientY };
+    travelled += Math.abs(dx) + Math.abs(dy);
+    owed = [owed[0] + dx, owed[1] + dy];
+    flushing ||= window.setTimeout(flush, 30);
+  });
+  const end = () => {
+    if (last && travelled < 12 && Date.now() - downAt < 250) void send({ click: "left" });
+    last = null;
+    flush();
+  };
+  area.addEventListener("pointerup", end);
+  area.addEventListener("pointercancel", () => {
+    last = null;
+  });
+  const button = (label: string, action: string, event: Record<string, unknown>) =>
+    h("button", { type: "button", class: "pad-key wide", "data-action": action, onclick: () => void send(event) }, label);
+  return h(
+    "div",
+    { class: "remote" },
+    area,
+    h("div", { class: "row" }, button("click", "click", { click: "left" }), button("right click", "right-click", { click: "right" })),
+    h("div", { class: "row" }, button("scroll up", "scroll-up", { scroll: 3 }), button("scroll down", "scroll-down", { scroll: -3 })),
+  );
+}
+
+// The TV asks for the adult PIN (ADR-037): a pad here, whose digits go to the
+// TV's pad, which shows a dot for each and checks it. The boxes here fill as
+// the TV's do.
+function tvPad(pin: NonNullable<Tv["pin"]>): HTMLElement {
+  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "delete", "0", "ok"];
+  const boxes = Array.from({ length: 4 }, (_, i) => h("span", { class: `pin-box${i < pin.digits ? " filled" : ""}` }));
+  const note = h("p", { class: `note${pin.error ? " bad" : ""}` }, pin.error ? `${pin.error}.` : pin.for);
+  const press = (k: string) => {
+    if (k === "delete") void send({ key: "backspace" });
+    // The TV's pad checks the PIN at its fourth digit; OK only says so.
+    else if (k === "ok") {
+      if (pin.digits < 4) {
+        note.textContent = "4 digits.";
+        note.classList.add("bad");
+      }
+    } else void send({ key: k });
+  };
+  return h(
+    "div",
+    { class: "overlay", id: "tv-pin", role: "dialog", "aria-label": "the adult pin, for the tv" },
+    h(
+      "div",
+      { class: "page" },
+      prompt("tv pin"),
+      h("h1", {}, pin.title),
+      note,
+      h("div", { class: "pin-boxes" }, ...boxes),
+      h(
+        "div",
+        { class: "pin-keys" },
+        ...keys.map((k) =>
+          k === "delete"
+            ? h("button", { type: "button", class: "pin-key pin-delete", "aria-label": "delete", "data-pin": "delete", onclick: () => press(k) }, glyph("backspace", 28))
+            : h("button", { type: "button", class: `pin-key${k === "ok" ? " pin-ok" : ""}`, "data-pin": k, onclick: () => press(k) }, k),
+        ),
+      ),
+      h("button", { type: "button", class: "button", "data-action": "back", onclick: () => void send({ key: "back" }) }, "back"),
+    ),
   );
 }
 
@@ -164,9 +322,20 @@ function signIn(name: string): HTMLElement {
   return form;
 }
 
+// The phone's keyboard opens for the TV's field: digits first for a number.
 function typing(): HTMLElement {
   if (state?.signIn) return signIn(state.signIn.name);
-  const field = h("input", { class: "field", id: "tv-text", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "type or dictate" }) as HTMLInputElement;
+  const kind = state?.tv.field?.kind ?? "text";
+  const field = h("input", {
+    class: "field",
+    id: "tv-text",
+    type: kind === "password" || kind === "email" || kind === "url" ? kind : "text",
+    inputmode: kind === "number" ? "numeric" : kind === "email" ? "email" : kind === "url" ? "url" : kind === "search" ? "search" : "text",
+    autocomplete: kind === "password" ? "current-password" : "off",
+    autocapitalize: "off",
+    spellcheck: "false",
+    placeholder: kind === "number" ? "type a number" : "type or dictate",
+  }) as HTMLInputElement;
   const go = async () => {
     if (!field.value) return;
     const text = field.value;
@@ -285,13 +454,15 @@ function draw(): void {
     "div",
     { class: "tabs" },
     ...([
-      ["remote", "remote"],
-      ["type", "keyboard"],
-      ["home", "grid"],
-    ] as const).map(([m, icon]) =>
+      ["remote", "remote", "remote"],
+      ["type", "keyboard", "type"],
+      ["play", "play-pause", "play"],
+      ["mouse", "pointer", "mouse"],
+      ["home", "grid", "home"],
+    ] as const).map(([m, icon, label]) =>
       iconButton(
         icon,
-        m,
+        label,
         {
           class: `tab${m === mode ? " on" : ""}`,
           "data-mode": m,
@@ -346,7 +517,10 @@ function draw(): void {
   if (mode === "home") void arrange(body);
   else if (mode === "who") body.append(who());
   else if (mode === "update" && state.update) body.append(updatePage(state.update));
-  else body.append(mode === "type" ? typing() : remote());
+  else if (mode === "type") body.append(typing());
+  else if (mode === "play") body.append(playback());
+  else if (mode === "mouse") body.append(trackpad());
+  else body.append(remote());
   const viewer = h(
     "button",
     {
@@ -362,23 +536,56 @@ function draw(): void {
     state.viewer.name,
   );
   app.replaceChildren(h("div", { class: "page" }, h("div", { class: "top" }, viewer, tabs), ...banners, body));
+  drawPad();
 }
 
-// Who's watching, the lock, a sign-in and an update, asked again every few
-// seconds while the page shows. The page is drawn again when one changes,
-// unless something is being typed or home is being arranged.
-async function refresh(force = false): Promise<void> {
+// The TV's PIN pad, over whatever's showing while the TV asks.
+function drawPad(): void {
+  document.getElementById("tv-pin")?.remove();
+  if (state?.tv.pin) document.body.append(tvPad(state.tv.pin));
+}
+
+// Who's watching, the lock, a sign-in, an update and what's on the TV. With
+// wait, the box answers when something changes, or after 25 s.
+//
+// When what's on the TV changes, the remote opens the page for it, unless
+// home is being arranged or who's watching or the update is open; the PIN
+// pad comes over anything. Otherwise the page is drawn again when something
+// changed, unless something is being typed or home is being arranged.
+async function refresh(force = false, wait = false): Promise<void> {
   let next: State;
   try {
-    next = await api<State>("GET", "/api/phone/state");
+    next = await api<State>("GET", wait && state ? `/api/phone/state?since=${state.version}` : "/api/phone/state");
   } catch (error) {
     if (error instanceof Unpaired) failed(error);
+    if (wait) await new Promise((resolve) => setTimeout(resolve, 2000));
     return;
   }
-  const changed = JSON.stringify(next) !== JSON.stringify(state);
+  const before = state;
+  const { version: _then, ...was } = before ?? ({} as State);
+  const { version: _now, ...now } = next;
+  const changed = JSON.stringify(now) !== JSON.stringify(was);
   state = next;
+  const moved = before !== null && next.tv.view !== before.tv.view;
+  const follow = FOLLOW[next.tv.view];
+  if (moved && follow && (mode === "remote" || mode === "type" || mode === "play" || mode === "mouse")) {
+    mode = follow;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    draw();
+    return;
+  }
   const typingNow = document.activeElement instanceof HTMLInputElement;
   if (force || (changed && !typingNow && mode !== "home")) draw();
+  else if (JSON.stringify(next.tv.pin) !== JSON.stringify(before?.tv.pin)) drawPad();
+}
+
+// Asks the box over and over, each ask waiting for the next change, while
+// the page shows.
+async function follow(): Promise<void> {
+  for (;;) {
+    if (document.visibilityState === "visible" && token() && state) await refresh(false, true);
+    else await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }
 
 async function start(): Promise<void> {
@@ -405,9 +612,9 @@ async function main(): Promise<void> {
   }
   if (!token()) return pairView();
   await start();
-  setInterval(() => {
-    if (document.visibilityState === "visible" && token() && state) void refresh();
-  }, 2500);
+  void follow();
 }
+
+listenFeel();
 
 void main();

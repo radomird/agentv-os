@@ -105,6 +105,21 @@ test("a command from the daemon, such as Install now from a phone, goes to the T
   await fake.close();
 });
 
+test("ADR-037 on Omarchy's desktop it says it's the desktop's relay, and the trackpad's moves and clicks go to the input device", async () => {
+  const fake = await daemon();
+  const sent: unknown[] = [];
+  const remote = new RemoteInput({ url: fake.url, as: "desktop", send: async (request) => void sent.push(request), retryMs: 20 });
+  remote.start();
+  await until(() => fake.connected() === 1);
+  assert.deepEqual(fake.headers, ["desktop"]);
+  fake.say({ move: [12, -7] });
+  fake.say({ click: "left" });
+  await until(() => sent.length === 2);
+  assert.deepEqual(sent, [{ move: [12, -7] }, { click: "left" }]);
+  remote.stop();
+  await fake.close();
+});
+
 test("a key the virtual input device refuses is logged, and typed text never is", async () => {
   const fake = await daemon();
   const lines: string[] = [];

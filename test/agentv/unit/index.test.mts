@@ -1,11 +1,12 @@
 // The signed app index and the installer (daemon/apps/index.ts, install.ts):
-// a sample app installs from a signed test index, and a tampered index is
-// refused (S2.1). The index here is signed by a throwaway key made for the
+// a sample app installs from a signed test index, from a repo of its own or
+// its folder in a repo of several (ADR-036), and a tampered index is refused
+// (S2.1). The index here is signed by a throwaway key made for the
 // test, which stands in for AgenTV's own.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -101,6 +102,7 @@ test("S2.1 a sample app installs from a signed test index", async () => {
   assert.ok(existsSync(join(dir, "agentv.sample", "manifest.json")));
   assert.ok(existsSync(join(dir, "agentv.sample", "app.ts")));
   assert.ok(!existsSync(join(dir, "agentv.sample", ".git")), "the app's folder has no git history");
+  assert.ok(!existsSync(join(dir, "agentv.sample", "fixtures")), "its fixtures stay out, since they're for its tests");
   const record = await readInstalled(dir);
   assert.equal(record["agentv.sample"].commit, first);
   assert.deepEqual(readdirSync(dir).sort(), ["agentv.sample", "installed.json"]);
@@ -184,6 +186,44 @@ test("an app can be removed", async () => {
   await refused(removeApp("../etc", dir), /isn't an app id/);
 });
 
+// A repo of several apps, one folder each, the way agentv-apps is (ADR-036):
+// apps/sample, and apps/linked, a link to it.
+const several = join(scratch, "several");
+let severalCommit = "";
+function severalRepo(): string {
+  if (severalCommit) return severalCommit;
+  mkdirSync(join(several, "apps"), { recursive: true });
+  cpSync(SAMPLE, join(several, "apps", "sample"), { recursive: true });
+  writeFileSync(join(several, "README.md"), "Apps\n");
+  symlinkSync("sample", join(several, "apps", "linked"));
+  sh("git", ["init", "--quiet"], several);
+  sh("git", ["add", "-A"], several);
+  sh("git", ["-c", "user.name=AgenTV", "-c", "user.email=test@agentv.invalid", "commit", "--quiet", "-m", "Apps"], several);
+  severalCommit = sh("git", ["rev-parse", "HEAD"], several).trim();
+  return severalCommit;
+}
+
+test("ADR-036 an app in a repo of several installs from its own folder, without its fixtures", async () => {
+  const dir = apps();
+  const at = severalRepo();
+  const installed = await installFromIndex("agentv.sample", index([sample(at, "1.0.0", { repo: `file://${several}`, path: "apps/sample" })]), dir, keyring);
+  assert.equal(installed.path, "apps/sample");
+  assert.deepEqual(readdirSync(join(dir, "agentv.sample")).sort(), ["app.ts", "icon.svg", "library.ts", "manifest.json"]);
+  assert.equal((await readInstalled(dir))["agentv.sample"].path, "apps/sample");
+});
+
+test("ADR-036 a folder the commit doesn't have isn't installed, and leaves nothing behind", async () => {
+  const dir = apps();
+  const source = index([sample(severalRepo(), "1.0.0", { repo: `file://${several}`, path: "apps/missing" })]);
+  await refused(installFromIndex("agentv.sample", source, dir, keyring), /has no folder apps\/missing/);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("ADR-036 a folder that's a link isn't followed", async () => {
+  const source = index([sample(severalRepo(), "1.0.0", { repo: `file://${several}`, path: "apps/linked" })]);
+  await refused(installFromIndex("agentv.sample", source, apps(), keyring), /has no folder apps\/linked/);
+});
+
 test("the index has to have the shape this box understands", () => {
   const entry = sample() as Record<string, unknown>;
   assert.throws(() => parseIndex("{"), /isn't valid JSON/);
@@ -193,6 +233,10 @@ test("the index has to have the shape this box understands", () => {
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, tier: "local" }] })), /no tier/);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [entry, entry] })), /twice/);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, id: "../x" }] })), /isn't valid/);
+  for (const path of ["../x", "apps/../x", "/apps/x", "apps//x", "apps/", ".", "apps/.x", 7]) {
+    assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, path }] })), /isn't a plain folder/, `path ${path}`);
+  }
+  assert.equal(parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, path: "apps/jellyfin" }] })).apps[0].path, "apps/jellyfin");
 });
 
 test("the index can come from an address", async () => {

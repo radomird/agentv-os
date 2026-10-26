@@ -50,3 +50,4 @@ S4.6  image     the user account can't read the stored key (layer 2 too; agentv 
 S4.7  check     a tile moved or resized in arrange home changes on the TV within 1 s (layer 4; the image layer moves one from a phone on the box's address)
 S4.8  check     the phone shows the same update notice as the TV, and Install tonight from the phone installs it overnight (layer 4)
 S4.9  manual    on an iPhone, the sign-in field offers AutoFill and signs in to a service on the TV; the web companion's fields do the same in a phone browser, with no password in AgenTV's logs (the image layer checks the web companion's fields and the logs)
+S4.10 check     when the TV asks for the PIN, a paired phone shows a pad within 1 s and the PIN typed there does what the TV asked; the remote follows the TV to the keyboard, playback and the d-pad, each press shows and clicks (and buzzes on Android), and quick taps never zoom (layers 2 and 4; real phones by hand)

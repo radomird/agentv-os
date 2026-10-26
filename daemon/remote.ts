@@ -9,6 +9,9 @@ import { join } from "node:path";
 
 export interface RemoteOptions {
   url: string; // the daemon's stream: http://127.0.0.1:3000/api/remote
+  // Who takes the stream: the screen daemon ("1"), or Omarchy's desktop
+  // ("desktop"), while it's on, for the phone's trackpad (ADR-037).
+  as?: "1" | "desktop";
   // Hands one request to the virtual input device: {"key": "up"}, {"text": ...}.
   send?: (request: Record<string, unknown>) => Promise<void>;
   // What the TV session does for a phone, past the PIN the daemon checked:
@@ -40,6 +43,7 @@ export function sendInput(request: Record<string, unknown>, socket = join(proces
 
 export class RemoteInput {
   private url: string;
+  private as: string;
   private send: (request: Record<string, unknown>) => Promise<void>;
   private command: (cmd: string) => Promise<void>;
   private log: (line: string) => void;
@@ -52,6 +56,7 @@ export class RemoteInput {
 
   constructor(options: RemoteOptions) {
     this.url = options.url;
+    this.as = options.as ?? "1";
     this.send = options.send ?? ((request) => sendInput(request));
     this.command = options.command ?? (async () => {});
     this.log = options.log ?? ((line) => console.log(line));
@@ -76,7 +81,7 @@ export class RemoteInput {
     while (!this.stopped) {
       this.abort = new AbortController();
       try {
-        const response = await fetch(this.url, { headers: { "X-AgenTV-Screen": "1" }, signal: this.abort.signal });
+        const response = await fetch(this.url, { headers: { "X-AgenTV-Screen": this.as }, signal: this.abort.signal });
         if (!response.ok || !response.body) throw new Error(`the daemon answered ${response.status}`);
         let buffer = "";
         const decoder = new TextDecoder();
