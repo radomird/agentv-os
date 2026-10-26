@@ -14,7 +14,7 @@
 // Which tier an app has comes from where it came from, recorded in
 // installed.json beside the apps, never from its manifest.
 
-import { chmod, cp, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lchown, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../../apps/contract/manifest.ts";
 import { IndexError, loadIndex, run, type IndexEntry } from "./index.ts";
@@ -129,13 +129,21 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
 
 // Every folder 755 and every file 644, whoever made them and however, so the
 // daemon, which runs as a user of its own, can read the app, and nothing in
-// it is a program.
-async function readable(dir: string): Promise<void> {
+// it is a program. Installed as root, all of it is root's too: a copy can
+// keep the owner of the folder it came from, and the person whose folder
+// that was mustn't be able to change the app on the box (ADR-011). Links
+// are left alone, and the package's checks refuse them after.
+async function readable(dir: string, root = process.getuid?.() === 0): Promise<void> {
+  if (root) await lchown(dir, 0, 0);
   await chmod(dir, 0o755);
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) await readable(path);
-    else if (entry.isFile()) await chmod(path, 0o644);
+    if (entry.isDirectory()) {
+      await readable(path, root);
+    } else if (entry.isFile()) {
+      if (root) await lchown(path, 0, 0);
+      await chmod(path, 0o644);
+    }
   }
 }
 
