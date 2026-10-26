@@ -29,6 +29,15 @@ export interface App {
   forChildren: boolean; // a child's profile can open it (ADR-009)
 }
 
+// An app's own setup, from its tile: its fields, such as a server's
+// address, and whether a sign-in comes after them.
+export interface AppSetup {
+  id: string;
+  name: string;
+  fields: { key: string; label: string; value: string; address: boolean }[];
+  signIn: boolean;
+}
+
 // Someone who watches (ADR-009): an avatar is a colour from the theme.
 export interface Viewer {
   id: string;
@@ -241,6 +250,8 @@ export const daemon = {
   saveKey: (provider: string, key: string, grant?: string) => call<KeyState>("PUT", "/api/key", { provider, key }, grant),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
+  appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
+  saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),
   // The adult PIN (ADR-009, S4.5).
   checkPin: (pin: string) => call<{ grant: string; until: string }>("POST", "/api/pin/check", { pin }),
   setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),

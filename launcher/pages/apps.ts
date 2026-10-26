@@ -17,6 +17,11 @@ function appTile(ctx: Ctx, app: App): HTMLElement {
       "data-id": app.id,
       "aria-label": app.name,
       onclick: async () => {
+        // Its setup first, when a field it needs isn't filled in.
+        if (app.needsSetup && app.tier !== "built-in") {
+          ctx.go(`app-setup/${app.id}`);
+          return;
+        }
         const reply = await screen.open(app.id);
         if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
       },

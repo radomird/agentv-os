@@ -267,9 +267,15 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
               openBuiltin(ctx, app);
               return;
             }
+            // A field it needs isn't filled in, such as its server's
+            // address: its setup page first, and the sign-in after.
+            if (app.needsSetup) {
+              ctx.go(`app-setup/${app.id}`);
+              return;
+            }
             // Its service wants a sign-in: AgenTV's sign-in screen, over the
             // service's own page (ADR-032, board 15).
-            if (app.signIn === "needed" && !app.needsSetup) {
+            if (app.signIn === "needed") {
               const reply = await screen.signIn(app.id);
               if (!reply.ok) ctx.toast(reply.error ?? `${app.name} can't sign in from here`, "fail");
               return;

@@ -10,6 +10,7 @@ import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
+import { appSetup } from "./pages/app-setup.ts";
 import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
@@ -278,6 +279,7 @@ function viewFor(route: string): View {
   const [name, arg] = route.split("/");
   if (name === "apps") return apps(ctx);
   if (name === "details") return details(ctx, arg);
+  if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
   if (name === "whats-new") return whatsNew(ctx);
   if (name === "update-off") return checkView(ctx);
