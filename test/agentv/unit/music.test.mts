@@ -1,19 +1,22 @@
 // The built-in Music app's side in the TV session (daemon/music.ts,
 // daemon/storage.ts): the library read from the fixture folder with ffprobe
 // (tags in every format, cover art in a file and embedded, a playlist),
-// search, the sources (USB drives through udisks2, shares through gvfs, a
-// password never kept), the player against a stand-in for mpv's IPC, and an
-// album from a USB stick and one from a share, each found by name (S3.6).
+// search, a scan in the background with progress, a few files at a time and
+// saved as it goes, albums kept while their share is away, the sources (USB
+// drives through udisks2, shares through gvfs, and an SMB share with a
+// password handed to root, ADR-038), the player against a stand-in for
+// mpv's IPC, and an album from a USB stick and one from a share, each found
+// by name (S3.6).
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { MusicApp, MusicLibrary, MusicPlayer, connectMpv, tagsOf, words, type Track } from "../../../daemon/music.ts";
-import { Storage, shareProblem, run as realRun, type Run, type Source } from "../../../daemon/storage.ts";
+import { Storage, gioProblem, rootShare, shareProblem, run as realRun, type Run, type Source } from "../../../daemon/storage.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const FIXTURES = join(ROOT, "test/agentv/fixtures/music");
@@ -93,6 +96,99 @@ test("a scan again reads only what changed, and what's gone goes", needsFfmpeg, 
   assert.deepEqual(Object.values(again.tracks).map((track) => track.title).sort(), ["A", "C", "Dusk", "E", "Midnight"]);
 });
 
+test("a scan says how far it's got, reads a few files at a time, and saves what it has as it goes", needsFfmpeg, async () => {
+  const dir = join(scratch, "library-progress");
+  let active = 0;
+  let most = 0;
+  let probes = 0;
+  let partway = -1;
+  const slow: Run = async (command, args, input) => {
+    if (command !== "ffprobe") return realRun(command, args, input);
+    probes++;
+    // By the last file, what was read so far is in the library already.
+    if (probes === 6) {
+      for (let tries = 0; tries < 50 && !existsSync(join(dir, "library.json")); tries++) await new Promise((done) => setTimeout(done, 20));
+      partway = Object.keys(JSON.parse(readFileSync(join(dir, "library.json"), "utf8")).tracks).length;
+    }
+    active++;
+    most = Math.max(most, active);
+    await new Promise((done) => setTimeout(done, 30));
+    try {
+      return await realRun(command, args, input);
+    } finally {
+      active--;
+    }
+  };
+  const steps: { source: string; found: number; read: number; albums: number }[] = [];
+  const library = new MusicLibrary({ dir, run: slow });
+  await library.scan([folder(FIXTURES, "share", "nas/music")], { progress: (step) => void steps.push({ ...step }), saveEvery: 0 });
+  assert.ok(most > 1 && most <= 4, `${most} files read at once`);
+  assert.ok(partway >= 1 && partway < 6, `${partway} tracks saved partway`);
+  assert.deepEqual(steps.at(-1), { source: "nas/music", found: 6, read: 6, albums: 2 });
+  assert.ok(steps.every((step, at) => at === 0 || step.read >= steps[at - 1].read), "what's read only goes up");
+});
+
+test("albums on a share that's away stay, marked away, aren't read again, and can't play until it's back", needsFfmpeg, async () => {
+  const nas = join(scratch, "away-nas");
+  cpSync(FIXTURES, nas, { recursive: true });
+  const share = folder(nas, "share", "nas/music");
+  let probes = 0;
+  const counting: Run = (command, args, input) => {
+    if (command === "ffprobe") probes++;
+    return realRun(command, args, input);
+  };
+  const library = new MusicLibrary({ dir: join(scratch, "library-away"), run: counting });
+  await library.scan([share]);
+  probes = 0;
+  const away = await library.scan([], { away: [{ ...share.source, available: false, path: null }] });
+  assert.equal(probes, 0, "nothing on a share that's away is read");
+  assert.deepEqual(Object.values(away.albums).map((album) => [album.title, album.away]).sort(), [["Night Shift", true], ["Test Tones", true]]);
+  assert.equal(Object.keys(away.tracks).length, 6);
+  assert.equal(Object.keys(away.playlists).length, 1, "its playlist stays too");
+  assert.equal((await library.search("night shift"))[0].away, true);
+
+  const sources = [{ ...share.source, available: false, path: null }];
+  const storage = { sources: async () => sources, paths: async () => [], mountShare: async () => { throw new Error("the NAS at nas didn't answer"); } } as unknown as Storage;
+  const player = { play: async () => assert.fail("nothing away plays"), now: async () => null, close() {} } as unknown as MusicPlayer;
+  const app = new MusicApp({ storage, library, player });
+  assert.deepEqual(await app.handle({ op: "play", q: "night shift" }), { ok: false, error: "Night Shift is on a share that isn't there right now" });
+  app.stop();
+
+  // Back: it can play, and what was read of it before still holds.
+  const back = await library.scan([share]);
+  assert.equal(probes, 0, "it isn't read from scratch when it's back");
+  assert.ok(Object.values(back.albums).every((album) => !album.away));
+});
+
+test("a scan runs in the background, and its progress follows it to the end", needsFfmpeg, async () => {
+  const sources = [folder(FIXTURES)];
+  const storage = { sources: async () => sources.map((s) => s.source), paths: async () => sources } as unknown as Storage;
+  const player = { now: async () => null, close() {} } as unknown as MusicPlayer;
+  const app = new MusicApp({ storage, library: new MusicLibrary({ dir: join(scratch, "library-background") }), player });
+  const started = (await app.handle({ op: "scan" })) as { ok: boolean; progress: { scanning: boolean } };
+  assert.deepEqual([started.ok, started.progress.scanning], [true, true]);
+  let progress: { scanning: boolean; read: number; found: number; albums: number; finishedAt: string | null; error?: string } | undefined;
+  for (let tries = 0; tries < 200; tries++) {
+    progress = ((await app.handle({ op: "progress" })) as { progress: typeof progress }).progress;
+    if (!progress?.scanning) break;
+    await new Promise((done) => setTimeout(done, 50));
+  }
+  assert.deepEqual([progress?.scanning, progress?.found, progress?.read, progress?.albums, progress?.error], [false, 6, 6, 2, undefined]);
+  assert.ok(progress?.finishedAt);
+  assert.equal(((await app.handle({ op: "sources" })) as { progress: { albums: number } }).progress.albums, 2);
+
+  // A scan that fails says why.
+  const broken = new MusicApp({
+    storage: { sources: async () => [], paths: async () => { throw new Error("the folder went away"); } } as unknown as Storage,
+    library: new MusicLibrary({ dir: join(scratch, "library-broken") }),
+    player,
+  });
+  await assert.rejects(broken.scan(), /the folder went away/);
+  assert.deepEqual([broken.progress().scanning, broken.progress().error], [false, "the folder went away"]);
+  app.stop();
+  broken.stop();
+});
+
 // --- Sources ------------------------------------------------------------------
 
 // lsblk, udisksctl and gio as they answer on a box with a USB stick and a
@@ -141,17 +237,124 @@ test("USB sticks come from lsblk and mount through udisks2; shares mount through
   assert.deepEqual(log.find((call) => call.command === "udisksctl")?.args, ["mount", "--no-user-interaction", "-b", "/dev/sda1"]);
   await assert.rejects(storage.mountUsb("/dev/nvme0n1p2"), /isn't a USB drive/);
 
-  const share = await storage.addShare("smb://radomir@nas/music", "hunter2");
+  // A share with no user mounts through gvfs, as a guest.
+  const share = await storage.addShare("smb://nas/music");
   assert.equal(share.path, "/run/user/1000/gvfs/smb-share:server=nas,share=music");
   const mount = log.find((call) => call.command === "gio" && call.args[0] === "mount")!;
-  assert.deepEqual(mount.args, ["mount", "smb://radomir@nas/music"]);
-  // The password goes to gio on stdin, and nowhere else.
-  assert.equal(mount.input, "\nhunter2\n");
-  assert.ok(!readFileSync(join(scratch, "storage.json"), "utf8").includes("hunter2"));
-  assert.deepEqual(JSON.parse(readFileSync(join(scratch, "storage.json"), "utf8")).shares, ["smb://radomir@nas/music"]);
+  assert.deepEqual(mount.args, ["mount", "--anonymous", "smb://nas/music"]);
+  assert.deepEqual(JSON.parse(readFileSync(join(scratch, "storage.json"), "utf8")).shares, ["smb://nas/music"]);
   assert.deepEqual((await storage.paths()).map((p) => p.source.kind), ["folder", "usb", "share"]);
-  assert.equal(await storage.remove("share:smb://radomir@nas/music"), true);
+  assert.equal(await storage.remove("share:smb://nas/music"), true);
   assert.equal(await storage.remove("share:smb://nas/other"), false);
+});
+
+test("a guest share gvfs can't mount says it wants a user name and password", async () => {
+  const storage = new Storage({
+    home: join(scratch, "home"),
+    config: join(scratch, "storage-guest.json"),
+    run: async (command, args) => {
+      if (command === "gio" && args[0] === "info") throw new Error("The specified location is not mounted");
+      throw new Error("Command failed: gio mount --anonymous smb://nas/private");
+    },
+  });
+  await assert.rejects(storage.addShare("smb://nas/private"), /nas\/private wants a user name and password\. add it as smb:\/\/you@nas\/private/);
+  assert.equal(gioProblem("smb://nas/music", "gio: smb://nas/music: Connection refused"), "gio: smb://nas/music: Connection refused");
+});
+
+// agentv-share-store as root answers a request in the drop folder: it writes
+// shares.json, with no password in it, and "mounts" the share at a folder.
+function fakeRoot(drop: string, status: string, mounted: Set<string>, answer: (request: { op: string; uri: string; password?: string }) => { mounted: boolean; error?: string } | null) {
+  const seen: { op: string; uri: string; password?: string; mode: number }[] = [];
+  const timer = setInterval(() => {
+    for (const name of readdirSync(drop).filter((file) => file.endsWith(".json"))) {
+      const file = join(drop, name);
+      const request = JSON.parse(readFileSync(file, "utf8"));
+      seen.push({ ...request, mode: statSync(file).mode & 0o777 });
+      rmSync(file);
+      const shares = existsSync(status) ? JSON.parse(readFileSync(status, "utf8")).shares : {};
+      const id = Buffer.from(request.uri).toString("hex").slice(-12);
+      const path = join(drop, "..", "mnt", id);
+      const said = answer(request);
+      if (said === null) delete shares[id];
+      else {
+        shares[id] = { uri: request.uri, path, mounted: said.mounted, at: new Date().toISOString(), ...(said.error ? { error: said.error } : {}) };
+        if (said.mounted) mounted.add(path);
+      }
+      writeFileSync(status, JSON.stringify({ shares }));
+    }
+  }, 20);
+  return { seen, stop: () => clearInterval(timer) };
+}
+
+test("ADR-038 an SMB share with a user name goes to root with its password, and comes back from root's mount", async () => {
+  const dir = join(scratch, "root-shares");
+  const drop = join(dir, "drop");
+  const status = join(dir, "shares.json");
+  mkdirSync(drop, { recursive: true });
+  const mounted = new Set<string>();
+  let nas = { mounted: true } as { mounted: boolean; error?: string };
+  const root = fakeRoot(drop, status, mounted, (request) => (request.op === "remove" ? null : nas));
+  const gio: string[] = [];
+  const storage = new Storage({
+    home: join(dir, "home"),
+    config: join(dir, "storage.json"),
+    drop,
+    status,
+    mounted: async () => mounted,
+    run: async (command, args) => {
+      if (command === "lsblk") return JSON.stringify({ blockdevices: [] });
+      gio.push(`${command} ${args.join(" ")}`);
+      throw new Error("not here");
+    },
+  });
+  assert.equal(rootShare("smb://radomir@nas/music"), true);
+  assert.equal(rootShare("smb://nas/music"), false);
+  assert.equal(rootShare("nfs://nas/export/music"), false);
+  try {
+    await assert.rejects(storage.addShare("smb://radomir@nas/music"), /needs its password/);
+    await assert.rejects(storage.addShare("smb://radomir@nas/music", "two\nlines"), /line break/);
+    const share = await storage.addShare("smb://radomir@nas/music", "hunter2");
+    assert.equal(share.available, true);
+    assert.ok(share.path?.startsWith(join(dir, "mnt")));
+    // The password went to root in a file only its writer can read, and
+    // nothing here has it; gvfs wasn't asked.
+    assert.deepEqual(root.seen.map((r) => [r.op, r.uri, r.password, r.mode.toString(8)]), [["add", "smb://radomir@nas/music", "hunter2", "600"]]);
+    assert.ok(!readFileSync(join(dir, "storage.json"), "utf8").includes("hunter2"));
+    assert.ok(!readFileSync(status, "utf8").includes("hunter2"));
+    assert.deepEqual(gio, []);
+    assert.deepEqual((await storage.sources()).map((s) => [s.id, s.available, s.error]), [["share:smb://radomir@nas/music", true, undefined]]);
+
+    // After a restart, root's word is from before and nothing's mounted:
+    // it's away, and asking root mounts it again with no password.
+    mounted.clear();
+    assert.deepEqual((await storage.sources()).map((s) => [s.available, s.path]), [[false, null]]);
+    assert.ok((await storage.mountShare("smb://radomir@nas/music")).startsWith(join(dir, "mnt")));
+    assert.deepEqual(root.seen.at(-1), { op: "mount", uri: "smb://radomir@nas/music", mode: 0o600 });
+
+    // A password the NAS turns down: root's words, and it isn't saved.
+    nas = { mounted: false, error: "the NAS didn't take that user name and password" };
+    await assert.rejects(storage.addShare("smb://radomir@nas/films", "wrong"), /the NAS didn't take that user name and password/);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "storage.json"), "utf8")).shares, ["smb://radomir@nas/music"]);
+    mounted.clear();
+    nas = { mounted: false, error: "the NAS at nas didn't answer" };
+    await assert.rejects(storage.mountShare("smb://radomir@nas/music"), /the NAS at nas didn't answer/);
+    assert.deepEqual((await storage.sources()).map((s) => [s.available, s.error]), [[false, "the NAS at nas didn't answer"]]);
+
+    // Forgetting it asks root to take the password and the mount too.
+    assert.equal(await storage.remove("share:smb://radomir@nas/music"), true);
+    assert.equal(root.seen.at(-1)?.op, "remove");
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "storage.json"), "utf8")).shares, []);
+  } finally {
+    root.stop();
+  }
+});
+
+test("a share root has no word on yet needs its password again", async () => {
+  const dir = join(scratch, "root-none");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "storage.json"), JSON.stringify({ folders: [], shares: ["smb://radomir@nas/music"] }));
+  const storage = new Storage({ config: join(dir, "storage.json"), status: join(dir, "nothing.json"), mounted: async () => new Set(), run: async () => JSON.stringify({ blockdevices: [] }) });
+  assert.deepEqual((await storage.sources()).map((s) => [s.available, s.error]), [[false, "it needs its password again"]]);
 });
 
 test("a share's address is smb:// or nfs://, names its share, and holds no password", () => {
@@ -161,6 +364,7 @@ test("a share's address is smb:// or nfs://, names its share, and holds no passw
   assert.match(shareProblem("ftp://nas/music") ?? "", /smb:\/\/ or nfs:\/\//);
   assert.match(shareProblem("smb://nas") ?? "", /names the share/);
   assert.match(shareProblem("nas/music") ?? "", /looks like/);
+  assert.match(shareProblem("smb://nas/music\nevil") ?? "", /can't have that/);
 });
 
 // --- The player ------------------------------------------------------------------
@@ -273,7 +477,7 @@ test("S3.6 an album on a USB stick and one on a NAS share each play, and 'play <
   const player = { play: async (queue: Track[]) => void played.push(queue), now: async () => null, close() {} } as unknown as MusicPlayer;
   const recorded: unknown[] = [];
   const app = new MusicApp({ storage, library, player, record: async (state) => void recorded.push(state) });
-  assert.deepEqual(await app.handle({ op: "scan" }), { ok: true, albums: 2, tracks: 6 });
+  assert.deepEqual(await app.handle({ op: "scan", wait: true }), { ok: true, albums: 2, tracks: 6 });
 
   for (const [query, root, title] of [["test tones", stick, "Test Tones"], ["night shift", nas, "Night Shift"]] as const) {
     const reply = (await app.handle({ op: "play", q: query })) as { ok: boolean; playing: { kind: string; title: string; tracks: number } };

@@ -40,7 +40,7 @@ The AgenTV wordmark is drawn in the letterforms of Omarchy's logo, as a thank-yo
 | --- | --- |
 | `agentv-os` (this one) | The TV OS: Omarchy plus AgenTV's TV session, the daemon, the launcher, setup, the builder and the app contract |
 | [`agentv-iso`](https://github.com/radomird/agentv-iso) | The installer ISO, a fork of `omacom/omarchy-iso` that installs `agentv-os` |
-| `agentv-index` | The signed index of apps (coming soon) |
-| `agentv-app-*` | Official apps: Jellyfin, Plex, Immich, Steam (coming soon) |
+| [`agentv-pkgs`](https://github.com/radomird/agentv-pkgs) | The `agentv` and `agentv-keyring` packages, and the signed repository a box updates from |
+| [`agentv-apps`](https://github.com/radomird/agentv-apps) | The official apps, one folder each, and the signed index a box installs them from: Jellyfin and Immich, with Plex and Steam coming soon |
 | `agentv-plugin` | An Omarchy shell plugin with a "Back to TV" button for the desktop (coming soon) |
 | `agentv-companion` | The phone app: remote, keyboard and microphone (coming soon) |

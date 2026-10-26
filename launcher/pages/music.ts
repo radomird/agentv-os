@@ -15,6 +15,7 @@ interface AlbumInfo {
   artist: string;
   year: string;
   cover: boolean | string | null; // a list says whether there is one; an album, its file
+  away?: boolean; // on a share or folder that isn't there now
   tracks: string[];
 }
 
@@ -47,6 +48,29 @@ interface SourceInfo {
   kind: "folder" | "usb" | "share";
   name: string;
   available: boolean;
+  error?: string;
+}
+
+interface Progress {
+  scanning: boolean;
+  source: string | null;
+  found: number;
+  read: number;
+  albums: number;
+  finishedAt: string | null;
+  error?: string;
+}
+
+// How far reading the music has got, in a line.
+function progressLine(progress: Progress | undefined): string {
+  if (!progress) return "";
+  const count = (n: number) => n.toLocaleString("en-GB");
+  if (progress.scanning) {
+    const where = progress.source ? `reading ${progress.source.toLowerCase()}` : "finding the music";
+    return `${where} · ${count(progress.read)} of ${count(progress.found)} files · ${count(progress.albums)} albums so far`;
+  }
+  if (progress.error) return `reading stopped: ${progress.error.toLowerCase()}`;
+  return progress.finishedAt ? `read ${count(progress.read)} files · ${count(progress.albums)} albums` : "";
 }
 
 const covers = new Map<string, string | null>();
@@ -106,13 +130,14 @@ function nowPlaying(): HTMLElement {
   return el;
 }
 
+// An album on a share that's away stays, dimmed, and says so.
 function albumTile(ctx: Ctx, album: AlbumInfo): HTMLElement {
   return h(
     "button",
-    { class: "tile size-s album-tile", "data-focus": true, "data-album": album.id, "aria-label": album.title, onclick: () => ctx.go(`music/${album.id}`) },
+    { class: `tile size-s album-tile${album.away ? " away" : ""}`, "data-focus": true, "data-album": album.id, "aria-label": album.title, onclick: () => ctx.go(`music/${album.id}`) },
     cover(album.id, album.title, Boolean(album.cover)),
     h("span", { class: "album-title" }, album.title.toLowerCase()),
-    h("span", { class: "album-artist" }, album.artist.toLowerCase()),
+    h("span", { class: "album-artist" }, album.away ? `away · ${album.artist.toLowerCase()}` : album.artist.toLowerCase()),
   );
 }
 
@@ -258,10 +283,13 @@ function albumPage(ctx: Ctx, id: string): View {
 // and reading them all again.
 function sources(ctx: Ctx): View {
   const list = h("div", { class: "sources" }, h("div", { class: "empty" }, "…"));
+  const progress = h("div", { class: "scan-progress" }, "");
   const address = h("input", { class: "music-search", "data-focus": true, type: "text", placeholder: "smb://nas/music or smb://you@nas/music", "aria-label": "a share's address", autocomplete: "off" }) as HTMLInputElement;
-  // Only for a share with a user name in its address. It goes to the mount
-  // once and isn't kept (ADR-032).
+  // Only for a share with a user name in its address. The box keeps it where
+  // only root can read it, mounts the share with it after every restart, and
+  // never shows it again (ADR-038).
   const password = h("input", { class: "music-search", "data-focus": true, type: "password", placeholder: "its password, if it has a user name", "aria-label": "the share's password", autocomplete: "off" }) as HTMLInputElement;
+  const hint = h("div", { class: "hint" }, "the box keeps the password, so a nas account that can only read is best");
   const add = h(
     "button",
     {
@@ -273,6 +301,7 @@ function sources(ctx: Ctx): View {
         // has mounted.
         const secret = password.value;
         password.value = "";
+        ctx.toast("mounting the share");
         const reply = await screen.music("add-share", { uri: address.value.trim(), ...(secret ? { password: secret } : {}) });
         if (reply.ok) {
           ctx.sounds.play("confirm");
@@ -292,9 +321,9 @@ function sources(ctx: Ctx): View {
       "data-focus": true,
       "data-action": "scan",
       onclick: async () => {
-        ctx.toast("reading the music again");
         const reply = await screen.music("scan", {});
-        ctx.toast(reply.ok ? `${reply.albums} albums, ${reply.tracks} tracks` : (reply.error ?? "that didn't work"), reply.ok ? "ok" : "fail");
+        if (!reply.ok) ctx.toast(reply.error ?? "that didn't work", "fail");
+        progress.textContent = progressLine(reply.progress as Progress | undefined);
       },
     },
     "read them all again",
@@ -302,11 +331,26 @@ function sources(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page music" }, ...heading("music sources", "sources."), list, h("div", { class: "section" }, "# a nas share"), address, password, add, scan),
+    h(
+      "div",
+      { class: "page music" },
+      ...heading("music sources", "sources."),
+      list,
+      progress,
+      h("div", { class: "section" }, "# a nas share"),
+      h("div", { class: "share-form" }, address, password),
+      hint,
+      h("div", { class: "share-actions" }, add, scan),
+    ),
     bar(ctx, "music", "usb drives show up when they're plugged in"),
   );
-  void screen.music("sources", {}).then((reply) => {
+  // The sources, and how far reading them has got, every 2 s while it reads.
+  let wasScanning = false;
+  const draw = async () => {
+    const reply = await screen.music("sources", {});
     const found = (reply.sources as SourceInfo[] | undefined) ?? [];
+    const now = reply.progress as Progress | undefined;
+    progress.textContent = progressLine(now);
     list.replaceChildren(
       ...(found.length
         ? found.map((source) =>
@@ -314,11 +358,23 @@ function sources(ctx: Ctx): View {
               "div",
               { class: "source" },
               h("span", {}, `${source.kind === "usb" ? "usb" : source.kind} · ${source.name}`),
-              h("span", { class: "button-value" }, source.available ? "ready" : source.kind === "usb" ? "plugged in" : "not there"),
+              source.available || source.kind === "usb"
+                ? h("span", { class: "button-value" }, source.available ? "ready" : "plugged in")
+                : h("span", { class: `button-value ${source.error ? "problem" : "away"}` }, (source.error ?? "away").toLowerCase()),
             ),
           )
         : [h("div", { class: "empty" }, reply.ok ? "no folders, drives or shares yet" : "music plays on the TV")]),
     );
+    wasScanning = Boolean(now?.scanning);
+  };
+  const timer = setInterval(() => {
+    if (!el.isConnected) clearInterval(timer);
+    else if (wasScanning) void draw();
+  }, 2000);
+  // A scan started from here starts the polling too.
+  scan.addEventListener("click", () => {
+    wasScanning = true;
   });
+  void draw();
   return { el, first: address };
 }

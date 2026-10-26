@@ -1,0 +1,259 @@
+#!/bin/bash
+
+# agentv:summary=Keep the passwords of Music's NAS shares where only root can read them, and mount the shares
+# agentv:hidden=true
+# agentv:requires-sudo=true
+# agentv:args=[mount-all]
+
+# A NAS share with a password (ADR-038). Music, in the TV session, leaves a
+# request in /var/lib/agentv/share-drop, where anyone can add a file but only
+# root can read one, and agentv-share.path starts this as root:
+#
+#   add     keeps the share's user name and password in /etc/agentv/shares/
+#           (root's alone, 0600) and mounts the share read-only
+#   mount   mounts a share it already has the password for
+#   remove  unmounts it and forgets its password
+#
+# With mount-all, as the box starts (agentv-shares.service), it mounts every
+# share it has a password for. Each share mounts at /mnt/agentv/<id>, owned
+# by the person who added it, so Music reads the files and never sees the
+# password. /etc/agentv/shares.json says what happened to each, for Music,
+# with no password in it.
+#
+# Only SMB shares with a user name come here. NFS shares, and SMB shares with
+# no user, mount through gvfs in the TV session, as before.
+
+set -euo pipefail
+
+AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
+DROP=${AGENTV_SHARE_DROP:-/var/lib/agentv/share-drop}
+WORK=${AGENTV_SHARE_WORK:-/var/lib/agentv/share-work}
+MOUNTS=${AGENTV_SHARE_MOUNTS:-/mnt/agentv}
+CREDS=$AGENTV_ETC/shares
+STATUS=$AGENTV_ETC/shares.json
+# How many times mount-all tries a share, and how long between, for a NAS
+# or a Wi-Fi that's slower to come up than the box.
+TRIES=${AGENTV_SHARE_TRIES:-6}
+PAUSE=${AGENTV_SHARE_PAUSE:-5}
+
+say() {
+  echo "agentv-share-store: $*"
+}
+
+now() {
+  date -u +%Y-%m-%dT%H:%M:%S.%3NZ
+}
+
+# A share's id: the start of its address's SHA-1.
+id_of() {
+  printf '%s' "$1" | sha1sum | cut -c1-12
+}
+
+# %XX escapes in a user name or a path, as an address can have them.
+unescape() {
+  printf '%b' "${1//%/\\x}"
+}
+
+# Splits an address into domain, user, host, port and path, or fails. Only
+# SMB with a user name (and a domain before a ;, if it has one), a plain host
+# name or address, and a path, with no control characters or backslashes
+# anywhere, before or after their %XX escapes.
+parse() {
+  local uri=$1 who
+  [[ $uri =~ ^smb://([^@/:\\]+)@([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:([0-9]{1,5}))?(/[^[:cntrl:]\\]+)$ ]] || return 1
+  who=$(unescape "${BASH_REMATCH[1]}")
+  host=${BASH_REMATCH[2]}
+  port=${BASH_REMATCH[4]}
+  path=$(unescape "${BASH_REMATCH[5]}")
+  path=${path%/}
+  domain=""
+  user=$who
+  if [[ $who == *";"* ]]; then
+    domain=${who%%;*}
+    user=${who#*;}
+  fi
+  [[ -n $user && -n $path && $path != "/" && "$path/" != */../* && ! $who =~ [[:cntrl:]\\] && ! $path =~ [[:cntrl:]\\] ]]
+}
+
+# Sets one share's entry in shares.json (null removes it).
+status() {
+  local id=$1 entry=$2 next="$AGENTV_ETC/.shares.json.next"
+  install -d -m 755 "$AGENTV_ETC"
+  { cat "$STATUS" 2>/dev/null || echo '{}'; } |
+    jq --arg id "$id" --argjson entry "$entry" --arg at "$(now)" \
+      '(if type == "object" then . else {} end) | .shares = ((.shares // {}) | if $entry == null then del(.[$id]) else .[$id] = $entry end) | .at = $at' >"$next"
+  chmod 644 "$next"
+  mv -f "$next" "$STATUS"
+}
+
+# What shares.json has for a share, or nothing.
+entry_of() {
+  jq -c --arg id "$1" '.shares[$id] // empty' "$STATUS" 2>/dev/null || true
+}
+
+# The words for what mount.cifs said.
+problem() {
+  local said=$1 host=$2 path=$3
+  case "$said" in
+    *"error(13)"* | *"Permission denied"*) echo "the NAS didn't take that user name and password" ;;
+    *"error(2)"* | *"No such file or directory"*) echo "the NAS at $host has no share at $path" ;;
+    *"error(112)"* | *"error(113)"* | *"error(111)"* | *"error(101)"* | *"could not resolve"* | *"Unable to find suitable address"* | *"timed out"*)
+      echo "the NAS at $host didn't answer" ;;
+    *"error(95)"* | *"Operation not supported"*) echo "the NAS and the box couldn't agree on a version of SMB" ;;
+    *) echo "the share didn't mount: $(tail -n 1 <<<"$said")" ;;
+  esac
+}
+
+# Mounts one share it has the password for, and says how it went.
+mount_one() {
+  local id=$1 uri=$2 owner=$3 point="$MOUNTS/$1" group said options
+  local domain user host port path
+  parse "$uri" || return 1
+  group=$(getent passwd "$owner" | cut -d: -f4)
+  [[ -n $group ]] || group=$owner
+  install -d -m 755 "$MOUNTS"
+  install -d -m 755 "$point"
+  if mountpoint -q "$point"; then
+    status "$id" "$(jq -cn --arg uri "$uri" --arg path "$point" --argjson owner "$owner" --arg at "$(now)" '{uri: $uri, path: $path, owner: $owner, mounted: true, at: $at}')"
+    return 0
+  fi
+  # Read-only, the files the owner's, and nothing on it runs.
+  options="ro,credentials=$CREDS/$id.cred,uid=$owner,gid=$group,forceuid,forcegid,file_mode=0444,dir_mode=0555,nosuid,nodev,noexec,iocharset=utf8${port:+,port=$port}"
+  if said=$(timeout 40 mount -t cifs "//$host$path" "$point" -o "$options" 2>&1); then
+    status "$id" "$(jq -cn --arg uri "$uri" --arg path "$point" --argjson owner "$owner" --arg at "$(now)" '{uri: $uri, path: $path, owner: $owner, mounted: true, at: $at}')"
+    say "mounted $host$path at $point"
+    return 0
+  fi
+  status "$id" "$(jq -cn --arg uri "$uri" --arg path "$point" --argjson owner "$owner" --arg error "$(problem "$said" "$host" "$path")" --arg at "$(now)" \
+    '{uri: $uri, path: $path, owner: $owner, mounted: false, error: $error, at: $at}')"
+  say "$host$path didn't mount: $said"
+  return 1
+}
+
+add() {
+  local uri=$1 password=$2 owner=$3 id domain user host port path
+  id=$(id_of "$uri")
+  if ! parse "$uri"; then
+    status "$id" "$(jq -cn --arg uri "$uri" --arg at "$(now)" '{uri: $uri, path: "", mounted: false, error: "that share address won'"'"'t do here", at: $at}')"
+    return 0
+  fi
+  if [[ -z $password || $password == *$'\n'* || ${#password} -gt 256 ]]; then
+    status "$id" "$(jq -cn --arg uri "$uri" --arg at "$(now)" '{uri: $uri, path: "", mounted: false, error: "that password won'"'"'t do", at: $at}')"
+    return 0
+  fi
+  # Someone else's share stays theirs.
+  local had
+  had=$(entry_of "$id")
+  if [[ -n $had && $(jq -r '.owner // empty' <<<"$had") != "" && $(jq -r '.owner' <<<"$had") != "$owner" ]]; then
+    say "a share is already kept for someone else; nothing changed"
+    return 0
+  fi
+  install -d -m 700 "$CREDS"
+  ( umask 077
+    {
+      printf 'username=%s\n' "$user"
+      printf 'password=%s\n' "$password"
+      if [[ -n $domain ]]; then printf 'domain=%s\n' "$domain"; fi
+    } >"$CREDS/.$id.next"
+  )
+  # A share that's mounted already, from before, mounts again with these.
+  if mountpoint -q "$MOUNTS/$id"; then
+    umount "$MOUNTS/$id" 2>/dev/null || umount -l "$MOUNTS/$id"
+  fi
+  mv -f "$CREDS/.$id.next" "$CREDS/$id.cred"
+  if ! mount_one "$id" "$uri" "$owner"; then
+    # A share that didn't mount isn't kept, so a typo doesn't stay. What
+    # went wrong does, for Music to say.
+    rm -f "$CREDS/$id.cred"
+    rmdir "$MOUNTS/$id" 2>/dev/null || true
+  fi
+}
+
+remount() {
+  local uri=$1 owner=$2 id had
+  id=$(id_of "$uri")
+  had=$(entry_of "$id")
+  if [[ ! -f $CREDS/$id.cred ]]; then
+    status "$id" "$(jq -cn --arg uri "$uri" --argjson owner "$owner" --arg at "$(now)" '{uri: $uri, path: "", owner: $owner, mounted: false, error: "it needs its password again", at: $at}')"
+    return 0
+  fi
+  [[ $(jq -r '.owner // empty' <<<"$had") == "$owner" ]] || return 0
+  mount_one "$id" "$uri" "$owner" || true
+}
+
+forget() {
+  local uri=$1 owner=$2 id had
+  id=$(id_of "$uri")
+  had=$(entry_of "$id")
+  [[ -z $had || $(jq -r '.owner // empty' <<<"$had") == "" || $(jq -r '.owner' <<<"$had") == "$owner" ]] || return 0
+  if mountpoint -q "$MOUNTS/$id"; then
+    umount "$MOUNTS/$id" 2>/dev/null || umount -l "$MOUNTS/$id"
+  fi
+  rmdir "$MOUNTS/$id" 2>/dev/null || true
+  rm -f "$CREDS/$id.cred"
+  status "$id" null
+  say "forgot a share and its password"
+}
+
+# Every request the TV session dropped. Each is moved somewhere only root
+# can reach before it's read, so it can't be swapped for a link meanwhile,
+# and only a plain file of an ordinary user's counts.
+handle_drop() {
+  local file name work owner op uri password
+  install -d -m 700 "$WORK"
+  shopt -s nullglob
+  for file in "$DROP"/*.json; do
+    name=${file##*/}
+    work="$WORK/$name"
+    mv -f -- "$file" "$work" 2>/dev/null || continue
+    if [[ -L $work || ! -f $work ]] || (( $(stat -c %h -- "$work") != 1 )); then
+      rm -rf -- "$work"
+      continue
+    fi
+    owner=$(stat -c %u -- "$work")
+    if (( owner < 1000 || owner >= 60000 )); then
+      rm -f -- "$work"
+      continue
+    fi
+    op=$(jq -r 'if type == "object" then (.op // "") else "" end' "$work" 2>/dev/null || true)
+    uri=$(jq -r 'if type == "object" then (.uri // "") else "" end' "$work" 2>/dev/null || true)
+    password=$(jq -r 'if type == "object" then (.password // "") else "" end' "$work" 2>/dev/null || true)
+    rm -f -- "$work"
+    case "$op" in
+      add) add "$uri" "$password" "$owner" ;;
+      mount) remount "$uri" "$owner" ;;
+      remove) forget "$uri" "$owner" ;;
+      *) say "a request it doesn't know; nothing changed" ;;
+    esac
+    unset password
+  done
+}
+
+# As the box starts: every share with a password, tried a few times while
+# the network and the NAS come up.
+mount_all() {
+  local id uri owner try left
+  [[ -f $STATUS ]] || exit 0
+  left=$(jq -r '.shares // {} | to_entries[] | select(.value.owner != null) | "\(.key) \(.value.owner) \(.value.uri)"' "$STATUS")
+  for (( try = 1; try <= TRIES; try++ )); do
+    local still=""
+    while read -r id owner uri; do
+      [[ -n $id && -f $CREDS/$id.cred && $id == "$(id_of "$uri")" ]] || continue
+      mount_one "$id" "$uri" "$owner" || still+="$id $owner $uri"$'\n'
+    done <<<"$left"
+    left=$still
+    [[ -n $left ]] || break
+    if (( try < TRIES )); then sleep "$PAUSE"; fi
+  done
+  return 0
+}
+
+case "${1:-}" in
+  "") handle_drop ;;
+  mount-all) mount_all ;;
+  -h | --help) sed -n 's/^# agentv:args=/Usage: agentv-share-store /p' "${BASH_SOURCE[0]}" ;;
+  *)
+    sed -n 's/^# agentv:args=/Usage: agentv-share-store /p' "${BASH_SOURCE[0]}" >&2
+    exit 2
+    ;;
+esac
