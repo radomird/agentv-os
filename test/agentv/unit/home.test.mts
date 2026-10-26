@@ -4,7 +4,7 @@
 // a theme that can only change colours.
 
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -213,3 +213,17 @@ test("S2.14 the check after an update loads every installed app, each in a worke
     writeFileSync(manifest, goodManifest);
   }
 });
+
+test("ADR-035 a box from before keeps the apps an adult ticked for children, from kids-apps.json", async () => {
+  const box = await startBox();
+  try {
+    writeFileSync(join(box.state, "kids-apps.json"), JSON.stringify({ "agentv.tube": true }));
+    const home = await (await fetch(`${box.url}/api/home`)).json();
+    assert.equal(home.apps.find((app: any) => app.id === "agentv.tube").forChildren, true);
+    assert.equal(existsSync(join(box.state, "children-apps.json")), true);
+    assert.equal(existsSync(join(box.state, "kids-apps.json")), false);
+  } finally {
+    await box.daemon.close();
+  }
+});
+

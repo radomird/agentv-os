@@ -33,7 +33,7 @@ export async function arrange(root: HTMLElement): Promise<void> {
       return;
     }
     try {
-      const reply = await withPin("arranging a kid's home", (grant) => api<{ layout: Placed[] }>("PUT", "/api/phone/layout", { layout: next }, grant));
+      const reply = await withPin("arranging a child's home", (grant) => api<{ layout: Placed[] }>("PUT", "/api/phone/layout", { layout: next }, grant));
       if (!reply) return;
       home.layout = reply.layout;
       navigator.vibrate?.(8);

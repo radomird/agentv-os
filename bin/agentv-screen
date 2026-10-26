@@ -31,7 +31,7 @@
 #                  now and Go back
 #   power <restart|shutdown>  Settings → Power's Restart, and Shut down once
 #                  its countdown ends: the box restarts or turns off now
-#   pin <action>   the parent PIN, asked for on the TV in front, for an
+#   pin <action>   the adult PIN, asked for on the TV in front, for an
 #                  action such as desktop: prints the grant it gives
 #   settings [section]  Settings on the TV, at a section such as power
 #   audio          the sound outputs, which one plays and at what volume

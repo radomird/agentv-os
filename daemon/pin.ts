@@ -1,7 +1,7 @@
-// The parent PIN (ADR-009, S4.5): four digits, and optional until a kid's
+// The adult PIN (ADR-009, S4.5): four digits, and optional until a child's
 // profile needs one. It guards the adult actions: Omarchy's desktop,
 // Settings → Power, installing an update or going back from one, and
-// Settings → Parental itself. AI, the spend caps and kids' profiles join
+// Settings → Adult PIN itself. AI, the spend caps and children's profiles join
 // them as they're built. It locks the TV when someone locks it by hand, and
 // after the box starts and after the TV has been off long enough for its
 // apps to close, when the profile on screen asks for the PIN to open
@@ -36,7 +36,7 @@ interface Stored {
   // The boot the TV was last unlocked in. Another boot, or the TV off for a
   // while, locks a profile that asks for the PIN to open.
   unlockedBoot?: string;
-  // Locked by hand, from Settings → Parental, whoever's watching.
+  // Locked by hand, from Settings → Adult PIN, whoever's watching.
   byHand?: boolean;
 }
 
@@ -53,7 +53,7 @@ export interface PinOptions {
   path: string; // <state>/pin.json
   bootId?: () => string;
   now?: () => number;
-  // Why the PIN has to stay set, such as a kid's profile, or null.
+  // Why the PIN has to stay set, such as a child's profile, or null.
   needed?: () => string | null;
 }
 

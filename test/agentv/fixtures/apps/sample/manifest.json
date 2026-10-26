@@ -21,6 +21,6 @@
     "origins": ["{serverUrl}"],
     "icon": "icon.svg",
     "tiles": { "s": "logo", "m": "continue", "l": "continue and latest" },
-    "kidsSafe": false
+    "childSafe": false
   }
 }

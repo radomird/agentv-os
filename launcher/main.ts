@@ -60,7 +60,7 @@ export interface Ctx {
   grant(what: string): Promise<string | null>;
   // Drops that grant, as when the daemon refused it.
   forgetGrant(): void;
-  // A PIN pad over the page, as Settings → Parental chooses a new PIN with.
+  // A PIN pad over the page, as Settings → Adult PIN chooses a new PIN with.
   // True once submit took the digits.
   pad(options: Omit<PadOptions, "cancel">): Promise<boolean>;
 }
@@ -78,8 +78,8 @@ const ctx: Ctx = {
   sounds,
   focus,
   go(route) {
-    // On a kid's profile, Settings is an adult's, past the PIN (ADR-009).
-    if (route.startsWith("settings") && kidWithPin() && !holding()) {
+    // On a child's profile, Settings is an adult's, past the PIN (ADR-009).
+    if (route.startsWith("settings") && childWithPin() && !holding()) {
       void grantFor("settings").then((grant) => grant !== null && ctx.go(route));
       return;
     }
@@ -94,10 +94,10 @@ const ctx: Ctx = {
     sounds.play("back");
   },
   // Edit mode, on the focused tile; only adults edit home (ADR-015). On a
-  // kid's profile, a parent can, past the PIN.
+  // child's profile, an adult can, past the PIN.
   edit() {
     const tile = focus.get()?.dataset.id ?? "";
-    if (kidWithPin()) {
+    if (childWithPin()) {
       void grantFor("editing home").then((grant) => grant !== null && ctx.go(`edit/${tile}`));
       return;
     }
@@ -127,7 +127,7 @@ const ctx: Ctx = {
     setAmbient(true);
   },
   async saveLayout(layout) {
-    const grant = kidWithPin() ? await grantFor("changing home") : undefined;
+    const grant = childWithPin() ? await grantFor("changing home") : undefined;
     if (grant === null) return false;
     try {
       ctx.state.layout = (await daemon.saveLayout(layout, grant)).layout;
@@ -155,7 +155,7 @@ const ctx: Ctx = {
   },
 };
 
-// --- The parent PIN (ADR-009, S4.5) ------------------------------------------
+// --- The adult PIN (ADR-009, S4.5) ------------------------------------------
 
 // The pad, over the page while it's open, and the keys go to it.
 const pinEl = document.getElementById("pin")!;
@@ -167,7 +167,7 @@ let locking = false;
 let lockPad: Pad | null = null;
 
 const holding = () => Boolean(held && held.until - Date.now() > 15_000);
-const kidWithPin = () => ctx.state.viewer.role === "kid" && ctx.state.pin?.set === true;
+const childWithPin = () => ctx.state.viewer.role === "child" && ctx.state.pin?.set === true;
 
 // One pad at a time; one asked for while another is up waits its turn, and
 // doesn't come at all when skip says by then it isn't needed.
@@ -220,7 +220,7 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   if (!ctx.state.pin?.set) return "";
   let grant: string | null = null;
   const ok = await openPad(
-    { command: "tv pin", title: "enter the parent pin", note: `for ${what}.`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
+    { command: "tv pin", title: "enter the adult pin", note: `for ${what}.`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
     undefined,
     options.one ? undefined : holding,
   );
@@ -228,7 +228,7 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   return grant ?? held?.token ?? null;
 }
 
-// The lock: by hand from Settings → Parental, and after the box starts and
+// The lock: by hand from Settings → Adult PIN, and after the box starts and
 // after the TV has been off, for a profile that asks for the PIN to open
 // (ADR-034). The pad has no way past it but the PIN, or the phone switching
 // to someone else. Unlocking is all it does: an adult action after it still
@@ -239,7 +239,7 @@ function setLock(locked: boolean): void {
     held = null;
     const viewer = ctx.state.viewer;
     void openPad(
-      { command: "tv locked", title: "enter the parent pin", note: viewer.locked ? `${viewer.name}'s profile asks for it to open.` : "the tv is locked.", cancel: false, submit: checkPin(false) },
+      { command: "tv locked", title: "enter the adult pin", note: viewer.locked ? `${viewer.name}'s profile asks for it to open.` : "the tv is locked.", cancel: false, submit: checkPin(false) },
       (pad) => (lockPad = pad),
       // Unlocked elsewhere while it waited its turn.
       () => ctx.state.pin?.locked !== true,
@@ -487,14 +487,14 @@ async function switched(): Promise<void> {
   held = null;
   ctx.state = await daemon.home();
   apply(ctx.state.settings);
-  const kid = ctx.state.viewer.role === "kid";
-  if (kid) {
+  const child = ctx.state.viewer.role === "child";
+  if (child) {
     for (const id of ctx.running.keys()) {
       if (!ctx.state.apps.some((app) => app.id === id)) void screen.quit(id);
     }
   }
-  // Edit mode was the last viewer's home, and a kid starts on their own.
-  if (kid || history[history.length - 1].startsWith("edit")) history = ["home"];
+  // Edit mode was the last viewer's home, and a child starts on their own.
+  if (child || history[history.length - 1].startsWith("edit")) history = ["home"];
   redraw();
 }
 
@@ -554,8 +554,8 @@ async function start(): Promise<void> {
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
-    // Someone else is watching (S4.2): their home, at once. A kid's profile
-    // closes the apps open behind home that kids can't open.
+    // Someone else is watching (S4.2): their home, at once. A child's profile
+    // closes the apps open behind home that children can't open.
     viewer: () => void switched(),
     viewers: () => void refresh(),
     // A phone was paired or forgotten: pairing is done, and Settings says so.

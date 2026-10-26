@@ -26,7 +26,7 @@ export class AppError extends Error {
 
 export interface Viewer {
   id: string;
-  role: "adult" | "kid";
+  role: "adult" | "child";
 }
 
 // What drives a web app's real page. url() says where it is now; call() does

@@ -60,7 +60,7 @@
 # Stage 4, the box's side of the companions (S4 runs them all). Neither
 # changes the household's PIN or key:
 #
-#   S4.5  with a parent PIN set, the daemon refuses a guarded request that
+#   S4.5  with an adult PIN set, the daemon refuses a guarded request that
 #         doesn't carry the PIN's grant. The PIN on the TV is manual.
 #   S4.6  with a key set in Settings → AI, it's root's alone in
 #         /etc/agentv/env, and this account can't read it.
@@ -788,14 +788,14 @@ s45() {
     return 0
   fi
   if [[ $(jq -r '.set' <<<"$pin") != "true" ]]; then
-    result manual S4.5 "there's no parent PIN yet: set one in Settings → Parental, then run agentv selftest S4.5 again"
+    result manual S4.5 "there's no adult PIN yet: set one in Settings → Adult PIN, then run agentv selftest S4.5 again"
     return 0
   fi
   # A version nothing installs, so a daemon that let it through still
   # couldn't schedule anything.
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Content-Type: application/json'     -d '{"version":"selftest"}' "$(home_url)api/updates/tonight" 2>/dev/null || true)
   if [[ $code == "403" ]]; then
-    result pass S4.5 "with the parent PIN set, installing tonight without it is refused"
+    result pass S4.5 "with the adult PIN set, installing tonight without it is refused"
   else
     result fail S4.5 "installing tonight without the PIN wasn't refused (HTTP ${code:-none})"
   fi
@@ -881,7 +881,7 @@ HTML
     license: "MIT", description: "agentv selftest'"'"'s stand-in for a streaming service", kinds: ["tv-app"],
     entryPoints: {tvApp: "app.ts"},
     tv: {contract: 1, category: "streaming", runtime: "web", homeUrl: ($url + "/"), origins: [$url],
-      capabilities: ["launch", "playback"], kidsSafe: true}
+      capabilities: ["launch", "playback"], childSafe: true}
   }' >"$work/app/manifest.json"
   cat >"$work/app/app.ts" <<'APP'
 export default {

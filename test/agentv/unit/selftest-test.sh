@@ -536,13 +536,13 @@ run4() {
 fake stat 'case "$*" in "-c %a "*) cat "$STATE/env-mode" ;; "-c %U "*) cat "$STATE/env-owner" ;; esac'
 
 run4 S4 || fail "with no pin and no key, stage 4's checks say what to do first" "$(cat "$SCRATCH/out")"
-grep -qF "manual S4.5 there's no parent PIN yet: set one in Settings → Parental" "$SCRATCH/out" || fail "it says to set a pin" "$(cat "$SCRATCH/out")"
+grep -qF "manual S4.5 there's no adult PIN yet: set one in Settings → Adult PIN" "$SCRATCH/out" || fail "it says to set a pin" "$(cat "$SCRATCH/out")"
 grep -qF "manual S4.6 there's no key yet: add one in Settings → AI" "$SCRATCH/out" || fail "it says to add a key" "$(cat "$SCRATCH/out")"
 pass "with no PIN and no key yet, S4.5 and S4.6 say what to set first"
 
 echo '{"ok":true,"set":true,"locked":false}' >"$state/pin"
 run4 S4.5 || fail "S4.5 passes when the daemon refuses without the pin" "$(cat "$SCRATCH/out")"
-grep -qF "pass S4.5 with the parent PIN set, installing tonight without it is refused" "$SCRATCH/out" || fail "it says what was refused" "$(cat "$SCRATCH/out")"
+grep -qF "pass S4.5 with the adult PIN set, installing tonight without it is refused" "$SCRATCH/out" || fail "it says what was refused" "$(cat "$SCRATCH/out")"
 { grep -q 'api/updates/tonight' "$state/curl.log" && grep -q '"version":"selftest"' "$state/curl.log"; } || fail "it asks for a version nothing installs" "$(cat "$state/curl.log")"
 echo 400 >"$state/tonight-code"
 ! run4 S4.5 || fail "S4.5 fails when the daemon lets it through"

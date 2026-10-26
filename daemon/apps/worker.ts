@@ -16,7 +16,7 @@ type Request =
 
 interface Viewer {
   id: string;
-  role: "adult" | "kid";
+  role: "adult" | "child";
 }
 
 interface Fetched {

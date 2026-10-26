@@ -176,7 +176,7 @@ export class Daemon {
         });
       });
     }
-    // A kid's profile, or one that asks for the PIN to open, keeps the PIN
+    // A child's profile, or one that asks for the PIN to open, keeps the PIN
     // on (ADR-009, ADR-034): see DELETE /api/pin.
     this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId });
     this.ledgerPath = options.ledger ?? join(options.state, "ledger.db");
@@ -515,7 +515,7 @@ export class Daemon {
     }
 
     // A tile moved, resized, pinned or unpinned on the phone: the TV follows
-    // within a second. A kid's home is an adult's to arrange, past the PIN.
+    // within a second. A child's home is an adult's to arrange, past the PIN.
     if (method === "PUT" && path === "/api/phone/layout") {
       if (!(await this.adult(request, response, "arranging home from a phone"))) return;
       const body = (await this.body(request)) as { layout?: unknown } | undefined;
@@ -614,7 +614,7 @@ export class Daemon {
       return;
     }
 
-    // Who's watching, from the phone (S4.2): from a kid's profile to an
+    // Who's watching, from the phone (S4.2): from a child's profile to an
     // adult's needs the PIN, entered on the phone.
     if (method === "POST" && path === "/api/phone/viewer") {
       const body = (await this.body(request)) as { id?: unknown } | undefined;
@@ -634,7 +634,7 @@ export class Daemon {
       return;
     }
 
-    // The parent PIN, entered on the phone: a grant, and the TV unlocked.
+    // The adult PIN, entered on the phone: a grant, and the TV unlocked.
     if (method === "POST" && path === "/api/phone/pin") {
       const locked = (await this.pinStatus()).locked;
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
@@ -680,11 +680,11 @@ export class Daemon {
     return false;
   }
 
-  // Switching needs the PIN from a kid's profile to an adult's, and to a
+  // Switching needs the PIN from a child's profile to an adult's, and to a
   // profile that asks for it to open (ADR-034).
   private switchNeedsPin(now: Profile, target: Profile): boolean {
     if (now.id === target.id) return false;
-    return target.locked || (now.role === "kid" && target.role === "adult");
+    return target.locked || (now.role === "child" && target.role === "adult");
   }
 
   // Whether the TV is locked, for the profile on screen.
@@ -702,11 +702,11 @@ export class Daemon {
     }
   }
 
-  // On a kid's profile, Settings and home's layout are an adult's, past the
+  // On a child's profile, Settings and home's layout are an adult's, past the
   // PIN (ADR-009, ADR-015).
   private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
-    if ((await this.profiles.active()).role !== "kid") return true;
-    return this.guarded(request, response, `${what} on a kid's profile`);
+    if ((await this.profiles.active()).role !== "child") return true;
+    return this.guarded(request, response, `${what} on a child's profile`);
   }
 
   private async text(request: IncomingMessage): Promise<string> {
@@ -951,7 +951,7 @@ export class Daemon {
       return;
     }
 
-    // --- The parent PIN (ADR-009, S4.5) ------------------------------------
+    // --- The adult PIN (ADR-009, S4.5) ------------------------------------
 
     if (method === "GET" && path === "/api/pin") {
       this.json(response, 200, { ok: true, ...(await this.pinStatus()) });
@@ -988,7 +988,7 @@ export class Daemon {
       return;
     }
 
-    // Settings → Parental: a PIN, or another one, which needs a grant from
+    // Settings → Adult PIN: a PIN, or another one, which needs a grant from
     // the one before.
     if ((method === "PUT" || method === "DELETE") && path === "/api/pin") {
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
@@ -1004,7 +1004,7 @@ export class Daemon {
       return;
     }
 
-    // The TV locks: by hand from Settings → Parental, whoever's watching,
+    // The TV locks: by hand from Settings → Adult PIN, whoever's watching,
     // and from the screen daemon once the TV has been off long enough for its
     // apps to close ("tv-off"), for a profile that asks for the PIN to open.
     if (method === "POST" && path === "/api/pin/lock") {
@@ -1144,7 +1144,7 @@ export class Daemon {
     }
 
     // Someone else watching: everything on the TV is theirs within a second.
-    // From a kid's profile to an adult's needs the PIN.
+    // From a child's profile to an adult's needs the PIN.
     if (method === "POST" && path === "/api/viewer") {
       const body = (await this.body(request)) as { id?: unknown } | undefined;
       const all = await this.profiles.list();
@@ -1165,18 +1165,18 @@ export class Daemon {
     }
 
     // Settings → Profiles: adding, changing and taking off profiles needs
-    // the PIN once there is one, and a kid's profile, or one that asks for
+    // the PIN once there is one, and a child's profile, or one that asks for
     // the PIN to open, needs one to exist.
     const one = /^\/api\/viewers\/([a-z0-9._-]+)$/.exec(path);
     if ((method === "POST" && path === "/api/viewers") || ((method === "PUT" || method === "DELETE") && one)) {
       if (!this.guarded(request, response, "changing profiles")) return;
       const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
-      if (method !== "DELETE" && body.role === "kid" && !this.pin.status().set) {
-        this.json(response, 400, { ok: false, error: "a kid's profile needs a parent pin. set one in settings → parental first" });
+      if (method !== "DELETE" && body.role === "child" && !this.pin.status().set) {
+        this.json(response, 400, { ok: false, error: "a child's profile needs an adult pin. set one in settings → adult pin first" });
         return;
       }
       if (method !== "DELETE" && body.locked === true && !this.pin.status().set) {
-        this.json(response, 400, { ok: false, error: "a locked profile needs a parent pin. set one in settings → parental first" });
+        this.json(response, 400, { ok: false, error: "a locked profile needs an adult pin. set one in settings → adult pin first" });
         return;
       }
       const locked = (await this.pinStatus()).locked;
@@ -1192,23 +1192,23 @@ export class Daemon {
         this.json(response, error === "there's no such profile" ? 404 : 400, { ok: false, error });
         return;
       }
-      this.log(method === "POST" ? `a profile was added, ${profile!.role === "kid" ? "a kid" : "an adult"}` : method === "PUT" ? "a profile was changed" : "a profile was taken off");
+      this.log(method === "POST" ? `a profile was added, ${profile!.role === "child" ? "a child" : "an adult"}` : method === "PUT" ? "a profile was changed" : "a profile was taken off");
       this.broadcast("viewers", {});
       await this.lockChanged(locked);
       this.json(response, 200, { ok: true, ...(profile ? { profile } : {}), viewers: await this.profiles.list(), active: (await this.profiles.active()).id });
       return;
     }
 
-    // An app ticked for kids, or unticked, from its details.
-    const forKids = /^\/api\/apps\/([a-z0-9.-]+)\/for-kids$/.exec(path);
-    if (method === "POST" && forKids) {
-      if (!this.guarded(request, response, "kids' apps") || !(await this.adult(request, response, "kids' apps"))) return;
+    // An app ticked for children, or unticked, from its details.
+    const forChildren = /^\/api\/apps\/([a-z0-9.-]+)\/for-children$/.exec(path);
+    if (method === "POST" && forChildren) {
+      if (!this.guarded(request, response, "children's apps") || !(await this.adult(request, response, "children's apps"))) return;
       const body = (await this.body(request)) as { allowed?: unknown } | undefined;
       if (typeof body?.allowed !== "boolean") {
         this.json(response, 400, { ok: false, error: "allowed is true or false" });
         return;
       }
-      if (!(await this.home.setForKids(forKids[1], body.allowed))) {
+      if (!(await this.home.setForChildren(forChildren[1], body.allowed))) {
         this.json(response, 404, { ok: false, error: "that isn't an app here" });
         return;
       }

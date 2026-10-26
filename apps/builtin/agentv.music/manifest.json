@@ -15,6 +15,6 @@
     "capabilities": ["launch", "tile"],
     "icon": "icon.svg",
     "tiles": { "s": "logo", "m": "now playing", "l": "now playing and recent" },
-    "kidsSafe": true
+    "childSafe": true
   }
 }

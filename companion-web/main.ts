@@ -6,7 +6,7 @@
 //   keyboard's dictation too, and on AgenTV's sign-in screen, a name and a
 //   password the phone's password manager can fill;
 // - who's watching, arrange home, the update notice with Install tonight,
-//   and the parent PIN, which also unlocks the TV.
+//   and the adult PIN, which also unlocks the TV.
 // It works in any phone's browser; the iOS app will do more.
 
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
@@ -217,10 +217,10 @@ function who(): HTMLElement {
         avatar(viewer),
         h("span", {}, viewer.name),
         viewer.locked ? glyph("lock", 18) : null,
-        h("span", { class: "viewer-role" }, [viewer.role === "kid" ? "kid" : "", viewer.id === state?.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
+        h("span", { class: "viewer-role" }, [viewer.role === "child" ? "child" : "", viewer.id === state?.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
-    h("p", { class: "note" }, "from a kid's profile to an adult's, or to a locked one, needs the parent pin."),
+    h("p", { class: "note" }, "from a child's profile to an adult's, or to a locked one, needs the adult pin."),
   );
 }
 

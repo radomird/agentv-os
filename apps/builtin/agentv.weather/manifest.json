@@ -16,6 +16,6 @@
     "origins": ["https://api.met.no"],
     "icon": "icon.svg",
     "tiles": { "s": "now", "m": "today and tomorrow", "l": "7 days" },
-    "kidsSafe": true
+    "childSafe": true
   }
 }

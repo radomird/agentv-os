@@ -181,14 +181,14 @@ test("the phone's keys and text reach the screen daemon's stream, and what's typ
   controller.abort();
 });
 
-test("the PIN on the phone gives a grant, which switching from a kid to an adult needs", async () => {
+test("the PIN on the phone gives a grant, which switching from a child to an adult needs", async () => {
   assert.equal((await send(tv, "PUT", "/api/pin", { body: { pin: "4826" } })).status, 200);
   const wrong = await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "0000" } });
   assert.equal(wrong.status, 403);
   const grant = (await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).data.grant;
-  const kid = (await send(tv, "POST", "/api/viewers", { body: { name: "mila", role: "kid" }, grant })).data.profile;
-  assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: kid.id } })).status, 200);
-  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.viewer.id, kid.id);
+  const child = (await send(tv, "POST", "/api/viewers", { body: { name: "mila", role: "child" }, grant })).data.profile;
+  assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: child.id } })).status, 200);
+  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.viewer.id, child.id);
   const owner = (await send(phone, "GET", "/api/phone/state", { token })).data.viewers.find((v: any) => v.role === "adult");
   assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: owner.id } })).status, 403);
   assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: owner.id }, grant })).status, 200);
