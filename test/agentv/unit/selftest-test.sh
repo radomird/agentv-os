@@ -217,6 +217,9 @@ fake steam 'exit 0'
 fake omarchy-cmd-present 'type -P "$1" >/dev/null'
 # The virtual input device, and the screen daemon's journal.
 fake agentv-input 'echo "$*" >>"$STATE/input.log"'
+# agentv app install and remove: the real ones (ADR-039), from this repo.
+fake agentv-app-install 'echo "install $*" >>"$STATE/app.log"; AGENTV_PATH="$ROOT" exec "$ROOT/bin/agentv-app-install" "$@"'
+fake agentv-app-remove 'echo "remove $*" >>"$STATE/app.log"; AGENTV_PATH="$ROOT" exec "$ROOT/bin/agentv-app-remove" "$@"'
 # The Music app in the TV session (S3.6): a scan in the background that's
 # done at the second look, its library and sources, and a player whose
 # position moves on with each look, unless it's stuck.
@@ -287,7 +290,7 @@ tv() {
 
 run1() {
   env PATH="$fakes:$PATH" STATE="$state" AGENTV_PATH="$SCRATCH/agentv" AGENTV_SDDM_CONF="$SCRATCH/sddm.conf" \
-    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_INPUT="$fakes/agentv-input" AGENTV_MUSIC="$fakes/agentv-music" AGENTV_MUSIC_WAIT_S=0 AGENTV_MUSIC_POLL_S=0 \
+    AGENTV_SCREEN="$fakes/agentv-screen" AGENTV_APP="$fakes/agentv-app" ROOT="$ROOT" AGENTV_INPUT="$fakes/agentv-input" AGENTV_MUSIC="$fakes/agentv-music" AGENTV_MUSIC_WAIT_S=0 AGENTV_MUSIC_POLL_S=0 \
     AGENTV_STATE="$SCRATCH/var" "$BASH" "$selftest" "$@" >"$SCRATCH/out" 2>&1
 }
 
@@ -468,6 +471,9 @@ grep -q "^manual S3.3 a second viewer" "$SCRATCH/out" || fail "it says what wait
 # The stand-in was a real app while it was there, and is gone with its rows.
 AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-app-validate" --local "$state/seen-app" >/dev/null || fail "the stand-in passes the app contract's checks"
 [[ $(jq -r .tier "$state/seen-record") == local ]] || fail "the stand-in was installed as a local app" "$(cat "$state/seen-record")"
+[[ $(jq -r '.source | test("/app$")' "$state/seen-record") == true ]] || fail "its record says which folder it came from" "$(cat "$state/seen-record")"
+grep -qx "install --local .*/app --yes" "$state/app.log" || fail "S3.3 installs the stand-in with agentv app install --local" "$(cat "$state/app.log")"
+grep -qx "remove local.selftest-player" "$state/app.log" || fail "and removes it with agentv app remove" "$(cat "$state/app.log")"
 [[ ! -e $SCRATCH/var/apps/local.selftest-player ]] || fail "the stand-in is removed after"
 [[ $(jq -c 'keys' "$SCRATCH/var/apps/installed.json") == '["agentv.sample"]' ]] || fail "installed.json is as it was" "$(cat "$SCRATCH/var/apps/installed.json")"
 grep -q -- "-X DELETE .*api/ledger?app=local.selftest-player" "$state/curl.log" || fail "its rows are forgotten" "$(cat "$state/curl.log")"
@@ -498,6 +504,20 @@ grep -q "^fail S3.3 no ledger row appeared within 1.5 s of the app opening" "$SC
 rm -f "$state/no-ledger"
 kill "$home_pid" 2>/dev/null || true
 pass "S3.3 fails when no row comes, and still cleans up"
+
+# With the adult PIN set and no terminal, the install asks on the TV, where
+# nobody types it here: S3.3 says so, and nothing is left behind.
+tv
+echo '{"ok":true,"set":true}' >"$state/pin"
+: >"$state/app.log"
+! run1 S3.3 S3.10 || fail "an install that isn't approved fails S3.3"
+grep -q "^fail S3.3 agentv app install --local didn't install the stand-in player" "$SCRATCH/out" || fail "it says the install didn't happen" "$(cat "$SCRATCH/out")"
+grep -q "^fail S3.10 agentv app install --local didn't install the stand-in player" "$SCRATCH/out" || fail "S3.10 says so too" "$(cat "$SCRATCH/out")"
+[[ ! -e $SCRATCH/var/apps/local.selftest-player && $(jq -c 'keys' "$SCRATCH/var/apps/installed.json") == '["agentv.sample"]' ]] ||
+  fail "nothing of the stand-in is left" "$(ls "$SCRATCH/var/apps")"
+rm -f "$state/pin"
+kill "$home_pid" 2>/dev/null || true
+pass "S3.3 installs its stand-in only once an adult says yes, as any app install"
 
 # --- S3.6: an album from a stick and one from a share ---------------------------
 

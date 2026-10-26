@@ -5,7 +5,7 @@
 // runs on the home screen.
 
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
@@ -705,8 +705,59 @@ export class Home {
     return true;
   }
 
+  // --- Installs from the command line -----------------------------------
+
+  private watcher: FSWatcher | null = null;
+  private watchSoon?: NodeJS.Timeout;
+  private watchAgain?: NodeJS.Timeout;
+
+  // Calls changed("apps") shortly after an app is installed or removed
+  // outside the daemon, as agentv app install and remove do as root
+  // (ADR-039), so the launcher shows it at once. An app that changed starts
+  // its worker again from its new package. On a box with no apps yet the
+  // folder isn't there until the first install, so it looks for it every
+  // few seconds, and once it's there, says what came before it looked.
+  watchApps(every = 5_000): void {
+    const soon = (_event?: string, name?: string | Buffer | null) => {
+      if (name && String(name) !== "installed.json") return;
+      if (this.watchSoon) clearTimeout(this.watchSoon);
+      this.watchSoon = setTimeout(() => void this.appsChanged(), 200);
+    };
+    const attach = (first: boolean) => {
+      if (this.watcher) return;
+      try {
+        this.watcher = watch(this.appsDir, soon);
+        this.watcher.on("error", () => {
+          this.watcher?.close();
+          this.watcher = null;
+        });
+        if (!first) soon();
+      } catch {
+        this.watcher = null;
+      }
+    };
+    attach(true);
+    this.watchAgain = setInterval(() => attach(false), every);
+    this.watchAgain.unref();
+  }
+
+  private async appsChanged(): Promise<void> {
+    const builtins = new Set((await this.builtinApps()).map(({ manifest }) => manifest.id));
+    for (const [id, host] of this.hosts) {
+      if (builtins.has(id)) continue;
+      host.stop();
+      this.hosts.delete(id);
+      for (const key of this.tiles.keys()) if (key.includes(`:${id}:`)) this.tiles.delete(key);
+    }
+    this.checked = undefined;
+    this.changed("apps");
+  }
+
   stop(): void {
     for (const host of this.hosts.values()) host.stop();
+    this.watcher?.close();
+    if (this.watchSoon) clearTimeout(this.watchSoon);
+    if (this.watchAgain) clearInterval(this.watchAgain);
   }
 }
 

@@ -4,10 +4,12 @@
 // a theme that can only change colours.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { installLocal, removeApp } from "../../../daemon/apps/install.ts";
 import { cleanTheme } from "../../../daemon/home.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "../ui/box.mts";
@@ -227,3 +229,37 @@ test("ADR-035 a box from before keeps the apps an adult ticked for children, fro
   }
 });
 
+
+test("ADR-039 an app installed or removed from the command line shows on the TV at once", async () => {
+  const box = await startBox();
+  const built = mkdtempSync(join(tmpdir(), "agentv-built-"));
+  try {
+    cpSync(join(box.apps, "local.mytv"), built, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(built, "manifest.json"), "utf8"));
+    writeFileSync(join(built, "manifest.json"), JSON.stringify({ ...manifest, id: "local.built", name: "Built" }));
+    const ids = async () => ((await (await fetch(`${box.url}/api/home`)).json()).apps as { id: string }[]).map((app) => app.id);
+    assert.ok(!(await ids()).includes("local.built"));
+
+    // The TV hears of it, as agentv app install --local and remove do it.
+    const heard = async (change: () => Promise<unknown>): Promise<string> => {
+      const events = await fetch(`${box.url}/api/events`);
+      const reader = events.body!.getReader();
+      await change();
+      let seen = "";
+      const deadline = Date.now() + 3000;
+      while (!seen.includes("event: apps") && Date.now() < deadline) {
+        const { value } = await Promise.race([reader.read(), new Promise<{ value: undefined }>((r) => setTimeout(() => r({ value: undefined }), 500))]);
+        if (value) seen += new TextDecoder().decode(value);
+      }
+      await reader.cancel();
+      return seen;
+    };
+    assert.match(await heard(() => installLocal(built, box.apps, async () => true)), /event: apps/);
+    assert.ok((await ids()).includes("local.built"), "the new app is in Apps");
+    assert.match(await heard(() => removeApp("local.built", box.apps)), /event: apps/);
+    assert.ok(!(await ids()).includes("local.built"), "and gone again once it's removed");
+  } finally {
+    rmSync(built, { recursive: true, force: true });
+    await box.daemon.close();
+  }
+});

@@ -271,6 +271,7 @@ const ACTIONS: Record<string, string> = {
   power: "restarting or shutting down",
   update: "installing an update",
   "go-back": "going back",
+  "app-install": "installing an app",
 };
 
 function viewFor(route: string): View {

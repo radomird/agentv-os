@@ -217,6 +217,7 @@ export class Daemon {
     this.pin = new Pin({ path: join(options.state, "pin.json"), bootId: options.bootId });
     this.ledgerPath = options.ledger ?? join(options.state, "ledger.db");
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
+    this.home.watchApps();
     this.server = createServer((request, response) => {
       this.handle(request, response).catch((error: Error) => {
         this.log(`error: ${request.method} ${request.url}: ${error.message}`);
