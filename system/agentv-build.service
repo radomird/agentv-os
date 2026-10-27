@@ -16,7 +16,7 @@ Environment=AGENTV_PATH=/usr/share/agentv
 TimeoutStartSec=25min
 UMask=0022
 ProtectSystem=strict
-ReadWritePaths=/var/lib/agentv/build /var/lib/agentv/apps /run/agentv-build -/var/lib/private/agentv/daemon/build-drop
+ReadWritePaths=/var/lib/agentv/build -/var/lib/agentv/apps /run/agentv-build -/var/lib/private/agentv/daemon/build-drop
 ProtectHome=yes
 PrivateTmp=yes
 PrivateNetwork=yes
