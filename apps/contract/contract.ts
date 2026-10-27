@@ -1,8 +1,12 @@
-// AgenTV's app contract, version 1 (PHASE-1-PLAN.md, "App contract"). Every
-// TV app is a TypeScript module that the daemon loads in a worker of its own.
-// Its default export is a TvApp. A web app gets one page in the services'
-// Chromium, limited to the origins its manifest declares; a native app gets
-// none.
+// AgenTV's app contract (PHASE-1-PLAN.md, "App contract"). Every web or
+// native TV app is a TypeScript module that the daemon loads in a worker of
+// its own. Its default export is a TvApp. A web app gets one page in the
+// services' Chromium, limited to the origins its manifest declares; a native
+// app gets none. That's all of contract 1, and contract 2 keeps it as it is.
+//
+// Contract 2 adds the page app (ADR-043), which is its own page in a
+// sandboxed frame instead of a module: kit.ts has what it may ask of the box,
+// and page.ts its rules.
 //
 // Apps import these types with `import type`, which Node strips, so an app
 // never loads anything from outside its own folder.

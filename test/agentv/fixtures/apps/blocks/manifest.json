@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.blocks",
+  "name": "Blocks",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "A falling-block game, the page app in AgenTV's tests",
+  "kinds": ["tv-app"],
+  "entryPoints": { "page": "index.html" },
+  "tv": {
+    "contract": 2,
+    "category": "games",
+    "runtime": "page",
+    "capabilities": ["launch", "tile"],
+    "icon": "icon.svg",
+    "tiles": { "s": "logo", "m": "high score" },
+    "childSafe": true
+  }
+}
