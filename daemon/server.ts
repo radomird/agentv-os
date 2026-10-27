@@ -36,6 +36,7 @@ import { Builds, type Provider as BuildProvider } from "./builds.ts";
 import { Asks } from "./asks.ts";
 import { exportRefusal, packageFiles, zipFolder } from "./export.ts";
 import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal, type SignIn } from "./github.ts";
+import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
@@ -76,6 +77,8 @@ export interface DaemonOptions {
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
+  // The themes your agent made, as root put them: /var/lib/agentv/themes.
+  themes?: string;
   // Where packages put their desktop entries and icons, for a native app's
   // icon: /usr/local/share, /usr/share and flatpak's.
   dataDirs?: string[];
@@ -210,6 +213,11 @@ export class Daemon {
   readonly pageAsks = new PageAsks();
   // Export's asks of the person's GitHub sign-in, for the screen daemon.
   readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: "the TV didn't answer in time: is its session running?" } });
+  // A made theme's asks, for the screen daemon to hand it to Omarchy (S6.4).
+  readonly themeAsks = new Asks<ThemeAsk, ThemeAnswer>({ clean: cleanTheme, late: { ok: false, error: "the TV didn't answer in time: is its session running?", late: true } });
+  // What it asked already, by theme, build and version, so a pass that read
+  // the record before the last answer came doesn't ask again.
+  private themesAsked = new Set<string>();
   private buildsSeen = "";
   private buildsTimer?: ReturnType<typeof setInterval>;
   // What home's Chromium reaches the internet through.
@@ -408,6 +416,7 @@ export class Daemon {
     this.openLedger?.close();
     this.pageAsks.close();
     this.exportAsks.close();
+    this.themeAsks.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -433,7 +442,8 @@ export class Daemon {
     // A build waiting for its plan's sign-in gets one, and goes on after it,
     // and a streaming service's app learns the rest once it's signed in.
     await this.builds.tend({ signedIn: (id) => this.home.isSignedIn(id) }).catch(() => false);
-    const now = JSON.stringify(await this.builds.list().catch(() => []));
+    await this.tendThemes().catch(() => {});
+    const now = JSON.stringify([await this.builds.list().catch(() => []), await this.madeApplied()]);
     if (now === this.buildsSeen) return;
     this.buildsSeen = now;
     this.broadcast("builds", {});
@@ -447,7 +457,77 @@ export class Daemon {
       warnings: this.builds.warnings(),
       // What setup's "+ add your own" kept for the builder.
       wishes: (await this.setup()).wishes,
+      // Each made theme the TV has handed to Omarchy, or why it couldn't.
+      themes: await this.madeApplied(),
     };
+  }
+
+  // --- Themes your agent made (S6.4) ---------------------------------------
+
+  private get themesDir(): string {
+    return this.options.themes ?? THEMES;
+  }
+
+  // Which version of each made theme the screen daemon handed to Omarchy,
+  // or why it couldn't. Each version goes once, so a theme the person
+  // changed from isn't set again.
+  private async madeApplied(): Promise<Record<string, { version: string; name?: string; error?: string }>> {
+    try {
+      return JSON.parse(await readFile(join(this.options.state, "made-themes.json"), "utf8"));
+    } catch {
+      return {};
+    }
+  }
+
+  // A change to that record, one after another, so two answers at once
+  // don't write over each other.
+  private changeApplied(change: (applied: Record<string, { version: string; name?: string; error?: string }>) => void): Promise<void> {
+    this.appliedChanging = this.appliedChanging.then(async () => {
+      const applied = await this.madeApplied();
+      change(applied);
+      await mkdir(this.options.state, { recursive: true });
+      await writeFile(join(this.options.state, "made-themes.json.next"), JSON.stringify(applied, null, 2));
+      await rename(join(this.options.state, "made-themes.json.next"), join(this.options.state, "made-themes.json"));
+    });
+    return this.appliedChanging;
+  }
+
+  private appliedChanging: Promise<void> = Promise.resolve();
+
+  // A theme an adult approved, once root put it in place: the screen daemon,
+  // as the person, hands it to Omarchy and sets it, so the TV and the desktop
+  // change together. One that's removed goes from Omarchy too.
+  private async tendThemes(): Promise<void> {
+    const applied = await this.madeApplied();
+    const placed = new Map(madeThemes(this.themesDir).map((theme) => [theme.app, theme.version]));
+    const asks: { id: string; key: string; ask: ThemeAsk; version?: string }[] = [];
+    for (const view of await this.builds.list()) {
+      if (view.state !== "installed" || view.understood?.recipe !== "theme") continue;
+      if (placed.get(view.id) !== view.version || applied[view.id]?.version === view.version) continue;
+      asks.push({ id: view.id, key: `take ${view.id} ${view.build} ${view.version}`, ask: { kind: "take", id: view.id }, version: view.version });
+    }
+    for (const id of Object.keys(applied)) if (!placed.has(id)) asks.push({ id, key: `drop ${id}`, ask: { kind: "drop", id } });
+    for (const { id, key, ask, version } of asks) {
+      if (this.themesAsked.has(key)) continue;
+      this.themesAsked.add(key);
+      void this.themeAsks
+        .ask(ask, 120_000)
+        .then(async (said) => {
+          // The TV didn't answer: the next pass asks again.
+          if (said.late) return void this.themesAsked.delete(key);
+          await this.changeApplied((now) => {
+            if (ask.kind === "drop") delete now[id];
+            else now[id] = { version: version!, ...(said.ok ? { name: said.name } : { error: said.error }) };
+          });
+          for (const asked of [...this.themesAsked]) if (asked.startsWith(ask.kind === "drop" ? `take ${id} ` : `drop ${id}`)) this.themesAsked.delete(asked);
+          this.log(ask.kind === "drop" ? `${id} is gone from omarchy's themes` : said.ok ? `${id} ${version} is the theme now, on the tv and the desktop` : `${id} ${version} couldn't be set: ${said.error}`);
+          void this.watchBuilds();
+        })
+        .catch((error: Error) => {
+          this.themesAsked.delete(key);
+          this.log(`made themes: ${error.message}`);
+        });
+    }
   }
 
   // The AI a build runs on: picked, its terms accepted, and a key there for
@@ -2387,6 +2467,18 @@ export class Daemon {
       this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
       return;
     }
+    // A made theme's asks: the screen daemon, as the person, hands it to
+    // Omarchy and sets it, or takes it away (S6.4).
+    if (method === "GET" && path === "/api/themes/ask") {
+      this.json(response, 200, { ok: true, ask: await this.themeAsks.take() });
+      return;
+    }
+    const themeAnswer = /^\/api\/themes\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && themeAnswer) {
+      const known = this.themeAsks.answer(Number(themeAnswer[1]), await this.body(request));
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
 
     // A page app's kit call from home, for the app whose frame it came
     // from: checked against its manifest, then done (ADR-043).
@@ -2587,7 +2679,10 @@ export class Daemon {
     // The looks setup and Settings offer (board 12), with the colours their
     // previews draw, and which one the TV has.
     if (method === "GET" && path === "/api/themes") {
-      const looks = await previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy");
+      // Omarchy's, and each your agent made that's handed to Omarchy.
+      const applied = await this.madeApplied();
+      const made = madeThemes(this.themesDir).filter((theme) => applied[theme.app] && !applied[theme.app]!.error);
+      const looks = [...(await previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy")), ...made];
       this.json(response, 200, { ok: true, themes: looks, current: currentTheme(await this.home.theme(), looks) });
       return;
     }

@@ -193,7 +193,7 @@ export async function startBox(
   port = 0,
   fixtures = FIXTURES,
   options: BoxOptions = {},
-): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string; hotspot: string; builds: string }> {
+): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string; hotspot: string; builds: string; themes: string }> {
   const { apps, state, builtins } = makeBox(fixtures, options);
   // What the update check and an install write, empty until a test fills it.
   const updates = join(state, "..", "update");
@@ -227,8 +227,10 @@ export async function startBox(
     keyStatus,
     setupAppsStatus,
     setupCatalog: async () => OFFICIAL,
-    // Omarchy's themes, from this checkout, for setup's look.
+    // Omarchy's themes, from this checkout, for setup's look, and the themes
+    // your agent made, empty until a test plays root's part in them.
     omarchy: ROOT,
+    themes: join(state, "..", "themes"),
     backgrounds: join(state, "..", "backgrounds"),
     // No packages' desktop entries or icons until a test puts some there.
     dataDirs: [join(state, "..", "share")],
@@ -240,5 +242,5 @@ export async function startBox(
     npmWarnings: join(state, "..", "npm-warnings.json"),
   });
   const listening = await daemon.listen();
-  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot, builds: join(state, "..", "build") };
+  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot, builds: join(state, "..", "build"), themes: join(state, "..", "themes") };
 }

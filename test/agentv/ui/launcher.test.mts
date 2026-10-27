@@ -406,7 +406,8 @@ test("S5.2 Settings → Look offers Tokyo Night, Gruvbox and Catppuccin Latte, a
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="look"]').click();
   await page.waitForSelector('[data-action="theme-gruvbox"]');
-  assert.deepEqual(await page.locator('[data-action^="theme-"] span:first-child').allInnerTexts(), ["tokyo night", "gruvbox", "catppuccin latte"]);
+  // And last, a theme your agent makes from a few words (S6.4, ADR-048).
+  assert.deepEqual(await page.locator('[data-action^="theme-"] span:first-child').allInnerTexts(), ["tokyo night", "gruvbox", "catppuccin latte", "describe your own"]);
   await page.locator('[data-action="theme-gruvbox"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
   await page.close();

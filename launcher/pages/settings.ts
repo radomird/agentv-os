@@ -275,7 +275,14 @@ export function settings(ctx: Ctx, open?: string): View {
             h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
           ),
         ),
-        note("they come from your omarchy theme: one of these, or any other on omarchy's desktop, and the tv follows."),
+        // A theme your agent made: its page, where it can be removed.
+        ...(looks?.themes ?? []).flatMap((look) => {
+          const made = look.app ? buildsState()?.builds.find((b) => b.id === look.app && b.state === "installed") : undefined;
+          return made ? [h("button", { class: "button", "data-focus": true, "data-action": `theme-made-${look.id}`, onclick: () => ctx.go(`build/${made.build}`) }, h("span", {}, `${look.name}, made by your agent`), h("span", { class: "button-value" }, "→"))] : [];
+        }),
+        // Look's last: a theme your agent makes from a few words (S6.4).
+        ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
+        note("they come from your omarchy theme: one of these, one your agent made, or any other on omarchy's desktop, and the tv follows."),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         h(
           "button",
@@ -465,8 +472,12 @@ export function settings(ctx: Ctx, open?: string): View {
       looks = found;
       const item = menu.querySelector<HTMLElement>('[data-key="look"] .menu-value');
       if (item) item.textContent = sections.find((section) => section.key === "look")!.value();
-      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "look" && !panel.contains(ctx.focus.get() ?? null)) {
-        show(sections.find((section) => section.key === "look")!);
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "look") {
+        // A theme your agent made since, say: drawn again, with the focus
+        // where it was.
+        const at = ctx.focus.get() ?? null;
+        if (!panel.contains(at)) show(sections.find((section) => section.key === "look")!);
+        else if (menu.isConnected) ctx.render("settings/look", at?.getAttribute("data-action") ?? undefined);
       }
     })
     .catch(() => {});

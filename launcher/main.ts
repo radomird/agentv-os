@@ -286,6 +286,8 @@ function viewFor(route: string): View {
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
   // Your agent's builds are an adult's too (ADR-043 to ADR-046).
   if (name === "build" && ctx.state.viewer.role === "adult") return arg ? buildPage(ctx, arg) : buildAsk(ctx);
+  // Look's "describe your own": a theme, made the same way (S6.4).
+  if (name === "describe" && ctx.state.viewer.role === "adult") return buildAsk(ctx, "theme");
   if (name === "change" && arg && ctx.state.viewer.role === "adult") return buildChange(ctx, arg);
   if (name === "details") return details(ctx, arg);
   if (name === "app-setup") return appSetup(ctx, arg);

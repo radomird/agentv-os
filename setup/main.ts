@@ -250,6 +250,7 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "people") return people(ctx);
   if (to === "goal") return goal(ctx);
   if (to === "apps/add") return addYourOwn(ctx);
+  if (to === "theme/own") return addYourOwn(ctx, "theme");
   if (to === "apps") return apps(ctx);
   if (to === "theme") return theme(ctx);
   if (to === "background/photos") return photos(ctx);

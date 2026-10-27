@@ -255,6 +255,7 @@ export interface ThemePreview {
   note: string;
   mode: "light" | "dark";
   colors: { background: string; dark_background: string; accent: string; selection: string; foreground: string; bright_foreground: string };
+  app?: string; // a theme your agent made: its build's id
 }
 
 // Apps → add an app (ADR-042): an official app that isn't on the TV yet, and
@@ -388,6 +389,8 @@ export interface BuildsState {
   spend: { month: string; spent: number; cap: BuilderSettings["cap"] };
   warnings: { id: string; version: string; build: string; malware: string[]; serious: string[]; since: string }[];
   wishes: string[]; // what setup's "+ add your own" kept
+  // Each theme your agent made that the TV handed to Omarchy, or why not.
+  themes?: Record<string, { version: string; name?: string; error?: string }>;
 }
 
 // Things that changed, as the daemon tells them. opened runs each time the

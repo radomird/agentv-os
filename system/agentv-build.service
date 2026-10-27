@@ -3,7 +3,7 @@
 # out goes by, fetches the provider's CLI into the builder's home the first
 # time, and starts the build in its sandbox. It also installs an app an
 # adult approved, puts the version before back, and removes an app the
-# builder made. agentv-build.path starts it.
+# builder made, and the same for a theme. agentv-build.path starts it.
 
 [Unit]
 Description=AgenTV build start
@@ -16,7 +16,7 @@ Environment=AGENTV_PATH=/usr/share/agentv
 TimeoutStartSec=25min
 UMask=0022
 ProtectSystem=strict
-ReadWritePaths=/var/lib/agentv/build -/var/lib/agentv/apps /run/agentv-build -/var/lib/private/agentv/daemon/build-drop
+ReadWritePaths=/var/lib/agentv/build -/var/lib/agentv/apps -/var/lib/agentv/themes /run/agentv-build -/var/lib/private/agentv/daemon/build-drop
 ProtectHome=yes
 PrivateTmp=yes
 PrivateNetwork=yes

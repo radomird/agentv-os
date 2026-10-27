@@ -1,9 +1,9 @@
 // The look (board 12, ADR-012, Q55): three of Omarchy's own themes, each
 // shown as a small screen in its own colours, and "describe your own",
-// which the TV's agent will make (stage 6). OK on one sets it with Omarchy's
-// omarchy-theme-set, through the screen daemon, and the whole TV follows a
-// moment later, as it does when the theme changes on Omarchy's desktop
-// (S5.2). Settings → Look changes it again any time.
+// which setup keeps for the TV's agent to make (S6.4). OK on one sets it
+// with Omarchy's omarchy-theme-set, through the screen daemon, and the whole
+// TV follows a moment later, as it does when the theme changes on Omarchy's
+// desktop (S5.2). Settings → Look changes it again any time.
 
 import { daemon, screen, type ThemePreview } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
@@ -49,10 +49,7 @@ export async function theme(ctx: Ctx): Promise<View> {
       class: "look look-own",
       "data-focus": true,
       "data-theme": "own",
-      onclick: () => {
-        ctx.sounds.play("failure");
-        ctx.toast("your tv's agent will make themes soon", "fail");
-      },
+      onclick: () => ctx.open("theme/own"),
     },
     h("span", { class: "look-screen look-dashed" }, glyph("spark", 96)),
     h("span", { class: "look-text" }, h("span", { class: "look-name" }, "describe your own"), h("span", { class: "look-note" }, "your agent will make it")),
