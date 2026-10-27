@@ -352,7 +352,7 @@ export interface BuildView {
   name?: string;
   provider: "claude" | "chatgpt" | "gemini" | "grok" | "muse";
   path: "plan" | "key";
-  state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "failed";
+  state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
   phase: "understand" | "plan" | "build" | "stage-b";
   step?: string;
   steps: { id: string; state: "waiting" | "running" | "done" | "failed" }[];
@@ -369,6 +369,8 @@ export interface BuildView {
   };
   cost?: { low: number; high: number };
   minutes?: number;
+  // A plan's sign-in, the first time the builder runs on it (ADR-040).
+  signIn?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
   shot: boolean;
   at: string;
 }

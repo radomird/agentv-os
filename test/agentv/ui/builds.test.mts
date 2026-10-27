@@ -6,8 +6,9 @@
 // status.json, is played by the test, as the daemon reads it on the box.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
@@ -23,6 +24,7 @@ let url = "";
 let state = "";
 let builds = "";
 let apps = "";
+let phoneToken = "";
 const errors: string[] = [];
 
 async function send(method: string, path: string, body?: unknown, grant?: string, base = url) {
@@ -43,6 +45,7 @@ before(async () => {
   const lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await send("POST", "/api/phones/pair", {})).pairing.code;
   const token = (await send("POST", "/api/phone/pair", { code, name: "iphone" }, undefined, lan)).token;
+  phoneToken = token;
   const accepted = await fetch(`${lan}/api/phone/terms`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ provider: "claude", path: "key" }) });
   assert.equal(accepted.status, 200);
 });
@@ -387,4 +390,70 @@ test("Q117 a built app's details ask for a change, build it again, go back a ver
   await page.waitForFunction(() => /blocks is gone, with every version of it/.test(document.getElementById("toasts")?.textContent ?? ""));
   assert.deepEqual(drop("remove"), { id: first.id });
   await page.close();
+});
+
+test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link as a QR code, the phone opens it and sends the code past the PIN, and the build goes on", async () => {
+  // A stand-in qrencode, as the image has the real one.
+  const tools = mkdtempSync(join(tmpdir(), "agentv-builds-ui-"));
+  writeFileSync(join(tools, "qrencode"), `#!/bin/bash\necho '<svg xmlns="http://www.w3.org/2000/svg" width="21" height="21"><rect width="21" height="21"/></svg>'\n`);
+  chmodSync(join(tools, "qrencode"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${tools}:${path}`;
+  try {
+    const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
+    assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
+    const accepted = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/terms`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${phoneToken}`, "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "claude", path: "plan" }),
+    });
+    assert.equal(accepted.status, 200);
+    const asked = (await send("POST", "/api/builds", { sentence: "a game like tetris" })).build;
+    assert.equal(drop("start").path, "plan");
+    // The builder found no sign-in: the daemon asks root for one by itself.
+    status(asked.id, asked.build, { state: "plan-sign-in", reason: "sign in to your claude plan first" });
+    const signIn = join(state, "build-drop", "sign-in.json");
+    for (let i = 0; i < 100 && !existsSync(signIn); i++) await new Promise((done) => setTimeout(done, 100));
+    assert.deepEqual(drop("sign-in"), { build: asked.build, provider: "claude" });
+    rmSync(signIn);
+    const link = "https://claude.ai/oauth/authorize?code=true&client_id=stand-in&state=s7Q";
+    const run = join(state, "..", "build-run", "sign-in");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(join(run, "status.json"), JSON.stringify({ provider: "claude", state: "waiting", url: link, pastes: true, at: new Date(Date.now() + 50).toISOString() }));
+
+    const page = await tv();
+    await go(page, `build/${asked.build}`);
+    await page.waitForSelector('.build-page[data-state="plan-sign-in"] .build-qr img', { timeout: 10_000 });
+    await page.waitForFunction(() => ((document.querySelector(".build-qr img") as HTMLImageElement | null)?.naturalWidth ?? 0) > 0);
+    const tvSays = await page$(page);
+    assert.match(tvSays, /sign in to your claude plan\./);
+    assert.match(tvSays, /scan it with your phone's camera and sign in\. then paste the code the page gives you on your phone's agentv page\./);
+
+    const hand = await phone();
+    await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
+    assert.match(await hand.locator('[data-action="plan-sign-in"]').innerText(), /sign in to your claude plan ›/);
+    await hand.locator('[data-action="plan-sign-in"]').tap();
+    await hand.waitForSelector('[data-action="open-sign-in"]');
+    assert.equal(await hand.locator('[data-action="open-sign-in"]').getAttribute("href"), link);
+    await hand.locator('input[name="code"]').fill("good-code#s7Q");
+    await hand.locator('[data-action="send-code"]').tap();
+    await hand.waitForSelector(".overlay .pin-keys");
+    for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+    await hand.waitForFunction(() => /signing in on the tv/.test(document.getElementById("toast")?.textContent ?? ""));
+    assert.deepEqual(drop("sign-in-code"), { code: "good-code#s7Q" });
+    rmSync(join(state, "build-drop", "sign-in-code.json"));
+
+    // The CLI says it's in: the build starts again, by itself.
+    writeFileSync(join(run, "status.json"), JSON.stringify({ provider: "claude", state: "done", pastes: true, at: new Date(Date.now() + 50).toISOString() }));
+    await page.waitForSelector('.build-page[data-state="starting"]', { timeout: 10_000 });
+    const again = drop("start");
+    assert.deepEqual([again.phase, again.signedIn], ["understand", true]);
+    rmSync(join(state, "build-drop", "start.json"));
+    await send("POST", `/api/builds/${asked.build}/forget`, {}, grant);
+    await hand.close();
+    await page.close();
+  } finally {
+    process.env.PATH = path;
+    rmSync(tools, { recursive: true, force: true });
+  }
 });

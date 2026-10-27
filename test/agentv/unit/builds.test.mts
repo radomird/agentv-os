@@ -325,7 +325,7 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     assert.equal(listed.builds[0].state, "approve");
     // The phone's own state carries it too, for its notices.
     const followed = (await (await phone("GET", "/api/phone/state")).json()).builds;
-    assert.deepEqual(followed, [{ build: asked.build.build, id: asked.build.id, name: "a game like tetris", state: "approve", phase: "build", done: 0, steps: 0 }]);
+    assert.deepEqual(followed, [{ build: asked.build.build, id: asked.build.id, name: "a game like tetris", provider: "claude", state: "approve", phase: "build", done: 0, steps: 0 }]);
     assert.deepEqual(listed.builds[0].approval.reaches.declared, ["a tile on home"]);
     assert.equal(listed.settings.safeguards, true);
     const shot = await phone("GET", `/api/phone/builds/${asked.build.build}/shot`);

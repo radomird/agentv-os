@@ -74,7 +74,7 @@ export function ownTools(event: unknown): string[] {
 
 // What every run has: the builder's own home, a plain PATH, and the
 // sandbox's filter as the only way out.
-function baseEnv(run: StepRun): Record<string, string> {
+function baseEnv(run: { home: string; proxy?: string }): Record<string, string> {
   const env: Record<string, string> = {
     HOME: run.home,
     PATH: `${join(run.home, ".local/bin")}:/usr/local/bin:/usr/bin:/bin`,
@@ -85,6 +85,36 @@ function baseEnv(run: StepRun): Record<string, string> {
   if (run.proxy) {
     for (const name of ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"]) env[name] = run.proxy;
   }
+  return env;
+}
+
+// A plan's own sign-in through its CLI (ADR-022, ADR-040), in the builder's
+// sandbox, as agentv-builder: the command that starts it, whether the
+// person pastes a code back into it from the provider's page, and how the
+// CLI says it's signed in. AgenTV shows the link the CLI prints and passes
+// on what the person types, and never sees the plan's tokens, which the CLI
+// keeps in its own files. Only the plans AgenTV offers have one.
+export interface SignIn {
+  login: string[];
+  status: string[];
+  pastes: boolean;
+  signedIn: (out: string, code: number) => boolean;
+}
+
+export const SIGN_IN: Partial<Record<Provider, SignIn>> = {
+  // Claude Code prints its link and reads the code from its prompt, and
+  // says it's signed in to a plan with authMethod "claude.ai".
+  claude: { login: ["auth", "login", "--claudeai"], status: ["auth", "status", "--json"], pastes: true, signedIn: (out, code) => code === 0 && /"authMethod"\s*:\s*"claude\.ai"/.test(out) },
+  // Codex's device sign-in prints a link and a code to enter there.
+  chatgpt: { login: ["login", "--device-auth"], status: ["login", "status"], pastes: false, signedIn: (out, code) => code === 0 && !/not logged in/i.test(out) },
+};
+
+// What the CLI's sign-in and its status run with: the builder's home, the
+// filter as the only way out, and each CLI's own folder.
+export function signInEnv(provider: Provider, home: string, proxy?: string): Record<string, string> {
+  const env = baseEnv({ home, proxy });
+  if (provider === "claude") Object.assign(env, { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1" });
+  if (provider === "chatgpt") env.CODEX_HOME = join(home, ".codex");
   return env;
 }
 

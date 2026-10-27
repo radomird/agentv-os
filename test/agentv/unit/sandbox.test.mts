@@ -422,7 +422,7 @@ test("root starts one build at a time, and stops the running one when asked", as
   assert.ok(!o.calls.some((call) => call.includes("agentv-builder@local.blocks-1.0.0.service")));
   writeFileSync(join(o.drop, "stop.json"), "{}");
   await h.handle();
-  assert.deepEqual(o.calls.at(-1), ["stop", "--no-block", "agentv-builder@*.service"]);
+  assert.deepEqual(o.calls.at(-1), ["stop", "--no-block", "agentv-builder@*.service", "agentv-builder-sign-in@*.service"]);
 });
 
 test("a change starts from a copy of the version it changes, in the build's own folder", async () => {
@@ -498,6 +498,14 @@ test("S6.3 the builder's sandbox stays as tight as it is: no sudo, no key, no ne
   assert.equal(one("BindPaths"), "/var/lib/agentv/build/%I /var/lib/agentv/builder", "it writes its build and its own home, nothing else");
   assert.ok(one("InaccessiblePaths")!.split(" ").includes("-/etc/agentv"), "the keys are out of its sight");
   assert.ok(!u.has("ReadWritePaths") && !u.has("LoadCredential") && !u.has("EnvironmentFile"), "it's given nothing more to write, and no credential");
+
+  // A plan's sign-in runs in the same sandbox, and writes only its own folder.
+  const signIn = unit("agentv-builder-sign-in@.service");
+  for (const key of ["User", "NoNewPrivileges", "PrivateNetwork", "ProtectSystem", "ProtectHome", "PrivateTmp", "PrivateDevices", "RestrictSUIDSGID", "TemporaryFileSystem", "CapabilityBoundingSet", "InaccessiblePaths", "ProtectProc"]) {
+    assert.deepEqual(signIn.get(key), u.get(key), `the sign-in's ${key} is the build's`);
+  }
+  assert.equal(signIn.get("BindPaths")?.join(" "), "/var/lib/agentv/builder /run/agentv-build/sign-in");
+  assert.ok(!signIn.has("ReadWritePaths") && !signIn.has("LoadCredential") && !signIn.has("EnvironmentFile"));
 
   const net = unit("agentv-build-net.service");
   assert.equal(net.get("User")?.[0], "agentv-build-net", "the key goes to the relay's own user");

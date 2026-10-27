@@ -38,6 +38,7 @@ export interface BuildRequest {
   // With a key: what this build may spend, in dollars (ADR-045).
   budget?: { build: number; month: number; spentMonth: number };
   safeguards: boolean; // npm's guards (ADR-044)
+  signedIn?: boolean; // the plan's sign-in just finished (ADR-040)
   at: string;
 }
 
@@ -64,7 +65,7 @@ export interface BuildStatus {
   phase: Phase;
   // installed is the version on home, and kept the one before it, for
   // rollback (Q117).
-  state: "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "failed";
+  state: "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
   steps: { id: string; state: StepState }[];
   step?: string;
   reason?: string; // one line, why it failed

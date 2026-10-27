@@ -12,6 +12,12 @@
 //   Local app (daemon/apps/install.ts), or the version before it, back for a
 //   rollback. The version that was on home is kept for that.
 // - remove.json: an app and every build of it, gone.
+// - sign-in.json: a plan's sign-in, the first time the builder runs
+//   (ADR-040): the provider's own CLI signs in, as agentv-builder in the same
+//   sandbox, through the filter with a sign-in ticket of its own, and keeps
+//   what it gets in its own files in the builder's home.
+// - sign-in-code.json: the code the person pasted on the phone, for the
+//   CLI's prompt.
 //
 // One build runs at a time. What happened goes to /run/agentv-build/answer.json
 // for the daemon, and a refused build's status.json says why.
@@ -20,7 +26,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, lchownSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { BuildRequest, BuildStatus, Provider } from "../build.ts";
-import { CLIS } from "../providers.ts";
+import { CLIS, SIGN_IN } from "../providers.ts";
 import { KINDS, planProblems, type Plan } from "../recipe.ts";
 import { installLocal, readInstalled, removeApp } from "../../daemon/apps/install.ts";
 import { DEFAULT_CAP, type Spend, type Ticket } from "./relay.ts";
@@ -94,6 +100,7 @@ export function checkRequest(data: unknown): { request?: BuildRequest; from?: st
   const change = clean(d.change, 500);
   if (change) request.change = change;
   if (plan) request.plan = plan;
+  if (d.signedIn === true && d.path === "plan") request.signedIn = true;
   return { request, from: d.from as string | undefined, cap };
 }
 
@@ -162,9 +169,16 @@ export class HandOver {
 
   async handle(): Promise<{ started: boolean; reason?: string } | null> {
     if (this.take("stop.json").found) {
-      this.o.systemctl(["stop", "--no-block", "agentv-builder@*.service"]);
+      // A sign-in not yet begun stops too.
+      this.take("sign-in.json");
+      this.take("sign-in-code.json");
+      this.o.systemctl(["stop", "--no-block", "agentv-builder@*.service", "agentv-builder-sign-in@*.service"]);
       return this.answer(null, false, "stopped", "stop");
     }
+    const code = this.take("sign-in-code.json");
+    if (code.found) return this.signInCode(code.data);
+    const signIn = this.take("sign-in.json");
+    if (signIn.found) return this.signIn(signIn.data);
     const remove = this.take("remove.json");
     if (remove.found) return this.remove(remove.data);
     const install = this.take("install.json");
@@ -233,6 +247,54 @@ export class HandOver {
     if (stat?.isSymbolicLink()) rmSync(app, { force: true });
     else if (stat) rmSync(app, { recursive: true, force: true });
     return this.answer(null, true, undefined, "remove");
+  }
+
+  // A plan's sign-in for the build that's waiting for it (ADR-040). The CLI
+  // gets a fresh folder of its own for how it's going and the code, and the
+  // filter a ticket that lets it reach its provider's sign-in pages.
+  signIn(data: unknown): { started: boolean; reason?: string } {
+    const d = (typeof data === "object" && data !== null ? data : {}) as { build?: unknown; provider?: unknown };
+    const build = typeof d.build === "string" && BUILD.test(d.build) ? d.build : null;
+    const provider = d.provider as Provider;
+    if (!PROVIDERS.includes(provider) || !SIGN_IN[provider]) return this.answer(build, false, "that plan has no sign-in yet", "sign-in");
+    if (this.running()) return this.answer(build, false, "another build is running; one runs at a time", "sign-in");
+    this.o.systemctl(["stop", "agentv-builder-sign-in@*.service"]);
+    const folder = join(this.o.run, "sign-in");
+    mkdirSync(this.o.run, { recursive: true });
+    rmSync(folder, { recursive: true, force: true });
+    mkdirSync(folder, { mode: 0o755 });
+    lchownSync(folder, this.o.builder.uid, this.o.builder.gid);
+    const ticket = join(this.o.run, "sign-in.json");
+    write(ticket, { provider, path: "plan", recipe: null });
+    const refuse = (reason: string) => {
+      rmSync(ticket, { force: true });
+      return this.answer(build, false, reason, "sign-in");
+    };
+    const cli = CLIS[provider];
+    if (!existsSync(join(this.o.home, ".local/bin", cli)) && !this.o.systemctl(["start", `agentv-builder-cli@${cli}.service`])) return refuse(`the box couldn't fetch ${cli}`);
+    if (!this.o.systemctl(["restart", "agentv-build-net.service"])) return refuse("the builder's way out didn't start");
+    if (!this.o.systemctl(["start", "--no-block", `agentv-builder-sign-in@${provider}.service`])) return refuse("the sign-in didn't start");
+    return this.answer(build, true, undefined, "sign-in");
+  }
+
+  // The code from the phone, where the sign-in reads it: a file only the
+  // builder reads, made new so nothing the builder left is followed.
+  signInCode(data: unknown): { started: boolean; reason?: string } {
+    const code = (data as { code?: unknown } | null)?.code;
+    if (typeof code !== "string" || !/^[\x21-\x7e]{1,512}$/.test(code)) return this.answer(null, false, "that isn't a sign-in code", "sign-in-code");
+    const folder = join(this.o.run, "sign-in");
+    const stat = lstatSync(folder, { throwIfNoEntry: false });
+    if (!stat?.isDirectory() || stat.isSymbolicLink() || stat.uid !== this.o.builder.uid) return this.answer(null, false, "nothing is signing in", "sign-in-code");
+    const next = join(folder, "input.next");
+    try {
+      rmSync(next, { force: true });
+      writeFileSync(next, code, { mode: 0o600, flag: "wx" });
+      lchownSync(next, this.o.builder.uid, this.o.builder.gid);
+      renameSync(next, join(folder, "input"));
+    } catch {
+      return this.answer(null, false, "the code couldn't be handed over", "sign-in-code");
+    }
+    return this.answer(null, true, undefined, "sign-in-code");
   }
 
   start(data: unknown): { started: boolean; reason?: string } {
