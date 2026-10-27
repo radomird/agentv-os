@@ -4,11 +4,13 @@
 # agentv:hidden=true
 # agentv:requires-sudo=true
 
-# TV setup's apps (board 09). The setup screens hand the official apps the
-# household picked to AgenTV's daemon, which can't write the apps folder. It
-# leaves their ids in its own private state, and agentv-setup-apps.path
-# starts this as root to install each one with `agentv app install`, from
-# the signed index, one after the other. /run/agentv-setup-apps/state.json
+# TV setup's apps (board 09), and the ones added from Apps after it
+# (ADR-042). The TV hands the official apps picked to AgenTV's daemon, which
+# can't write the apps folder. It leaves their ids in its own private state,
+# and agentv-setup-apps.path starts this as root to install each one with
+# `agentv app install`, from the signed index, one after the other. A native
+# app's program comes with it, from agentv-app-package@<app-id>.service,
+# since this one can't write the system. /run/agentv-setup-apps/state.json
 # says how each is going, for the TV: queued, installing, installed or
 # failed, with why.
 
@@ -17,6 +19,9 @@ set -euo pipefail
 DROP=${AGENTV_SETUP_APPS_DROP:-/var/lib/private/agentv/daemon/apps-drop/install.json}
 STATUS=${AGENTV_SETUP_APPS_STATUS:-/run/agentv-setup-apps/state.json}
 INSTALL=${AGENTV_APP_INSTALL:-agentv-app-install}
+APPS=${AGENTV_APPS:-/var/lib/agentv/apps}
+PACKAGE=${AGENTV_APP_PACKAGE:-}
+PACKAGE_ERRORS=${AGENTV_APP_PACKAGE_ERRORS:-/run/agentv-app-package}
 
 [[ -f $DROP ]] || exit 0
 mapfile -t apps < <(jq -r '.apps[]? | strings' "$DROP" 2>/dev/null || true)
@@ -34,6 +39,25 @@ set_state() {
   mv -f "$next" "$STATUS"
 }
 
+# needs_program <id>: whether an official native app that just installed
+# names a program the box doesn't have yet.
+needs_program() {
+  local pkg
+  [[ $(jq -r --arg id "$1" '.[$id].tier // empty' "$APPS/installed.json" 2>/dev/null) == "official" ]] || return 1
+  pkg=$(jq -r 'select(.tv.runtime == "native") | .tv.package.pacman // .tv.package.flatpak // empty' "$APPS/$1/manifest.json" 2>/dev/null || true)
+  [[ -n $pkg ]] || return 1
+  ! pacman -Q -- "$pkg" >/dev/null 2>&1
+}
+
+# install_program <id>: the app's program, as root, in its own unit.
+install_program() {
+  if [[ -n $PACKAGE ]]; then
+    "$PACKAGE" "$1"
+  else
+    systemctl start "agentv-app-package@$1.service"
+  fi
+}
+
 wanted=()
 for id in "${apps[@]}"; do
   if [[ ! $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]]; then
@@ -47,8 +71,18 @@ done
 for id in "${wanted[@]}"; do
   set_state "$id" installing
   if out=$("$INSTALL" "$id" 2>&1); then
-    set_state "$id" installed
     echo "agentv-setup-apps: installed $id"
+    if needs_program "$id"; then
+      echo "agentv-setup-apps: installing the program $id opens"
+      if ! install_program "$id"; then
+        why=$(head -n 1 "$PACKAGE_ERRORS/$id.error" 2>/dev/null | cut -c1-200 || true)
+        [[ -n $why ]] || why="its program didn't install"
+        set_state "$id" failed "$why"
+        echo "agentv-setup-apps: the program $id opens didn't install: $why" >&2
+        continue
+      fi
+    fi
+    set_state "$id" installed
   else
     # The installer's own last line says why, as "Couldn't do it: ...".
     why=$(printf '%s\n' "$out" | grep -v '^\s*$' | tail -n 1 | sed -E 's/^(Couldn.t do it|Something went wrong): //; s/\.$//' | cut -c1-200)

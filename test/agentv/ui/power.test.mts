@@ -155,6 +155,8 @@ test("S2.18 Power isn't on a child's profile or offered while an update runs, an
   await go(child, "power/shutdown");
   await child.waitForSelector(".grid .tile");
   assert.equal(await child.locator(".page.power").count(), 0);
+  // Its stand-in for /api/home may still be answering; that's not this test's.
+  await child.unrouteAll({ behavior: "ignoreErrors" });
   await child.close();
 
   // A countdown stops when an install starts, and Power says why it's not
