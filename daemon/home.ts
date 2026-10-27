@@ -15,6 +15,7 @@ import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts
 import { readInstalled } from "./apps/install.ts";
 import type { Ledger, WatchRow } from "./ledger.ts";
 import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
+import { DATA_DIRS, packageIcon } from "./package-icon.ts";
 import { siteIcon } from "./site-icon.ts";
 
 // Where an app came from: the signed index, this box's agent, or AgenTV
@@ -208,6 +209,9 @@ export interface HomeOptions {
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
+  // Where packages put their desktop entries and icons, for a native app's
+  // icon: /usr/local/share, /usr/share and flatpak's.
+  dataDirs?: string[];
 }
 
 // How long before a site's icon that didn't come is asked for again.
@@ -258,6 +262,7 @@ export class Home {
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
   private goal?: () => Promise<string | null>;
   private pageTile?: (id: string) => Promise<unknown>;
+  private dataDirs: string[];
 
   constructor(options: HomeOptions) {
     this.appsDir = options.appsDir;
@@ -270,6 +275,7 @@ export class Home {
     this.viewerOf = options.viewer;
     this.goal = options.goal;
     this.pageTile = options.pageTile;
+    this.dataDirs = options.dataDirs ?? DATA_DIRS;
   }
 
   // --- The viewer -------------------------------------------------------
@@ -347,7 +353,9 @@ export class Home {
       const fields = (manifest.tv.setup ?? []).filter((step) => step.type === "field");
       const signedIn = signIns[manifest.id]?.signedIn;
       const signInStep = (manifest.tv.setup ?? []).some((step) => step.type === "signIn");
-      const icon = manifest.tv.icon || this.hasSiteIcon(manifest.id, tier) ? `/api/apps/${manifest.id}/icon` : undefined;
+      // Its own logo, or else its package's icon or its site's.
+      const has = !!manifest.tv.icon || (manifest.tv.runtime === "native" ? packageIcon(manifest.tv, this.dataDirs) !== null : this.hasSiteIcon(manifest.id, tier));
+      const icon = has ? `/api/apps/${manifest.id}/icon` : undefined;
       const reach = [...allowedOrigins(manifest, values)].map((origin) => origin.replace(/^https?:\/\//, ""));
       return {
         id: manifest.id,
@@ -692,6 +700,7 @@ export class Home {
     if (!found) return null;
     if (found.manifest.tv.icon) return { path: join(found.dir, found.manifest.tv.icon) };
     if (found.tier === "built-in") return null;
+    if (found.manifest.tv.runtime === "native") return packageIcon(found.manifest.tv, this.dataDirs);
     const site = await readJson<{ type?: string } | null>(join(this.state, "icons", `${id}.json`), null);
     return site?.type ? { path: join(this.state, "icons", id), type: site.type } : null;
   }

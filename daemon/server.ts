@@ -71,6 +71,9 @@ export interface DaemonOptions {
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
+  // Where packages put their desktop entries and icons, for a native app's
+  // icon: /usr/local/share, /usr/share and flatpak's.
+  dataDirs?: string[];
   // The backgrounds and their credits: /var/lib/agentv/backgrounds.
   backgrounds?: string;
   // Tests point the museum archives at their own server.
@@ -228,6 +231,7 @@ export class Daemon {
       changed: (event) => this.broadcast(event, {}),
       pageTile: (id) => this.pageApps.tile(id),
       log: this.log,
+      dataDirs: options.dataDirs,
     });
     // Page apps (ADR-043): each on an origin of its own, and the kit's calls
     // checked against its manifest.
@@ -429,12 +433,16 @@ export class Daemon {
   // The phone's state: who's watching, the lock, a sign-in, an update and
   // what's on the TV, with the count it's at.
   private async phoneState(phone: unknown): Promise<object> {
+    // The count before anything's read: a change while it's read leaves the
+    // phone a count behind, so it asks again at once, and never a count
+    // ahead of what it was told, with its next ask waiting 25 s.
+    const version = this.phoneVersion;
     const viewer = await this.profiles.active();
     const pin = this.pin.status(viewer.locked);
     const setup = await this.setup();
     return {
       ok: true,
-      version: this.phoneVersion,
+      version,
       phone,
       viewer,
       viewers: await this.profiles.list(),
@@ -1420,6 +1428,28 @@ export class Daemon {
       const state = await this.updates.read();
       this.broadcast("updates", state);
       this.json(response, 200, { ok: true, tonight: state.tonight });
+      return;
+    }
+
+    // Apps → add an app (ADR-042): the official apps that aren't on the TV,
+    // and one picked, handed to root as setup's are, past the PIN once there
+    // is one. A child's profile doesn't add apps.
+    if (path === "/api/apps/add" && (method === "GET" || method === "POST")) {
+      if ((await this.profiles.active()).role === "child") {
+        this.json(response, 403, { ok: false, error: "only an adult adds apps" });
+        return;
+      }
+      if (method === "POST") {
+        if (!this.guarded(request, response, "adding an app")) return;
+        const id = ((await this.body(request)) as { id?: unknown } | undefined)?.id;
+        const why = await this.setupApps.add(id, await this.home.apps());
+        if (why) {
+          this.json(response, 400, { ok: false, error: why });
+          return;
+        }
+        this.log(`apps: adding ${String(id)}`);
+      }
+      this.json(response, 200, { ok: true, ...(await this.setupApps.available(await this.home.apps())) });
       return;
     }
 
