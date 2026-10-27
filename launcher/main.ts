@@ -10,6 +10,7 @@ import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
+import { addApp, installMoved } from "./pages/add-app.ts";
 import { appSetup } from "./pages/app-setup.ts";
 import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
@@ -279,6 +280,8 @@ const ACTIONS: Record<string, string> = {
 function viewFor(route: string): View {
   const [name, arg] = route.split("/");
   if (name === "apps") return apps(ctx);
+  // Adding an app is an adult's, and a child's profile doesn't see it (ADR-042).
+  if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
   if (name === "details") return details(ctx, arg);
   if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
@@ -644,6 +647,8 @@ async function start(): Promise<void> {
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
+    // An app added from Apps, or picked in setup, is installing.
+    "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),
     // Someone else is watching (S4.2): their home, at once. A child's profile
     // closes the apps open behind home that children can't open.
     viewer: () => void switched(),

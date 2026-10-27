@@ -1,6 +1,7 @@
 // Setup's apps (board 09): the official apps from AgenTV's signed index
 // (ADR-010, ADR-036), the ones for what the TV is for first, and the rest
-// under "more", beside the built-in apps that come with AgenTV. The daemon
+// under "more", beside the built-in apps that come with AgenTV. Apps → add
+// an app hands over the same way, after setup (ADR-042). The daemon
 // can't write the apps folder, which is root's, so it leaves the ones picked
 // in its own private state, where agentv-setup-apps.path starts
 // bin/agentv-setup-apps as root to install each with `agentv app install`,
@@ -33,6 +34,16 @@ export interface SetupApp {
   description: string;
   builtin: boolean;
   installed: boolean;
+  state: InstallState | null;
+  error?: string;
+}
+
+// Apps → add an app (ADR-042): an official app that isn't on the TV, or one
+// added from there that just landed.
+export interface AvailableApp {
+  id: string;
+  name: string;
+  description: string;
   state: InstallState | null;
   error?: string;
 }
@@ -82,6 +93,8 @@ export class SetupApps {
   private cached?: { until: number; apps: IndexEntry[]; error?: string };
   // Picked and handed over, until root says how it's going.
   private queued = new Set<string>();
+  // Added from Apps, which keeps them on its list once they're installed.
+  private added = new Set<string>();
   private watching?: ReturnType<typeof setInterval>;
   private seen = "";
 
@@ -155,6 +168,34 @@ export class SetupApps {
     const forGoal = first.map((id) => shown.get(id)).filter((app): app is SetupApp => !!app);
     const more = [...shown.values()].filter((app) => !first.includes(app.id)).sort((a, b) => Number(b.builtin) - Number(a.builtin) || a.name.localeCompare(b.name));
     return { for: forGoal, more, ...(error ? { error } : {}) };
+  }
+
+  // Apps → add an app (ADR-042): the official apps that aren't on the TV,
+  // by name, each with how its install is going once it's picked. One added
+  // from there stays on the list as installed, so it can be opened there.
+  async available(present: Present[]): Promise<{ apps: AvailableApp[]; error?: string }> {
+    const { apps, error } = await this.official();
+    const status = this.status();
+    const here = new Set(present.map((app) => app.id));
+    const list: AvailableApp[] = [];
+    for (const entry of apps) {
+      const now = status[entry.id];
+      if (here.has(entry.id) && !(this.added.has(entry.id) && now?.state === "installed")) continue;
+      // Installed once and taken off since: it can be added again.
+      const state = now?.state === "installed" && !here.has(entry.id) ? null : (now?.state ?? null);
+      list.push({ id: entry.id, name: entry.name, description: entry.description ?? "", state, ...(state === "failed" && now?.error ? { error: now.error } : {}) });
+    }
+    list.sort((a, b) => a.name.localeCompare(b.name));
+    return { apps: list, ...(error ? { error } : {}) };
+  }
+
+  // One app from Apps → add an app, handed to root as setup's are.
+  async add(id: unknown, present: Present[]): Promise<string | null> {
+    if (typeof id !== "string" || !ID.test(id)) return "send the app to add as its id";
+    if (present.some((app) => app.id === id)) return "that app is on the tv already";
+    const why = await this.install([id]);
+    if (!why) this.added.add(id);
+    return why;
   }
 
   // Hands the picked apps to root to install. Null once root has them, or
