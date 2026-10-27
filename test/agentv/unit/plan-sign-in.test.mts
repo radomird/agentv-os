@@ -165,6 +165,23 @@ test("ADR-040 Codex's device sign-in shows its link and the code to enter there,
   assert.ok(existsSync(join(h, ".codex/auth.json")), "in Codex's own folder in the builder's home");
 });
 
+test("ADR-040 the sign-in runs as its unit runs it, as a program of its own", async () => {
+  // As agentv-builder-sign-in@claude starts it. Its imports once made a
+  // loop through the runner, which only showed when it ran this way.
+  const dir = join(scratch, `program${++count}`);
+  mkdirSync(join(dir, "home"), { recursive: true });
+  mkdirSync(join(dir, "folder"));
+  mkdirSync(join(dir, "net"));
+  const { spawnSync } = await import("node:child_process");
+  const ran = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", join(ROOT, "builder/sign-in.ts"), "claude"], {
+    env: { ...process.env, HOME: join(dir, "home"), AGENTV_SIGN_IN: join(dir, "folder"), AGENTV_BUILD_NET: join(dir, "net") },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  assert.equal(ran.status, 1, ran.stderr);
+  assert.match(read(join(dir, "folder"))!.reason!, /claude isn't on the box yet/);
+});
+
 test("a plan without its CLI, or with no sign-in yet, says so", async () => {
   const folder = join(scratch, `none${++count}`);
   mkdirSync(folder);

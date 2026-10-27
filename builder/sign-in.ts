@@ -17,6 +17,8 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CLIS, SIGN_IN, signInEnv } from "./providers.ts";
+import { forward } from "./sandbox/forward.ts";
+import { PROXY_PORT } from "./sandbox/ports.ts";
 import type { Provider } from "./build.ts";
 
 export interface SignInStatus {
@@ -155,7 +157,6 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     console.error("Usage: node sign-in.ts <claude|chatgpt|gemini|grok|muse>");
     process.exit(2);
   }
-  const { forward, PROXY_PORT } = await import("./sandbox/start.ts");
   const net = process.env.AGENTV_BUILD_NET ?? "/run/agentv-build-net";
   const server = await forward(PROXY_PORT, join(net, "proxy.sock"));
   // A stop from the TV says so, rather than leaving the link up.
