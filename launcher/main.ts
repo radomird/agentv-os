@@ -565,10 +565,16 @@ async function refresh(): Promise<void> {
   redraw();
 }
 
+// Whose home is on the TV. Word of one switch can come twice, from its own
+// event and from the events' catch-up as they start, and it's made once.
+let shownViewer = "";
+
 async function switched(): Promise<void> {
-  held = null;
   ctx.state = await homeState();
   apply(ctx.state.settings);
+  if (ctx.state.viewer.id === shownViewer) return redraw();
+  shownViewer = ctx.state.viewer.id;
+  held = null;
   const child = ctx.state.viewer.role === "child";
   if (child) {
     for (const id of ctx.running.keys()) {
@@ -616,6 +622,7 @@ async function start(): Promise<void> {
     focus.refresh();
   });
   ctx.state = await daemon.home();
+  shownViewer = ctx.state.viewer.id;
   apply(ctx.state.settings);
   await loadBackgrounds();
   show("home");
