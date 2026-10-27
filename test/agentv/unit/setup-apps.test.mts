@@ -185,3 +185,39 @@ test("the setup screens get the apps for the goal, pick them past the PIN once t
   assert.equal((await post("/api/setup/apps", { install: ["agentv.steam"] }, grant)).status, 409, "not once setup is done");
   assert.equal((await post("/api/setup/wish", { text: "more" })).status, 409);
 });
+
+test("ADR-042 Apps → add an app lists the official apps not on the TV, and adds one past the PIN", async () => {
+  // After setup, with the PIN from the test before.
+  const listed = async () => (await (await fetch(`${url}/api/apps/add`)).json()).apps as { id: string; state: string | null; error?: string }[];
+  assert.deepEqual(
+    (await listed()).map((app) => `${app.id} ${app.state}`),
+    ["agentv.immich null", "agentv.jellyfin null", "agentv.steam null"],
+    "by name, official only, and Immich, which root said it installed but isn't here, can be added again",
+  );
+  assert.equal((await post("/api/apps/add", { id: "agentv.steam" })).status, 403, "past the PIN");
+  const grant = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
+  assert.equal((await post("/api/apps/add", { id: "someone.else" }, grant)).status, 400, "only an official app");
+  assert.equal((await post("/api/apps/add", { id: "agentv.music" }, grant)).status, 400, "not one already on the TV");
+  assert.equal((await post("/api/apps/add", { id: "../steam" }, grant)).status, 400);
+  const stop = root(join(state, "apps-drop", "install.json"), status, () => "failed");
+  try {
+    assert.equal((await post("/api/apps/add", { id: "agentv.steam" }, grant)).status, 200);
+    const second = await post("/api/apps/add", { id: "agentv.jellyfin" }, grant);
+    assert.equal(second.status, 400);
+    assert.equal((await second.json()).error, "steam is still installing. add this one once it's done", "root installs one at a time");
+    const until = Date.now() + 5000;
+    let steam = (await listed()).find((app) => app.id === "agentv.steam");
+    while (Date.now() < until && steam?.state !== "failed") {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      steam = (await listed()).find((app) => app.id === "agentv.steam");
+    }
+    assert.deepEqual(steam, { id: "agentv.steam", name: "Steam", description: "Your Steam on the TV", state: "failed", error: "couldn't fetch agentv.steam" }, "its tile says it failed, and why");
+  } finally {
+    stop();
+  }
+
+  const child = (await (await post("/api/viewers", { name: "mia", role: "child" }, grant)).json()).profile;
+  await post("/api/viewer", { id: child.id }, grant);
+  assert.equal((await fetch(`${url}/api/apps/add`)).status, 403, "a child's profile doesn't see it");
+  assert.equal((await post("/api/apps/add", { id: "agentv.jellyfin" }, grant)).status, 403, "even with the PIN");
+});

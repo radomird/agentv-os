@@ -1,6 +1,6 @@
 // Apps (ADR-015): everything on the box, on the home screen or not. Enter
 // opens an app, i shows its details, p puts it on home or takes it off, and e
-// edits home.
+// edits home. An adult adds AgenTV's official apps from here (ADR-042).
 
 import { screen, type App } from "../api.ts";
 import { h } from "../dom.ts";
@@ -36,6 +36,17 @@ export function apps(ctx: Ctx): View {
   const on = ctx.state.apps.filter((app) => pinned.has(app.id));
   const off = ctx.state.apps.filter((app) => !pinned.has(app.id));
 
+  // AgenTV's official apps that aren't here yet, for an adult (ADR-042).
+  const official =
+    ctx.state.viewer.role === "adult"
+      ? h(
+          "button",
+          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "add-app", onclick: () => ctx.go("add-app") },
+          h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, "more apps")),
+          h("span", { class: "tile-name" }, "+ add an app"),
+        )
+      : null;
+
   const add = h(
     "button",
     {
@@ -62,7 +73,7 @@ export function apps(ctx: Ctx): View {
       h("div", { class: "section" }, "# on your home"),
       on.length ? h("div", { class: "row" }, ...on.map((app) => appTile(ctx, app))) : h("div", { class: "empty" }, "nothing yet"),
       h("div", { class: "section" }, "# not on your home"),
-      h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), add),
+      h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(official ? [official] : []), add),
     ),
     bar(ctx, "apps", "↵ open · i details · p pin to home · e edit home"),
   );
