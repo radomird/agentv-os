@@ -32,7 +32,7 @@ import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
-import { Builds } from "./builds.ts";
+import { Builds, type Provider as BuildProvider } from "./builds.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
@@ -419,7 +419,7 @@ export class Daemon {
 
   // The AI a build runs on: picked, its terms accepted, and a key there for
   // a key's path.
-  private async builderAi(): Promise<{ ai?: { provider: "claude" | "chatgpt" | "gemini"; path: "plan" | "key" }; error?: string }> {
+  private async builderAi(): Promise<{ ai?: { provider: BuildProvider; path: "plan" | "key" }; error?: string }> {
     const ai = await this.ai.read();
     if (!ai.provider || !ai.path || !ai.accepted) return { error: "pick the AI in Settings → AI, and accept its terms on the phone, first" };
     if (ai.path === "key") {
