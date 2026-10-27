@@ -262,6 +262,8 @@ export const daemon = {
   archives: () => call<{ archives: { id: Art["archive"]; name: string }[] }>("GET", "/api/art").then((r) => r.archives),
   searchArt: (archive: Art["archive"], words: string) => call<{ items: Art[] }>("GET", `/api/art/search?archive=${archive}&q=${encodeURIComponent(words)}`).then((r) => r.items),
   pickArt: (archive: Art["archive"], id: string) => call<Backgrounds & { background: Background }>("POST", "/api/backgrounds/art", { archive, id }),
+  // An Immich album through its shared link: its photos as the background.
+  immichAlbum: (link: string, grant?: string) => call<Backgrounds & { album: string; count: number }>("POST", "/api/backgrounds/immich", { link }, grant),
   // The looks setup and Settings → Look offer, and which one the TV has.
   themes: () => call<{ themes: ThemePreview[]; current: string | null }>("GET", "/api/themes"),
   weather: () => call<WeatherPlace>("GET", "/api/weather"),

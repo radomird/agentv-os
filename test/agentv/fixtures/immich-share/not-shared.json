@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/assets/00000000-0000-0000-0000-000000000007/thumbnail?size=preview&key=fixture-key"
+  },
+  "status": 400,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "message": "Not found or no asset.view access",
+    "error": "Bad Request",
+    "statusCode": 400,
+    "correlationId": "avncnwbp"
+  }
+}
