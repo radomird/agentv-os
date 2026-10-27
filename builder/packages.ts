@@ -287,11 +287,20 @@ export class Packages {
 // command: the system read-only, the builder's home hidden, the work
 // folder writable, and its own namespaces but the sandbox's network,
 // whose only way out is the filter.
+//
+// It has no /proc of its own: the kernel won't mount one in a namespace
+// whose /proc the build's unit has covered in part (ProtectKernelTunables),
+// and the sandbox's own would show the builder's other processes, and
+// through them its home. Only /proc's files about the machine are there,
+// for a script that asks how many CPUs or how much memory there is.
 export function jail(work: string, home: string): string[] {
   return [
     "--ro-bind", "/", "/",
     "--dev", "/dev",
-    "--proc", "/proc",
+    "--tmpfs", "/proc",
+    "--ro-bind-try", "/proc/cpuinfo", "/proc/cpuinfo",
+    "--ro-bind-try", "/proc/meminfo", "/proc/meminfo",
+    "--ro-bind-try", "/proc/stat", "/proc/stat",
     "--tmpfs", "/tmp",
     "--tmpfs", home,
     "--bind", work, work,

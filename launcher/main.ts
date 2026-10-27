@@ -726,8 +726,12 @@ async function start(): Promise<void> {
   w.agentvHome = () => act("home");
   w.agentvAmbient = (on) => setAmbient(on);
   // A page app opened from elsewhere, such as Apps or the phone, through
-  // the screen daemon, which put home in front first.
-  w.agentvPage = (id) => openPage(ctx, id);
+  // the screen daemon, which put home in front first. One installed a moment
+  // ago may not be in home's list yet, so home reads it again first.
+  w.agentvPage = (id) => {
+    if (ctx.state.apps.some((app) => app.id === id)) openPage(ctx, id);
+    else void refresh().then(() => openPage(ctx, id));
+  };
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the
