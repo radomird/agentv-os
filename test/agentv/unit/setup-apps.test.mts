@@ -202,6 +202,9 @@ test("ADR-042 Apps → add an app lists the official apps not on the TV, and add
   const stop = root(join(state, "apps-drop", "install.json"), status, () => "failed");
   try {
     assert.equal((await post("/api/apps/add", { id: "agentv.steam" }, grant)).status, 200);
+    const second = await post("/api/apps/add", { id: "agentv.jellyfin" }, grant);
+    assert.equal(second.status, 400);
+    assert.equal((await second.json()).error, "steam is still installing. add this one once it's done", "root installs one at a time");
     const until = Date.now() + 5000;
     let steam = (await listed()).find((app) => app.id === "agentv.steam");
     while (Date.now() < until && steam?.state !== "failed") {

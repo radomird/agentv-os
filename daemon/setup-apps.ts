@@ -79,6 +79,8 @@ export interface SetupAppsOptions {
 }
 
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
+// Longer than agentv-setup-apps.service may run.
+const STALE_MS = 2 * 3600_000;
 const STATES: InstallState[] = ["queued", "installing", "installed", "failed"];
 
 export class SetupApps {
@@ -189,10 +191,19 @@ export class SetupApps {
     return { apps: list, ...(error ? { error } : {}) };
   }
 
-  // One app from Apps → add an app, handed to root as setup's are.
+  // One app from Apps → add an app, handed to root as setup's are. Root
+  // installs one hand-over at a time, so a second waits for the first. One
+  // that hasn't moved for longer than root may take was cut short.
   async add(id: unknown, present: Present[]): Promise<string | null> {
     if (typeof id !== "string" || !ID.test(id)) return "send the app to add as its id";
     if (present.some((app) => app.id === id)) return "that app is on the tv already";
+    const going = Object.entries(this.status()).find(
+      ([, app]) => (app.state === "queued" || app.state === "installing") && !(app.at && Date.now() - Date.parse(app.at) > STALE_MS),
+    );
+    if (going) {
+      const name = (await this.official()).apps.find((app) => app.id === going[0])?.name ?? going[0];
+      return `${name.toLowerCase()} is still installing. add this one once it's done`;
+    }
     const why = await this.install([id]);
     if (!why) this.added.add(id);
     return why;
