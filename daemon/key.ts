@@ -1,14 +1,14 @@
-// The provider key (ADR-009, ADR-022, S4.6): an API key for Claude, ChatGPT
-// or Gemini, given on the TV or the phone. The daemon can't write /etc, and
-// shouldn't hold the key, so it leaves it in its own private state, where
-// agentv-key.path starts bin/agentv-key-store as root to move it into
-// /etc/agentv/env. It waits for that, and the key never comes back out: the
+// The provider key (ADR-009, ADR-022, ADR-047, S4.6): an API key for Claude,
+// ChatGPT, Gemini, Grok or Muse, given on the TV or the phone. The daemon
+// can't write /etc, and shouldn't hold the key, so it leaves it in its own
+// private state, where agentv-key.path starts bin/agentv-key-store as root
+// to move it into /etc/agentv/env. It waits for that, and the key never comes back out: the
 // TV only hears which provider has one, from /etc/agentv/key.json.
 
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { OFFERS, PROVIDER_LIST } from "./ai.ts";
 
-export const PROVIDERS: Record<string, string> = { claude: "claude", chatgpt: "chatgpt", gemini: "gemini" };
 // What agentv-key-store takes as a key, so the env file reads it as one.
 const KEY = /^[A-Za-z0-9_.:-]{20,300}$/;
 
@@ -47,7 +47,7 @@ export class ProviderKey {
 
   // Why a key won't do, before anything happens to it, or null.
   check(provider: unknown, key: unknown): string | null {
-    if (provider !== null && (typeof provider !== "string" || !PROVIDERS[provider])) return "claude, chatgpt or gemini";
+    if (provider !== null && (typeof provider !== "string" || !Object.hasOwn(OFFERS, provider))) return PROVIDER_LIST;
     if (provider !== null && (typeof key !== "string" || !KEY.test(key.trim()))) return "that doesn't look like a key";
     return null;
   }

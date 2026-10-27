@@ -42,6 +42,22 @@ drop '{"provider":"someone","key":"abc"}'
 if store; then fail "a provider it doesn't know is refused"; fi
 pass "a drop that isn't a key for a provider it knows changes nothing"
 
+# Grok's and Muse's keys (ADR-047) take the provider key's place, each by
+# the name its CLI reads.
+GROK="xai-$(printf 'g%.0s' {1..40})"
+MUSE="LLM_$(printf 'u%.0s' {1..40})"
+drop "{\"provider\":\"grok\",\"key\":\"$GROK\"}"
+store || fail "a key for grok is kept" "$(cat "$SCRATCH/out")"
+[[ $(cat "$AGENTV_ETC/env") == $'TMDB_API_KEY=tmdb123\n'"XAI_API_KEY=$GROK" ]] || fail "grok's is XAI_API_KEY, in the place of claude's" "$(cat "$AGENTV_ETC/env")"
+jq -e '.set == true and .provider == "grok"' "$AGENTV_ETC/key.json" >/dev/null || fail "key.json names grok"
+drop "{\"provider\":\"muse\",\"key\":\"$MUSE\"}"
+store || fail "a key for muse is kept" "$(cat "$SCRATCH/out")"
+[[ $(cat "$AGENTV_ETC/env") == $'TMDB_API_KEY=tmdb123\n'"META_API_KEY=$MUSE" ]] || fail "muse's is META_API_KEY, in the place of grok's" "$(cat "$AGENTV_ETC/env")"
+jq -e '.set == true and .provider == "muse"' "$AGENTV_ETC/key.json" >/dev/null || fail "key.json names muse"
+[[ $(stat -c %a "$AGENTV_ETC/env") == 600 ]] || fail "the env file is still its owner's alone"
+if grep -q "$GROK\|$MUSE" "$AGENTV_ETC/key.json" "$SCRATCH/out"; then fail "their keys are in nothing but the env file"; fi
+pass "ADR-047 grok's key is kept as XAI_API_KEY and muse's as META_API_KEY, one provider at a time"
+
 drop '{"provider":null}'
 store || fail "a drop with no provider takes the key off"
 [[ $(cat "$AGENTV_ETC/env") == "TMDB_API_KEY=tmdb123" ]] || fail "only the provider key goes" "$(cat "$AGENTV_ETC/env")"

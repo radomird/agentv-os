@@ -233,6 +233,15 @@ test("ADR-043 a Back pressed while the app answers the one before still counts",
   await page.close();
 });
 
+test("ADR-043 a page app installed a moment ago opens from the screen daemon before home has heard of it", async () => {
+  const page = await tv();
+  probe("agentv.fresh", "Fresh", {}, null);
+  await page.evaluate(() => (window as unknown as { agentvPage: (id: string) => void }).agentvPage("agentv.fresh"));
+  await page.waitForSelector(".page-app.on", { timeout: 5000 });
+  assert.doesNotMatch(await page.locator("#toasts").innerText(), /isn't on this tv/);
+  await page.close();
+});
+
 test("ADR-043 an app with no Back of its own is left on Back", async () => {
   const page = await tv();
   await open(page, "agentv.other");

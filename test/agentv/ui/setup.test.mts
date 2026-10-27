@@ -502,7 +502,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   const page = await tv();
   await page.waitForSelector(".providers");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick one.");
-  assert.deepEqual(await page.locator(".provider-name").allInnerTexts(), ["claude", "chatgpt", "gemini"]);
+  assert.deepEqual(await page.locator(".provider-name").allInnerTexts(), ["claude", "chatgpt", "gemini", "grok", "muse"]);
   assert.match(await textOf(page, ".bar"), /2\/6 ai/);
   await page.keyboard.press("Enter");
   await page.waitForSelector('[data-path="plan"]');
@@ -581,6 +581,56 @@ test("Q103 with Claude's plan, once its terms are accepted and the CLI is in, th
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
   await page.waitForFunction(() => /\[x\] claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   assert.doesNotMatch(await textOf(page, ".ready-list"), /signed in/);
+  await page.close();
+});
+
+test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's and Muse's plans are coming soon, a Meta Managed Account uses a key, and each key shows its maker's terms", async () => {
+  await toAi();
+  const page = await tv();
+  await page.waitForSelector(".providers.many");
+  const cards = await page.locator(".provider").evaluateAll((all) =>
+    all.map((card) => {
+      const name = card.querySelector(".provider-name") as HTMLElement;
+      return { bottom: card.getBoundingClientRect().bottom, fits: name.scrollWidth <= name.clientWidth + 1 };
+    }),
+  );
+  assert.equal(cards.length, 5);
+  for (const card of cards) {
+    assert.ok(card.bottom <= 1080, "every card is on the screen");
+    assert.ok(card.fits, "and its name fits it");
+  }
+  const terms = () => page.locator(".terms-list [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms")));
+
+  // Grok: down from Claude.
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "grok");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-path="key"]');
+  assert.match(await textOf(page, '[data-path="plan"]'), /supergrok or x premium\+ · coming soon/);
+  assert.equal(await page.locator('[data-path="plan"][data-focus]').count(), 0, "it can't be picked");
+  assert.match(await textOf(page, '[data-path="key"]'), /from your xai account/);
+  assert.equal(await page.locator('[data-note="plan"]').count(), 0);
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".terms-list");
+  assert.deepEqual(await terms(), ["xai-enterprise-terms", "xai-acceptable-use-policy"]);
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "the terms first.");
+
+  // Muse, beside it.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".providers");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "muse");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-path="key"]');
+  assert.match(await textOf(page, '[data-path="plan"]'), /a muse code subscription · coming soon/);
+  assert.equal(await textOf(page, '[data-note="plan"]'), "a meta managed account can only use a key.");
+  assert.match(await textOf(page, '[data-path="key"]'), /from your meta account/);
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".terms-list");
+  assert.deepEqual(await terms(), ["meta-model-api-terms", "meta-model-api-acceptable-use-policy"]);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".providers");
   await page.close();
 });
 
