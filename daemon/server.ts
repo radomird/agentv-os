@@ -33,6 +33,7 @@ import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { Builds, type Provider as BuildProvider } from "./builds.ts";
+import { exportRefusal, zipFolder } from "./export.ts";
 import { PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
@@ -223,6 +224,8 @@ export class Daemon {
   private keyTerms: Provider | null = null;
   // The last few page apps' notices, for the phones (ADR-043).
   private notices: { app: string; name: string; text: string; at: string }[] = [];
+  // An app the TV offered for Export, for an adult's phone to save (ADR-045).
+  private exportOffer: { id: string; name: string; version: string; until: number } | null = null;
   // Omarchy's desktop's relay for the phone's trackpad, while it's on.
   private desktops = new Set<ServerResponse>();
   private ledgerPath: string;
@@ -637,6 +640,8 @@ export class Daemon {
       // The builds an adult follows here too: how each is going, and the
       // ones waiting for their yes (ADR-043, ADR-046).
       builds: viewer.role === "adult" ? await this.phoneBuilds() : [],
+      // An app the TV offered for Export, for an adult to save here.
+      export: viewer.role === "adult" && this.exportOffer && this.exportOffer.until > Date.now() ? { id: this.exportOffer.id, name: this.exportOffer.name, version: this.exportOffer.version } : null,
     };
   }
 
@@ -1185,6 +1190,36 @@ export class Daemon {
     }
 
     if (await this.builderApi(method, path, request, response, phone)) return;
+
+    // Export (ADR-045): the app the TV offered, as a .zip for this phone, an
+    // adult's, and never one that drives a service's own site.
+    const exporting = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/export$/.exec(path);
+    if (method === "GET" && exporting) {
+      if ((await this.profiles.active()).role !== "adult") {
+        this.json(response, 403, { ok: false, error: "an adult exports an app" });
+        return;
+      }
+      const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === exporting[1]);
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      if (!found || refusal) {
+        this.json(response, 400, { ok: false, error: refusal });
+        return;
+      }
+      const zip = zipFolder(found.dir, `${found.manifest.id}-${found.manifest.version}`);
+      if (this.exportOffer?.id === found.manifest.id) {
+        this.exportOffer = null;
+        this.phonesChanged();
+      }
+      this.log(`${found.manifest.id} was exported to ${phone.name}`);
+      response.writeHead(200, {
+        "Content-Type": "application/zip",
+        "Content-Length": zip.length,
+        "Content-Disposition": `attachment; filename="${found.manifest.id}-${found.manifest.version}.zip"`,
+        "Cache-Control": "no-store",
+      });
+      response.end(zip);
+      return;
+    }
 
     // The adult PIN, entered on the phone: a grant, and the TV unlocked.
     if (method === "POST" && path === "/api/phone/pin") {
@@ -2108,6 +2143,23 @@ export class Daemon {
 
     // What an app said when the screen daemon asked whether it's signed in
     // (ADR-032), for its tile.
+    // Export from an app's details (ADR-045): the phone of an adult who's
+    // watching saves it, so the TV offers it there for ten minutes.
+    const offer = /^\/api\/apps\/(local\.[a-z0-9-]+)\/export$/.exec(path);
+    if (method === "POST" && offer) {
+      if (!(await this.adult(request, response, "exporting an app"))) return;
+      const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === offer[1]);
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      if (!found || refusal) {
+        this.json(response, 400, { ok: false, error: refusal });
+        return;
+      }
+      this.exportOffer = { id: found.manifest.id, name: found.manifest.name, version: found.manifest.version, until: Date.now() + 10 * 60_000 };
+      this.phonesChanged();
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     const signedIn = /^\/api\/apps\/([a-z0-9.-]+)\/signed-in$/.exec(path);
     if (method === "POST" && signedIn) {
       const body = (await this.body(request)) as { signedIn?: unknown } | undefined;

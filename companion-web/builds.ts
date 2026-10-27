@@ -242,3 +242,32 @@ function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => 
     leave,
   ];
 }
+
+// An app the TV offered for Export (ADR-045): the package as a .zip, saved
+// on this phone.
+export interface Offer {
+  id: string;
+  name: string;
+  version: string;
+}
+
+export function exportBanner(offer: Offer | null | undefined, failed: (error: unknown) => void): HTMLElement | null {
+  if (!offer) return null;
+  const name = offer.name.toLowerCase();
+  const save = async () => {
+    try {
+      const response = await fetch(`/api/phone/apps/${offer.id}/export`, { headers: { Authorization: `Bearer ${token()}` } });
+      if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "it couldn't be exported");
+      const link = h("a", { href: URL.createObjectURL(await response.blob()), download: `${offer.id}-${offer.version}.zip` }) as HTMLAnchorElement;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+      toast(`${name} is saved on this phone`, true);
+    } catch (error) {
+      failed(error);
+    }
+  };
+  return h("button", { type: "button", class: "banner", "data-action": "save-export", onclick: () => void save() }, glyph("download", 18), h("span", {}, `save ${name} on this phone ›`));
+}
+

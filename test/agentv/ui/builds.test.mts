@@ -362,7 +362,7 @@ test("Q117 a built app's details ask for a change, build it again, go back a ver
   const page = await tv();
   await go(page, `details/${first.id}`);
   await page.waitForSelector('[data-action="rollback"]', { timeout: 10_000 });
-  assert.deepEqual(await page.locator(".actions .button").allInnerTexts().then((all) => all.slice(-4)), ["change it →", "build it again", "go back to 1.0.0", "remove"]);
+  assert.deepEqual(await page.locator(".actions .button").allInnerTexts().then((all) => all.slice(-5)), ["change it →", "build it again", "go back to 1.0.0", "export", "remove"]);
 
   // A change in words is a new version from the one on home.
   await page.locator('[data-action="change"]').click();
@@ -477,3 +477,25 @@ test("ADR-011 a streaming service's app learns the rest after the sign-in, and a
   assert.match((await send("POST", `/api/builds/${asked.build}/forget`, {})).error, /its app is on the tv/);
   await page.close();
 });
+
+test("ADR-045 Export from a built app's details offers it to the phone, which saves the zip", async () => {
+  const asked = (await send("POST", "/api/builds", { sentence: "a puzzle of sliding tiles" })).build;
+  rmSync(join(state, "build-drop", "start.json"), { force: true });
+  status(asked.id, asked.build, { phase: "build", state: "installed", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A sliding puzzle" } });
+  builtApp(asked.id, "1.0.0");
+  const page = await tv();
+  await go(page, `details/${asked.id}`);
+  await page.waitForSelector('[data-action="export"]', { timeout: 10_000 });
+  await page.locator('[data-action="export"]').click();
+  await page.waitForFunction(() => /save blocks on your phone/.test(document.getElementById("toasts")?.textContent ?? ""));
+
+  const hand = await phone();
+  await hand.waitForSelector('[data-action="save-export"]', { timeout: 10_000 });
+  assert.match(await hand.locator('[data-action="save-export"]').innerText(), /save blocks on this phone ›/);
+  const [download] = await Promise.all([hand.waitForEvent("download"), hand.locator('[data-action="save-export"]').tap()]);
+  assert.equal(download.suggestedFilename(), `${asked.id}-1.0.0.zip`);
+  await hand.waitForFunction(() => !document.querySelector('[data-action="save-export"]'), undefined, { timeout: 10_000 });
+  await hand.close();
+  await page.close();
+});
+

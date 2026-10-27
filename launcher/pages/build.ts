@@ -418,9 +418,10 @@ export function buildPage(ctx: Ctx, which: string): View {
 // --- An app your agent built ------------------------------------------------
 
 // Its details' buttons (Q117): a change in words, the same app built again
-// from its recipe, the version before back, or the app gone. Each new
-// version goes through the same gates and approval. Nothing for an app the
-// builder didn't make, or for a child.
+// from its recipe, the version before back, Export to the phone (ADR-045),
+// or the app gone. Each new version goes through the same gates and
+// approval. Nothing for an app the builder didn't make, or for a child, and
+// no Export for one that drives a service's own site.
 export function builtActions(ctx: Ctx, id: string): HTMLElement[] {
   if (ctx.state.viewer.role !== "adult") return [];
   const mine = builds().filter((b) => b.id === id);
@@ -454,11 +455,22 @@ export function builtActions(ctx: Ctx, id: string): HTMLElement[] {
       fail(error);
     }
   };
+  const exported = async () => {
+    try {
+      await daemon.exportApp(id);
+      ctx.sounds.play("confirm");
+      ctx.toast(`save ${name} on your phone: it's waiting there`, "ok");
+    } catch (error) {
+      fail(error);
+    }
+  };
+  const web = ctx.state.apps.find((app) => app.id === id)?.runtime === "web";
   const button = (label: string, action: string, onclick: () => void) => h("button", { class: "button", "data-focus": true, "data-action": action, onclick }, label);
   return [
     button("change it →", "change", () => ctx.go(`change/${id}`)),
     button("build it again", "rebuild", () => void again()),
     ...(kept ? [button(`go back to ${kept.version}`, "rollback", () => void back())] : []),
+    ...(web ? [] : [button("export", "export", () => void exported())]),
     button("remove", "remove-built", () => void removeBuilt(ctx, id, name)),
   ];
 }
