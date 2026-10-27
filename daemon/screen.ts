@@ -920,9 +920,20 @@ export class Screen {
   // the image checks drive Settings → Power with keys from there.
   async settings(section: string): Promise<object> {
     if (!/^[a-z-]*$/.test(section)) return { ok: false, error: "which section of settings" };
-    await this.home("agentv screen settings");
-    const route = JSON.stringify(section ? `settings/${section}` : "settings");
-    const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${route}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    return this.goHome(section ? `settings/${section}` : "settings", "agentv screen settings");
+  }
+
+  // Apps on the TV, or its add an app (agentv screen apps [add]), as from
+  // home: the image checks add an app with keys from there (ADR-042).
+  async appsPage(page: string): Promise<object> {
+    if (page !== "" && page !== "add") return { ok: false, error: "apps, or apps add" };
+    return this.goHome(page === "add" ? "add-app" : "apps", "agentv screen apps");
+  }
+
+  // A page of the launcher's, as from home.
+  private async goHome(route: string, from: string): Promise<object> {
+    await this.home(from);
+    const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
     return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
   }
@@ -1659,6 +1670,8 @@ export class Screen {
         return this.askPin(String(request.action ?? ""));
       case "settings":
         return this.settings(String(request.section ?? ""));
+      case "apps":
+        return this.appsPage(String(request.page ?? ""));
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
         return this.close(request.role);
