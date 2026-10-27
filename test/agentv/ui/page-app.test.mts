@@ -217,6 +217,22 @@ test("ADR-043 Back goes to the app first, and leaves it when the app lets it go"
   await page.close();
 });
 
+test("ADR-043 a Back pressed while the app answers the one before still counts", async () => {
+  const page = await tv();
+  const frame = await open(page, "agentv.probe");
+  await clear(frame);
+  // The app busy for a moment, so its answer to the first Back comes after
+  // the second press. It keeps the first and lets the second go.
+  await frame.evaluate(() => void setTimeout(() => {
+    const until = performance.now() + 150;
+    while (performance.now() < until);
+  }, 0));
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".page-app", { state: "detached", timeout: 3000 });
+  await page.close();
+});
+
 test("ADR-043 an app with no Back of its own is left on Back", async () => {
   const page = await tv();
   await open(page, "agentv.other");
