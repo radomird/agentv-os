@@ -99,7 +99,11 @@ export class NetFilter {
       socket.pipe(upstream);
     });
     upstream.on("error", () => socket.end("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"));
+    // Whichever side goes first takes the tunnel with it. When the site's
+    // done, what it sent goes out first; the client side isn't read any
+    // more, so it'd never be seen to close.
     socket.on("close", () => upstream.destroy());
+    upstream.on("close", () => socket.end(() => socket.destroy()));
   }
 
   private async forward(request: IncomingMessage, response: ServerResponse): Promise<void> {
