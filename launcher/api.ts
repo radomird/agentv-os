@@ -203,13 +203,13 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
 export interface Background {
   id: string;
   type: string;
-  kind: "photo" | "art";
+  kind: "photo" | "art" | "folder";
   credit: { text: string | null; from: string };
   added: string;
 }
 
 export interface Backgrounds {
-  source: "field" | "photos" | "art";
+  source: "field" | "photos" | "art" | "folder";
   current: string | null;
   items: Background[];
 }
@@ -227,12 +227,13 @@ export interface Art {
 
 // What the ambient screen says under a picture.
 export function creditLine(item: Background): string {
-  return item.credit.text ?? (item.kind === "art" ? item.credit.from : `photo · ${item.credit.from}`);
+  return item.credit.text ?? (item.kind === "photo" ? `photo · ${item.credit.from}` : item.credit.from);
 }
 
-// The pictures the chosen source shows: the photos, or the art.
+// The pictures the chosen source shows: the photos, the art or a folder's.
 export function shownPictures(backgrounds: Backgrounds | null): Background[] {
-  const kind = backgrounds?.source === "photos" ? "photo" : backgrounds?.source === "art" ? "art" : null;
+  const kinds: Record<Backgrounds["source"], Background["kind"] | null> = { field: null, photos: "photo", art: "art", folder: "folder" };
+  const kind = backgrounds ? kinds[backgrounds.source] : null;
   return kind ? backgrounds!.items.filter((item) => item.kind === kind) : [];
 }
 
@@ -379,6 +380,9 @@ export const screen = {
   // Sets one of Omarchy's themes, as its desktop does (board 12). Omarchy
   // takes a few seconds; the colours arrive as a theme event.
   setTheme: (theme: string) => ask({ cmd: "theme-set", theme }, 90_000),
+  // One of Music's folders, drives or shares as the background (ADR-012):
+  // its pictures are copied over, which takes a while on a slow share.
+  backgroundFolder: (source: string, grant?: string) => ask({ cmd: "background-folder", source, ...(grant ? { grant } : {}) }, 300_000),
   // Settings → Sound: the outputs and the volume, or another output or level
   // from now on (S2.19).
   audio: async (change: { output?: string; volume?: number } = {}) => (await ask({ cmd: "audio", ...change })) as AudioState,

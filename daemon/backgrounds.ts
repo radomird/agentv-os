@@ -1,15 +1,16 @@
 // Backgrounds (ADR-012, board 13, S5.3): the pictures behind home and on
 // the ambient screen, each kept with its credit, which the ambient screen
 // shows: the household's own photos, sent from a phone (Share → TV on the
-// web companion), and works picked from museum archives (art.ts), each kept
-// in /var/lib/agentv/backgrounds. With none chosen, the TV keeps its
-// theme's pixel field.
+// web companion), works picked from museum archives (art.ts), and pictures
+// from a folder, a USB drive or a NAS share, which the TV session hands over
+// (picture-folder.ts), each kept in /var/lib/agentv/backgrounds. With none
+// chosen, the TV keeps its theme's pixel field.
 
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export const SOURCES = ["field", "photos", "art"] as const;
+export const SOURCES = ["field", "photos", "art", "folder"] as const;
 export type Source = (typeof SOURCES)[number];
 
 export type ImageType = "image/jpeg" | "image/png" | "image/webp";
@@ -25,8 +26,9 @@ export interface Credit {
 export interface Background {
   id: string;
   type: ImageType;
-  // A photo from a phone, or a work from an archive.
-  kind: "photo" | "art";
+  // A photo from a phone, a work from an archive, or a picture from a
+  // folder or a share.
+  kind: "photo" | "art" | "folder";
   credit: Credit;
   added: string;
 }
@@ -62,7 +64,8 @@ export function creditText(text: unknown, most = 120): string | null {
 }
 
 // The kind of picture a source shows.
-const KIND: Record<Source, Background["kind"] | null> = { field: null, photos: "photo", art: "art" };
+const KIND: Record<Source, Background["kind"] | null> = { field: null, photos: "photo", art: "art", folder: "folder" };
+const KINDS: Background["kind"][] = ["photo", "art", "folder"];
 
 function fresh(): BackgroundState {
   return { source: "field", current: null, items: [] };
@@ -85,7 +88,7 @@ export class Backgrounds {
     // A box from before art kept only photos, with no kind.
     const items = (Array.isArray(data.items) ? data.items : [])
       .filter((item): item is Background => typeof item?.id === "string" && ID.test(item.id) && item.type in EXTENSIONS && typeof item.credit?.from === "string")
-      .map((item) => ({ ...item, kind: item.kind === "art" ? ("art" as const) : ("photo" as const) }));
+      .map((item) => ({ ...item, kind: KINDS.includes(item.kind) ? item.kind : ("photo" as const) }));
     const chosen = SOURCES.includes(data.source as Source) ? (data.source as Source) : "field";
     const source = KIND[chosen] && !items.some((item) => item.kind === KIND[chosen]) ? "field" : chosen;
     const current = items.some((item) => item.id === data.current) ? (data.current as string) : (items[0]?.id ?? null);
@@ -123,9 +126,20 @@ export class Backgrounds {
       state.items = state.items.filter((one) => one !== old);
       await rm(join(this.dir, `${old.id}.${EXTENSIONS[old.type]}`), { force: true });
     }
-    state.source = kind === "art" ? "art" : "photos";
+    state.source = kind === "art" ? "art" : kind === "folder" ? "folder" : "photos";
     state.current = item.id;
     return { item, state: await this.save(state) };
+  }
+
+  // Puts away every picture of a kind, as a folder's from before when
+  // another folder takes its place.
+  async clear(kind: Background["kind"]): Promise<BackgroundState> {
+    const state = await this.read();
+    for (const old of state.items.filter((one) => one.kind === kind)) await rm(join(this.dir, `${old.id}.${EXTENSIONS[old.type]}`), { force: true });
+    state.items = state.items.filter((one) => one.kind !== kind);
+    if (state.current && !state.items.some((one) => one.id === state.current)) state.current = state.items[0]?.id ?? null;
+    if (KIND[state.source] === kind) state.source = "field";
+    return this.save(state);
   }
 
   // The source the TV shows: its pixel field, the photos or the art.
@@ -134,6 +148,7 @@ export class Backgrounds {
     const state = await this.read();
     if (source === "photos" && !state.items.some((item) => item.kind === "photo")) return { error: "send a photo from your phone first" };
     if (source === "art" && !state.items.some((item) => item.kind === "art")) return { error: "pick a work from an archive first" };
+    if (source === "folder" && !state.items.some((item) => item.kind === "folder")) return { error: "pick a folder or a share first" };
     state.source = source as Source;
     if (typeof current === "string" && state.items.some((item) => item.id === current)) state.current = current;
     return { state: await this.save(state) };

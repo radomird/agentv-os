@@ -9,7 +9,7 @@ import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
-  type SignIn, type Sound, type Role } from "../../../daemon/screen.ts";
+  type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -341,6 +341,8 @@ async function tv(
     signIn?: SignIn;
     profiles?: ProfilesForViewer;
     sound?: Sound;
+    music?: Music;
+    pictures?: Pictures;
     running?: string;
   } = {},
 ) {
@@ -1452,4 +1454,30 @@ test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, 
   assert.deepEqual(await second, { ok: false, error: "Theme 'nowhere' does not exist" });
   assert.deepEqual(t.launcher.themes, ["gruvbox", "nowhere"]);
   assert.ok(t.lines.some((line) => line.includes("setting omarchy's theme to gruvbox")));
+});
+
+test("a folder as the background: the TV session finds it among Music's sources and hands its pictures to the daemon, one copy at a time", async () => {
+  const sources = [
+    { id: "folder:/home/owner/Pictures", kind: "folder", name: "pictures", path: "/home/owner/Pictures", available: true },
+    { id: "share:smb://nas/photos", kind: "share", name: "nas/photos", path: null, available: false, error: "it needs its password again" },
+  ];
+  const sent: { source: { name: string; path: string }; grant?: string }[] = [];
+  let finish: (reply: { ok: boolean; count?: number }) => void = () => {};
+  const pictures: Pictures = {
+    send: (source, grant) => {
+      sent.push({ source, grant });
+      return new Promise((resolve) => (finish = resolve));
+    },
+  };
+  const music: Music = { handle: async (request) => (request.op === "sources" ? { ok: true, sources } : { ok: false }), scan: async () => null };
+  const t = await tv({ music, pictures });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "folder:/etc" }), { ok: false, error: "that isn't one of the tv's folders" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "share:smb://nas/photos" }), { ok: false, error: "nas/photos isn't there right now" });
+  const copying = t.screen.fromHome({ cmd: "background-folder", source: "folder:/home/owner/Pictures", grant: "g" });
+  await sleep(10);
+  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "folder:/home/owner/Pictures" }), { ok: false, error: "the pictures are still being copied" });
+  finish({ ok: true, count: 12 });
+  assert.deepEqual(await copying, { ok: true, count: 12 });
+  assert.deepEqual(sent, [{ source: { name: "pictures", path: "/home/owner/Pictures" }, grant: "g" }]);
+  assert.ok(t.lines.includes("background: 12 pictures from pictures"));
 });

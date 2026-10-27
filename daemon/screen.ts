@@ -51,6 +51,7 @@ import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
+import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import { RemoteInput } from "./remote.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
@@ -228,12 +229,19 @@ export interface Sound {
   handle(request: Record<string, unknown>): Promise<object>;
 }
 
+// A folder's pictures handed to the daemon as the background
+// (picture-folder.ts, ADR-012).
+export interface Pictures {
+  send(source: FolderSource, grant?: string): Promise<{ ok: boolean; count?: number; error?: string }>;
+}
+
 interface Options {
   hyprland: Hyprland;
   launcher: Launcher;
   playback?: Playback;
   music?: Music;
   sound?: Sound;
+  pictures?: Pictures;
   signIn?: SignIn;
   profiles?: ProfilesForViewer;
   now?: () => number;
@@ -276,6 +284,7 @@ export class Screen {
   private launcher: Launcher;
   private playback?: Playback;
   private music?: Music;
+  private pictures?: Pictures;
   private sound?: Sound;
   private signIn?: SignIn;
   private profiles?: ProfilesForViewer;
@@ -338,6 +347,7 @@ export class Screen {
     this.launcher = options.launcher;
     this.playback = options.playback;
     this.music = options.music;
+    this.pictures = options.pictures;
     this.sound = options.sound;
     this.signIn = options.signIn;
     this.profiles = options.profiles;
@@ -801,6 +811,9 @@ export class Screen {
       // The Music page (ADR-017).
       case "music":
         return this.musicRequest(request);
+      // A folder, a USB drive or a share as the background (ADR-012).
+      case "background-folder":
+        return this.backgroundFolder(String(request.source ?? ""), typeof request.grant === "string" ? request.grant : undefined);
       // Settings → Sound: the output and its volume (S2.19).
       case "audio":
         return this.soundRequest(request);
@@ -1348,6 +1361,28 @@ export class Screen {
       return await this.sound.handle(request);
     } catch (error) {
       return { ok: false, error: (error as Error).message };
+    }
+  }
+
+  // One of Music's sources as the background: up to 60 of its pictures,
+  // handed to the daemon. One at a time.
+  private folderBusy = false;
+  private async backgroundFolder(id: string, grant?: string): Promise<object> {
+    if (!this.music || !this.pictures) return { ok: false, error: "the tv's folders aren't here" };
+    if (this.folderBusy) return { ok: false, error: "the pictures are still being copied" };
+    this.folderBusy = true;
+    try {
+      const reply = (await this.music.handle({ op: "sources" })) as { sources?: { id: string; name: string; path: string | null; available: boolean }[] };
+      const source = reply.sources?.find((one) => one.id === id);
+      if (!source) return { ok: false, error: "that isn't one of the tv's folders" };
+      if (!source.available || !source.path) return { ok: false, error: `${source.name} isn't there right now` };
+      const sent = await this.pictures.send({ name: source.name, path: source.path }, grant);
+      this.log(`background: ${sent.ok ? `${sent.count} pictures from ${source.name}` : `none from ${source.name}, ${sent.error}`}`);
+      return sent;
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    } finally {
+      this.folderBusy = false;
     }
   }
 
@@ -2153,7 +2188,7 @@ async function main(): Promise<void> {
   // Full volume on each new default output, or the level Settings chose.
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, signIn: signInWatch(), profiles: serviceProfiles() });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN.
   new RemoteInput({

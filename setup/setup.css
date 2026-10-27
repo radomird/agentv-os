@@ -1048,3 +1048,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.art-side .button {
+  align-self: flex-start;
+}
