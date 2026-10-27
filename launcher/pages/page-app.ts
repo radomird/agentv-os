@@ -32,7 +32,9 @@ interface Open {
 
 const open = new Map<string, Open>();
 let front: Open | null = null;
-let backing = false;
+// Back presses still to go to the app in front, after the one it's
+// answering: each press counts, in turn.
+let backs = 0;
 let listening = false;
 const pads = new Map<number, Set<string>>();
 
@@ -108,6 +110,24 @@ function start(ctx: Ctx, id: string, name: string): Open {
   const others = [...open.values()].filter((o) => o !== entry).sort((a, b) => a.usedAt - b.usedAt);
   while (open.size > KEEP && others.length) close(ctx, others.shift()!);
   return entry;
+}
+
+// Gives the app each Back pressed, one at a time: the first it lets go of
+// leaves it, and the presses after that are home's no more.
+async function answerBacks(ctx: Ctx, entry: Open): Promise<void> {
+  while (backs > 0) {
+    if (front !== entry) {
+      backs = 0;
+      return;
+    }
+    const kept = await entry.host.back();
+    backs--;
+    if (!kept) {
+      backs = 0;
+      if (front === entry) leave(ctx, entry);
+      return;
+    }
+  }
 }
 
 // Leaves the app for good: closed, and home back where it was.
@@ -202,13 +222,7 @@ export function pageView(ctx: Ctx, id: string): View {
     act(action: Action) {
       if (action === "home") return false;
       if (action === "back") {
-        if (!backing) {
-          backing = true;
-          void entry.host.back().then((kept) => {
-            backing = false;
-            if (!kept && front === entry) leave(ctx, entry);
-          });
-        }
+        if (backs++ === 0) void answerBacks(ctx, entry);
         return true;
       }
       // Everything else reaches the app through the kit, as pressed and let
