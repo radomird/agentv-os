@@ -24,6 +24,7 @@ import { validatePackage } from "../apps/contract/manifest.ts";
 import { pagePermissions } from "../apps/contract/page.ts";
 import { Build, type BuildRequest, type BuildStatus, keepManifest } from "./build.ts";
 import { PLAN, UNDERSTAND } from "./harness/server.ts";
+import { lockedPackages } from "./packages.ts";
 import { command, outcome, type Outcome } from "./providers.ts";
 import { KINDS, loadRecipes, planRecipe, type Recipe, type Step } from "./recipe.ts";
 
@@ -316,10 +317,8 @@ export class Runner {
   // The npm packages in the build, by name and version, from its lockfile.
   private packages(): { name: string; version: string }[] {
     try {
-      const lock = JSON.parse(readFileSync(join(this.build.work, "package-lock.json"), "utf8"));
-      return Object.entries(lock.packages ?? {})
-        .filter(([path]) => path.startsWith("node_modules/"))
-        .map(([path, info]) => ({ name: path.replace(/^.*node_modules\//, ""), version: String((info as { version?: string }).version ?? "") }))
+      return lockedPackages(JSON.parse(readFileSync(join(this.build.work, "package-lock.json"), "utf8")))
+        .map(({ name, version }) => ({ name, version }))
         .sort((a, b) => a.name.localeCompare(b.name));
     } catch {
       return [];

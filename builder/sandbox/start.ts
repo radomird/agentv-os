@@ -12,9 +12,9 @@
 import { createConnection, createServer, type Server } from "node:net";
 import { join, resolve } from "node:path";
 import { Runner } from "../run.ts";
+import { PROXY_PORT, RELAY_PORT } from "./ports.ts";
 
-export const PROXY_PORT = 8080;
-export const RELAY_PORT = 8081;
+export { PROXY_PORT, RELAY_PORT };
 
 // A port on this loopback that passes each connection to a socket file.
 export function forward(port: number, path: string): Promise<Server> {
