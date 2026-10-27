@@ -566,6 +566,22 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   await page.close();
 });
 
+test("Q103 with Claude's plan, once its terms are accepted and the CLI is in, the step says it's ready and when the plan signs in, with no check mark for it", async () => {
+  await toAi();
+  await post("/api/ai", { provider: "claude", path: "plan" });
+  await daemon.ai.accept("claude", "plan", { phone: "iphone", viewer: "radomir" });
+  const page = await tv();
+  await page.waitForSelector('[data-action="continue"]');
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "ready.");
+  const plan = page.locator('[data-plan="sign-in"]');
+  assert.match(await plan.innerText(), /^\[ \] claude pro or max · you'll sign in to it the first time agentv builds an app$/);
+  assert.match((await plan.getAttribute("class")) ?? "", /mark-todo/);
+  await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
+  await page.waitForFunction(() => /\[x\] claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  assert.doesNotMatch(await textOf(page, ".ready-list"), /signed in/);
+  await page.close();
+});
+
 test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on with none", async () => {
   await toAi();
   const page = await tv();
