@@ -25,9 +25,12 @@ export interface PageAnswer {
 
 const HTML_MAX = 2 * 1024 * 1024;
 const LINES_MAX = 300;
+// The most a page answer's JSON may be, with its copy escaped: more than
+// the daemon takes in any other body.
+export const ANSWER_MAX = 6 * 1024 * 1024;
 
 // Only what a page answer has, within bounds.
-function cleanPage(said: unknown): PageAnswer {
+export function cleanPage(said: unknown): PageAnswer {
   const a = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
   if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "the TV couldn't show it" };
   return {
@@ -81,7 +84,8 @@ export class PageAskWatch extends AskWatch<PageAsk, PageAnswer> {
       url: o.url,
       path: "api/builder/page-ask",
       what: "stage B's pages",
-      handle: (ask) => o.snapshot(ask.url, ask.origins),
+      // Only what the daemon takes, so a big page's copy still gets there.
+      handle: async (ask) => cleanPage(await o.snapshot(ask.url, ask.origins)),
       failed: (error) => ({ ok: false, error: error.message }),
       ...(o.log ? { log: o.log } : {}),
       ...(o.retryMs !== undefined ? { retryMs: o.retryMs } : {}),

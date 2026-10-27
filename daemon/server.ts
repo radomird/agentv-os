@@ -36,7 +36,7 @@ import { Builds, type Provider as BuildProvider } from "./builds.ts";
 import { Asks } from "./asks.ts";
 import { exportRefusal, packageFiles, zipFolder } from "./export.ts";
 import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal, type SignIn } from "./github.ts";
-import { PageAsks } from "./page-asks.ts";
+import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
@@ -2364,7 +2364,14 @@ export class Daemon {
     }
     const pageAnswer = /^\/api\/builder\/page-ask\/(\d+)$/.exec(path);
     if (method === "POST" && pageAnswer) {
-      const known = this.pageAsks.answer(Number(pageAnswer[1]), await this.body(request));
+      // A page's copy is bigger than any other body the daemon takes.
+      let said: unknown;
+      try {
+        said = JSON.parse((await this.raw(request, ANSWER_MAX)).toString("utf8"));
+      } catch (error) {
+        said = { ok: false, error: `the TV's answer couldn't be read: ${(error as Error).message}` };
+      }
+      const known = this.pageAsks.answer(Number(pageAnswer[1]), said);
       this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
       return;
     }
