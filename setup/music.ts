@@ -1,8 +1,9 @@
 // The setup soundtrack (ADR-014, ADR-024, S5.4): music from the welcome
 // screen to the background step, with a small player in the bottom-left
 // corner whose equaliser moves with what's playing. M mutes it, and so does
-// the phone; setup keeps the choice. Until the soundtrack itself ships, a
-// stand-in plays: a slow chord, made here, nothing fetched.
+// the phone; setup keeps the choice. The track is in setup/audio/, all rights
+// reserved (its LICENSE says so); a package without it plays a stand-in, a
+// slow chord made here, nothing fetched.
 
 import { glyph } from "../launcher/glyphs.ts";
 import { h } from "../launcher/dom.ts";
