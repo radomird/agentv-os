@@ -166,12 +166,17 @@ export class Ai {
     return Array.isArray(all) ? (all as Acceptance[]) : [];
   }
 
+  // The latest acceptance of a provider's terms for a path, as they read
+  // now, or null.
+  async acceptance(provider: Provider, path: Path): Promise<Acceptance | null> {
+    return [...(await this.history())].reverse().find((a) => a.provider === provider && a.path === path && a.read === TERMS_READ) ?? null;
+  }
+
   async read(): Promise<AiState> {
     const saved = await readJson<Record<string, unknown>>(this.choicePath, {});
     const provider = isProvider(saved.provider) ? saved.provider : null;
     const path = isPath(saved.path) ? saved.path : null;
-    const history = await this.history();
-    const accepted = provider && path ? ([...history].reverse().find((a) => a.provider === provider && a.path === path && a.read === TERMS_READ) ?? null) : null;
+    const accepted = provider && path ? await this.acceptance(provider, path) : null;
     const cli = saved.cli as AiState["cli"] | undefined;
     return { provider, path, accepted, cli: accepted && cli && cli.cli === OFFERS[provider!].cli ? cli : null };
   }
@@ -198,11 +203,19 @@ export class Ai {
   async accept(provider: unknown, path: unknown, by: { phone: unknown; viewer: unknown }): Promise<{ state?: AiState; error?: string }> {
     const shown = await this.read();
     if (!shown.provider || !shown.path || shown.provider !== provider || shown.path !== path) return { error: "those aren't the terms the tv shows" };
+    const recorded = await this.record(shown.provider, shown.path, by);
+    return recorded.error ? { error: recorded.error } : { state: await this.read() };
+  }
+
+  // An adult's acceptance of a provider's terms for a path, kept with the
+  // rest: for what setup shows, or for a key Settings → AI waits to keep
+  // (Q104).
+  async record(provider: Provider, path: Path, by: { phone: unknown; viewer: unknown }): Promise<{ acceptance?: Acceptance; error?: string }> {
     if (typeof by.phone !== "string" || !NAME.test(by.phone) || typeof by.viewer !== "string" || !NAME.test(by.viewer)) return { error: "who accepted them" };
-    const acceptance: Acceptance = { provider: shown.provider, path: shown.path, terms: OFFERS[shown.provider].terms[shown.path], read: TERMS_READ, by: { phone: by.phone, viewer: by.viewer }, at: now() };
+    const acceptance: Acceptance = { provider, path, terms: OFFERS[provider].terms[path], read: TERMS_READ, by: { phone: by.phone, viewer: by.viewer }, at: now() };
     await mkdir(this.state, { recursive: true });
     await writeJson(this.historyPath, [...(await this.history()), acceptance]);
-    return { state: await this.read() };
+    return { acceptance };
   }
 
   // How the first run of the CLI goes, from the screen daemon.

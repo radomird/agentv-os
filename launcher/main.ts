@@ -20,7 +20,7 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
-import { keyPage } from "./pages/key.ts";
+import { keyPage, termsHeard } from "./pages/key.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { Sounds } from "./sounds.ts";
@@ -654,6 +654,9 @@ async function start(): Promise<void> {
     },
     viewers: () => void refresh(),
     // A phone was paired or forgotten: pairing is done, and Settings says so.
+    // A provider's terms accepted on a phone, for a key Settings → AI waits
+    // to keep (Q104).
+    terms: (data) => termsHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {

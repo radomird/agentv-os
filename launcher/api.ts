@@ -155,6 +155,16 @@ export interface KeyState {
   provider: string | null;
 }
 
+// The terms a key waits for, when nobody here has accepted that provider's
+// terms for a key yet (Q104, ADR-023).
+export interface KeyTerms {
+  provider: string;
+  name: string;
+  maker: string;
+  terms: { id: string; name: string; url: string }[];
+  summary: string;
+}
+
 // Settings → Weather: the forecast's city, and the cities it can be.
 export interface WeatherPlace {
   zone: string;
@@ -275,7 +285,16 @@ export const daemon = {
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
   // The provider key (S4.6): which provider has one, never the key.
   key: () => call<KeyState>("GET", "/api/key"),
-  saveKey: (provider: string, key: string, grant?: string) => call<KeyState>("PUT", "/api/key", { provider, key }, grant),
+  // The key kept, or the terms it waits for.
+  saveKey: async (provider: string, key: string, grant?: string): Promise<KeyState | { terms: KeyTerms }> => {
+    const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
+    const data = await response.json();
+    if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "PUT /api/key failed");
+    return data as KeyState;
+  },
+  // Settings → AI stopped waiting for a key's terms.
+  stopKeyTerms: () => call<{ ok: boolean }>("DELETE", "/api/key/terms"),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),

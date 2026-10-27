@@ -1,9 +1,12 @@
 // The provider key on the TV (ADR-009, ADR-022, S4.6): Settings → AI says
 // which provider has one, and this page takes a key, typed or pasted, for
 // Claude, ChatGPT or Gemini. The daemon hands it to root and it's never
-// shown again. An adult's, past the PIN once there is one.
+// shown again. An adult's, past the PIN once there is one. A key for a
+// provider whose terms nobody here has accepted waits for them: the page
+// shows them, an adult accepts them on a paired phone, and then the key is
+// kept (Q104, ADR-023).
 
-import { daemon, type KeyState } from "../api.ts";
+import { daemon, type KeyState, type KeyTerms } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -16,6 +19,14 @@ export let keyState: KeyState | null = null;
 
 export function setKeyState(state: KeyState): void {
   keyState = state;
+}
+
+// What the page does once a provider's terms are accepted on a phone, while
+// it waits for them.
+let termsAccepted: ((data: { provider?: string; path?: string }) => void) | null = null;
+
+export function termsHeard(data: unknown): void {
+  termsAccepted?.(data as { provider?: string; path?: string });
 }
 
 export function aiValue(ctx: Ctx): string {
@@ -77,6 +88,63 @@ export function keyPage(ctx: Ctx): View {
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
+  const form = h(
+    "div",
+    { class: "profile-form" },
+    which,
+    field,
+    h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "save")),
+  );
+  const note = h("p", { class: "panel-note" }, "only the system can read it, and it's never shown again.");
+  // The terms the key waits for, in place of the form, until a phone
+  // accepts them or the page goes back.
+  let waiting = false;
+  const stopWaiting = () => {
+    if (!waiting) return;
+    waiting = false;
+    termsAccepted = null;
+    void daemon.stopKeyTerms().catch(() => {});
+  };
+  const showTerms = (terms: KeyTerms, key: string, grant: string | undefined) => {
+    waiting = true;
+    termsAccepted = (data) => {
+      if (data.provider !== terms.provider || data.path !== "key") return;
+      waiting = false;
+      termsAccepted = null;
+      void keep(key, grant);
+    };
+    const back = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: () => (stopWaiting(), ctx.back()) }, "back");
+    form.replaceChildren(
+      h("div", { class: "panel-title" }, `${terms.name}'s terms come first`),
+      ...terms.terms.map((t) => h("div", { class: "terms-row", "data-terms": t.id }, t.name)),
+      h("p", { class: "panel-note" }, terms.summary),
+      h("p", { class: "panel-note" }, "an adult accepts them on a paired phone. the key is kept once they do."),
+      h("div", { class: "check-actions" }, back),
+    );
+    note.textContent = "no phone yet? pair one in settings → phones.";
+    ctx.focus.refresh();
+    ctx.focus.set(back);
+  };
+  const keep = async (key: string, grant: string | undefined) => {
+    let saved: KeyState | { terms: KeyTerms };
+    try {
+      saved = await daemon.saveKey(provider, key, grant);
+    } catch (error) {
+      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+      return;
+    }
+    if ("terms" in saved) {
+      showTerms(saved.terms, key, grant);
+      return;
+    }
+    keyState = saved;
+    field.value = "";
+    ctx.sounds.play("confirm");
+    ctx.toast(`the key for ${provider} is kept`, "ok");
+    ctx.back();
+  };
   const save = async () => {
     const key = field.value.trim();
     if (!key) {
@@ -85,18 +153,7 @@ export function keyPage(ctx: Ctx): View {
     }
     const grant = await ctx.grant("the ai key");
     if (grant === null) return;
-    try {
-      keyState = await daemon.saveKey(provider, key, grant || undefined);
-    } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
-      ctx.sounds.play("failure");
-      ctx.toast((error as Error).message, "fail");
-      return;
-    }
-    field.value = "";
-    ctx.sounds.play("confirm");
-    ctx.toast(`the key for ${provider} is kept`, "ok");
-    ctx.back();
+    await keep(key, grant || undefined);
   };
   draw();
   const el = h(
@@ -106,14 +163,8 @@ export function keyPage(ctx: Ctx): View {
       "div",
       { class: "page profile" },
       ...heading("tv settings · ai", "add a key"),
-      h(
-        "div",
-        { class: "profile-form" },
-        which,
-        field,
-        h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "save")),
-      ),
-      h("p", { class: "panel-note" }, "only the system can read it, and it's never shown again."),
+      form,
+      note,
     ),
     bar(ctx, "settings", "←→ provider · ↵ select · esc back"),
   );
@@ -121,6 +172,7 @@ export function keyPage(ctx: Ctx): View {
     el,
     first: which,
     act(action) {
+      if (action === "back") stopWaiting();
       if ((action === "left" || action === "right") && ctx.focus.get() === which) {
         step(action === "right" ? 1 : -1);
         return true;

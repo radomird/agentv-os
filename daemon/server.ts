@@ -26,7 +26,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
-import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
+import { Ai, OFFERS, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
 import { ImmichAlbum } from "./immich-album.ts";
@@ -193,6 +193,9 @@ export class Daemon {
   private tv: TvContext = { pin: null, field: null, screen: "home", front: "home", playing: false, desktop: false };
   private phoneVersion = 1;
   private phoneWaiters = new Set<() => void>();
+  // The provider whose terms a key from Settings → AI waits for (Q104), which
+  // the phones show for an adult to accept.
+  private keyTerms: Provider | null = null;
   // Omarchy's desktop's relay for the phone's trackpad, while it's on.
   private desktops = new Set<ServerResponse>();
   private ledgerPath: string;
@@ -400,6 +403,10 @@ export class Daemon {
   }
 
   private async aiAsk(setup: SetupState): Promise<object | null> {
+    if (this.keyTerms) {
+      const offer = OFFERS[this.keyTerms];
+      return { ask: "terms", provider: this.keyTerms, path: "key", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.key, summary: offer.summary.key, keyUrl: offer.keyUrl };
+    }
     if (setup.done || setup.step !== "ai") return null;
     const ai = await this.ai.read();
     if (!ai.provider || !ai.path) return null;
@@ -870,6 +877,20 @@ export class Daemon {
       }
       if (!this.guarded(request, response, "accepting the provider's terms from a phone")) return;
       const body = (await this.body(request)) as { provider?: unknown; path?: unknown } | undefined;
+      // Settings → AI's key, waiting for its provider's terms (Q104).
+      if (this.keyTerms && body?.provider === this.keyTerms && body?.path === "key") {
+        const provider = this.keyTerms;
+        const recorded = await this.ai.record(provider, "key", { phone: phone.name, viewer: viewer.name });
+        if (!recorded.acceptance) {
+          this.json(response, 400, { ok: false, error: recorded.error });
+          return;
+        }
+        this.keyTerms = null;
+        this.log(`${viewer.name} accepted ${provider}'s terms for a key, on ${phone.name}, for settings`);
+        this.broadcast("terms", { provider, path: "key", accepted: recorded.acceptance });
+        this.json(response, 200, { ok: true, accepted: recorded.acceptance });
+        return;
+      }
       const result = await this.ai.accept(body?.provider, body?.path, { phone: phone.name, viewer: viewer.name });
       if (!result.state) {
         this.json(response, 400, { ok: false, error: result.error });
@@ -1551,6 +1572,17 @@ export class Daemon {
       if (!this.guarded(request, response, "the provider key") || !(await this.adult(request, response, "the provider key"))) return;
       const body = (method === "PUT" ? await this.body(request) : {}) as { provider?: unknown; key?: unknown } | undefined;
       const provider = method === "DELETE" ? null : (body?.provider ?? "");
+      // A key for a provider whose terms nobody here has accepted waits for
+      // them (Q104, ADR-023): the phones show them, and an adult accepts.
+      if (typeof provider === "string" && Object.hasOwn(OFFERS, provider) && !this.key.check(provider, body?.key) && !(await this.ai.acceptance(provider as Provider, "key"))) {
+        const offer = OFFERS[provider as Provider];
+        if (this.keyTerms !== provider) {
+          this.keyTerms = provider as Provider;
+          this.phonesChanged();
+        }
+        this.json(response, 409, { ok: false, error: `${offer.name}'s terms come first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.key, summary: offer.summary.key } });
+        return;
+      }
       const why = await this.key.store(provider, body?.key);
       if (why) {
         this.log(`the provider key wasn't kept: ${why}`);
@@ -1561,6 +1593,16 @@ export class Daemon {
       this.log(set ? `a key for ${provider} is kept, root's alone` : "the provider key is off");
       this.broadcast("key", { set, provider: this.key.status().provider });
       this.json(response, 200, { ok: true, set, provider: this.key.status().provider });
+      return;
+    }
+
+    // Settings → AI stopped waiting for a key's terms: the phones stop asking.
+    if (method === "DELETE" && path === "/api/key/terms") {
+      if (this.keyTerms) {
+        this.keyTerms = null;
+        this.phonesChanged();
+      }
+      this.json(response, 200, { ok: true });
       return;
     }
 
