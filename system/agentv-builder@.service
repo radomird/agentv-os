@@ -1,0 +1,60 @@
+# One build in the agentv-builder sandbox (ADR-011, ADR-045): the instance
+# is the build's folder under /var/lib/agentv/build, like local.blocks/1.0.0.
+# agentv-build.service starts it once root has made the folder.
+#
+# The builder has no sudo and holds no key or token of any kind. It writes
+# its build's folder and its own home, where the provider's CLI and, on a
+# plan, the CLI's own sign-in live. The rest of /var/lib is an empty folder
+# to it, so other services' state and the TV's sign-ins in
+# /var/lib/agentv/chromium are out of its sight, and so are the keys in
+# /etc/agentv, the person's home and the NAS shares. It has no
+# network of its own: its only way out is agentv-build-net's filter and
+# relay (builder/sandbox/start.ts).
+
+[Unit]
+Description=AgenTV build %I
+BindsTo=agentv-build-net.service
+After=agentv-build-net.service
+
+[Service]
+Type=exec
+User=agentv-builder
+Group=agentv-builder
+SupplementaryGroups=agentv-build-net
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/builder/sandbox/start.ts /var/lib/agentv/build/%I
+ExecStopPost=+/usr/bin/rm -f /run/agentv-build/ticket.json
+Environment=AGENTV_PATH=/usr/share/agentv HOME=/var/lib/agentv/builder
+WorkingDirectory=/var/lib/agentv/builder
+# The longest recipe is 40 minutes; this is the box's own stop.
+RuntimeMaxSec=90min
+TimeoutStopSec=10s
+UMask=0022
+MemoryMax=4G
+TasksMax=512
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/lib:ro
+BindPaths=/var/lib/agentv/build/%I /var/lib/agentv/builder
+InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+KeyringMode=private
+SystemCallArchitectures=native
+# Chromium, for the gates, keeps its own sandbox in namespaces, and so does
+# bubblewrap, for a package's install script with safeguards off.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
