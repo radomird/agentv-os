@@ -3,8 +3,14 @@
 // names, never anywhere else, and never to this box whatever a name says.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, request, type Server } from "node:http";
+import { createServer as createSecureServer } from "node:https";
 import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { connect as tlsConnect } from "node:tls";
 import { after, before, test } from "node:test";
 import { forbiddenAddress, NetFilter, target } from "../../../daemon/net-filter.ts";
 
@@ -91,6 +97,49 @@ test("ADR-045 a host on the list gets through, by CONNECT and plain http", async
   const direct = await plain(`http://allowed.example:${sitePort}/page?x=1`);
   assert.equal(direct.status, 200);
   assert.match(direct.body, /hello from allowed\.example:\d+ \/page\?x=1/);
+});
+
+test("a tunnel the site closes first doesn't stay open in the filter", async () => {
+  // An https site that closes once it has answered, and a client that reads
+  // the answer and closes a moment later, as a browser does.
+  const dir = mkdtempSync(join(tmpdir(), "agentv-net-filter-"));
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=allowed.example", "-addext", "subjectAltName=DNS:allowed.example", "-days", "2", "-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem")], { stdio: "ignore" });
+  const cert = readFileSync(join(dir, "cert.pem"));
+  const secureSite = createSecureServer({ key: readFileSync(join(dir, "key.pem")), cert }, (_req, res) => res.end("hello over tls"));
+  const securePort = await new Promise<number>((resolve) => secureSite.listen(0, "127.0.0.1", () => resolve((secureSite.address() as { port: number }).port)));
+  const leaky = new NetFilter({ policy: () => true, resolve: async () => "127.0.0.1", forbid: () => false });
+  const leakyPort = await leaky.listen();
+  const sockets = new Set<import("node:net").Socket>();
+  leaky.server.on("connection", (socket) => sockets.add(socket));
+  try {
+    const raw = connect(leakyPort, "127.0.0.1", () => raw.write(`CONNECT allowed.example:${securePort} HTTP/1.1\r\nHost: x\r\n\r\n`));
+    await new Promise((resolve) => raw.once("data", resolve));
+    const tls = tlsConnect({ socket: raw, servername: "allowed.example", ca: cert });
+    tls.write("GET / HTTP/1.1\r\nHost: allowed.example\r\nConnection: close\r\n\r\n");
+    let data = "";
+    tls.on("data", (chunk) => (data += chunk));
+    tls.on("error", () => {});
+    await new Promise<void>((resolve) => {
+      const wait = setInterval(() => {
+        if (data.includes("hello over tls")) {
+          clearInterval(wait);
+          resolve();
+        }
+      }, 10);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    tls.destroy();
+    raw.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const open = await new Promise<number>((resolve) => leaky.server.getConnections((_e, n) => resolve(n)));
+    assert.equal(open, 0, "the filter let go of the client");
+  } finally {
+    // So a leak fails this test rather than hanging the rest.
+    for (const socket of sockets) socket.destroy();
+    await leaky.close();
+    secureSite.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("ADR-043 S6.8 a host that isn't on the list is refused", async () => {
