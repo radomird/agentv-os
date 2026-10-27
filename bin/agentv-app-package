@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# agentv:summary=Install the program an official native app opens
+# agentv:args=<app-id>
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# ADR-042: an official native app's tv.package names the program it opens,
+# such as Steam. This installs it the way Omarchy's own installer does, or
+# with omarchy-pkg-add where Omarchy has none, from the repositories the box
+# already uses. agentv-setup-apps starts it as root, through
+# agentv-app-package@<app-id>.service, once the app itself is in. It leaves
+# out the step Omarchy's installer ends with, which starts the program, since
+# this runs as root. Only an app installed as official can name a package.
+
+set -euo pipefail
+
+APPS=${AGENTV_APPS:-/var/lib/agentv/apps}
+ERRORS=${AGENTV_APP_PACKAGE_ERRORS:-/run/agentv-app-package}
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+export PATH="$OMARCHY_PATH/bin:$PATH"
+
+id=${1:-}
+if [[ ! $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]]; then
+  echo "Usage: agentv app package <app-id>" >&2
+  exit 2
+fi
+
+# fail <why>: says why for agentv-setup-apps, which shows it on the TV.
+fail() {
+  mkdir -p "$ERRORS"
+  printf '%s\n' "$1" >"$ERRORS/$id.error"
+  echo "agentv-app-package: $id: $1" >&2
+  exit 1
+}
+
+rm -f "$ERRORS/$id.error"
+tier=$(jq -r --arg id "$id" '.[$id].tier // empty' "$APPS/installed.json" 2>/dev/null || true)
+[[ $tier == "official" ]] || fail "only an official app installs a program"
+manifest="$APPS/$id/manifest.json"
+[[ $(jq -r '.tv.runtime // empty' "$manifest" 2>/dev/null) == "native" ]] || fail "it isn't a native app"
+pkg=$(jq -r '.tv.package.pacman // empty' "$manifest" 2>/dev/null || true)
+if [[ -z $pkg ]]; then
+  [[ -n $(jq -r '.tv.package.flatpak // empty' "$manifest" 2>/dev/null) ]] && fail "a flatpak program isn't installed from the tv yet"
+  fail "it names no package"
+fi
+[[ $pkg =~ ^[a-z0-9][a-z0-9@._+-]*$ ]] || fail "'$pkg' isn't a package name"
+
+if pacman -Q -- "$pkg" >/dev/null 2>&1; then
+  echo "agentv-app-package: $pkg is installed already"
+  exit 0
+fi
+
+# What Omarchy's own installer runs first, for the programs it has one for.
+case $pkg in
+  steam)
+    # omarchy-install-gaming-steam: the lib32 drivers for this box's
+    # graphics come before Steam, so Steam doesn't pull in another's.
+    omarchy-install-gaming-gpu-lib32 || fail "the graphics drivers steam needs didn't install"
+    ;;
+esac
+omarchy-pkg-add "$pkg" || fail "$pkg didn't install"
+echo "agentv-app-package: installed $pkg for $id"
