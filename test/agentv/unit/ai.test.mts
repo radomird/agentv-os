@@ -1,4 +1,4 @@
-// The AI provider and its terms (daemon/ai.ts, ADR-022, ADR-023, S5.5):
+// The AI provider and its terms (daemon/ai.ts, ADR-022, ADR-023, ADR-047, S5.5):
 // which provider, by plan or key, the terms an adult accepted on a phone
 // before anything of it installs, kept with who, on which phone and when,
 // and how the first run of its CLI went. And what the phone hears and may
@@ -62,10 +62,29 @@ test("S5.5 Claude's terms are Anthropic's consumer terms for a plan and its comm
   for (const offer of Object.values(OFFERS)) for (const terms of Object.values(offer.terms)) for (const t of terms) assert.match(t.url, /^https:\/\//);
 });
 
+test("ADR-047 Grok's terms are xAI's consumer terms for a plan and its enterprise terms for a key, and Muse's the Meta Model API's, each with its acceptable use policy", () => {
+  assert.deepEqual(OFFERS.grok.terms.plan.map((t) => t.url), ["https://x.ai/legal/terms-of-service", "https://x.ai/legal/acceptable-use-policy"]);
+  assert.deepEqual(OFFERS.grok.terms.key.map((t) => t.url), ["https://x.ai/legal/terms-of-service-enterprise", "https://x.ai/legal/acceptable-use-policy"]);
+  assert.deepEqual(OFFERS.muse.terms.plan.map((t) => t.url), [
+    "https://dev.meta.ai/legal/terms-of-service",
+    "https://www.facebook.com/legal/meta_subs_terms",
+    "https://dev.meta.ai/legal/acceptable-use-policy",
+  ]);
+  assert.deepEqual(OFFERS.muse.terms.key.map((t) => t.url), ["https://dev.meta.ai/legal/terms-of-service", "https://dev.meta.ai/legal/acceptable-use-policy"]);
+  assert.deepEqual([OFFERS.grok.cli, OFFERS.grok.cliName, OFFERS.muse.cli, OFFERS.muse.cliName], ["grok", "grok build", "muse", "muse code"]);
+  assert.equal(OFFERS.grok.plan.offered, false, "a plan waits for a build to run on it headless (stage 6)");
+  assert.equal(OFFERS.muse.plan.offered, false);
+  assert.match(OFFERS.muse.plan.note ?? "", /meta managed account can only use a key/);
+  // Read today; the others' readings, and so their acceptances, stand.
+  assert.deepEqual([TERMS_READ.grok, TERMS_READ.muse, TERMS_READ.claude], ["2026-10-27", "2026-10-27", "2026-10-26"]);
+});
+
 test("a plan is only where it's offered, and none clears the choice", async () => {
   const ai = new Ai({ state: join(scratch, "store") });
   assert.match((await ai.choose("chatgpt", "plan")).error ?? "", /coming soon/);
-  assert.match((await ai.choose("copilot", "key")).error ?? "", /claude, chatgpt or gemini/);
+  assert.match((await ai.choose("grok", "plan")).error ?? "", /supergrok or x premium\+ is coming soon/);
+  assert.match((await ai.choose("muse", "plan")).error ?? "", /coming soon/);
+  assert.match((await ai.choose("copilot", "key")).error ?? "", /claude, chatgpt, gemini, grok or muse/);
   assert.match((await ai.choose("claude", "both")).error ?? "", /a plan or a key/);
   assert.deepEqual((await ai.choose("claude", "plan")).state, { provider: "claude", path: "plan", accepted: null, cli: null });
   assert.deepEqual((await ai.choose(null, undefined)).state, { provider: null, path: null, accepted: null, cli: null });
@@ -78,7 +97,7 @@ test("S5.5 an acceptance is for the terms the TV shows, kept with who, on which 
   assert.match((await ai.accept("claude", "plan", { phone: "iphone", viewer: "radomir" })).error ?? "", /aren't the terms the tv shows/);
   assert.match((await ai.accept("claude", "key", { phone: "iphone", viewer: "<script>" })).error ?? "", /who accepted/);
   const accepted = (await ai.accept("claude", "key", { phone: "iphone", viewer: "radomir" })).state!.accepted!;
-  assert.deepEqual([accepted.provider, accepted.path, accepted.read, accepted.by], ["claude", "key", TERMS_READ, { phone: "iphone", viewer: "radomir" }]);
+  assert.deepEqual([accepted.provider, accepted.path, accepted.read, accepted.by], ["claude", "key", TERMS_READ.claude, { phone: "iphone", viewer: "radomir" }]);
   assert.equal(accepted.terms[0].id, "anthropic-commercial-terms");
   assert.match(accepted.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$/);
   // Picking a plan needs its own terms; back to the key, they're still accepted.
@@ -196,7 +215,7 @@ test("Q104 Settings → AI: a key for a provider whose terms nobody here accepte
   assert.equal((await phone("/api/phone/terms", { provider: "gemini", path: "key" }, grant)).status, 400);
   assert.equal((await phone("/api/phone/terms", { provider: "chatgpt", path: "key" }, grant)).status, 200);
   const record = kept().at(-1);
-  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ, "iphone", "openai-services-agreement"]);
+  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ.chatgpt, "iphone", "openai-services-agreement"]);
   assert.equal((await phoneState()).ai, null);
   await withRoot(async () => assert.equal((await put("chatgpt", `sk-proj-${"n".repeat(40)}`)).status, 200));
   assert.doesNotMatch(JSON.stringify(kept()), /sk-proj/, "no key in the record");
@@ -208,6 +227,32 @@ test("Q104 Settings → AI: a key for a provider whose terms nobody here accepte
   assert.equal((await phoneState()).ai, null);
   assert.equal((await phone("/api/phone/terms", { provider: "gemini", path: "key" }, grant)).status, 400, "nothing to accept now");
   assert.equal(kept().length, 3);
+});
+
+test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own terms for a key, accepted on a phone, then its key is kept, and a second one just saves", async () => {
+  const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  const put = (provider: string, key: string) =>
+    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ provider, key }) });
+  const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
+  for (const [provider, key, first] of [
+    ["grok", `xai-${"g".repeat(40)}`, "xai-enterprise-terms"],
+    ["muse", `LLM_${"u".repeat(40)}`, "meta-model-api-terms"],
+  ]) {
+    const before = kept().length;
+    const waiting = await put(provider, key);
+    assert.equal(waiting.status, 409, `${provider}'s key waits`);
+    assert.equal((await waiting.json()).terms.terms[0].id, first);
+    const asked = (await phoneState()).ai;
+    assert.deepEqual([asked.ask, asked.provider, asked.path, asked.terms[0].id], ["terms", provider, "key", first]);
+    assert.equal(kept().length, before, "nothing is recorded before an adult accepts");
+    assert.equal((await phone("/api/phone/terms", { provider, path: "key" }, grant)).status, 200);
+    const record = kept().at(-1);
+    assert.deepEqual([record.provider, record.path, record.read, record.by.phone], [provider, "key", "2026-10-27", "iphone"]);
+    await withRoot(async () => assert.equal((await put(provider, key)).status, 200, `${provider}'s key is kept`));
+    await withRoot(async () => assert.equal((await put(provider, `${key}2`)).status, 200, `a second ${provider} key just saves`));
+    assert.equal(kept().length, before + 1, "with no new acceptance");
+  }
+  assert.doesNotMatch(JSON.stringify(kept()), /xai-g|LLM_u/, "no key in the record");
 });
 
 test("a child's profile can't accept the terms or give the key from a phone", async () => {
