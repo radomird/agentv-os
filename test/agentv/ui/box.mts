@@ -230,6 +230,8 @@ export async function startBox(
     // Omarchy's themes, from this checkout, for setup's look.
     omarchy: ROOT,
     backgrounds: join(state, "..", "backgrounds"),
+    // No packages' desktop entries or icons until a test puts some there.
+    dataDirs: [join(state, "..", "share")],
     art: options.art,
   });
   const listening = await daemon.listen();
