@@ -31,7 +31,7 @@
     {
       "id": "study",
       "stage": "b",
-      "does": "Stage B, after the household signed in on the TV. Look at the service's own pages with page_snapshot, through AgenTV's harness, on its declared origins only: a search with results, a series' page with its seasons and episodes, a film's page, the player while it plays, and the profile picker if there is one. Save each as a fixture. Write down in NOTES.md how to search, how to start a title or an episode, where the player shows its title, season and episode, and where the next episode control is. Never use the service's own continue watching row.",
+      "does": "Stage B, after the household signed in on the TV. Look at the service's own pages with page_snapshot, through AgenTV's harness, on its declared origins only: a search with results, a series' page with its seasons and episodes, a film's page, the player while it plays, and the profile picker if there is one. Keep each as a fixture with page_snapshot's save, like fixtures/pages/search.html. Write down in NOTES.md how to search, how to start a title or an episode, where the player shows its title, season and episode, and where the next episode control is. Never use the service's own continue watching row.",
       "tools": ["read", "write", "page_snapshot"],
       "writes": ["NOTES.md", "fixtures/**"],
       "reads": ["contract"],

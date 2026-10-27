@@ -428,6 +428,11 @@ export class Home {
     return readJson(join(this.state, "signins.json"), {});
   }
 
+  // Whether an app said it's signed in, the last time it was asked.
+  async isSignedIn(id: string): Promise<boolean> {
+    return (await this.signIns())[id]?.signedIn === true;
+  }
+
   // Notes what an app said. False when it isn't an app here, or it has no
   // signIn.
   async signedIn(id: string, signedIn: boolean): Promise<boolean> {

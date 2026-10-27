@@ -33,6 +33,7 @@ import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { Builds, type Provider as BuildProvider } from "./builds.ts";
+import { PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
@@ -192,6 +193,8 @@ export class Daemon {
   readonly backgrounds: Backgrounds;
   readonly pageApps: PageApps;
   readonly builds: Builds;
+  // Stage B's asks of the services' Chromium, for the screen daemon.
+  readonly pageAsks = new PageAsks();
   private buildsSeen = "";
   private buildsTimer?: ReturnType<typeof setInterval>;
   // What home's Chromium reaches the internet through.
@@ -407,8 +410,9 @@ export class Daemon {
   // --- The builder (ADR-011, ADR-043 to ADR-046) ---------------------------
 
   private async watchBuilds(): Promise<void> {
-    // A build waiting for its plan's sign-in gets one, and goes on after it.
-    await this.builds.tend().catch(() => false);
+    // A build waiting for its plan's sign-in gets one, and goes on after it,
+    // and a streaming service's app learns the rest once it's signed in.
+    await this.builds.tend({ signedIn: (id) => this.home.isSignedIn(id) }).catch(() => false);
     const now = JSON.stringify(await this.builds.list().catch(() => []));
     if (now === this.buildsSeen) return;
     this.buildsSeen = now;
@@ -2199,6 +2203,42 @@ export class Daemon {
     }
 
     if (await this.builderApi(method, path, request, response)) return;
+
+    // Stage B (ADR-011): a page of the service the running build is
+    // learning, as the signed-in browser shows it, from the builder's way
+    // out. Only while the build is in stage B, on its declared origins.
+    if (method === "POST" && path === "/api/builder/page") {
+      const running = this.builds.stageB();
+      if (!running) {
+        this.json(response, 409, { ok: false, error: "no build is learning a service now" });
+        return;
+      }
+      const body = (await this.body(request)) as { url?: unknown } | undefined;
+      let url: URL;
+      try {
+        url = new URL(String(body?.url));
+      } catch {
+        this.json(response, 400, { ok: false, error: "an address like https://service.example/" });
+        return;
+      }
+      if (url.protocol !== "https:" || !running.origins.includes(url.origin)) {
+        this.json(response, 403, { ok: false, error: `${url.origin} isn't one of ${running.id}'s declared origins` });
+        return;
+      }
+      this.json(response, 200, await this.pageAsks.ask(url.href, running.origins));
+      return;
+    }
+    // The screen daemon takes each ask, and answers it.
+    if (method === "GET" && path === "/api/builder/page-ask") {
+      this.json(response, 200, { ok: true, ask: await this.pageAsks.take() });
+      return;
+    }
+    const pageAnswer = /^\/api\/builder\/page-ask\/(\d+)$/.exec(path);
+    if (method === "POST" && pageAnswer) {
+      const known = this.pageAsks.answer(Number(pageAnswer[1]), await this.body(request));
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
 
     // A page app's kit call from home, for the app whose frame it came
     // from: checked against its manifest, then done (ADR-043).

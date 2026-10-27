@@ -52,6 +52,7 @@ import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { cdpPage } from "./page.ts";
+import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
@@ -312,6 +313,9 @@ export class Screen {
   private apps = new Map<Role, App>();
   private opens: Open[] = [];
   private want: { role: Role; until: number; app?: string } | null = null;
+  // Until when a services' window that opens is stage B's look at a page,
+  // which stays out of sight (snapshot).
+  private quietUntil = 0;
   private backHoldMs: number;
   private backDown = 0;
   private backUp = 0;
@@ -555,8 +559,9 @@ export class Screen {
     const window = this.remember(client);
     const front = this.front();
     const wanted = this.want && window.role === this.want.role && this.now() <= this.want.until;
+    const quiet = !wanted && window.role === "web" && this.now() <= this.quietUntil;
 
-    if (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front)) {
+    if (!quiet && (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front))) {
       const app = wanted ? this.want?.app : undefined;
       if (wanted) this.want = null;
       this.log(`in front: ${describe(window)}`);
@@ -1451,6 +1456,53 @@ export class Screen {
     );
   }
 
+  // Stage B's look at a page of a service the household signed in to
+  // (ADR-011, daemon/page-asks.ts): opened out of sight in the services'
+  // Chromium, read only while it's on the app's declared origins, and
+  // closed. The build gets the page's structure and a copy without its
+  // scripts, never the browser.
+  async snapshot(url: string, origins: string[]): Promise<PageAnswer> {
+    const on = (address: string) => {
+      try {
+        const at = new URL(address);
+        return at.protocol === "https:" && origins.includes(at.origin);
+      } catch {
+        return false;
+      }
+    };
+    if (!on(url)) return { ok: false, error: "that isn't one of the app's origins" };
+    const cdp = this.apps.get("web")?.cdp;
+    if (!cdp) return { ok: false, error: "the services' Chromium isn't open: open the app on the TV once, then try again" };
+    this.quietUntil = this.now() + 15_000;
+    let target: string | undefined;
+    try {
+      target = await cdp.open(url);
+      const until = this.now() + 30_000;
+      for (;;) {
+        const [at, ready] = (await cdp.evaluateIn(target, "[location.href, document.readyState]").catch(() => ["about:blank", ""])) as [string, string];
+        if (at !== "about:blank" && ready === "complete") break;
+        if (this.now() > until) break;
+        await new Promise((done) => setTimeout(done, 250));
+      }
+      // A page that draws itself once it's loaded gets a moment to.
+      await new Promise((done) => setTimeout(done, 1500));
+      const at = String(await cdp.evaluateIn(target, "location.href"));
+      if (!on(at)) return { ok: false, error: `it went to ${at.replace(/[?#].*$/, "")}, which isn't one of the app's origins` };
+      // The builder's own reading of a page, as its look reads one, loaded
+      // only when a build asks, so the TV session starts without it.
+      const { OUTLINE, SNAPSHOT } = await import("../builder/browse.ts");
+      const outline = (await cdp.evaluateIn(target, OUTLINE)) as { url: string; title: string; lines: string[] };
+      const html = String(await cdp.evaluateIn(target, SNAPSHOT));
+      this.log(`stage B looked at a page of ${new URL(at).origin}`);
+      return { ok: true, url: outline.url, title: outline.title, lines: outline.lines, html };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    } finally {
+      this.quietUntil = 0;
+      if (target) await cdp.close(target).catch(() => {});
+    }
+  }
+
   // The page a new services' Chromium opened with.
   private async firstPage(cdp: DevTools, entry: Open): Promise<void> {
     for (let tries = 0; tries < 50 && !entry.target; tries++) {
@@ -2258,6 +2310,8 @@ async function main(): Promise<void> {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
     },
   }).start();
+  // Stage B's asks to see a service's signed-in pages, from the builder.
+  new PageAskWatch({ url: HOME_URL, snapshot: (url, origins) => screen.snapshot(url, origins) }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);

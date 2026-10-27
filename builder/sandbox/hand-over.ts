@@ -356,6 +356,7 @@ export class HandOver {
       provider: request.provider,
       path: request.path,
       recipe: request.recipe,
+      phase: request.phase,
       ...(request.plan ? { origins: request.plan.permissions.origins } : {}),
       ...(request.path === "key" ? { cap: { ...DEFAULT_CAP, ...checked.cap } } : {}),
     };

@@ -7,6 +7,10 @@
 //   and, on a plan, the provider the plan signs in to. Nothing else, and
 //   never this box.
 // - relay.sock: the key relay (relay.ts), with a key.
+// - page.sock: in a streaming service's stage B, a page of the service as
+//   the household's signed-in browser shows it (ADR-011): its structure and
+//   a copy without its scripts, on the build's declared origins only, which
+//   the daemon asks the screen daemon for. Never the browser itself.
 //
 // What the running build is comes from root's ticket, never from the build
 // itself; the origins it declared come from its state, read again for each
@@ -14,6 +18,7 @@
 
 import { execFileSync } from "node:child_process";
 import { chmodSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { join, resolve } from "node:path";
 import { NetFilter, type Policy } from "../../daemon/net-filter.ts";
 import type { Provider } from "../build.ts";
@@ -63,6 +68,50 @@ export function allowed(ticket: Ticket | null, declared: Declared, signIn = fals
     } catch {}
   }
   return hosts;
+}
+
+export interface PageOptions {
+  ticket: () => Ticket | null;
+  declared: (ticket: Ticket) => string[]; // its origins
+  ask: (url: string) => Promise<object>; // the daemon's answer
+  log: (line: string) => void;
+}
+
+// Stage B's look at the signed-in pages: one ask at a time, an address on
+// the running build's declared origins, while it's in stage B.
+export function pageServer(o: PageOptions): Server {
+  let busy = false;
+  return createServer(async (request, response) => {
+    const answer = (status: number, body: object) => {
+      response.writeHead(status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(body));
+    };
+    if (request.method !== "POST" || request.url !== "/snapshot") return answer(404, { ok: false, error: "only POST /snapshot" });
+    let text = "";
+    for await (const chunk of request) {
+      text += chunk;
+      if (text.length > 4096) return answer(413, { ok: false, error: "an address, and nothing more" });
+    }
+    let url: URL;
+    try {
+      url = new URL(String(JSON.parse(text).url));
+    } catch {
+      return answer(400, { ok: false, error: "an address like https://service.example/" });
+    }
+    const ticket = o.ticket();
+    if (!ticket || ticket.phase !== "stage-b") return answer(403, { ok: false, error: "the service's signed-in pages are for stage B, after the household signed in" });
+    if (url.protocol !== "https:" || !o.declared(ticket).includes(url.origin)) return answer(403, { ok: false, error: `${url.origin} isn't one of the build's declared origins` });
+    if (busy) return answer(429, { ok: false, error: "one page at a time" });
+    busy = true;
+    try {
+      o.log(`stage B: ${ticket.id} looks at ${url.origin}`);
+      answer(200, await o.ask(url.href));
+    } catch (error) {
+      answer(502, { ok: false, error: `the TV couldn't show it: ${(error as Error).message}` });
+    } finally {
+      busy = false;
+    }
+  });
 }
 
 // Only https, and only what's on the list.
@@ -127,11 +176,27 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     spendPath: process.env.AGENTV_SPEND ?? "/var/lib/agentv/spend/spend.json",
     log,
   });
-  for (const name of ["proxy.sock", "relay.sock"]) rmSync(join(run, name), { force: true });
+  // The daemon, on the box's own address, takes stage B's asks to the
+  // screen daemon, which holds the signed-in browser.
+  const daemon = process.env.AGENTV_DAEMON ?? "http://127.0.0.1:3000";
+  const page = pageServer({
+    ticket,
+    declared: (build) => {
+      const said = declaredBy(build, join(root, "builder/recipes"));
+      return said.originsAllowed ? said.origins : [];
+    },
+    ask: async (url) => {
+      const response = await fetch(`${daemon}/api/builder/page`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }), signal: AbortSignal.timeout(120_000) });
+      return (await response.json()) as object;
+    },
+    log,
+  });
+  for (const name of ["proxy.sock", "relay.sock", "page.sock"]) rmSync(join(run, name), { force: true });
   await filter.listenPath(join(run, "proxy.sock"));
   await relay.listen(join(run, "relay.sock"));
+  await new Promise<void>((done) => page.listen(join(run, "page.sock"), done));
   // The builder reaches them through its group, and nobody else does.
-  for (const name of ["proxy.sock", "relay.sock"]) chmodSync(join(run, name), 0o660);
+  for (const name of ["proxy.sock", "relay.sock", "page.sock"]) chmodSync(join(run, name), 0o660);
   log(`the builder's way out is ready in ${run}`);
   if (process.env.NOTIFY_SOCKET) execFileSync("systemd-notify", ["--ready"]);
 }

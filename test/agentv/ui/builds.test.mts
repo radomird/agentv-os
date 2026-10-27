@@ -457,3 +457,23 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
     rmSync(tools, { recursive: true, force: true });
   }
 });
+
+test("ADR-011 a streaming service's app learns the rest after the sign-in, and a stage B that failed offers removing the app, not the build", async () => {
+  const asked = (await send("POST", "/api/builds", { sentence: "add stand-in" })).build;
+  assert.ok(asked, "a new build starts");
+  rmSync(join(state, "build-drop", "start.json"), { force: true });
+  const understood = { name: "Stand-in", recipe: "streaming", says: "A made-up streaming service" };
+  status(asked.id, asked.build, { phase: "stage-b", state: "running", steps: STEPS(1), understood });
+  const page = await tv();
+  await go(page, `build/${asked.build}`);
+  await page.waitForSelector('.build-page[data-state="running"]', { timeout: 10_000 });
+  const learning = await page$(page);
+  assert.match(learning, /learning stand-in\./);
+  assert.match(learning, /you're signed in, so your agent is learning how stand-in searches, starts a title and shows what's playing\./);
+
+  status(asked.id, asked.build, { phase: "stage-b", state: "failed", reason: "study: it stopped", steps: STEPS(1), understood });
+  await page.waitForSelector('.build-page[data-state="failed"]', { timeout: 10_000 });
+  assert.deepEqual(await page.locator(".check-actions .button").allInnerTexts(), ["try again", "remove the app"]);
+  assert.match((await send("POST", `/api/builds/${asked.build}/forget`, {})).error, /its app is on the tv/);
+  await page.close();
+});

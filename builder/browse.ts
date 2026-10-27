@@ -32,8 +32,9 @@ export interface LookOptions {
 const LINES_MAX = 300;
 
 // Runs in the page: its structure, a line each, with a selector an app
-// could use for each thing on it.
-const OUTLINE = `(() => {
+// could use for each thing on it. Stage B's page_snapshot reads a signed-in
+// page with it too, through the screen daemon (daemon/page-asks.ts).
+export const OUTLINE = `(() => {
   const clip = (text, n = 80) => String(text || "").replace(/\\s+/g, " ").trim().slice(0, n);
   const lines = [];
   const seen = new Set();
@@ -69,22 +70,26 @@ const OUTLINE = `(() => {
   return { url: location.href, title: document.title, lines };
 })()`;
 
-// Runs in the page: the page as it is now, without what would run or fetch.
-const SNAPSHOT = `(() => {
+// Runs in the page: the page as it is now, without what would run or fetch,
+// and without what a signed-in page keeps for itself: hidden fields, what's
+// in a field, its meta tags and long data values, where tokens live.
+export const SNAPSHOT = `(() => {
   const copy = document.documentElement.cloneNode(true);
-  for (const el of copy.querySelectorAll("script, noscript, style, link, base, meta[http-equiv], iframe, object, embed, template")) el.remove();
+  for (const el of copy.querySelectorAll("script, noscript, style, link, base, meta, iframe, object, embed, template, input[type=hidden]")) el.remove();
   for (const el of copy.querySelectorAll("*")) {
     for (const attr of [...el.attributes]) {
       const name = attr.name.toLowerCase();
-      if (name.startsWith("on") || ["src", "srcset", "poster", "data", "style"].includes(name)) el.removeAttribute(attr.name);
+      if (name.startsWith("on") || ["src", "srcset", "poster", "data", "style", "value"].includes(name)) el.removeAttribute(attr.name);
       else if (name === "href" && /^\\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+      else if (name.startsWith("data-") && attr.value.length > 100) el.removeAttribute(attr.name);
     }
   }
+  for (const el of copy.querySelectorAll("textarea")) el.textContent = "";
   return "<!doctype html>\\n" + copy.outerHTML;
 })()`;
 
 // Whether this browser can play Widevine, as a streaming service's player asks.
-const DRM = `navigator.requestMediaKeySystemAccess ? navigator.requestMediaKeySystemAccess("com.widevine.alpha", [{ initDataTypes: ["cenc"], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }]).then(() => true, () => false) : false`;
+export const DRM = `navigator.requestMediaKeySystemAccess ? navigator.requestMediaKeySystemAccess("com.widevine.alpha", [{ initDataTypes: ["cenc"], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }]).then(() => true, () => false) : false`;
 
 export async function look(url: string, o: LookOptions): Promise<Look> {
   const browser = headless(o.chromium, { proxy: o.proxy });
@@ -142,15 +147,23 @@ export async function look(url: string, o: LookOptions): Promise<Look> {
   }
 }
 
-// A look, for the agent to read: the page, what of it isn't declared, and
+// A page, for the agent to read: where it is, what's said about it, and
 // its structure.
-export function saidLook(seen: Look, declared: string[]): string {
-  const undeclared = seen.asked.filter((origin) => origin.startsWith("https://") && !declared.includes(origin));
+export function saidPage(seen: { url: string; title: string; status?: number; lines: string[] }, notes: string[] = []): string {
   return [
     `${seen.url}${seen.status ? ` answered ${seen.status}` : ""}: "${seen.title.replace(/\s+/g, " ").trim().slice(0, 100)}"`,
-    `protected video (Widevine) in this browser: ${seen.drm ? "yes" : "no"}`,
-    undeclared.length ? `it also asked for origins the build hasn't declared, which the filter refused: ${undeclared.join(", ")}` : "it asked for nothing the build hasn't declared",
+    ...notes,
     "",
     ...(seen.lines.length ? seen.lines : ["(nothing on it yet)"]),
   ].join("\n");
+}
+
+// A look: the page, whether it plays protected video, and what it asked
+// for that the build hasn't declared.
+export function saidLook(seen: Look, declared: string[]): string {
+  const undeclared = seen.asked.filter((origin) => origin.startsWith("https://") && !declared.includes(origin));
+  return saidPage(seen, [
+    `protected video (Widevine) in this browser: ${seen.drm ? "yes" : "no"}`,
+    undeclared.length ? `it also asked for origins the build hasn't declared, which the filter refused: ${undeclared.join(", ")}` : "it asked for nothing the build hasn't declared",
+  ]);
 }
