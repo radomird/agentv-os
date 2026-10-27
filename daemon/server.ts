@@ -386,12 +386,16 @@ export class Daemon {
   // The phone's state: who's watching, the lock, a sign-in, an update and
   // what's on the TV, with the count it's at.
   private async phoneState(phone: unknown): Promise<object> {
+    // The count before anything's read: a change while it's read leaves the
+    // phone a count behind, so it asks again at once, and never a count
+    // ahead of what it was told, with its next ask waiting 25 s.
+    const version = this.phoneVersion;
     const viewer = await this.profiles.active();
     const pin = this.pin.status(viewer.locked);
     const setup = await this.setup();
     return {
       ok: true,
-      version: this.phoneVersion,
+      version,
       phone,
       viewer,
       viewers: await this.profiles.list(),
