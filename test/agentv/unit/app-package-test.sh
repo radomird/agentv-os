@@ -26,8 +26,16 @@ cat >"$OMARCHY_PATH/bin/pacman" <<STUB
 #!/bin/bash
 grep -qx -- "\${3:-\$2}" "$SCRATCH/installed" 2>/dev/null
 STUB
+# The box's repositories, each with its package list.
+cat >"$OMARCHY_PATH/bin/pacman-conf" <<'STUB'
+#!/bin/bash
+[[ $1 == --repo-list ]] && printf '%s\n' core extra multilib
+STUB
 chmod +x "$OMARCHY_PATH/bin/"*
 echo bash >"$SCRATCH/installed"
+export AGENTV_PACMAN_SYNC="$SCRATCH/sync"
+mkdir -p "$AGENTV_PACMAN_SYNC"
+touch "$AGENTV_PACMAN_SYNC/core.db" "$AGENTV_PACMAN_SYNC/extra.db" "$AGENTV_PACMAN_SYNC/multilib.db"
 
 # app <id> <tier> <manifest>: an app where agentv app install puts one.
 app() {
@@ -77,6 +85,13 @@ refused agentv.odd "'--overwrite=*' isn't a package name"
 app agentv.plex official "$(native flatpak tv.plex.PlexHTPC)"
 refused agentv.plex "a flatpak program isn't installed from the tv yet"
 pass "only an official native app names a package, by a package name, and a refusal says why"
+
+# A box that hasn't fetched its package lists yet says to update it first.
+rm "$AGENTV_PACMAN_SYNC/multilib.db"
+app agentv.later official "$(native pacman later-game)"
+refused agentv.later "the box doesn't have its package lists yet: update it from settings, then add the app again"
+touch "$AGENTV_PACMAN_SYNC/multilib.db"
+pass "a box without its package lists says to update it, and fetches none on the side"
 
 app agentv.broken official "$(native pacman broken-game)"
 if package agentv.broken; then

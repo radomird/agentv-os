@@ -51,6 +51,14 @@ if pacman -Q -- "$pkg" >/dev/null 2>&1; then
   exit 0
 fi
 
+# pacman installs only with every repository's package list on the box,
+# which the box's own updates fetch. This never fetches them on the side,
+# since lists newer than the system can break it.
+SYNC=${AGENTV_PACMAN_SYNC:-/var/lib/pacman/sync}
+for repo in $(pacman-conf --repo-list 2>/dev/null); do
+  [[ -f $SYNC/$repo.db ]] || fail "the box doesn't have its package lists yet: update it from settings, then add the app again"
+done
+
 # What Omarchy's own installer runs first, for the programs it has one for.
 case $pkg in
   steam)
