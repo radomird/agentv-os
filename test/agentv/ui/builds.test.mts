@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
+import { AskWatch } from "../../../daemon/asks.ts";
+import type { GitHubAnswer, GitHubAsk, PushAsk } from "../../../daemon/github.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
 
@@ -497,5 +499,59 @@ test("ADR-045 Export from a built app's details offers it to the phone, which sa
   await hand.waitForFunction(() => !document.querySelector('[data-action="save-export"]'), undefined, { timeout: 10_000 });
   await hand.close();
   await page.close();
+});
+
+test("ADR-045 with the box signed in to GitHub, the phone pushes a built app to a repo of the person's own, past the PIN", async () => {
+  await send("PUT", "/api/pin", { pin: "2468" });
+  const asked = (await send("POST", "/api/builds", { sentence: "a game of falling blocks" })).build;
+  rmSync(join(state, "build-drop", "start.json"), { force: true });
+  status(asked.id, asked.build, { phase: "build", state: "installed", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
+  builtApp(asked.id, "1.0.0");
+  // The screen daemon, as the person, who signed in with gh on Omarchy's desktop.
+  const pushes: PushAsk[] = [];
+  const screen = new AskWatch<GitHubAsk, GitHubAnswer>({
+    url: `${url}/`,
+    path: "api/export/ask",
+    what: "Export's push",
+    handle: async (ask) => {
+      if (ask.kind === "sign-in") return { ok: true, via: "gh", login: "person" };
+      pushes.push(ask);
+      return { ok: true, url: `https://github.com/${ask.repo.owner}/${ask.repo.name}`, pushed: true };
+    },
+    failed: (error) => ({ ok: false, error: error.message }),
+    log: () => {},
+    retryMs: 50,
+  });
+  screen.start();
+  try {
+    const page = await tv();
+    await go(page, `details/${asked.id}`);
+    await page.waitForSelector('[data-action="export"]', { timeout: 10_000 });
+    await page.locator('[data-action="export"]').click();
+
+    const hand = await phone();
+    await hand.waitForSelector('[data-action="push-export"]', { timeout: 10_000 });
+    assert.match(await hand.locator('[data-action="push-export"]').innerText(), /push blocks to github ›/);
+    await hand.locator('[data-action="push-export"]').tap();
+    await hand.waitForSelector('input[name="repo"]');
+    const shown = await hand.locator("body").innerText();
+    assert.match(shown, /push blocks to github/);
+    assert.match(shown, new RegExp(`the tv pushes it as person, in a folder named ${asked.id.replace(/\./g, "\\.")}`));
+    assert.match(shown, /a repo that isn't there yet is made, private/);
+    assert.equal(await hand.locator('input[name="repo"]').inputValue(), `person/${asked.id.replace(/^local\./, "")}`);
+    await hand.locator('input[name="repo"]').fill("my-blocks");
+    await hand.locator('[data-action="push"]').tap();
+    await hand.waitForSelector(".overlay .pin-keys");
+    for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+    await hand.waitForFunction(() => /blocks is on github\.com\/person\/my-blocks/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    assert.equal(pushes.length, 1);
+    assert.deepEqual(pushes[0]!.repo, { owner: "person", name: "my-blocks" });
+    assert.ok(pushes[0]!.files.some((file) => file.path === "manifest.json"));
+    await hand.waitForFunction(() => !document.querySelector('[data-action="push-export"], input[name="repo"]'), undefined, { timeout: 10_000 });
+    await hand.close();
+    await page.close();
+  } finally {
+    screen.stop();
+  }
 });
 

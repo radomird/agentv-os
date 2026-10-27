@@ -93,7 +93,7 @@ test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doe
     assert.equal((await state()).export, null);
     assert.match((await (await send("POST", "/api/apps/local.stand-in/export", {})).json()).error, /drives a service's own site/);
     assert.equal((await send("POST", "/api/apps/local.blocks/export", {})).status, 200);
-    assert.deepEqual((await state()).export, { id: "local.blocks", name: manifest.name, version: manifest.version });
+    assert.deepEqual((await state()).export, { id: "local.blocks", name: manifest.name, version: manifest.version, github: null });
     assert.equal((await phone("/api/phone/apps/local.stand-in/export")).status, 400, "not even asked for directly");
 
     const saved = await phone("/api/phone/apps/local.blocks/export");

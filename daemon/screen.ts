@@ -45,8 +45,10 @@ import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
 import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
+import { AskWatch } from "./asks.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
+import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
@@ -2312,6 +2314,15 @@ async function main(): Promise<void> {
   }).start();
   // Stage B's asks to see a service's signed-in pages, from the builder.
   new PageAskWatch({ url: HOME_URL, snapshot: (url, origins) => screen.snapshot(url, origins) }).start();
+  // Export's push to a repo of the person's own (ADR-045): this runs as
+  // them, so their own GitHub sign-in pushes it, and nothing else holds it.
+  new AskWatch<GitHubAsk, GitHubAnswer>({
+    url: HOME_URL,
+    path: "api/export/ask",
+    what: "Export's push",
+    handle: answerGitHub({ userAgent: userAgent() }),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
