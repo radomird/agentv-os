@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["*.ts", "harness/*.ts", "sandbox/*.ts", "gates/*.ts", "../test/agentv/unit/builder.test.mts", "../test/agentv/unit/sandbox.test.mts", "../test/agentv/unit/packages.test.mts", "../test/agentv/unit/providers.test.mts"]
+  "include": ["*.ts", "harness/*.ts", "sandbox/*.ts", "gates/*.ts", "../test/agentv/unit/builder.test.mts", "../test/agentv/unit/sandbox.test.mts", "../test/agentv/unit/packages.test.mts", "../test/agentv/unit/providers.test.mts", "../test/agentv/unit/builds.test.mts"]
 }

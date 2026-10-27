@@ -32,6 +32,7 @@ import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
+import { Builds } from "./builds.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
@@ -97,6 +98,12 @@ export interface DaemonOptions {
   // The filter home's Chromium goes through (ADR-043): its port, 3005 on
   // the box, or none. Only the origins page apps declared get through.
   homeProxyPort?: number;
+  // The builder (ADR-011): its builds, root's answers, the spend and the
+  // nightly package check, where root and the builder write them.
+  builds?: string; // /var/lib/agentv/build
+  buildRun?: string; // /run/agentv-build
+  spend?: string; // /var/lib/agentv/spend/spend.json
+  npmWarnings?: string; // /var/lib/agentv/npm-check/warnings.json
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -181,6 +188,9 @@ export class Daemon {
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
   readonly pageApps: PageApps;
+  readonly builds: Builds;
+  private buildsSeen = "";
+  private buildsTimer?: ReturnType<typeof setInterval>;
   // What home's Chromium reaches the internet through.
   readonly homeProxy?: NetFilter;
   private art: ArtArchives;
@@ -270,6 +280,7 @@ export class Daemon {
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
     this.ai = new Ai({ state: options.state });
+    this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
@@ -320,6 +331,10 @@ export class Daemon {
   }
 
   listen(): Promise<number> {
+    // The builds, looked at every two seconds: the TV and the phones hear
+    // when one moves on.
+    this.buildsTimer = setInterval(() => void this.watchBuilds(), 2000);
+    this.buildsTimer.unref();
     const lan = this.lan;
     const captive = this.captive;
     const phones = Promise.all([
@@ -356,6 +371,7 @@ export class Daemon {
   }
 
   close(): Promise<void> {
+    clearInterval(this.buildsTimer);
     for (const stream of this.streams) stream.end();
     for (const stream of this.remotes) stream.end();
     this.lan?.close();
@@ -382,6 +398,129 @@ export class Daemon {
 
   setup(): Promise<SetupState> {
     return this.setupState.read();
+  }
+
+  // --- The builder (ADR-011, ADR-043 to ADR-046) ---------------------------
+
+  private async watchBuilds(): Promise<void> {
+    const now = JSON.stringify(await this.builds.list().catch(() => []));
+    if (now === this.buildsSeen) return;
+    this.buildsSeen = now;
+    this.broadcast("builds", {});
+  }
+
+  private async buildsState() {
+    return { builds: await this.builds.list(), settings: await this.builds.settings(), spend: await this.builds.spend(), warnings: this.builds.warnings() };
+  }
+
+  // The AI a build runs on: picked, its terms accepted, and a key there for
+  // a key's path.
+  private async builderAi(): Promise<{ ai?: { provider: "claude" | "chatgpt" | "gemini"; path: "plan" | "key" }; error?: string }> {
+    const ai = await this.ai.read();
+    if (!ai.provider || !ai.path || !ai.accepted) return { error: "pick the AI in Settings → AI, and accept its terms on the phone, first" };
+    if (ai.path === "key") {
+      const key = this.key.status();
+      if (!key.set || key.provider !== ai.provider) return { error: "there's no key for the AI yet: add one in Settings → AI" };
+    }
+    return { ai: { provider: ai.provider, path: ai.path } };
+  }
+
+  // The TV's asks of the builder, and the phone's when phone is given. True
+  // when it was one.
+  private async builderApi(method: string | undefined, path: string, request: IncomingMessage, response: ServerResponse, phone?: { name: string }): Promise<boolean> {
+    const base = phone ? "/api/phone/builds" : "/api/builds";
+    if (path !== base && !path.startsWith(`${base}/`)) return false;
+    const answer = (result: { build?: unknown; error?: string }, done?: string) => {
+      if (result.error) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      if (done) this.log(done);
+      void this.watchBuilds();
+      this.json(response, 200, { ok: true, ...(result.build ? { build: result.build } : {}) });
+    };
+    const viewer = await this.profiles.active();
+    if (viewer.role !== "adult") {
+      this.json(response, 403, { ok: false, error: "an adult asks the builder" });
+      return true;
+    }
+    if (method === "GET" && path === base) {
+      this.json(response, 200, { ok: true, ...(await this.buildsState()) });
+      return true;
+    }
+    const [, build, action] = /^\/api\/(?:phone\/)?builds\/([a-z0-9-]+)(?:\/([a-z]+))?$/.exec(path) ?? [];
+    const app = /^\/api\/builds\/apps\/(local\.[a-z0-9-]+)\/([a-z]+)$/.exec(path);
+
+    if (phone) {
+      if (method === "GET" && action === "shot") {
+        const view = await this.builds.find(build);
+        const png = view?.shot ? await readFile(this.builds.shot(view)).catch(() => null) : null;
+        if (!png) {
+          this.json(response, 404, { ok: false, error: "there's no screenshot" });
+          return true;
+        }
+        response.writeHead(200, { "Content-Type": "image/png", "Content-Length": png.length, "Cache-Control": "no-store" });
+        response.end(png);
+        return true;
+      }
+      // An adult's yes, behind the PIN: a plan, or the app itself (ADR-043, ADR-046).
+      if (method === "POST" && (action === "approve" || action === "plan")) {
+        if (!this.guarded(request, response, action === "plan" ? "a build's plan" : "a built app")) return true;
+        if (action === "plan") answer(await this.builds.approvePlan(build), `${viewer.name} approved a plan on ${phone.name}`);
+        else answer(await this.builds.approve(build), `${viewer.name} approved a built app on ${phone.name}`);
+        return true;
+      }
+      this.json(response, 404, { ok: false, error: "not found" });
+      return true;
+    }
+
+    if (method === "POST" && path === base) {
+      const ai = await this.builderAi();
+      if (!ai.ai) return answer({ error: ai.error }), true;
+      const body = (await this.body(request)) as { sentence?: unknown } | undefined;
+      const installed = (await this.home.manifests()).map(({ manifest }) => manifest.id);
+      answer(await this.builds.ask(body?.sentence, ai.ai, installed), `${viewer.name} asked the builder for an app`);
+      return true;
+    }
+    if (method === "POST" && path === `${base}/stop`) {
+      await this.builds.stop();
+      answer({}, "the build was stopped");
+      return true;
+    }
+    if (method === "PUT" && path === `${base}/settings`) {
+      if (!this.guarded(request, response, "the builder's caps and safeguards")) return true;
+      const result = await this.builds.setSettings(await this.body(request));
+      if (result.error) return answer({ error: result.error }), true;
+      this.log(`the builder's settings changed: $${result.settings!.cap.build} a build, $${result.settings!.cap.month} a month, safeguards ${result.settings!.safeguards ? "on" : "off"}`);
+      this.json(response, 200, { ok: true, settings: result.settings });
+      return true;
+    }
+    if (method === "POST" && app) {
+      const [, id, what] = app;
+      if (what === "rollback" || what === "remove") {
+        if (!this.guarded(request, response, what === "remove" ? "removing a built app" : "going back a version")) return true;
+        if (what === "rollback") answer(await this.builds.rollback(id), `${viewer.name} went back a version of ${id}`);
+        else {
+          const result = await this.builds.remove(id);
+          if (!result.error) await this.pageApps.forget(id);
+          answer(result, `${viewer.name} removed ${id}`);
+        }
+        return true;
+      }
+      if (what === "change" || what === "rebuild") {
+        const ai = await this.builderAi();
+        if (!ai.ai) return answer({ error: ai.error }), true;
+        const body = (await this.body(request)) as { text?: unknown } | undefined;
+        answer(await this.builds.next(id, what === "change" ? (body?.text ?? "") : undefined, ai.ai), `${viewer.name} asked for a new version of ${id}`);
+        return true;
+      }
+    }
+    if (method === "POST" && build && (action === "confirm" || action === "retry")) {
+      answer(action === "confirm" ? await this.builds.confirm(build) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
+      return true;
+    }
+    this.json(response, 404, { ok: false, error: "not found" });
+    return true;
   }
 
   // Tells every page that's listening what changed, and the phones too.
@@ -977,6 +1116,8 @@ export class Daemon {
       this.json(response, 200, { ok: true, provider: ai.provider });
       return;
     }
+
+    if (await this.builderApi(method, path, request, response, phone)) return;
 
     // The adult PIN, entered on the phone: a grant, and the TV unlocked.
     if (method === "POST" && path === "/api/phone/pin") {
@@ -1971,6 +2112,8 @@ export class Daemon {
       this.send(response, type, await readFile(found.path), { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox" });
       return;
     }
+
+    if (await this.builderApi(method, path, request, response)) return;
 
     // A page app's kit call from home, for the app whose frame it came
     // from: checked against its manifest, then done (ADR-043).

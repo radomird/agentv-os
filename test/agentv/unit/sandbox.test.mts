@@ -337,7 +337,7 @@ const asked = (change: Record<string, unknown> = {}) => ({
   ...change,
 });
 
-test("root checks what the daemon asked before anything starts", () => {
+test("root checks what the daemon asked before anything starts", async () => {
   assert.ok(checkRequest(asked()).request);
   assert.match(checkRequest(asked({ id: "agentv.music" })).error!, /local\./);
   assert.match(checkRequest(asked({ id: "local.blocks/../../etc" })).error!, /local\./);
@@ -360,6 +360,7 @@ function handOver(name: string, running = false) {
   const o = {
     drop: join(base, "drop"),
     builds: join(base, "build"),
+    apps: join(base, "apps"),
     home: join(base, "home"),
     run: join(base, "run"),
     spend: join(base, "spend.json"),
@@ -379,11 +380,11 @@ function handOver(name: string, running = false) {
   return { o, h };
 }
 
-test("root makes the build's folder, its request and the ticket, fetches the CLI the first time, and starts the sandbox", () => {
+test("root makes the build's folder, its request and the ticket, fetches the CLI the first time, and starts the sandbox", async () => {
   const { o, h } = handOver("start");
   writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked()));
   writeFileSync(o.spend, JSON.stringify({ month: new Date().toISOString().slice(0, 7), spent: 3, builds: {} }));
-  const done = h.handle();
+  const done = await h.handle();
   assert.deepEqual(done, { started: true, reason: undefined });
   assert.ok(!existsSync(join(o.drop, "start.json")), "the drop is taken");
   const dir = join(o.builds, "local.blocks", "1.0.0");
@@ -401,7 +402,7 @@ test("root makes the build's folder, its request and the ticket, fetches the CLI
   assert.equal(JSON.parse(readFileSync(join(o.run, "answer.json"), "utf8")).started, true);
 });
 
-test("a new build starts from an empty folder, whatever an earlier try left there", () => {
+test("a new build starts from an empty folder, whatever an earlier try left there", async () => {
   const { o, h } = handOver("again");
   const dir = join(o.builds, "local.blocks", "1.0.0");
   mkdirSync(join(o.builds, "local.blocks"), { recursive: true });
@@ -409,56 +410,56 @@ test("a new build starts from an empty folder, whatever an earlier try left ther
   writeFileSync(join(dir, "state.json"), JSON.stringify({ understood: { name: "Old", recipe: "game", says: "an earlier try" } }));
   writeFileSync(join(o.home, ".local/bin/claude"), "");
   writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked({ phase: "understand" })));
-  assert.equal(h.handle()!.started, true);
+  assert.equal((await h.handle())!.started, true);
   assert.ok(!existsSync(join(dir, "state.json")));
   assert.ok(existsSync(join(dir, "request.json")));
 });
 
-test("root starts one build at a time, and stops the running one when asked", () => {
+test("root starts one build at a time, and stops the running one when asked", async () => {
   const { o, h } = handOver("busy", true);
   writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked()));
-  assert.match(h.handle()!.reason!, /one runs at a time/);
+  assert.match((await h.handle())!.reason!, /one runs at a time/);
   assert.ok(!o.calls.some((call) => call.includes("agentv-builder@local.blocks-1.0.0.service")));
   writeFileSync(join(o.drop, "stop.json"), "{}");
-  h.handle();
+  await h.handle();
   assert.deepEqual(o.calls.at(-1), ["stop", "--no-block", "agentv-builder@*.service"]);
 });
 
-test("a change starts from a copy of the version it changes, in the build's own folder", () => {
+test("a change starts from a copy of the version it changes, in the build's own folder", async () => {
   const { o, h } = handOver("change");
   mkdirSync(join(o.builds, "local.blocks", "1.0.0", "work", "app"), { recursive: true });
   writeFileSync(join(o.builds, "local.blocks", "1.0.0", "work", "app", "main.js"), "// 1.0.0");
   writeFileSync(join(o.home, ".local/bin/claude"), "");
   writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked({ version: "1.0.1", from: "1.0.0", change: "make it faster" })));
-  assert.equal(h.handle()!.started, true);
+  assert.equal((await h.handle())!.started, true);
   const dir = join(o.builds, "local.blocks", "1.0.1");
   assert.equal(readFileSync(join(dir, "from", "work", "app", "main.js"), "utf8"), "// 1.0.0");
   assert.equal(JSON.parse(readFileSync(join(dir, "request.json"), "utf8")).from, join(dir, "from"));
   assert.ok(!o.calls.some((call) => call[1]?.startsWith("agentv-builder-cli@")), "the CLI is there already");
 });
 
-test("root won't follow what a build left behind: a swapped app folder or a pointed drop", () => {
+test("root won't follow what a build left behind: a swapped app folder or a pointed drop", async () => {
   const { o, h } = handOver("swapped");
   mkdirSync(o.builds, { recursive: true });
   mkdirSync(join(scratch, "elsewhere"), { recursive: true });
   symlinkSync(join(scratch, "elsewhere"), join(o.builds, "local.blocks"));
   writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked()));
-  assert.match(h.handle()!.reason!, /root's/);
+  assert.match((await h.handle())!.reason!, /root's/);
   assert.ok(!existsSync(join(scratch, "elsewhere", "1.0.0")));
 
   const pointed = handOver("pointed");
   writeFileSync(join(scratch, "a-request.json"), JSON.stringify(asked()));
   symlinkSync(join(scratch, "a-request.json"), join(pointed.o.drop, "start.json"));
-  assert.equal(pointed.h.handle()!.started, false);
+  assert.equal((await pointed.h.handle())!.started, false);
   assert.ok(!lstatSync(join(scratch, "a-request.json")).isSymbolicLink());
 });
 
-test("a refused request says why in its build's status", () => {
+test("a refused request says why in its build's status", async () => {
   const { o, h } = handOver("refused");
   // The CLI can't be fetched.
   const failing = new HandOver({ ...o, systemctl: (args) => !args[1]?.startsWith("agentv-builder-cli@") && !args.includes("is-active") });
   writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked()));
-  assert.match(failing.handle()!.reason!, /couldn't fetch claude/);
+  assert.match((await failing.handle())!.reason!, /couldn't fetch claude/);
   const status = JSON.parse(readFileSync(join(o.builds, "local.blocks", "1.0.0", "status.json"), "utf8"));
   assert.equal(status.state, "failed");
   assert.ok(!existsSync(join(o.run, "ticket.json")), "no ticket stays behind");
