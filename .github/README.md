@@ -68,7 +68,7 @@ You'll need:
 - a USB stick of 8 GB or more;
 - a keyboard, for Omarchy's installer.
 
-1. Get the ISO from [agentv-iso's latest release](https://github.com/radomird/agentv-iso/releases). It's about 6.5 GB, over GitHub's limit for release files. So for now the release links to the build run that keeps it, and you'll need a GitHub account to download it.
+1. Download [the 0.1.3 ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.3-x86_64.iso) (about 6.5 GB) and [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.3-x86_64.iso.sha256). Each [agentv-iso release](https://github.com/radomird/agentv-iso/releases) links to its own. With both in one folder, `shasum -a 256 -c agentv-0.1.3-x86_64.iso.sha256` on a Mac (or `sha256sum -c` on Linux) checks the download.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux, like [Omarchy's manual](../manual/02-getting-started.md) says.
 3. Boot the box from the stick and answer Omarchy's usual installer questions. It wipes the box's disk.
 4. The box reboots into AgenTV. TV setup is coming soon, so for now a new box starts on a welcome page, and `agentv setup skip` takes it to home.
