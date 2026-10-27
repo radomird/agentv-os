@@ -34,7 +34,8 @@ screen() {
   fail "agentv screen back down sends the press and when it happened" "$(screen back down 1700000000123 2>&1)"
 [[ $(screen back up 5) == '{"cmd":"back","edge":"up","at":5}' ]] || fail "agentv screen back up sends the release"
 [[ $(screen quit agentv.games) == '{"cmd":"quit","app":"agentv.games"}' ]] || fail "agentv screen quit names the app"
-for bad in "back" "back left 1" "back down soon" "quit"; do
+[[ $(screen apps add) == '{"cmd":"apps","page":"add"}' ]] || fail "agentv screen apps add asks for Apps' add an app"
+for bad in "back" "back left 1" "back down soon" "quit" "apps settings" "apps add more"; do
   # shellcheck disable=SC2086 # each case is words on purpose
   if screen $bad >/dev/null 2>&1; then fail "agentv screen $bad is refused"; fi
 done
