@@ -17,6 +17,7 @@
 
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { arrange } from "./arrange.ts";
+import { buildBanner, buildNotices, buildPage, type PhoneBuild } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
@@ -58,6 +59,9 @@ interface State {
   // The latest notices from page apps that declared them (ADR-043), newest
   // first.
   notices?: { app: string; name: string; text: string; at: string }[];
+  // An adult's builds that aren't on home yet: how each is going, and the
+  // ones waiting for a yes here (ADR-043, ADR-046).
+  builds?: PhoneBuild[];
 }
 
 interface Ask {
@@ -72,9 +76,11 @@ interface Ask {
   keyUrl: string;
 }
 
-type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo";
+type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "build";
 let state: State | null = null;
 let mode: Mode = "remote";
+// The build being approved, while it's open.
+let approving: string | null = null;
 // The photo page stays as it is while the page draws again around it, so a
 // photo picked isn't lost when something changes on the TV.
 let photoEl: HTMLElement | null = null;
@@ -648,8 +654,30 @@ function draw(): void {
       ),
     );
   }
+  // Your agent's build: the one waiting for a yes, or how the newest is going.
+  if (mode !== "build") {
+    const building = buildBanner(state.builds, (build) => {
+      mode = "build";
+      approving = build;
+      draw();
+    });
+    if (building) banners.push(building);
+  }
   const body = h("div", {});
-  if (mode === "home") {
+  if (mode === "build" && approving) {
+    body.append(
+      buildPage(
+        approving,
+        () => {
+          mode = "remote";
+          approving = null;
+          draw();
+        },
+        failed,
+        () => refresh(true),
+      ),
+    );
+  } else if (mode === "home") {
     void arrange(body).then(() =>
       body.append(
         h(
@@ -737,6 +765,8 @@ async function refresh(force = false, wait = false): Promise<void> {
   const { version: _now, ...now } = next;
   const changed = JSON.stringify(now) !== JSON.stringify(was);
   state = next;
+  // A build that moved on says so here as it does on the TV.
+  buildNotices(before?.builds, next.builds);
   // A page app's new notice shows here as it does on the TV.
   const notice = next.notices?.[0];
   if (before && notice && notice.at !== before.notices?.[0]?.at) toast(`${notice.name.toLowerCase()}: ${notice.text}`, true);

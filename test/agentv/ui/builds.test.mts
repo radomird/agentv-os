@@ -191,6 +191,92 @@ test("ADR-046 what setup's + add your own kept is asked from here with one press
   await page.close();
 });
 
+// A paired phone's page, as it opens from the TV's QR code.
+async function phone(): Promise<Page> {
+  const { pairing } = await send("POST", "/api/phones/pair", {});
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${pairing.code}`);
+  await page.waitForSelector(".dpad");
+  return page;
+}
+
+// A 1 x 1 PNG, for the test TV's screenshot.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+test("ADR-043 the phone follows a build, shows the finished app with its screenshot and what it reaches, and approves it with the PIN", async () => {
+  await send("PUT", "/api/pin", { pin: "2468" });
+  const b = (await send("GET", "/api/builds")).builds[0];
+  const understood = { name: "Photos", recipe: "photos", says: "The photos on your NAS" };
+  status(b.id, b.build, { phase: "build", state: "running", steps: STEPS(1), understood });
+  const hand = await phone();
+  await hand.waitForFunction(() => /building photos · 1 of 4/.test(document.querySelector("[data-build]")?.textContent ?? ""));
+
+  status(b.id, b.build, {
+    phase: "build",
+    state: "approve",
+    steps: STEPS(4),
+    understood,
+    approval: { reaches: { always: ["the remote and a gamepad"], declared: ["your photos, through the tv"] }, packages: [{ name: "exifr", version: "7.1.3" }] },
+  });
+  writeFileSync(join(builds, b.id, "1.0.0", "shot.png"), PNG);
+  await hand.waitForFunction(() => /photos is ready: approve it here/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
+  await hand.locator('[data-action="approve-build"]').tap();
+  await hand.waitForSelector(".build-approve h1");
+  const page = await hand.locator(".build-approve").innerText();
+  assert.match(page, /photos is ready[\s\S]*your agent built it\. add it to the tv\?/);
+  assert.match(page, /\[x\] the remote and a gamepad[\s\S]*\[x\] your photos, through the tv[\s\S]*\[x\] can't see your other sign-ins or your ai key[\s\S]*\[x\] stays on this tv/);
+  assert.match(page, /packages: exifr 7\.1\.3/);
+  assert.match(page, /✓ its checks passed: 4 steps, and the test tv/);
+  await hand.waitForFunction(() => (document.querySelector(".build-shot") as HTMLImageElement | null)?.src.startsWith("data:image/png"));
+
+  rmSync(join(state, "build-drop", "install.json"), { force: true });
+  await hand.locator('[data-action="approve"]').tap();
+  await hand.waitForSelector(".overlay .pin-keys");
+  for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+  await hand.waitForFunction(() => !document.querySelector(".build-approve"));
+  assert.deepEqual(drop("install"), { build: b.build, id: b.id, version: "1.0.0" });
+  await hand.close();
+});
+
+test("ADR-046 a plan for a request no recipe fits is approved on the phone, and then it's built", async () => {
+  const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
+  const asked = (await send("POST", "/api/builds", { sentence: "a family chore chart" })).build;
+  assert.ok(asked, "the photos app waits for root, and another build can start");
+  status(asked.id, asked.build, {
+    phase: "plan",
+    state: "plan",
+    understood: { name: "Chores", recipe: null, says: "A chore chart for the family" },
+    plan: {
+      name: "Chores",
+      says: "A chart of who does which chore this week",
+      steps: [{ id: "design", does: "Work out the chart and its buttons" }, { id: "build", does: "Write the page app" }],
+      permissions: { origins: [], media: [], tile: true, notices: false },
+      packages: [],
+      cost: { low: 0.5, high: 2 },
+    },
+  });
+  const hand = await phone();
+  await hand.waitForSelector('[data-action="approve-build"]', { timeout: 10_000 });
+  assert.match(await hand.locator('[data-action="approve-build"]').innerText(), /a plan for chores · approve it/);
+  await hand.locator('[data-action="approve-build"]').tap();
+  await hand.waitForSelector(".build-approve h1");
+  const page = await hand.locator(".build-approve").innerText();
+  assert.match(page, /a plan for chores[\s\S]*no recipe fits "a family chore chart"/);
+  assert.match(page, /work out the chart and its buttons[\s\S]*write the page app/i);
+  assert.match(page, /\[x\] reaches nothing on the internet[\s\S]*\[x\] puts a tile on home/);
+  assert.match(page, /cost[\s\S]*about \$0\.50 to \$2\.00 on your claude key/);
+  await hand.locator('[data-action="approve-plan"]').tap();
+  await hand.waitForSelector(".overlay .pin-keys");
+  for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+  await hand.waitForFunction(() => !document.querySelector(".build-approve"));
+  const start = drop("start");
+  assert.deepEqual([start.phase, start.recipe, start.plan.name], ["build", null, "Chores"]);
+  status(asked.id, asked.build, { phase: "build", state: "failed", reason: "it stopped", steps: [] });
+  await send("POST", `/api/builds/${asked.build}/forget`, {}, grant);
+  await hand.close();
+});
+
 test("a child's profile has no + add your own, and no builds", async () => {
   await send("PUT", "/api/pin", { pin: "2468" });
   const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
