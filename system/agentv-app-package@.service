@@ -1,0 +1,17 @@
+# The program an official native app opens, such as Steam (ADR-042),
+# installed as root by bin/agentv-app-package for the app named after the @.
+# agentv-setup-apps starts it once the app itself is in, and waits for it.
+# It runs pacman, so it isn't kept to a few folders the way
+# agentv-setup-apps.service is.
+
+[Unit]
+Description=AgenTV: the program %i opens
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-app-package %i
+TimeoutStartSec=60min
+RuntimeDirectory=agentv-app-package
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+Environment=OMARCHY_PATH=/usr/share/omarchy

@@ -4,7 +4,7 @@
 // a theme that can only change colours.
 
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -90,6 +90,29 @@ test("an app's icon is served to be drawn, never run", async () => {
   const response = await fetch(`${url}/api/apps/agentv.sample/icon`);
   assert.equal(response.headers.get("content-type"), "image/svg+xml");
   assert.match(String(response.headers.get("content-security-policy")), /sandbox/);
+  assert.equal((await fetch(`${url}/api/apps/agentv.games/icon`)).status, 404);
+});
+
+test("a native app with no logo of its own gets the icon its installed package gives it", async () => {
+  // What Steam's package installs, with a stand-in icon of a few bytes.
+  const share = join(appsDir, "..", "share");
+  const byId = async () => Object.fromEntries((await get("/api/home")).apps.map((app: any) => [app.id, app]));
+  assert.equal((await byId())["agentv.games"].icon, undefined);
+  mkdirSync(join(share, "icons", "hicolor", "256x256", "apps"), { recursive: true });
+  writeFileSync(join(share, "icons", "hicolor", "256x256", "apps", "steam.png"), "stand-in icon");
+  mkdirSync(join(share, "applications"), { recursive: true });
+  writeFileSync(join(share, "applications", "steam.desktop"), "[Desktop Entry]\nName=Steam\nExec=/usr/bin/steam %U\nIcon=steam\n");
+  try {
+    assert.equal((await byId())["agentv.games"].icon, "/api/apps/agentv.games/icon");
+    const response = await fetch(`${url}/api/apps/agentv.games/icon`);
+    assert.equal(response.headers.get("content-type"), "image/png");
+    assert.match(String(response.headers.get("content-security-policy")), /sandbox/);
+    assert.equal(await response.text(), "stand-in icon");
+  } finally {
+    rmSync(share, { recursive: true, force: true });
+  }
+  // Gone with the package, so the tile shows its name again.
+  assert.equal((await byId())["agentv.games"].icon, undefined);
   assert.equal((await fetch(`${url}/api/apps/agentv.games/icon`)).status, 404);
 });
 
