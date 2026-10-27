@@ -219,6 +219,15 @@ test("ADR-011 the daemon passes on a look at a signed-in page only for the build
     assert.equal((await post(`/api/builder/page-ask/${ask.n}`, { ok: true, url: ask.url, title: "Stand-in", lines: ["h1"], html: "<p>x</p>" })).status, 200);
     assert.deepEqual(await (await asking).json(), { ok: true, url: "https://stand-in.test/browse", title: "Stand-in", lines: ["h1"], html: "<p>x</p>" });
     assert.equal((await post(`/api/builder/page-ask/${ask.n}`, { ok: true })).status, 404);
+
+    // A signed-in page's copy is far bigger than the daemon's other bodies,
+    // and gets there whole.
+    const big = `<!doctype html><main>${'<a class="title" href="/watch/1">a film</a>'.repeat(20_000)}</main>`;
+    assert.ok(big.length > 512 * 1024);
+    const bigger = post("/api/builder/page", { url: "https://stand-in.test/browse" });
+    const next = (await (await fetch(`${url}/api/builder/page-ask`)).json()).ask;
+    assert.equal((await post(`/api/builder/page-ask/${next.n}`, { ok: true, url: next.url, title: "Stand-in", lines: ["h1"], html: big })).status, 200);
+    assert.equal((await (await bigger).json()).html, big);
   } finally {
     await daemon.close();
   }

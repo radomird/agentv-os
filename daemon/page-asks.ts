@@ -24,6 +24,22 @@ export interface PageAnswer {
 
 const HTML_MAX = 2 * 1024 * 1024;
 const LINES_MAX = 300;
+// The most a page answer's JSON may be, with its copy escaped: more than
+// the daemon takes in any other body.
+export const ANSWER_MAX = 6 * 1024 * 1024;
+
+// Only what a page answer has, within bounds.
+export function cleanPage(said: unknown): PageAnswer {
+  const a = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
+  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "the TV couldn't show it" };
+  return {
+    ok: true,
+    url: typeof a.url === "string" ? a.url.slice(0, 2000) : "",
+    title: typeof a.title === "string" ? a.title.slice(0, 300) : "",
+    lines: Array.isArray(a.lines) ? a.lines.filter((line): line is string => typeof line === "string").slice(0, LINES_MAX).map((line) => line.slice(0, 400)) : [],
+    html: typeof a.html === "string" ? a.html.slice(0, HTML_MAX) : "",
+  };
+}
 
 // The daemon's side: asks waiting for the screen daemon, one at a time.
 export class PageAsks {
@@ -73,18 +89,7 @@ export class PageAsks {
     const done = this.waiting.get(n);
     if (!done) return false;
     this.waiting.delete(n);
-    const a = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
-    if (a.ok !== true) {
-      done({ ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "the TV couldn't show it" });
-      return true;
-    }
-    done({
-      ok: true,
-      url: typeof a.url === "string" ? a.url.slice(0, 2000) : "",
-      title: typeof a.title === "string" ? a.title.slice(0, 300) : "",
-      lines: Array.isArray(a.lines) ? a.lines.filter((line): line is string => typeof line === "string").slice(0, LINES_MAX).map((line) => line.slice(0, 400)) : [],
-      html: typeof a.html === "string" ? a.html.slice(0, HTML_MAX) : "",
-    });
+    done(cleanPage(said));
     return true;
   }
 }
@@ -125,7 +130,8 @@ export class PageAskWatch {
         const { ask } = (await response.json()) as { ask: PageAsk | null };
         if (!ask) continue;
         const answer = await this.o.snapshot(ask.url, ask.origins).catch((error: Error): PageAnswer => ({ ok: false, error: error.message }));
-        await fetch(`${this.o.url}api/builder/page-ask/${ask.n}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(answer), signal: AbortSignal.timeout(10_000) });
+        // Only what the daemon takes, so a big page's copy still gets there.
+        await fetch(`${this.o.url}api/builder/page-ask/${ask.n}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cleanPage(answer)), signal: AbortSignal.timeout(10_000) });
       } catch (error) {
         if (this.stopped) return;
         this.o.log(`stage B's pages: ${(error as Error).message}`);
