@@ -19,7 +19,7 @@ set -euo pipefail
 
 AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
 DROP=${AGENTV_KEY_DROP:-/var/lib/private/agentv/daemon/key-drop/key.json}
-VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY)
+VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY XAI_API_KEY META_API_KEY)
 
 [[ -f $DROP ]] || exit 0
 provider=$(jq -r '.provider // empty' "$DROP" 2>/dev/null || true)
@@ -39,6 +39,8 @@ case "$provider" in
   claude) var=ANTHROPIC_API_KEY ;;
   chatgpt) var=OPENAI_API_KEY ;;
   gemini) var=GEMINI_API_KEY ;;
+  grok) var=XAI_API_KEY ;;
+  muse) var=META_API_KEY ;;
   "") var="" ;;
   *)
     echo "agentv-key-store: no such provider; nothing changed" >&2
