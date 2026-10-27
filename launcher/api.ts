@@ -259,6 +259,9 @@ export interface ThemePreview {
 
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  // One of a page app's kit calls the daemon does, checked against its
+  // manifest there (ADR-043): what it gives back.
+  kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
@@ -338,6 +341,7 @@ export interface Running {
 interface Reply {
   ok: boolean;
   error?: string;
+  value?: unknown;
   apps?: Running[];
   [key: string]: unknown;
 }
@@ -373,6 +377,13 @@ export const screen = {
   running: async () => (await ask({ cmd: "running" })).apps ?? [],
   // Closes an app open behind home, such as a game still running.
   quit: (app: string) => ask({ cmd: "quit", app }),
+  // A page app's photos and music, from the TV session (ADR-043). A photo
+  // from a slow NAS takes a while.
+  kit: async (app: string, name: string, args: unknown[]) => {
+    const reply = await ask({ cmd: "kit", app, call: name, args }, 60_000);
+    if (!reply.ok) throw new Error(reply.error ?? "that didn't work");
+    return reply.value;
+  },
   // A key on the ambient screen: back to what was in front.
   wake: () => ask({ cmd: "wake" }),
   // Settings → Updates: Check now and Install now.

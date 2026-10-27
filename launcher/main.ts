@@ -16,6 +16,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
+import { hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
@@ -291,6 +292,8 @@ function viewFor(route: string): View {
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
   if (name === "music") return music(ctx, arg);
+  // A page app, full screen in its frame (ADR-043).
+  if (name === "app" && arg) return pageView(ctx, arg);
   return home(ctx);
 }
 
@@ -299,6 +302,8 @@ function viewFor(route: string): View {
 function show(route: string, direction?: "forward" | "back", action?: string): void {
   // Home ends a visit to Settings, and the PIN's grant with it.
   if (route === "home") held = null;
+  // Any page but a page app's puts the one in front behind home, paused.
+  if (!route.startsWith("app/")) hidePages(ctx);
   tell({ screen: route === "home" ? "home" : "menu" });
   view = viewFor(route);
   const el = view.el;
@@ -594,7 +599,8 @@ function redraw(): void {
 // Which apps are open behind home, from the screen daemon. Home's tiles show
 // it; edit mode doesn't, so it isn't redrawn under the viewer's hands.
 function setRunning(apps: Running[]): void {
-  const next = new Map(apps.map((app) => [app.id, app]));
+  // The page apps open behind home are home's own, not the screen daemon's.
+  const next = new Map([...apps, ...pageRunning()].map((app) => [app.id, app]));
   if (JSON.stringify([...next]) === JSON.stringify([...ctx.running])) return;
   ctx.running = next;
   if (history[history.length - 1] === "home") redraw();
@@ -644,6 +650,15 @@ async function start(): Promise<void> {
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
+    // A page app set its tile (ADR-043): home's tiles ask again.
+    tiles: () => {
+      if (history[history.length - 1] === "home") redraw();
+    },
+    // A page app's notice, declared in its manifest.
+    notice: (data) => {
+      const notice = data as { name?: string; text?: string };
+      if (notice.text) ctx.toast(`${(notice.name ?? "an app").toLowerCase()}: ${notice.text}`, "ok");
+    },
     // Someone else is watching (S4.2): their home, at once. A child's profile
     // closes the apps open behind home that children can't open.
     viewer: () => void switched(),
@@ -685,10 +700,14 @@ async function start(): Promise<void> {
     agentvHome: () => void;
     agentvRunning: (json: string) => void;
     agentvAmbient: (on: boolean) => void;
+    agentvPage: (id: string) => void;
     agentvLauncher: object;
   };
   w.agentvHome = () => act("home");
   w.agentvAmbient = (on) => setAmbient(on);
+  // A page app opened from elsewhere, such as Apps or the phone, through
+  // the screen daemon, which put home in front first.
+  w.agentvPage = (id) => openPage(ctx, id);
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the

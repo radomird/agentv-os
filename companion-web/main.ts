@@ -55,6 +55,9 @@ interface State {
   // What setup's AI step asks of the phone (ADR-023): the provider's terms
   // for an adult to accept, then the key.
   ai: Ask | null;
+  // The latest notices from page apps that declared them (ADR-043), newest
+  // first.
+  notices?: { app: string; name: string; text: string; at: string }[];
 }
 
 interface Ask {
@@ -734,6 +737,9 @@ async function refresh(force = false, wait = false): Promise<void> {
   const { version: _now, ...now } = next;
   const changed = JSON.stringify(now) !== JSON.stringify(was);
   state = next;
+  // A page app's new notice shows here as it does on the TV.
+  const notice = next.notices?.[0];
+  if (before && notice && notice.at !== before.notices?.[0]?.at) toast(`${notice.name.toLowerCase()}: ${notice.text}`, true);
   const moved = before !== null && next.tv.view !== before.tv.view;
   const follow = FOLLOW[next.tv.view];
   if (moved && follow && (mode === "remote" || mode === "type" || mode === "play" || mode === "mouse")) {

@@ -37,6 +37,8 @@ import { ProviderKey } from "./key.ts";
 import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
+import { NetFilter } from "./net-filter.ts";
+import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { currentTheme, previews } from "./themes.ts";
@@ -92,6 +94,9 @@ export interface DaemonOptions {
   hotspotAddress?: string;
   // How long a phone's ask for the state waits for a change (25 s).
   phoneWaitMs?: number;
+  // The filter home's Chromium goes through (ADR-043): its port, 3005 on
+  // the box, or none. Only the origins page apps declared get through.
+  homeProxyPort?: number;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -175,6 +180,9 @@ export class Daemon {
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
+  readonly pageApps: PageApps;
+  // What home's Chromium reaches the internet through.
+  readonly homeProxy?: NetFilter;
   private art: ArtArchives;
   private immich: ImmichAlbum;
   private immichBusy = false;
@@ -197,6 +205,8 @@ export class Daemon {
   // The provider whose terms a key from Settings → AI waits for (Q104), which
   // the phones show for an adult to accept.
   private keyTerms: Provider | null = null;
+  // The last few page apps' notices, for the phones (ADR-043).
+  private notices: { app: string; name: string; text: string; at: string }[] = [];
   // Omarchy's desktop's relay for the phone's trackpad, while it's on.
   private desktops = new Set<ServerResponse>();
   private ledgerPath: string;
@@ -216,8 +226,43 @@ export class Daemon {
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
+      pageTile: (id) => this.pageApps.tile(id),
       log: this.log,
     });
+    // Page apps (ADR-043): each on an origin of its own, and the kit's calls
+    // checked against its manifest.
+    this.pageApps = new PageApps({
+      state: options.state,
+      root: options.root,
+      find: async (id) => {
+        const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === id && manifest.tv.runtime === "page");
+        return found ? { manifest: found.manifest, dir: found.dir } : null;
+      },
+      viewer: async () => {
+        const viewer = await this.profiles.active();
+        return { id: viewer.id, name: viewer.name, role: viewer.role };
+      },
+      notice: (app, text) => {
+        this.log(`${app.id} sent a notice`);
+        this.notices = [{ app: app.id, name: app.name, text, at: now() }, ...this.notices].slice(0, 5);
+        this.broadcast("notice", { app: app.id, name: app.name, text });
+      },
+      tileChanged: (id) => this.broadcast("tiles", { app: id }),
+      log: this.log,
+    });
+    if (options.homeProxyPort !== undefined) {
+      this.homeProxy = new NetFilter({
+        // The origins the page apps on the box declared, as they are now.
+        policy: async (host, port, scheme) => {
+          const origin = new URL(`${scheme}://${host.includes(":") ? `[${host}]` : host}:${port}`).origin;
+          for (const { manifest } of await this.home.manifests()) {
+            if (manifest.tv.runtime === "page" && (manifest.tv.origins ?? []).includes(origin)) return true;
+          }
+          return false;
+        },
+        log: (line) => this.log(`home's proxy: ${line}`),
+      });
+    }
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
@@ -280,6 +325,7 @@ export class Daemon {
     const phones = Promise.all([
       lan ? new Promise<void>((resolve) => lan.listen(this.options.lanPort, this.options.lanHost ?? "0.0.0.0", () => resolve())) : null,
       captive ? new Promise<void>((resolve) => captive.listen(this.options.setupPort, this.options.setupHost ?? "0.0.0.0", () => resolve())) : null,
+      this.homeProxy?.listen(this.options.homeProxyPort, "127.0.0.1"),
     ]);
     return phones.then(
       () =>
@@ -314,6 +360,7 @@ export class Daemon {
     for (const stream of this.remotes) stream.end();
     this.lan?.close();
     this.captive?.close();
+    void this.homeProxy?.close();
     this.home.stop();
     this.updates.stop();
     this.setupApps.stop();
@@ -400,6 +447,8 @@ export class Daemon {
       // What setup's AI step asks of the phone (ADR-023): the provider's
       // terms for an adult to accept, then the key.
       ai: await this.aiAsk(setup),
+      // Page apps' notices, as the TV shows them (ADR-043).
+      notices: this.notices,
     };
   }
 
@@ -1099,6 +1148,14 @@ export class Daemon {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    // A page app's own origin gets its files and the kit, and nothing else
+    // of the daemon's (ADR-043).
+    const port = (this.server.address() as { port: number }).port;
+    const page = pageAppId(request.headers.host, port);
+    if (page) {
+      await this.pageApps.serve(page, request, response, port);
+      return;
+    }
     const allowed = this.allowed(request);
     if (!allowed.ok) {
       this.log(`refused ${request.method} ${request.url}: ${allowed.why}`);
@@ -1915,6 +1972,27 @@ export class Daemon {
       return;
     }
 
+    // A page app's kit call from home, for the app whose frame it came
+    // from: checked against its manifest, then done (ADR-043).
+    if (method === "POST" && path === "/api/kit") {
+      const body = ((await this.body(request)) ?? {}) as { app?: unknown; call?: unknown; args?: unknown };
+      const result = await this.pageApps.call(body.app, body.call, Array.isArray(body.args) ? body.args : []);
+      if (result.error) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.json(response, 200, { ok: true, value: result.value ?? null });
+      return;
+    }
+
+    // The TV session asks before it reads a page app's photos or music.
+    const kit = /^\/api\/apps\/([a-z0-9.-]+)\/kit$/.exec(path);
+    if (method === "GET" && kit) {
+      const why = await this.pageApps.allows(kit[1], url.searchParams.get("call"));
+      this.json(response, why ? 403 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
+
     const launch = /^\/api\/apps\/([a-z0-9.-]+)\/launch$/.exec(path);
     if (method === "GET" && launch) {
       const target = await this.home.launch(launch[1], await this.profiles.active());
@@ -2168,6 +2246,7 @@ async function main(): Promise<void> {
     port,
     lanPort: process.env.AGENTV_LAN_PORT === "off" ? undefined : Number(process.env.AGENTV_LAN_PORT ?? 3001),
     setupPort: process.env.AGENTV_SETUP_PORT === "off" ? undefined : Number(process.env.AGENTV_SETUP_PORT ?? 3002),
+    homeProxyPort: process.env.AGENTV_HOME_PROXY_PORT === "off" ? undefined : Number(process.env.AGENTV_HOME_PROXY_PORT ?? 3005),
   });
   const listening = await daemon.listen();
   const phones = daemon.lanPort ? `, for phones on port ${daemon.lanPort}` : "";
