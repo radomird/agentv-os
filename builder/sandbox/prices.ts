@@ -5,6 +5,9 @@
 // - https://developers.openai.com/api/docs/pricing
 // - https://ai.google.dev/gemini-api/docs/pricing (Gemini 3's prices are
 //   to roughly double on 2027-01-01, so read it again before then)
+// - https://docs.x.ai/docs/models (a prompt that reaches 200K tokens is
+//   billed at the long rate for all of it)
+// - https://dev.meta.ai/docs/pricing-rate-limits (no long-context premium)
 //
 // A model that isn't here isn't priced, so the relay refuses it rather than
 // guess what a build spent.
@@ -64,6 +67,21 @@ export const PRICES: Record<Provider, Record<string, Rate>> = {
     "gemini-2.5-pro": { in: 1.25, out: 10, cacheRead: 0.125, above: { tokens: 200_000, rate: { in: 2.5, out: 15, cacheRead: 0.25 } } },
     "gemini-2.5-flash": { in: 0.3, out: 2.5, cacheRead: 0.03 },
     "gemini-2.5-flash-lite": { in: 0.1, out: 0.4, cacheRead: 0.01 },
+  },
+  grok: {
+    "grok-4.7": { in: 2, out: 6, cacheRead: 0.5, above: { tokens: 199_999, rate: { in: 4, out: 12, cacheRead: 1 } } },
+    "grok-4.6": { in: 2, out: 6, cacheRead: 0.5, above: { tokens: 199_999, rate: { in: 4, out: 12, cacheRead: 1 } } },
+    "grok-4.5": { in: 2, out: 6, cacheRead: 0.3, above: { tokens: 199_999, rate: { in: 4, out: 12, cacheRead: 0.6 } } },
+    "grok-4.3": { in: 1.25, out: 2.5, cacheRead: 0.2, above: { tokens: 199_999, rate: { in: 2.5, out: 5, cacheRead: 0.4 } } },
+    "grok-build-0.1": { in: 1, out: 2, cacheRead: 0.2, above: { tokens: 199_999, rate: { in: 2, out: 4, cacheRead: 0.4 } } },
+  },
+  muse: {
+    "muse-wonder-1.0": { in: 4, out: 20, cacheRead: 0.2 },
+    "muse-spark-1.3": { in: 1.25, out: 4.25, cacheRead: 0.15 },
+    "muse-spark-1.2": { in: 1.25, out: 4.25, cacheRead: 0.15 },
+    "muse-spark-1.1": { in: 1.25, out: 4.25, cacheRead: 0.15 },
+    "muse-spark-1.3-contributor": { in: 0.1, out: 0.2, cacheRead: 0.002 },
+    "muse-spark-1.2-contributor": { in: 0.1, out: 0.2, cacheRead: 0.002 },
   },
 };
 

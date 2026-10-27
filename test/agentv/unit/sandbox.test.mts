@@ -75,9 +75,9 @@ let ticket: Ticket | null = null;
 const spendPath = join(scratch, "spend", "spend.json");
 const relay = new Relay({
   ticket: () => ticket,
-  key: (p) => (p === "claude" ? KEY : p === "chatgpt" ? "sk-openai-relaytest" : "gemini-relaytest"),
+  key: (p) => ({ claude: KEY, chatgpt: "sk-openai-relaytest", gemini: "gemini-relaytest", grok: "xai-relaytest", muse: "LLM_relaytest" })[p],
   spendPath,
-  upstream: { claude: upstreamUrl, chatgpt: upstreamUrl, gemini: upstreamUrl },
+  upstream: { claude: upstreamUrl, chatgpt: upstreamUrl, gemini: upstreamUrl, grok: upstreamUrl, muse: upstreamUrl },
 });
 const relayPort = (await relay.listen(0)) as number;
 after(() => {
@@ -155,9 +155,10 @@ test("the relay passes on only a model's calls, a model it can price, and no too
   assert.equal(search.status, 400);
   assert.match(search.text, /web_search_20260209/);
   assert.equal(seen.length, 0, "none of them reached the provider");
-  assert.equal(serverTools("chatgpt", { tools: [{ type: "function", name: "write" }, { type: "web_search" }] }), "web_search");
+  assert.equal(serverTools("responses", { tools: [{ type: "function", name: "write" }, { type: "web_search" }] }), "web_search");
+  assert.equal(serverTools("chat", { tools: [{ type: "function", function: { name: "write" } }, { type: "x_search" }] }), "x_search");
   assert.equal(serverTools("gemini", { tools: [{ functionDeclarations: [] }, { googleSearch: {} }] }), "googleSearch");
-  assert.equal(serverTools("claude", { tools: [{ name: "write", input_schema: {} }] }), null);
+  assert.equal(serverTools("messages", { tools: [{ name: "write", input_schema: {} }] }), null);
 });
 
 test("a build stops within one request of its cap, and the month's cap holds across builds", async () => {
@@ -212,16 +213,40 @@ test("codex's and gemini's answers are counted too, though their CLIs report no 
   assert.equal(Math.round(spent().builds.b1 * 1e6) / 1e6, 0.5 + 0.6);
 });
 
+test("ADR-047 grok's and muse's answers are counted: xAI's at the cost it says, Meta's from its usage", async () => {
+  rmSync(spendPath, { force: true });
+  ticket = keyTicket({ provider: "grok" });
+  seen.length = 0;
+  const done = { type: "response.completed", response: { usage: { input_tokens: 100_000, output_tokens: 10_000, cost_in_usd_ticks: 1_234_500_000 } } };
+  answer = { type: "text/event-stream", body: `data: ${JSON.stringify(done)}\n\ndata: [DONE]\n\n` };
+  assert.equal((await ask("POST", "/v1/responses", { model: "grok-4.7", stream: true }, { authorization: "Bearer agentv-relay" })).status, 200);
+  assert.equal(seen[0].headers.authorization, "Bearer xai-relaytest");
+  assert.equal(spent().builds.b1, 0.12345, "1,234,500,000 ticks are $0.12345");
+  assert.equal((await ask("POST", "/v1/responses", { model: "grok-4.7", tools: [{ type: "x_search" }] })).status, 400, "xAI's own search would go round the filter");
+
+  rmSync(spendPath, { force: true });
+  ticket = keyTicket({ provider: "muse" });
+  seen.length = 0;
+  answer = { type: "application/json", body: JSON.stringify({ object: "chat.completion", usage: { prompt_tokens: 1_000_000, prompt_tokens_details: { cached_tokens: 200_000 }, completion_tokens: 100_000 } }) };
+  assert.equal((await ask("POST", "/v1/chat/completions", { model: "muse-spark-1.2" })).status, 200);
+  assert.equal(seen[0].headers.authorization, "Bearer LLM_relaytest");
+  // 800K input at $1.25, 200K cached at $0.15, 100K output at $4.25.
+  assert.equal(Math.round(spent().builds.b1 * 1e6) / 1e6, 1 + 0.03 + 0.425);
+  assert.equal((await ask("POST", "/v1/chat/completions", { model: "muse-unknown-9" })).status, 400);
+});
+
 test("Claude's cache writes are counted at their own rates", () => {
-  const meter = new Meter("claude");
+  const meter = new Meter("messages");
   meter.read({ type: "message_start", message: { usage: { input_tokens: 10, cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 30 }, cache_read_input_tokens: 40, output_tokens: 1 } } });
   meter.read({ type: "message_delta", usage: { output_tokens: 99 } });
   assert.deepEqual(meter.usage, { input: 10, cacheWrite5m: 20, cacheWrite1h: 30, cacheRead: 40, output: 99 });
 });
 
 test("the relay takes the provider's key from /etc/agentv/env's line, and no other", () => {
-  const env = "TMDB_API_KEY=tmdb\nANTHROPIC_API_KEY=sk-ant-1\nOPENAI_API_KEY=\n";
+  const env = "TMDB_API_KEY=tmdb\nANTHROPIC_API_KEY=sk-ant-1\nOPENAI_API_KEY=\nXAI_API_KEY=xai-1\nMETA_API_KEY=LLM_1\n";
   assert.equal(keyFrom(env, "claude"), "sk-ant-1");
+  assert.equal(keyFrom(env, "grok"), "xai-1");
+  assert.equal(keyFrom(env, "muse"), "LLM_1");
   assert.equal(keyFrom(env, "chatgpt"), null);
   assert.equal(keyFrom(env, "gemini"), null);
 });

@@ -46,28 +46,42 @@ export const UPSTREAM: Record<Provider, string> = {
   claude: "https://api.anthropic.com",
   chatgpt: "https://api.openai.com",
   gemini: "https://generativelanguage.googleapis.com",
+  grok: "https://api.x.ai",
+  muse: "https://api.meta.ai",
 };
 
+// The shape of a call's request and answer: Anthropic's Messages, OpenAI's
+// Responses and Chat Completions, which xAI's and Meta's APIs speak too, and
+// Gemini's own.
+export type Wire = "messages" | "responses" | "chat" | "gemini";
+
+interface Call {
+  method: string;
+  path: RegExp;
+  wire?: Wire; // a model's answer, priced, in this shape
+}
+
+const MODELS = { method: "GET", path: /^\/v1\/models(\/[\w.-]+)?(\?.*)?$/ };
+const MESSAGES = { method: "POST", path: /^\/v1\/messages(\?.*)?$/, wire: "messages" as const };
+const RESPONSES = { method: "POST", path: /^\/v1\/responses(\?.*)?$/, wire: "responses" as const };
+const CHAT = { method: "POST", path: /^\/v1\/chat\/completions(\?.*)?$/, wire: "chat" as const };
+
 // The calls a CLI makes for a model's answer, and the free ones beside them.
-const CALLS: Record<Provider, { method: string; path: RegExp; priced: boolean }[]> = {
-  claude: [
-    { method: "POST", path: /^\/v1\/messages(\?.*)?$/, priced: true },
-    { method: "POST", path: /^\/v1\/messages\/count_tokens(\?.*)?$/, priced: false },
-    { method: "GET", path: /^\/v1\/models(\/[\w.-]+)?(\?.*)?$/, priced: false },
-  ],
-  chatgpt: [
-    { method: "POST", path: /^\/v1\/responses(\?.*)?$/, priced: true },
-    { method: "GET", path: /^\/v1\/models(\/[\w.-]+)?(\?.*)?$/, priced: false },
-  ],
+const CALLS: Record<Provider, Call[]> = {
+  claude: [MESSAGES, { method: "POST", path: /^\/v1\/messages\/count_tokens(\?.*)?$/ }, MODELS],
+  chatgpt: [RESPONSES, MODELS],
   gemini: [
-    { method: "POST", path: /^\/v1beta\/models\/[\w.-]+:(streamGenerateContent|generateContent)(\?.*)?$/, priced: true },
-    { method: "POST", path: /^\/v1beta\/models\/[\w.-]+:countTokens(\?.*)?$/, priced: false },
-    { method: "GET", path: /^\/v1beta\/models(\/[\w.-]+)?(\?.*)?$/, priced: false },
+    { method: "POST", path: /^\/v1beta\/models\/[\w.-]+:(streamGenerateContent|generateContent)(\?.*)?$/, wire: "gemini" },
+    { method: "POST", path: /^\/v1beta\/models\/[\w.-]+:countTokens(\?.*)?$/ },
+    { method: "GET", path: /^\/v1beta\/models(\/[\w.-]+)?(\?.*)?$/ },
   ],
+  grok: [RESPONSES, CHAT, MODELS],
+  // Which of Meta's three muse calls isn't documented yet, so all three.
+  muse: [RESPONSES, CHAT, MESSAGES, MODELS],
 };
 
 // The key's line in /etc/agentv/env (bin/agentv-key-store).
-const KEY_VARS: Record<Provider, string> = { claude: "ANTHROPIC_API_KEY", chatgpt: "OPENAI_API_KEY", gemini: "GEMINI_API_KEY" };
+const KEY_VARS: Record<Provider, string> = { claude: "ANTHROPIC_API_KEY", chatgpt: "OPENAI_API_KEY", gemini: "GEMINI_API_KEY", grok: "XAI_API_KEY", muse: "META_API_KEY" };
 
 export function keyFrom(env: string, provider: Provider): string | null {
   for (const line of env.split("\n")) {
@@ -83,13 +97,13 @@ const AUTH = ["authorization", "x-api-key", "x-goog-api-key", "openai-organizati
 // What's wrong with a request's tools: any the provider would run itself.
 // The agent's tools are AgenTV's harness, which the CLI calls; a provider's
 // own web search or code runner would reach the internet round the filter.
-export function serverTools(provider: Provider, body: Record<string, unknown>): string | null {
+export function serverTools(wire: Wire, body: Record<string, unknown>): string | null {
   const tools = Array.isArray(body.tools) ? (body.tools as Record<string, unknown>[]) : [];
   for (const tool of tools) {
     if (typeof tool !== "object" || tool === null) continue;
-    if (provider === "claude" && typeof tool.type === "string" && tool.type !== "custom") return tool.type;
-    if (provider === "chatgpt" && typeof tool.type === "string" && tool.type !== "function" && tool.type !== "custom") return tool.type;
-    if (provider === "gemini") {
+    if (wire === "messages" && typeof tool.type === "string" && tool.type !== "custom") return tool.type;
+    if ((wire === "responses" || wire === "chat") && typeof tool.type === "string" && tool.type !== "function" && tool.type !== "custom") return tool.type;
+    if (wire === "gemini") {
       const own = Object.keys(tool).find((name) => name !== "functionDeclarations");
       if (own) return own;
     }
@@ -97,22 +111,27 @@ export function serverTools(provider: Provider, body: Record<string, unknown>): 
   return null;
 }
 
-// Usage, as each provider reports it, added up over an answer's events. A
+// Usage, as each wire reports it, added up over an answer's events. A
 // streamed answer reports it as it goes; the last count of each kind wins.
+// xAI's answers say their exact cost too, which then counts instead.
 export class Meter {
   usage: Usage = { ...NO_USAGE };
   seen = false;
-  private provider: Provider;
+  exact?: number; // dollars, as the provider says
+  private wire: Wire;
 
-  constructor(provider: Provider) {
-    this.provider = provider;
+  constructor(wire: Wire) {
+    this.wire = wire;
   }
 
   read(event: unknown): void {
     if (typeof event !== "object" || event === null) return;
     const e = event as Record<string, any>;
     const n = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0);
-    if (this.provider === "claude") {
+    const ticks = (usage: Record<string, unknown>) => {
+      if (typeof usage.cost_in_usd_ticks === "number" && usage.cost_in_usd_ticks >= 0) this.exact = usage.cost_in_usd_ticks / 1e10;
+    };
+    if (this.wire === "messages") {
       // message_start has the input; message_delta the output so far. An
       // answer that isn't streamed has both in its usage.
       const usage = e.type === "message_start" ? e.message?.usage : e.type === "message_delta" ? e.usage : e.type === "message" ? e.usage : null;
@@ -129,9 +148,9 @@ export class Meter {
       if (usage.output_tokens !== undefined) this.usage.output = n(usage.output_tokens);
       return;
     }
-    if (this.provider === "chatgpt") {
-      // The Responses API: response.completed, .incomplete or .failed carry
-      // the whole answer's usage, and so does an answer that isn't streamed.
+    if (this.wire === "responses") {
+      // response.completed, .incomplete or .failed carry the whole answer's
+      // usage, and so does an answer that isn't streamed.
       const usage = e.response?.usage ?? (e.object === "response" ? e.usage : null);
       if (!usage) return;
       this.seen = true;
@@ -139,6 +158,19 @@ export class Meter {
       this.usage.cacheRead = cached;
       this.usage.input = Math.max(0, n(usage.input_tokens) - cached);
       this.usage.output = n(usage.output_tokens);
+      ticks(usage);
+      return;
+    }
+    if (this.wire === "chat") {
+      // The last chunk, or the whole answer, has the usage.
+      const usage = e.usage;
+      if (!usage || typeof usage !== "object") return;
+      this.seen = true;
+      const cached = n(usage.prompt_tokens_details?.cached_tokens);
+      this.usage.cacheRead = cached;
+      this.usage.input = Math.max(0, n(usage.prompt_tokens) - cached);
+      this.usage.output = n(usage.completion_tokens);
+      ticks(usage);
       return;
     }
     // Gemini: each chunk has usageMetadata so far; thinking is billed as
@@ -271,7 +303,7 @@ export class Relay {
 
     let model = "";
     let fast = false;
-    if (call.priced) {
+    if (call.wire) {
       const why = this.capped(ticket);
       if (why) return this.refuse(response, provider, 403, why);
       let body: Record<string, unknown> = {};
@@ -280,7 +312,7 @@ export class Relay {
       } catch {
         return this.refuse(response, provider, 400, "that request isn't JSON");
       }
-      const own = serverTools(provider, body);
+      const own = serverTools(call.wire, body);
       if (own) return this.refuse(response, provider, 400, `the provider's own ${own} tool isn't allowed: the builder reaches the internet only through its filter`);
       model = provider === "gemini" ? (/^\/v1beta\/models\/([\w.-]+):/.exec(url)?.[1] ?? "") : String(body.model ?? "");
       if (!rateFor(provider, model)) return this.refuse(response, provider, 400, `the relay doesn't know what ${model || "that model"} costs, so it can't keep the build inside its cap`);
@@ -292,12 +324,12 @@ export class Relay {
     const headers: IncomingHttpHeaders = { ...request.headers };
     for (const name of [...HOP, ...AUTH]) delete headers[name];
     if (provider === "claude") headers["x-api-key"] = key;
-    else if (provider === "chatgpt") headers.authorization = `Bearer ${key}`;
-    else headers["x-goog-api-key"] = key;
+    else if (provider === "gemini") headers["x-goog-api-key"] = key;
+    else headers.authorization = `Bearer ${key}`;
     headers["content-length"] = String(raw.length);
 
     const base = new URL(this.options.upstream?.[provider] ?? UPSTREAM[provider]);
-    const meter = new Meter(provider);
+    const meter = call.wire ? new Meter(call.wire) : null;
     const send = base.protocol === "http:" ? httpRequest : httpsRequest;
     const upstream = send(
       { host: base.hostname, port: base.port || (base.protocol === "http:" ? 80 : 443), method: request.method, path: url, headers },
@@ -309,14 +341,14 @@ export class Relay {
         let text = "";
         answer.setEncoding("utf8");
         answer.on("data", (chunk: string) => {
-          if (call.priced) {
+          if (meter) {
             if (type.includes("event-stream")) meter.sse(chunk);
             else if (text.length < 64 * 1024 * 1024) text += chunk;
           }
           response.write(chunk);
         });
         answer.on("end", () => {
-          if (call.priced) {
+          if (meter) {
             if (!type.includes("event-stream")) meter.json(text);
             meter.sse("\n");
             this.charge(ticket, model, meter, fast);
@@ -336,7 +368,7 @@ export class Relay {
   private charge(ticket: Ticket, model: string, meter: Meter, fast: boolean): void {
     if (!meter.seen) return;
     const rate = rateFor(ticket.provider, model);
-    const dollars = rate ? cost(rate, meter.usage, fast) : null;
+    const dollars = meter.exact ?? (rate ? cost(rate, meter.usage, fast) : null);
     // A prompt too long to price uses up what's left of the build's cap.
     const cap = { ...DEFAULT_CAP, ...ticket.cap };
     const charged = dollars ?? Math.max(0, cap.build - (this.spend().builds[ticket.build] ?? 0));

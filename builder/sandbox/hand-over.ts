@@ -35,7 +35,7 @@ const BUILD = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const ID = /^local\.[a-z0-9][a-z0-9-]{0,62}$/;
 const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
 const PHASES = ["understand", "plan", "build", "stage-b"];
-const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini"];
+const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
 const clean = (value: unknown, max: number): string | null =>
   typeof value === "string" && value.trim() ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : null;
@@ -51,7 +51,7 @@ export function checkRequest(data: unknown): { request?: BuildRequest; from?: st
   if (!sentence) return { error: "a build says what was asked" };
   if (typeof d.phase !== "string" || !PHASES.includes(d.phase)) return { error: "understand, plan, build or stage-b" };
   if (d.recipe !== null && !KINDS.includes(d.recipe as never)) return { error: "a recipe AgenTV has, or null for a plan" };
-  if (!PROVIDERS.includes(d.provider as Provider)) return { error: "claude, chatgpt or gemini" };
+  if (!PROVIDERS.includes(d.provider as Provider)) return { error: "claude, chatgpt, gemini, grok or muse" };
   if (d.path !== "plan" && d.path !== "key") return { error: "a plan or a key" };
   if (d.provider === "gemini" && d.path === "plan") return { error: "google's plans aren't offered yet" };
   if (typeof d.safeguards !== "boolean") return { error: "whether npm's safeguards are on" };

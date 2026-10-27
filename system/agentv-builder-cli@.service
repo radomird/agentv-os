@@ -1,9 +1,9 @@
-# The provider's CLI in the builder's own home (ADR-040): claude, codex or
-# gemini, fetched with mise the way Omarchy fetches it for the person, and
-# linked as ~/.local/bin/<cli>, which is where the builder runs it from.
-# agentv-build.service starts this before the first build that needs it.
-# It runs nothing of an agent's, so it has the network, but none of the
-# box's keys or sign-ins.
+# The provider's CLI in the builder's own home (ADR-040, ADR-047): claude,
+# codex, gemini, grok or muse, fetched with mise the way Omarchy fetches it
+# for the person, and linked as ~/.local/bin/<cli>, which is where the
+# builder runs it from (builder/sandbox/fetch-cli.sh). agentv-build.service
+# starts this before the first build that needs it. It runs nothing of an
+# agent's, so it has the network, but none of the box's keys or sign-ins.
 
 [Unit]
 Description=AgenTV builder's %i
@@ -16,7 +16,7 @@ User=agentv-builder
 Group=agentv-builder
 Environment=HOME=/var/lib/agentv/builder
 WorkingDirectory=/var/lib/agentv/builder
-ExecStart=/usr/bin/bash -c 'mise use -g "$1" && mkdir -p ~/.local/bin && ln -sfn "$(mise which "$1")" ~/.local/bin/"$1"' agentv-builder-cli %i
+ExecStart=/usr/bin/bash /usr/share/agentv/builder/sandbox/fetch-cli.sh %i
 TimeoutStartSec=20min
 UMask=0022
 ProtectSystem=strict

@@ -100,6 +100,14 @@ test("S6.9 a build walks its recipe's steps in order, each offered only that ste
   assert.deepEqual(filled.steps.map((s: { id: string }) => s.id), ["design", "packages", "build", "tests", "try"]);
 });
 
+test("a CLI that offers the agent tools of its own is stopped before the agent can use one", async () => {
+  const b = build();
+  const status = await run(b, recording({ design: { offer: ["Bash", "WebFetch"], calls: [{ tool: "write", args: { path: "DESIGN.md", content: "made with a shell" } }] } }));
+  assert.equal(status.state, "failed");
+  assert.match(status.reason ?? "", /^design: the agent's CLI offered tools of its own: Bash, WebFetch/);
+  assert.ok(!events(b).some((e) => e.step === "design" && e.tool === "write"), "it was stopped before it wrote anything");
+});
+
 test("S6.9 a tool the step doesn't list is refused, and so is a write or a read outside it", async () => {
   const b = build();
   const misled = recording({

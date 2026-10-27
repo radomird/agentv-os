@@ -29,6 +29,8 @@ export const PLAN_HOSTS: Record<Provider, string[]> = {
   claude: ["api.anthropic.com", "platform.claude.com", "claude.ai", "console.anthropic.com"],
   chatgpt: ["api.openai.com", "chatgpt.com", "auth.openai.com"],
   gemini: [],
+  grok: ["cli-chat-proxy.grok.com", "auth.x.ai"],
+  muse: ["api.meta.ai", "auth.meta.com"],
 };
 
 // The plan's sign-in, the first time the builder runs (ADR-040): the same
@@ -37,6 +39,8 @@ export const SIGN_IN_HOSTS: Record<Provider, string[]> = {
   claude: [...PLAN_HOSTS.claude, "claude.com", "sso.claude.com"],
   chatgpt: PLAN_HOSTS.chatgpt,
   gemini: [],
+  grok: PLAN_HOSTS.grok,
+  muse: PLAN_HOSTS.muse,
 };
 
 export interface Declared {
