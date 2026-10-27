@@ -112,7 +112,13 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
     set({ state: "waiting", url, ...(code ? { code } : {}) });
   };
   child.stdout.on("data", heard);
-  child.stderr.on("data", heard);
+  // What script itself says, on its own output: the CLI's goes to the
+  // terminal, and so to stdout. Only this says why script couldn't start it.
+  let scriptSaid = "";
+  child.stderr.on("data", (chunk: Buffer) => {
+    scriptSaid = (scriptSaid + chunk.toString("utf8")).slice(-400);
+    heard(chunk);
+  });
 
   // The code the person pasted on the phone, as root hands it over.
   const timer = setInterval(() => {
@@ -135,7 +141,13 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
   const limit = setTimeout(() => end(`it took longer than ${o.minutes ?? 15} minutes`), (o.minutes ?? 15) * 60_000);
   const stopped = () => end("it was stopped");
   o.stop?.addEventListener("abort", stopped);
-  const exit = await new Promise<number>((done) => child.on("close", (code) => done(code ?? 1)));
+  const exit = await new Promise<number>((done) => {
+    child.on("error", (error) => {
+      scriptSaid ||= error.message;
+      done(1);
+    });
+    child.on("close", (code) => done(code ?? 1));
+  });
   clearInterval(timer);
   clearTimeout(limit);
   o.stop?.removeEventListener("abort", stopped);
@@ -147,7 +159,9 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
     log(`${provider}'s plan is signed in`);
     return set({ state: "done", url: undefined, code: undefined });
   }
-  return set({ state: "failed", url: undefined, code: undefined, reason: why || (exit === 0 ? "the sign-in didn't finish" : "the sign-in stopped before it finished") });
+  const said = scriptSaid.replace(ESCAPES, "").split("\n").map((line) => line.trim()).find(Boolean)?.slice(0, 200);
+  if (!status.url && exit !== 0) log(`${provider}'s sign-in stopped before its link showed: its terminal exited ${exit}${said ? `, saying "${said}"` : ""}`);
+  return set({ state: "failed", url: undefined, code: undefined, reason: why || (exit === 0 ? "the sign-in didn't finish" : `the sign-in stopped before it finished${!status.url && said ? `: ${said}` : ""}`) });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
