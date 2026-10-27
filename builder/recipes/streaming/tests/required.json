@@ -1,0 +1,5 @@
+{
+  "a": ["launch", "signIn.isSignedIn"],
+  "b": ["launch", "signIn.isSignedIn", "search", "playback.open", "playback.readPlaybackState"],
+  "say": "Every streaming app the recipe builds has contract checks for these calls, against pages saved on this box: stage A's before the sign-in, stage B's after it. playback.next and profiles are checked too when the app has them."
+}

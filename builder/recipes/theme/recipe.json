@@ -1,0 +1,44 @@
+{
+  "kind": "theme",
+  "name": "theme",
+  "fits": "An Omarchy theme from a few words, such as a calm forest at dusk: its colours for the TV and Omarchy's desktop alike, and a background or two drawn for it.",
+  "runtime": "theme",
+  "bounds": { "origins": false, "media": [], "tile": false, "notices": false },
+  "template": "template",
+  "tests": "tests",
+  "cost": { "low": 0.2, "high": 1 },
+  "minutes": 10,
+  "steps": [
+    {
+      "id": "design",
+      "does": "Work out the theme from the words and write it down in DESIGN.md: its mood, light or dark, the accent, and what its background shows. Read Omarchy's own theming guide first. Text on the TV is read from the couch, so the foreground has to stand out well on the background.",
+      "tools": ["read", "write"],
+      "writes": ["DESIGN.md"],
+      "reads": ["omarchy/theming.md"],
+      "needs": ["DESIGN.md"]
+    },
+    {
+      "id": "colors",
+      "does": "Write theme/colors.toml as the template's: mode, then every colour it names, each a #rrggbb. Add theme/icons.theme with one of the icon sets the guide lists, if one fits. A theme here holds its colours, its icon set and its pictures, and nothing that runs code. Run theme_check until it passes.",
+      "tools": ["read", "write", "theme_check"],
+      "writes": ["theme/colors.toml", "theme/icons.theme"],
+      "reads": ["omarchy/theming.md"],
+      "needs": ["theme/colors.toml"]
+    },
+    {
+      "id": "art",
+      "does": "Draw the theme's background as an SVG scene, theme/backgrounds/1-scene.svg, at 3840 x 2160, in the theme's own colours: shapes and gradients, no text, no pictures from anywhere else. A second one is welcome. theme_check draws each one as the picture Omarchy and the TV use, and shows you a preview of the TV in the theme.",
+      "tools": ["read", "write", "theme_check"],
+      "writes": ["theme/backgrounds/*.svg"],
+      "reads": ["omarchy/theming.md"],
+      "needs": ["theme/backgrounds"]
+    },
+    {
+      "id": "try",
+      "does": "Run theme_check and fix what it finds, until it passes: every colour there and readable, the backgrounds drawn, and nothing in the theme but its colours, icon set and pictures.",
+      "tools": ["read", "write", "theme_check"],
+      "writes": ["theme/colors.toml", "theme/icons.theme", "theme/backgrounds/*.svg"],
+      "reads": ["omarchy/theming.md"]
+    }
+  ]
+}

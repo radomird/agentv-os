@@ -1,0 +1,70 @@
+{
+  "kind": "streaming",
+  "name": "streaming service",
+  "fits": "A video or music streaming service the household signs in to on its website: films and series, live TV, music. The app opens the service's own site in the TV's browser, and learns how to search, start a title, read what plays, and pick a profile for children.",
+  "runtime": "web",
+  "bounds": { "origins": true, "media": [], "tile": false, "notices": false },
+  "template": "template",
+  "tests": "tests",
+  "cost": { "low": 1, "high": 5 },
+  "minutes": 10,
+  "steps": [
+    {
+      "id": "site",
+      "stage": "a",
+      "does": "Stage A, with no sign-in. Confirm the service's own web address from the request, and look at its start page and sign-in page with look: a fresh browser with no sign-in. Declare with declare_origin the service's origins its pages, sign-in and player use, and nothing else. look also says whether this browser can play the service's protected video (Widevine). Write down in NOTES.md the address, the origins, how a page shows it's signed in or signed out, and where the sign-in form is.",
+      "tools": ["read", "write", "declare_origin", "look"],
+      "writes": ["NOTES.md"],
+      "reads": ["contract"],
+      "needs": ["NOTES.md"]
+    },
+    {
+      "id": "sign-in",
+      "stage": "a",
+      "does": "Stage A. Write app/app.ts from the template: launch opens the service's home address, and signIn.isSignedIn tells from the page whether it's signed in, with signIn.open bringing the page to its sign-in form. Fill in app/manifest.json: its homeUrl and tv.origins are what you declared, its capabilities launch and signIn, and a sign-in step in tv.setup. Every page read has a timeout and a typed failure. Save the signed-out pages look gave you as fixtures, and add checks for them to fixtures/contract.json. Run check and contract_tests until both pass.",
+      "tools": ["read", "list", "write", "remove", "check", "contract_tests", "look"],
+      "writes": ["app/**", "fixtures/**", "NOTES.md"],
+      "reads": ["contract"],
+      "needs": ["app/app.ts", "app/manifest.json", "fixtures/contract.json"],
+      "turns": 50
+    },
+    {
+      "id": "study",
+      "stage": "b",
+      "does": "Stage B, after the household signed in on the TV. Look at the service's own pages with page_snapshot, through AgenTV's harness, on its declared origins only: a search with results, a series' page with its seasons and episodes, a film's page, the player while it plays, and the profile picker if there is one. Save each as a fixture. Write down in NOTES.md how to search, how to start a title or an episode, where the player shows its title, season and episode, and where the next episode control is. Never use the service's own continue watching row.",
+      "tools": ["read", "write", "page_snapshot"],
+      "writes": ["NOTES.md", "fixtures/**"],
+      "reads": ["contract"],
+      "needs": ["NOTES.md"],
+      "turns": 50
+    },
+    {
+      "id": "playback",
+      "stage": "b",
+      "does": "Stage B. Add to app/app.ts: search for 'play X', playback.open to start an item and resolve once it plays, playback.readPlaybackState from the address, the page and the video element (never pixels, null when nothing plays), playback.next with the site's own next episode control, and profiles.list and profiles.select if the service has a profile for children. Add the capabilities to app/manifest.json. Run check until it passes.",
+      "tools": ["read", "list", "write", "remove", "check"],
+      "writes": ["app/**", "NOTES.md"],
+      "reads": ["contract"],
+      "needs": ["app/app.ts"],
+      "turns": 60
+    },
+    {
+      "id": "tests",
+      "stage": "b",
+      "does": "Stage B. Add checks to fixtures/contract.json for every capability, against the pages you saved: launch, signIn both ways, a search with a known result, opening a known episode, its playback state with the title, season, episode and a moving position, nothing playing as null, next, and the profiles when there are some. Run contract_tests.",
+      "tools": ["read", "list", "write", "contract_tests"],
+      "writes": ["fixtures/**"],
+      "reads": ["contract", "tests"],
+      "needs": ["fixtures/contract.json"]
+    },
+    {
+      "id": "try",
+      "stage": "b",
+      "does": "Stage B. Run check and contract_tests, and fix what they find, until both pass. The recipe's own checks name the capabilities every streaming app covers.",
+      "tools": ["read", "list", "write", "remove", "check", "contract_tests", "page_snapshot"],
+      "writes": ["app/**", "fixtures/**", "NOTES.md"],
+      "reads": ["contract", "tests"],
+      "turns": 60
+    }
+  ]
+}

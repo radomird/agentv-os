@@ -279,8 +279,9 @@ jobs:
               s07="pass (unit: holding back; the live check runs in nightly)"
               s21="pass (unit: agentv app install from a signed test index)"
               s22="pass (unit: agentv app validate)"
+              s69="pass (layer 2: recorded builds through the real harness: each step offered only its tools, writes and reads outside it refused, a step that doesn't do its part ends the build, and no recipe means a plan first)"
               ;;
-            *) s06="fail (layer 2: $UNIT)"; s07="fail (layer 2: $UNIT)"; s21="fail (layer 2: $UNIT)"; s22="fail (layer 2: $UNIT)" ;;
+            *) s06="fail (layer 2: $UNIT)"; s07="fail (layer 2: $UNIT)"; s21="fail (layer 2: $UNIT)"; s22="fail (layer 2: $UNIT)"; s69="fail (layer 2: $UNIT)" ;;
           esac
           case "$UI" in
             success)
@@ -332,4 +333,4 @@ jobs:
           fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
             "S2.12=$s212" "S2.13=$s213" "S2.18=$s218" "S2.19=$s219" "S3.1=$s31" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" \
-            "S4.2=$s42" "S4.7=$s47" "S4.8=$s48" "S4.10=$s410" >>"$GITHUB_STEP_SUMMARY"
+            "S4.2=$s42" "S4.7=$s47" "S4.8=$s48" "S4.10=$s410" "S6.9=$s69" >>"$GITHUB_STEP_SUMMARY"

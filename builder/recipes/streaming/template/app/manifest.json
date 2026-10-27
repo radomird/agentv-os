@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "local.service",
+  "name": "Service",
+  "version": "1.0.0",
+  "author": "your agent",
+  "license": "MIT",
+  "description": "What it is, in one line",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "streaming",
+    "runtime": "web",
+    "homeUrl": "https://service.example/",
+    "capabilities": ["launch", "signIn"],
+    "setup": [{ "type": "signIn" }],
+    "origins": ["https://service.example"],
+    "childSafe": false
+  }
+}

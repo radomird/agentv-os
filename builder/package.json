@@ -1,0 +1,5 @@
+{
+  "name": "agentv-builder",
+  "private": true,
+  "type": "module"
+}
