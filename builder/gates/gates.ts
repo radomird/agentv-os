@@ -3,10 +3,11 @@
 // TV (testtv.ts). The runner calls them before an adult sees the app, and
 // the harness's try and run_tests tools call them while the agent works.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Build } from "../build.ts";
 import type { Recipe } from "../recipe.ts";
+import { checkTheme, themeRules } from "../theme.ts";
 import { type TestFile, tryApp, type TryReport } from "./testtv.ts";
 
 export interface GateOptions {
@@ -47,8 +48,18 @@ export function tryBuild(build: Build, recipe: Recipe, options: GateOptions, wha
 
 // The gates before approval, for the runner: what failed, and the shot.
 export async function gates(build: Build, recipe: Recipe, options: GateOptions): Promise<{ problems: string[]; shot?: string }> {
-  // A streaming service passes its contract tests, and a theme its own
-  // check, instead; each comes with its stage's tools.
+  // A theme passes its own check, which draws it, and its preview goes with
+  // the approval.
+  if (recipe.runtime === "theme") {
+    const report = await checkTheme(build.work, themeRules(recipe), { chromium: options.chromium ?? CHROMIUM });
+    const problems = report.lines.filter((line) => line.startsWith("not ok: ")).map((line) => line.slice("not ok: ".length));
+    const preview = join(build.work, "theme", "preview.png");
+    if (problems.length || !existsSync(preview)) return { problems: problems.length ? problems : ["it has no preview"] };
+    copyFileSync(preview, join(build.dir, "shot.png"));
+    return { problems: [], shot: join(build.dir, "shot.png") };
+  }
+  // A streaming service passes its contract tests instead, with its stage's
+  // tools.
   if (recipe.runtime !== "page") return { problems: [] };
   const report = await tryBuild(build, recipe, options, { checks: true, tests: true, shot: true });
   return { problems: report.problems, shot: report.shot };

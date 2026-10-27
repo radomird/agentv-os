@@ -27,7 +27,7 @@
     },
     {
       "id": "art",
-      "does": "Draw the theme's background as an SVG scene, theme/backgrounds/1-scene.svg, at 3840 x 2160, in the theme's own colours: shapes and gradients, no text, no pictures from anywhere else. A second one is welcome. theme_check draws each one as the picture Omarchy and the TV use, and shows you a preview of the TV in the theme.",
+      "does": "Draw the theme's background as an SVG scene, theme/backgrounds/1-scene.svg, at 3840 x 2160, in the theme's own colours: shapes and gradients, no text, no pictures from anywhere else. A second one is welcome. theme_check draws each one as the picture Omarchy and the TV use, beside it as a .png, and makes theme/preview.png, the TV in the theme, which an adult sees before saying yes.",
       "tools": ["read", "write", "theme_check"],
       "writes": ["theme/backgrounds/*.svg"],
       "reads": ["omarchy/theming.md"],
