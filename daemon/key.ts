@@ -45,11 +45,18 @@ export class ProviderKey {
     }
   }
 
+  // Why a key won't do, before anything happens to it, or null.
+  check(provider: unknown, key: unknown): string | null {
+    if (provider !== null && (typeof provider !== "string" || !PROVIDERS[provider])) return "claude, chatgpt or gemini";
+    if (provider !== null && (typeof key !== "string" || !KEY.test(key.trim()))) return "that doesn't look like a key";
+    return null;
+  }
+
   // Hands a key over, or with no provider takes it off. Null once root has
   // it, or why not.
   async store(provider: unknown, key: unknown): Promise<string | null> {
-    if (provider !== null && (typeof provider !== "string" || !PROVIDERS[provider])) return "claude, chatgpt or gemini";
-    if (provider !== null && (typeof key !== "string" || !KEY.test(key.trim()))) return "that doesn't look like a key";
+    const wrong = this.check(provider, key);
+    if (wrong) return wrong;
     const before = this.status().at;
     mkdirSync(dirname(this.drop), { recursive: true, mode: 0o700 });
     writeFileSync(`${this.drop}.next`, JSON.stringify(provider === null ? { provider: null } : { provider, key: (key as string).trim() }), { mode: 0o600 });

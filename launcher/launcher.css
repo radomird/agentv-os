@@ -907,6 +907,12 @@ button {
   color: var(--foreground);
 }
 
+/* The provider's terms a key waits for (Q104). */
+.terms-row::before {
+  content: "· ";
+  color: var(--accent);
+}
+
 .panel .button {
   max-width: 640px;
 }

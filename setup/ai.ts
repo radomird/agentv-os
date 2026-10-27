@@ -2,10 +2,11 @@
 // then the household's plan or an API key. Picking one shows that
 // provider's terms for that way in, and nothing of it installs until an
 // adult accepts them on the phone, which the box records. A key is then
-// pasted on the phone, or typed here; a plan signs in through the provider's
-// own CLI when the agent first builds something (stage 6). Either way a
-// check mark says so, and the provider's agent CLI arrives in the
-// background, through Omarchy's own wrapper.
+// pasted on the phone, or typed here, and a check mark says it's kept. A plan
+// signs in through the provider's own CLI the first time AgenTV builds an
+// app (stage 6, ADR-040), so for a plan the step says the CLI is ready and
+// when that sign-in comes, with no check mark for it. The provider's agent
+// CLI arrives in the background, through Omarchy's own wrapper.
 
 import { screen } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
@@ -199,7 +200,8 @@ function key(ctx: Ctx, ai: AiInfo): View {
   };
 }
 
-// The check mark: what's done, and the CLI arriving.
+// What's done, and the CLI arriving. For a plan, the sign-in that comes with
+// the first build has no check mark.
 function done(ctx: Ctx, ai: AiInfo): View {
   const offer = ai.offers[ai.provider!];
   const cli = h("span", { class: "ready-row" });
@@ -214,14 +216,14 @@ function done(ctx: Ctx, ai: AiInfo): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading(`${offer.name}`, "all set.", ctx.reduced())), go),
+    h("div", { class: "setup-top" }, h("div", {}, ...heading(`${offer.name}`, ai.path === "plan" ? "ready." : "all set.", ctx.reduced())), go),
     h(
       "div",
       { class: "ready-list" },
       h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), ` terms accepted · ${accepted.by.viewer} on ${accepted.by.phone}`)),
       ai.path === "key"
         ? h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), " key kept · root's alone"))
-        : h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), ` ${offer.plan.name} · signs in when your agent first builds an app`)),
+        : h("span", { class: "ready-row mark-todo", "data-plan": "sign-in" }, h("span", {}, h("b", {}, "[ ]"), ` ${offer.plan.name} · you'll sign in to it the first time agentv builds an app`)),
       cli,
     ),
   );

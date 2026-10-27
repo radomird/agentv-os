@@ -82,6 +82,56 @@ test("S4.6 Settings → AI takes a key in a field that doesn't show it, for the 
   await page.close();
 });
 
+test("Q104 a key for a provider whose terms nobody here accepted waits for them: the TV shows them, an adult accepts on the phone, and the key is kept; a second key just saves", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  const addKey = async (right: number) => {
+    await go(page, "key");
+    await page.waitForSelector('.page [data-action="key"]');
+    for (let i = 0; i < right; i++) await page.keyboard.press("ArrowRight");
+    await page.locator('[data-action="key"]').fill(KEY);
+    await page.locator('[data-action="save"]').click();
+  };
+
+  await addKey(0);
+  await page.waitForFunction(() => /claude's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
+  assert.deepEqual(await page.locator(".profile-form [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-commercial-terms", "anthropic-usage-policy", "claude-code-legal"]);
+  assert.match(await page.locator(".page").innerText(), /an adult accepts them on a paired phone\. the key is kept once they do\./);
+  assert.ok(!(await page.content()).includes(KEY), "the key isn't on the page while it waits");
+
+  // An adult on a paired phone reads them and accepts.
+  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json()).pairing.code;
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  phone.on("pageerror", (error) => errors.push(error.message));
+  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+  await phone.waitForSelector("#tv-ask");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
+  await phone.locator('[data-action="accept"]').tap();
+  await page.waitForFunction(() => /the key for claude is kept/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
+  await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
+  const accepted = (await daemon.ai.history()).filter((a) => a.provider === "claude" && a.path === "key");
+  assert.deepEqual(accepted.map((a) => a.by.phone), ["phone"]);
+
+  // Another key for Claude: its terms are accepted, so it just saves.
+  await page.waitForSelector(".grid .tile.focused");
+  await addKey(0);
+  await page.waitForFunction(() => document.querySelectorAll(".toast").length > 0 && /the key for claude is kept/.test(document.querySelector(".toast:last-child")?.textContent ?? ""), null, { timeout: 10_000 });
+  assert.equal((await daemon.ai.history()).length, accepted.length, "no new acceptance");
+
+  // ChatGPT's, then back: the phone stops asking.
+  await page.waitForSelector(".grid .tile.focused");
+  await addKey(1);
+  await page.waitForFunction(() => /chatgpt's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
+  await phone.waitForSelector("#tv-ask");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "chatgpt terms");
+  await page.keyboard.press("Escape");
+  await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
+  await phone.close();
+  await page.close();
+});
+
 test("S4.6 S4.5 with a PIN set, the key is past it", async () => {
   assert.equal(daemon.pin.set("4826", undefined), null);
   const { page, puts } = await tv();

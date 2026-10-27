@@ -150,6 +150,66 @@ test("S5.5 setup's AI step: the phone hears the terms to accept, an adult accept
   assert.doesNotMatch(history, /sk-ant/, "no key in the record");
 });
 
+// Root's move of a key, as agentv-key-store does it, while fn runs.
+async function withRoot(fn: () => Promise<void>): Promise<void> {
+  const mover = setInterval(() => {
+    try {
+      const drop = JSON.parse(readFileSync(join(state, "key-drop", "key.json"), "utf8"));
+      rmSync(join(state, "key-drop", "key.json"));
+      writeFileSync(keyStatus, JSON.stringify({ set: true, provider: drop.provider, at: new Date().toISOString() }));
+    } catch {
+      // nothing dropped yet
+    }
+  }, 20);
+  try {
+    await fn();
+  } finally {
+    clearInterval(mover);
+  }
+}
+
+test("Q104 Settings → AI: a key for a provider whose terms nobody here accepted waits for an adult to accept them on a phone; one for a provider accepted just saves", async () => {
+  const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  await post("/api/setup", { done: true });
+  const put = (provider: string, key: string) =>
+    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ provider, key }) });
+  const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
+
+  // Claude's terms for a key were accepted in setup: a new key just saves.
+  await withRoot(async () => assert.equal((await put("claude", `sk-ant-${"m".repeat(40)}`)).status, 200));
+  assert.equal((await phoneState()).ai, null);
+
+  // ChatGPT's never were. A key that won't do says so first; one that will
+  // waits, and the phone shows ChatGPT's terms for a key.
+  assert.equal((await put("chatgpt", "short")).status, 400);
+  const waiting = await put("chatgpt", `sk-proj-${"n".repeat(40)}`);
+  assert.equal(waiting.status, 409);
+  const said = await waiting.json();
+  assert.equal(said.error, "chatgpt's terms come first");
+  assert.deepEqual(said.terms.terms, OFFERS.chatgpt.terms.key);
+  const asked = (await phoneState()).ai;
+  assert.deepEqual([asked.ask, asked.provider, asked.path, asked.terms[0].name], ["terms", "chatgpt", "key", "openai's services agreement"]);
+  assert.equal(kept().length, 2, "nothing is recorded before an adult accepts");
+
+  // Past the PIN, and only the terms it asks for.
+  assert.equal((await phone("/api/phone/terms", { provider: "chatgpt", path: "key" })).status, 403);
+  assert.equal((await phone("/api/phone/terms", { provider: "gemini", path: "key" }, grant)).status, 400);
+  assert.equal((await phone("/api/phone/terms", { provider: "chatgpt", path: "key" }, grant)).status, 200);
+  const record = kept().at(-1);
+  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ, "iphone", "openai-services-agreement"]);
+  assert.equal((await phoneState()).ai, null);
+  await withRoot(async () => assert.equal((await put("chatgpt", `sk-proj-${"n".repeat(40)}`)).status, 200));
+  assert.doesNotMatch(JSON.stringify(kept()), /sk-proj/, "no key in the record");
+
+  // Gemini, then Settings stops waiting: the phone stops asking.
+  assert.equal((await put("gemini", `AIza${"p".repeat(35)}`)).status, 409);
+  assert.equal((await phoneState()).ai.provider, "gemini");
+  assert.equal((await fetch(`${url}/api/key/terms`, { method: "DELETE" })).status, 200);
+  assert.equal((await phoneState()).ai, null);
+  assert.equal((await phone("/api/phone/terms", { provider: "gemini", path: "key" }, grant)).status, 400, "nothing to accept now");
+  assert.equal(kept().length, 3);
+});
+
 test("a child's profile can't accept the terms or give the key from a phone", async () => {
   const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
   const child = (await (await post("/api/viewers", { name: "mia", role: "child" }, grant)).json()).profile;
