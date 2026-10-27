@@ -1,5 +1,5 @@
-// The AI provider (board 04, ADR-022, ADR-023): Claude, ChatGPT or Gemini,
-// then the household's plan or an API key. Picking one shows that
+// The AI provider (board 04, ADR-022, ADR-023, ADR-047): Claude, ChatGPT,
+// Gemini, Grok or Muse, then the household's plan or an API key. Picking one shows that
 // provider's terms for that way in, and nothing of it installs until an
 // adult accepts them on the phone, which the box records. A key is then
 // pasted on the phone, or typed here, and a check mark says it's kept. A plan
@@ -14,7 +14,7 @@ import { setup, type AiInfo, type Path, type Provider } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
-const ORDER: Provider[] = ["claude", "chatgpt", "gemini"];
+const ORDER: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
 // What the CLI's first run says, for a line or the status bar.
 export function cliLine(ai: AiInfo): string | null {
@@ -57,7 +57,7 @@ function pick(ctx: Ctx): View {
     "div",
     { class: "setup-page" },
     h("div", {}, ...heading("which ai do you use?", "pick one.", ctx.reduced())),
-    h("div", { class: "providers" }, ...cards),
+    h("div", { class: `providers${cards.length > 3 ? " many" : ""}` }, ...cards),
     h("div", { class: "setup-foot" }, h("span", { class: "setup-note" }, "→ then your plan or an api key, on your phone."), later),
   );
   return { el, first: cards[0], info: "←→ move · ↵ pick" };
@@ -101,7 +101,10 @@ export function path(ctx: Ctx, provider: Provider): View {
     { class: "setup-page" },
     h("div", {}, ...heading(`${offer.name} --how`, "plan or key?", ctx.reduced())),
     h("div", { class: "providers two" }, plan, keyCard),
-    h("span", { class: "setup-note" }, "voice works either way: your phone does the dictation."),
+    // One line: who can't use a plan, where that matters more than voice.
+    offer.plan.note
+      ? h("span", { class: "setup-note", "data-note": "plan" }, offer.plan.note)
+      : h("span", { class: "setup-note" }, "voice works either way: your phone does the dictation."),
   );
   return { el, first: offer.plan.offered ? (plan as HTMLElement) : keyCard, info: "←→ move · ↵ pick · esc back", back: () => again(ctx) };
 }
