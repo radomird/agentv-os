@@ -107,5 +107,7 @@ test("ADR-042 a child's profile has no add an app", async () => {
   await go(page, "add-app");
   await page.waitForSelector(".grid .tile");
   assert.equal(await page.locator(".add-tile").count(), 0, "it goes home instead");
+  // Its stand-in for /api/home may still be answering; that's not this test's.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
 });
