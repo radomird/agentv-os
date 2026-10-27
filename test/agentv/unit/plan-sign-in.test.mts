@@ -7,6 +7,7 @@
 // CLI's own files.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -199,6 +200,22 @@ test("ADR-040 a terminal that can't start the CLI says why, and nothing the CLI 
   assert.equal(done.reason, "the sign-in stopped before it finished: script: failed to create pseudo-terminal: Permission denied");
   assert.deepEqual(lines, ['claude\'s sign-in stopped before its link showed: its terminal exited 1, saying "script: failed to create pseudo-terminal: Permission denied"']);
   assert.doesNotMatch(readFileSync(join(folder, "status.json"), "utf8"), /secret/);
+});
+
+test("S6.5 the sign-in's terminal runs its command in sh, not agentv-builder's own shell, which is nologin", async () => {
+  // script as util-linux 2.42 has it: with no SHELL, it runs its command in
+  // the account's own shell, and on the box nologin says no on the terminal.
+  const h = home("claude", CLAUDE);
+  const real = execFileSync("sh", ["-c", "command -v script"], { encoding: "utf8" }).trim();
+  writeFileSync(join(h, ".local/bin/script"), `#!/bin/sh\n[ -n "$SHELL" ] || { echo 'This account is currently not available.'; exit 1; }\nexec '${real}' "$@"\n`);
+  chmodSync(join(h, ".local/bin/script"), 0o755);
+  const folder = join(scratch, `nologin${count}`);
+  mkdirSync(folder);
+  const going = signIn("claude", { home: h, folder, minutes: 1, log: () => {} });
+  await until(() => read(folder)?.state !== "starting");
+  assert.equal(read(folder)!.state, "waiting", read(folder)!.reason);
+  writeFileSync(join(folder, "input"), "good-code#s7Q\n");
+  assert.equal((await going).state, "done");
 });
 
 test("a plan without its CLI, or with no sign-in yet, says so", async () => {

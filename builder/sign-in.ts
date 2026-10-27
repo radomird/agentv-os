@@ -92,10 +92,12 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
 
   // The CLI in a terminal of its own, as it expects: script gives it one,
   // wide enough that its link stays on one line, and its keys come from
-  // this pipe.
+  // this pipe. script runs that in the shell SHELL names, or else in the
+  // account's own, and agentv-builder's is nologin; the CLI itself gets the
+  // same environment as in a build.
   const quoted = [cli, ...spec.login].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
-  const child = spawn("script", ["-qfec", `stty cols 500 rows 40; exec ${quoted}`, "/dev/null"], {
-    env: { ...signInEnv(provider, o.home, o.proxy), TERM: "dumb" },
+  const child = spawn("script", ["-qfec", `unset SHELL; stty cols 500 rows 40; exec ${quoted}`, "/dev/null"], {
+    env: { ...signInEnv(provider, o.home, o.proxy), TERM: "dumb", SHELL: "/bin/sh" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let seen = "";
