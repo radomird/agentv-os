@@ -156,9 +156,11 @@ async function fresh(): Promise<void> {
 // The TV's page, with a stand-in for the screen daemon that takes its
 // requests, as the home screen's window has it on the box.
 // With replies, by command (or "music:<op>"), in place of a plain { ok: true }.
-async function tv(options: { reducedMotion?: "reduce"; replies?: Record<string, unknown> } = {}): Promise<Page> {
+async function tv(options: { reducedMotion?: "reduce"; replies?: Record<string, unknown>; noTrack?: boolean } = {}): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: options.reducedMotion });
   page.on("pageerror", (error) => errors.push(error.message));
+  // As a package without the soundtrack's file: the stand-in plays.
+  if (options.noTrack) await page.route("**/setup/audio/**", (route) => route.fulfill({ status: 404, body: "" }));
   await page.addInitScript((replies: Record<string, unknown>) => {
     const w = window as unknown as { screenRequests: { cmd: string }[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
     w.screenRequests = [];
@@ -967,7 +969,10 @@ test("S5.4 the soundtrack plays from the welcome screen with its player, the equ
   await page.waitForSelector(".player");
   assert.match(await textOf(page, ".player"), /setup soundtrack[\s\S]*m to mute/);
   assert.equal(await page.locator(".eq .eq-bar").count(), 7);
-  // The stand-in's chord swells in: the bars rise with it.
+  // The track itself, setup/audio/setup-soundtrack-v1.mp3, plays: the bars
+  // rise with it.
+  await page.waitForFunction(() => ((window as unknown as { agentvSetup: { music: { audio?: HTMLAudioElement } } }).agentvSetup.music.audio?.currentTime ?? 0) > 0.5);
+  assert.equal(await page.evaluate(() => (window as unknown as { agentvSetup: { music: { standIn: boolean } } }).agentvSetup.music.standIn), false);
   await page.waitForFunction(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels().some((level) => level > 0.3), null, { timeout: 8000 });
   const seen = new Set<string>();
   for (let i = 0; i < 6; i++) {
@@ -996,6 +1001,17 @@ test("S5.4 the soundtrack plays from the welcome screen with its player, the equ
   await post("/api/setup", { done: true });
   await page.waitForSelector(".grid .tile", { timeout: 10_000 });
   assert.equal(await page.locator(".player").count(), 0);
+  await page.close();
+});
+
+test("S5.4 with no soundtrack in the package, the stand-in's chords play and the bars move with them", async () => {
+  await fresh();
+  await post("/api/setup/music", { muted: false });
+  const page = await tv({ noTrack: true });
+  await page.waitForSelector(".player");
+  // Its first chord swells in: the bars rise with it.
+  await page.waitForFunction(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels().some((level) => level > 0.3), null, { timeout: 8000 });
+  assert.equal(await page.evaluate(() => (window as unknown as { agentvSetup: { music: { standIn: boolean } } }).agentvSetup.music.standIn), true);
   await page.close();
 });
 

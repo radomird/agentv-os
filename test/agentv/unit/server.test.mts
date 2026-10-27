@@ -138,6 +138,33 @@ test("the launcher's TypeScript is served as JavaScript, with its types stripped
   assert.match(code, /export function next\(index\s*, count\s*\)/);
 });
 
+test("setup's soundtrack is served as audio: HEAD says it's there, and a range sends part of it", async () => {
+  mkdirSync(join(root, "setup/audio"), { recursive: true });
+  writeFileSync(join(root, "setup/audio/track.mp3"), Buffer.from(Array.from({ length: 256 }, (_, i) => i)));
+  const head = await fetch(`${url}/setup/audio/track.mp3`, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get("content-type"), "audio/mpeg");
+  assert.equal(head.headers.get("content-length"), "256");
+  assert.equal(head.headers.get("accept-ranges"), "bytes");
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+  assert.equal((await fetch(`${url}/setup/audio/missing.mp3`, { method: "HEAD" })).status, 404);
+
+  const part = async (range: string) => {
+    const response = await fetch(`${url}/setup/audio/track.mp3`, { headers: { Range: range } });
+    return { status: response.status, range: response.headers.get("content-range"), bytes: [...new Uint8Array(await response.arrayBuffer())] };
+  };
+  assert.deepEqual(await part("bytes=0-3"), { status: 206, range: "bytes 0-3/256", bytes: [0, 1, 2, 3] });
+  assert.deepEqual(await part("bytes=254-"), { status: 206, range: "bytes 254-255/256", bytes: [254, 255] });
+  assert.deepEqual(await part("bytes=-2"), { status: 206, range: "bytes 254-255/256", bytes: [254, 255] });
+  assert.deepEqual(await part("bytes=250-999"), { status: 206, range: "bytes 250-255/256", bytes: [250, 251, 252, 253, 254, 255] });
+  assert.equal((await part("bytes=300-")).status, 416);
+  // No range, or one it doesn't read, is the whole file.
+  assert.equal((await part("items=0-3")).bytes.length, 256);
+  assert.equal((await fetch(`${url}/setup/audio/track.mp3`)).status, 200);
+  // The pages' TypeScript is still whole, with its types stripped.
+  assert.equal((await fetch(`${url}/launcher/focus.ts`, { headers: { Range: "bytes=0-3" } })).status, 200);
+});
+
 test("only the TV's page folders are served", async () => {
   for (const path of ["/launcher/../secret.txt", "/launcher/%2e%2e/%2e%2e/secret.txt", "/../secret.txt", "/settings", "/daemon/server.ts", "/launcher/missing.ts", "/launcher/"]) {
     assert.equal((await raw("GET", path, { Host: `127.0.0.1:${port}` })).status, 404, path);

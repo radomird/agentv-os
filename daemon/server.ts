@@ -117,6 +117,7 @@ const TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".webp": "image/webp",
   ".ogg": "audio/ogg",
+  ".mp3": "audio/mpeg",
   ".woff2": "font/woff2",
 };
 
@@ -1025,7 +1026,10 @@ export class Daemon {
     response.end(body);
   }
 
-  private async file(response: ServerResponse, relative: string): Promise<void> {
+  // A file from the TV's pages. HEAD says whether it's there, as setup's page
+  // asks of its soundtrack, and a range sends part of one, as an audio
+  // element asks for to seek or loop.
+  private async file(response: ServerResponse, relative: string, request?: IncomingMessage): Promise<void> {
     const path = join(this.options.root, relative);
     const type = TYPES[extname(path).toLowerCase()];
     let info;
@@ -1049,13 +1053,28 @@ export class Daemon {
         this.stripped.set(path, { mtime: info.mtimeMs, code: body });
       }
     }
-    response.writeHead(200, {
-      "Content-Type": type,
-      "Content-Length": Buffer.byteLength(body),
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    });
-    response.end(body);
+    const headers: Record<string, string | number> = { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+    let status = 200;
+    if (Buffer.isBuffer(body)) {
+      headers["Accept-Ranges"] = "bytes";
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(request?.headers.range ?? ""));
+      if (range && (range[1] || range[2])) {
+        const size = body.length;
+        const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+        if (start >= size || start > end) {
+          response.writeHead(416, { "Content-Range": `bytes */${size}` });
+          response.end();
+          return;
+        }
+        body = body.subarray(start, end + 1);
+        status = 206;
+        headers["Content-Range"] = `bytes ${start}-${end}/${size}`;
+      }
+    }
+    headers["Content-Length"] = Buffer.byteLength(body);
+    response.writeHead(status, headers);
+    response.end(request?.method === "HEAD" ? undefined : body);
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -2086,8 +2105,8 @@ export class Daemon {
       this.json(response, 400, { ok: false, error: "that address isn't valid" });
       return;
     }
-    if (method === "GET" && STATIC.includes(relative.split(sep)[0]) && !relative.split(sep).includes("..")) {
-      await this.file(response, relative);
+    if ((method === "GET" || method === "HEAD") && STATIC.includes(relative.split(sep)[0]) && !relative.split(sep).includes("..")) {
+      await this.file(response, relative, request);
       return;
     }
 
