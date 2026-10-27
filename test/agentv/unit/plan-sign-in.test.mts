@@ -182,6 +182,25 @@ test("ADR-040 the sign-in runs as its unit runs it, as a program of its own", as
   assert.match(read(join(dir, "folder"))!.reason!, /claude isn't on the box yet/);
 });
 
+test("ADR-040 a terminal that can't start the CLI says why, and nothing the CLI said", async () => {
+  // script, as on a box where its sandbox refuses it a terminal: its own
+  // error is all that's kept, and the CLI never ran.
+  const home = join(scratch, `terminal${++count}`);
+  const folder = join(home, "folder");
+  mkdirSync(join(home, ".local/bin"), { recursive: true });
+  mkdirSync(folder);
+  writeFileSync(join(home, ".local/bin/claude"), "#!/bin/sh\necho 'sk-ant-oat01-secret'\nexit 1\n");
+  writeFileSync(join(home, ".local/bin/script"), "#!/bin/sh\necho 'script: failed to create pseudo-terminal: Permission denied' >&2\nexit 1\n");
+  chmodSync(join(home, ".local/bin/claude"), 0o755);
+  chmodSync(join(home, ".local/bin/script"), 0o755);
+  const lines: string[] = [];
+  const done = await signIn("claude", { home, folder, log: (line) => lines.push(line) });
+  assert.equal(done.state, "failed");
+  assert.equal(done.reason, "the sign-in stopped before it finished: script: failed to create pseudo-terminal: Permission denied");
+  assert.deepEqual(lines, ['claude\'s sign-in stopped before its link showed: its terminal exited 1, saying "script: failed to create pseudo-terminal: Permission denied"']);
+  assert.doesNotMatch(readFileSync(join(folder, "status.json"), "utf8"), /secret/);
+});
+
 test("a plan without its CLI, or with no sign-in yet, says so", async () => {
   const folder = join(scratch, `none${++count}`);
   mkdirSync(folder);
