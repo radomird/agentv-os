@@ -47,7 +47,7 @@ export interface ToolsOptions {
 
 // A path in the work folder, as the agent names it: relative, with nothing
 // that climbs out, and no link on the way.
-function inWork(work: string, rel: unknown): string {
+export function inWork(work: string, rel: unknown): string {
   if (typeof rel !== "string" || !rel.trim()) throw new ToolError("which file: a path in the build, like app/main.js");
   const clean = posix.normalize(rel.replace(/^\.\/+/, ""));
   if (clean.startsWith("/") || clean.startsWith("..") || clean.includes("\0") || clean.split("/").includes("..")) {
@@ -209,8 +209,8 @@ export function stepTools(options: ToolsOptions): ToolSpec[] {
     bundle: { inputSchema: schema({}), run: missing("bundle") },
     try: { inputSchema: schema({}), run: missing("try") },
     run_tests: { inputSchema: schema({}), run: missing("run_tests") },
-    fetch_sample: { inputSchema: schema({ url: { type: "string" } }, ["url"]), run: missing("fetch_sample") },
-    look: { inputSchema: schema({ url: { type: "string" } }, ["url"]), run: missing("look") },
+    fetch_sample: { inputSchema: schema({ url: { type: "string" }, save: { type: "string", description: "Keep the answer as a recorded reply for fixtures/contract.json, like fixtures/replies/search.json" } }, ["url"]), run: missing("fetch_sample") },
+    look: { inputSchema: schema({ url: { type: "string" }, save: { type: "string", description: "Keep the page, without its scripts, as a fixture, like fixtures/pages/home.html" } }, ["url"]), run: missing("look") },
     page_snapshot: { inputSchema: schema({ url: { type: "string" }, save: { type: "string" } }), run: missing("page_snapshot") },
     contract_tests: { inputSchema: schema({}), run: missing("contract_tests") },
     theme_check: { inputSchema: schema({}), run: missing("theme_check") },

@@ -25,4 +25,4 @@ The app's checks are in `fixtures/contract.json`: the saved pages each address a
 }
 ```
 
-`contract_tests` runs every check in a worker, with every request answered from the saved pages, so nothing signs in. Saved pages never hold a password or a session.
+`look` keeps a page it opened as a fixture when you give it `save`, like `fixtures/pages/home.html`: the page as it was, without its scripts, styles or images, so a check reads it with nothing else to fetch. `contract_tests` runs every check in a worker, with every request answered from the saved pages, so nothing signs in. Saved pages never hold a password or a session.
