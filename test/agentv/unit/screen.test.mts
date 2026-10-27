@@ -973,6 +973,15 @@ test("agentv screen settings opens Settings at a section on the home screen", as
   assert.deepEqual(await screen.handle({ cmd: "settings", section: "../x" }), { ok: false, error: "which section of settings" });
 });
 
+test("ADR-042 agentv screen apps opens Apps, or its add an app, on the home screen", async () => {
+  const { launcher, screen } = await tv();
+  assert.deepEqual(await screen.handle({ cmd: "apps", page: "" }), { ok: true });
+  assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('go("apps")')));
+  assert.deepEqual(await screen.handle({ cmd: "apps", page: "add" }), { ok: true });
+  assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('go("add-app")')));
+  assert.deepEqual(await screen.handle({ cmd: "apps", page: "settings" }), { ok: false, error: "apps, or apps add" });
+});
+
 // --- Home and Back (ADR-031, stage 2) ----------------------------------------
 
 // Opens an installed web app from the home screen, and its window.

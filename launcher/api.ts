@@ -257,8 +257,25 @@ export interface ThemePreview {
   colors: { background: string; dark_background: string; accent: string; selection: string; foreground: string; bright_foreground: string };
 }
 
+// Apps → add an app (ADR-042): an official app that isn't on the TV yet, and
+// how its install is going once it's picked.
+export interface AvailableApp {
+  id: string;
+  name: string;
+  description: string;
+  state: "queued" | "installing" | "installed" | "failed" | null;
+  error?: string;
+}
+
+export interface Available {
+  apps: AvailableApp[];
+  error?: string;
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  available: () => call<Available>("GET", "/api/apps/add"),
+  addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,

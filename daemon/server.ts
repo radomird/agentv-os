@@ -1370,6 +1370,28 @@ export class Daemon {
       return;
     }
 
+    // Apps → add an app (ADR-042): the official apps that aren't on the TV,
+    // and one picked, handed to root as setup's are, past the PIN once there
+    // is one. A child's profile doesn't add apps.
+    if (path === "/api/apps/add" && (method === "GET" || method === "POST")) {
+      if ((await this.profiles.active()).role === "child") {
+        this.json(response, 403, { ok: false, error: "only an adult adds apps" });
+        return;
+      }
+      if (method === "POST") {
+        if (!this.guarded(request, response, "adding an app")) return;
+        const id = ((await this.body(request)) as { id?: unknown } | undefined)?.id;
+        const why = await this.setupApps.add(id, await this.home.apps());
+        if (why) {
+          this.json(response, 400, { ok: false, error: why });
+          return;
+        }
+        this.log(`apps: adding ${String(id)}`);
+      }
+      this.json(response, 200, { ok: true, ...(await this.setupApps.available(await this.home.apps())) });
+      return;
+    }
+
     // The check after an update (bin/agentv-update-after): does every
     // installed app still load?
     if (method === "GET" && path === "/api/apps/check") {
