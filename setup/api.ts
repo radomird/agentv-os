@@ -41,7 +41,7 @@ export interface SetupInfo {
   pin: boolean;
 }
 
-export type Provider = "claude" | "chatgpt" | "gemini";
+export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
 export type Path = "plan" | "key";
 
 export interface Terms {
@@ -56,7 +56,7 @@ export interface Offer {
   maker: string;
   cli: string;
   cliName: string;
-  plan: { offered: boolean; name: string };
+  plan: { offered: boolean; name: string; note?: string };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   summary: Record<Path, string>;

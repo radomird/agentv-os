@@ -54,7 +54,7 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
   const { daemon, lines, send } = await box();
   try {
     assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null });
-    assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "claude, chatgpt or gemini" });
+    assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "claude, chatgpt, gemini, grok or muse" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: "short" })).data, { ok: false, error: "that doesn't look like a key" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: `${KEY}\nEVIL=1` })).data, { ok: false, error: "that doesn't look like a key" });
 
