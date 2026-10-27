@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Records the museum archives' replies the art picker's tests serve
+# (daemon/art.ts, test/agentv/fixtures/art): a search of each, and the works
+# it reads one by one. The Met's collection API, the Art Institute of
+# Chicago's API and Wikimedia Commons' API all need no key, and each asks for
+# a User-Agent that says who's asking. In CI that's this repo's address;
+# elsewhere, set AGENTV_RECORD_CONTACT. The pictures stay the tests' own.
+#
+# Usage: test/agentv/fixtures/record/art
+
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
+DIR="$ROOT/test/agentv/fixtures/art"
+
+contact=${AGENTV_RECORD_CONTACT:-}
+if [[ -z $contact && -n ${GITHUB_REPOSITORY:-} ]]; then
+  contact="${GITHUB_SERVER_URL:-https://github.com}/$GITHUB_REPOSITORY"
+fi
+[[ -n $contact ]] || { echo "Set AGENTV_RECORD_CONTACT to a web address or email for the archives' User-Agent" >&2; exit 2; }
+agent="AgenTV-fixtures/1 (+$contact)"
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+# get <file> <url>: one reply, kept as it came, when it's JSON.
+get() {
+  local status
+  status=$(curl -sS --retry 3 --retry-delay 5 -o "$work/body" -w '%{http_code}' -H "User-Agent: $agent" -H "AIC-User-Agent: $agent" -H "Accept: application/json" "$2")
+  [[ $status == 200 ]] || { echo "$2 answered $status" >&2; head -c 300 "$work/body" >&2; echo >&2; return 1; }
+  jq . "$work/body" >"$DIR/$1" || { echo "$2 didn't answer with JSON" >&2; return 1; }
+  echo "recorded $1"
+}
+
+failed=()
+
+# The Met: its v1.1 search, then each work it lists, one a second.
+if get met-search.json "https://collectionapi.metmuseum.org/public/collection/v1.1/search?q=sea&hasImages=true&isPublicDomain=true&limit=6"; then
+  rm -f "$DIR"/met-object-*.json
+  for id in $(jq -r '.objectIDs[:6][]' "$DIR/met-search.json"); do
+    sleep 1
+    get "met-object-$id.json" "https://collectionapi.metmuseum.org/public/collection/v1/objects/$id" || failed+=("met object $id")
+  done
+  jq '.objectIDs = .objectIDs[:6]' "$DIR/met-search.json" >"$work/s" && mv "$work/s" "$DIR/met-search.json"
+else
+  failed+=(met)
+fi
+
+# The Art Institute: its search, public domain only, with the fields read.
+fields="id,title,image_id,artist_title,date_display,is_public_domain"
+get aic-search.json "https://api.artic.edu/api/v1/artworks/search?q=water%20lilies&query%5Bterm%5D%5Bis_public_domain%5D=true&limit=6&fields=$fields" || failed+=(aic)
+
+# Commons: its search in the file namespace, bitmaps only.
+get commons-search.json "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&generator=search&gsrsearch=filetype%3Abitmap%20harbour&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url%7Cmime%7Cextmetadata&iiurlwidth=3840&iiextmetadatafilter=ObjectName%7CArtist%7CDateTimeOriginal%7CLicenseShortName" || failed+=(commons)
+
+# What answered is kept, and what didn't is said, so a run still pushes
+# what it got.
+{
+  echo "recorded $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  (( ${#failed[@]} == 0 )) || echo "didn't answer: ${failed[*]}"
+} >"$DIR/recorded.txt"
+cat "$DIR/recorded.txt"

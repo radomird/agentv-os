@@ -1,0 +1,88 @@
+{
+  "objectID": 437914,
+  "isHighlight": false,
+  "accessionNumber": "06.1200",
+  "accessionYear": "1906",
+  "isPublicDomain": true,
+  "primaryImage": "https://images.metmuseum.org/CRDImages/ep/original/DP147592.jpg",
+  "primaryImageSmall": "https://images.metmuseum.org/CRDImages/ep/web-large/DP147592.jpg",
+  "additionalImages": [],
+  "constituents": [
+    {
+      "constituentID": 162662,
+      "role": "Artist",
+      "name": "Simon de Vlieger",
+      "constituentULAN_URL": "http://vocab.getty.edu/page/ulan/500002742",
+      "constituentWikidata_URL": "https://www.wikidata.org/wiki/Q1093129",
+      "gender": ""
+    }
+  ],
+  "department": "European Paintings",
+  "objectName": "Painting",
+  "title": "Calm Sea",
+  "culture": "",
+  "period": "",
+  "dynasty": "",
+  "reign": "",
+  "portfolio": "",
+  "artistRole": "Artist",
+  "artistPrefix": "",
+  "artistDisplayName": "Simon de Vlieger",
+  "artistDisplayBio": "Dutch, Rotterdam (?) ca. 1600/1601–1653 Weesp",
+  "artistSuffix": "",
+  "artistAlphaSort": "Vlieger, Simon de",
+  "artistNationality": "Dutch",
+  "artistBeginDate": "1600",
+  "artistEndDate": "1653",
+  "artistGender": "",
+  "artistWikidata_URL": "https://www.wikidata.org/wiki/Q1093129",
+  "artistULAN_URL": "http://vocab.getty.edu/page/ulan/500002742",
+  "objectDate": "after 1640",
+  "objectBeginDate": 1640,
+  "objectEndDate": 1653,
+  "medium": "Oil on wood",
+  "dimensions": "14 3/4 x 17 1/2 in. (37.5 x 44.5 cm)",
+  "measurements": [
+    {
+      "elementName": "Overall",
+      "elementDescription": null,
+      "elementMeasurements": {
+        "Height": 37.5,
+        "Width": 44.5
+      }
+    }
+  ],
+  "creditLine": "Rogers Fund, 1906",
+  "geographyType": "",
+  "city": "",
+  "state": "",
+  "county": "",
+  "country": "",
+  "region": "",
+  "subregion": "",
+  "locale": "",
+  "locus": "",
+  "excavation": "",
+  "river": "",
+  "classification": "Paintings",
+  "rightsAndReproduction": "",
+  "linkResource": "",
+  "metadataDate": "2026-03-07T04:55:36.053Z",
+  "repository": "Metropolitan Museum of Art, New York, NY",
+  "objectURL": "https://www.metmuseum.org/art/collection/search/437914",
+  "tags": [
+    {
+      "term": "Seascapes",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300117546",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q158607"
+    },
+    {
+      "term": "Boats",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300178749",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q35872"
+    }
+  ],
+  "objectWikidata_URL": "https://www.wikidata.org/wiki/Q19912761",
+  "isTimelineWork": false,
+  "GalleryNumber": "615"
+}

@@ -1,0 +1,81 @@
+{
+  "objectID": 502724,
+  "isHighlight": false,
+  "accessionNumber": "89.4.2365",
+  "accessionYear": "1889",
+  "isPublicDomain": true,
+  "primaryImage": "https://images.metmuseum.org/CRDImages/mi/original/DP218830.jpg",
+  "primaryImageSmall": "https://images.metmuseum.org/CRDImages/mi/web-large/DP218830.jpg",
+  "additionalImages": [
+    "https://images.metmuseum.org/CRDImages/mi/original/B12289 89.4.2365.jpg",
+    "https://images.metmuseum.org/CRDImages/mi/original/211900.jpg"
+  ],
+  "constituents": [
+    {
+      "constituentID": 155238,
+      "role": "Maker",
+      "name": "Sea Dayaks (Iban)",
+      "constituentULAN_URL": "",
+      "constituentWikidata_URL": "",
+      "gender": ""
+    }
+  ],
+  "department": "Musical Instruments",
+  "objectName": "Ensuranai",
+  "title": "Ensuranai",
+  "culture": "Iban people",
+  "period": "",
+  "dynasty": "",
+  "reign": "",
+  "portfolio": "",
+  "artistRole": "Maker",
+  "artistPrefix": "",
+  "artistDisplayName": "Sea Dayaks (Iban)",
+  "artistDisplayBio": "",
+  "artistSuffix": "",
+  "artistAlphaSort": "Sea Dayaks",
+  "artistNationality": "Iban people",
+  "artistBeginDate": "",
+  "artistEndDate": "",
+  "artistGender": "",
+  "artistWikidata_URL": "",
+  "artistULAN_URL": "",
+  "objectDate": "19th century",
+  "objectBeginDate": 1801,
+  "objectEndDate": 1900,
+  "medium": "Coconut, wood, skin, rattan",
+  "dimensions": "42 × 7 × 9 1/2 in. (106.7 × 17.8 × 24.1 cm)\r\nDiameter (Of body): 5 7/8 in. (15 cm)",
+  "measurements": [
+    {
+      "elementName": "Overall",
+      "elementDescription": null,
+      "elementMeasurements": {
+        "Depth": 24.130049,
+        "Height": 106.680214,
+        "Width": 17.780035
+      }
+    }
+  ],
+  "creditLine": "The Crosby Brown Collection of Musical Instruments, 1889",
+  "geographyType": "",
+  "city": "",
+  "state": "Sarawak (northern Borneo)",
+  "county": "",
+  "country": "Malaysia",
+  "region": "",
+  "subregion": "",
+  "locale": "",
+  "locus": "",
+  "excavation": "",
+  "river": "",
+  "classification": "Chordophone-Lute-bowed-unfretted",
+  "rightsAndReproduction": "",
+  "linkResource": "",
+  "metadataDate": "2025-12-20T04:50:39.43Z",
+  "repository": "Metropolitan Museum of Art, New York, NY",
+  "objectURL": "https://www.metmuseum.org/art/collection/search/502724",
+  "tags": null,
+  "objectWikidata_URL": "https://www.wikidata.org/wiki/Q116413048",
+  "isTimelineWork": true,
+  "GalleryNumber": "681"
+}

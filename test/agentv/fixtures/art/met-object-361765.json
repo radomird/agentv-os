@@ -1,0 +1,101 @@
+{
+  "objectID": 361765,
+  "isHighlight": false,
+  "accessionNumber": "62.635.397",
+  "accessionYear": "1962",
+  "isPublicDomain": true,
+  "primaryImage": "https://images.metmuseum.org/CRDImages/dp/original/DP823422.jpg",
+  "primaryImageSmall": "https://images.metmuseum.org/CRDImages/dp/web-large/DP823422.jpg",
+  "additionalImages": [],
+  "constituents": [
+    {
+      "constituentID": 161995,
+      "role": "Artist",
+      "name": "Wenceslaus Hollar",
+      "constituentULAN_URL": "http://vocab.getty.edu/page/ulan/500028368",
+      "constituentWikidata_URL": "https://www.wikidata.org/wiki/Q448555",
+      "gender": ""
+    },
+    {
+      "constituentID": 90601,
+      "role": "Publisher",
+      "name": "Peter Stent",
+      "constituentULAN_URL": "(not assigned)",
+      "constituentWikidata_URL": "https://www.wikidata.org/wiki/Q7177102",
+      "gender": ""
+    }
+  ],
+  "department": "Drawings and Prints",
+  "objectName": "Print",
+  "title": "Sea Storms",
+  "culture": "",
+  "period": "",
+  "dynasty": "",
+  "reign": "",
+  "portfolio": "Sea Storms : Four plates (New Hollstein 1839-1842)",
+  "artistRole": "Artist",
+  "artistPrefix": "",
+  "artistDisplayName": "Wenceslaus Hollar",
+  "artistDisplayBio": "Bohemian, Prague 1607–1677 London",
+  "artistSuffix": "",
+  "artistAlphaSort": "Hollar, Wenceslaus",
+  "artistNationality": "Bohemian",
+  "artistBeginDate": "1607",
+  "artistEndDate": "1677",
+  "artistGender": "",
+  "artistWikidata_URL": "https://www.wikidata.org/wiki/Q448555",
+  "artistULAN_URL": "http://vocab.getty.edu/page/ulan/500028368",
+  "objectDate": "1665",
+  "objectBeginDate": 1665,
+  "objectEndDate": 1665,
+  "medium": "Etching; first state of two",
+  "dimensions": "Sheet: 4 15/16 × 10 11/16 in. (12.5 × 27.1 cm)",
+  "measurements": [
+    {
+      "elementName": "Sheet",
+      "elementDescription": null,
+      "elementMeasurements": {
+        "Height": 12.5,
+        "Width": 27.1
+      }
+    }
+  ],
+  "creditLine": "Gift of Harry G. Friedman, 1962",
+  "geographyType": "",
+  "city": "",
+  "state": "",
+  "county": "",
+  "country": "",
+  "region": "",
+  "subregion": "",
+  "locale": "",
+  "locus": "",
+  "excavation": "",
+  "river": "",
+  "classification": "Prints",
+  "rightsAndReproduction": "",
+  "linkResource": "",
+  "metadataDate": "2025-03-06T04:54:30Z",
+  "repository": "Metropolitan Museum of Art, New York, NY",
+  "objectURL": "https://www.metmuseum.org/art/collection/search/361765",
+  "tags": [
+    {
+      "term": "Whales",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300250157",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q1865281"
+    },
+    {
+      "term": "Waves",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300343616",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q165848"
+    },
+    {
+      "term": "Ships",
+      "AAT_URL": "http://vocab.getty.edu/page/aat/300082981",
+      "Wikidata_URL": "https://www.wikidata.org/wiki/Q11446"
+    }
+  ],
+  "objectWikidata_URL": "",
+  "isTimelineWork": false,
+  "GalleryNumber": ""
+}

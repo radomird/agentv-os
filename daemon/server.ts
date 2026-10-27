@@ -27,6 +27,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ } from "./ai.ts";
+import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { Backgrounds, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
@@ -69,6 +70,8 @@ export interface DaemonOptions {
   omarchy?: string;
   // The backgrounds and their credits: /var/lib/agentv/backgrounds.
   backgrounds?: string;
+  // Tests point the museum archives at their own server.
+  art?: Pick<ArtOptions, "endpoints" | "imageHosts" | "fetch">;
   // The phone companion's port on the home network, or none. 3001 on the box.
   lanPort?: number;
   lanHost?: string;
@@ -170,6 +173,7 @@ export class Daemon {
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
+  private art: ArtArchives;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -215,6 +219,7 @@ export class Daemon {
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
     this.ai = new Ai({ state: options.state });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
+    this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -1899,6 +1904,55 @@ export class Daemon {
       }
       this.broadcast("background", result.state);
       this.json(response, 200, { ok: true, ...result.state });
+      return;
+    }
+
+    // Art from museum archives (ADR-012): the archives, a search of one, a
+    // work's thumbnail through the daemon, and a work picked as the
+    // background, which the daemon fetches whole and keeps with its credit.
+    if (method === "GET" && path === "/api/art") {
+      this.json(response, 200, { ok: true, archives: ARCHIVES });
+      return;
+    }
+
+    if (method === "GET" && path === "/api/art/search") {
+      const result = await this.art.search(url.searchParams.get("archive"), url.searchParams.get("q"));
+      if (!result.items) {
+        this.json(response, result.error?.includes("didn't answer") ? 502 : 400, { ok: false, error: result.error });
+        return;
+      }
+      this.json(response, 200, { ok: true, items: result.items });
+      return;
+    }
+
+    const artThumb = /^\/api\/art\/([a-z]+)\/(\d{1,12})\/thumb$/.exec(path);
+    if (method === "GET" && artThumb) {
+      const found = await this.art.thumb(artThumb[1], artThumb[2]);
+      if (!found) {
+        this.json(response, 404, { ok: false, error: "no such picture" });
+        return;
+      }
+      this.send(response, found.type, found.body, { "Cache-Control": "private, max-age=86400" });
+      return;
+    }
+
+    if (method === "POST" && path === "/api/backgrounds/art") {
+      if (!(await this.adult(request, response, "the background"))) return;
+      const body = ((await this.body(request)) ?? {}) as { archive?: unknown; id?: unknown };
+      const work = await this.art.whole(body.archive, body.id);
+      if (!work.body || !work.art) {
+        this.json(response, 502, { ok: false, error: work.error });
+        return;
+      }
+      const name = ARCHIVES.find((one) => one.id === work.art!.archive)!.name;
+      const result = await this.backgrounds.add(work.body, { text: work.art.credit, from: name }, "art");
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.log(`background: ${work.art.archive} ${work.art.id}, from ${name}`);
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, background: result.item, ...result.state });
       return;
     }
 
