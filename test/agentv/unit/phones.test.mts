@@ -238,6 +238,31 @@ test("ADR-037 S4.10 the phone hears what's on the TV within a second: its ask wa
   await send(tv, "POST", "/api/tv/context", { body: { field: null } });
 });
 
+test("ADR-037 a change while the phone's state is read leaves it a count behind, so its next ask answers at once", async () => {
+  // Who's watching is read first; the TV changes before the rest is.
+  const active = daemon.profiles.active.bind(daemon.profiles);
+  let changed = false;
+  daemon.profiles.active = async () => {
+    const viewer = await active();
+    if (!changed) {
+      changed = true;
+      await send(tv, "POST", "/api/tv/context", { body: { playing: true } });
+    }
+    return viewer;
+  };
+  try {
+    const read = (await send(phone, "GET", "/api/phone/state", { token })).data;
+    assert.ok(changed);
+    const at = Date.now();
+    const next = (await send(phone, "GET", `/api/phone/state?since=${read.version}`, { token })).data;
+    assert.ok(Date.now() - at < 300, `it waited ${Date.now() - at} ms`);
+    assert.ok(next.version > read.version);
+  } finally {
+    daemon.profiles.active = active;
+    await send(tv, "POST", "/api/tv/context", { body: { playing: false } });
+  }
+});
+
 test("ADR-037 the trackpad's moves, clicks and scrolls reach the stream, Omarchy's desktop's relay makes it the trackpad, and Settings opens on the TV for an adult", async () => {
   const controller = new AbortController();
   const stream = await fetch(`${tv}/api/remote`, { headers: { "X-AgenTV-Screen": "desktop" }, signal: controller.signal });
