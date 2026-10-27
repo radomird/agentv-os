@@ -69,6 +69,9 @@ export interface DaemonOptions {
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
+  // Where packages put their desktop entries and icons, for a native app's
+  // icon: /usr/local/share, /usr/share and flatpak's.
+  dataDirs?: string[];
   // The backgrounds and their credits: /var/lib/agentv/backgrounds.
   backgrounds?: string;
   // Tests point the museum archives at their own server.
@@ -217,6 +220,7 @@ export class Daemon {
       goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
       log: this.log,
+      dataDirs: options.dataDirs,
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
