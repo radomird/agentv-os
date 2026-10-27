@@ -16,8 +16,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { BuildStatus, Understood } from "../builder/build.ts";
-import type { Plan } from "../builder/recipe.ts";
+import { loadRecipes, type Kind, type Plan, type Recipe } from "../builder/recipe.ts";
 
 export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
 
@@ -35,6 +36,9 @@ export interface BuildView {
   version: string;
   sentence: string;
   name?: string;
+  // The AI it runs on, and whether on a plan or a key.
+  provider: Provider;
+  path: "plan" | "key";
   state: BuildStatus["state"] | "starting";
   phase: BuildStatus["phase"];
   step?: string;
@@ -43,6 +47,10 @@ export interface BuildView {
   spent?: number;
   understood?: Understood;
   plan?: Plan;
+  // Roughly what it costs on Claude with a key, and how long it takes: its
+  // recipe's, or its plan's.
+  cost?: { low: number; high: number };
+  minutes?: number;
   approval?: BuildStatus["approval"];
   shot: boolean;
   at: string;
@@ -64,6 +72,7 @@ export interface BuildsOptions {
   run?: string; // /run/agentv-build: root's answer
   spend?: string; // /var/lib/agentv/spend/spend.json
   warnings?: string; // /var/lib/agentv/npm-check/warnings.json
+  recipes?: string; // builder/recipes
   now?: () => Date;
 }
 
@@ -114,8 +123,22 @@ export class Builds {
       run: options.run ?? "/run/agentv-build",
       spend: options.spend ?? "/var/lib/agentv/spend/spend.json",
       warnings: options.warnings ?? "/var/lib/agentv/npm-check/warnings.json",
+      recipes: options.recipes ?? fileURLToPath(new URL("../builder/recipes/", import.meta.url)),
       now: options.now ?? (() => new Date()),
     };
+  }
+
+  private recipes: Map<Kind, Recipe> | null = null;
+
+  // A kind's recipe, read once, for what a build costs and takes.
+  private recipe(kind: string | null | undefined): Recipe | undefined {
+    if (!kind) return undefined;
+    try {
+      this.recipes ??= loadRecipes(this.o.recipes);
+    } catch {
+      this.recipes = new Map();
+    }
+    return this.recipes.get(kind as Kind);
   }
 
   // The screenshot the approval shows, where the test TV left it.
@@ -178,7 +201,16 @@ export class Builds {
     }
   }
 
-  private answer(): { build: string | null; started: boolean; reason?: string; at: string } | null {
+  // The build whose start root hasn't taken yet, if one is waiting.
+  private waiting(): string | null {
+    try {
+      return JSON.parse(readFileSync(join(this.o.drop, "start.json"), "utf8")).build ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private answer(): { action?: string; build: string | null; started: boolean; reason?: string; at: string } | null {
     try {
       return JSON.parse(readFileSync(join(this.o.run, "answer.json"), "utf8"));
     } catch {
@@ -189,25 +221,37 @@ export class Builds {
   // Every build the household asked for, newest first, as it stands.
   async list(): Promise<BuildView[]> {
     const answer = this.answer();
+    const waiting = this.waiting();
     const views: BuildView[] = [];
     for (const asked of [...(await this.asked())].reverse()) {
       const status = this.status(asked.id, asked.version);
       const mine = status && status.build === asked.build ? status : null;
-      const refused = !mine && answer?.build === asked.build && !answer.started ? answer.reason : undefined;
+      // Root's word on this build, when it's newer than what the build says:
+      // a start it refused, or took before the builder wrote anything, or an
+      // install that didn't go in.
+      const fresh = answer && answer.build === asked.build && (!mine || answer.at > mine.at) ? answer : null;
+      const refused = fresh && fresh.action !== "install" && !fresh.started ? fresh.reason : undefined;
+      const starting = waiting === asked.build || (fresh?.action === "start" && fresh.started);
+      const notInstalled = fresh?.action === "install" && !fresh.started ? fresh.reason : undefined;
+      const recipe = this.recipe(mine?.understood?.recipe);
       views.push({
         build: asked.build,
         id: asked.id,
         version: asked.version,
         sentence: asked.sentence,
         name: mine?.understood?.name ?? mine?.plan?.name,
-        state: refused ? "failed" : (mine?.state ?? "starting"),
+        provider: asked.provider,
+        path: asked.path,
+        state: refused ? "failed" : starting ? "starting" : (mine?.state ?? "starting"),
         phase: mine?.phase ?? "understand",
         step: mine?.step,
         steps: mine?.steps ?? [],
-        reason: refused ?? mine?.reason,
+        reason: refused ?? notInstalled ?? mine?.reason,
         spent: this.spentBy(asked.build) ?? mine?.spent,
         understood: mine?.understood,
         plan: mine?.plan,
+        cost: mine?.plan?.cost ?? recipe?.cost,
+        minutes: recipe?.minutes,
         approval: mine?.approval,
         shot: existsSync(join(this.o.builds, asked.id, asked.version, "shot.png")),
         at: mine?.at ?? asked.at,
@@ -347,6 +391,21 @@ export class Builds {
 
   async stop(): Promise<void> {
     await this.drop("stop", {});
+  }
+
+  // A build that never reached home, put away: "not this" when it's
+  // confirmed, or one that failed. Its folder goes too, once no other
+  // version of the app is left.
+  async forget(build: unknown): Promise<{ error?: string }> {
+    const view = await this.find(build);
+    if (!view) return { error: "there's no such build" };
+    if (view.state === "running") return { error: "stop it first" };
+    if (view.state === "installed" || view.state === "kept") return { error: "that version is on the tv: remove the app instead" };
+    if (view.state === "starting") await this.stop();
+    const left = (await this.asked()).filter((a) => a.build !== view.build);
+    await this.writeJson(this.askedPath, left);
+    if (!left.some((a) => a.id === view.id)) await this.drop("remove", { id: view.id });
+    return {};
   }
 
   // An app's next version: a change to it, or the same again from its recipe.

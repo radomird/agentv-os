@@ -11,6 +11,7 @@
 
 import { createConnection, createServer, type Server } from "node:net";
 import { join, resolve } from "node:path";
+import { Build } from "../build.ts";
 import { gates } from "../gates/gates.ts";
 import { Runner } from "../run.ts";
 import { PROXY_PORT, RELAY_PORT } from "./ports.ts";
@@ -33,6 +34,14 @@ export function forward(port: number, path: string): Promise<Server> {
   });
 }
 
+// A build stopped while it was going, as the TV and the phone show it.
+export function stopped(build: Build): void {
+  const now = build.status();
+  if (!now || now.state !== "running") return;
+  const steps = now.steps.map((step) => (step.state === "running" ? { ...step, state: "failed" as const } : step));
+  build.setStatus({ ...now, state: "failed", steps, reason: "you stopped it", at: new Date().toISOString() });
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   process.removeAllListeners("warning");
   const dir = process.argv[2];
@@ -42,6 +51,12 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   }
   const net = process.env.AGENTV_BUILD_NET ?? "/run/agentv-build-net";
   const servers = [await forward(PROXY_PORT, join(net, "proxy.sock")), await forward(RELAY_PORT, join(net, "relay.sock"))];
+  // A stop from the TV: the build says it was stopped, rather than still
+  // going, and keeps what it had.
+  process.once("SIGTERM", () => {
+    stopped(new Build(dir));
+    process.exit(1);
+  });
   const root = process.env.AGENTV_PATH ?? "/usr/share/agentv";
   const proxy = `http://127.0.0.1:${PROXY_PORT}`;
   const status = await new Runner(dir, {

@@ -10,7 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { Builds, idFor, nextVersion } from "../../../daemon/builds.ts";
+import { Build } from "../../../builder/build.ts";
 import { HandOver } from "../../../builder/sandbox/hand-over.ts";
+import { stopped } from "../../../builder/sandbox/start.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -114,6 +116,75 @@ test("an approved app goes to root to install; a refused start says why; the spe
   await builds.approve(build!.build);
   assert.deepEqual(drop("install"), { build: build!.build, id: build!.id, version: "1.0.0" });
   assert.match((await builds.approve("b-nope")).error!, /no such build/);
+});
+
+test("a build says it's starting until the builder writes, with its recipe's cost and time once it's read", async () => {
+  const { o, builds, drop, status } = box();
+  const { build } = await builds.ask("a game like tetris", KEY);
+  assert.equal((await builds.list())[0].state, "starting", "root hasn't taken it yet");
+  drop("start");
+  mkdirSync(o.run, { recursive: true });
+  writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "start", build: build!.build, started: true, at: "2026-10-27T18:00:10.000Z" }));
+  status(build!.id, "1.0.0", { build: build!.build, phase: "understand", state: "confirm", understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" }, at: "2026-10-27T18:00:05.000Z" });
+  assert.equal((await builds.list())[0].state, "starting", "root took it, and the builder hasn't written since");
+  status(build!.id, "1.0.0", { build: build!.build, phase: "understand", state: "confirm", understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" }, at: "2026-10-27T18:00:20.000Z" });
+  const read = (await builds.list())[0];
+  assert.deepEqual([read.state, read.cost, read.minutes, read.provider, read.path], ["confirm", { low: 0.5, high: 3 }, 20, "claude", "key"]);
+  await builds.confirm(build!.build);
+  assert.equal((await builds.list())[0].state, "starting", "confirmed, and waiting for root again");
+});
+
+test("a build never on home is put away, its folder with it; one going is stopped first, and one on home is removed instead", async () => {
+  const { o, builds, drop, status } = box();
+  const { build } = await builds.ask("a game like tetris", KEY);
+  assert.match((await builds.forget("b-nope")).error!, /no such build/);
+  // Still starting: it's stopped, then put away.
+  assert.deepEqual(await builds.forget(build!.build), {});
+  assert.deepEqual(drop("stop"), {});
+  assert.deepEqual(drop("remove"), { id: build!.id });
+  assert.deepEqual(await builds.list(), []);
+
+  const again = (await builds.ask("a game like tetris", KEY)).build!;
+  drop("start");
+  status(again.id, "1.0.0", { build: again.build, state: "running", at: "2026-10-27T19:00:00.000Z" });
+  assert.match((await builds.forget(again.build)).error!, /stop it first/);
+  status(again.id, "1.0.0", { build: again.build, state: "installed", at: "2026-10-27T19:00:01.000Z" });
+  assert.match((await builds.forget(again.build)).error!, /remove the app instead/);
+  // A change that failed is put away, and the app on home stays.
+  const next = (await builds.next(again.id, "make it faster", KEY)).build!;
+  drop("start");
+  status(again.id, next.version, { build: next.build, state: "failed", reason: "its tests didn't pass", at: "2026-10-27T19:00:02.000Z" });
+  assert.deepEqual(await builds.forget(next.build), {});
+  assert.equal(drop("remove"), null, "the app's other version is still there");
+  assert.deepEqual((await builds.list()).map((b) => b.state), ["installed"]);
+  assert.ok(existsSync(o.state));
+});
+
+test("an install root couldn't do says why, and the app still waits for its yes", async () => {
+  const { o, builds, drop, status } = box();
+  const { build } = await builds.ask("a game like tetris", KEY);
+  drop("start");
+  status(build!.id, "1.0.0", { build: build!.build, state: "approve", at: "2026-10-27T18:00:05.000Z" });
+  await builds.approve(build!.build);
+  drop("install");
+  mkdirSync(o.run, { recursive: true });
+  writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "install", build: build!.build, started: false, reason: "it couldn't be installed: no room", at: "2026-10-27T18:00:09.000Z" }));
+  const view = (await builds.list())[0];
+  assert.deepEqual([view.state, view.reason], ["approve", "it couldn't be installed: no room"]);
+});
+
+test("a build stopped while it was going says so, with the step it was on", () => {
+  const dir = join(scratch, "stopped");
+  mkdirSync(dir, { recursive: true });
+  const build = new Build(dir);
+  build.setStatus({ build: "b1", id: "local.blocks", version: "1.0.0", phase: "build", state: "running", steps: [{ id: "design", state: "done" }, { id: "build", state: "running" }], started: "", at: "" });
+  stopped(build);
+  const now = build.status()!;
+  assert.deepEqual([now.state, now.reason, now.steps.map((s) => s.state)], ["failed", "you stopped it", ["done", "failed"]]);
+  // One that had already finished is left as it was.
+  build.setStatus({ ...now, state: "approve", reason: undefined });
+  stopped(build);
+  assert.equal(build.status()!.state, "approve");
 });
 
 test("a change and a rebuild are new versions through the same steps; a rollback brings the kept one back", async () => {
@@ -233,11 +304,17 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant);
     assert.equal((await phone("POST", "/api/phone/terms", { provider: "claude", path: "plan" }, grant)).status, 200);
 
+    // What setup kept for later is listed, and asked no longer once asked.
+    const setupPath = join(base, "state", "setup.json");
+    writeFileSync(setupPath, JSON.stringify({ done: true, at: "2026-10-27T17:00:00Z", wishes: ["A game like Tetris", "a quiz"] }));
+    assert.deepEqual((await (await send("GET", "/api/builds")).json()).wishes, ["A game like Tetris", "a quiz"]);
     const asked = await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json();
     assert.equal(asked.ok, true, JSON.stringify(asked));
+    assert.deepEqual((await (await send("GET", "/api/builds")).json()).wishes, ["a quiz"]);
     const start = JSON.parse(readFileSync(join(base, "state", "build-drop", "start.json"), "utf8"));
     assert.equal(start.phase, "understand");
     assert.equal(start.path, "plan");
+    rmSync(join(base, "state", "build-drop", "start.json"), { force: true }); // root took it
 
     // The builder's gates passed: the app waits for an adult, with its shot.
     const dir = join(builds, asked.build.id, "1.0.0");
@@ -246,6 +323,9 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     writeFileSync(join(dir, "shot.png"), Buffer.from("\x89PNG\r\n\x1a\nnot really"));
     const listed = await (await phone("GET", "/api/phone/builds")).json();
     assert.equal(listed.builds[0].state, "approve");
+    // The phone's own state carries it too, for its notices.
+    const followed = (await (await phone("GET", "/api/phone/state")).json()).builds;
+    assert.deepEqual(followed, [{ build: asked.build.build, id: asked.build.id, name: "a game like tetris", state: "approve", phase: "build", done: 0, steps: 0 }]);
     assert.deepEqual(listed.builds[0].approval.reaches.declared, ["a tile on home"]);
     assert.equal(listed.settings.safeguards, true);
     const shot = await phone("GET", `/api/phone/builds/${asked.build.build}/shot`);

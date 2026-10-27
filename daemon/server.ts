@@ -414,7 +414,14 @@ export class Daemon {
   }
 
   private async buildsState() {
-    return { builds: await this.builds.list(), settings: await this.builds.settings(), spend: await this.builds.spend(), warnings: this.builds.warnings() };
+    return {
+      builds: await this.builds.list(),
+      settings: await this.builds.settings(),
+      spend: await this.builds.spend(),
+      warnings: this.builds.warnings(),
+      // What setup's "+ add your own" kept for the builder.
+      wishes: (await this.setup()).wishes,
+    };
   }
 
   // The AI a build runs on: picked, its terms accepted, and a key there for
@@ -483,7 +490,9 @@ export class Daemon {
       if (!ai.ai) return answer({ error: ai.error }), true;
       const body = (await this.body(request)) as { sentence?: unknown } | undefined;
       const installed = (await this.home.manifests()).map(({ manifest }) => manifest.id);
-      answer(await this.builds.ask(body?.sentence, ai.ai, installed), `${viewer.name} asked the builder for an app`);
+      const result = await this.builds.ask(body?.sentence, ai.ai, installed);
+      if (result.build) await this.setupState.asked(result.build.sentence);
+      answer(result, `${viewer.name} asked the builder for an app`);
       return true;
     }
     if (method === "POST" && path === `${base}/stop`) {
@@ -518,6 +527,10 @@ export class Daemon {
         answer(await this.builds.next(id, what === "change" ? (body?.text ?? "") : undefined, ai.ai), `${viewer.name} asked for a new version of ${id}`);
         return true;
       }
+    }
+    if (method === "POST" && build && action === "forget") {
+      answer(await this.builds.forget(build), `${viewer.name} put a build away`);
+      return true;
     }
     if (method === "POST" && build && (action === "confirm" || action === "retry")) {
       answer(action === "confirm" ? await this.builds.confirm(build) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
@@ -596,7 +609,26 @@ export class Daemon {
       ai: await this.aiAsk(setup),
       // Page apps' notices, as the TV shows them (ADR-043).
       notices: this.notices,
+      // The builds an adult follows here too: how each is going, and the
+      // ones waiting for their yes (ADR-043, ADR-046).
+      builds: viewer.role === "adult" ? await this.phoneBuilds() : [],
     };
+  }
+
+  private async phoneBuilds(): Promise<object[]> {
+    const builds = await this.builds.list().catch(() => []);
+    return builds
+      .filter((b) => b.state !== "installed" && b.state !== "kept")
+      .map((b) => ({
+        build: b.build,
+        id: b.id,
+        name: b.name ?? b.sentence,
+        state: b.state,
+        phase: b.phase,
+        done: b.steps.filter((step) => step.state === "done").length,
+        steps: b.steps.length,
+        ...(b.reason ? { reason: b.reason } : {}),
+      }));
   }
 
   private async aiAsk(setup: SetupState): Promise<object | null> {
