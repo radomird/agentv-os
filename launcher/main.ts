@@ -661,7 +661,8 @@ async function switched(): Promise<void> {
 }
 
 // What changed while the page wasn't hearing the daemon's events: another
-// viewer, as a switch from the phone, or anything else on home.
+// viewer, as a switch from the phone, a share to ask about, or anything else
+// on home.
 async function catchUp(): Promise<void> {
   const was = ctx.state.viewer.id;
   const state = await homeState();
@@ -670,6 +671,7 @@ async function catchUp(): Promise<void> {
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void askShared();
 }
 
 // The page again, in place, with the focus where it was.

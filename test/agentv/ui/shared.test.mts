@@ -108,6 +108,32 @@ test("S5.10 home drawn again under the notice leaves the notice the keys: OK is 
   }
 });
 
+test("S5.10 a share that came before the TV heard the daemon's events is asked about once it does", async () => {
+  await clear();
+  // Home's page loads, and its events come late, as on a busy box: the
+  // share comes in between and its word is missed.
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  let late: () => void = () => {};
+  const heard = new Promise<void>((resolve) => (late = resolve));
+  await page.route("**/api/events", async (route) => {
+    await heard;
+    await route.continue();
+  });
+  try {
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".grid .tile.focused");
+    await share("photo", JPEG, "?credit=photo%20by%20ana");
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator("#notice.on").count(), 0, "nothing heard yet");
+    late();
+    await page.waitForSelector("#notice.on .notice-card", { timeout: 10_000 });
+    assert.equal(await focused(page), "share-open");
+  } finally {
+    await page.close();
+    await clear();
+  }
+});
+
 test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Shared, and Open shows it full screen with its credit, to be the background", async () => {
   const page = await tv();
   try {
