@@ -1,0 +1,47 @@
+# The builder's way out (builder/sandbox/net.ts, ADR-045), outside its
+# sandbox, on two socket files only the builder's group can reach:
+# proxy.sock, the filter that lets a build reach the npm registry, OSV.dev,
+# the origins its app declares and, on a plan, its provider, and
+# relay.sock, the relay that adds the household's key and keeps each build
+# and the month inside their spend caps. The key comes as a credential, so
+# only this service reads it, and the spend is kept in
+# /var/lib/agentv/spend for the TV. agentv-build.service restarts this for
+# each build.
+
+[Unit]
+Description=AgenTV builder's way out
+After=network.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+User=agentv-build-net
+Group=agentv-build-net
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/builder/sandbox/net.ts
+Environment=AGENTV_PATH=/usr/share/agentv
+LoadCredential=env:/etc/agentv/env
+RuntimeDirectory=agentv-build-net
+RuntimeDirectoryMode=0750
+StateDirectory=agentv/spend
+StateDirectoryMode=0755
+Restart=on-failure
+TimeoutStopSec=5s
+UMask=0022
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=-/var/lib/agentv/chromium -/var/lib/private
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native

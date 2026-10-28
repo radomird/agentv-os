@@ -1,0 +1,34 @@
+# The provider's CLI in the builder's own home (ADR-040): claude, codex or
+# gemini, fetched with mise the way Omarchy fetches it for the person, and
+# linked as ~/.local/bin/<cli>, which is where the builder runs it from.
+# agentv-build.service starts this before the first build that needs it.
+# It runs nothing of an agent's, so it has the network, but none of the
+# box's keys or sign-ins.
+
+[Unit]
+Description=AgenTV builder's %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=agentv-builder
+Group=agentv-builder
+Environment=HOME=/var/lib/agentv/builder
+WorkingDirectory=/var/lib/agentv/builder
+ExecStart=/usr/bin/bash -c 'mise use -g "$1" && mkdir -p ~/.local/bin && ln -sfn "$(mise which "$1")" ~/.local/bin/"$1"' agentv-builder-cli %i
+TimeoutStartSec=20min
+UMask=0022
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/lib:ro
+BindPaths=/var/lib/agentv/builder
+InaccessiblePaths=-/etc/agentv
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes

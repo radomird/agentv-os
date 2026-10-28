@@ -65,6 +65,11 @@ export class NetFilter {
     return new Promise((resolve) => this.server.listen(port, host, () => resolve((this.server.address() as { port: number }).port)));
   }
 
+  // On a socket file instead, for a sandbox with no network of its own.
+  listenPath(path: string): Promise<string> {
+    return new Promise((resolve) => this.server.listen(path, () => resolve(path)));
+  }
+
   close(): Promise<void> {
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
