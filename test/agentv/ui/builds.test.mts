@@ -6,7 +6,7 @@
 // status.json, is played by the test, as the daemon reads it on the box.
 
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import { AskWatch } from "../../../daemon/asks.ts";
 import type { GitHubAnswer, GitHubAsk, PushAsk } from "../../../daemon/github.ts";
+import { placeTheme, type ThemeAnswer, type ThemeAsk, themeName } from "../../../daemon/made-themes.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
 
@@ -26,6 +27,7 @@ let url = "";
 let state = "";
 let builds = "";
 let apps = "";
+let themes = "";
 let phoneToken = "";
 const errors: string[] = [];
 
@@ -39,7 +41,7 @@ async function send(method: string, path: string, body?: unknown, grant?: string
 }
 
 before(async () => {
-  ({ daemon, url, state, builds, apps } = await startBox());
+  ({ daemon, url, state, builds, apps, themes } = await startBox());
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
   // Claude with a key, its terms accepted on a paired phone.
   writeFileSync(join(state, "..", "key.json"), JSON.stringify({ set: true, provider: "claude", at: new Date().toISOString() }));
@@ -555,3 +557,79 @@ test("ADR-045 with the box signed in to GitHub, the phone pushes a built app to 
   }
 });
 
+test("S6.4 Look's describe your own asks for a theme, the phone approves it with its preview, and it's the TV's and the desktop's", async () => {
+  await send("PUT", "/api/pin", { pin: "2468" });
+  // The screen daemon, as the person, hands a made theme to Omarchy.
+  const taken: ThemeAsk[] = [];
+  const screen = new AskWatch<ThemeAsk, ThemeAnswer>({
+    url: `${url}/`,
+    path: "api/themes/ask",
+    what: "made themes",
+    handle: async (ask) => {
+      taken.push(ask);
+      return { ok: true, name: themeName(ask.id) };
+    },
+    failed: (error) => ({ ok: false, error: error.message }),
+    log: () => {},
+    retryMs: 50,
+  });
+  screen.start();
+  try {
+    const page = await tv();
+    await go(page, "settings/look");
+    await page.waitForSelector('[data-action="theme-own"]', { timeout: 10_000 });
+    const look = await page.locator('[data-action^="theme-"]').evaluateAll((els) => els.map((el) => el.getAttribute("data-action")));
+    assert.equal(look.at(-1), "theme-own", "describe your own is Look's last");
+    await page.locator('[data-action="theme-own"]').click();
+    await page.waitForSelector(".build-ask");
+    assert.match(await page.locator(".screen").innerText(), /what should your theme look like\?[\s\S]*for the tv and omarchy's desktop alike/);
+    assert.equal(await page.locator(".build-ask").getAttribute("placeholder"), "a calm forest at dusk");
+    await page.locator(".build-ask").fill("a calm forest at dusk");
+    await page.locator('[data-action="ask"]').click();
+    await page.waitForSelector(".build-page");
+    assert.equal(drop("start").sentence, "a theme: a calm forest at dusk");
+    const asked = (await send("GET", "/api/builds")).builds.find((b: { sentence: string }) => b.sentence === "a theme: a calm forest at dusk");
+
+    // Its gate passed: the phone shows the TV in it, and approves it with the PIN.
+    const understood = { name: "Calm forest", recipe: "theme", says: "A calm forest at dusk" };
+    status(asked.id, asked.build, { phase: "build", state: "approve", steps: STEPS(4), understood, approval: { reaches: { always: [], declared: [] }, packages: [] } });
+    writeFileSync(join(builds, asked.id, "1.0.0", "shot.png"), PNG);
+    await page.waitForFunction(() => /approve it on your phone, with the pin, to make it your theme, on the tv and omarchy's desktop/.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    const hand = await phone();
+    await hand.waitForSelector('[data-action="approve-build"]', { timeout: 10_000 });
+    await hand.locator('[data-action="approve-build"]').tap();
+    await hand.waitForSelector(".build-approve h1");
+    const approval = await hand.locator(".build-approve").innerText();
+    assert.match(approval, /calm forest is ready[\s\S]*your agent made a theme: its colours and a background or two\. make it your theme, on the tv and omarchy's desktop\?/);
+    assert.match(approval, /\[x\] its colours, its icons and its pictures, and nothing that runs[\s\S]*\[x\] reaches nothing on the internet[\s\S]*\[x\] stays on this tv/);
+    assert.doesNotMatch(approval, /packages:/);
+    assert.match(approval, /✓ its checks passed: 4 steps, and the theme check/);
+    rmSync(join(state, "build-drop", "install.json"), { force: true });
+    await hand.locator('[data-action="approve"]').tap();
+    await hand.waitForSelector(".overlay .pin-keys");
+    for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
+    await hand.waitForFunction(() => /calm forest becomes your theme/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    assert.deepEqual(drop("install"), { build: asked.build, id: asked.id, version: "1.0.0" });
+    await hand.close();
+
+    // Root put it in place: the screen daemon sets it, and the TV says so.
+    const theme = join(builds, asked.id, "1.0.0", "work", "theme");
+    cpSync(join(import.meta.dirname, "../fixtures/themes/forest"), theme, { recursive: true });
+    writeFileSync(join(theme, "backgrounds", "1-scene.png"), PNG);
+    placeTheme(theme, themes, { id: asked.id, name: "Calm forest", version: "1.0.0" });
+    status(asked.id, asked.build, { phase: "build", state: "installed", steps: STEPS(4), understood });
+    await page.waitForFunction(() => /calm forest is your theme\./.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => /it's on the tv and omarchy's desktop/.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    assert.deepEqual(taken, [{ kind: "take", id: asked.id, n: 1 }]);
+    assert.ok(await page.locator('[data-action="remove-built"]').isVisible());
+
+    // Look lists it after Omarchy's own, with its page a press away.
+    await go(page, "settings/look");
+    const name = themeName(asked.id);
+    await page.waitForSelector(`[data-action="theme-${name}"]`, { timeout: 10_000 });
+    assert.match(await page.locator(`[data-action="theme-made-${name}"]`).innerText(), /calm forest, made by your agent/);
+    await page.close();
+  } finally {
+    screen.stop();
+  }
+});

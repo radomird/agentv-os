@@ -39,6 +39,7 @@
 import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
@@ -49,6 +50,7 @@ import { AskWatch } from "./asks.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
+import { dropTheme, takeTheme, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
@@ -2298,6 +2300,25 @@ function pageMedia(home = HOME_URL): PageMedia {
   });
 }
 
+// A made theme's ask, as this person: the theme copied into Omarchy's
+// themes as theirs and set, or taken away again (daemon/made-themes.ts).
+// Another theme still being set is waited for.
+export async function answerTheme(ask: ThemeAsk, screen: { setTheme(theme: unknown): Promise<object> }, o: { home?: string; omarchy?: string; themes?: string; waitMs?: number } = {}): Promise<ThemeAnswer> {
+  const home = o.home ?? homedir();
+  if (ask.kind === "drop") {
+    dropTheme({ id: ask.id, home });
+    return { ok: true };
+  }
+  const took = takeTheme({ themes: o.themes ?? THEMES, id: ask.id, home, omarchy: o.omarchy ?? (process.env.OMARCHY_PATH || "/usr/share/omarchy") });
+  if (!took.name) return { ok: false, error: took.error };
+  for (let tries = 0; ; tries++) {
+    const set = (await screen.setTheme(took.name)) as { ok: boolean; error?: string };
+    if (set.ok) return { ok: true, name: took.name };
+    if (!/still being set/.test(set.error ?? "") || tries >= 30) return { ok: false, error: set.error ?? "omarchy didn't set it" };
+    await new Promise((done) => setTimeout(done, o.waitMs ?? 2000));
+  }
+}
+
 async function main(): Promise<void> {
   const music = musicApp();
   // Full volume on each new default output, or the level Settings chose.
@@ -2321,6 +2342,15 @@ async function main(): Promise<void> {
     path: "api/export/ask",
     what: "Export's push",
     handle: answerGitHub({ userAgent: userAgent() }),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // A theme your agent made (S6.4): a theme of this person's in Omarchy now,
+  // and set, so the TV and the desktop change together.
+  new AskWatch<ThemeAsk, ThemeAnswer>({
+    url: HOME_URL,
+    path: "api/themes/ask",
+    what: "made themes",
+    handle: (ask) => answerTheme(ask, screen),
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the

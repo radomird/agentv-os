@@ -856,9 +856,15 @@ test("S5.2 the look: three of Omarchy's themes in their own colours, OK sets one
   assert.equal(await page.locator(".look.picked").getAttribute("data-theme"), "tokyo-night");
   assert.equal(await page.locator(".look.focused").getAttribute("data-theme"), "tokyo-night");
 
-  // Describe your own waits for the TV's agent.
+  // Describe your own is kept for the TV's agent to make (S6.4).
   await page.locator('[data-theme="own"]').click();
-  await page.waitForFunction(() => /make themes soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+  await page.waitForSelector(".wish-field");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "describe your own.");
+  assert.equal(await page.locator(".wish-field").getAttribute("placeholder"), "a calm forest at dusk");
+  await page.locator(".wish-field").fill("a calm forest at dusk");
+  await page.locator('[data-action="keep"]').click();
+  await page.waitForSelector(".looks .look");
+  assert.ok((await (await fetch(`${url}/api/setup`)).json()).setup.wishes.includes("a theme: a calm forest at dusk"));
 
   // Gruvbox: Omarchy's own command sets it, and its colours come back as
   // they do from Omarchy's desktop.

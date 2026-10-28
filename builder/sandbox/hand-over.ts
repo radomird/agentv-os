@@ -9,9 +9,10 @@
 //   builder's home the first time, and starts agentv-builder@.service.
 // - stop.json: stops the running build.
 // - install.json: an app an adult approved on the phone, put in place as a
-//   Local app (daemon/apps/install.ts), or the version before it, back for a
+//   Local app (daemon/apps/install.ts), or a theme in /var/lib/agentv/themes
+//   (daemon/made-themes.ts), or the version before it, back for a
 //   rollback. The version that was on home is kept for that.
-// - remove.json: an app and every build of it, gone.
+// - remove.json: an app or a theme and every build of it, gone.
 // - sign-in.json: a plan's sign-in, the first time the builder runs
 //   (ADR-040): the provider's own CLI signs in, as agentv-builder in the same
 //   sandbox, through the filter with a sign-in ticket of its own, and keeps
@@ -23,18 +24,23 @@
 // for the daemon, and a refused build's status.json says why.
 
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, lchownSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { cpSync, existsSync, lchownSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import type { BuildRequest, BuildStatus, Provider } from "../build.ts";
 import { CLIS, SIGN_IN } from "../providers.ts";
-import { KINDS, planProblems, type Plan } from "../recipe.ts";
+import { KINDS, loadRecipes, planProblems, type Plan } from "../recipe.ts";
+import { checkTheme, themeRules } from "../theme.ts";
 import { installLocal, readInstalled, removeApp } from "../../daemon/apps/install.ts";
+import { type MadeTheme, placeTheme, removeTheme, THEMES, themeName } from "../../daemon/made-themes.ts";
 import { DEFAULT_CAP, type Spend, type Ticket } from "./relay.ts";
 
 export interface HandOverOptions {
   drop: string; // the daemon's drop folder
   builds: string; // /var/lib/agentv/build
   apps: string; // /var/lib/agentv/apps
+  themes?: string; // /var/lib/agentv/themes, beside the apps
+  recipes?: string; // AgenTV's own, whose rules a theme is checked by again
   home: string; // the builder's home
   run: string; // /run/agentv-build
   spend: string; // the relay's spend.json
@@ -219,7 +225,9 @@ export class HandOver {
     const id = d.id as string;
     const version = d.version as string;
     try {
-      await installLocal(join(dir, "work", "app"), this.o.apps, async (manifest) => manifest.id === id && manifest.version === version);
+      const theme = join(dir, "work", "theme");
+      if (!existsSync(join(dir, "work", "app")) && existsSync(theme)) await this.installTheme(theme, { id, name: String(status.understood?.name ?? themeName(id)).replace(/[\u0000-\u001f\u007f<>]/g, "").slice(0, 60), version });
+      else await installLocal(join(dir, "work", "app"), this.o.apps, async (manifest) => manifest.id === id && manifest.version === version);
     } catch (error) {
       return this.answer(build, false, `it couldn't be installed: ${(error as Error).message}`, "install");
     }
@@ -233,6 +241,28 @@ export class HandOver {
     return this.answer(build, true, undefined, "install");
   }
 
+  private get themes(): string {
+    return this.o.themes ?? join(dirname(this.o.apps), "themes");
+  }
+
+  // A theme the agent made (S6.4): a copy of its build, links left as links,
+  // checked again by AgenTV's own theme rules rather than the build's, then
+  // only what Omarchy shows put in place, for anyone to read.
+  private async installTheme(theme: string, about: MadeTheme): Promise<void> {
+    const recipe = loadRecipes(this.o.recipes ?? join(process.env.AGENTV_PATH ?? "/usr/share/agentv", "builder", "recipes")).get("theme");
+    if (!recipe) throw new Error("there's no theme recipe on this box");
+    mkdirSync(this.themes, { recursive: true, mode: 0o755 });
+    const staging = mkdtempSync(join(this.themes, ".staging-"));
+    try {
+      await cp(theme, join(staging, "theme"), { recursive: true, verbatimSymlinks: true });
+      const problem = (await checkTheme(staging, themeRules(recipe))).lines.find((line) => line.startsWith("not ok: "));
+      if (problem) throw new Error(problem.slice("not ok: ".length));
+      placeTheme(join(staging, "theme"), this.themes, about);
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+    }
+  }
+
   // An app, every build of it, and its running build, gone.
   async remove(data: unknown): Promise<{ started: boolean; reason?: string }> {
     const id = (data as { id?: unknown } | null)?.id;
@@ -242,6 +272,7 @@ export class HandOver {
       if (ticket.id === id) this.o.systemctl(["stop", "agentv-builder@*.service"]);
     } catch {}
     if ((await readInstalled(this.o.apps))[id]) await removeApp(id, this.o.apps);
+    removeTheme(this.themes, id);
     const app = join(this.o.builds, id);
     const stat = lstatSync(app, { throwIfNoEntry: false });
     if (stat?.isSymbolicLink()) rmSync(app, { force: true });
@@ -398,6 +429,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     drop: process.env.AGENTV_BUILD_DROP ?? "/var/lib/private/agentv/daemon/build-drop",
     builds: "/var/lib/agentv/build",
     apps: "/var/lib/agentv/apps",
+    themes: THEMES,
     home: "/var/lib/agentv/builder",
     run: "/run/agentv-build",
     spend: "/var/lib/agentv/spend/spend.json",

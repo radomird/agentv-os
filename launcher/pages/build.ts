@@ -54,13 +54,18 @@ export async function loadBuilds(ctx: Ctx): Promise<void> {
     else if (b.state === "plan") ctx.toast(`your agent has a plan for ${name}: approve it on your phone`, "ok");
     else if (b.state === "confirm") ctx.toast(`your agent read what you asked: check it in apps`, "ok");
     else if (b.state === "plan-sign-in") ctx.toast(`sign in to your ${b.provider} plan to build ${name}`, "ok");
-    else if (b.state === "installed" && was === "approve") ctx.toast(`${name} is on your home`, "ok");
+    else if (b.state === "installed" && was === "approve") ctx.toast(madeTheme(b) ? `${name} is your theme now` : `${name} is on your home`, "ok");
     else if (b.state === "failed") ctx.toast(`couldn't build ${name}`, "fail");
   }
 }
 
 function nameOf(b: BuildView): string {
   return (b.name ?? b.sentence).toLowerCase();
+}
+
+// A theme your agent made (S6.4), rather than an app.
+function madeTheme(b: BuildView): boolean {
+  return b.understood?.recipe === "theme";
 }
 
 function money(dollars: number): string {
@@ -139,26 +144,30 @@ export function buildNotice(): string {
 
 // --- What to make ------------------------------------------------------------
 
-export function buildAsk(ctx: Ctx): View {
+// For a theme, from Look's "describe your own" (S6.4), the words say what
+// it looks like, and the builder hears that it's a theme.
+export function buildAsk(ctx: Ctx, kind?: "theme"): View {
+  const theme = kind === "theme";
   const field = h("input", {
     class: "music-search build-ask",
     "data-focus": true,
     "data-field": "sentence",
     type: "text",
     maxlength: "300",
-    placeholder: "a game like tetris, or the photos on my nas",
-    "aria-label": "what should your agent make",
+    placeholder: theme ? "a calm forest at dusk" : "a game like tetris, or the photos on my nas",
+    "aria-label": theme ? "what should your theme look like" : "what should your agent make",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
   const wishes = state?.wishes ?? [];
   let asking = false;
   const ask = async (said?: string) => {
-    const sentence = (said ?? field.value).trim();
-    if (!sentence || asking) {
-      if (!sentence) ctx.toast("say what you'd like first", "fail");
+    const words = (said ?? field.value).trim();
+    if (!words || asking) {
+      if (!words) ctx.toast("say what you'd like first", "fail");
       return;
     }
+    const sentence = theme && said === undefined && !/\btheme\b/i.test(words) ? `a theme: ${words}` : words;
     asking = true;
     let made: BuildView;
     try {
@@ -182,10 +191,16 @@ export function buildAsk(ctx: Ctx): View {
     h(
       "div",
       { class: "page profile" },
-      ...heading("tv app build", "what should i make?"),
-      h("div", { class: "panel-title" }, "app to make"),
+      ...heading(theme ? "omarchy theme build" : "tv app build", theme ? "what should your theme look like?" : "what should i make?"),
+      h("div", { class: "panel-title" }, theme ? "theme to make" : "app to make"),
       field,
-      h("p", { class: "panel-note" }, "type here, or on your phone. your agent builds it in the background, and you can keep using the tv."),
+      h(
+        "p",
+        { class: "panel-note" },
+        theme
+          ? "a few words, typed here or on your phone. your agent makes its colours and a background or two, for the tv and omarchy's desktop alike."
+          : "type here, or on your phone. your agent builds it in the background, and you can keep using the tv.",
+      ),
       h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "ask", onclick: () => void ask() }, "ask")),
       // What setup kept for later: each one asked with one press.
       ...(wishes.length
@@ -346,7 +361,9 @@ export function buildPage(ctx: Ctx, which: string): View {
         note(
           b.phase === "stage-b"
             ? `your agent learned how ${name} searches, starts a title and shows what's playing, and its checks passed. approve it on your phone, with the pin, to update ${name} on your home.`
-            : `your agent built it, and its checks passed. approve it on your phone, with the pin, to put ${name} on your home.`,
+            : madeTheme(b)
+              ? "your agent made it, and its checks passed. approve it on your phone, with the pin, to make it your theme, on the tv and omarchy's desktop."
+              : `your agent built it, and its checks passed. approve it on your phone, with the pin, to put ${name} on your home.`,
         ),
         steps(b),
       ];
@@ -392,8 +409,17 @@ export function buildPage(ctx: Ctx, which: string): View {
       keys = "↵ try again · del remove · esc back";
       break;
     default:
-      title = `${name} is on your home.`;
-      body = [note("open it from home or apps.")];
+      if (madeTheme(b)) {
+        // On the TV and the desktop once the screen daemon handed it to
+        // Omarchy, or why it couldn't.
+        const set = state?.themes?.[b.id];
+        title = `${name} is your theme.`;
+        body = [note(set?.error ? `it couldn't be set: ${set.error}.` : set?.version === b.version ? "it's on the tv and omarchy's desktop. pick another any time in settings → look." : "setting it on the tv and omarchy's desktop…")];
+        buttons = [button("remove the theme", "remove-built", () => void removeBuilt(ctx, b.id, name))];
+      } else {
+        title = `${name} is on your home.`;
+        body = [note("open it from home or apps.")];
+      }
   }
 
   const el = h(

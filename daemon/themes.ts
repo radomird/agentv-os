@@ -40,15 +40,21 @@ export function parseColors(text: string): { mode: "light" | "dark"; colors: Rec
   return { mode, colors };
 }
 
+// A look's preview from its colors.toml, or null when it lacks a colour
+// the preview draws.
+export function themePreview(id: string, name: string, note: string, text: string): ThemePreview | null {
+  const { mode, colors } = parseColors(text);
+  if (!KEYS.every((key) => colors[key])) return null;
+  return { id, name, note, mode, colors: Object.fromEntries(KEYS.map((key) => [key, colors[key]])) as ThemePreview["colors"] };
+}
+
 // The three looks, from Omarchy's themes folder, each one that's there.
 export async function previews(omarchy: string): Promise<ThemePreview[]> {
   const found: ThemePreview[] = [];
   for (const theme of DEFAULT_THEMES) {
     const text = await readFile(join(omarchy, "themes", theme.id, "colors.toml"), "utf8").catch(() => null);
-    if (text === null) continue;
-    const { mode, colors } = parseColors(text);
-    if (!KEYS.every((key) => colors[key])) continue;
-    found.push({ ...theme, mode, colors: Object.fromEntries(KEYS.map((key) => [key, colors[key]])) as ThemePreview["colors"] });
+    const preview = text === null ? null : themePreview(theme.id, theme.name, theme.note, text);
+    if (preview) found.push(preview);
   }
   return found;
 }

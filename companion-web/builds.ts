@@ -45,6 +45,7 @@ interface FullBuild {
   };
   cost?: { low: number; high: number };
   signIn?: { state: string; url?: string; code?: string; pastes?: boolean };
+  understood?: { recipe: string | null };
   shot: boolean;
 }
 
@@ -145,11 +146,13 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
     }
     const name = lower(b);
     const plan = b.state === "plan";
+    // A theme your agent made (S6.4) becomes the TV's and the desktop's.
+    const theme = b.understood?.recipe === "theme";
     const yes = async () => {
       try {
         const answered = await withPin(plan ? `the plan for ${name}` : `adding ${name}`, (grant) => api("POST", `/api/phone/builds/${build}/${plan ? "plan" : "approve"}`, {}, grant));
         if (answered === null) return;
-        toast(plan ? `your agent builds ${name} now` : `${name} goes on your tv's home`, true);
+        toast(plan ? `your agent builds ${name} now` : theme ? `${name} becomes your theme` : `${name} goes on your tv's home`, true);
         back();
         await done();
       } catch (error) {
@@ -187,15 +190,24 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
       return;
     }
     const a = b.approval ?? { reaches: { always: [], declared: [] }, packages: [] };
-    const img = h("img", { class: "build-shot", alt: `${name} on the test tv` }) as HTMLImageElement;
+    const img = h("img", { class: "build-shot", alt: theme ? `the tv in ${name}` : `${name} on the test tv` }) as HTMLImageElement;
+    const passed = b.steps.filter((s) => s.state === "done").length;
     page.replaceChildren(
       prompt(`tv app approve ${name}`),
       h("h1", {}, `${name} is ready`),
-      h("p", { class: "note" }, b.phase === "stage-b" ? `your agent learned how to search ${name}, play from it and see what's on. update it on the tv?` : "your agent built it. add it to the tv?"),
+      h(
+        "p",
+        { class: "note" },
+        b.phase === "stage-b"
+          ? `your agent learned how to search ${name}, play from it and see what's on. update it on the tv?`
+          : theme
+            ? "your agent made a theme: its colours and a background or two. make it your theme, on the tv and omarchy's desktop?"
+            : "your agent built it. add it to the tv?",
+      ),
       ...(b.shot ? [img] : []),
-      checks([...a.reaches.always, ...a.reaches.declared, "can't see your other sign-ins or your ai key", "stays on this tv"]),
-      h("p", { class: "note" }, a.packages.length ? `packages: ${a.packages.map((x) => `${x.name} ${x.version}`).join(", ")}` : "packages: none"),
-      h("p", { class: "note ok-line" }, h("b", {}, "✓"), ` its checks passed: ${b.steps.filter((s) => s.state === "done").length} steps, and the test tv`),
+      checks(theme ? ["its colours, its icons and its pictures, and nothing that runs", "reaches nothing on the internet", "stays on this tv"] : [...a.reaches.always, ...a.reaches.declared, "can't see your other sign-ins or your ai key", "stays on this tv"]),
+      ...(theme ? [] : [h("p", { class: "note" }, a.packages.length ? `packages: ${a.packages.map((x) => `${x.name} ${x.version}`).join(", ")}` : "packages: none")]),
+      h("p", { class: "note ok-line" }, h("b", {}, "✓"), theme ? ` its checks passed: ${passed} steps, and the theme check` : ` its checks passed: ${passed} steps, and the test tv`),
       buttons,
     );
     if (b.shot) {
