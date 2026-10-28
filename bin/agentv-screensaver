@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# agentv:summary=The terminal screensaver on the TV's ambient screen
+# agentv:hidden=true
+
+# Omarchy's own screensaver effect on the TV (ADR-049): ttfx runs a random
+# effect on Omarchy's branding text, which is AgenTV's wordmark (ADR-021), as
+# omarchy-screensaver does on the desktop, but in a terminal coloured by the
+# current Omarchy theme rather than black. The screen daemon starts it in a
+# foot of its own when the ambient screen comes up, and brings back what was
+# on screen once it ends. Any key ends it, from the remote, the phone or a
+# keyboard.
+
+set -uo pipefail
+
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+export PATH="$OMARCHY_PATH/bin:$PATH"
+text="$HOME/.config/omarchy/branding/screensaver.txt"
+[[ -f $text ]] || text="$OMARCHY_PATH/logo.txt"
+
+effect=""
+finish() {
+  [[ -n $effect ]] && kill "$effect" 2>/dev/null
+  printf '\033[?25h'
+  exit 0
+}
+trap finish SIGINT SIGTERM SIGHUP SIGQUIT
+
+# The theme's colours, as Omarchy's own helper sends them to a terminal, and
+# no cursor.
+omarchy-theme-osc
+printf '\033[?25l\033[2J'
+
+# A new terminal starts at 80 × 24 until it's full screen.
+deadline=$(( SECONDS + 2 ))
+while (( SECONDS < deadline )) && [[ $(stty size 2>/dev/null) == "24 80" ]]; do
+  sleep 0.02
+done
+
+while true; do
+  ttfx -i "$text" \
+    --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas --anchor-canvas c --anchor-text c \
+    --random-effect --no-eol --no-restore-cursor &
+  effect=$!
+  # A key, looked for four times a second, so the next effect follows on.
+  while kill -0 "$effect" 2>/dev/null; do
+    if read -rsn1 -t 0.25; then
+      finish
+    fi
+  done
+done

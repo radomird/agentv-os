@@ -68,7 +68,7 @@ import { Storage } from "./storage.ts";
 import { THEME_NAME } from "./themes.ts";
 import { tvOn } from "./tv-power.ts";
 
-export type Role = "home" | "web" | "steam";
+export type Role = "home" | "web" | "steam" | "screensaver";
 
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:agentv-held";
@@ -160,6 +160,11 @@ export interface Launcher {
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
+  // What the ambient screen shows, from Settings: the backgrounds, or the
+  // terminal screensaver (ADR-049).
+  ambientStyle(): Promise<"pictures" | "terminal">;
+  // The terminal screensaver, Omarchy's effect in a foot of its own.
+  screensaver(): App;
   // Tells AgenTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037).
   tvContext(change: { front: "home" | "app"; playing: boolean }): Promise<void>;
@@ -601,6 +606,11 @@ export class Screen {
       }
       this.opens = this.opens.filter((o) => o.address !== address);
       this.running();
+    }
+    // The terminal screensaver ended on a key: back to what was there.
+    if (window?.role === "screensaver") {
+      if (this.ambient) await this.endAmbient("a key on the terminal screensaver");
+      return;
     }
     if (!window || !wasFront || this.ending) return;
 
@@ -1209,8 +1219,10 @@ export class Screen {
   }
 
   // The home screen in front on its ambient screen. What was in front stays
-  // open behind it, unless the TV went off and it closed.
-  showAmbient(): Promise<object> {
+  // open behind it, unless the TV went off and it closed. With the terminal
+  // screensaver chosen in Settings, it comes in front of that, except once
+  // the TV is off, when there's no one to see it (ADR-049).
+  showAmbient(terminal = true): Promise<object> {
     return this.queue(async () => {
       if (this.ambient) return;
       const front = this.front();
@@ -1221,20 +1233,46 @@ export class Screen {
       this.ambientAt = this.now();
       this.log(`the ambient screen${this.ambientFrom ? `, over ${this.ambientFrom}` : ""}`);
       await this.inHome("window.agentvAmbient?.(true)");
+      if (terminal && !this.tvOff && (await this.launcher.ambientStyle().catch(() => "pictures" as const)) === "terminal") this.startScreensaver();
     }).then(() => ({ ok: true }));
+  }
+
+  // Omarchy's terminal screensaver, in front once its window opens. It ends
+  // on a key, and its window closing ends the ambient screen.
+  private startScreensaver(): void {
+    if (this.apps.has("screensaver")) return;
+    try {
+      const app = this.launcher.screensaver();
+      this.apps.set("screensaver", app);
+      app.onExit(() => {
+        if (this.apps.get("screensaver") === app) this.apps.delete("screensaver");
+      });
+      this.want = { role: "screensaver", until: this.now() + 15_000 };
+      this.log(`the terminal screensaver (pid ${app.pid})`);
+    } catch (error) {
+      this.log(`no terminal screensaver: ${(error as Error).message}`);
+    }
   }
 
   // A key on the ambient screen: back to what was in front, or home.
   wake(why = "asked"): Promise<object> {
-    return this.queue(async () => {
-      if (!this.ambient) return;
-      this.ambient = false;
-      this.log(`the ambient screen ends: ${why}`);
-      const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
-      this.ambientFrom = null;
-      await this.inHome("window.agentvAmbient?.(false)");
-      if (back) await this.toFront(back);
-    }).then(() => ({ ok: true }));
+    return this.queue(() => this.endAmbient(why)).then(() => ({ ok: true }));
+  }
+
+  private async endAmbient(why: string): Promise<void> {
+    if (!this.ambient) return;
+    this.ambient = false;
+    this.log(`the ambient screen ends: ${why}`);
+    const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
+    this.ambientFrom = null;
+    if (this.want?.role === "screensaver") this.want = null;
+    this.apps.get("screensaver")?.stop();
+    await this.inHome("window.agentvAmbient?.(false)");
+    if (back) await this.toFront(back);
+    else if (this.front()?.role === "screensaver") {
+      const home = this.homeWindow();
+      if (home) await this.toFront(home.address);
+    }
   }
 
   private pollTv(): void {
@@ -1279,7 +1317,7 @@ export class Screen {
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
       await this.launcher.lock().catch(() => {});
-    }).then(() => void this.showAmbient());
+    }).then(() => void this.showAmbient(false));
   }
 
   openWeb(url: string, id = url): Promise<object> {
@@ -2104,6 +2142,22 @@ export const launcher: Launcher = {
     const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
     const minutes = (await response.json())?.settings?.idleMinutes;
     return typeof minutes === "number" && minutes > 0 ? minutes : 10;
+  },
+
+  async ambientStyle() {
+    const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
+    return (await response.json())?.settings?.ambient === "terminal" ? "terminal" : "pictures";
+  },
+
+  screensaver() {
+    // In foot, with Omarchy's own settings for its screensaver, as a window
+    // the screen daemon knows by the process it started.
+    const omarchy = process.env.OMARCHY_PATH || "/usr/share/omarchy";
+    const child = spawn("foot", [`--config=${join(omarchy, "default", "foot", "screensaver.ini")}`, "--app-id=org.agentv.screensaver", "agentv-screensaver"], {
+      stdio: ["ignore", "ignore", "inherit"],
+      env: { ...process.env, OMARCHY_PATH: omarchy },
+    });
+    return track("screensaver", child);
   },
 
   // Each kill stops one instance and returns once it's gone, as Omarchy's

@@ -404,6 +404,67 @@ test("S2.17 Settings → Look changes how long the ambient screen waits", async 
   await page.close();
 });
 
+test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", async () => {
+  const page = await tv();
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="look"]').click();
+    await page.locator('[data-action="theme-own"]').hover();
+    // The list's hidden rows run on under the buttons below it. Scrolled, as
+    // by a mouse's wheel, so the first of them is just below the focus.
+    await page.evaluate(() => {
+      const list = document.querySelector<HTMLElement>(".look-list")!;
+      const own = document.querySelector('[data-action="theme-own"]')!.getBoundingClientRect();
+      const hidden = [...list.querySelectorAll(".look-item")].map((el) => el.getBoundingClientRect()).find((r) => r.top > own.bottom);
+      if (hidden) list.scrollTop += hidden.top - (own.bottom + 8);
+    });
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "motion");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    const sight = await page.evaluate(() => {
+      const at = document.querySelector(".look-item.focused")?.getBoundingClientRect();
+      const box = document.querySelector(".look-list")!.getBoundingClientRect();
+      return Boolean(at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1);
+    });
+    assert.ok(sight, "up from describe your own went to a theme out of sight");
+  } finally {
+    await page.close();
+  }
+});
+
+test("S5.9 Settings → Look picks what the ambient screen shows, the backgrounds or Omarchy's terminal screensaver", async () => {
+  const page = await tv();
+  const ambient = () => page.evaluate(async () => (await (await fetch("/api/home")).json()).settings.ambient);
+  const shown = (value: string) => page.waitForFunction((v) => document.querySelector('[data-action="ambient-style"] .button-value')?.textContent === v, value);
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="look"]').click();
+    await page.locator('[data-action="ambient-style"]').hover();
+    await shown("backgrounds");
+    // Right, left or Enter changes it, and the focus stays on it.
+    await page.keyboard.press("ArrowRight");
+    await shown("terminal");
+    assert.equal(await ambient(), "terminal");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "ambient-style");
+    await page.keyboard.press("Enter");
+    await shown("backgrounds");
+    assert.equal(await ambient(), "pictures");
+    // Look can be longer than the screen: down to its last setting keeps the
+    // focus in sight, above the status bar.
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "idle");
+    const sight = await page.evaluate(() => {
+      const at = document.querySelector('[data-action="idle"]')!.getBoundingClientRect();
+      const panel = document.querySelector(".settings-panel")!.getBoundingClientRect();
+      return { at: at.bottom, panel: panel.bottom };
+    });
+    assert.ok(sight.at <= sight.panel + 1, JSON.stringify(sight));
+  } finally {
+    await page.close();
+  }
+});
+
 test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first, each with its colours, and picking one sets it with Omarchy's own command", async () => {
   const page = await tv();
   await page.locator('.bar-link:has-text("settings")').click();
