@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
+import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
@@ -26,6 +26,7 @@ import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { keyPage, termsHeard } from "./pages/key.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
+import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
 
@@ -212,6 +213,46 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
   return next;
 }
 
+// A share's notice (ADR-050, S5.10): who sent what, with Open and Not now.
+// The daemon names one only with home in front and nothing playing, the
+// oldest first, and the next one comes once this one's answered. It never
+// comes over a PIN pad, the ambient screen or an install.
+const noticeEl = document.getElementById("notice")!;
+let noticeOpen: { share: Share; before: HTMLElement | undefined } | null = null;
+
+async function askShared(): Promise<void> {
+  const found = await loadShared();
+  // Apps → Shared follows too.
+  if (history[history.length - 1] === "apps" && !noticeOpen && !pinOpen) redraw();
+  const share = found?.ask ? found.shares.find((one) => one.id === found.ask) : undefined;
+  if (!share || noticeOpen || pinOpen || ambient || updatingShown) return;
+  const before = focus.get();
+  before?.classList.remove("focused");
+  const answer = async (open: boolean) => {
+    closeNotice();
+    sounds.play(open ? "forward" : "back");
+    await daemon.answerShare(share.id).catch(() => {});
+    if (open) await openShare(ctx, share);
+    void askShared();
+  };
+  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "share-open", onclick: () => void answer(true) }, "open");
+  const no = h("button", { class: "button", "data-focus": true, "data-action": "share-later", onclick: () => void answer(false) }, "not now");
+  const card = h("div", { class: "notice-card" }, h("div", { class: "notice-title" }, `${share.from} sent ${shareWhat(share)}`), h("div", { class: "notice-buttons" }, yes, no));
+  noticeEl.replaceChildren(card);
+  noticeEl.classList.add("on");
+  noticeOpen = { share, before };
+  focus.setRoot(card, yes);
+  sounds.play("forward");
+}
+
+function closeNotice(): void {
+  const before = noticeOpen?.before;
+  noticeOpen = null;
+  noticeEl.classList.remove("on");
+  noticeEl.replaceChildren();
+  if (view) focus.setRoot(view.el, before?.isConnected ? before : view.first);
+}
+
 // The PIN, checked by the daemon, which gives the grant: kept for the rest
 // of this visit to Settings with hold, and for this one action without.
 let checking = false;
@@ -303,6 +344,8 @@ function viewFor(route: string): View {
   if (name === "music") return music(ctx, arg);
   // A page app, full screen in its frame (ADR-043).
   if (name === "app" && arg) return pageView(ctx, arg);
+  // A photo or a video a phone shared (ADR-050).
+  if (name === "shared" && arg) return sharedView(ctx, arg);
   return home(ctx);
 }
 
@@ -498,6 +541,15 @@ function act(action: Action): void {
     } else pinOpen.act(action);
     return;
   }
+  // A share's notice has the keys while it's up; Back is Not now.
+  if (noticeOpen) {
+    if (action === "up" || action === "down" || action === "left" || action === "right") focus.move(action);
+    else if (action === "ok") {
+      sounds.play("select");
+      focus.get()?.click();
+    } else if (action === "back") noticeEl.querySelector<HTMLElement>('[data-action="share-later"]')?.click();
+    return;
+  }
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -546,7 +598,7 @@ document.addEventListener("pointermove", (event) => {
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
   const el = (event.target as Element | null)?.closest<HTMLElement>("[data-focus]");
-  if (el && (pinOpen ? pinEl.contains(el) : view?.el.contains(el) && !view.busy?.())) focus.set(el);
+  if (el && (pinOpen ? pinEl.contains(el) : noticeOpen ? noticeEl.contains(el) : view?.el.contains(el) && !view.busy?.())) focus.set(el);
 });
 document.addEventListener("click", (event) => {
   if (event.detail === 0) return; // a click from the keyboard, already played
@@ -592,7 +644,10 @@ async function switched(): Promise<void> {
   // Edit mode was the last viewer's home, and a child starts on their own.
   if (child || history[history.length - 1].startsWith("edit")) history = ["home"];
   await loadBuilds(ctx);
+  // A child's profile sees only what was shared with it (ADR-050).
+  if (history[history.length - 1].startsWith("shared/")) history = ["home"];
   redraw();
+  void askShared();
   // The apps still open take the service's profile for who's watching now.
   void screen.viewer();
 }
@@ -637,6 +692,7 @@ async function start(): Promise<void> {
   await loadBackgrounds();
   await loadBuilds(ctx);
   show("home");
+  void askShared();
   setLock(ctx.state.pin?.locked === true);
   window.addEventListener(
     "keydown",
@@ -666,6 +722,8 @@ async function start(): Promise<void> {
     },
     // A photo came from a phone, or another source was chosen.
     background: () => void loadBackgrounds(),
+    // A phone shared something, or the TV may ask about one now (ADR-050).
+    shared: () => void askShared(),
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },
