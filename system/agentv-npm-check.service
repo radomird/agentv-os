@@ -1,0 +1,35 @@
+# Each built app's npm packages, checked against OSV.dev again
+# (builder/npm-check.ts, ADR-044). What it finds goes to
+# /var/lib/agentv/npm-check/warnings.json, and the TV and the phone warn
+# about an app whose package turned out to be malware or to have a high or
+# critical vulnerability. agentv-npm-check.timer starts it every night. It
+# runs as the builder's way out, which already asks OSV.dev, and reads the
+# builds' lockfiles, nothing else.
+
+[Unit]
+Description=AgenTV nightly package check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=agentv-build-net
+Group=agentv-build-net
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/builder/npm-check.ts
+StateDirectory=agentv/npm-check
+StateDirectoryMode=0755
+UMask=0022
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=-/etc/agentv -/var/lib/agentv/chromium -/var/lib/private
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+SystemCallArchitectures=native

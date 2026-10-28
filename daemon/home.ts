@@ -9,6 +9,7 @@ import { existsSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
+import { pagePermissions } from "../apps/contract/page.ts";
 import { pin, problem, type Placed, type Size } from "../launcher/layout.ts";
 import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
@@ -178,6 +179,13 @@ export function sizesOf(manifest: Manifest): SizeChoice[] {
   return sizes;
 }
 
+// What a page app reaches, as its details say (ADR-043): what it declared,
+// or nothing outside this TV.
+function pageReach(manifest: Manifest): string[] {
+  const { declared } = pagePermissions(manifest);
+  return declared.length ? declared : ["nothing outside this tv"];
+}
+
 function maker(tier: AppTier, manifest: Manifest): string {
   if (tier === "built-in") return "built in";
   if (tier === "official") return "official · made by agentv";
@@ -193,6 +201,8 @@ export interface HomeOptions {
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
   // Who's watching now (daemon/profiles.ts). Without it, the box's owner.
   viewer?: () => Promise<Viewer & { name: string; avatar?: string }>;
+  // What a page app's tile shows: what it last set (ADR-043).
+  pageTile?: (id: string) => Promise<unknown>;
   // What the TV is for, from setup (ADR-006): Music is on home from the
   // start when it's music.
   goal?: () => Promise<string | null>;
@@ -251,6 +261,7 @@ export class Home {
   private log: (line: string) => void;
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
   private goal?: () => Promise<string | null>;
+  private pageTile?: (id: string) => Promise<unknown>;
   private dataDirs: string[];
 
   constructor(options: HomeOptions) {
@@ -263,6 +274,7 @@ export class Home {
     this.log = options.log ?? (() => {});
     this.viewerOf = options.viewer;
     this.goal = options.goal;
+    this.pageTile = options.pageTile;
     this.dataDirs = options.dataDirs ?? DATA_DIRS;
   }
 
@@ -357,7 +369,16 @@ export class Home {
         runtime: manifest.tv.runtime,
         icon,
         sizes: sizesOf(manifest),
-        reach: reach.length ? reach : manifest.tv.runtime === "native" ? ["its own window on this tv"] : builtin ? ["nothing outside this tv"] : ["nothing yet"],
+        reach:
+          manifest.tv.runtime === "page"
+            ? pageReach(manifest)
+            : reach.length
+              ? reach
+              : manifest.tv.runtime === "native"
+                ? ["its own window on this tv"]
+                : builtin
+                  ? ["nothing outside this tv"]
+                  : ["nothing yet"],
         needsSetup: fields.some((field) => field.type === "field" && !values[field.key]),
         signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
@@ -405,6 +426,11 @@ export class Home {
   // The services' Chromium is the box's, so a sign-in is too, not a viewer's.
   private signIns(): Promise<Record<string, { signedIn: boolean; at: string }>> {
     return readJson(join(this.state, "signins.json"), {});
+  }
+
+  // Whether an app said it's signed in, the last time it was asked.
+  async isSignedIn(id: string): Promise<boolean> {
+    return (await this.signIns())[id]?.signedIn === true;
   }
 
   // Notes what an app said. False when it isn't an app here, or it has no
@@ -687,13 +713,15 @@ export class Home {
   // What opening an app means, for the screen daemon: its home address with
   // its setup fields filled in, or its command. Nothing, for an app a child's
   // profile can't open.
-  async launch(id: string, viewer?: Viewer): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | null> {
+  async launch(id: string, viewer?: Viewer): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | { runtime: "page"; name: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
     if (viewer?.role === "child" && !(await this.apps(viewer)).some((app) => app.id === id)) return null;
     const tv = found.manifest.tv;
     const name = found.manifest.name;
     if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name };
+    // A page app opens on home, in its frame (ADR-043).
+    if (tv.runtime === "page") return { runtime: "page", name };
     const values = (await this.appSettings())[id] ?? {};
     const url = (tv.homeUrl ?? "").replace(/^\{([A-Za-z][A-Za-z0-9]*)\}/, (_, key: string) => (values[key] ?? "").replace(/\/+$/, ""));
     try {
@@ -810,6 +838,8 @@ export class Home {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
     const capabilities = found.manifest.tv.capabilities;
+    // A page app sets its tile through the kit while it runs (ADR-043).
+    if (found.manifest.tv.runtime === "page") return capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null;
     if (!capabilities.includes("tile")) {
       // The free medium continue tile, drawn from the ledger each time.
       if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return null;

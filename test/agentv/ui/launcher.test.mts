@@ -430,6 +430,8 @@ test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first,
     return { scrolled: list.scrollTop, inSight: Boolean(at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1) };
   });
   assert.ok(sight.scrolled > 0 && sight.inSight, JSON.stringify(sight));
+  // And last, a theme your agent makes from a few words (S6.4, ADR-048).
+  assert.equal(await page.locator('[data-action^="theme-"] span:first-child').last().innerText(), "describe your own");
   await page.locator('[data-action="theme-gruvbox"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
   await page.close();

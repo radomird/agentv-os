@@ -605,3 +605,67 @@ h1.with-icon .glyph {
 .photo-preview.hidden {
   display: none;
 }
+
+/* Your agent's builds (ADR-043, ADR-046, board 18): the app or the plan to
+   approve, its screenshot, and what it may do. */
+.build-approve {
+  gap: 16px;
+}
+
+.build-shot {
+  width: 100%;
+  border: 2px solid var(--selection);
+}
+
+.checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.checks b,
+.ok-line b {
+  color: var(--green);
+  font-weight: 400;
+}
+
+.plan-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.build-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* A plan's sign-in (ADR-040): the code to enter on the provider's page, or
+   the field for the one it gives. */
+.plan-code {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
+
+.plan-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.build-approve a.button {
+  text-decoration: none;
+}

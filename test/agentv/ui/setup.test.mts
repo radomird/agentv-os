@@ -889,12 +889,19 @@ test("S5.2 S5.7 the look: every Omarchy theme in its own colours, Tokyo Night fi
   await page.locator('[data-theme="own"]').hover();
   assert.ok(await inSight());
 
-  // Describe your own waits for the TV's agent.
+  // Describe your own is kept for the TV's agent to make (S6.4).
   await page.locator('[data-theme="own"]').click();
-  await page.waitForFunction(() => /make themes soon/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+  await page.waitForSelector(".wish-field");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "describe your own.");
+  assert.equal(await page.locator(".wish-field").getAttribute("placeholder"), "a calm forest at dusk");
+  await page.locator(".wish-field").fill("a calm forest at dusk");
+  await page.locator('[data-action="keep"]').click();
+  await page.waitForSelector(".looks .look");
+  assert.ok((await (await fetch(`${url}/api/setup`)).json()).setup.wishes.includes("a theme: a calm forest at dusk"));
 
   // A theme installed on Omarchy's desktop meanwhile: the screen daemon hands
   // over the list, and it's in the grid, said to be installed.
+  await page.locator('[data-theme="own"]').hover();
   const handed = shipped.map((id) => ({ id, mode: "dark", colors: { background: "#101010", dark_background: "#000000", accent: "#ff8800", selection: "#333333", foreground: "#cccccc", bright_foreground: "#ffffff" }, installed: false }));
   await fetch(`${url}/api/themes`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themes: [...handed, { ...handed[0], id: "aurora", installed: true }] }) });
   await page.waitForSelector('.look[data-theme="aurora"]', { timeout: 5000 });

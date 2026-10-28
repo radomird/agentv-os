@@ -267,6 +267,7 @@ export interface ThemePreview {
   note: string;
   mode: "light" | "dark";
   colors: { background: string; dark_background: string; accent: string; selection: string; foreground: string; bright_foreground: string };
+  app?: string; // a theme your agent made: its build's id
 }
 
 // Apps → add an app (ADR-042): an official app that isn't on the TV yet, and
@@ -286,6 +287,9 @@ export interface Available {
 
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  // One of a page app's kit calls the daemon does, checked against its
+  // manifest there (ADR-043): what it gives back.
+  kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
@@ -336,7 +340,70 @@ export const daemon = {
   removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),
   lock: () => call<{ locked: boolean }>("POST", "/api/pin/lock"),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
+  // The builder (ADR-043 to ADR-046): an adult's asks, and how each goes.
+  builds: () => call<BuildsState>("GET", "/api/builds"),
+  ask: (sentence: string) => call<{ build: BuildView }>("POST", "/api/builds", { sentence }).then((r) => r.build),
+  confirm: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/confirm`).then((r) => r.build),
+  retry: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/retry`).then((r) => r.build),
+  forget: (build: string) => call<{ ok: boolean }>("POST", `/api/builds/${build}/forget`),
+  stopBuild: () => call<{ ok: boolean }>("POST", "/api/builds/stop"),
+  builderSettings: (change: Partial<BuilderSettings>, grant?: string) => call<{ settings: BuilderSettings }>("PUT", "/api/builds/settings", change, grant).then((r) => r.settings),
+  // A built app's next version, the one before it back, or the app gone.
+  changeApp: (id: string, text: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/change`, { text }).then((r) => r.build),
+  rebuildApp: (id: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rebuild`).then((r) => r.build),
+  rollbackApp: (id: string, grant?: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rollback`, undefined, grant).then((r) => r.build),
+  removeBuilt: (id: string, grant?: string) => call<{ ok: boolean }>("POST", `/api/builds/apps/${id}/remove`, undefined, grant),
+  // Export (ADR-045): offered to an adult's phone, which saves the .zip.
+  exportApp: (id: string) => call<{ ok: boolean }>("POST", `/api/apps/${id}/export`, {}),
 };
+
+// The builder (ADR-043 to ADR-046): one build as the TV shows it, from what
+// was asked to the app on home.
+export interface BuildView {
+  build: string;
+  id: string;
+  version: string;
+  sentence: string;
+  name?: string;
+  provider: "claude" | "chatgpt" | "gemini" | "grok" | "muse";
+  path: "plan" | "key";
+  state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
+  phase: "understand" | "plan" | "build" | "stage-b";
+  step?: string;
+  steps: { id: string; state: "waiting" | "running" | "done" | "failed" }[];
+  reason?: string;
+  spent?: number;
+  understood?: { name: string; recipe: string | null; says: string; address?: string; category?: string };
+  plan?: {
+    name: string;
+    says: string;
+    steps: { id: string; does: string }[];
+    permissions: { origins: string[]; media: string[]; tile: boolean; notices: boolean };
+    packages: { name: string; version?: string }[];
+    cost?: { low: number; high: number };
+  };
+  cost?: { low: number; high: number };
+  minutes?: number;
+  // A plan's sign-in, the first time the builder runs on it (ADR-040).
+  signIn?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
+  shot: boolean;
+  at: string;
+}
+
+export interface BuilderSettings {
+  cap: { build: number; month: number }; // dollars, with a key
+  safeguards: boolean;
+}
+
+export interface BuildsState {
+  builds: BuildView[];
+  settings: BuilderSettings;
+  spend: { month: string; spent: number; cap: BuilderSettings["cap"] };
+  warnings: { id: string; version: string; build: string; malware: string[]; serious: string[]; since: string }[];
+  wishes: string[]; // what setup's "+ add your own" kept
+  // Each theme your agent made that the TV handed to Omarchy, or why not.
+  themes?: Record<string, { version: string; name?: string; error?: string }>;
+}
 
 // Things that changed, as the daemon tells them. opened runs each time the
 // stream opens: the first time, a moment after the page asked for what it
@@ -367,6 +434,7 @@ export interface Running {
 interface Reply {
   ok: boolean;
   error?: string;
+  value?: unknown;
   apps?: Running[];
   [key: string]: unknown;
 }
@@ -402,6 +470,13 @@ export const screen = {
   running: async () => (await ask({ cmd: "running" })).apps ?? [],
   // Closes an app open behind home, such as a game still running.
   quit: (app: string) => ask({ cmd: "quit", app }),
+  // A page app's photos and music, from the TV session (ADR-043). A photo
+  // from a slow NAS takes a while.
+  kit: async (app: string, name: string, args: unknown[]) => {
+    const reply = await ask({ cmd: "kit", app, call: name, args }, 60_000);
+    if (!reply.ok) throw new Error(reply.error ?? "that didn't work");
+    return reply.value;
+  },
   // A key on the ambient screen: back to what was in front.
   wake: () => ask({ cmd: "wake" }),
   // Settings → Updates: Check now and Install now.

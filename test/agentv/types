@@ -21,9 +21,9 @@ trap 'rm -rf "$tools"' EXIT
 npm install --prefix "$tools" --no-save --no-audit --no-fund --silent "$TYPESCRIPT" "$NODE_TYPES" "$PLAYWRIGHT"
 
 # Each project's own settings, with the fetched types found where they are:
-# the daemon and the app contract on Node, and the launcher, the phone
+# the daemon, the app contract and the builder on Node, and the launcher, the phone
 # companion and TV setup in the browser.
-for project in daemon launcher companion-web setup; do
+for project in daemon launcher companion-web setup builder; do
   jq -n --arg base "$ROOT/$project/tsconfig.json" --arg modules "$tools/node_modules" '{
     extends: $base,
     compilerOptions: {

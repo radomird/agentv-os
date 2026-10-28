@@ -938,7 +938,7 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
   align-content: start;
-  max-height: 288px;
+  max-height: 204px;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -1734,4 +1734,98 @@ body.with-backdrop.on-home {
 .music-tile .entries .album-cover {
   width: 120px;
   height: 120px;
+}
+
+/* Page apps (ADR-043): each full screen in its own frame over home, above
+   the focus ring and under the toasts, the PIN pad and the ambient screen.
+   Only the one in front shows; the others wait behind home, paused. */
+#page-apps {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 15;
+  background: var(--darker-background);
+}
+
+#page-apps.on {
+  display: block;
+}
+
+.page-app {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.page-app.on {
+  display: block;
+}
+
+.page-app-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--darker-background);
+}
+
+.page-app-cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: var(--foreground);
+  background: var(--darker-background);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--base) var(--ease);
+}
+
+.page-app.loading .page-app-cover {
+  opacity: 1;
+}
+
+/* Your agent's builds (boards 10, 17 and 20): what was asked, how far it
+   is, and what it understood, on its own page. */
+.build-said {
+  margin: 0 0 24px;
+  font-size: 30px;
+}
+
+.build-value {
+  color: var(--bright-foreground);
+}
+
+.build-bar {
+  max-width: 1100px;
+  margin-bottom: 24px;
+}
+
+.build-steps {
+  margin-bottom: 36px;
+  font-size: 30px;
+}
+
+.updating-step.bad,
+.updating-step.bad b {
+  color: var(--red);
+}
+
+.build-wishes {
+  margin-top: 48px;
+}
+
+/* A plan's sign-in on a build's page: the CLI's link for the phone's camera. */
+.pair-qr.build-qr {
+  width: 360px;
+  height: 360px;
+  padding: 16px;
+}
+
+.pair-code.build-code {
+  margin: 0;
+  font-size: 80px;
+  letter-spacing: 12px;
 }
