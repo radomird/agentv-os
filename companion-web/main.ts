@@ -17,7 +17,7 @@
 
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { arrange } from "./arrange.ts";
-import { buildBanner, buildNotices, buildPage, type PhoneBuild } from "./builds.ts";
+import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
@@ -62,6 +62,8 @@ interface State {
   // An adult's builds that aren't on home yet: how each is going, and the
   // ones waiting for a yes here (ADR-043, ADR-046).
   builds?: PhoneBuild[];
+  // An app the TV offered for Export, to save here (ADR-045).
+  export?: Offer | null;
 }
 
 interface Ask {
@@ -654,6 +656,9 @@ function draw(): void {
       ),
     );
   }
+  // An app the TV offered for Export, to save here.
+  const saving = exportBanner(state.export, failed);
+  if (saving) banners.push(saving);
   // Your agent's build: the one waiting for a yes, or how the newest is going.
   if (mode !== "build") {
     const building = buildBanner(state.builds, (build) => {

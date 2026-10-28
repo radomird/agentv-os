@@ -340,6 +340,8 @@ export const daemon = {
   rebuildApp: (id: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rebuild`).then((r) => r.build),
   rollbackApp: (id: string, grant?: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rollback`, undefined, grant).then((r) => r.build),
   removeBuilt: (id: string, grant?: string) => call<{ ok: boolean }>("POST", `/api/builds/apps/${id}/remove`, undefined, grant),
+  // Export (ADR-045): offered to an adult's phone, which saves the .zip.
+  exportApp: (id: string) => call<{ ok: boolean }>("POST", `/api/apps/${id}/export`, {}),
 };
 
 // The builder (ADR-043 to ADR-046): one build as the TV shows it, from what
