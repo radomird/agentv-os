@@ -1,12 +1,12 @@
-// The background (board 13, ADR-012, S5.3): the theme's pixel field, the
-// household's photos sent from a phone, a shared folder, art from museum
-// archives, or art the TV's agent makes. The pixel field, the photos, a
-// folder or a share, and the archives are here now; the others are coming
+// The background (board 13, ADR-012, ADR-048, S5.3, S5.8): the Omarchy
+// theme's own backgrounds, the default, as on Omarchy's desktop, the theme's
+// pixel field, the household's photos sent from a phone, a shared folder,
+// art from museum archives, or art the TV's agent makes, which is coming
 // soon. A photo sent from the phone, a folder picked or a work picked
 // becomes the background at once, with its credit, which the ambient screen
 // shows.
 
-import { daemon, screen, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
+import { daemon, screen, shownCurrent, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { setup } from "./api.ts";
@@ -14,7 +14,7 @@ import { field, heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
 interface Card {
-  id: "field" | "photos" | "folder" | "art" | "made";
+  id: "theme" | "field" | "photos" | "folder" | "art" | "made";
   name: string;
   note: string;
   icon?: Glyph;
@@ -22,14 +22,15 @@ interface Card {
 }
 
 const CARDS: Card[] = [
-  { id: "field", name: "pixel field", note: "default" },
+  { id: "theme", name: "the theme's", note: "default", icon: "grid" },
+  { id: "field", name: "pixel field", note: "in its colours" },
   { id: "photos", name: "your photos", note: "sent from your phone", icon: "photo" },
   { id: "folder", name: "shared folder", note: "nas or immich", icon: "grid" },
   { id: "art", name: "art", note: "museum archives", icon: "spark" },
   { id: "made", name: "made for you", note: "your agent will draw it", icon: "spark", soon: "your tv's agent will draw backgrounds soon" },
 ];
 
-const empty = (): Backgrounds => ({ source: "field", current: null, items: [] });
+const empty = (): Backgrounds => ({ source: "theme", current: null, items: [] });
 
 export async function background(ctx: Ctx): Promise<View> {
   let now = await daemon.backgrounds().catch(empty);
@@ -46,6 +47,9 @@ export async function background(ctx: Ctx): Promise<View> {
   const line = h("span", { class: "setup-note" });
 
   const draw = () => {
+    // The theme's own: the one Omarchy shows, or the pixel field for a
+    // theme without any.
+    const own = shownCurrent({ ...now, source: "theme" });
     for (const card of cards) {
       const id = card.dataset.background;
       card.classList.toggle("picked", id === now.source);
@@ -53,14 +57,22 @@ export async function background(ctx: Ctx): Promise<View> {
       const kind = id === "photos" ? "photo" : id === "art" ? "art" : id === "folder" ? "folder" : null;
       const mine = now.items.filter((item) => item.kind === kind);
       const newest = mine.find((item) => item.id === now.current) ?? mine[0];
-      if (id === "field" && !shot.firstChild) shot.append(field());
+      if (id === "theme") {
+        if (own && shot.querySelector("img")?.dataset.id !== own.id) shot.replaceChildren(h("img", { src: `/api/backgrounds/${own.id}`, alt: "", "data-id": own.id }));
+        else if (!own && !shot.querySelector(".pixel-field")) shot.replaceChildren(field());
+      } else if (id === "field" && !shot.firstChild) shot.append(field());
       else if (kind) shot.replaceChildren(newest ? h("img", { src: `/api/backgrounds/${newest.id}`, alt: "" }) : glyph(CARDS.find((c) => c.id === id)!.icon!, 72));
       else if (id !== "field" && !shot.firstChild) shot.append(glyph(CARDS.find((c) => c.id === id)!.icon!, 72));
     }
     const photos = now.items.filter((item) => item.kind === "photo").length;
     const shown = shownPictures(now);
+    const theme = now.theme?.name?.replace(/[-_]+/g, " ");
     line.textContent =
-      now.source === "art"
+      now.source === "theme"
+        ? own
+          ? `${theme}'s own, as on omarchy's desktop. it changes with the theme.`
+          : `${theme ?? "this theme"} has no backgrounds of its own, so it's the pixel field for now.`
+        : now.source === "art"
         ? (shown.find((item) => item.id === now.current)?.credit.text ?? "art from the archives.")
         : now.source === "folder"
           ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from ${shown[0]?.credit.from ?? "a folder"}.`

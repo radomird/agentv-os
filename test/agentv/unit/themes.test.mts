@@ -6,10 +6,11 @@
 // list over (daemon/omarchy-themes.ts), since the daemon can't.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { pictureId } from "../../../daemon/backgrounds.ts";
 import { OmarchyThemes } from "../../../daemon/omarchy-themes.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { cleanFound, currentTheme, parseColors, previews } from "../../../daemon/themes.ts";
@@ -28,7 +29,7 @@ function rendered(theme: string): string {
 async function daemon(): Promise<{ url: string; close: () => Promise<void> }> {
   const dir = mkdtempSync(join(scratch, "daemon-"));
   mkdirSync(join(dir, "root", "setup"), { recursive: true });
-  const d = new Daemon({ root: join(dir, "root"), state: join(dir, "state"), port: 0, log: () => {}, builtins: null, omarchy: ROOT });
+  const d = new Daemon({ root: join(dir, "root"), state: join(dir, "state"), backgrounds: join(dir, "backgrounds"), port: 0, log: () => {}, builtins: null, omarchy: ROOT });
   return { url: `http://127.0.0.1:${await d.listen()}`, close: () => d.close() };
 }
 
@@ -183,4 +184,68 @@ test("the screen daemon keeps trying while the daemon isn't there yet, at the st
   lister.stop();
   assert.equal(lines.length, 12);
   assert.match(lines[0], /didn't take the list/);
+});
+
+// A person's home on Tokyo Night as omarchy-theme-set leaves it: the
+// theme's backgrounds in the current theme, one of the person's own for
+// Tokyo Night beside them, and the one Omarchy shows linked.
+function themedHome(): { dir: string; state: string; mine: string; lake: string; oma: string } {
+  const dir = home();
+  const state = join(dir, ".local", "state", "omarchy", "current");
+  const backgrounds = join(state, "theme", "backgrounds");
+  mkdirSync(backgrounds, { recursive: true });
+  const from = join(ROOT, "themes", "tokyo-night", "backgrounds");
+  cpSync(join(from, "3-sunset-lake.png"), join(backgrounds, "3-sunset-lake.png"));
+  cpSync(join(from, "6-oma.jpg"), join(backgrounds, "6-oma.jpg"));
+  writeFileSync(join(backgrounds, "7-moving.gif"), "GIF89a");
+  const own = join(dir, ".config", "omarchy", "backgrounds", "tokyo-night");
+  mkdirSync(own, { recursive: true });
+  cpSync(join(from, "5-oma-cityscape.jpg"), join(own, "mine.jpg"));
+  writeFileSync(join(state, "theme.name"), "tokyo-night\n");
+  symlinkSync(join(backgrounds, "6-oma.jpg"), join(state, "background"));
+  return { dir, state, mine: join(own, "mine.jpg"), lake: join(backgrounds, "3-sunset-lake.png"), oma: join(backgrounds, "6-oma.jpg") };
+}
+
+test("S5.8 the screen daemon finds the theme's backgrounds as Omarchy does, the person's own first, and the one Omarchy shows", async () => {
+  const person = themedHome();
+  const found = await new OmarchyThemes({ omarchy: ROOT, home: person.dir }).backgrounds();
+  const id = (path: string) => pictureId(readFileSync(path));
+  assert.equal(found?.theme, "tokyo-night");
+  assert.deepEqual(found?.files.map((file) => [file.id, file.type]), [
+    [id(person.mine), "image/jpeg"],
+    [id(person.lake), "image/png"],
+    [id(person.oma), "image/jpeg"],
+  ], "in Omarchy's order, and only what the TV can show");
+  assert.equal(found?.current, id(person.oma));
+  rmSync(join(person.state, "theme.name"));
+  assert.equal(await new OmarchyThemes({ omarchy: ROOT, home: person.dir }).backgrounds(), null, "no theme set yet: nothing to hand over");
+});
+
+test("S5.8 the theme's backgrounds reach the daemon once each, and home follows the desktop to the next", async () => {
+  const person = themedHome();
+  const d = await daemon();
+  const lines: string[] = [];
+  const lister = new OmarchyThemes({ omarchy: ROOT, home: person.dir, daemon: `${d.url}/`, settleMs: 50, retryMs: 50, log: (line) => lines.push(line) });
+  const id = (path: string) => pictureId(readFileSync(path));
+  try {
+    await lister.start();
+    let list = await (await fetch(`${d.url}/api/backgrounds`)).json();
+    assert.equal(list.source, "theme", "the theme's own, by default");
+    assert.deepEqual([list.theme.name, list.theme.current, list.theme.items.length], ["tokyo-night", id(person.oma), 3]);
+    assert.deepEqual(list.theme.items[0].credit, { text: "tokyo night", from: "omarchy" });
+    assert.deepEqual(Buffer.from(await (await fetch(`${d.url}/api/backgrounds/${id(person.oma)}`)).arrayBuffer()), readFileSync(person.oma));
+
+    // The desktop's next background: Omarchy links another.
+    rmSync(join(person.state, "background"));
+    symlinkSync(person.lake, join(person.state, "background"));
+    for (let i = 0; i < 100 && list.theme.current !== id(person.lake); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      list = await (await fetch(`${d.url}/api/backgrounds`)).json();
+    }
+    assert.equal(list.theme.current, id(person.lake), "home follows the desktop to the next");
+  } finally {
+    lister.stop();
+    await d.close();
+  }
+  assert.deepEqual(lines, []);
 });

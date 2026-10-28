@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { creditLine, daemon, listen, screen, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
+import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
@@ -315,6 +315,7 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   if (!route.startsWith("app/")) hidePages(ctx);
   tell({ screen: route === "home" ? "home" : "menu" });
   view = viewFor(route);
+  document.body.classList.toggle("on-home", route === "home");
   const el = view.el;
   if (direction) {
     el.classList.add(direction === "forward" ? "page-forward" : "page-back");
@@ -335,14 +336,15 @@ function apply(settings: Settings): void {
   document.documentElement.classList.toggle("reduce-motion", settings.reduceMotion);
 }
 
-// The background (ADR-012, S5.3): the photo or work chosen, behind home,
-// dimmed so the tiles read over it; or the theme's own colour with none.
+// The background (ADR-012, ADR-048, S5.3, S5.8): the theme's own, as on
+// Omarchy's desktop, or the photo or work chosen, behind home only, dimmed so
+// the tiles read over it; or the theme's own colour with none. Settings,
+// Apps and the other pages keep the theme's colour.
 const backdropEl = document.getElementById("backdrop")!;
 let backgrounds: Backgrounds | null = null;
 
 function drawBackdrop(): void {
-  const pictures = shownPictures(backgrounds);
-  const item = pictures.find((one) => one.id === backgrounds?.current) ?? pictures[0];
+  const item = shownCurrent(backgrounds);
   const shown = backdropEl.querySelector("img")?.dataset.id;
   if (item && item.id !== shown) backdropEl.replaceChildren(h("img", { class: "backdrop-picture", src: `/api/backgrounds/${item.id}`, alt: "", "data-id": item.id }));
   else if (!item) backdropEl.replaceChildren();
@@ -376,7 +378,7 @@ function setAmbient(on: boolean): void {
     const pictures = h("div", { class: "ambient-pictures" });
     const credit = h("div", { class: "ambient-credit" });
     const photos = shownPictures(backgrounds);
-    let at = Math.max(0, photos.findIndex((item) => item.id === backgrounds?.current));
+    let at = Math.max(0, photos.findIndex((item) => item.id === shownCurrent(backgrounds)?.id));
     const next = () => {
       const item = photos[at % photos.length];
       at++;

@@ -5,7 +5,8 @@
 // timing is the NUC's), and what the launcher asks the TV session for.
 
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -434,6 +435,72 @@ test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first,
   await page.locator('[data-action="theme-gruvbox"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
   await page.close();
+});
+
+test("S5.7 Look drawn again while it waits for the list, as for a build's news, still shows a theme that came in meanwhile", async () => {
+  const page = await tv();
+  const go = (route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
+  const before = (await (await fetch(`${url}/api/themes`)).json()).themes;
+  const handed = (themes: unknown[]) => fetch(`${url}/api/themes`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themes }) });
+  try {
+    await go("settings/look");
+    await page.waitForSelector('[data-action="theme-gruvbox"]');
+    await go("home");
+    // A theme installed on the desktop, and the list slow to come.
+    const aurora = { id: "aurora", mode: "dark", installed: true, colors: { background: "#101418", dark_background: "#0a0d10", accent: "#7fd1b9", selection: "#28323c", foreground: "#d8e0e8", bright_foreground: "#ffffff" } };
+    await handed([...before, aurora]);
+    await page.route("**/api/themes", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.continue();
+    });
+    await go("settings/look");
+    await page.waitForTimeout(100);
+    await go("home");
+    await go("settings/look");
+    await page.waitForSelector('[data-action="theme-aurora"]', { timeout: 5000 });
+  } finally {
+    await page.unroute("**/api/themes");
+    await handed(before);
+    await page.close();
+  }
+});
+
+test("S5.8 home shows the theme's own background, as on Omarchy's desktop, credited to the theme, and follows the desktop to the next; Settings keeps the theme's colour", async () => {
+  // As the screen daemon hands them over: two of Tokyo Night's, the second
+  // the one Omarchy shows.
+  const files = ["6-oma.jpg", "3-sunset-lake.png"].map((name) => {
+    const body = readFileSync(join(ROOT, "themes", "tokyo-night", "backgrounds", name));
+    return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type: name.endsWith(".png") ? "image/png" : "image/jpeg", body };
+  });
+  const offer = (current: string) =>
+    fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current, files: files.map(({ id, type }) => ({ id, type })) }) });
+  await offer(files[1].id);
+  for (const file of files) await fetch(`${url}/api/backgrounds/theme/${file.id}`, { method: "POST", body: new Uint8Array(file.body) });
+  const before = (await (await fetch(`${url}/api/backgrounds`)).json()).source;
+  await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "theme" }) });
+  const page = await tv();
+  try {
+    await page.waitForSelector(`#backdrop img[data-id="${files[1].id}"]`, { timeout: 5000 });
+    assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "block");
+    // The desktop moves on to the next: home follows.
+    await offer(files[0].id);
+    await page.waitForSelector(`#backdrop img[data-id="${files[0].id}"]`, { timeout: 5000 });
+    // The ambient screen goes through them, credited to the theme.
+    await page.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(true));
+    await page.waitForSelector("#ambient.on.photos .ambient-picture.on", { timeout: 5000 });
+    assert.equal(await page.locator(".ambient-credit").innerText(), "tokyo night");
+    await page.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(false));
+    // Settings, like every page but home, keeps the theme's own colour.
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.waitForSelector(".menu");
+    assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "none");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".grid .tile.focused");
+    assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "block", "and home has it again");
+  } finally {
+    await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: before }) });
+    await page.close();
+  }
 });
 
 test("an app's tile that says set up opens its setup: the server's address, typed, then its sign-in", async () => {
