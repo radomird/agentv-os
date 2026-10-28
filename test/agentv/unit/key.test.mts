@@ -35,7 +35,7 @@ function root(): () => void {
 
 async function box(waitMs = 5000) {
   const lines: string[] = [];
-  const daemon = new Daemon({ root: dir, state, builtins: null, port: 0, log: (line) => lines.push(line), running: "0.3.0-1", keyStatus: join(etc, "key.json"), keyWaitMs: waitMs });
+  const daemon = new Daemon({ root: dir, state, builtins: null, port: 0, log: (line) => lines.push(line), running: "0.3.0-1", keyStatus: join(etc, "key.json"), keyWaitMs: waitMs, channelFile: join(etc, "channel") });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const send = async (method: string, path: string, body?: unknown, grant?: string) => {
     const response = await fetch(`${url}${path}`, {
@@ -53,7 +53,9 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
   const stop = root();
   const { daemon, lines, send } = await box();
   try {
-    assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null });
+    // With the plans setup offers on this box's channel, stable here.
+    const claude = [{ provider: "claude", bestEffort: false }];
+    assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null, plans: claude });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "claude, chatgpt, gemini, grok or muse" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: "short" })).data, { ok: false, error: "that doesn't look like a key" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: `${KEY}\nEVIL=1` })).data, { ok: false, error: "that doesn't look like a key" });
@@ -68,7 +70,7 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
     assert.equal(statSync(join(etc, "env")).mode & 0o777, 0o600);
     assert.equal(existsSync(join(state, "key-drop", "key.json")), false, "nothing of it stays in the daemon's state");
     const asked = await send("GET", "/api/key");
-    assert.deepEqual(asked.data, { ok: true, set: true, provider: "claude" });
+    assert.deepEqual(asked.data, { ok: true, set: true, provider: "claude", plans: claude });
     for (const text of [stored.text, asked.text, (await send("GET", "/api/home")).text, lines.join("\n")]) assert.ok(!text.includes(KEY));
     assert.ok(lines.includes("a key for claude is kept, root's alone"));
 

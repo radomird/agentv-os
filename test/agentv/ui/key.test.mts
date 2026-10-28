@@ -55,6 +55,24 @@ async function tv(): Promise<{ page: Page; puts: { body: { provider: string; key
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
 const focused = (page: Page) => page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action") ?? document.querySelector(".focused")?.getAttribute("data-key"));
 
+test("ADR-053 Settings → AI names the plans setup offers: Claude's on stable, and ChatGPT's and grok's too on edge, as best effort", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on("pageerror", (error) => errors.push(error.message));
+  let plans = [{ provider: "claude", bestEffort: false }];
+  await page.route(`${url}/api/key`, (route) => route.fulfill({ json: { ok: true, set: false, provider: null, plans } }));
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  await go(page, "settings/ai");
+  await page.waitForFunction(() => /no key yet/.test(document.querySelector(".panel")?.textContent ?? ""));
+  assert.match(await page.locator(".panel").innerText(), /using your plan instead comes with tv setup: claude's\. more plans are coming soon\./);
+  plans = [...plans, { provider: "chatgpt", bestEffort: true }, { provider: "grok", bestEffort: true }];
+  await go(page, "home");
+  await go(page, "settings/ai");
+  await page.waitForFunction(() => /best effort/.test(document.querySelector(".panel")?.textContent ?? ""));
+  assert.match(await page.locator(".panel").innerText(), /using your plan instead comes with tv setup: claude's, or chatgpt's or grok's as best effort\./);
+  await page.close();
+});
+
 test("S4.6 Settings → AI takes a key in a field that doesn't show it, for the provider picked", async () => {
   const { page, puts } = await tv();
   await go(page, "settings/ai");
