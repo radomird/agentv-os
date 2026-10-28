@@ -635,6 +635,29 @@ test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's
   await page.close();
 });
 
+test("S5.6 a mouse left still doesn't take the focus as the page loads again: the AI step starts on Claude, and a real move takes it", async () => {
+  // On the box, an update in getting ready loads setup's page again, and
+  // Chromium tells the new page where the mouse rests, over Muse in the
+  // middle of the screen, as if it had moved there.
+  await toAi();
+  const page = await tv();
+  await page.waitForSelector(".providers.many");
+  const box = async (provider: string) => {
+    const b = (await page.locator(`.provider[data-provider="${provider}"]`).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const muse = await box("muse");
+  await page.reload();
+  await page.waitForSelector(".providers.many");
+  await page.mouse.move(muse.x, muse.y);
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "claude");
+  const grok = await box("grok");
+  await page.mouse.move(grok.x, grok.y, { steps: 4 });
+  assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "grok");
+  await page.close();
+});
+
 test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on with none", async () => {
   await toAi();
   const page = await tv();
