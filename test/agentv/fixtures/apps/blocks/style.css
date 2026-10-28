@@ -1,0 +1,4 @@
+html, body { margin: 0; height: 100%; background: #1a1b26; color: #c0caf5; font: 32px monospace; }
+body { display: flex; align-items: center; justify-content: center; gap: 64px; }
+canvas { height: 90vh; image-rendering: pixelated; background: #16161e; }
+aside p { margin: 0 0 24px; }
