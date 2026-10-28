@@ -1,13 +1,17 @@
-// The tools the harness gets from beyond it (ADR-043, ADR-044): npm and
-// the bundle here, and the gates and the browsers as they come. A step that
-// lists one that isn't here yet is told it isn't on this box yet.
+// The tools the harness gets from beyond it (ADR-043, ADR-044): npm, the
+// bundle, and the test TV's checks and tests here, and the browsers for a
+// streaming service as they come. A step that lists one that isn't here yet
+// is told it isn't on this box yet.
 //
 // The harness runs in the builder's sandbox, so what it fetches goes
 // through the sandbox's filter, at its fixed address there.
 
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 import { Build } from "../build.ts";
 import { osvFor, registryFor } from "../fetch.ts";
+import { tryBuild } from "../gates/gates.ts";
+import { said as report } from "../gates/testtv.ts";
 import { PackageError, Packages } from "../packages.ts";
 import { PROXY_PORT } from "../sandbox/ports.ts";
 import { ToolError } from "./mcp.ts";
@@ -61,9 +65,14 @@ export async function extraTools(dir: string, _step: string): Promise<Extra> {
     run,
     proxy: PROXY,
   });
+  // The test TV, with the app as it is now: AgenTV's checks, or the tests.
+  const root = process.env.AGENTV_PATH ?? join(import.meta.dirname, "../..");
+  const gate = { root, proxy: PROXY };
   return {
     npm_info: (args) => said(() => packages.info(args.name)),
     npm_add: (args) => said(() => packages.add(args.name, args.version)),
     bundle: () => said(() => packages.bundle()),
+    try: async () => report(await tryBuild(build, build.recipe(), gate, { checks: true, tests: false })),
+    run_tests: async () => report(await tryBuild(build, build.recipe(), gate, { checks: false, tests: true })),
   };
 }

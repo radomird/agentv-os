@@ -17,6 +17,9 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
   const paused: (() => void)[] = [];
   const resumed: (() => void)[] = [];
   let back: (() => boolean | void) | null = null;
+  // AgenTV's test TV (builder/gates/) sees how many listeners the app has
+  // given the kit through this. On home nothing's there, so it does nothing.
+  const watched = () => (window as { agentvTestTv?: (listening: { input: number; back: boolean; pause: number }) => void }).agentvTestTv?.({ input: inputs.length, back: back !== null, pause: paused.length });
 
   const send = (message: FromApp) => home.postMessage(message, "*");
 
@@ -73,11 +76,20 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
     ready: () => void call("ready").catch(() => {}),
     exit: () => void call("exit").catch(() => {}),
     viewer: () => call("viewer") as ReturnType<Kit["viewer"]>,
-    input: Object.freeze({ on: (listener: (event: InputEvent) => void) => void inputs.push(listener) }),
+    input: Object.freeze({
+      on: (listener: (event: InputEvent) => void) => {
+        inputs.push(listener);
+        watched();
+      },
+    }),
     onBack: (listener: () => boolean | void) => {
       back = listener;
+      watched();
     },
-    onPause: (listener: () => void) => void paused.push(listener),
+    onPause: (listener: () => void) => {
+      paused.push(listener);
+      watched();
+    },
     onResume: (listener: () => void) => void resumed.push(listener),
     storage: Object.freeze({
       get: (key: string) => call("storage.get", key),

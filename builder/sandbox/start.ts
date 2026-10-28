@@ -11,6 +11,7 @@
 
 import { createConnection, createServer, type Server } from "node:net";
 import { join, resolve } from "node:path";
+import { gates } from "../gates/gates.ts";
 import { Runner } from "../run.ts";
 import { PROXY_PORT, RELAY_PORT } from "./ports.ts";
 
@@ -41,12 +42,15 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   }
   const net = process.env.AGENTV_BUILD_NET ?? "/run/agentv-build-net";
   const servers = [await forward(PROXY_PORT, join(net, "proxy.sock")), await forward(RELAY_PORT, join(net, "relay.sock"))];
+  const root = process.env.AGENTV_PATH ?? "/usr/share/agentv";
+  const proxy = `http://127.0.0.1:${PROXY_PORT}`;
   const status = await new Runner(dir, {
-    root: process.env.AGENTV_PATH,
+    root,
     home: process.env.HOME,
-    proxy: `http://127.0.0.1:${PROXY_PORT}`,
+    proxy,
     relay: `http://127.0.0.1:${RELAY_PORT}`,
     standIn: process.env.AGENTV_BUILD_STAND_IN,
+    gates: (build, recipe) => gates(build, recipe, { root, proxy }),
   }).run();
   for (const server of servers) server.close();
   process.exit(status.state === "failed" ? 1 : 0);
