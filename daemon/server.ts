@@ -69,6 +69,8 @@ export interface DaemonOptions {
   // writes, and how long that may take.
   keyStatus?: string;
   keyWaitMs?: number;
+  // The channel `agentv channel` sets: /etc/agentv/channel (ADR-053).
+  channelFile?: string;
   // Setup's apps: what agentv-setup-apps writes as it installs them
   // (/run/agentv-setup-apps/state.json), how long it may take to start, and
   // the official apps in the index, in place of the signed index itself.
@@ -312,7 +314,7 @@ export class Daemon {
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
-    this.ai = new Ai({ state: options.state });
+    this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
@@ -430,6 +432,16 @@ export class Daemon {
       if (at > 0 && line.slice(0, at) in values) values[line.slice(0, at)] = line.slice(at + 1).trim();
     }
     return values;
+  }
+
+  // The channel this box updates from, as `agentv channel` says it: the one
+  // /etc/agentv/channel names, or else the one its package was built for.
+  // A checkout's daemon, with neither, is on stable.
+  private async channel(): Promise<string> {
+    const chosen = (await readFile(this.options.channelFile ?? "/etc/agentv/channel", "utf8").catch(() => "")).split("\n")[0].trim();
+    if (chosen) return chosen;
+    const built = (await this.settings()).AGENTV_CHANNEL;
+    return built === "dev" ? "stable" : built || "stable";
   }
 
   setup(): Promise<SetupState> {
@@ -2066,7 +2078,10 @@ export class Daemon {
     // Which provider has a key. The key itself never comes back.
     if (method === "GET" && path === "/api/key") {
       const { set, provider, error } = this.key.status();
-      this.json(response, 200, { ok: true, set, provider, ...(error ? { error } : {}) });
+      // And the plans setup offers on this box's channel, for Settings → AI
+      // to name (ADR-053).
+      const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, bestEffort: offer.plan.bestEffort === true }));
+      this.json(response, 200, { ok: true, set, provider, plans, ...(error ? { error } : {}) });
       return;
     }
 
@@ -2116,7 +2131,7 @@ export class Daemon {
     // first run of its CLI went, and what each provider offers.
     if (method === "GET" && path === "/api/ai") {
       const { set, provider } = this.key.status();
-      this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: OFFERS, read: TERMS_READ, key: { set, provider } });
+      this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: await this.ai.offers(), channel: await this.channel(), read: TERMS_READ, key: { set, provider } });
       return;
     }
 

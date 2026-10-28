@@ -153,6 +153,9 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
+  // The plans setup offers on this box's channel, and which of them only as
+  // best effort, on edge (ADR-053).
+  plans?: { provider: string; bestEffort: boolean }[];
 }
 
 // The terms a key waits for, when nobody here has accepted that provider's

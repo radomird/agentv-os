@@ -427,7 +427,7 @@ export function settings(ctx: Ctx, open?: string): View {
   void daemon
     .key()
     .then((found) => {
-      setKeyState({ set: found.set, provider: found.provider });
+      setKeyState({ set: found.set, provider: found.provider, plans: found.plans });
       const item = menu.querySelector<HTMLElement>('[data-key="ai"] .menu-value');
       if (item) item.textContent = aiValue(ctx);
       if (menu.querySelector(".open")?.getAttribute("data-key") === "ai" && !panel.contains(ctx.focus.get() ?? null)) {

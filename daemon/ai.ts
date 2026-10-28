@@ -21,12 +21,13 @@ export interface Terms {
 }
 
 // The day each provider's terms were last read on its own pages. A new
-// reading is a new acceptance.
+// reading is a new acceptance. xAI's pages turn away a script, so they were
+// read in a browser (Q133).
 export const TERMS_READ: Record<Provider, string> = {
   claude: "2026-10-26",
   chatgpt: "2026-10-26",
   gemini: "2026-10-26",
-  grok: "2026-10-27",
+  grok: "2026-10-28",
   muse: "2026-10-27",
 };
 
@@ -40,11 +41,12 @@ export interface Offer {
   // The agent CLI Omarchy's wrapper fetches on first use, and its name.
   cli: Cli;
   cliName: string;
-  // A plan runs through the CLI's own sign-in (ADR-022). Claude's is offered;
-  // ChatGPT's, Grok's and Muse's come once a build runs on them headless
-  // (stage 6, ADR-047), and Google's once its new CLI runs headless. A note
+  // A plan runs through the CLI's own sign-in (ADR-022). Claude's is offered.
+  // ChatGPT's and Grok's are offered on edge, as best effort, and on stable
+  // once a build has run on each headless on the NUC (ADR-053). Muse's waits
+  // for Meta (ADR-051), and Google's for its new CLI to run headless. A note
   // says who can't use one at all.
-  plan: { offered: boolean; name: string; note?: string };
+  plan: { offered: boolean; name: string; note?: string; edge?: boolean; bestEffort?: boolean };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   // One line for the TV on what the terms are.
@@ -83,7 +85,7 @@ export const OFFERS: Record<Provider, Offer> = {
     maker: "openai",
     cli: "codex",
     cliName: "codex",
-    plan: { offered: false, name: "chatgpt plus or pro" },
+    plan: { offered: false, name: "chatgpt plus or pro", edge: true },
     keyUrl: "https://platform.openai.com/api-keys",
     terms: {
       plan: [{ id: "openai-terms-of-use", name: "openai's terms of use", url: "https://openai.com/policies/terms-of-use/" }, OPENAI_USAGE],
@@ -121,7 +123,7 @@ export const OFFERS: Record<Provider, Offer> = {
     maker: "xai",
     cli: "grok",
     cliName: "grok build",
-    plan: { offered: false, name: "supergrok or x premium+" },
+    plan: { offered: false, name: "supergrok or x premium+", edge: true },
     keyUrl: "https://console.x.ai",
     terms: {
       plan: [{ id: "xai-consumer-terms", name: "xai's consumer terms of service", url: "https://x.ai/legal/terms-of-service" }, XAI_USE],
@@ -150,6 +152,16 @@ export const OFFERS: Record<Provider, Offer> = {
     },
   },
 };
+
+// What each provider offers on a box on this channel: on edge, a plan that
+// stable doesn't offer yet, but edge may, is offered as best effort
+// (ADR-053).
+export function offersOn(channel: string): Record<Provider, Offer> {
+  const early = (offer: Offer) => !offer.plan.offered && offer.plan.edge === true && channel === "edge";
+  return Object.fromEntries(
+    Object.values(OFFERS).map((offer) => [offer.provider, early(offer) ? { ...offer, plan: { ...offer.plan, offered: true, bestEffort: true } } : offer]),
+  ) as Record<Provider, Offer>;
+}
 
 export interface Acceptance {
   provider: Provider;
@@ -196,9 +208,17 @@ const NAME = /^[\p{L}\p{N}' ._-]{1,40}$/u;
 
 export class Ai {
   private state: string;
+  // The channel the box updates from, as `agentv channel` says it.
+  private channel: () => Promise<string>;
 
-  constructor(options: { state: string }) {
+  constructor(options: { state: string; channel?: () => Promise<string> }) {
     this.state = options.state;
+    this.channel = options.channel ?? (async () => "stable");
+  }
+
+  // What each provider offers on this box's channel.
+  async offers(): Promise<Record<Provider, Offer>> {
+    return offersOn(await this.channel());
   }
 
   private get choicePath(): string {
@@ -231,7 +251,10 @@ export class Ai {
   }
 
   // The provider and the path, as picked on the TV, or none, as when the TV
-  // goes back to pick again. A plan only where it's offered.
+  // goes back to pick again. A plan only where it's offered on this box's
+  // channel. A plan picked on edge stays picked if the box goes back to
+  // stable: it's the household's, already signed in, and stable only keeps
+  // it from being picked anew.
   async choose(provider: unknown, path: unknown): Promise<{ state?: AiState; error?: string }> {
     const saved = await readJson<Record<string, unknown>>(this.choicePath, {});
     if (provider === null) {
@@ -241,7 +264,7 @@ export class Ai {
     }
     if (!isProvider(provider)) return { error: PROVIDER_LIST };
     if (!isPath(path)) return { error: "a plan or a key" };
-    if (path === "plan" && !OFFERS[provider].plan.offered) return { error: `${OFFERS[provider].plan.name} is coming soon. use an api key for now` };
+    if (path === "plan" && !(await this.offers())[provider].plan.offered) return { error: `${OFFERS[provider].plan.name} is coming soon. use an api key for now` };
     await mkdir(this.state, { recursive: true });
     await writeJson(this.choicePath, { ...saved, provider, path });
     return { state: await this.read() };

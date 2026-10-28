@@ -17,8 +17,9 @@ const PROVIDERS = ["claude", "chatgpt", "gemini", "grok", "muse"];
 // time it opens.
 export let keyState: KeyState | null = null;
 
+// A key's change answers without the plans, so the ones last heard stay.
 export function setKeyState(state: KeyState): void {
-  keyState = state;
+  keyState = { ...state, plans: state.plans ?? keyState?.plans };
 }
 
 // What the page does once a provider's terms are accepted on a phone, while
@@ -35,6 +36,18 @@ export function aiValue(ctx: Ctx): string {
   return keyState.set ? `${keyState.provider}${guard}` : "no key";
 }
 
+// Which plans setup offers here: Claude's everywhere, and ChatGPT's and
+// Grok's on edge as best effort (ADR-053).
+function plansLine(state: KeyState): string {
+  const plans = state.plans ?? [{ provider: "claude", bestEffort: false }];
+  const named = (bestEffort: boolean) => plans.filter((plan) => plan.bestEffort === bestEffort).map((plan) => `${plan.provider}'s`).join(" or ");
+  const sure = named(false);
+  const early = named(true);
+  if (!sure && !early) return "using your plan instead is coming soon.";
+  if (!early) return `using your plan instead comes with tv setup: ${sure}. more plans are coming soon.`;
+  return `using your plan instead comes with tv setup: ${[sure, `${early} as best effort`].filter(Boolean).join(", or ")}.`;
+}
+
 export function aiPanel(ctx: Ctx): HTMLElement[] {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
   if (!keyState) return [h("div", { class: "panel-big" }, "…")];
@@ -42,7 +55,7 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
     const grant = await ctx.grant("the ai key");
     if (grant === null) return;
     try {
-      keyState = await daemon.removeKey(grant || undefined);
+      setKeyState(await daemon.removeKey(grant || undefined));
     } catch (error) {
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
@@ -63,7 +76,7 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
     : [
         h("div", { class: "panel-title" }, "builds and voice use"),
         h("div", { class: "panel-big" }, "no key yet"),
-        note("an api key from claude, chatgpt, gemini, grok or muse. using your plan instead comes with tv setup."),
+        note(`an api key from claude, chatgpt, gemini, grok or muse. ${plansLine(keyState)}`),
         h("button", { class: "button primary", "data-focus": true, "data-action": "add-key", onclick: () => ctx.go("key") }, "add a key →"),
       ];
 }
@@ -139,7 +152,7 @@ export function keyPage(ctx: Ctx): View {
       showTerms(saved.terms, key, grant);
       return;
     }
-    keyState = saved;
+    setKeyState(saved);
     field.value = "";
     ctx.sounds.play("confirm");
     ctx.toast(`the key for ${provider} is kept`, "ok");

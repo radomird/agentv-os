@@ -654,6 +654,54 @@ test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on 
   await page.close();
 });
 
+test("ADR-053 on edge, ChatGPT's and grok's plans are offered as best effort, and picking one goes on to its consumer terms", async () => {
+  const channel = join(state, "..", "channel");
+  writeFileSync(channel, "edge\n");
+  try {
+    await toAi();
+    const page = await tv();
+    await page.waitForSelector(".providers");
+    const terms = () => page.locator(".terms-list [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms")));
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-path="plan"][data-focus]');
+    assert.match(await textOf(page, '[data-path="plan"]'), /chatgpt plus or pro · best effort/);
+    assert.equal(await page.locator(".provider.focused").getAttribute("data-path"), "plan", "it's the first pick");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".terms-list");
+    assert.deepEqual(await terms(), ["openai-terms-of-use", "openai-usage-policies"]);
+    let ai = await (await fetch(`${url}/api/ai`)).json();
+    assert.deepEqual([ai.provider, ai.path, ai.accepted], ["chatgpt", "plan", null], "nothing is accepted on the TV");
+
+    // grok, down from Claude.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".providers");
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "grok");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-path="plan"][data-focus]');
+    assert.match(await textOf(page, '[data-path="plan"]'), /supergrok or x premium\+ · best effort/);
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".terms-list");
+    assert.deepEqual(await terms(), ["xai-consumer-terms", "xai-acceptable-use-policy"]);
+    ai = await (await fetch(`${url}/api/ai`)).json();
+    assert.deepEqual([ai.provider, ai.path], ["grok", "plan"]);
+
+    // Muse's plan waits for Meta on edge too.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".providers");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "muse");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-path="key"]');
+    assert.match(await textOf(page, '[data-path="plan"]'), /a muse code subscription · coming soon/);
+    await page.close();
+  } finally {
+    rmSync(channel, { force: true });
+  }
+});
+
 // To who watches, with no PIN and only the box's owner.
 async function toPeople(): Promise<void> {
   await toAi();

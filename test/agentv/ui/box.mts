@@ -225,6 +225,9 @@ export async function startBox(
     hotspotRun: hotspot,
     interfaces: options.interfaces as never,
     keyStatus,
+    // The channel, as agentv channel keeps it: none, so stable, until a test
+    // puts the box on edge (ADR-053).
+    channelFile: join(state, "..", "channel"),
     setupAppsStatus,
     setupCatalog: async () => OFFICIAL,
     // Omarchy's themes, from this checkout, for setup's look, and the themes
