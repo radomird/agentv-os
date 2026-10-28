@@ -486,10 +486,8 @@ test("S6.3 the builder's sandbox stays as tight as it is: no sudo, no key, no ne
     PrivateNetwork: "yes",
     ProtectSystem: "strict",
     ProtectHome: "yes",
-    PrivateTmp: "yes",
     PrivateDevices: "yes",
-    RestrictSUIDSGID: "yes",
-    TemporaryFileSystem: "/var/lib:ro",
+    TemporaryFileSystem: "/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777",
     CapabilityBoundingSet: "",
   })) {
     assert.equal(one(key), value, `${key}=${value}`);
@@ -504,4 +502,34 @@ test("S6.3 the builder's sandbox stays as tight as it is: no sudo, no key, no ne
 
   const users = readFileSync(join(ROOT, "system/sysusers/agentv-builder.conf"), "utf8");
   assert.ok(!/wheel|sudo|adm\b/.test(users.replace(/^#.*$/gm, "")), "the builder's in no admin group");
+});
+
+test("S6.10 everything the builder can write is mounted nosuid and nodev: its build, its home, its /tmp and its /var/tmp", () => {
+  const u = unit("agentv-builder@.service");
+  const binds = u.get("BindPaths")!.join(" ").split(" ");
+  assert.deepEqual(u.get("RequiresMountsFor")?.join(" ").split(" "), binds, "a build waits for the mounts its folders come from");
+  // Each folder it binds comes from a mount of its own for the whole box,
+  // on itself, nosuid and nodev, there from boot. A bind keeps the flags of
+  // the mount it comes from.
+  for (const path of ["/var/lib/agentv/build", "/var/lib/agentv/builder"]) {
+    assert.ok(binds.some((bind) => bind === path || bind.startsWith(`${path}/`)), `it binds ${path} or a folder in it`);
+    const name = `${path.slice(1).replaceAll("/", "-")}.mount`;
+    const mount = unit(name);
+    assert.equal(mount.get("What")?.[0], path, `${name} mounts ${path}`);
+    assert.equal(mount.get("Where")?.[0], path, `${name} mounts it on itself`);
+    assert.deepEqual(mount.get("Options")?.[0]?.split(",").sort(), ["bind", "nodev", "nosuid"], `${name} is nosuid and nodev`);
+    assert.equal(mount.get("WantedBy")?.[0], "local-fs.target", `${name} is there from boot`);
+  }
+  // Its /tmp and /var/tmp are its own, nosuid and nodev. PrivateTmp= would
+  // keep its /var/tmp on the box's /var, where set-user-ID bits count.
+  const tmp = u.get("TemporaryFileSystem")!.join(" ").split(" ");
+  for (const path of ["/tmp", "/var/tmp"]) {
+    const options = tmp.find((entry) => entry.startsWith(`${path}:`))?.split(":")[1]?.split(",") ?? [];
+    assert.ok(options.includes("nosuid") && options.includes("nodev"), `its ${path} is nosuid and nodev`);
+  }
+  assert.ok(!u.has("PrivateTmp"));
+  // RestrictSUIDSGID= filters out openat2(), which bubblewrap needs, and the
+  // mounts above do its work instead (ADR-052).
+  assert.ok(!u.has("RestrictSUIDSGID"), "bubblewrap can open what it binds");
+  assert.ok(!u.has("ReadWritePaths") && !u.has("StateDirectory") && !u.has("CacheDirectory") && !u.has("RuntimeDirectory"), "it's given nothing else to write");
 });
