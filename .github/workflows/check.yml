@@ -251,6 +251,7 @@ jobs:
       packages: build
       update-test: true
       from-disk: ${{ needs.changes.outputs.from-disk == 'true' }}
+      own-repo: true
     secrets: inherit
 
   report:
