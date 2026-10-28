@@ -1691,3 +1691,54 @@ body.with-backdrop {
   width: 120px;
   height: 120px;
 }
+
+/* Page apps (ADR-043): each full screen in its own frame over home, above
+   the focus ring and under the toasts, the PIN pad and the ambient screen.
+   Only the one in front shows; the others wait behind home, paused. */
+#page-apps {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 15;
+  background: var(--darker-background);
+}
+
+#page-apps.on {
+  display: block;
+}
+
+.page-app {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.page-app.on {
+  display: block;
+}
+
+.page-app-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--darker-background);
+}
+
+.page-app-cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: var(--foreground);
+  background: var(--darker-background);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--base) var(--ease);
+}
+
+.page-app.loading .page-app-cover {
+  opacity: 1;
+}

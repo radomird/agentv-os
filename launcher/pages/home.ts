@@ -13,6 +13,7 @@ import { clock, h, monogram, tint } from "../dom.ts";
 import { span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
+import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
 
@@ -265,6 +266,11 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
             }
             if (app.tier === "built-in") {
               openBuiltin(ctx, app);
+              return;
+            }
+            // A page app opens here, in its frame (ADR-043).
+            if (app.runtime === "page") {
+              openPage(ctx, app.id);
               return;
             }
             // A field it needs isn't filled in, such as its server's
