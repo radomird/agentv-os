@@ -3,12 +3,16 @@
 // Run by screen-test.sh with Node's own test runner.
 
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
+import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -259,14 +263,14 @@ class FakeLauncher implements Launcher {
   }
   // The provider whose terms are accepted, the CLI's first runs, and what
   // the daemon heard about them.
-  accepted: "claude" | "codex" | "gemini" | null = null;
+  accepted: Cli | null = null;
   firstRuns: string[] = [];
   cliStates: { state: string; version?: string; error?: string }[] = [];
   firstRunDone: (run: { version?: string; error?: string }) => void = () => {};
   async acceptedCli() {
     return this.accepted;
   }
-  firstRun(cli: "claude" | "codex" | "gemini") {
+  firstRun(cli: Cli) {
     this.firstRuns.push(cli);
     return new Promise<{ version?: string; error?: string }>((resolve) => (this.firstRunDone = resolve));
   }
@@ -973,6 +977,15 @@ test("agentv screen settings opens Settings at a section on the home screen", as
   assert.deepEqual(await screen.handle({ cmd: "settings", section: "../x" }), { ok: false, error: "which section of settings" });
 });
 
+test("ADR-042 agentv screen apps opens Apps, or its add an app, on the home screen", async () => {
+  const { launcher, screen } = await tv();
+  assert.deepEqual(await screen.handle({ cmd: "apps", page: "" }), { ok: true });
+  assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('go("apps")')));
+  assert.deepEqual(await screen.handle({ cmd: "apps", page: "add" }), { ok: true });
+  assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('go("add-app")')));
+  assert.deepEqual(await screen.handle({ cmd: "apps", page: "settings" }), { ok: false, error: "apps, or apps add" });
+});
+
 // --- Home and Back (ADR-031, stage 2) ----------------------------------------
 
 // Opens an installed web app from the home screen, and its window.
@@ -1437,6 +1450,23 @@ test("S5.5 the provider's agent CLI runs for the first time only once its terms 
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(t.launcher.cliStates[3], { state: "failed", error: "mise couldn't reach the internet" });
   assert.ok(t.lines.some((line) => line.includes("fetching claude on its first run")));
+});
+
+test("ADR-047 the first run asks each provider's CLI for its version the way it takes it: grok with its version command, the others with --version", async () => {
+  const home = mkdtempSync(join(tmpdir(), "agentv-cli-"));
+  mkdirSync(join(home, ".local", "bin"), { recursive: true });
+  // Stand-ins for Omarchy's wrappers, which say what they were asked.
+  for (const cli of ["claude", "grok", "muse"]) writeFileSync(join(home, ".local", "bin", cli), `#!/bin/bash\necho "${cli} $*"\n`, { mode: 0o755 });
+  const before = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    assert.deepEqual(await launcher.firstRun("grok"), { version: "grok version" });
+    assert.deepEqual(await launcher.firstRun("muse"), { version: "muse --version" });
+    assert.deepEqual(await launcher.firstRun("claude"), { version: "claude --version" });
+  } finally {
+    process.env.HOME = before;
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, one at a time, and says why when it isn't", async () => {

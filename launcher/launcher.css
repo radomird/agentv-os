@@ -212,6 +212,40 @@ button {
   text-align: right;
 }
 
+/* An official app's one line on Apps → add an app (ADR-042), or how its
+   install is going, in two lines at most. */
+.tile-line {
+  display: -webkit-box;
+  margin-top: 12px;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 24px;
+  line-height: 1.25;
+  opacity: 0.8;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tile-line.tile-state,
+.tile-line.tile-quit {
+  opacity: 1;
+  text-align: left;
+}
+
+/* Apps → add an app: three to a row, with room for the line. */
+.row.add-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.row.add-row .tile {
+  height: 240px;
+  justify-content: flex-start;
+}
+
+.row.add-row .tile-name {
+  margin-top: 16px;
+}
+
 .tile-state {
   color: var(--yellow);
   text-align: right;

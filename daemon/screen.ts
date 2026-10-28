@@ -43,6 +43,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
+import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
@@ -72,6 +73,9 @@ export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
 // Apps kept open behind home, besides a game (ADR-031).
 export const KEEP_OPEN = 2;
+// How each provider's agent CLI says its version, which its first run asks
+// for: xAI's grok has a version command, not a flag.
+const VERSION_ARGS: Record<Cli, string[]> = { claude: ["--version"], codex: ["--version"], gemini: ["--version"], grok: ["version"], muse: ["--version"] };
 // How far before its press a tap's release can read the clock (see back).
 const BACK_SLACK_MS = 50;
 
@@ -154,10 +158,10 @@ export interface Launcher {
   stopOmarchyShell(): Promise<void>;
   // The agent CLI of the provider whose terms an adult accepted, from
   // AgenTV's daemon, or null while none are (ADR-023).
-  acceptedCli(): Promise<"claude" | "codex" | "gemini" | null>;
+  acceptedCli(): Promise<Cli | null>;
   // Runs that CLI once, through Omarchy's own wrapper, which fetches it on
   // its first run: the version it says, or why not.
-  firstRun(cli: "claude" | "codex" | "gemini"): Promise<{ version?: string; error?: string }>;
+  firstRun(cli: Cli): Promise<{ version?: string; error?: string }>;
   // Tells AgenTV's daemon how the first run goes.
   cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }): Promise<void>;
   // Sets an Omarchy theme with Omarchy's own omarchy-theme-set, as its
@@ -857,8 +861,8 @@ export class Screen {
   }
 
   // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
-  // fetches Anthropic's, OpenAI's or Google's published binary on the first
-  // run (ADR-023). Only once AgenTV's daemon says an adult accepted that
+  // fetches Anthropic's, OpenAI's, Google's, xAI's or Meta's published
+  // binary on the first run (ADR-023, ADR-047). Only once AgenTV's daemon says an adult accepted that
   // provider's terms, in the background, one run at a time, and the daemon
   // hears how it goes.
   private cliRun: Promise<void> | null = null;
@@ -920,9 +924,20 @@ export class Screen {
   // the image checks drive Settings → Power with keys from there.
   async settings(section: string): Promise<object> {
     if (!/^[a-z-]*$/.test(section)) return { ok: false, error: "which section of settings" };
-    await this.home("agentv screen settings");
-    const route = JSON.stringify(section ? `settings/${section}` : "settings");
-    const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${route}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    return this.goHome(section ? `settings/${section}` : "settings", "agentv screen settings");
+  }
+
+  // Apps on the TV, or its add an app (agentv screen apps [add]), as from
+  // home: the image checks add an app with keys from there (ADR-042).
+  async appsPage(page: string): Promise<object> {
+    if (page !== "" && page !== "add") return { ok: false, error: "apps, or apps add" };
+    return this.goHome(page === "add" ? "add-app" : "apps", "agentv screen apps");
+  }
+
+  // A page of the launcher's, as from home.
+  private async goHome(route: string, from: string): Promise<object> {
+    await this.home(from);
+    const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
     return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
   }
@@ -1659,6 +1674,8 @@ export class Screen {
         return this.askPin(String(request.action ?? ""));
       case "settings":
         return this.settings(String(request.section ?? ""));
+      case "apps":
+        return this.appsPage(String(request.page ?? ""));
       case "close":
         if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
         return this.close(request.role);
@@ -1892,7 +1909,7 @@ export const launcher: Launcher = {
   async acceptedCli() {
     const ai = await (await fetch(`${HOME_URL}api/ai`, { signal: AbortSignal.timeout(5000) })).json();
     const cli = ai?.accepted && ai.provider ? ai.offers?.[ai.provider]?.cli : null;
-    return cli === "claude" || cli === "codex" || cli === "gemini" ? cli : null;
+    return typeof cli === "string" && Object.hasOwn(VERSION_ARGS, cli) ? (cli as Cli) : null;
   },
 
   firstRun(cli) {
@@ -1900,7 +1917,7 @@ export const launcher: Launcher = {
     // its first run. Its download can take a while on a slow line.
     const wrapper = join(process.env.HOME ?? "", ".local", "bin", cli);
     return new Promise((resolve) => {
-      execFile(wrapper, ["--version"], { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
+      execFile(wrapper, VERSION_ARGS[cli], { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
         const first = (text: string) => text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
         if (error) resolve({ error: first(stderr) || error.message.split("\n")[0] });
         else resolve({ version: first(stdout) });

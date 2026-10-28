@@ -378,6 +378,16 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Five providers sit in two rows, a little smaller. */
+.providers.many .provider {
+  height: 200px;
+  padding: 28px 36px;
+}
+
+.providers.many .provider-name {
+  font-size: 64px;
+}
+
 .provider {
   display: flex;
   flex-direction: column;

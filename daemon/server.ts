@@ -69,6 +69,9 @@ export interface DaemonOptions {
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
+  // Where packages put their desktop entries and icons, for a native app's
+  // icon: /usr/local/share, /usr/share and flatpak's.
+  dataDirs?: string[];
   // The backgrounds and their credits: /var/lib/agentv/backgrounds.
   backgrounds?: string;
   // Tests point the museum archives at their own server.
@@ -217,6 +220,7 @@ export class Daemon {
       goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
       log: this.log,
+      dataDirs: options.dataDirs,
     });
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
@@ -1363,6 +1367,28 @@ export class Daemon {
       const state = await this.updates.read();
       this.broadcast("updates", state);
       this.json(response, 200, { ok: true, tonight: state.tonight });
+      return;
+    }
+
+    // Apps → add an app (ADR-042): the official apps that aren't on the TV,
+    // and one picked, handed to root as setup's are, past the PIN once there
+    // is one. A child's profile doesn't add apps.
+    if (path === "/api/apps/add" && (method === "GET" || method === "POST")) {
+      if ((await this.profiles.active()).role === "child") {
+        this.json(response, 403, { ok: false, error: "only an adult adds apps" });
+        return;
+      }
+      if (method === "POST") {
+        if (!this.guarded(request, response, "adding an app")) return;
+        const id = ((await this.body(request)) as { id?: unknown } | undefined)?.id;
+        const why = await this.setupApps.add(id, await this.home.apps());
+        if (why) {
+          this.json(response, 400, { ok: false, error: why });
+          return;
+        }
+        this.log(`apps: adding ${String(id)}`);
+      }
+      this.json(response, 200, { ok: true, ...(await this.setupApps.available(await this.home.apps())) });
       return;
     }
 

@@ -1,17 +1,17 @@
-// The provider key on the TV (ADR-009, ADR-022, S4.6): Settings → AI says
-// which provider has one, and this page takes a key, typed or pasted, for
-// Claude, ChatGPT or Gemini. The daemon hands it to root and it's never
-// shown again. An adult's, past the PIN once there is one. A key for a
-// provider whose terms nobody here has accepted waits for them: the page
-// shows them, an adult accepts them on a paired phone, and then the key is
-// kept (Q104, ADR-023).
+// The provider key on the TV (ADR-009, ADR-022, ADR-047, S4.6): Settings →
+// AI says which provider has one, and this page takes a key, typed or
+// pasted, for Claude, ChatGPT, Gemini, Grok or Muse. The daemon hands it to
+// root and it's never shown again. An adult's, past the PIN once there is
+// one. A key for a provider whose terms nobody here has accepted waits for
+// them: the page shows them, an adult accepts them on a paired phone, and
+// then the key is kept (Q104, ADR-023).
 
 import { daemon, type KeyState, type KeyTerms } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
-const PROVIDERS = ["claude", "chatgpt", "gemini"];
+const PROVIDERS = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
 // Kept between visits so Settings draws at once, and asked for again each
 // time it opens.
@@ -63,7 +63,7 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
     : [
         h("div", { class: "panel-title" }, "builds and voice use"),
         h("div", { class: "panel-big" }, "no key yet"),
-        note("an api key from claude, chatgpt or gemini. using your plan instead comes with tv setup."),
+        note("an api key from claude, chatgpt, gemini, grok or muse. using your plan instead comes with tv setup."),
         h("button", { class: "button primary", "data-focus": true, "data-action": "add-key", onclick: () => ctx.go("key") }, "add a key →"),
       ];
 }

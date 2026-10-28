@@ -9,7 +9,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type Provider = "claude" | "chatgpt" | "gemini";
+export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
+// The agent CLI each provider publishes, as Omarchy's wrappers name it.
+export type Cli = "claude" | "codex" | "gemini" | "grok" | "muse";
 export type Path = "plan" | "key";
 
 export interface Terms {
@@ -18,21 +20,31 @@ export interface Terms {
   url: string;
 }
 
-// The day these terms were last read on the providers' own pages. A new
+// The day each provider's terms were last read on its own pages. A new
 // reading is a new acceptance.
-export const TERMS_READ = "2026-10-26";
+export const TERMS_READ: Record<Provider, string> = {
+  claude: "2026-10-26",
+  chatgpt: "2026-10-26",
+  gemini: "2026-10-26",
+  grok: "2026-10-27",
+  muse: "2026-10-27",
+};
+
+// The providers, as an error message names them.
+export const PROVIDER_LIST = "claude, chatgpt, gemini, grok or muse";
 
 export interface Offer {
   provider: Provider;
   name: string;
   maker: string;
   // The agent CLI Omarchy's wrapper fetches on first use, and its name.
-  cli: "claude" | "codex" | "gemini";
+  cli: Cli;
   cliName: string;
   // A plan runs through the CLI's own sign-in (ADR-022). Claude's is offered;
-  // ChatGPT's comes once a build runs on it (stage 6), and Google's once its
-  // new CLI runs headless.
-  plan: { offered: boolean; name: string };
+  // ChatGPT's, Grok's and Muse's come once a build runs on them headless
+  // (stage 6, ADR-047), and Google's once its new CLI runs headless. A note
+  // says who can't use one at all.
+  plan: { offered: boolean; name: string; note?: string };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   // One line for the TV on what the terms are.
@@ -43,6 +55,9 @@ const ANTHROPIC_USAGE: Terms = { id: "anthropic-usage-policy", name: "anthropic'
 const CLAUDE_CODE: Terms = { id: "claude-code-legal", name: "claude code's legal notes", url: "https://code.claude.com/docs/en/legal-and-compliance" };
 const OPENAI_USAGE: Terms = { id: "openai-usage-policies", name: "openai's usage policies", url: "https://openai.com/policies/usage-policies/" };
 const GOOGLE_USE: Terms = { id: "google-generative-ai-use-policy", name: "google's generative ai prohibited use policy", url: "https://policies.google.com/terms/generative-ai/use-policy" };
+const XAI_USE: Terms = { id: "xai-acceptable-use-policy", name: "xai's acceptable use policy", url: "https://x.ai/legal/acceptable-use-policy" };
+const META_TERMS: Terms = { id: "meta-model-api-terms", name: "the meta model api's terms of service", url: "https://dev.meta.ai/legal/terms-of-service" };
+const META_USE: Terms = { id: "meta-model-api-acceptable-use-policy", name: "the meta model api's acceptable use policy", url: "https://dev.meta.ai/legal/acceptable-use-policy" };
 
 export const OFFERS: Record<Provider, Offer> = {
   claude: {
@@ -100,13 +115,47 @@ export const OFFERS: Record<Provider, Offer> = {
       key: "your key, under google's terms, the gemini api's additional terms and its generative ai use policy, through gemini cli.",
     },
   },
+  grok: {
+    provider: "grok",
+    name: "grok",
+    maker: "xai",
+    cli: "grok",
+    cliName: "grok build",
+    plan: { offered: false, name: "supergrok or x premium+" },
+    keyUrl: "https://console.x.ai",
+    terms: {
+      plan: [{ id: "xai-consumer-terms", name: "xai's consumer terms of service", url: "https://x.ai/legal/terms-of-service" }, XAI_USE],
+      key: [{ id: "xai-enterprise-terms", name: "xai's enterprise terms of service", url: "https://x.ai/legal/terms-of-service-enterprise" }, XAI_USE],
+    },
+    summary: {
+      plan: "your plan, under xai's consumer terms and acceptable use policy, through grok build as xai publishes it.",
+      key: "your key, under xai's enterprise terms and acceptable use policy, through grok build as xai publishes it.",
+    },
+  },
+  muse: {
+    provider: "muse",
+    name: "muse",
+    maker: "meta",
+    cli: "muse",
+    cliName: "muse code",
+    plan: { offered: false, name: "a muse code subscription", note: "a meta managed account can only use a key." },
+    keyUrl: "https://dev.meta.ai",
+    terms: {
+      plan: [META_TERMS, { id: "meta-subscription-terms", name: "meta's subscription terms of service", url: "https://www.facebook.com/legal/meta_subs_terms" }, META_USE],
+      key: [META_TERMS, META_USE],
+    },
+    summary: {
+      plan: "your plan, under the meta model api's terms, meta's subscription terms and its acceptable use policy, through muse code as meta publishes it.",
+      key: "your key, under the meta model api's terms and acceptable use policy, through muse code as meta publishes it.",
+    },
+  },
 };
 
 export interface Acceptance {
   provider: Provider;
   path: Path;
   terms: Terms[];
-  read: string; // TERMS_READ, when they were accepted
+  read: string; // the provider's TERMS_READ, when they were accepted
   by: { phone: string; viewer: string };
   at: string;
 }
@@ -169,7 +218,7 @@ export class Ai {
   // The latest acceptance of a provider's terms for a path, as they read
   // now, or null.
   async acceptance(provider: Provider, path: Path): Promise<Acceptance | null> {
-    return [...(await this.history())].reverse().find((a) => a.provider === provider && a.path === path && a.read === TERMS_READ) ?? null;
+    return [...(await this.history())].reverse().find((a) => a.provider === provider && a.path === path && a.read === TERMS_READ[provider]) ?? null;
   }
 
   async read(): Promise<AiState> {
@@ -190,7 +239,7 @@ export class Ai {
       await writeJson(this.choicePath, { ...saved, provider: null, path: null });
       return { state: await this.read() };
     }
-    if (!isProvider(provider)) return { error: "claude, chatgpt or gemini" };
+    if (!isProvider(provider)) return { error: PROVIDER_LIST };
     if (!isPath(path)) return { error: "a plan or a key" };
     if (path === "plan" && !OFFERS[provider].plan.offered) return { error: `${OFFERS[provider].plan.name} is coming soon. use an api key for now` };
     await mkdir(this.state, { recursive: true });
@@ -212,7 +261,7 @@ export class Ai {
   // (Q104).
   async record(provider: Provider, path: Path, by: { phone: unknown; viewer: unknown }): Promise<{ acceptance?: Acceptance; error?: string }> {
     if (typeof by.phone !== "string" || !NAME.test(by.phone) || typeof by.viewer !== "string" || !NAME.test(by.viewer)) return { error: "who accepted them" };
-    const acceptance: Acceptance = { provider, path, terms: OFFERS[provider].terms[path], read: TERMS_READ, by: { phone: by.phone, viewer: by.viewer }, at: now() };
+    const acceptance: Acceptance = { provider, path, terms: OFFERS[provider].terms[path], read: TERMS_READ[provider], by: { phone: by.phone, viewer: by.viewer }, at: now() };
     await mkdir(this.state, { recursive: true });
     await writeJson(this.historyPath, [...(await this.history()), acceptance]);
     return { acceptance };
