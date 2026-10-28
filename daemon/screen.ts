@@ -68,7 +68,7 @@ import { Storage } from "./storage.ts";
 import { THEME_NAME } from "./themes.ts";
 import { tvOn } from "./tv-power.ts";
 
-export type Role = "home" | "web" | "steam" | "screensaver";
+export type Role = "home" | "web" | "steam" | "screensaver" | "share";
 
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:agentv-held";
@@ -81,6 +81,10 @@ export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
 // The daemon's filter for home's Chromium (daemon/net-filter.ts).
 export const HOME_PROXY = "http://127.0.0.1:3005";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
+// The share browser's own profile (ADR-050): a link a phone shared opens
+// there when no app declares its site, so it never sees the apps' sign-ins.
+// It's the person's, like Music's state.
+export const SHARE_PROFILE = join(homedir(), ".local", "state", "agentv", "chromium-share");
 // Apps kept open behind home, besides a game (ADR-031).
 export const KEEP_OPEN = 2;
 // How each provider's agent CLI says its version, which its first run asks
@@ -123,6 +127,10 @@ export interface Launcher {
   // running, it hands the window to that one and exits. A browser this
   // starts has a DevTools pipe, and the daemon opens later windows with it.
   web(url: string): App;
+  // The share browser, on a profile of its own, with a DevTools pipe.
+  shareBrowser(url: string): App;
+  // Where a shared link opens: the app that declares its site, or none.
+  shareTarget(id: string): Promise<{ url: string; app?: string }>;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
   // Tells the overlay whether an app is in front, so the mouse's Home
@@ -330,6 +338,8 @@ export class Screen {
   private backHoldMs: number;
   private backDown = 0;
   private backUp = 0;
+  // A press of Back has come and its release hasn't yet.
+  private backPressed = false;
   private backTimer: ReturnType<typeof setTimeout> | null = null;
   // The ambient screen, and the window to go back to after it.
   ambient = false;
@@ -442,7 +452,9 @@ export class Screen {
     try {
       const front = this.front();
       const app = Boolean(front && front.role !== "home") && !this.ambient;
-      let playing = app ? await this.playing() : false;
+      // Home pauses an app it comes in front of, so with home in front this
+      // is a shared video in home's own player (ADR-050).
+      let playing = this.ambient ? false : await this.playing();
       if (!playing && this.music) {
         const now = (await this.music.handle({ op: "now" }).catch(() => null)) as { now?: { playing?: boolean } | null } | null;
         playing = now?.now?.playing === true;
@@ -534,6 +546,7 @@ export class Screen {
     const profile = this.launcher.profile(pid);
     if (profile === HOME_PROFILE) return "home";
     if (profile === SERVICES_PROFILE) return "web";
+    if (profile === SHARE_PROFILE) return "share";
     return null;
   }
 
@@ -812,6 +825,8 @@ export class Screen {
       return { ok: false, error: "that needs the pin", pin: true };
     }
     switch (request?.cmd) {
+      case "open-share":
+        return this.openShare(String(request.share ?? ""));
       case "open-app": {
         const id = String(request.app ?? "");
         // An item too, such as one to continue: the app opens it with its own
@@ -1025,14 +1040,27 @@ export class Screen {
   // tap.
   back(edge: "down" | "up", at: number): object {
     if (edge === "up") {
+      // A release that came before its press: the press is then taken for
+      // the same tap, and goes no further.
+      const first = !this.backPressed && at > this.backUp + BACK_SLACK_MS;
+      this.backPressed = false;
       this.backUp = Math.max(this.backUp, at);
       if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
       }
+      if (first && this.front()?.role === "share") void this.closeShare("back");
       return { ok: true };
     }
     if (at <= this.backUp + BACK_SLACK_MS || at <= this.backDown) return { ok: true };
+    this.backPressed = true;
+    // A shared link's browser page closes on Back (ADR-050), on whichever
+    // half of the tap comes first.
+    if (this.front()?.role === "share") {
+      this.backDown = at;
+      void this.closeShare("back");
+      return { ok: true };
+    }
     this.backDown = at;
     if (this.backTimer) clearTimeout(this.backTimer);
     this.backTimer = setTimeout(
@@ -1207,15 +1235,80 @@ export class Screen {
   // Whether an open app's page is playing.
   private async playing(): Promise<boolean> {
     const cdp = this.apps.get("web")?.cdp;
-    if (!cdp) return false;
-    for (const entry of this.opens.filter((o) => o.target)) {
-      const answer = await Promise.race([
-        cdp.evaluateIn(entry.target!, `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`).catch(() => false),
-        sleep(500).then(() => false),
-      ]);
+    for (const entry of cdp ? this.opens.filter((o) => o.target) : []) {
+      const answer = await Promise.race([cdp!.evaluateIn(entry.target!, MEDIA_PLAYING).catch(() => false), sleep(500).then(() => false)]);
       if (answer === true) return true;
     }
+    // A shared link's page in the share browser, and a shared video in
+    // home's own player (ADR-050).
+    const share = this.apps.get("share")?.cdp;
+    for (const page of share ? await share.pages().catch(() => []) : []) {
+      const answer = await Promise.race([share!.evaluateIn(page.targetId, MEDIA_PLAYING).catch(() => false), sleep(500).then(() => false)]);
+      if (answer === true) return true;
+    }
+    if (this.apps.has("home")) {
+      const home = (await Promise.race([this.inHome(`({ playing: ${MEDIA_PLAYING} })`), sleep(500).then(() => ({}))])) as { playing?: boolean };
+      if (home.playing === true) return true;
+    }
     return false;
+  }
+
+  // --- Shared to the TV (ADR-050, S5.10) ------------------------------------
+
+  // A link a phone shared, from its notice or Apps → Shared: in the app that
+  // declares its site, if who's watching may open one, or else in the share
+  // browser, on a profile of its own, so it never sees the apps' sign-ins.
+  async openShare(id: string): Promise<object> {
+    if (!/^[0-9a-f]{16}$/.test(id)) return { ok: false, error: "which share" };
+    let target: { url: string; app?: string };
+    try {
+      target = await this.launcher.shareTarget(id);
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+    if (!/^https?:/.test(target.url)) return { ok: false, error: "only a web page opens on the tv" };
+    if (target.app) {
+      // Open already: it goes to the link, and comes back where it was.
+      const open = this.opens.find((o) => o.id === target.app && o.target && o.address && this.windows.has(o.address));
+      const cdp = this.apps.get("web")?.cdp;
+      if (open && cdp) await cdp.evaluateIn(open.target!, `location.href = ${JSON.stringify(target.url)}`).catch(() => {});
+      this.log(`a shared link opens in ${target.app}`);
+      return this.openWeb(target.url, target.app);
+    }
+    return this.queue(async () => {
+      // One shared page at a time: the newest takes the browser's window.
+      const running = this.apps.get("share");
+      this.want = { role: "share", until: this.now() + 30_000 };
+      if (running?.cdp) {
+        const before = [...(await running.cdp.pages().catch(() => []))];
+        const opened = await running.cdp.open(target.url).catch(() => undefined);
+        if (opened) {
+          for (const page of before) if (page.targetId !== opened) await running.cdp.close(page.targetId).catch(() => {});
+          this.log("a shared link opens in the share browser");
+          return;
+        }
+      }
+      running?.stop();
+      const app = this.launcher.shareBrowser(target.url);
+      this.apps.set("share", app);
+      app.onExit(() => {
+        if (this.apps.get("share") === app) this.apps.delete("share");
+      });
+      this.log("a shared link opens in the share browser");
+    }).then(() => ({ ok: true }));
+  }
+
+  // The share browser closes, and home comes back.
+  private closeShare(why: string): Promise<void> {
+    return this.queue(async () => {
+      const app = this.apps.get("share");
+      if (!app) return;
+      this.log(`the share browser closes: ${why}`);
+      if (this.want?.role === "share") this.want = null;
+      app.stop();
+      const home = this.homeWindow();
+      if (home) await this.toFront(home.address);
+    });
   }
 
   // The home screen in front on its ambient screen. What was in front stays
@@ -1313,6 +1406,8 @@ export class Screen {
       if (!this.tvOff) return;
       this.log("the TV has been off for a while; closing every app");
       for (const entry of [...this.opens]) await this.closeOpen(entry);
+      // And a shared link's page.
+      this.apps.get("share")?.stop();
       this.ambient = false;
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
@@ -1854,6 +1949,9 @@ function chromium(): string {
   return existsSync("/usr/lib/chromium/chromium") ? "/usr/lib/chromium/chromium" : "chromium";
 }
 
+// Whether an audio or video element in a page plays.
+const MEDIA_PLAYING = `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`;
+
 const CHROMIUM_FLAGS = [
   "--ozone-platform=wayland",
   "--kiosk",
@@ -1930,6 +2028,24 @@ export const launcher: Launcher = {
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
     return track("web", child, false, cdp);
+  },
+
+  shareBrowser(url) {
+    // Its own prompts off too, as in the services' profile.
+    const prefs = spawnSync("agentv-chromium-prefs", [SHARE_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
+    if (prefs.status !== 0) console.log(`couldn't turn off the share browser's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+      stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
+    });
+    const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
+    return track("share", child, false, cdp);
+  },
+
+  async shareTarget(id) {
+    const response = await fetch(`${HOME_URL}api/shared/${encodeURIComponent(id)}/target`, { signal: AbortSignal.timeout(5000) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || typeof data.url !== "string") throw new Error(data.error ?? "that share isn't here");
+    return { url: data.url, ...(typeof data.app === "string" ? { app: data.app } : {}) };
   },
 
   steam(mode) {

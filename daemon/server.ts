@@ -2674,9 +2674,9 @@ export class Daemon {
       return;
     }
 
-    // One of them: its file, Open or Not now, a photo as the background, or
-    // taken off the box. Only one who's watching sees.
-    const shared = /^\/api\/shared\/([0-9a-f]{16})(?:\/(file|answer|background))?$/.exec(path);
+    // One of them: its file, Open or Not now, a photo as the background, a
+    // link's app, or taken off the box. Only one who's watching sees.
+    const shared = /^\/api\/shared\/([0-9a-f]{16})(?:\/(file|answer|background|target))?$/.exec(path);
     if (shared) {
       const share = (await this.sharesFor(await this.profiles.active())).find((one) => one.id === shared[1]);
       if (!share) {
@@ -2685,6 +2685,18 @@ export class Daemon {
       }
       if (method === "GET" && shared[2] === "file") {
         await this.sendShared(request, response, share.id);
+        return;
+      }
+      // Where a link opens, for the screen daemon: the app that declares its
+      // site, if who's watching may open one, or else a browser page of its
+      // own.
+      if (method === "GET" && shared[2] === "target") {
+        if (share.kind !== "link" || !share.url) {
+          this.json(response, 400, { ok: false, error: "only a link opens in an app" });
+          return;
+        }
+        const app = await this.home.appForUrl(share.url, await this.profiles.active());
+        this.json(response, 200, { ok: true, url: share.url, ...(app ? { app } : {}) });
         return;
       }
       if (method === "POST" && shared[2] === "answer") {
