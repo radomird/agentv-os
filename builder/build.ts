@@ -62,7 +62,9 @@ export interface BuildStatus {
   id: string;
   version: string;
   phase: Phase;
-  state: "running" | "confirm" | "plan" | "approve" | "installed" | "sign-in" | "failed";
+  // installed is the version on home, and kept the one before it, for
+  // rollback (Q117).
+  state: "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "failed";
   steps: { id: string; state: StepState }[];
   step?: string;
   reason?: string; // one line, why it failed

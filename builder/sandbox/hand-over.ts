@@ -8,6 +8,10 @@
 //   the ticket the filter and the relay go by, fetches the CLI into the
 //   builder's home the first time, and starts agentv-builder@.service.
 // - stop.json: stops the running build.
+// - install.json: an app an adult approved on the phone, put in place as a
+//   Local app (daemon/apps/install.ts), or the version before it, back for a
+//   rollback. The version that was on home is kept for that.
+// - remove.json: an app and every build of it, gone.
 //
 // One build runs at a time. What happened goes to /run/agentv-build/answer.json
 // for the daemon, and a refused build's status.json says why.
@@ -18,11 +22,13 @@ import { join, resolve } from "node:path";
 import type { BuildRequest, BuildStatus, Provider } from "../build.ts";
 import { CLIS } from "../providers.ts";
 import { KINDS, planProblems, type Plan } from "../recipe.ts";
+import { installLocal, readInstalled, removeApp } from "../../daemon/apps/install.ts";
 import { DEFAULT_CAP, type Spend, type Ticket } from "./relay.ts";
 
 export interface HandOverOptions {
   drop: string; // the daemon's drop folder
   builds: string; // /var/lib/agentv/build
+  apps: string; // /var/lib/agentv/apps
   home: string; // the builder's home
   run: string; // /run/agentv-build
   spend: string; // the relay's spend.json
@@ -122,9 +128,9 @@ export class HandOver {
     this.o = options;
   }
 
-  private answer(build: string | null, started: boolean, reason?: string): { started: boolean; reason?: string } {
+  private answer(build: string | null, started: boolean, reason?: string, action = "start"): { started: boolean; reason?: string } {
     mkdirSync(this.o.run, { recursive: true });
-    write(join(this.o.run, "answer.json"), { build, started, ...(reason ? { reason } : {}), at: new Date().toISOString() });
+    write(join(this.o.run, "answer.json"), { action, build, started, ...(reason ? { reason } : {}), at: new Date().toISOString() });
     if (reason) console.error(`agentv-build-start: ${reason}`);
     return { started, reason };
   }
@@ -141,22 +147,92 @@ export class HandOver {
     return stat.isDirectory() && !stat.isSymbolicLink() && stat.uid === this.o.rootUid ? path : null;
   }
 
-  handle(): { started: boolean; reason?: string } | null {
-    const stop = join(this.o.drop, "stop.json");
-    if (existsSync(stop)) {
-      rmSync(stop, { force: true });
-      this.o.systemctl(["stop", "--no-block", "agentv-builder@*.service"]);
-      return this.answer(null, false, "stopped");
-    }
-    const startPath = join(this.o.drop, "start.json");
-    if (!existsSync(startPath)) return null;
+  // What the daemon left, taken: only a file it wrote, never one it points
+  // somewhere else.
+  private take(name: string): { found: boolean; data: unknown } {
+    const path = join(this.o.drop, name);
+    if (!existsSync(path) && !lstatSync(path, { throwIfNoEntry: false })) return { found: false, data: null };
     let data: unknown = null;
-    // Only a file the daemon wrote, never one it points somewhere else.
     try {
-      if (lstatSync(startPath).isFile()) data = JSON.parse(readFileSync(startPath, "utf8"));
+      if (lstatSync(path).isFile()) data = JSON.parse(readFileSync(path, "utf8"));
     } catch {}
-    rmSync(startPath, { force: true });
-    return this.start(data);
+    rmSync(path, { force: true });
+    return { found: true, data };
+  }
+
+  async handle(): Promise<{ started: boolean; reason?: string } | null> {
+    if (this.take("stop.json").found) {
+      this.o.systemctl(["stop", "--no-block", "agentv-builder@*.service"]);
+      return this.answer(null, false, "stopped", "stop");
+    }
+    const remove = this.take("remove.json");
+    if (remove.found) return this.remove(remove.data);
+    const install = this.take("install.json");
+    if (install.found) return this.install(install.data);
+    const start = this.take("start.json");
+    return start.found ? this.start(start.data) : null;
+  }
+
+  // A version's folder, if it's a real one under the app's root-owned one.
+  private versionDir(id: unknown, version: unknown): string | null {
+    if (typeof id !== "string" || !ID.test(id) || typeof version !== "string" || !VERSION.test(version)) return null;
+    const app = join(this.o.builds, id);
+    const appStat = lstatSync(app, { throwIfNoEntry: false });
+    if (!appStat?.isDirectory() || appStat.isSymbolicLink() || appStat.uid !== this.o.rootUid) return null;
+    const dir = join(app, version);
+    const stat = lstatSync(dir, { throwIfNoEntry: false });
+    return stat?.isDirectory() && !stat.isSymbolicLink() ? dir : null;
+  }
+
+  private readStatus(dir: string): BuildStatus | null {
+    try {
+      const path = join(dir, "status.json");
+      return lstatSync(path).isFile() ? (JSON.parse(readFileSync(path, "utf8")) as BuildStatus) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // An approved version on home, or a kept one back. The app that was there
+  // is kept for a rollback, and its storage, which is the daemon's, stays.
+  async install(data: unknown): Promise<{ started: boolean; reason?: string }> {
+    const d = (typeof data === "object" && data !== null ? data : {}) as { build?: unknown; id?: unknown; version?: unknown };
+    const build = typeof d.build === "string" && BUILD.test(d.build) ? d.build : null;
+    const dir = this.versionDir(d.id, d.version);
+    if (!build || !dir) return this.answer(build, false, "there's no such build to install", "install");
+    const status = this.readStatus(dir);
+    if (!status || status.build !== build || (status.state !== "approve" && status.state !== "kept")) return this.answer(build, false, "that build isn't approved and waiting", "install");
+    const id = d.id as string;
+    const version = d.version as string;
+    try {
+      await installLocal(join(dir, "work", "app"), this.o.apps, async (manifest) => manifest.id === id && manifest.version === version);
+    } catch (error) {
+      return this.answer(build, false, `it couldn't be installed: ${(error as Error).message}`, "install");
+    }
+    for (const other of readdirSync(join(this.o.builds, id))) {
+      if (other === version) continue;
+      const otherDir = this.versionDir(id, other);
+      const was = otherDir ? this.readStatus(otherDir) : null;
+      if (otherDir && was?.state === "installed") write(join(otherDir, "status.json"), { ...was, state: "kept", at: new Date().toISOString() });
+    }
+    write(join(dir, "status.json"), { ...status, state: "installed", at: new Date().toISOString() });
+    return this.answer(build, true, undefined, "install");
+  }
+
+  // An app, every build of it, and its running build, gone.
+  async remove(data: unknown): Promise<{ started: boolean; reason?: string }> {
+    const id = (data as { id?: unknown } | null)?.id;
+    if (typeof id !== "string" || !ID.test(id)) return this.answer(null, false, "which app", "remove");
+    try {
+      const ticket = JSON.parse(readFileSync(join(this.o.run, "ticket.json"), "utf8")) as Ticket;
+      if (ticket.id === id) this.o.systemctl(["stop", "agentv-builder@*.service"]);
+    } catch {}
+    if ((await readInstalled(this.o.apps))[id]) await removeApp(id, this.o.apps);
+    const app = join(this.o.builds, id);
+    const stat = lstatSync(app, { throwIfNoEntry: false });
+    if (stat?.isSymbolicLink()) rmSync(app, { force: true });
+    else if (stat) rmSync(app, { recursive: true, force: true });
+    return this.answer(null, true, undefined, "remove");
   }
 
   start(data: unknown): { started: boolean; reason?: string } {
@@ -258,6 +334,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const handOver = new HandOver({
     drop: process.env.AGENTV_BUILD_DROP ?? "/var/lib/private/agentv/daemon/build-drop",
     builds: "/var/lib/agentv/build",
+    apps: "/var/lib/agentv/apps",
     home: "/var/lib/agentv/builder",
     run: "/run/agentv-build",
     spend: "/var/lib/agentv/spend/spend.json",
@@ -272,6 +349,6 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
       }
     },
   });
-  const done = handOver.handle();
+  const done = await handOver.handle();
   process.exit(done && !done.started && done.reason !== "stopped" ? 1 : 0);
 }
