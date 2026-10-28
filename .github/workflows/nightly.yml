@@ -4,7 +4,8 @@ name: Nightly
 # stands tonight goes through the whole image layer, including an update in
 # place (S0.5). When everything passes, the run signs tested.json with every
 # package and version on the box, and boxes take only those (ADR-026, S0.7).
-# Until AgenTV has a stable release, it tests edge. A failure opens an issue.
+# Until AgenTV has a stable release, it tests edge. A failure opens an issue,
+# and the next night that passes closes it.
 #
 # It's also where the edge ISO is made, the way omarchy-iso's own nightly
 # build makes Omarchy's: AgenTV's edge packages on Omarchy's stable channel,
@@ -92,3 +93,21 @@ jobs:
         run: |
           gh issue create -R "$GITHUB_REPOSITORY" --title "Nightly run failed on $(date -u +%Y-%m-%d)" \
             --body "An image run failed tonight, so tested.json, the edge ISO or both weren't updated. Boxes stay where they are. Screenshots and logs: $RUN"
+
+  # A night that passes closes the issues earlier failures opened, so the
+  # list only ever shows what's still broken.
+  fixed:
+    name: Say it's fixed
+    needs: image
+    if: success()
+    runs-on: ubuntu-26.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue list -R "$GITHUB_REPOSITORY" --state open --search 'in:title "Nightly run failed on"' \
+            --json number,title --jq '.[] | select(.title | startswith("Nightly run failed on ")) | .number' |
+            while read -r number; do
+              gh issue close "$number" -R "$GITHUB_REPOSITORY" --comment "Tonight's run passed, with every image check: $RUN"
+            done
