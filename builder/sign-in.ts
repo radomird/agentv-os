@@ -14,7 +14,7 @@
 // Usage: node sign-in.ts <provider>
 
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { CLIS, SIGN_IN, signInEnv } from "./providers.ts";
 import { forward } from "./sandbox/forward.ts";
@@ -59,6 +59,13 @@ export function signedIn(provider: Provider, o: { home: string; proxy?: string }
   if (!spec) return Promise.resolve(null);
   const cli = cliFor(provider, o.home);
   if (!existsSync(cli)) return Promise.resolve(false);
+  if ("file" in spec) {
+    try {
+      return Promise.resolve(statSync(join(o.home, spec.file)).size > 0);
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
   return new Promise((done) => {
     execFile(cli, spec.status, { env: signInEnv(provider, o.home, o.proxy), timeout: 30_000 }, (error, stdout, stderr) => {
       const code = error ? (typeof (error as { code?: unknown }).code === "number" ? ((error as { code: number }).code) : 1) : 0;

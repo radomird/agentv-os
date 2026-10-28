@@ -94,12 +94,9 @@ function baseEnv(run: { home: string; proxy?: string }): Record<string, string> 
 // CLI says it's signed in. AgenTV shows the link the CLI prints and passes
 // on what the person types, and never sees the plan's tokens, which the CLI
 // keeps in its own files. Only the plans AgenTV offers have one.
-export interface SignIn {
-  login: string[];
-  status: string[];
-  pastes: boolean;
-  signedIn: (out: string, code: number) => boolean;
-}
+// How the CLI says it's signed in: a status command and what it prints,
+// or, for a CLI with none, its own credentials file in the builder's home.
+export type SignIn = { login: string[]; pastes: boolean } & ({ status: string[]; signedIn: (out: string, code: number) => boolean } | { file: string });
 
 export const SIGN_IN: Partial<Record<Provider, SignIn>> = {
   // Claude Code prints its link and reads the code from its prompt, and
@@ -107,6 +104,9 @@ export const SIGN_IN: Partial<Record<Provider, SignIn>> = {
   claude: { login: ["auth", "login", "--claudeai"], status: ["auth", "status", "--json"], pastes: true, signedIn: (out, code) => code === 0 && /"authMethod"\s*:\s*"claude\.ai"/.test(out) },
   // Codex's device sign-in prints a link and a code to enter there.
   chatgpt: { login: ["login", "--device-auth"], status: ["login", "status"], pastes: false, signedIn: (out, code) => code === 0 && !/not logged in/i.test(out) },
+  // Grok Build's device sign-in does the same, and keeps the session in its
+  // own auth.json, owner-only. It has no status command (ADR-051).
+  grok: { login: ["login", "--device-auth"], file: ".grok/auth.json", pastes: false },
 };
 
 // What the CLI's sign-in and its status run with: the builder's home, the
@@ -115,6 +115,7 @@ export function signInEnv(provider: Provider, home: string, proxy?: string): Rec
   const env = baseEnv({ home, proxy });
   if (provider === "claude") Object.assign(env, { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1" });
   if (provider === "chatgpt") env.CODEX_HOME = join(home, ".codex");
+  if (provider === "grok") Object.assign(env, { GROK_HOME: join(home, ".grok"), DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1", GROK_DISABLE_AUTOUPDATER: "1", GROK_DISABLE_EXPERIMENTS: "1" });
   return env;
 }
 
