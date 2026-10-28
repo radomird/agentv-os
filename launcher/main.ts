@@ -12,6 +12,7 @@ import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { addApp, installMoved } from "./pages/add-app.ts";
 import { appSetup } from "./pages/app-setup.ts";
+import { buildAsk, buildPage, buildsMoved, loadBuilds } from "./pages/build.ts";
 import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
@@ -283,6 +284,8 @@ function viewFor(route: string): View {
   if (name === "apps") return apps(ctx);
   // Adding an app is an adult's, and a child's profile doesn't see it (ADR-042).
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
+  // Your agent's builds are an adult's too (ADR-043 to ADR-046).
+  if (name === "build" && ctx.state.viewer.role === "adult") return arg ? buildPage(ctx, arg) : buildAsk(ctx);
   if (name === "details") return details(ctx, arg);
   if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
@@ -583,6 +586,7 @@ async function switched(): Promise<void> {
   }
   // Edit mode was the last viewer's home, and a child starts on their own.
   if (child || history[history.length - 1].startsWith("edit")) history = ["home"];
+  await loadBuilds(ctx);
   redraw();
   // The apps still open take the service's profile for who's watching now.
   void screen.viewer();
@@ -594,6 +598,7 @@ async function catchUp(): Promise<void> {
   const was = ctx.state.viewer.id;
   const state = await homeState();
   if (state.viewer.id !== was) return switched();
+  await loadBuilds(ctx);
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
@@ -625,6 +630,7 @@ async function start(): Promise<void> {
   shownViewer = ctx.state.viewer.id;
   apply(ctx.state.settings);
   await loadBackgrounds();
+  await loadBuilds(ctx);
   show("home");
   setLock(ctx.state.pin?.locked === true);
   window.addEventListener(
@@ -671,6 +677,8 @@ async function start(): Promise<void> {
     },
     // An app added from Apps, or picked in setup, is installing.
     "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),
+    // A build moved on (ADR-043 to ADR-046): its tile, its page and home's bar.
+    builds: () => buildsMoved(ctx, history[history.length - 1], redraw),
     // Someone else is watching (S4.2): their home, at once. A child's profile
     // closes the apps open behind home that children can't open.
     viewer: () => void switched(),

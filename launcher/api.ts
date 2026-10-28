@@ -327,7 +327,64 @@ export const daemon = {
   removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),
   lock: () => call<{ locked: boolean }>("POST", "/api/pin/lock"),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
+  // The builder (ADR-043 to ADR-046): an adult's asks, and how each goes.
+  builds: () => call<BuildsState>("GET", "/api/builds"),
+  ask: (sentence: string) => call<{ build: BuildView }>("POST", "/api/builds", { sentence }).then((r) => r.build),
+  confirm: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/confirm`).then((r) => r.build),
+  retry: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/retry`).then((r) => r.build),
+  forget: (build: string) => call<{ ok: boolean }>("POST", `/api/builds/${build}/forget`),
+  stopBuild: () => call<{ ok: boolean }>("POST", "/api/builds/stop"),
+  builderSettings: (change: Partial<BuilderSettings>, grant?: string) => call<{ settings: BuilderSettings }>("PUT", "/api/builds/settings", change, grant).then((r) => r.settings),
+  // A built app's next version, the one before it back, or the app gone.
+  changeApp: (id: string, text: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/change`, { text }).then((r) => r.build),
+  rebuildApp: (id: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rebuild`).then((r) => r.build),
+  rollbackApp: (id: string, grant?: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rollback`, undefined, grant).then((r) => r.build),
+  removeBuilt: (id: string, grant?: string) => call<{ ok: boolean }>("POST", `/api/builds/apps/${id}/remove`, undefined, grant),
 };
+
+// The builder (ADR-043 to ADR-046): one build as the TV shows it, from what
+// was asked to the app on home.
+export interface BuildView {
+  build: string;
+  id: string;
+  version: string;
+  sentence: string;
+  name?: string;
+  provider: "claude" | "chatgpt" | "gemini" | "grok" | "muse";
+  path: "plan" | "key";
+  state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "failed";
+  phase: "understand" | "plan" | "build" | "stage-b";
+  step?: string;
+  steps: { id: string; state: "waiting" | "running" | "done" | "failed" }[];
+  reason?: string;
+  spent?: number;
+  understood?: { name: string; recipe: string | null; says: string; address?: string; category?: string };
+  plan?: {
+    name: string;
+    says: string;
+    steps: { id: string; does: string }[];
+    permissions: { origins: string[]; media: string[]; tile: boolean; notices: boolean };
+    packages: { name: string; version?: string }[];
+    cost?: { low: number; high: number };
+  };
+  cost?: { low: number; high: number };
+  minutes?: number;
+  shot: boolean;
+  at: string;
+}
+
+export interface BuilderSettings {
+  cap: { build: number; month: number }; // dollars, with a key
+  safeguards: boolean;
+}
+
+export interface BuildsState {
+  builds: BuildView[];
+  settings: BuilderSettings;
+  spend: { month: string; spent: number; cap: BuilderSettings["cap"] };
+  warnings: { id: string; version: string; build: string; malware: string[]; serious: string[]; since: string }[];
+  wishes: string[]; // what setup's "+ add your own" kept
+}
 
 // Things that changed, as the daemon tells them. opened runs each time the
 // stream opens: the first time, a moment after the page asked for what it

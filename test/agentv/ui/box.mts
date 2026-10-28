@@ -193,7 +193,7 @@ export async function startBox(
   port = 0,
   fixtures = FIXTURES,
   options: BoxOptions = {},
-): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string; hotspot: string }> {
+): Promise<{ daemon: Daemon; url: string; apps: string; state: string; updates: string; hotspot: string; builds: string }> {
   const { apps, state, builtins } = makeBox(fixtures, options);
   // What the update check and an install write, empty until a test fills it.
   const updates = join(state, "..", "update");
@@ -233,7 +233,12 @@ export async function startBox(
     // No packages' desktop entries or icons until a test puts some there.
     dataDirs: [join(state, "..", "share")],
     art: options.art,
+    // The builder's folders, empty until a test plays root's part in them.
+    builds: join(state, "..", "build"),
+    buildRun: join(state, "..", "build-run"),
+    spend: join(state, "..", "spend.json"),
+    npmWarnings: join(state, "..", "npm-warnings.json"),
   });
   const listening = await daemon.listen();
-  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot };
+  return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot, builds: join(state, "..", "build") };
 }

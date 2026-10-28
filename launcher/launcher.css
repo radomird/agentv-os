@@ -1742,3 +1742,33 @@ body.with-backdrop {
 .page-app.loading .page-app-cover {
   opacity: 1;
 }
+
+/* Your agent's builds (boards 10, 17 and 20): what was asked, how far it
+   is, and what it understood, on its own page. */
+.build-said {
+  margin: 0 0 24px;
+  font-size: 30px;
+}
+
+.build-value {
+  color: var(--bright-foreground);
+}
+
+.build-bar {
+  max-width: 1100px;
+  margin-bottom: 24px;
+}
+
+.build-steps {
+  margin-bottom: 36px;
+  font-size: 30px;
+}
+
+.updating-step.bad,
+.updating-step.bad b {
+  color: var(--red);
+}
+
+.build-wishes {
+  margin-top: 48px;
+}
