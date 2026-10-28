@@ -1332,6 +1332,25 @@ test("S5.10 a shared link with no app of its own opens in the share browser, on 
   t.screen.stop();
 });
 
+test("S5.10 a tap on Back closes the share browser, whichever half of it arrives first", async () => {
+  // As with any tap, the release can reach the TV session before its press,
+  // which is then taken for the same tap and goes no further.
+  const t = await tv({ backHoldMs: 80 });
+  t.launcher.shares.set("e".repeat(16), { url: "https://example.org/watch" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: "e".repeat(16) }), { ok: true });
+  const browser = t.launcher.last("share");
+  t.hypr.open("0xd", browser.pid);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "share");
+  const now = Date.now();
+  t.screen.back("up", now - 3);
+  t.screen.back("down", now);
+  await t.screen.idle();
+  assert.equal(browser.stopped, true, t.lines.join("\n"));
+  assert.equal(t.lines.filter((line) => line.includes("the share browser closes")).length, 1);
+  t.screen.stop();
+});
+
 test("S5.10 a shared link opens in the app that declares its site, going there if the app's open already", async () => {
   const t = await tv();
   const id = "d".repeat(16);

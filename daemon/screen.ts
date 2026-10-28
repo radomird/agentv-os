@@ -338,6 +338,8 @@ export class Screen {
   private backHoldMs: number;
   private backDown = 0;
   private backUp = 0;
+  // A press of Back has come and its release hasn't yet.
+  private backPressed = false;
   private backTimer: ReturnType<typeof setTimeout> | null = null;
   // The ambient screen, and the window to go back to after it.
   ambient = false;
@@ -1038,15 +1040,22 @@ export class Screen {
   // tap.
   back(edge: "down" | "up", at: number): object {
     if (edge === "up") {
+      // A release that came before its press: the press is then taken for
+      // the same tap, and goes no further.
+      const first = !this.backPressed && at > this.backUp + BACK_SLACK_MS;
+      this.backPressed = false;
       this.backUp = Math.max(this.backUp, at);
       if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
       }
+      if (first && this.front()?.role === "share") void this.closeShare("back");
       return { ok: true };
     }
     if (at <= this.backUp + BACK_SLACK_MS || at <= this.backDown) return { ok: true };
-    // A shared link's browser page closes on Back (ADR-050).
+    this.backPressed = true;
+    // A shared link's browser page closes on Back (ADR-050), on whichever
+    // half of the tap comes first.
     if (this.front()?.role === "share") {
       this.backDown = at;
       void this.closeShare("back");
