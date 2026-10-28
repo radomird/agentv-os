@@ -13,6 +13,8 @@ import { clock, h, monogram, tint } from "../dom.ts";
 import { span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
+import { buildNotice, homeBuildTile } from "./build.ts";
+import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
 
@@ -267,6 +269,11 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
               openBuiltin(ctx, app);
               return;
             }
+            // A page app opens here, in its frame (ADR-043).
+            if (app.runtime === "page") {
+              openPage(ctx, app.id);
+              return;
+            }
             // A field it needs isn't filled in, such as its server's
             // address: its setup page first, and the sign-in after.
             if (app.needsSetup) {
@@ -325,10 +332,15 @@ export function home(ctx: Ctx): View {
     const tile = tileFor(ctx, placed);
     if (tile) grid.append(tile);
   }
+  // Your agent's newest build, while it isn't on home yet (boards 19, 20).
+  const building = homeBuildTile(ctx);
+  if (building) grid.append(building);
 
-  // A new release says so in the bar (ADR-025, board 31), until Later.
+  // A new release says so in the bar (ADR-025, board 31), until Later, and
+  // a build that's going or waiting says so after it.
   const next = release(ctx.updates);
-  const notice = !next ? "" : tonight(ctx.updates) ? `agentv ${next} installs tonight` : later(ctx.updates) ? "" : `agentv ${next} is ready · settings → updates`;
+  const update = !next ? "" : tonight(ctx.updates) ? `agentv ${next} installs tonight` : later(ctx.updates) ? "" : `agentv ${next} is ready · settings → updates`;
+  const notice = update || buildNotice();
   const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice));
   return {
     el,

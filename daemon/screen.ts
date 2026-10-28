@@ -46,14 +46,19 @@ import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
 import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
+import { AskWatch } from "./asks.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
+import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
+import { dropTheme, takeTheme, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { OmarchyThemes } from "./omarchy-themes.ts";
 import { cdpPage } from "./page.ts";
+import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
+import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import { RemoteInput } from "./remote.ts";
@@ -73,6 +78,8 @@ export const HOME_URL = "http://127.0.0.1:3000/";
 // launcher's start, or the welcome page's.
 export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" in window || "agentvWelcome" in window)`;
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
+// The daemon's filter for home's Chromium (daemon/net-filter.ts).
+export const HOME_PROXY = "http://127.0.0.1:3005";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
 // Apps kept open behind home, besides a game (ADR-031).
 export const KEEP_OPEN = 2;
@@ -122,7 +129,7 @@ export interface Launcher {
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
   // What opening an installed app means, from AgenTV's daemon, or null.
-  appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | null>;
+  appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | { runtime: "page"; name?: string } | null>;
   // AgenTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
@@ -236,6 +243,11 @@ export interface Sound {
   handle(request: Record<string, unknown>): Promise<object>;
 }
 
+// A page app's photos and music (daemon/page-media.ts, ADR-043).
+export interface PageMediaRequests {
+  handle(app: unknown, call: unknown, args: unknown[]): Promise<{ ok: boolean; value?: unknown; error?: string }>;
+}
+
 // A folder's pictures handed to the daemon as the background
 // (picture-folder.ts, ADR-012).
 export interface Pictures {
@@ -249,6 +261,7 @@ interface Options {
   music?: Music;
   sound?: Sound;
   pictures?: Pictures;
+  pageMedia?: PageMediaRequests;
   signIn?: SignIn;
   profiles?: ProfilesForViewer;
   now?: () => number;
@@ -292,6 +305,7 @@ export class Screen {
   private playback?: Playback;
   private music?: Music;
   private pictures?: Pictures;
+  private pageMedia?: PageMediaRequests;
   private sound?: Sound;
   private signIn?: SignIn;
   private profiles?: ProfilesForViewer;
@@ -305,6 +319,9 @@ export class Screen {
   private apps = new Map<Role, App>();
   private opens: Open[] = [];
   private want: { role: Role; until: number; app?: string } | null = null;
+  // Until when a services' window that opens is stage B's look at a page,
+  // which stays out of sight (snapshot).
+  private quietUntil = 0;
   private backHoldMs: number;
   private backDown = 0;
   private backUp = 0;
@@ -355,6 +372,7 @@ export class Screen {
     this.playback = options.playback;
     this.music = options.music;
     this.pictures = options.pictures;
+    this.pageMedia = options.pageMedia;
     this.sound = options.sound;
     this.signIn = options.signIn;
     this.profiles = options.profiles;
@@ -547,8 +565,9 @@ export class Screen {
     const window = this.remember(client);
     const front = this.front();
     const wanted = this.want && window.role === this.want.role && this.now() <= this.want.until;
+    const quiet = !wanted && window.role === "web" && this.now() <= this.quietUntil;
 
-    if (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front)) {
+    if (!quiet && (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front))) {
       const app = wanted ? this.want?.app : undefined;
       if (wanted) this.want = null;
       this.log(`in front: ${describe(window)}`);
@@ -802,6 +821,8 @@ export class Screen {
           if (item) void Promise.resolve(ready).then(() => this.playback?.play?.(id, item));
           return reply;
         }
+        // A page app opens on home, in its frame (ADR-043).
+        if (target.runtime === "page") return this.openPage(id);
         if (target.exec[0] === "steam") return this.openSteam(id);
         return { ok: false, error: "that app can't be opened from the tv yet" };
       }
@@ -818,6 +839,11 @@ export class Screen {
       // The Music page (ADR-017).
       case "music":
         return this.musicRequest(request);
+      // A page app's photos or music, read-only (ADR-043). The daemon says
+      // whether its manifest allows each call.
+      case "kit":
+        if (!this.pageMedia) return { ok: false, error: "photos and music aren't here" };
+        return this.pageMedia.handle(request.app, request.call, Array.isArray(request.args) ? request.args : []);
       // A folder, a USB drive or a share as the background (ADR-012).
       case "background-folder":
         return this.backgroundFolder(String(request.source ?? ""), typeof request.grant === "string" ? request.grant : undefined);
@@ -941,6 +967,14 @@ export class Screen {
   private async goHome(route: string, from: string): Promise<object> {
     await this.home(from);
     const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    if (!reply.ok) return reply;
+    return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
+  }
+
+  // A page app (ADR-043): home in front, then its frame there.
+  async openPage(id: string): Promise<object> {
+    await this.home("a page app");
+    const reply = (await this.inHome(`(() => { const open = window.agentvPage; if (open) open(${JSON.stringify(id)}); return { went: !!open }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
     return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
   }
@@ -1428,6 +1462,53 @@ export class Screen {
     );
   }
 
+  // Stage B's look at a page of a service the household signed in to
+  // (ADR-011, daemon/page-asks.ts): opened out of sight in the services'
+  // Chromium, read only while it's on the app's declared origins, and
+  // closed. The build gets the page's structure and a copy without its
+  // scripts, never the browser.
+  async snapshot(url: string, origins: string[]): Promise<PageAnswer> {
+    const on = (address: string) => {
+      try {
+        const at = new URL(address);
+        return at.protocol === "https:" && origins.includes(at.origin);
+      } catch {
+        return false;
+      }
+    };
+    if (!on(url)) return { ok: false, error: "that isn't one of the app's origins" };
+    const cdp = this.apps.get("web")?.cdp;
+    if (!cdp) return { ok: false, error: "the services' Chromium isn't open: open the app on the TV once, then try again" };
+    this.quietUntil = this.now() + 15_000;
+    let target: string | undefined;
+    try {
+      target = await cdp.open(url);
+      const until = this.now() + 30_000;
+      for (;;) {
+        const [at, ready] = (await cdp.evaluateIn(target, "[location.href, document.readyState]").catch(() => ["about:blank", ""])) as [string, string];
+        if (at !== "about:blank" && ready === "complete") break;
+        if (this.now() > until) break;
+        await new Promise((done) => setTimeout(done, 250));
+      }
+      // A page that draws itself once it's loaded gets a moment to.
+      await new Promise((done) => setTimeout(done, 1500));
+      const at = String(await cdp.evaluateIn(target, "location.href"));
+      if (!on(at)) return { ok: false, error: `it went to ${at.replace(/[?#].*$/, "")}, which isn't one of the app's origins` };
+      // The builder's own reading of a page, as its look reads one, loaded
+      // only when a build asks, so the TV session starts without it.
+      const { OUTLINE, SNAPSHOT } = await import("../builder/browse.ts");
+      const outline = (await cdp.evaluateIn(target, OUTLINE)) as { url: string; title: string; lines: string[] };
+      const html = String(await cdp.evaluateIn(target, SNAPSHOT));
+      this.log(`stage B looked at a page of ${new URL(at).origin}`);
+      return { ok: true, url: outline.url, title: outline.title, lines: outline.lines, html };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    } finally {
+      this.quietUntil = 0;
+      if (target) await cdp.close(target).catch(() => {});
+    }
+  }
+
   // The page a new services' Chromium opened with.
   private async firstPage(cdp: DevTools, entry: Open): Promise<void> {
     for (let tries = 0; tries < 50 && !entry.target; tries++) {
@@ -1791,7 +1872,10 @@ export const launcher: Launcher = {
     const child = spawn(
       chromium(),
       // The home screen's sounds play without waiting for a first key press.
-      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe", "--autoplay-policy=no-user-gesture-required"],
+      // Home reaches the internet only through the daemon's filter, which
+      // lets through the origins page apps declared (ADR-043). This box's own
+      // addresses, the daemon and the page apps' origins, stay direct.
+      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe", "--autoplay-policy=no-user-gesture-required", `--proxy-server=${HOME_PROXY}`],
       { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] },
     );
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
@@ -1881,6 +1965,7 @@ export const launcher: Launcher = {
     const name = typeof target.name === "string" ? target.name : undefined;
     if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url, name };
     if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String), name };
+    if (target.runtime === "page") return { runtime: "page", name };
     return null;
   },
 
@@ -2203,12 +2288,45 @@ export function musicApp(home = HOME_URL, log: (line: string) => void = console.
   });
 }
 
+// Page apps' photos and music (ADR-043): Music's sources and library, here
+// in the TV session, with the daemon asked about each call first.
+function pageMedia(home = HOME_URL): PageMedia {
+  return new PageMedia({
+    storage: new Storage(),
+    library: new MusicLibrary(),
+    async allowed(app, call) {
+      const response = await fetch(`${home}api/apps/${encodeURIComponent(app)}/kit?call=${encodeURIComponent(call)}`, { signal: AbortSignal.timeout(5000) });
+      if (response.ok) return null;
+      return (await response.json().catch(() => ({}))).error ?? "that isn't allowed";
+    },
+  });
+}
+
+// A made theme's ask, as this person: the theme copied into Omarchy's
+// themes as theirs and set, or taken away again (daemon/made-themes.ts).
+// Another theme still being set is waited for.
+export async function answerTheme(ask: ThemeAsk, screen: { setTheme(theme: unknown): Promise<object> }, o: { home?: string; omarchy?: string; themes?: string; waitMs?: number } = {}): Promise<ThemeAnswer> {
+  const home = o.home ?? homedir();
+  if (ask.kind === "drop") {
+    dropTheme({ id: ask.id, home });
+    return { ok: true };
+  }
+  const took = takeTheme({ themes: o.themes ?? THEMES, id: ask.id, home, omarchy: o.omarchy ?? (process.env.OMARCHY_PATH || "/usr/share/omarchy") });
+  if (!took.name) return { ok: false, error: took.error };
+  for (let tries = 0; ; tries++) {
+    const set = (await screen.setTheme(took.name)) as { ok: boolean; error?: string };
+    if (set.ok) return { ok: true, name: took.name };
+    if (!/still being set/.test(set.error ?? "") || tries >= 30) return { ok: false, error: set.error ?? "omarchy didn't set it" };
+    await new Promise((done) => setTimeout(done, o.waitMs ?? 2000));
+  }
+}
+
 async function main(): Promise<void> {
   const music = musicApp();
   // Full volume on each new default output, or the level Settings chose.
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), signIn: signInWatch(), profiles: serviceProfiles() });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN.
   new RemoteInput({
@@ -2216,6 +2334,26 @@ async function main(): Promise<void> {
     command: async (cmd) => {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
     },
+  }).start();
+  // Stage B's asks to see a service's signed-in pages, from the builder.
+  new PageAskWatch({ url: HOME_URL, snapshot: (url, origins) => screen.snapshot(url, origins) }).start();
+  // Export's push to a repo of the person's own (ADR-045): this runs as
+  // them, so their own GitHub sign-in pushes it, and nothing else holds it.
+  new AskWatch<GitHubAsk, GitHubAnswer>({
+    url: HOME_URL,
+    path: "api/export/ask",
+    what: "Export's push",
+    handle: answerGitHub({ userAgent: userAgent() }),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // A theme your agent made (S6.4): a theme of this person's in Omarchy now,
+  // and set, so the TV and the desktop change together.
+  new AskWatch<ThemeAsk, ThemeAnswer>({
+    url: HOME_URL,
+    path: "api/themes/ask",
+    what: "made themes",
+    handle: (ask) => answerTheme(ask, screen),
+    failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.

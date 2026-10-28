@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["*.ts", "harness/*.ts", "sandbox/*.ts", "gates/*.ts", "../test/agentv/unit/builder.test.mts", "../test/agentv/unit/sandbox.test.mts", "../test/agentv/unit/packages.test.mts", "../test/agentv/unit/providers.test.mts", "../test/agentv/unit/builds.test.mts"]
+}
