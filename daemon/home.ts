@@ -14,6 +14,7 @@ import { pin, problem, type Placed, type Size } from "../launcher/layout.ts";
 import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
 import type { Ledger, WatchRow } from "./ledger.ts";
+import { legible } from "./legible.ts";
 import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
 import { DATA_DIRS, packageIcon } from "./package-icon.ts";
 import { siteIcon } from "./site-icon.ts";
@@ -906,7 +907,8 @@ export class Home {
     const clean = cleanTheme(css);
     if (!clean) return false;
     await mkdir(this.state, { recursive: true });
-    await writeFile(join(this.state, "theme.css"), clean);
+    // With the colours for text that read in it (ADR-048, S5.8).
+    await writeFile(join(this.state, "theme.css"), legible(clean));
     if (name) await writeFile(join(this.state, "theme-name"), `${name}\n`);
     else await rm(join(this.state, "theme-name"), { force: true });
     return true;
