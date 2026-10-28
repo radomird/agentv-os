@@ -7,16 +7,31 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export function userAgent(root = process.env.AGENTV_PATH ?? "/usr/share/agentv"): string {
+  const value = settings(root);
+  const version = value("AGENTV_VERSION") ?? "dev";
+  const home = homepage(value);
+  return home ? `AgenTV/${version} (+${home})` : `AgenTV/${version}`;
+}
+
+// Who AgenTV's own repos belong to on GitHub, from the same settings, or
+// null in a checkout. Export never pushes to them (ADR-045).
+export function agentvOwner(root = process.env.AGENTV_PATH ?? "/usr/share/agentv"): string | null {
+  return /^https:\/\/github\.com\/([A-Za-z0-9-]+)\//.exec(homepage(settings(root)) ?? "")?.[1] ?? null;
+}
+
+// The package's settings, a value at a time.
+function settings(root: string): (key: string) => string | undefined {
   let text = "";
   try {
     text = readFileSync(join(root, "settings"), "utf8");
   } catch {
     // A checkout has no settings: AgenTV, in development.
   }
-  const value = (key: string) => text.split("\n").find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1).trim();
-  const version = value("AGENTV_VERSION") ?? "dev";
-  const home = value("AGENTV_HOMEPAGE") ?? value("AGENTV_TESTED_URL")?.replace(/\/releases\/download\/tested$/, "");
-  return home ? `AgenTV/${version} (+${home})` : `AgenTV/${version}`;
+  return (key) => text.split("\n").find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1).trim();
+}
+
+function homepage(value: (key: string) => string | undefined): string | undefined {
+  return value("AGENTV_HOMEPAGE") ?? value("AGENTV_TESTED_URL")?.replace(/\/releases\/download\/tested$/, "");
 }
 
 // The agentv package a process started from, as pacman has it, with its

@@ -244,11 +244,13 @@ function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => 
 }
 
 // An app the TV offered for Export (ADR-045): the package as a .zip, saved
-// on this phone.
+// on this phone, or pushed to a repo of the person's own when the box is
+// signed in to GitHub as them.
 export interface Offer {
   id: string;
   name: string;
   version: string;
+  github?: { via: "gh" | "ssh"; login: string } | null;
 }
 
 export function exportBanner(offer: Offer | null | undefined, failed: (error: unknown) => void): HTMLElement | null {
@@ -271,3 +273,43 @@ export function exportBanner(offer: Offer | null | undefined, failed: (error: un
   return h("button", { type: "button", class: "banner", "data-action": "save-export", onclick: () => void save() }, glyph("download", 18), h("span", {}, `save ${name} on this phone ›`));
 }
 
+// The push, when the box is signed in to GitHub as the person.
+export function pushBanner(offer: Offer | null | undefined, open: () => void): HTMLElement | null {
+  if (!offer?.github) return null;
+  return h("button", { type: "button", class: "banner", "data-action": "push-export", onclick: open }, glyph("lock", 18), h("span", {}, `push ${offer.name.toLowerCase()} to github ›`));
+}
+
+// Where it goes, asked each time, and the PIN. The TV pushes it as the
+// person, in a folder named after the app, and never with --force.
+export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: string } }, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
+  const name = offer.name.toLowerCase();
+  const field = h("input", { class: "field", type: "text", name: "repo", value: `${offer.github.login}/${offer.id.replace(/^local\./, "")}`, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "the repo" }) as HTMLInputElement;
+  const label = h("span", {}, "push it with pin");
+  const button = h("button", { class: "button primary", type: "submit", "data-action": "push" }, glyph("lock", 20), label) as HTMLButtonElement;
+  const push = async (event: Event) => {
+    event.preventDefault();
+    const repo = field.value.trim();
+    if (!repo) return toast("type the repo first");
+    button.disabled = true;
+    label.textContent = "pushing…";
+    try {
+      const answered = await withPin(`pushing ${name}`, (grant) => api<{ url: string; pushed: boolean }>("POST", `/api/phone/apps/${offer.id}/push`, { repo }, grant));
+      if (answered === null) return;
+      toast(answered.pushed ? `${name} is on ${answered.url.replace(/^https:\/\//, "")}` : `${answered.url.replace(/^https:\/\//, "")} has this version already`, true);
+      back();
+    } catch (error) {
+      failed(error);
+    } finally {
+      button.disabled = false;
+      label.textContent = "push it with pin";
+    }
+  };
+  return [
+    prompt(`git push ${offer.id}`),
+    h("h1", {}, `push ${name} to github`),
+    h("p", { class: "note" }, `the tv pushes it as ${offer.github.login}, in a folder named ${offer.id}. the rest of the repo stays as it is, and nothing is forced.`),
+    h("p", { class: "note" }, offer.github.via === "gh" ? "a repo that isn't there yet is made, private." : "the repo has to be on github already."),
+    h("form", { class: "plan-paste", onsubmit: (event: Event) => void push(event) }, field, button),
+    h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "back"),
+  ];
+}

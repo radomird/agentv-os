@@ -25,7 +25,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
-import { installedPackage, userAgent } from "./identity.ts";
+import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
@@ -33,7 +33,9 @@ import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
 import { Builds, type Provider as BuildProvider } from "./builds.ts";
-import { exportRefusal, zipFolder } from "./export.ts";
+import { Asks } from "./asks.ts";
+import { exportRefusal, packageFiles, zipFolder } from "./export.ts";
+import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal, type SignIn } from "./github.ts";
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
@@ -147,6 +149,16 @@ const MAX_BODY = 64 * 1024;
 const PHONE_WAIT_MS = 25_000;
 const FIELD_KINDS = ["text", "search", "email", "password", "number", "url"];
 
+// An app the TV offered for Export (ADR-045), for ten minutes, with the
+// person's GitHub sign-in when they have one.
+interface ExportOffer {
+  id: string;
+  name: string;
+  version: string;
+  until: number;
+  github: SignIn | null;
+}
+
 // What's on the TV, for the phone's remote to follow (ADR-037). The TV's page
 // says what it shows: the PIN pad, what asks for it and how many digits are
 // in, a text field with the focus and its kind, and home, a menu or the
@@ -196,6 +208,8 @@ export class Daemon {
   readonly builds: Builds;
   // Stage B's asks of the services' Chromium, for the screen daemon.
   readonly pageAsks = new PageAsks();
+  // Export's asks of the person's GitHub sign-in, for the screen daemon.
+  readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: "the TV didn't answer in time: is its session running?" } });
   private buildsSeen = "";
   private buildsTimer?: ReturnType<typeof setInterval>;
   // What home's Chromium reaches the internet through.
@@ -224,8 +238,9 @@ export class Daemon {
   private keyTerms: Provider | null = null;
   // The last few page apps' notices, for the phones (ADR-043).
   private notices: { app: string; name: string; text: string; at: string }[] = [];
-  // An app the TV offered for Export, for an adult's phone to save (ADR-045).
-  private exportOffer: { id: string; name: string; version: string; until: number } | null = null;
+  // An app the TV offered for Export, for an adult's phone to save, or to
+  // push when the person's account here is signed in to GitHub (ADR-045).
+  private exportOffer: ExportOffer | null = null;
   // Omarchy's desktop's relay for the phone's trackpad, while it's on.
   private desktops = new Set<ServerResponse>();
   private ledgerPath: string;
@@ -391,6 +406,8 @@ export class Daemon {
     this.updates.stop();
     this.setupApps.stop();
     this.openLedger?.close();
+    this.pageAsks.close();
+    this.exportAsks.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -641,7 +658,7 @@ export class Daemon {
       // ones waiting for their yes (ADR-043, ADR-046).
       builds: viewer.role === "adult" ? await this.phoneBuilds() : [],
       // An app the TV offered for Export, for an adult to save here.
-      export: viewer.role === "adult" && this.exportOffer && this.exportOffer.until > Date.now() ? { id: this.exportOffer.id, name: this.exportOffer.name, version: this.exportOffer.version } : null,
+      export: viewer.role === "adult" && this.exportOffer && this.exportOffer.until > Date.now() ? { id: this.exportOffer.id, name: this.exportOffer.name, version: this.exportOffer.version, github: this.exportOffer.github } : null,
     };
   }
 
@@ -1221,6 +1238,56 @@ export class Daemon {
       return;
     }
 
+    // The push to a repo of the person's own, asked here each time behind
+    // the PIN, and done by the screen daemon as the person, with their own
+    // GitHub sign-in. AgenTV's own repos are refused (ADR-045).
+    const pushing = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/push$/.exec(path);
+    if (method === "POST" && pushing) {
+      const viewer = await this.profiles.active();
+      if (viewer.role !== "adult") {
+        this.json(response, 403, { ok: false, error: "an adult exports an app" });
+        return;
+      }
+      if (!this.guarded(request, response, "pushing an app to GitHub")) return;
+      const offer = this.exportOffer;
+      if (!offer || offer.id !== pushing[1] || offer.until <= Date.now()) {
+        this.json(response, 400, { ok: false, error: "export it from its details on the tv first" });
+        return;
+      }
+      if (!offer.github) {
+        this.json(response, 400, { ok: false, error: "this box isn't signed in to GitHub" });
+        return;
+      }
+      const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === offer.id);
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      if (!found || refusal) {
+        this.json(response, 400, { ok: false, error: refusal });
+        return;
+      }
+      const body = (await this.body(request)) as { repo?: unknown } | undefined;
+      const repo = parseRepo(body?.repo, offer.github.login);
+      const refused = "error" in repo ? repo.error : repoRefusal(repo, agentvOwner());
+      if (refused || "error" in repo) {
+        this.json(response, 400, { ok: false, error: refused });
+        return;
+      }
+      const files = packageFiles(found.dir).map(({ path, data }) => ({ path, data: data.toString("base64") }));
+      this.log(`${viewer.name} pushes ${offer.id} to github.com/${repo.owner}/${repo.name} from ${phone.name}`);
+      const said = await this.exportAsks.ask({ kind: "push", id: offer.id, name: offer.name, version: offer.version, repo, files }, 5 * 60_000);
+      if (!said.ok) {
+        this.log(`${offer.id} wasn't pushed: ${said.error}`);
+        this.json(response, 502, { ok: false, error: said.error });
+        return;
+      }
+      this.log(`${offer.id} is on github.com/${repo.owner}/${repo.name}${said.pushed === false ? ", which had it already" : ""}`);
+      if (this.exportOffer === offer) {
+        this.exportOffer = null;
+        this.phonesChanged();
+      }
+      this.json(response, 200, { ok: true, url: said.url, pushed: said.pushed });
+      return;
+    }
+
     // The adult PIN, entered on the phone: a grant, and the TV unlocked.
     if (method === "POST" && path === "/api/phone/pin") {
       const locked = (await this.pinStatus()).locked;
@@ -1251,6 +1318,15 @@ export class Daemon {
       "X-Content-Type-Options": "nosniff",
     });
     response.end(body);
+  }
+
+  // Whether the person's account here is signed in to GitHub, asked of the
+  // screen daemon, which runs as them. If it is, the phone offers a push too.
+  private async offerPush(offer: ExportOffer): Promise<void> {
+    const said = await this.exportAsks.ask({ kind: "sign-in" }, 30_000);
+    if (this.exportOffer !== offer || !said.ok || !said.via || !said.login) return;
+    offer.github = { via: said.via, login: said.login };
+    this.phonesChanged();
   }
 
   // The grant a page got for the PIN, sent with a guarded request.
@@ -2154,8 +2230,9 @@ export class Daemon {
         this.json(response, 400, { ok: false, error: refusal });
         return;
       }
-      this.exportOffer = { id: found.manifest.id, name: found.manifest.name, version: found.manifest.version, until: Date.now() + 10 * 60_000 };
+      this.exportOffer = { id: found.manifest.id, name: found.manifest.name, version: found.manifest.version, until: Date.now() + 10 * 60_000, github: null };
       this.phonesChanged();
+      void this.offerPush(this.exportOffer);
       this.json(response, 200, { ok: true });
       return;
     }
@@ -2295,6 +2372,18 @@ export class Daemon {
         said = { ok: false, error: `the TV's answer couldn't be read: ${(error as Error).message}` };
       }
       const known = this.pageAsks.answer(Number(pageAnswer[1]), said);
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+    // Export's asks of the person's GitHub sign-in: the screen daemon, which
+    // runs as them, takes each and answers it (ADR-045).
+    if (method === "GET" && path === "/api/export/ask") {
+      this.json(response, 200, { ok: true, ask: await this.exportAsks.take() });
+      return;
+    }
+    const exportAnswer = /^\/api\/export\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && exportAnswer) {
+      const known = this.exportAsks.answer(Number(exportAnswer[1]), await this.body(request));
       this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
       return;
     }

@@ -21,13 +21,13 @@ export function exportRefusal(manifest: Manifest, tier: string): string | null {
 }
 
 // Every file in the package, by its path in it, without links, fixtures or
-// a git folder.
-function files(dir: string): { path: string; data: Buffer }[] {
+// a git folder: what the .zip has, and what a push puts in the repo.
+export function packageFiles(dir: string): { path: string; data: Buffer }[] {
   const found: { path: string; data: Buffer }[] = [];
   let bytes = 0;
   const walk = (at: string, prefix: string) => {
     for (const name of readdirSync(at).sort()) {
-      if (!prefix && (name === "fixtures" || name === ".git")) continue;
+      if ((!prefix && name === "fixtures") || name === ".git") continue;
       const path = join(at, name);
       const stat = lstatSync(path);
       const rel = prefix ? `${prefix}/${name}` : name;
@@ -51,7 +51,7 @@ export function zipFolder(dir: string, top: string, at = new Date()): Buffer {
   const parts: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
-  for (const file of files(dir)) {
+  for (const file of packageFiles(dir)) {
     const name = Buffer.from(`${top}/${file.path}`, "utf8");
     const packed = deflateRawSync(file.data);
     const crc = crc32(file.data) >>> 0;

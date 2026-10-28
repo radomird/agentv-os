@@ -17,7 +17,7 @@
 
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { arrange } from "./arrange.ts";
-import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild } from "./builds.ts";
+import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild, pushBanner, pushPage } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
@@ -78,7 +78,7 @@ interface Ask {
   keyUrl: string;
 }
 
-type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "build";
+type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "build" | "push";
 let state: State | null = null;
 let mode: Mode = "remote";
 // The build being approved, while it's open.
@@ -86,6 +86,8 @@ let approving: string | null = null;
 // The photo page stays as it is while the page draws again around it, so a
 // photo picked isn't lost when something changes on the TV.
 let photoEl: HTMLElement | null = null;
+// The push's page, kept while it's open so a redraw keeps what's typed.
+let pushEl: HTMLElement | null = null;
 
 // The page each thing on the TV opens. The PIN pad comes over whatever page
 // is showing.
@@ -656,9 +658,19 @@ function draw(): void {
       ),
     );
   }
-  // An app the TV offered for Export, to save here.
+  // An app the TV offered for Export, to save here, or to push to GitHub.
   const saving = exportBanner(state.export, failed);
   if (saving) banners.push(saving);
+  if (mode === "push" && !state.export?.github) mode = "remote";
+  if (mode !== "push") pushEl = null;
+  const pushing =
+    mode === "push"
+      ? null
+      : pushBanner(state.export, () => {
+          mode = "push";
+          draw();
+        });
+  if (pushing) banners.push(pushing);
   // Your agent's build: the one waiting for a yes, or how the newest is going.
   if (mode !== "build") {
     const building = buildBanner(state.builds, (build) => {
@@ -701,6 +713,20 @@ function draw(): void {
         ),
       ),
     );
+  } else if (mode === "push" && state.export?.github) {
+    pushEl ??= h(
+      "div",
+      {},
+      ...pushPage(
+        { ...state.export, github: state.export.github },
+        () => {
+          mode = "remote";
+          draw();
+        },
+        failed,
+      ),
+    );
+    body.append(pushEl);
   } else if (mode === "photo") body.append((photoEl ??= photoPage(failed)));
   else if (mode === "who") body.append(who());
   else if (mode === "update" && state.update) body.append(updatePage(state.update));
