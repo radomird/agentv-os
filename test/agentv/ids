@@ -60,7 +60,7 @@ S5.4  image     the soundtrack plays from the welcome screen and muting it from 
 S5.5  image     picking Claude shows Anthropic's terms for the way in picked, nothing installs until an adult accepts on the phone, and the box records it (layers 2 and 4 too)
 S5.6  image     setup started from the previous release updates itself at getting ready, and picks up at the same step after a restart (layer 4 too)
 S5.7  image     setup and Settings → Look list every theme on the box, one installed with omarchy theme install too, and picking one changes the TV and the desktop within 2 s (layers 2 and 4 too)
-S5.8  image     with a theme that ships backgrounds, home shows the one Omarchy shows, credited to the theme, and follows the desktop to the next (layers 2 and 4 too)
+S5.8  image     with a theme that ships backgrounds, home shows the one Omarchy shows, credited to the theme, and follows the desktop to the next (layers 2 and 4 too); home, Apps and Settings pass the contrast check in every theme Omarchy ships (layer 4)
 S6.1  manual    two streaming services' apps, each asked for in a sentence, reach "Sign in" within 10 minutes on a fresh install (layers 2 and 4 run stage A against a stand-in service; the NUC with Claude)
 S6.2  manual    after the sign-in, each passes the same contract tests as the hand-written reference adapter, for under $5 each, on Claude (layers 2 and 4 run stage B against the stand-in; the NUC)
 S6.3  image     the builder can't read /etc/agentv/env or another service's cookies (layer 2 holds the sandbox's settings; the image layer probes it from inside, as agentv-builder)

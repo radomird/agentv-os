@@ -208,7 +208,7 @@ button {
 }
 
 .tile-label {
-  color: var(--bright-magenta);
+  color: var(--bright-magenta-ink, var(--bright-magenta));
   text-align: right;
 }
 
@@ -247,12 +247,12 @@ button {
 }
 
 .tile-state {
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
   text-align: right;
 }
 
 .tile-sign-in {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .tile-apps {
@@ -294,12 +294,12 @@ button {
   font-size: 64px;
 }
 
-.mono-0 { background: var(--bright-magenta); }
-.mono-1 { background: var(--blue); }
-.mono-2 { background: var(--green); }
-.mono-3 { background: var(--bright-yellow); }
-.mono-4 { background: var(--bright-cyan); }
-.mono-5 { background: var(--yellow); }
+.mono-0 { background: var(--bright-magenta); color: var(--bright-magenta-on, var(--background)); }
+.mono-1 { background: var(--blue); color: var(--blue-on, var(--background)); }
+.mono-2 { background: var(--green); color: var(--green-on, var(--background)); }
+.mono-3 { background: var(--bright-yellow); color: var(--bright-yellow-on, var(--background)); }
+.mono-4 { background: var(--bright-cyan); color: var(--bright-cyan-on, var(--background)); }
+.mono-5 { background: var(--yellow); color: var(--yellow-on, var(--background)); }
 
 /* What an app's tile() sends, drawn here in the theme (ADR-016), with icons
    from the launcher's own pixel set (pixels.ts). Laid out as canvas boards
@@ -331,12 +331,12 @@ button {
   color: var(--foreground);
 }
 
-.ink-0 { color: var(--bright-magenta); }
-.ink-1 { color: var(--blue); }
-.ink-2 { color: var(--green); }
-.ink-3 { color: var(--bright-yellow); }
-.ink-4 { color: var(--bright-cyan); }
-.ink-5 { color: var(--yellow); }
+.ink-0 { color: var(--bright-magenta-ink, var(--bright-magenta)); }
+.ink-1 { color: var(--blue-ink, var(--blue)); }
+.ink-2 { color: var(--green-ink, var(--green)); }
+.ink-3 { color: var(--bright-yellow-ink, var(--bright-yellow)); }
+.ink-4 { color: var(--bright-cyan-ink, var(--bright-cyan)); }
+.ink-5 { color: var(--yellow-ink, var(--yellow)); }
 
 .tile-content {
   flex: 1;
@@ -513,7 +513,7 @@ button {
 }
 
 .size-m .entries .entry-icon:first-child .entry-label {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 /* Large: a row of days under the headline, each a column. */
@@ -532,7 +532,7 @@ button {
 }
 
 .size-l .entries .entry-icon:first-child .entry-label {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 /* The built-in Clock: the time ticks here (canvas board 26). */
@@ -644,7 +644,7 @@ button {
   justify-content: flex-end;
   padding: 16px;
   border: 4px dashed var(--yellow);
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
   font-size: 22px;
   font-weight: 800;
   pointer-events: none;
@@ -657,7 +657,7 @@ button {
 
 .drop.no-room {
   border-color: var(--red);
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 /* The size bar: the app's own words for each size. */
@@ -687,7 +687,7 @@ button {
 }
 
 .sizebar-name {
-  color: var(--bright-cyan);
+  color: var(--bright-cyan-ink, var(--bright-cyan));
 }
 
 .sizebar-chips {
@@ -706,7 +706,7 @@ button {
 }
 
 .chip b {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
   margin-right: 0.6em;
 }
 
@@ -729,7 +729,7 @@ button {
 }
 
 .chip.unpin {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .chip.done {
@@ -756,7 +756,7 @@ button {
 }
 
 .prompt b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 400;
 }
 
@@ -826,11 +826,11 @@ button {
 }
 
 .button-value {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
 }
 
 .button.danger {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .details {
@@ -847,7 +847,7 @@ button {
 }
 
 .maker {
-  color: var(--bright-magenta);
+  color: var(--bright-magenta-ink, var(--bright-magenta));
   font-size: 32px;
   font-weight: 700;
 }
@@ -983,7 +983,7 @@ button {
 /* The provider's terms a key waits for (Q104). */
 .terms-row::before {
   content: "· ";
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .panel .button {
@@ -1025,7 +1025,7 @@ button {
 
 /* A game still running behind home, and its Quit (ADR-031). */
 .tile-quit {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 /* The background (ADR-012, ADR-048, S5.3): the theme's own or the photo
@@ -1191,7 +1191,7 @@ body.with-backdrop.on-home {
 }
 
 .update-next {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 800;
 }
 
@@ -1201,7 +1201,7 @@ body.with-backdrop.on-home {
 }
 
 .panel-title.security {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .notes {
@@ -1215,7 +1215,7 @@ body.with-backdrop.on-home {
 }
 
 .notes b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
 }
 
 /* Install now, Tonight and Later, side by side (boards 29 and 30). */
@@ -1285,7 +1285,7 @@ body.with-backdrop.on-home {
 }
 
 .updating-step b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 400;
 }
 
@@ -1294,7 +1294,7 @@ body.with-backdrop.on-home {
 }
 
 .updating-step.now b {
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
 }
 
 /* Something's off after an update (board 33): what the check found, then Go
@@ -1315,13 +1315,13 @@ body.with-backdrop.on-home {
 }
 
 .check-row b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 400;
 }
 
 .check-row.bad,
 .check-row.bad b {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .check-actions {
@@ -1338,7 +1338,7 @@ body.with-backdrop.on-home {
   margin: -12px 0 36px;
   font-size: 160px;
   line-height: 1;
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
   font-variant-numeric: tabular-nums;
 }
 
@@ -1378,7 +1378,7 @@ body.with-backdrop.on-home {
 }
 
 .pin-message.bad {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .pin-boxes {
@@ -1525,7 +1525,7 @@ body.with-backdrop.on-home {
   font-size: 120px;
   font-weight: 800;
   letter-spacing: 18px;
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 /* --- Music (ADR-017) ---------------------------------------------------- */
@@ -1596,7 +1596,7 @@ body.with-backdrop.on-home {
 }
 
 .now-label {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .now-text {
@@ -1680,7 +1680,7 @@ body.with-backdrop.on-home {
 }
 
 .source .button-value.problem {
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
 }
 
 .scan-progress:not(:empty) {
@@ -1810,7 +1810,7 @@ body.with-backdrop.on-home {
 
 .updating-step.bad,
 .updating-step.bad b {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .build-wishes {

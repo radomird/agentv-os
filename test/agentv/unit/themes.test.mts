@@ -6,11 +6,13 @@
 // list over (daemon/omarchy-themes.ts), since the daemon can't.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { pictureId } from "../../../daemon/backgrounds.ts";
+import { contrast, legible, TARGET } from "../../../daemon/legible.ts";
 import { OmarchyThemes } from "../../../daemon/omarchy-themes.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { cleanFound, currentTheme, parseColors, previews } from "../../../daemon/themes.ts";
@@ -248,4 +250,43 @@ test("S5.8 the theme's backgrounds reach the daemon once each, and home follows 
     await d.close();
   }
   assert.deepEqual(lines, []);
+});
+
+// The TV's colours for a theme as agentv-theme-sync hands them over, from
+// Omarchy's own resolver.
+function resolved(theme: string): string {
+  const out = execFileSync(join(ROOT, "bin/omarchy-theme-color"), ["--file", join(ROOT, "themes", theme, "colors.toml"), "--all"], { env: { ...process.env, OMARCHY_PATH: ROOT }, encoding: "utf8" });
+  const colors: Record<string, string> = {};
+  for (const line of out.split("\n")) {
+    const [key, value] = line.split("\t");
+    if (/^[a-z_]+$/.test(key ?? "") && /^#[0-9a-fA-F]{3,8}$/.test(value ?? "")) colors[key] = value;
+  }
+  return readFileSync(join(ROOT, "config/omarchy/themed/launcher.css.tpl"), "utf8").replace(/\{\{ *([a-z_]+) *\}\}/g, (_, key) => colors[key] ?? "#000000");
+}
+
+const value = (css: string, name: string) => new RegExp(`--${name}:\\s*(#[0-9a-f]{6})\\b`, "i").exec(css)?.[1]?.toLowerCase();
+const rgbOf = (hex: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+
+test("S5.8 each colour the TV writes text in gets an ink that reads on the theme's backgrounds, and an on colour for text on it", () => {
+  for (const theme of SHIPPED) {
+    const css = legible(resolved(theme));
+    for (const name of ["green", "yellow", "red", "accent", "bright-magenta", "bright-cyan"]) {
+      const ink = value(css, `${name}-ink`);
+      const on = value(css, `${name}-on`);
+      assert.ok(ink && on, `${theme} has --${name}-ink and --${name}-on`);
+      for (const back of ["background", "dark-background", "lighter-background"]) {
+        assert.ok(contrast(rgbOf(ink!), rgbOf(value(css, back)!)) >= TARGET, `${theme}'s ${name} ink on its ${back}`);
+      }
+      assert.ok(contrast(rgbOf(on!), rgbOf(value(css, name)!)) >= TARGET, `${theme}'s text on its ${name}`);
+    }
+  }
+  // A colour that reads already is left as it is.
+  const tokyo = legible(resolved("tokyo-night"));
+  assert.equal(value(tokyo, "green-ink"), value(tokyo, "green"));
+  // Catppuccin Latte's green doesn't, on its light grey: it's taken towards
+  // its dark foreground.
+  const latte = legible(resolved("catppuccin-latte"));
+  assert.notEqual(value(latte, "green-ink"), value(latte, "green"));
+  // Without a foreground there's nothing to mix with: as it came.
+  assert.equal(legible(":root {\n  --accent: #123456;\n}\n"), ":root {\n  --accent: #123456;\n}\n");
 });
