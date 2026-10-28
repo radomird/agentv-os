@@ -1,6 +1,7 @@
 // A plan's sign-in, the first time the builder runs on it (ADR-040, S6.5):
 // the provider's own CLI signs in (builder/sign-in.ts), with stand-ins for
-// Claude Code's paste-back login and Codex's device code; the runner waits
+// Claude Code's paste-back login and Codex's and Grok Build's device codes
+// (ADR-051); the runner waits
 // for it; root starts it and hands over the phone's code
 // (builder/sandbox/hand-over.ts); and the daemon asks for it and starts the
 // build again once it's in (daemon/builds.ts). The plan's tokens stay in the
@@ -68,6 +69,27 @@ for _ in $(seq 1 100); do
     mkdir -p "$CODEX_HOME"
     echo '{"tokens": {"access_token": "${TOKEN}"}}' >"$auth"
     echo "Successfully logged in"
+    exit 0
+  fi
+  sleep 0.1
+done
+exit 1
+`;
+
+// Grok Build's device sign-in: a link and a code to enter there, then it
+// waits until the person has, and keeps the session in its own auth.json.
+// It has no status command.
+const GROK = `#!/bin/bash
+[[ $1 == login && $2 == --device-auth ]] || exit 2
+[[ $GROK_HOME == "$HOME/.grok" ]] || exit 3
+echo "To sign in, open https://accounts.x.ai/device in a browser"
+echo "and enter the code WDJB-MJHT"
+for _ in $(seq 1 100); do
+  if [[ -f $HOME/entered ]]; then
+    mkdir -p "$GROK_HOME"
+    umask 077
+    echo '{"access_token": "${TOKEN}"}' >"$GROK_HOME/auth.json"
+    echo "Signed in"
     exit 0
   fi
   sleep 0.1
@@ -166,6 +188,22 @@ test("ADR-040 Codex's device sign-in shows its link and the code to enter there,
   assert.ok(existsSync(join(h, ".codex/auth.json")), "in Codex's own folder in the builder's home");
 });
 
+test("ADR-051 grok's device sign-in shows its link and the code to enter there, and its own auth.json says it's in", async () => {
+  const h = home("grok", GROK);
+  const folder = join(scratch, `grok${count}`);
+  mkdirSync(folder);
+  assert.equal(await signedIn("grok", { home: h }), false);
+  const going = signIn("grok", { home: h, folder, minutes: 1, log: () => {} });
+  await until(() => read(folder)?.state !== "starting");
+  assert.deepEqual([read(folder)!.state, read(folder)!.url, read(folder)!.code, read(folder)!.pastes], ["waiting", "https://accounts.x.ai/device", "WDJB-MJHT", false]);
+  writeFileSync(join(h, "entered"), "");
+  assert.equal((await going).state, "done");
+  assert.equal(await signedIn("grok", { home: h }), true);
+  assert.deepEqual(copies(h, [join(h, ".grok/auth.json"), join(h, ".local/bin/grok")]), [], "no copy of the plan's tokens in its home but grok's own file");
+  writeFileSync(join(h, ".grok/auth.json"), "");
+  assert.equal(await signedIn("grok", { home: h }), false, "an empty auth.json isn't a sign-in");
+});
+
 test("ADR-040 the sign-in runs as its unit runs it, as a program of its own", async () => {
   // As agentv-builder-sign-in@claude starts it. Its imports once made a
   // loop through the runner, which only showed when it ran this way.
@@ -224,8 +262,8 @@ test("a plan without its CLI, or with no sign-in yet, says so", async () => {
   const empty = join(scratch, `empty${count}`);
   mkdirSync(empty);
   assert.match((await signIn("claude", { home: empty, folder, log: () => {} })).reason!, /claude isn't on the box yet/);
-  assert.match((await signIn("grok", { home: empty, folder, log: () => {} })).reason!, /coming soon/);
-  assert.equal(await signedIn("grok", { home: empty }), null);
+  assert.match((await signIn("muse", { home: empty, folder, log: () => {} })).reason!, /coming soon/);
+  assert.equal(await signedIn("muse", { home: empty }), null);
 });
 
 // --- The runner waits for it ---------------------------------------------------
@@ -245,7 +283,7 @@ test("ADR-040 a build on a plan that isn't signed in waits for the sign-in, once
   const waits = await run(build());
   assert.deepEqual([waits.state, waits.reason], ["plan-sign-in", "sign in to your claude plan first"]);
   assert.match((await run(build({ signedIn: true }))).reason!, /sign-in didn't take/, "not asked for again and again");
-  assert.match((await run(build({ provider: "grok" }))).reason!, /grok's plan is coming soon: use a key/);
+  assert.match((await run(build({ provider: "muse" }))).reason!, /muse's plan is coming soon: use a key/);
 });
 
 // --- Root starts it, and hands over the code --------------------------------
@@ -304,7 +342,7 @@ test("ADR-040 root starts the sign-in in the builder's sandbox with a ticket of 
 
 test("root won't start a sign-in for a plan with none, or while a build runs, or hand a code to nobody", async () => {
   const { o, h } = handOver();
-  writeFileSync(join(o.drop, "sign-in.json"), JSON.stringify({ build: "b1", provider: "grok" }));
+  writeFileSync(join(o.drop, "sign-in.json"), JSON.stringify({ build: "b1", provider: "muse" }));
   assert.match((await h.handle())!.reason!, /no sign-in yet/);
   writeFileSync(join(o.drop, "sign-in-code.json"), JSON.stringify({ code: "good-code" }));
   assert.match((await h.handle())!.reason!, /nothing is signing in/);
