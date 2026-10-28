@@ -441,7 +441,7 @@ export function settings(ctx: Ctx, open?: string): View {
   void daemon
     .key()
     .then((found) => {
-      setKeyState({ set: found.set, provider: found.provider, plans: found.plans });
+      setKeyState({ set: found.set, provider: found.provider, plans: found.plans, ai: found.ai });
       const item = menu.querySelector<HTMLElement>('[data-key="ai"] .menu-value');
       if (item) item.textContent = aiValue(ctx);
       if (menu.querySelector(".open")?.getAttribute("data-key") === "ai" && !panel.contains(ctx.focus.get() ?? null)) {
@@ -519,13 +519,17 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // The sound, too, against what this page drew: a Settings drawn again
+  // while another one's ask waited has no output on it yet.
+  const heard = JSON.stringify(audio);
   void screen
     .audio()
     .then((found) => {
       // Away from the TV, it says so; a TV with no outputs says that.
       const next = found.ok ? { ...found, outputs: found.outputs ?? [] } : found;
-      const changed = JSON.stringify(next) !== JSON.stringify(audio);
+      const changed = JSON.stringify(next) !== heard;
       audio = next;
+      if (!menu.isConnected) return;
       const item = menu.querySelector<HTMLElement>('[data-key="sound"] .menu-value');
       if (item) item.textContent = sections.find((section) => section.key === "sound")!.value();
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {

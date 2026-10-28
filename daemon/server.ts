@@ -27,7 +27,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
-import { Ai, OFFERS, TERMS_READ, type Provider } from "./ai.ts";
+import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
@@ -251,6 +251,9 @@ export class Daemon {
   // The provider whose terms a key from Settings → AI waits for (Q104), which
   // the phones show for an adult to accept.
   private keyTerms: Provider | null = null;
+  // The provider whose terms a plan picked in Settings → AI waits for (Q143),
+  // the same way.
+  private planTerms: Provider | null = null;
   // The last few page apps' notices, for the phones (ADR-043).
   private notices: { app: string; name: string; text: string; at: string }[] = [];
   // An app the TV offered for Export, for an adult's phone to save, or to
@@ -438,6 +441,16 @@ export class Daemon {
       if (at > 0 && line.slice(0, at) in values) values[line.slice(0, at)] = line.slice(at + 1).trim();
     }
     return values;
+  }
+
+  // Settings → AI's state: which provider has a key (never the key), the
+  // plans this box's channel offers (ADR-053), and what builds use now, by
+  // plan or key, and whether its terms are accepted (Q143).
+  private async keyState(): Promise<object> {
+    const { set, provider } = this.key.status();
+    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name, bestEffort: offer.plan.bestEffort === true }));
+    const ai = await this.ai.read();
+    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
   }
 
   // The channel this box updates from, as `agentv channel` says it: the one
@@ -822,6 +835,10 @@ export class Daemon {
     if (this.keyTerms) {
       const offer = OFFERS[this.keyTerms];
       return { ask: "terms", provider: this.keyTerms, path: "key", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.key, summary: offer.summary.key, keyUrl: offer.keyUrl };
+    }
+    if (this.planTerms) {
+      const offer = OFFERS[this.planTerms];
+      return { ask: "terms", provider: this.planTerms, path: "plan", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.plan, summary: offer.summary.plan, keyUrl: offer.keyUrl };
     }
     if (setup.done || setup.step !== "ai") return null;
     const ai = await this.ai.read();
@@ -1340,6 +1357,20 @@ export class Daemon {
         this.keyTerms = null;
         this.log(`${viewer.name} accepted ${provider}'s terms for a key, on ${phone.name}, for settings`);
         this.broadcast("terms", { provider, path: "key", accepted: recorded.acceptance });
+        this.json(response, 200, { ok: true, accepted: recorded.acceptance });
+        return;
+      }
+      // Settings → AI's plan, waiting for its provider's terms (Q143).
+      if (this.planTerms && body?.provider === this.planTerms && body?.path === "plan") {
+        const provider = this.planTerms;
+        const recorded = await this.ai.record(provider, "plan", { phone: phone.name, viewer: viewer.name });
+        if (!recorded.acceptance) {
+          this.json(response, 400, { ok: false, error: recorded.error });
+          return;
+        }
+        this.planTerms = null;
+        this.log(`${viewer.name} accepted ${provider}'s terms for a plan, on ${phone.name}, for settings`);
+        this.broadcast("terms", { provider, path: "plan", accepted: recorded.acceptance });
         this.json(response, 200, { ok: true, accepted: recorded.acceptance });
         return;
       }
@@ -2185,11 +2216,8 @@ export class Daemon {
 
     // Which provider has a key. The key itself never comes back.
     if (method === "GET" && path === "/api/key") {
-      const { set, provider, error } = this.key.status();
-      // And the plans setup offers on this box's channel, for Settings → AI
-      // to name (ADR-053).
-      const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, bestEffort: offer.plan.bestEffort === true }));
-      this.json(response, 200, { ok: true, set, provider, plans, ...(error ? { error } : {}) });
+      const { error } = this.key.status();
+      this.json(response, 200, { ok: true, ...(await this.keyState()), ...(error ? { error } : {}) });
       return;
     }
 
@@ -2218,8 +2246,14 @@ export class Daemon {
       }
       const { set } = this.key.status();
       this.log(set ? `a key for ${provider} is kept, root's alone` : "the provider key is off");
+      // A key kept from Settings → AI is what builds use from now on, its
+      // terms accepted first (Q104, Q143), in place of a plan picked before.
+      if (set && typeof provider === "string" && Object.hasOwn(OFFERS, provider)) {
+        const chosen = await this.ai.choose(provider, "key");
+        if (chosen.state) this.broadcast("ai", chosen.state);
+      }
       this.broadcast("key", { set, provider: this.key.status().provider });
-      this.json(response, 200, { ok: true, set, provider: this.key.status().provider });
+      this.json(response, 200, { ok: true, ...(await this.keyState()) });
       return;
     }
 
@@ -2234,6 +2268,53 @@ export class Daemon {
     }
 
     // --- The AI provider and its terms (ADR-022, ADR-023) --------------------
+
+    // Settings → AI: the household's plan for builds, in place of a key
+    // (Q143). An adult's, past the PIN. A plan whose terms nobody here has
+    // accepted waits for them, as a key does: the phones show them, an adult
+    // accepts, and the TV asks again. Only a plan this box's channel offers
+    // (ADR-053).
+    if (method === "PUT" && path === "/api/ai/plan") {
+      if (!this.guarded(request, response, "the ai plan") || !(await this.adult(request, response, "the ai plan"))) return;
+      const body = (await this.body(request)) as { provider?: unknown } | undefined;
+      const provider = body?.provider;
+      if (typeof provider !== "string" || !Object.hasOwn(OFFERS, provider)) {
+        this.json(response, 400, { ok: false, error: PROVIDER_LIST });
+        return;
+      }
+      const offer = (await this.ai.offers())[provider as Provider];
+      if (!offer.plan.offered) {
+        this.json(response, 400, { ok: false, error: `${offer.plan.name} is coming soon. use an api key for now` });
+        return;
+      }
+      if (!(await this.ai.acceptance(provider as Provider, "plan"))) {
+        if (this.planTerms !== provider) {
+          this.planTerms = provider as Provider;
+          this.phonesChanged();
+        }
+        this.json(response, 409, { ok: false, error: `${offer.name}'s terms come first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.plan, summary: offer.summary.plan } });
+        return;
+      }
+      const chosen = await this.ai.choose(provider, "plan");
+      if (!chosen.state) {
+        this.json(response, 400, { ok: false, error: chosen.error });
+        return;
+      }
+      this.log(`builds use the ${provider} plan now, from settings`);
+      this.broadcast("ai", chosen.state);
+      this.json(response, 200, { ok: true, ...chosen.state });
+      return;
+    }
+
+    // Settings → AI stopped waiting for a plan's terms: the phones stop asking.
+    if (method === "DELETE" && path === "/api/ai/plan/terms") {
+      if (this.planTerms) {
+        this.planTerms = null;
+        this.phonesChanged();
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
 
     // Which provider, by plan or key, whether its terms are accepted, how the
     // first run of its CLI went, and what each provider offers.
