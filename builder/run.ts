@@ -25,7 +25,7 @@ import { pagePermissions } from "../apps/contract/page.ts";
 import { Build, type BuildRequest, type BuildStatus, keepManifest } from "./build.ts";
 import { PLAN, UNDERSTAND } from "./harness/server.ts";
 import { lockedPackages } from "./packages.ts";
-import { command, outcome, type Outcome } from "./providers.ts";
+import { command, outcome, type Outcome, ownTools } from "./providers.ts";
 import { KINDS, loadRecipes, planRecipe, type Recipe, type Step } from "./recipe.ts";
 
 export interface RunOptions {
@@ -151,6 +151,9 @@ export class Runner {
     const cwd = existsSync(this.build.work) ? this.build.work : this.build.dir;
     this.build.log({ step: step.id, started: true });
     const lines: string[] = [];
+    // A CLI that says it offers the agent tools of its own, beyond the
+    // harness's, is stopped before the agent can use one.
+    let own: string[] = [];
     const code = await new Promise<number | null>((done) => {
       const child = spawn(run.command, run.args, { cwd, env: run.env, stdio: ["ignore", "pipe", "pipe"] });
       let buffer = "";
@@ -159,8 +162,14 @@ export class Runner {
         buffer += chunk;
         let end;
         while ((end = buffer.indexOf("\n")) >= 0) {
-          lines.push(buffer.slice(0, end));
+          const line = buffer.slice(0, end);
+          lines.push(line);
           buffer = buffer.slice(end + 1);
+          if (own.length || !line.includes('"init"')) continue;
+          try {
+            own = ownTools(JSON.parse(line));
+          } catch {}
+          if (own.length) child.kill("SIGKILL");
         }
       });
       child.stderr.on("data", () => {});
@@ -172,6 +181,10 @@ export class Runner {
         done(exit);
       });
     });
+    if (own.length) {
+      this.build.log({ step: step.id, ended: true, ok: false, ownTools: own });
+      return { ok: false, reason: `the agent's CLI offered tools of its own: ${own.slice(0, 5).join(", ")}` };
+    }
     const result = outcome(this.options.standIn ? "stand-in" : request.provider, lines, code);
     if (Date.now() >= deadline) return { ok: false, reason: "the build took longer than it may" };
     this.spent += result.spent ?? 0;

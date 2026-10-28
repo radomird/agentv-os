@@ -18,7 +18,8 @@ import { join } from "node:path";
 import type { Media } from "../apps/contract/manifest.ts";
 import type { Kind, Plan, Recipe } from "./recipe.ts";
 
-export type Provider = "claude" | "chatgpt" | "gemini";
+// The provider the household picked, by its product's name (ADR-011, ADR-047).
+export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
 export type Phase = "understand" | "plan" | "build" | "stage-b";
 
 export interface BuildRequest {

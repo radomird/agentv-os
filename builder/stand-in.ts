@@ -9,6 +9,7 @@
 // "...", "spent": 0.12, "fail": "why" } } }. An argument "file" names a file
 // beside the recording whose text is the "content". A recording can call a
 // tool its step doesn't have, as a misled agent would, to show it's refused.
+// "offer": ["Bash"] plays a CLI that offers the agent tools of its own.
 //
 // Usage: node stand-in.ts <recording.json> <step> '<harness as JSON>'
 
@@ -27,6 +28,7 @@ interface Recorded {
   said?: string;
   spent?: number;
   fail?: string;
+  offer?: string[];
 }
 
 const [recordingPath, step, harnessJson] = process.argv.slice(2);
@@ -39,7 +41,9 @@ const child = spawn(harness.command, harness.args, { stdio: ["pipe", "pipe", "in
 const mcp = client(child.stdout, child.stdin, () => child.stdin.end());
 
 const listed = (await mcp.list()).map((tool) => tool.name);
-out({ type: "system", subtype: "init", tools: listed.map((name) => `mcp__agentv__${name}`) });
+out({ type: "system", subtype: "init", tools: [...listed.map((name) => `mcp__agentv__${name}`), ...(recorded.offer ?? [])] });
+// A CLI that offers tools of its own is stopped here, before it acts.
+if (recorded.offer?.length) await new Promise((resolve) => setTimeout(resolve, 5000));
 let turns = 0;
 for (const call of recorded.calls ?? []) {
   const args = { ...(call.args ?? {}) };
