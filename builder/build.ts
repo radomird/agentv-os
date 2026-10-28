@@ -61,7 +61,7 @@ export interface BuildStatus {
   id: string;
   version: string;
   phase: Phase;
-  state: "running" | "confirm" | "plan" | "approve" | "sign-in" | "failed";
+  state: "running" | "confirm" | "plan" | "approve" | "installed" | "sign-in" | "failed";
   steps: { id: string; state: StepState }[];
   step?: string;
   reason?: string; // one line, why it failed

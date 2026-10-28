@@ -1,0 +1,13 @@
+# The nightly package check (ADR-044), some time after 3 at night, and at
+# the next boot when the box was off.
+
+[Unit]
+Description=AgenTV nightly package check
+
+[Timer]
+OnCalendar=*-*-* 03:20
+RandomizedDelaySec=40min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
