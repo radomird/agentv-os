@@ -29,7 +29,7 @@ function rendered(theme: string): string {
 async function daemon(): Promise<{ url: string; close: () => Promise<void> }> {
   const dir = mkdtempSync(join(scratch, "daemon-"));
   mkdirSync(join(dir, "root", "setup"), { recursive: true });
-  const d = new Daemon({ root: join(dir, "root"), state: join(dir, "state"), port: 0, log: () => {}, builtins: null, omarchy: ROOT });
+  const d = new Daemon({ root: join(dir, "root"), state: join(dir, "state"), backgrounds: join(dir, "backgrounds"), port: 0, log: () => {}, builtins: null, omarchy: ROOT });
   return { url: `http://127.0.0.1:${await d.listen()}`, close: () => d.close() };
 }
 
