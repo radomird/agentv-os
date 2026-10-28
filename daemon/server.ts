@@ -2005,6 +2005,39 @@ export class Daemon {
       return;
     }
 
+    // From the screen daemon (ADR-048): the theme Omarchy has now, which of
+    // its backgrounds Omarchy shows, and the pictures, each only once. The
+    // answer says which it should send.
+    if (method === "PUT" && path === "/api/backgrounds/theme") {
+      const result = await this.backgrounds.offerTheme(await this.body(request));
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, need: result.need });
+      return;
+    }
+
+    const own = /^\/api\/backgrounds\/theme\/([0-9a-f]{16})$/.exec(path);
+    if (method === "POST" && own) {
+      let body: Buffer;
+      try {
+        body = await this.raw(request, MAX_PHOTO);
+      } catch (error) {
+        this.json(response, 413, { ok: false, error: (error as Error).message });
+        return;
+      }
+      const result = await this.backgrounds.addThemeFile(own[1], body);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     // Art from museum archives (ADR-012): the archives, a search of one, a
     // work's thumbnail through the daemon, and a work picked as the
     // background, which the daemon fetches whole and keeps with its credit.

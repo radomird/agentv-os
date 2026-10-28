@@ -4,11 +4,11 @@
 // what the TV and the phone may do with them.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { Backgrounds, creditText, imageType, MAX_PHOTOS } from "../../../daemon/backgrounds.ts";
+import { Backgrounds, creditText, imageType, MAX_PHOTOS, MAX_THEME, pictureId } from "../../../daemon/backgrounds.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-backgrounds-"));
@@ -58,7 +58,7 @@ test("a credit is one line of plain text", () => {
 test("S5.3 a photo becomes the background at once, kept with its credit, and the oldest goes once there are too many", async () => {
   const dir = join(scratch, "store");
   const store = new Backgrounds({ dir });
-  assert.deepEqual(await store.read(), { source: "field", current: null, items: [] });
+  assert.deepEqual(await store.read(), { source: "theme", current: null, items: [], theme: { name: null, current: null, items: [] } }, "a new box: the theme's own, none yet");
   assert.match((await store.add(Buffer.from("not a picture"), { from: "iphone" })).error ?? "", /jpeg, png or webp/);
   const first = await store.add(JPEG, { text: "photo by ana on unsplash", from: "radomir on iphone" });
   assert.equal(first.state?.source, "photos");
@@ -85,6 +85,69 @@ test("the pixel field or the photos, and taking the last photo off goes back to 
   assert.equal((await store.choose("photos", added.item!.id)).state?.current, added.item!.id);
   const removed = await store.remove(added.item!.id);
   assert.deepEqual([removed.state?.source, removed.state?.current, removed.state?.items.length], ["field", null, 0]);
+});
+
+test("S5.8 the theme's own backgrounds: each kept once, by what's in it, the one Omarchy shows current, and the theme's name their credit", async () => {
+  const dir = join(scratch, "theme");
+  const store = new Backgrounds({ dir });
+  const a = { id: pictureId(JPEG), type: "image/jpeg" as const };
+  const b = { id: pictureId(PNG), type: "image/png" as const };
+  const offered = await store.offerTheme({ theme: "tokyo-night", current: b.id, files: [a, b] });
+  assert.deepEqual(offered.need, [a.id, b.id], "it asks for each it doesn't have");
+  assert.deepEqual(offered.state?.theme, { name: "tokyo-night", current: null, items: [] }, "none shown until they're here");
+  assert.match((await store.addThemeFile(a.id, PNG)).error ?? "", /isn't the background it said/);
+  assert.match((await store.addThemeFile(pictureId(WEBP), WEBP)).error ?? "", /isn't one of the theme's/);
+  assert.equal((await store.addThemeFile(a.id, JPEG)).state?.theme.current, a.id, "the first that's here, until the one Omarchy shows is");
+  const both = (await store.addThemeFile(b.id, PNG)).state!;
+  assert.deepEqual([both.source, both.theme.current, both.theme.items.map((item) => item.id)], ["theme", b.id, [a.id, b.id]]);
+  assert.deepEqual(both.theme.items[0].credit, { text: "tokyo night", from: "omarchy" });
+  assert.deepEqual(await store.file(b.id), { path: join(dir, "theme", `${b.id}.png`), type: "image/png" });
+
+  // The desktop moves on to the next: nothing to send again.
+  assert.deepEqual((await store.offerTheme({ theme: "tokyo-night", current: a.id, files: [a, b] })).need, []);
+  assert.equal((await store.read()).theme.current, a.id);
+  // Another theme: the pictures no longer in it are put away.
+  const c = { id: pictureId(WEBP), type: "image/webp" as const };
+  const next = await store.offerTheme({ theme: "rose-pine", current: c.id, files: [b, c] });
+  assert.deepEqual(next.need, [c.id]);
+  assert.ok(!existsSync(join(dir, "theme", `${a.id}.jpg`)), "the one rose pine hasn't is gone");
+  assert.deepEqual(next.state?.theme.items.map((item) => [item.id, item.credit.text]), [[b.id, "rose pine"]]);
+  // A theme without backgrounds: none, and the TV keeps its colours.
+  assert.deepEqual((await store.offerTheme({ theme: "plain", current: null, files: [] })).state?.theme.items, []);
+  assert.deepEqual(readdirSync(join(dir, "theme")), []);
+
+  // Only what a theme could hand over.
+  assert.match((await store.offerTheme({ theme: "../x", files: [] })).error ?? "", /which omarchy theme/);
+  assert.match((await store.offerTheme({ theme: "x", files: [{ id: "../../etc", type: "image/png" }] })).error ?? "", /id and kind/);
+  assert.match((await store.offerTheme({ theme: "x", files: [{ id: a.id, type: "image/gif" }] })).error ?? "", /id and kind/);
+  assert.match((await store.offerTheme({ theme: "x", files: Array.from({ length: MAX_THEME + 1 }, (_, i) => ({ id: i.toString(16).padStart(16, "0"), type: "image/png" })) })).error ?? "", /up to/);
+  // The source can be chosen back from another.
+  await store.add(JPEG, { from: "iphone" });
+  assert.equal((await store.read()).source, "photos");
+  assert.equal((await store.choose("theme")).state?.source, "theme");
+});
+
+test("a box from before the theme's own keeps the source it had", async () => {
+  const dir = join(scratch, "before");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "backgrounds.json"), JSON.stringify({ source: "field", current: null, items: [] }));
+  assert.deepEqual(await new Backgrounds({ dir }).read(), { source: "field", current: null, items: [], theme: { name: null, current: null, items: [] } });
+});
+
+test("S5.8 the screen daemon hands the theme's own over through the daemon's local side, which the TV hears", async () => {
+  const events = await fetch(`${url}/api/events`);
+  const reader = events.body!.getReader();
+  const offer = await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "gruvbox", current: pictureId(PNG), files: [{ id: pictureId(PNG), type: "image/png" }] }) });
+  assert.deepEqual((await offer.json()).need, [pictureId(PNG)]);
+  assert.equal((await fetch(`${url}/api/backgrounds/theme/${pictureId(JPEG)}`, { method: "POST", body: new Uint8Array(JPEG) })).status, 400);
+  assert.equal((await fetch(`${url}/api/backgrounds/theme/${pictureId(PNG)}`, { method: "POST", body: new Uint8Array(PNG) })).status, 200);
+  let seen = "";
+  while (!seen.includes("event: background")) seen += new TextDecoder().decode((await reader.read()).value);
+  await reader.cancel();
+  const list = await (await fetch(`${url}/api/backgrounds`)).json();
+  assert.deepEqual([list.theme.name, list.theme.current], ["gruvbox", pictureId(PNG)]);
+  assert.deepEqual(Buffer.from(await (await fetch(`${url}/api/backgrounds/${pictureId(PNG)}`)).arrayBuffer()), PNG);
+  assert.equal((await fetch(`${lan}/api/backgrounds/theme`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" })).status, 404, "not from a phone");
 });
 
 test("S5.3 a photo shared from a paired phone becomes the TV's background, with its credit, and the TV hears it", async () => {

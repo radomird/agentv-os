@@ -213,15 +213,18 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
 export interface Background {
   id: string;
   type: string;
-  kind: "photo" | "art" | "folder";
+  kind: "photo" | "art" | "folder" | "theme";
   credit: { text: string | null; from: string };
   added: string;
 }
 
 export interface Backgrounds {
-  source: "field" | "photos" | "art" | "folder";
+  source: "theme" | "field" | "photos" | "art" | "folder";
   current: string | null;
   items: Background[];
+  // The Omarchy theme's own (ADR-048): the theme, the one Omarchy shows,
+  // and its backgrounds. A box from before them has none.
+  theme?: { name: string | null; current: string | null; items: Background[] };
 }
 
 // A work from a museum archive, as the art picker lists it.
@@ -240,11 +243,20 @@ export function creditLine(item: Background): string {
   return item.credit.text ?? (item.kind === "photo" ? `photo · ${item.credit.from}` : item.credit.from);
 }
 
-// The pictures the chosen source shows: the photos, the art or a folder's.
+// The pictures the chosen source shows: the theme's own, the photos, the art
+// or a folder's.
 export function shownPictures(backgrounds: Backgrounds | null): Background[] {
-  const kinds: Record<Backgrounds["source"], Background["kind"] | null> = { field: null, photos: "photo", art: "art", folder: "folder" };
+  if (backgrounds?.source === "theme") return backgrounds.theme?.items ?? [];
+  const kinds: Record<Backgrounds["source"], Background["kind"] | null> = { theme: null, field: null, photos: "photo", art: "art", folder: "folder" };
   const kind = backgrounds ? kinds[backgrounds.source] : null;
   return kind ? backgrounds!.items.filter((item) => item.kind === kind) : [];
+}
+
+// The one of them on screen: for the theme's own, the one Omarchy shows.
+export function shownCurrent(backgrounds: Backgrounds | null): Background | undefined {
+  const pictures = shownPictures(backgrounds);
+  const current = backgrounds?.source === "theme" ? backgrounds.theme?.current : backgrounds?.current;
+  return pictures.find((one) => one.id === current) ?? pictures[0];
 }
 
 // One of Omarchy's themes setup and Settings offer (board 12), with the

@@ -9,11 +9,16 @@
 // the list to the daemon, which can't: when the session starts, whenever the
 // themes folder changes, and whenever Omarchy sets a theme, which
 // `omarchy theme install` does last.
+//
+// With it go the backgrounds of the theme Omarchy has now, and which of them
+// Omarchy shows, for home (ADR-048, S5.8): each picture once, as the daemon
+// asks for it.
 
 import { execFile } from "node:child_process";
 import { watch, type FSWatcher } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, readlink, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { imageType, MAX_BYTES, MAX_THEME, pictureId, type ImageType } from "./backgrounds.ts";
 import { KEYS } from "./themes.ts";
 
 // A theme's name, as omarchy-theme-install allows it.
@@ -103,8 +108,8 @@ export class OmarchyThemes {
     return [...found.values()].slice(0, MOST);
   }
 
-  // The list to the daemon. One at a time: a change while one goes sends
-  // another after it.
+  // The list and the theme's backgrounds to the daemon. One at a time: a
+  // change while one goes sends another after it.
   push(): Promise<boolean> {
     if (this.pushing) {
       this.again = true;
@@ -115,10 +120,83 @@ export class OmarchyThemes {
       do {
         this.again = false;
         sent = await this.send(await this.list());
+        if (sent) sent = await this.sendBackgrounds();
       } while (this.again);
       return sent;
     })().finally(() => (this.pushing = null));
     return this.pushing;
+  }
+
+  // What's in each background, by its path, size and time, so one isn't
+  // read again until it changes.
+  private seen = new Map<string, { size: number; at: number; id: string; type: ImageType }>();
+
+  // The theme Omarchy has now, its backgrounds as Omarchy finds them when it
+  // sets a theme (omarchy-theme-set): the person's own for the theme, then
+  // the theme's, in the order of their paths, and the one Omarchy shows.
+  // Only the pictures the TV can show: JPEG, PNG and WebP.
+  async backgrounds(): Promise<{ theme: string; current: string | null; files: { id: string; type: ImageType; path: string }[] } | null> {
+    const state = join(this.options.home, ".local", "state", "omarchy", "current");
+    const theme = (await readFile(join(state, "theme.name"), "utf8").catch(() => "")).trim();
+    if (!NAME.test(theme)) return null;
+    const paths: string[] = [];
+    for (const dir of [join(this.options.home, ".config", "omarchy", "backgrounds", theme), join(state, "theme", "backgrounds")]) {
+      for (const name of await readdir(dir).catch(() => [] as string[])) if (/\.(jpe?g|png|webp)$/i.test(name)) paths.push(join(dir, name));
+    }
+    paths.sort();
+    const link = await readlink(join(state, "background")).catch(() => null);
+    const real = link ? await realpath(join(state, "background")).catch(() => null) : null;
+    const files: { id: string; type: ImageType; path: string }[] = [];
+    let current: string | null = null;
+    for (const path of paths) {
+      if (files.length >= MAX_THEME) break;
+      const info = await stat(path).catch(() => null);
+      if (!info?.isFile() || info.size > MAX_BYTES) continue;
+      let known = this.seen.get(path);
+      if (!known || known.size !== info.size || known.at !== info.mtimeMs) {
+        const body = await readFile(path).catch(() => null);
+        const type = body && imageType(body);
+        if (!body || !type) continue;
+        known = { size: info.size, at: info.mtimeMs, id: pictureId(body), type };
+        this.seen.set(path, known);
+      }
+      if (files.some((file) => file.id === known!.id)) continue;
+      files.push({ id: known.id, type: known.type, path });
+      if (path === link || (real && (await realpath(path).catch(() => null)) === real)) current = known.id;
+    }
+    return { theme, current, files };
+  }
+
+  // The theme's backgrounds to the daemon: what there is and which one
+  // Omarchy shows, then each picture the daemon asks for.
+  private async sendBackgrounds(): Promise<boolean> {
+    const found = await this.backgrounds();
+    if (!found) return true;
+    const daemon = this.options.daemon ?? "http://127.0.0.1:3000/";
+    const response = await fetch(`${daemon}api/backgrounds/theme`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: found.theme, current: found.current, files: found.files.map(({ id, type }) => ({ id, type })) }),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => null);
+    const answer = (await response?.json().catch(() => null)) as { need?: string[] } | null;
+    if (!response?.ok || !Array.isArray(answer?.need)) {
+      this.options.log?.(`themes: the daemon didn't take ${found.theme}'s backgrounds (${response?.status ?? "not there"})`);
+      return false;
+    }
+    let all = true;
+    for (const id of answer.need) {
+      const file = found.files.find((one) => one.id === id);
+      const body = file && (await readFile(file.path).catch(() => null));
+      const sent = body
+        ? await fetch(`${daemon}api/backgrounds/theme/${id}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array(body), signal: AbortSignal.timeout(60_000) }).catch(() => null)
+        : null;
+      if (!sent?.ok) {
+        all = false;
+        this.options.log?.(`themes: a background of ${found.theme} didn't reach the daemon (${sent?.status ?? "not sent"})`);
+      }
+    }
+    return all;
   }
 
   private async send(themes: FoundTheme[]): Promise<boolean> {

@@ -12,6 +12,7 @@
 // QR codes here, and a stand-in screen daemon takes the update's requests.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -924,7 +925,7 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   const page = await tv();
   await page.waitForSelector(".backs .back");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a background.");
-  assert.deepEqual(await page.locator(".back .look-name").allInnerTexts(), ["pixel field", "your photos", "shared folder", "art", "made for you"]);
+  assert.deepEqual(await page.locator(".back .look-name").allInnerTexts(), ["the theme's", "pixel field", "your photos", "shared folder", "art", "made for you"]);
   assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "field");
   assert.match(await textOf(page, ".bar"), /6\/6 look/);
 
@@ -952,6 +953,38 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   await page.waitForSelector(".grid .tile", { timeout: 10_000 });
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.done, true);
   await page.waitForSelector("#backdrop img");
+  await post("/api/backgrounds", { source: "field" });
+  await page.close();
+});
+
+// The theme's own backgrounds as the screen daemon hands them over: one of
+// Tokyo Night's, which Omarchy shows.
+async function themeBackground(theme: string, file: string): Promise<string> {
+  const body = readFileSync(join(ROOT, "themes", theme, "backgrounds", file));
+  const id = createHash("sha256").update(body).digest("hex").slice(0, 16);
+  const type = file.endsWith(".png") ? "image/png" : "image/jpeg";
+  await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme, current: id, files: [{ id, type }] }) });
+  await fetch(`${url}/api/backgrounds/theme/${id}`, { method: "POST", body: new Uint8Array(body) });
+  return id;
+}
+
+test("S5.8 the background: the theme's own first, as on Omarchy's desktop, and picked by default", async () => {
+  await toApps("streaming");
+  await post("/api/setup/finish", { step: "apps" });
+  await post("/api/setup/finish", { step: "theme" });
+  const id = await themeBackground("tokyo-night", "6-oma.jpg");
+  await post("/api/backgrounds", { source: "theme" });
+  const page = await tv();
+  await page.waitForSelector(".backs .back");
+  assert.equal(await page.locator(".back").first().getAttribute("data-background"), "theme");
+  assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "theme");
+  assert.equal(await page.locator(".back.focused").getAttribute("data-background"), "theme");
+  assert.equal(await page.locator('[data-background="theme"] .back-shot img').getAttribute("data-id"), id, "it shows the one Omarchy shows");
+  assert.equal(await textOf(page, ".setup-note"), "tokyo night's own, as on omarchy's desktop. it changes with the theme.");
+  // A theme without any: the pixel field, and it says so.
+  await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "plain", current: null, files: [] }) });
+  await page.waitForSelector('[data-background="theme"] .back-shot .pixel-field', { timeout: 5000 });
+  assert.equal(await textOf(page, ".setup-note"), "plain has no backgrounds of its own, so it's the pixel field for now.");
   await post("/api/backgrounds", { source: "field" });
   await page.close();
 });

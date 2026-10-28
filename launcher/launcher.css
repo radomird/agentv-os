@@ -1028,11 +1028,16 @@ button {
   color: var(--red);
 }
 
-/* The background (ADR-012, S5.3): the photo chosen, behind home and its
-   pages, dimmed with the theme's own colour so the tiles read over it. */
+/* The background (ADR-012, ADR-048, S5.3): the theme's own or the photo
+   chosen, behind home only, dimmed with the theme's own colour so the tiles
+   read over it. */
 #backdrop {
   position: fixed;
   inset: 0;
+}
+
+body:not(.on-home) #backdrop {
+  display: none;
 }
 
 .backdrop-picture {
@@ -1049,7 +1054,7 @@ button {
   background: color-mix(in srgb, var(--background) 62%, transparent);
 }
 
-body.with-backdrop {
+body.with-backdrop.on-home {
   background: var(--darker-background);
 }
 
