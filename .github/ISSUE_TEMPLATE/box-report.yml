@@ -1,0 +1,55 @@
+name: Box report
+description: Tell me how AgenTV went on your box
+title: "Box report: "
+labels: [box-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying AgenTV on your own box. Good or bad, it helps. I'll add your box to the README's tested boxes.
+
+  - type: input
+    id: box
+    attributes:
+      label: Box
+      description: The make and model, and its CPU if you know it.
+      placeholder: e.g. Intel NUC8i5BEH (i5-8259U)
+    validations:
+      required: true
+
+  - type: input
+    id: release
+    attributes:
+      label: AgenTV release
+      description: The ISO you installed from, or the update you're on.
+      placeholder: e.g. 0.1.3
+    validations:
+      required: true
+
+  - type: input
+    id: tv
+    attributes:
+      label: TV
+      description: The TV, projector or monitor it's plugged into.
+      placeholder: e.g. LG C1, over HDMI
+    validations:
+      required: false
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: How did it go?
+      options:
+        - Works
+        - Works, with problems
+        - Doesn't work
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: What worked and what didn't
+      description: The installer, Wi-Fi, sound over HDMI, your phone as the remote, the apps you tried.
+    validations:
+      required: false

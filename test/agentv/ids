@@ -61,3 +61,4 @@ S5.5  image     picking Claude shows Anthropic's terms for the way in picked, no
 S5.6  image     setup started from the previous release updates itself at getting ready, and picks up at the same step after a restart (layer 4 too)
 S6.3  image     the builder can't read /etc/agentv/env or another service's cookies (layer 2 holds the sandbox's settings; the image layer probes it from inside, as agentv-builder)
 S6.9  check     a build can't skip, add or leave its recipe's steps or use a tool its step doesn't list, and a request with no recipe gets a plan an adult approves before anything is built (layer 2, with the stand-in provider replaying recorded builds through the real harness)
+S6.10 image     a setuid or setgid file the builder writes gives no one more rights, and with safeguards off an npm install script runs, inside bubblewrap (layer 2 holds the mounts and the jail; the image layer probes them from inside, as agentv-builder)
