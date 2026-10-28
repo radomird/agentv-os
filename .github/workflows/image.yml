@@ -23,7 +23,10 @@ name: Image
 # from-disk starts from the newest one kept on agentv (or on its own branch):
 # it puts this commit's packages on that box, the way an update does, instead
 # of building an ISO and installing it (Q100). With none to start from, it
-# builds and installs, as before.
+# builds and installs, as before. With own-repo, the packages it built are
+# also the box's repository for the run: its update check reads them
+# instead of edge, so a pull request's run tests the pull request, updates
+# included (Q137). Nightly and release runs keep their channels.
 
 on:
   workflow_dispatch:
@@ -65,6 +68,10 @@ on:
         description: "Start from the newest installed box a run kept in the cache, instead of building an ISO and installing it"
         type: boolean
         default: false
+      own-repo:
+        description: "Point the box's update check at the packages built from that ref, instead of edge"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
@@ -95,6 +102,9 @@ on:
         type: boolean
         default: false
       from-disk:
+        type: boolean
+        default: false
+      own-repo:
         type: boolean
         default: false
     secrets:
@@ -159,6 +169,7 @@ jobs:
       - name: AgenTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
+          OWN_REPO: ${{ inputs.own-repo }}
           AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
         run: |
           dest=iso/configs/airootfs/usr/share/agentv-iso/packages
@@ -172,6 +183,12 @@ jobs:
               ghcr.io/archlinux/archlinux:latest /src/bin/build /repo
             mkdir -p "$dest"
             cp repo/agentv-*.pkg.tar.zst "$dest/"
+            # The whole signed repository, served to the box for the run.
+            if [[ $OWN_REPO == "true" ]]; then
+              mkdir -p iso/test-runs
+              cp -r repo iso/test-runs/own-repo
+              echo "AGENTV_TEST_OWN_REPO=/w/test-runs/own-repo" >>"$GITHUB_ENV"
+            fi
           else
             AGENTV_OWNER="$OWNER" iso/bin/agentv-iso-packages "$PACKAGES" "$dest"
           fi
@@ -341,7 +358,7 @@ jobs:
             "S3.3=$(result S3.3)" "S3.6=$(result S3.6)" "S3.8=$(result S3.8)" "S3.9=$(result S3.9)" "S3.10=$(result S3.10)" \
             "S4.4=$(result S4.4)" "S4.5=$(result S4.5)" "S4.6=$(result S4.6)" \
             "S5.2=$(result S5.2)" "S5.3=$(result S5.3)" "S5.4=$(result S5.4)" "S5.5=$(result S5.5)" "S5.6=$(result S5.6)" \
-            "S6.3=$(result S6.3)" "S6.4=$(result S6.4)" "S6.5=$(result S6.5)" "S6.8=$(result S6.8)" \
+            "S6.3=$(result S6.3)" "S6.4=$(result S6.4)" "S6.5=$(result S6.5)" "S6.8=$(result S6.8)" "S6.10=$(result S6.10)" \
             >>"$GITHUB_STEP_SUMMARY"
 
       - name: Keep the screenshots and logs

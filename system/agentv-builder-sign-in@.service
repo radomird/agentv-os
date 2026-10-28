@@ -6,11 +6,17 @@
 # person pastes on the phone into its prompt (builder/sign-in.ts), and sees
 # nothing else. agentv-build.service starts this once root has made its
 # folder and the filter's sign-in ticket.
+#
+# Like a build, everything it writes is nosuid and nodev (ADR-052): the
+# builder's home from var-lib-agentv-builder.mount, its folder in /run, and
+# its own /tmp and /var/tmp. It runs no bubblewrap, so it keeps
+# RestrictSUIDSGID= as well.
 
 [Unit]
 Description=AgenTV builder's %i sign-in
 BindsTo=agentv-build-net.service
 After=agentv-build-net.service
+RequiresMountsFor=/var/lib/agentv/builder
 
 [Service]
 Type=exec
@@ -30,10 +36,9 @@ TasksMax=128
 PrivateNetwork=yes
 ProtectSystem=strict
 ProtectHome=yes
-TemporaryFileSystem=/var/lib:ro
+TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
 BindPaths=/var/lib/agentv/builder /run/agentv-build/sign-in
 InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
-PrivateTmp=yes
 PrivateDevices=yes
 PrivateIPC=yes
 NoNewPrivileges=yes
