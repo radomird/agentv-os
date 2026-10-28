@@ -370,6 +370,13 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   page.replaceChildren(el);
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
+  // Under a share's notice too, which has the keys (ADR-050): the page gets
+  // the focus back on the same tile once the notice is answered.
+  if (noticeOpen) {
+    const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
+    noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }

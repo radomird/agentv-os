@@ -85,6 +85,29 @@ const clear = async () => {
   for (const one of (await (await fetch(`${url}/api/shared`)).json()).shares) await fetch(`${url}/api/shared/${one.id}`, { method: "DELETE" });
 };
 
+test("S5.10 home drawn again under the notice leaves the notice the keys: OK is still Open", async () => {
+  await clear();
+  const page = await tv();
+  try {
+    await share("photo", JPEG, "?credit=photo%20by%20ana");
+    await page.waitForSelector("#notice.on .notice-card");
+    assert.equal(await focused(page), "share-open");
+    // The TV session says an app is open behind home, which draws home again.
+    await page.evaluate(() => ((document.querySelector(".grid") as unknown as { drawn?: boolean }).drawn = true));
+    await page.evaluate(() => (window as unknown as { agentvRunning: (json: string) => void }).agentvRunning(JSON.stringify([{ id: "agentv.tube", game: false, paused: true }])));
+    await page.waitForFunction(() => document.querySelector(".grid") && !(document.querySelector(".grid") as unknown as { drawn?: boolean }).drawn);
+    assert.equal(await focused(page), "share-open", "Open still has the focus");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".shared-full img.shared-picture");
+    // Back: home, with the focus on its tiles again.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".grid .tile.focused");
+  } finally {
+    await page.close();
+    await clear();
+  }
+});
+
 test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Shared, and Open shows it full screen with its credit, to be the background", async () => {
   const page = await tv();
   try {
