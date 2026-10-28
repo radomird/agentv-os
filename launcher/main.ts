@@ -23,7 +23,7 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
-import { keyPage, termsHeard } from "./pages/key.ts";
+import { keyPage, planPage, termsHeard } from "./pages/key.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
@@ -338,6 +338,7 @@ function viewFor(route: string): View {
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
   if (name === "key") return keyPage(ctx);
+  if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");

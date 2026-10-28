@@ -127,16 +127,16 @@ test("ADR-053 the daemon goes by the channel agentv channel keeps, or else the o
     let now = await ai();
     assert.equal(now.channel, "stable", "a checkout with no channel is on stable");
     assert.deepEqual([now.offers.chatgpt.plan.offered, now.offers.grok.plan.offered], [false, false]);
-    assert.deepEqual(await plans(), [{ provider: "claude", bestEffort: false }]);
+    assert.deepEqual(await plans(), [{ provider: "claude", name: "claude pro or max", bestEffort: false }]);
     assert.match((await (await post("/api/ai", { provider: "chatgpt", path: "plan" })).json()).error, /coming soon/);
     writeFileSync(channelFile, "edge\n");
     now = await ai();
     assert.equal(now.channel, "edge");
     assert.deepEqual([now.offers.chatgpt.plan.bestEffort, now.offers.grok.plan.bestEffort, now.offers.muse.plan.offered], [true, true, false]);
     assert.deepEqual(await plans(), [
-      { provider: "claude", bestEffort: false },
-      { provider: "chatgpt", bestEffort: true },
-      { provider: "grok", bestEffort: true },
+      { provider: "claude", name: "claude pro or max", bestEffort: false },
+      { provider: "chatgpt", name: "chatgpt plus or pro", bestEffort: true },
+      { provider: "grok", name: "supergrok or x premium+", bestEffort: true },
     ]);
     // Its package's channel, when agentv channel hasn't set one.
     rmSync(channelFile);
@@ -313,6 +313,64 @@ test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own term
     assert.equal(kept().length, before + 1, "with no new acceptance");
   }
   assert.doesNotMatch(JSON.stringify(kept()), /xai-g|LLM_u/, "no key in the record");
+});
+
+test("Q143 Settings → AI: an adult picks the household's plan past the PIN, its terms accepted on a phone first, and a key kept there after is what builds use", async () => {
+  const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  const usePlan = (provider: string, withGrant = true) =>
+    fetch(`${url}/api/ai/plan`, { method: "PUT", headers: { "Content-Type": "application/json", ...(withGrant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+  const using = async () => (await (await fetch(`${url}/api/key`)).json()).ai;
+  const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
+  try {
+    assert.equal((await usePlan("claude", false)).status, 403, "past the PIN");
+    assert.match((await (await usePlan("copilot")).json()).error, /claude, chatgpt, gemini, grok or muse/);
+    // On stable, Claude's is the only plan.
+    assert.match((await (await usePlan("chatgpt")).json()).error, /chatgpt plus or pro is coming soon/);
+    assert.match((await (await usePlan("muse")).json()).error, /a muse code subscription is coming soon/);
+
+    // Claude's terms for a plan were accepted in setup: it's used at once.
+    const claude = await usePlan("claude");
+    assert.equal(claude.status, 200);
+    assert.deepEqual(await using(), { provider: "claude", path: "plan", accepted: true });
+
+    // On edge, grok's plan, whose terms nobody here has accepted, waits for
+    // them: the phone shows xAI's consumer terms, and builds keep Claude's
+    // plan until an adult accepts.
+    writeFileSync(channelFile, "edge\n");
+    const before = kept().length;
+    const waiting = await usePlan("grok");
+    assert.equal(waiting.status, 409);
+    const said = await waiting.json();
+    assert.equal(said.error, "grok's terms come first");
+    assert.deepEqual(said.terms.terms, OFFERS.grok.terms.plan);
+    const asked = (await phoneState()).ai;
+    assert.deepEqual([asked.ask, asked.provider, asked.path, asked.terms[0].id], ["terms", "grok", "plan", "xai-consumer-terms"]);
+    assert.deepEqual(await using(), { provider: "claude", path: "plan", accepted: true });
+    assert.equal((await phone("/api/phone/terms", { provider: "grok", path: "plan" })).status, 403, "past the PIN on the phone too");
+    assert.equal((await phone("/api/phone/terms", { provider: "grok", path: "plan" }, grant)).status, 200);
+    const record = kept().at(-1);
+    assert.deepEqual([kept().length, record.provider, record.path, record.read, record.terms[0].id], [before + 1, "grok", "plan", TERMS_READ.grok, "xai-consumer-terms"]);
+    assert.equal((await phoneState()).ai, null);
+    assert.equal((await usePlan("grok")).status, 200, "the TV asks again, and now it's used");
+    assert.deepEqual(await using(), { provider: "grok", path: "plan", accepted: true });
+
+    // ChatGPT's, then Settings stops waiting: the phone stops asking.
+    assert.equal((await usePlan("chatgpt")).status, 409);
+    assert.deepEqual([(await phoneState()).ai.provider, (await phoneState()).ai.path], ["chatgpt", "plan"]);
+    assert.equal((await fetch(`${url}/api/ai/plan/terms`, { method: "DELETE" })).status, 200);
+    assert.equal((await phoneState()).ai, null);
+    assert.deepEqual(await using(), { provider: "grok", path: "plan", accepted: true }, "the plan in use stays");
+
+    // A key kept from Settings → AI is what builds use after.
+    await withRoot(async () => {
+      const put = await fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ provider: "claude", key: `sk-ant-${"q".repeat(40)}` }) });
+      assert.equal(put.status, 200);
+      assert.deepEqual((await put.json()).ai, { provider: "claude", path: "key", accepted: true });
+    });
+    assert.deepEqual(await using(), { provider: "claude", path: "key", accepted: true });
+  } finally {
+    rmSync(channelFile, { force: true });
+  }
 });
 
 test("a child's profile can't accept the terms or give the key from a phone", async () => {

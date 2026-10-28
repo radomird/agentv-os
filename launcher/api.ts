@@ -155,9 +155,12 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
-  // The plans setup offers on this box's channel, and which of them only as
-  // best effort, on edge (ADR-053).
-  plans?: { provider: string; bestEffort: boolean }[];
+  // The plans setup and Settings → AI offer on this box's channel, and which
+  // of them only as best effort, on edge (ADR-053).
+  plans?: { provider: string; name?: string; bestEffort: boolean }[];
+  // What builds use now: the AI picked, by plan or key, and whether its terms
+  // are accepted (Q143).
+  ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
 }
 
 // The terms a key waits for, when nobody here has accepted that provider's
@@ -362,6 +365,16 @@ export const daemon = {
   },
   // Settings → AI stopped waiting for a key's terms.
   stopKeyTerms: () => call<{ ok: boolean }>("DELETE", "/api/key/terms"),
+  // The household's plan for builds, from Settings → AI (Q143), or the terms
+  // it waits for.
+  usePlan: async (provider: string, grant?: string): Promise<{ provider: string; path: "plan" } | { terms: KeyTerms }> => {
+    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+    const data = await response.json();
+    if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "PUT /api/ai/plan failed");
+    return data as { provider: string; path: "plan" };
+  },
+  stopPlanTerms: () => call<{ ok: boolean }>("DELETE", "/api/ai/plan/terms"),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
