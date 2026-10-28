@@ -737,6 +737,23 @@ export class Home {
     }
   }
 
+  // The web app whose sites include a shared link's, of those who's watching
+  // may open (ADR-050), or null for none.
+  async appForUrl(url: string, viewer?: Viewer): Promise<string | null> {
+    let origin: string;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      return null;
+    }
+    const theirs = new Set((await this.apps(viewer)).map((app) => app.id));
+    const settings = await this.appSettings();
+    for (const { manifest } of await this.manifests()) {
+      if (manifest.tv.runtime === "web" && theirs.has(manifest.id) && allowedOrigins(manifest, settings[manifest.id] ?? {}).has(origin)) return manifest.id;
+    }
+    return null;
+  }
+
   // --- Layouts and settings ---------------------------------------------
 
   private async sizesById(viewer?: Viewer): Promise<Map<string, Size[]>> {

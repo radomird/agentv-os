@@ -202,3 +202,29 @@ test("S5.10 a child's profile takes what phones share only once an adult allows 
     await fetch(`${url}/api/viewers/${mila.id}`, { method: "DELETE", headers: { "X-AgenTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant } });
   }
 });
+
+test("S5.10 a shared link opens in the app that declares its site, if who's watching may open it, or else in the share browser", async () => {
+  try {
+    const tube = await share("link", { url: "https://tube.example/watch?v=1" });
+    const other = await share("link", { url: "https://www.example.org/" });
+    const target = async (id: string) => (await fetch(`${url}/api/shared/${id}/target`)).json();
+    assert.deepEqual(await target(tube.data.share.id), { ok: true, url: "https://tube.example/watch?v=1", app: "agentv.tube" });
+    assert.deepEqual(await target(other.data.share.id), { ok: true, url: "https://www.example.org/" });
+    // A child's profile, allowed to take shares but not Tube: the share
+    // browser, not the app.
+    daemon.pin.set(PIN, undefined);
+    const grant = (await post("/api/pin/check", { pin: PIN })).grant as string;
+    const noa = (await post("/api/viewers", { name: "noa", role: "child", shares: true }, grant)).profile;
+    await post("/api/viewer", { id: noa.id });
+    const theirs = await share("link", { url: "https://tube.example/cartoons" });
+    assert.equal(theirs.status, 200);
+    assert.deepEqual(await target(theirs.data.share.id), { ok: true, url: "https://tube.example/cartoons" });
+    // A photo has nowhere to open but its own page.
+    const photo = await share("photo", JPEG);
+    assert.equal((await fetch(`${url}/api/shared/${photo.data.share.id}/target`)).status, 400);
+    await post("/api/viewer", { id: "radomir" }, (await post("/api/pin/check", { pin: PIN })).grant);
+    await fetch(`${url}/api/viewers/${noa.id}`, { method: "DELETE", headers: { "X-AgenTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant } });
+  } finally {
+    await clear();
+  }
+});

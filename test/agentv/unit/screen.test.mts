@@ -12,7 +12,7 @@ import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -136,8 +136,11 @@ class FakeBrowser implements DevTools {
   async pages() {
     return this.pageList;
   }
+  // What ran in a page, past whether it plays.
+  ran: string[] = [];
   async evaluateIn(targetId: string, expression: string): Promise<any> {
     if (expression.includes("some((m) => !m.paused")) return this.playing.get(targetId) ?? false;
+    this.ran.push(expression);
     if (expression === PAUSE && this.playing.get(targetId)) {
       this.playing.set(targetId, false);
       this.heldByHome.add(targetId);
@@ -307,6 +310,20 @@ class FakeLauncher implements Launcher {
   }
   screensaver() {
     return this.launch("screensaver");
+  }
+  // The share browser (ADR-050), and where each shared link opens.
+  shareCdp = new FakeBrowser();
+  shareBrowser(url: string) {
+    const app = this.launch("share", url);
+    app.cdp = this.shareCdp;
+    this.shareCdp.addPage(url);
+    return app;
+  }
+  shares = new Map<string, { url: string; app?: string }>();
+  async shareTarget(id: string) {
+    const found = this.shares.get(id);
+    if (!found) throw new Error("that share isn't here");
+    return found;
   }
   async toast(text: string) {
     this.toasts.push(text);
@@ -1280,6 +1297,76 @@ test("S5.9 input on the seat ends the terminal screensaver too, and with the TV 
   await t.screen.idle();
   assert.equal(t.screen.ambient, true);
   assert.equal(t.launcher.started.filter((one) => one.role === "screensaver").length, before);
+  t.screen.stop();
+});
+
+test("S5.10 a shared link with no app of its own opens in the share browser, on its own profile, the next one in the same window, and Back closes it", async () => {
+  const t = await tv();
+  const one = "a".repeat(16);
+  const two = "b".repeat(16);
+  t.launcher.shares.set(one, { url: "https://example.org/watch" });
+  t.launcher.shares.set(two, { url: "https://example.net/read" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: one }), { ok: true });
+  const browser = t.launcher.last("share");
+  assert.equal(t.launcher.started.at(-1)?.url, "https://example.org/watch");
+  assert.equal(t.launcher.started.filter((s) => s.role === "web").length, 0, "never the services' Chromium, with the apps' sign-ins");
+  t.hypr.open("0xd", browser.pid);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "share");
+  // A window it doesn't know is known by its profile too.
+  t.launcher.profiles.set(4242, SHARE_PROFILE);
+  assert.equal(t.screen.roleOf(4242), "share");
+  // The next link takes the same browser's window.
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: two }), { ok: true });
+  assert.equal(t.launcher.started.filter((s) => s.role === "share").length, 1);
+  assert.deepEqual(t.launcher.shareCdp.pageList.map((page) => page.url), ["https://example.net/read"]);
+  // Back closes it, and home's in front again.
+  t.screen.back("down", Date.now());
+  await t.screen.idle();
+  assert.equal(browser.stopped, true);
+  t.hypr.close("0xd");
+  browser.exit();
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: "c".repeat(16) }), { ok: false, error: "that share isn't here" });
+  t.screen.stop();
+});
+
+test("S5.10 a shared link opens in the app that declares its site, going there if the app's open already", async () => {
+  const t = await tv();
+  const id = "d".repeat(16);
+  t.launcher.shares.set(id, { url: "https://agentv.tube.example/watch?v=1", app: "agentv.tube" });
+  await openApp(t, "agentv.tube", "0xb");
+  await t.screen.handle({ cmd: "home" });
+  const before = t.launcher.started.length;
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: id }), { ok: true });
+  assert.ok(t.launcher.browser.ran.includes(`location.href = "https://agentv.tube.example/watch?v=1"`));
+  assert.equal(t.screen.front()?.address, "0xb", "the app comes back, at the link");
+  assert.equal(t.launcher.started.length, before, "nothing new started");
+  t.screen.stop();
+});
+
+test("S5.10 a shared video in home's player, or a page in the share browser, plays as far as the ambient screen and the notices go", async () => {
+  const t = await tv();
+  await t.screen.tellContext();
+  // Home's own player.
+  t.launcher.homeBrowser.answer = (expression) => (expression.includes("playing:") ? { playing: true } : undefined);
+  await t.screen.tellContext();
+  t.launcher.homeBrowser.answer = undefined;
+  await t.screen.tellContext();
+  // A page in the share browser.
+  t.launcher.shares.set("e".repeat(16), { url: "https://example.org/video" });
+  await t.screen.fromHome({ cmd: "open-share", share: "e".repeat(16) });
+  t.hypr.open("0xe", t.launcher.last("share").pid);
+  await t.screen.idle();
+  t.launcher.shareCdp.playing.set(t.launcher.shareCdp.target("https://example.org/video"), true);
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts, [
+    { front: "home", playing: false },
+    { front: "home", playing: true },
+    { front: "home", playing: false },
+    { front: "app", playing: true },
+  ]);
   t.screen.stop();
 });
 
