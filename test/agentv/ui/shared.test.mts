@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { ROOT, startBox } from "./box.mts";
+import { ROOT, rest, startBox } from "./box.mts";
 
 const require = createRequire(join(process.env.AGENTV_UI_MODULES ?? join(ROOT, "node_modules"), "x.js"));
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -76,6 +76,7 @@ async function tv(): Promise<Page> {
   });
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
+  await rest(page);
   return page;
 }
 

@@ -13,7 +13,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { HOME_UP } from "../../../daemon/screen.ts";
-import { FIXTURES, ROOT, startBox } from "./box.mts";
+import { FIXTURES, ROOT, rest, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -47,6 +47,7 @@ async function tv(options: { reducedMotion?: "reduce" | "no-preference"; at?: st
   });
   await page.goto(`${options.at ?? url}/`);
   await page.waitForSelector(".grid .tile.focused");
+  await rest(page);
   return page;
 }
 
@@ -136,6 +137,7 @@ test("S2.7 every app's details say who made it", async () => {
   for (const fixture of FIXTURES) {
     await page.goto(`${url}/`);
     await page.waitForSelector(".grid .tile.focused");
+    await rest(page);
     await page.locator(`.grid [data-id="${fixture.id}"]`).hover();
     await page.keyboard.press("i");
     await page.waitForSelector(".details-head");
@@ -311,6 +313,7 @@ test("S2.15 tiles show the apps open behind home, and q quits a game", async () 
   });
   await page.goto(`${url}/`);
   await page.waitForSelector('.grid [data-id="agentv.games"] .tile-quit');
+  await rest(page);
   assert.equal(await page.locator('.grid [data-id="agentv.games"] .tile-state').innerText(), "running · q quit");
   assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-state').innerText(), "paused");
   await page.locator('.grid [data-id="agentv.games"]').hover();
@@ -386,6 +389,30 @@ test("S2.17 the mouse move Chromium sends as home comes to the front doesn't end
   await page.waitForTimeout(300);
   assert.equal(await ambientOn(), true, "the move as home came back ended it");
   assert.equal(await wakes(), 1);
+  await page.close();
+});
+
+test("ADR-015 a mouse left still doesn't take the focus as home loads again: home starts on its first tile, and a real move takes it", async () => {
+  // On the box, home's page loads at boot and again after an update, and
+  // Chromium tells it where the mouse rests, in the middle of the screen,
+  // over a tile, as if it had moved there.
+  const page = await tv();
+  const first = await focused(page);
+  const middle = async (id: string) => {
+    const b = (await page.locator(`.grid [data-id="${id}"]`).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const [under, next] = (await page.$$eval(".grid .tile", (els) => els.map((el) => (el as HTMLElement).dataset.id!))).filter((id) => id !== first);
+  const resting = await middle(under);
+  await page.reload();
+  await page.waitForSelector(".grid .tile.focused");
+  await page.mouse.move(resting.x, resting.y);
+  await page.waitForTimeout(200);
+  assert.equal(await focused(page), first);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("pointer-hidden")), true, "the pointer showed");
+  const to = await middle(next);
+  await page.mouse.move(to.x, to.y, { steps: 4 });
+  assert.equal(await focused(page), next);
   await page.close();
 });
 

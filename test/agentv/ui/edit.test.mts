@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { after, before, beforeEach, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
-import { FIXTURES, ROOT, startBox, type Fixture } from "./box.mts";
+import { FIXTURES, ROOT, rest, startBox, type Fixture } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -67,6 +67,7 @@ async function editing(): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
+  await rest(page);
   await page.keyboard.press("e");
   await page.waitForSelector(".grid.editing .tile.focused");
   return page;
