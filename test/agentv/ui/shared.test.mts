@@ -134,6 +134,44 @@ test("S5.10 a share that came before the TV heard the daemon's events is asked a
   }
 });
 
+test("S5.10 an answer to the notice holds, even when an older look at the shares comes back after it", async () => {
+  await clear();
+  const page = await tv();
+  try {
+    await share("photo", JPEG, "?credit=photo%20by%20ana");
+    await page.waitForSelector("#notice.on .notice-card");
+    // The next look at the shares is read now, while the photo waits, and
+    // comes back late.
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let read: () => void = () => {};
+    const wasRead = new Promise<void>((resolve) => (read = resolve));
+    let held = false;
+    await page.route("**/api/shared", async (route) => {
+      if (held || route.request().method() !== "GET") return route.continue();
+      held = true;
+      const reply = await route.fetch();
+      read();
+      await released;
+      await route.fulfill({ response: reply });
+    });
+    // Away from home and back, which has the daemon say "shared" again.
+    await post("/api/tv/context", { front: "app" });
+    await post("/api/tv/context", { front: "home" });
+    await wasRead;
+    // Not now, then the old look comes back: the notice stays answered.
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.getElementById("notice")?.classList.contains("on"));
+    release();
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator("#notice.on").count(), 0, "the answered photo isn't asked about again");
+    assert.ok(await page.locator(".grid .tile.focused").isVisible());
+  } finally {
+    await page.close();
+    await clear();
+  }
+});
+
 test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Shared, and Open shows it full screen with its credit, to be the background", async () => {
   const page = await tv();
   try {
