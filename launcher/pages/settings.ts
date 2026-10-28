@@ -484,11 +484,16 @@ export function settings(ctx: Ctx, open?: string): View {
     // Still on Settings, after the few seconds Omarchy takes.
     if (menu.isConnected) ctx.render("settings/look", `theme-${look.id}`);
   };
+  // Against what this page drew, not what another Settings drawn since has
+  // seen: a redraw while this one waited, such as for a build's news, mustn't
+  // keep the list it started with.
+  const drew = JSON.stringify(looks);
   void daemon
     .themes()
     .then((found) => {
-      const changed = JSON.stringify(found) !== JSON.stringify(looks);
+      const changed = JSON.stringify(found) !== drew;
       looks = found;
+      if (!menu.isConnected) return;
       const item = menu.querySelector<HTMLElement>('[data-key="look"] .menu-value');
       if (item) item.textContent = sections.find((section) => section.key === "look")!.value();
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "look") {

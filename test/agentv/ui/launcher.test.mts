@@ -437,6 +437,34 @@ test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first,
   await page.close();
 });
 
+test("S5.7 Look drawn again while it waits for the list, as for a build's news, still shows a theme that came in meanwhile", async () => {
+  const page = await tv();
+  const go = (route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
+  const before = (await (await fetch(`${url}/api/themes`)).json()).themes;
+  const handed = (themes: unknown[]) => fetch(`${url}/api/themes`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themes }) });
+  try {
+    await go("settings/look");
+    await page.waitForSelector('[data-action="theme-gruvbox"]');
+    await go("home");
+    // A theme installed on the desktop, and the list slow to come.
+    const aurora = { id: "aurora", mode: "dark", installed: true, colors: { background: "#101418", dark_background: "#0a0d10", accent: "#7fd1b9", selection: "#28323c", foreground: "#d8e0e8", bright_foreground: "#ffffff" } };
+    await handed([...before, aurora]);
+    await page.route("**/api/themes", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.continue();
+    });
+    await go("settings/look");
+    await page.waitForTimeout(100);
+    await go("home");
+    await go("settings/look");
+    await page.waitForSelector('[data-action="theme-aurora"]', { timeout: 5000 });
+  } finally {
+    await page.unroute("**/api/themes");
+    await handed(before);
+    await page.close();
+  }
+});
+
 test("S5.8 home shows the theme's own background, as on Omarchy's desktop, credited to the theme, and follows the desktop to the next; Settings keeps the theme's colour", async () => {
   // As the screen daemon hands them over: two of Tokyo Night's, the second
   // the one Omarchy shows.
