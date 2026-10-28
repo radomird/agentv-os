@@ -219,16 +219,20 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
 // comes over a PIN pad, the ambient screen or an install.
 const noticeEl = document.getElementById("notice")!;
 let noticeOpen: { share: Share; before: HTMLElement | undefined } | null = null;
+// The shares answered here, so a look at them that left before the answer,
+// and comes back after it, doesn't ask again.
+const answered = new Set<string>();
 
 async function askShared(): Promise<void> {
   const found = await loadShared();
   // Apps → Shared follows too.
   if (history[history.length - 1] === "apps" && !noticeOpen && !pinOpen) redraw();
   const share = found?.ask ? found.shares.find((one) => one.id === found.ask) : undefined;
-  if (!share || noticeOpen || pinOpen || ambient || updatingShown) return;
+  if (!share || answered.has(share.id) || noticeOpen || pinOpen || ambient || updatingShown) return;
   const before = focus.get();
   before?.classList.remove("focused");
   const answer = async (open: boolean) => {
+    answered.add(share.id);
     closeNotice();
     sounds.play(open ? "forward" : "back");
     await daemon.answerShare(share.id).catch(() => {});
@@ -370,6 +374,13 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   page.replaceChildren(el);
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
+  // Under a share's notice too, which has the keys (ADR-050): the page gets
+  // the focus back on the same tile once the notice is answered.
+  if (noticeOpen) {
+    const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
+    noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }
@@ -654,7 +665,8 @@ async function switched(): Promise<void> {
 }
 
 // What changed while the page wasn't hearing the daemon's events: another
-// viewer, as a switch from the phone, or anything else on home.
+// viewer, as a switch from the phone, a share to ask about, or anything else
+// on home.
 async function catchUp(): Promise<void> {
   const was = ctx.state.viewer.id;
   const state = await homeState();
@@ -663,6 +675,7 @@ async function catchUp(): Promise<void> {
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void askShared();
 }
 
 // The page again, in place, with the focus where it was.
