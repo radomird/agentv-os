@@ -76,6 +76,7 @@ function tileWords(b: BuildView): { label: string; line: string; bad?: boolean }
     case "running":
       if (b.phase === "understand") return { label: "building", line: "reading what you asked" };
       if (b.phase === "plan") return { label: "building", line: "making a plan" };
+      if (b.phase === "stage-b") return { label: "building", line: b.steps.length ? `learning it · ${done} of ${b.steps.length}` : "learning it" };
       return { label: "building", line: b.steps.length ? `${done} of ${b.steps.length} steps` : "starting" };
     case "confirm":
       return { label: "check it", line: "is this what you meant?" };
@@ -284,6 +285,15 @@ export function buildPage(ctx: Ctx, which: string): View {
       } else if (b.phase === "plan") {
         title = `a plan for ${name}.`;
         body = [note("no recipe fits this, so your agent is writing a plan first. you'll approve it on your phone before anything is built.")];
+      } else if (b.phase === "stage-b") {
+        // A streaming service's stage B, after the household signed in (ADR-011).
+        title = `learning ${name}.`;
+        body = [
+          progress(b),
+          steps(b),
+          note(`you're signed in, so your agent is learning how ${name} searches, starts a title and shows what's playing. you can keep using the tv. when it's done, approve it on your phone.`),
+          b.path === "key" && b.spent !== undefined ? note(`${money(b.spent)} so far.`) : null,
+        ];
       } else {
         title = `building ${name}.`;
         const minutes = b.minutes ? ` it takes about ${b.minutes} minutes.` : "";
@@ -332,8 +342,16 @@ export function buildPage(ctx: Ctx, which: string): View {
     }
     case "approve":
       title = `${name} is ready.`;
-      body = [note(`your agent built it, and its checks passed. approve it on your phone, with the pin, to put ${name} on your home.`), steps(b)];
-      buttons = [button("not this", "forget", () => void forget())];
+      body = [
+        note(
+          b.phase === "stage-b"
+            ? `your agent learned how ${name} searches, starts a title and shows what's playing, and its checks passed. approve it on your phone, with the pin, to update ${name} on your home.`
+            : `your agent built it, and its checks passed. approve it on your phone, with the pin, to put ${name} on your home.`,
+        ),
+        steps(b),
+      ];
+      // Stage B's app is on home already, as stage A made it.
+      buttons = [b.phase === "stage-b" ? button("remove the app", "remove-built", () => void removeBuilt(ctx, b.id, name)) : button("not this", "forget", () => void forget())];
       break;
     case "plan-sign-in": {
       // The plan's sign-in (ADR-040): the CLI's own link, as a QR code for
@@ -367,7 +385,10 @@ export function buildPage(ctx: Ctx, which: string): View {
     case "failed":
       title = `couldn't build ${name}.`;
       body = [h("div", { class: "check-rows" }, row(false, "", b.reason ?? "it stopped")), b.steps.length ? steps(b) : null];
-      buttons = [button("try again", "retry", () => void act(() => daemon.retry(b.build)).then((ok) => ok && ctx.render(`build/${b.build}`)), true), button("remove", "forget", () => void forget())];
+      buttons = [
+        button("try again", "retry", () => void act(() => daemon.retry(b.build)).then((ok) => ok && ctx.render(`build/${b.build}`)), true),
+        b.phase === "stage-b" ? button("remove the app", "remove-built", () => void removeBuilt(ctx, b.id, name)) : button("remove", "forget", () => void forget()),
+      ];
       keys = "↵ try again · del remove · esc back";
       break;
     default:
@@ -386,7 +407,7 @@ export function buildPage(ctx: Ctx, which: string): View {
     act(action) {
       // Delete puts a failed build away, as its tile says.
       if (action === "remove" && b.state === "failed") {
-        void forget();
+        void (b.phase === "stage-b" ? removeBuilt(ctx, b.id, name) : forget());
         return true;
       }
       return false;
@@ -433,27 +454,30 @@ export function builtActions(ctx: Ctx, id: string): HTMLElement[] {
       fail(error);
     }
   };
-  const remove = async () => {
-    const grant = await ctx.grant(`removing ${name}`);
-    if (grant === null) return;
-    try {
-      await daemon.removeBuilt(id, grant || undefined);
-      ctx.sounds.play("confirm");
-      ctx.toast(`${name} is gone, with every version of it`, "ok");
-      await loadBuilds(ctx);
-      ctx.back();
-    } catch (error) {
-      ctx.forgetGrant();
-      fail(error);
-    }
-  };
   const button = (label: string, action: string, onclick: () => void) => h("button", { class: "button", "data-focus": true, "data-action": action, onclick }, label);
   return [
     button("change it →", "change", () => ctx.go(`change/${id}`)),
     button("build it again", "rebuild", () => void again()),
     ...(kept ? [button(`go back to ${kept.version}`, "rollback", () => void back())] : []),
-    button("remove", "remove-built", () => void remove()),
+    button("remove", "remove-built", () => void removeBuilt(ctx, id, name)),
   ];
+}
+
+// An app the agent built, and every version of it, gone, past the PIN.
+async function removeBuilt(ctx: Ctx, id: string, name: string): Promise<void> {
+  const grant = await ctx.grant(`removing ${name}`);
+  if (grant === null) return;
+  try {
+    await daemon.removeBuilt(id, grant || undefined);
+    ctx.sounds.play("confirm");
+    ctx.toast(`${name} is gone, with every version of it`, "ok");
+    await loadBuilds(ctx);
+    ctx.back();
+  } catch (error) {
+    ctx.forgetGrant();
+    ctx.sounds.play("failure");
+    ctx.toast((error as Error).message, "fail");
+  }
 }
 
 // A change to an app your agent built, in words: a new version from the one

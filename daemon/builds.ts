@@ -14,6 +14,11 @@
 // shows the CLI's link as a QR code, the phone hands over any code the
 // provider's page gives, and the build starts again once it's in.
 //
+// A streaming service's app goes on home after stage A, approved like any
+// other, and shows "Sign in". Once the household signed in on the TV, the
+// same build goes on with stage B by itself, and the app it makes then waits
+// for an adult's approval again (ADR-011).
+//
 // The daemon writes nothing into a build: each phase's request, the folders
 // and the installs are root's.
 
@@ -340,6 +345,23 @@ export class Builds {
     }
   }
 
+  // The build learning a streaming service after its sign-in (ADR-011), by
+  // root's ticket, with the origins it declared: what stage B's look at the
+  // signed-in pages keeps to.
+  stageB(): { id: string; version: string; origins: string[] } | null {
+    let ticket: { id?: unknown; version?: unknown; phase?: unknown } | null = null;
+    try {
+      ticket = JSON.parse(readFileSync(join(this.o.run, "ticket.json"), "utf8"));
+    } catch {}
+    if (!ticket || ticket.phase !== "stage-b" || typeof ticket.id !== "string" || !ID.test(ticket.id) || typeof ticket.version !== "string" || !/^\d+\.\d+\.\d+$/.test(ticket.version)) return null;
+    let state: { origins?: { origin?: unknown }[] } = {};
+    try {
+      state = JSON.parse(readFileSync(join(this.o.builds, ticket.id, ticket.version, "state.json"), "utf8"));
+    } catch {}
+    const origins = (state.origins ?? []).map((o) => o?.origin).filter((o): o is string => typeof o === "string" && o.startsWith("https://"));
+    return { id: ticket.id, version: ticket.version, origins };
+  }
+
   // Whether a build is under way, for how often to look again. One waiting
   // for its plan's sign-in is, since it goes on by itself once it's in.
   async running(): Promise<boolean> {
@@ -347,19 +369,26 @@ export class Builds {
   }
 
   // What the daemon does by itself, each time it looks: a build waiting for
-  // its plan's sign-in gets one, and starts again once it's signed in. True
-  // when it asked root for something.
-  async tend(): Promise<boolean> {
-    this.tending ??= this.tendNow().finally(() => (this.tending = null));
+  // its plan's sign-in gets one, and starts again once it's signed in; and a
+  // streaming service's app on home, signed in now, goes on with stage B.
+  // True when it asked root for something.
+  async tend(o: { signedIn?: (id: string) => Promise<boolean> } = {}): Promise<boolean> {
+    this.tending ??= this.tendNow(o).finally(() => (this.tending = null));
     return this.tending;
   }
 
   private tending: Promise<boolean> | null = null;
 
-  private async tendNow(): Promise<boolean> {
+  private async tendNow(o: { signedIn?: (id: string) => Promise<boolean> }): Promise<boolean> {
     const views = await this.list();
     const all = await this.asked();
     for (const view of views) {
+      if (view.state === "installed" && view.phase === "build" && view.understood?.recipe === "streaming" && o.signedIn && (await o.signedIn(view.id))) {
+        const asked = all.find((a) => a.build === view.build);
+        if (!asked || views.some((b) => b.state === "running" || b.state === "starting" || b.state === "plan-sign-in")) continue;
+        await this.start(asked, "stage-b", { recipe: "streaming", name: view.name });
+        return true;
+      }
       if (view.state !== "plan-sign-in") continue;
       const asked = all.find((a) => a.build === view.build);
       if (!asked) continue;
@@ -491,6 +520,7 @@ export class Builds {
     if (!view) return { error: "there's no such build" };
     if (view.state === "running") return { error: "stop it first" };
     if (view.state === "installed" || view.state === "kept") return { error: "that version is on the tv: remove the app instead" };
+    if (view.phase === "stage-b") return { error: "its app is on the tv: try again, or remove the app" };
     if (view.state === "starting" || view.state === "plan-sign-in") await this.stop();
     const left = (await this.asked()).filter((a) => a.build !== view.build);
     await this.writeJson(this.askedPath, left);

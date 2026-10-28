@@ -136,7 +136,7 @@ class FakeBrowser implements DevTools {
   async pages() {
     return this.pageList;
   }
-  async evaluateIn(targetId: string, expression: string) {
+  async evaluateIn(targetId: string, expression: string): Promise<any> {
     if (expression.includes("some((m) => !m.paused")) return this.playing.get(targetId) ?? false;
     if (expression === PAUSE && this.playing.get(targetId)) {
       this.playing.set(targetId, false);
@@ -1510,4 +1510,53 @@ test("a folder as the background: the TV session finds it among Music's sources 
   assert.deepEqual(await copying, { ok: true, count: 12 });
   assert.deepEqual(sent, [{ source: { name: "pictures", path: "/home/owner/Pictures" }, grant: "g" }]);
   assert.ok(t.lines.includes("background: 12 pictures from pictures"));
+});
+
+// --- Stage B's look at a signed-in page (ADR-011) -----------------------------
+
+test("ADR-011 stage B reads a service's page out of sight in the services' Chromium, on the app's origins only, and closes it", async () => {
+  const t = await tv();
+  await openApp(t, "stand-in", "0xc");
+  const browser = t.launcher.browser;
+  // The page opens in a window of its own, which the browser hands Hyprland.
+  browser.open = async (url: string) => {
+    const target = browser.addPage(url);
+    t.hypr.open("0xd", t.launcher.last("web").pid);
+    return target;
+  };
+  browser.evaluateIn = async (_target: string, expression: string) => {
+    if (expression === "[location.href, document.readyState]") return ["https://stand-in.test/browse", "complete"];
+    if (expression === "location.href") return "https://stand-in.test/browse";
+    if (expression.includes("const selector = (el)")) return { url: "https://stand-in.test/browse", title: "Stand-in", lines: ['button "R" button[data-testid="profile-menu"]'] };
+    if (expression.includes("cloneNode(true)")) return "<!doctype html>\n<html><body><button data-testid=\"profile-menu\">R</button></body></html>";
+    return 0;
+  };
+  const said = await t.screen.snapshot("https://stand-in.test/browse", ["https://stand-in.test"]);
+  await t.screen.idle();
+  assert.equal(said.ok, true, said.error);
+  assert.deepEqual(said.lines, ['button "R" button[data-testid="profile-menu"]']);
+  assert.match(said.html!, /profile-menu/);
+  assert.equal(t.screen.front()?.address, "0xc", "the app in front stays in front");
+  assert.ok(!t.hypr.onTv().includes("0xd"), "the page it opened stays out of sight");
+  assert.equal(browser.closed.length, 1, "and it's closed again");
+});
+
+test("ADR-011 stage B refuses a page off the app's origins, before it opens or after it went there", async () => {
+  const t = await tv();
+  assert.match((await t.screen.snapshot("https://stand-in.test/", ["https://stand-in.test"])).error!, /the services' Chromium isn't open/);
+  await openApp(t, "stand-in", "0xc");
+  const browser = t.launcher.browser;
+  const opened = browser.pageList.length;
+  assert.match((await t.screen.snapshot("https://elsewhere.test/", ["https://stand-in.test"])).error!, /isn't one of the app's origins/);
+  assert.match((await t.screen.snapshot("http://stand-in.test/", ["https://stand-in.test"])).error!, /isn't one of the app's origins/);
+  assert.equal(browser.pageList.length, opened, "nothing opened");
+  // A page that sends the browser elsewhere is read no further.
+  browser.evaluateIn = async (_target: string, expression: string) => {
+    if (expression === "[location.href, document.readyState]") return ["https://login.elsewhere.test/?next=x", "complete"];
+    if (expression === "location.href") return "https://login.elsewhere.test/?next=x";
+    throw new Error(`it read ${expression.slice(0, 30)}`);
+  };
+  const said = await t.screen.snapshot("https://stand-in.test/account", ["https://stand-in.test"]);
+  assert.equal(said.error, "it went to https://login.elsewhere.test/, which isn't one of the app's origins");
+  assert.equal(browser.closed.length, 1);
 });

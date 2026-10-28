@@ -393,6 +393,7 @@ test("root makes the build's folder, its request and the ticket, fetches the CLI
   assert.deepEqual(saved.budget, { build: 5, month: 20, spentMonth: 3 });
   const ticket = JSON.parse(readFileSync(join(o.run, "ticket.json"), "utf8"));
   assert.equal(ticket.dir, dir);
+  assert.equal(ticket.phase, "build", "the way out knows the phase: only stage B sees signed-in pages");
   assert.deepEqual(ticket.cap, { build: 5, month: 20 });
   assert.deepEqual(o.calls.slice(1), [
     ["start", "agentv-builder-cli@claude.service"],

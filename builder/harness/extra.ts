@@ -1,7 +1,8 @@
 // The tools the harness gets from beyond it (ADR-043, ADR-044, ADR-011):
 // npm, the bundle, the test TV's checks and tests, and for a streaming
-// service stage A's look at its pages, a sample of an address, and the
-// contract tests against the pages it kept. A step that lists one that isn't
+// service stage A's look at its pages, a sample of an address, the contract
+// tests against the pages it kept, and in stage B its signed-in pages as
+// the TV's browser shows them. A step that lists one that isn't
 // here yet is told it isn't on this box yet.
 //
 // The harness runs in the builder's sandbox, so what it fetches goes
@@ -11,14 +12,14 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { Build } from "../build.ts";
-import { look, saidLook } from "../browse.ts";
+import { look, saidLook, saidPage } from "../browse.ts";
 import { contractTests } from "../contract-run.ts";
 import { fetchVia, osvFor, registryFor } from "../fetch.ts";
 import { CHROMIUM, tryBuild } from "../gates/gates.ts";
 import { said as report } from "../gates/testtv.ts";
 import { PackageError, Packages } from "../packages.ts";
 import { writable } from "../recipe.ts";
-import { PROXY_PORT } from "../sandbox/ports.ts";
+import { PAGE_PORT, PROXY_PORT } from "../sandbox/ports.ts";
 import { ToolError } from "./mcp.ts";
 import { findStep } from "./steps.ts";
 import { type Extra, inWork } from "./tools.ts";
@@ -134,6 +135,19 @@ export async function extraTools(dir: string, stepId: string): Promise<Extra> {
       const saved = save ? `\n\nkept it as ${save(JSON.stringify({ status: answer.status, body }, null, 2))}` : "";
       const text = answer.text.length > SAMPLE_MAX ? `${answer.text.slice(0, SAMPLE_MAX)}\n... (${answer.text.length} characters; the rest isn't shown)` : answer.text;
       return `${url} answered ${answer.status}${saved}\n\n${text}`;
+    },
+    // Stage B: the service's page as the household's signed-in browser
+    // shows it, through the builder's way out and the screen daemon.
+    page_snapshot: async (args) => {
+      const { url } = declaredUrl(build, args.url);
+      const save = saveAt(build, stepId, args.save);
+      const response = await fetch(`http://127.0.0.1:${PAGE_PORT}/snapshot`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }), signal: AbortSignal.timeout(150_000) }).catch((error: Error) => {
+        throw new ToolError(`the TV's browser didn't answer: ${error.message}`);
+      });
+      const seen = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string; url?: string; title?: string; lines?: string[]; html?: string };
+      if (!seen.ok) throw new ToolError(seen.error ?? "the TV's browser couldn't show it");
+      const saved = save ? `\n\nkept the page, without its scripts, as ${save(seen.html ?? "")}` : "";
+      return `${saidPage({ url: seen.url ?? url, title: seen.title ?? "", lines: seen.lines ?? [] }, ["as the TV's signed-in browser shows it"])}${saved}`;
     },
     contract_tests: async () => {
       const stage = findStep(build, stepId)?.stage;

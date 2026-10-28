@@ -33,6 +33,7 @@ interface FullBuild {
   provider: string;
   path: "plan" | "key";
   state: string;
+  phase?: string;
   steps: { id: string; state: string }[];
   approval?: { reaches: { always: string[]; declared: string[] }; packages: { name: string; version: string }[] };
   plan?: {
@@ -190,7 +191,7 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
     page.replaceChildren(
       prompt(`tv app approve ${name}`),
       h("h1", {}, `${name} is ready`),
-      h("p", { class: "note" }, "your agent built it. add it to the tv?"),
+      h("p", { class: "note" }, b.phase === "stage-b" ? `your agent learned how to search ${name}, play from it and see what's on. update it on the tv?` : "your agent built it. add it to the tv?"),
       ...(b.shot ? [img] : []),
       checks([...a.reaches.always, ...a.reaches.declared, "can't see your other sign-ins or your ai key", "stays on this tv"]),
       h("p", { class: "note" }, a.packages.length ? `packages: ${a.packages.map((x) => `${x.name} ${x.version}`).join(", ")}` : "packages: none"),

@@ -5,7 +5,9 @@
 // as addresses, and then runs the build.
 //
 // - 127.0.0.1:8080: the filter, as HTTPS_PROXY;
-// - 127.0.0.1:8081: the key relay, as the provider's address, with a key.
+// - 127.0.0.1:8081: the key relay, as the provider's address, with a key;
+// - 127.0.0.1:8082: in stage B, the service's signed-in pages, as the
+//   screen daemon reads them (net.ts).
 //
 // Usage: node start.ts <build-dir>
 
@@ -14,9 +16,9 @@ import { Build } from "../build.ts";
 import { gates } from "../gates/gates.ts";
 import { Runner } from "../run.ts";
 import { forward } from "./forward.ts";
-import { PROXY_PORT, RELAY_PORT } from "./ports.ts";
+import { PAGE_PORT, PROXY_PORT, RELAY_PORT } from "./ports.ts";
 
-export { forward, PROXY_PORT, RELAY_PORT };
+export { forward, PAGE_PORT, PROXY_PORT, RELAY_PORT };
 
 // A build stopped while it was going, as the TV and the phone show it.
 export function stopped(build: Build): void {
@@ -34,7 +36,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     process.exit(2);
   }
   const net = process.env.AGENTV_BUILD_NET ?? "/run/agentv-build-net";
-  const servers = [await forward(PROXY_PORT, join(net, "proxy.sock")), await forward(RELAY_PORT, join(net, "relay.sock"))];
+  const servers = [await forward(PROXY_PORT, join(net, "proxy.sock")), await forward(RELAY_PORT, join(net, "relay.sock")), await forward(PAGE_PORT, join(net, "page.sock"))];
   // A stop from the TV: the build says it was stopped, rather than still
   // going, and keeps what it had.
   process.once("SIGTERM", () => {
