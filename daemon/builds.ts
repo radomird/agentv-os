@@ -10,6 +10,10 @@
 // the version before stays for one-press rollback (Q117). The spend caps and
 // npm's safeguards are an adult's settings, behind the PIN (ADR-044, ADR-045).
 //
+// On a plan, the first build waits for the plan's sign-in (ADR-040): the TV
+// shows the CLI's link as a QR code, the phone hands over any code the
+// provider's page gives, and the build starts again once it's in.
+//
 // The daemon writes nothing into a build: each phase's request, the folders
 // and the installs are root's.
 
@@ -52,8 +56,21 @@ export interface BuildView {
   cost?: { low: number; high: number };
   minutes?: number;
   approval?: BuildStatus["approval"];
+  // A plan's sign-in, while the build waits for it.
+  signIn?: SignInView;
   shot: boolean;
   at: string;
+}
+
+// How a plan's sign-in is going, from builder/sign-in.ts: the CLI's link to
+// open, a code to enter on its page, or whether the page gives a code to
+// paste back on the phone.
+export interface SignInView {
+  state: "starting" | "waiting" | "done" | "failed";
+  url?: string;
+  code?: string;
+  pastes?: boolean;
+  reason?: string;
 }
 
 export interface Warning {
@@ -218,6 +235,30 @@ export class Builds {
     }
   }
 
+  // The plan's sign-in for a build waiting on it: how it's going, once it's
+  // newer than the build's own word, or asked for and not yet begun.
+  private signInFor(asked: Asked, mine: BuildStatus): SignInView | undefined {
+    let said: (SignInView & { provider?: string; at?: string }) | null = null;
+    try {
+      said = JSON.parse(readFileSync(join(this.o.run, "sign-in", "status.json"), "utf8"));
+    } catch {}
+    const answer = this.answer();
+    // A stop from the TV ends it, whatever the sign-in got to say.
+    if (answer?.action === "stop" && answer.at > mine.at && (!said?.at || answer.at > said.at)) return { state: "failed", reason: "you stopped it" };
+    if (said && said.provider === asked.provider && typeof said.at === "string" && said.at > mine.at && ["starting", "waiting", "done", "failed"].includes(said.state)) {
+      return {
+        state: said.state,
+        ...(typeof said.url === "string" && said.url.startsWith("https://") ? { url: said.url } : {}),
+        ...(typeof said.code === "string" ? { code: said.code } : {}),
+        pastes: said.pastes === true,
+        ...(typeof said.reason === "string" ? { reason: said.reason } : {}),
+      };
+    }
+    if (existsSync(join(this.o.drop, "sign-in.json"))) return { state: "starting" };
+    if (answer?.action === "sign-in" && answer.build === asked.build && answer.at > mine.at) return answer.started ? { state: "starting" } : { state: "failed", reason: answer.reason };
+    return undefined;
+  }
+
   // Every build the household asked for, newest first, as it stands.
   async list(): Promise<BuildView[]> {
     const answer = this.answer();
@@ -230,7 +271,10 @@ export class Builds {
       // a start it refused, or took before the builder wrote anything, or an
       // install that didn't go in.
       const fresh = answer && answer.build === asked.build && (!mine || answer.at > mine.at) ? answer : null;
-      const refused = fresh && fresh.action !== "install" && !fresh.started ? fresh.reason : undefined;
+      const signIn = mine?.state === "plan-sign-in" ? this.signInFor(asked, mine) : undefined;
+      // A sign-in that didn't finish fails the build, which tries again from
+      // its sign-in.
+      const refused = signIn?.state === "failed" ? `couldn't sign in to the plan: ${signIn.reason ?? "it stopped"}` : fresh && fresh.action !== "install" && !fresh.started ? fresh.reason : undefined;
       const starting = waiting === asked.build || (fresh?.action === "start" && fresh.started);
       const notInstalled = fresh?.action === "install" && !fresh.started ? fresh.reason : undefined;
       const recipe = this.recipe(mine?.understood?.recipe);
@@ -253,6 +297,7 @@ export class Builds {
         cost: mine?.plan?.cost ?? recipe?.cost,
         minutes: recipe?.minutes,
         approval: mine?.approval,
+        ...(signIn && signIn.state !== "failed" ? { signIn } : {}),
         shot: existsSync(join(this.o.builds, asked.id, asked.version, "shot.png")),
         at: mine?.at ?? asked.at,
       });
@@ -295,14 +340,55 @@ export class Builds {
     }
   }
 
-  // Whether a build is under way, for how often to look again.
+  // Whether a build is under way, for how often to look again. One waiting
+  // for its plan's sign-in is, since it goes on by itself once it's in.
   async running(): Promise<boolean> {
-    return (await this.list()).some((b) => b.state === "running" || b.state === "starting");
+    return (await this.list()).some((b) => b.state === "running" || b.state === "starting" || b.state === "plan-sign-in");
+  }
+
+  // What the daemon does by itself, each time it looks: a build waiting for
+  // its plan's sign-in gets one, and starts again once it's signed in. True
+  // when it asked root for something.
+  async tend(): Promise<boolean> {
+    this.tending ??= this.tendNow().finally(() => (this.tending = null));
+    return this.tending;
+  }
+
+  private tending: Promise<boolean> | null = null;
+
+  private async tendNow(): Promise<boolean> {
+    const views = await this.list();
+    const all = await this.asked();
+    for (const view of views) {
+      if (view.state !== "plan-sign-in") continue;
+      const asked = all.find((a) => a.build === view.build);
+      if (!asked) continue;
+      if (!view.signIn) {
+        await this.drop("sign-in", { build: view.build, provider: view.provider });
+        return true;
+      }
+      if (view.signIn.state === "done") {
+        await this.start(asked, view.phase, { ...this.again(view), signedIn: true });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // The code the provider's page gave the person, for the CLI's prompt.
+  async signInCode(build: unknown, code: unknown): Promise<{ error?: string }> {
+    const view = await this.find(build);
+    if (!view) return { error: "there's no such build" };
+    if (view.state !== "plan-sign-in" || view.signIn?.state !== "waiting" || !view.signIn.pastes) return { error: "nothing is waiting for a code" };
+    const text = typeof code === "string" ? code.trim() : "";
+    if (!/^[\x21-\x7e]{1,512}$/.test(text)) return { error: "paste the code the page gave you" };
+    await this.drop("sign-in-code", { code: text });
+    return {};
   }
 
   // --- What an adult asks for -----------------------------------------------
 
-  private async drop(name: "start" | "stop" | "install" | "remove", data: unknown): Promise<void> {
+  private async drop(name: "start" | "stop" | "install" | "remove" | "sign-in" | "sign-in-code", data: unknown): Promise<void> {
     await mkdir(this.o.drop, { recursive: true });
     const path = join(this.o.drop, `${name}.json`);
     await writeFile(`${path}.next`, JSON.stringify(data));
@@ -384,9 +470,13 @@ export class Builds {
     if (!view || !asked) return { error: "there's no such build" };
     if (view.state !== "failed") return { error: "only a build that failed is tried again" };
     if (await this.running()) return { error: "another build is going; one runs at a time" };
-    const extra = view.phase === "understand" ? {} : { recipe: view.understood?.recipe ?? null, name: view.name, ...(view.plan && view.understood?.recipe == null ? { plan: view.plan } : {}) };
-    await this.start(asked, view.phase === "plan" ? "plan" : view.phase, extra);
+    await this.start(asked, view.phase, this.again(view));
     return { build: (await this.find(asked.build))! };
+  }
+
+  // What a phase needs again: what the agent understood, and an approved plan.
+  private again(view: BuildView): Record<string, unknown> {
+    return view.phase === "understand" ? {} : { recipe: view.understood?.recipe ?? null, name: view.name, ...(view.plan && view.understood?.recipe == null ? { plan: view.plan } : {}) };
   }
 
   async stop(): Promise<void> {
@@ -401,7 +491,7 @@ export class Builds {
     if (!view) return { error: "there's no such build" };
     if (view.state === "running") return { error: "stop it first" };
     if (view.state === "installed" || view.state === "kept") return { error: "that version is on the tv: remove the app instead" };
-    if (view.state === "starting") await this.stop();
+    if (view.state === "starting" || view.state === "plan-sign-in") await this.stop();
     const left = (await this.asked()).filter((a) => a.build !== view.build);
     await this.writeJson(this.askedPath, left);
     if (!left.some((a) => a.id === view.id)) await this.drop("remove", { id: view.id });

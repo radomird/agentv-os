@@ -649,3 +649,23 @@ h1.with-icon .glyph {
   flex-direction: column;
   gap: 10px;
 }
+
+/* A plan's sign-in (ADR-040): the code to enter on the provider's page, or
+   the field for the one it gives. */
+.plan-code {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
+
+.plan-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.build-approve a.button {
+  text-decoration: none;
+}

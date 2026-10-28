@@ -407,6 +407,8 @@ export class Daemon {
   // --- The builder (ADR-011, ADR-043 to ADR-046) ---------------------------
 
   private async watchBuilds(): Promise<void> {
+    // A build waiting for its plan's sign-in gets one, and goes on after it.
+    await this.builds.tend().catch(() => false);
     const now = JSON.stringify(await this.builds.list().catch(() => []));
     if (now === this.buildsSeen) return;
     this.buildsSeen = now;
@@ -474,6 +476,14 @@ export class Daemon {
         response.end(png);
         return true;
       }
+      // The code the plan's sign-in page gave, for the CLI's prompt, behind
+      // the PIN like the rest of the AI's settings (ADR-040).
+      if (method === "POST" && action === "code") {
+        if (!this.guarded(request, response, "the plan's sign-in")) return true;
+        const body = (await this.body(request)) as { code?: unknown } | undefined;
+        answer(await this.builds.signInCode(build, body?.code), `${viewer.name} handed the plan's sign-in a code on ${phone.name}`);
+        return true;
+      }
       // An adult's yes, behind the PIN: a plan, or the app itself (ADR-043, ADR-046).
       if (method === "POST" && (action === "approve" || action === "plan")) {
         if (!this.guarded(request, response, action === "plan" ? "a build's plan" : "a built app")) return true;
@@ -527,6 +537,17 @@ export class Daemon {
         answer(await this.builds.next(id, what === "change" ? (body?.text ?? "") : undefined, ai.ai), `${viewer.name} asked for a new version of ${id}`);
         return true;
       }
+    }
+    // The plan's sign-in link as a QR code, for the phone's camera.
+    if (method === "GET" && build && action === "qr") {
+      const url = (await this.builds.find(build))?.signIn?.url;
+      const svg = url ? await this.qr(url) : null;
+      if (!svg) {
+        this.json(response, 404, { ok: false, error: url ? "there's no qr code without qrencode" : "nothing is signing in" });
+        return true;
+      }
+      this.send(response, TYPES[".svg"], svg, { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" });
+      return true;
     }
     if (method === "POST" && build && action === "forget") {
       answer(await this.builds.forget(build), `${viewer.name} put a build away`);
@@ -623,8 +644,10 @@ export class Daemon {
         build: b.build,
         id: b.id,
         name: b.name ?? b.sentence,
+        provider: b.provider,
         state: b.state,
         phase: b.phase,
+        ...(b.signIn ? { signIn: b.signIn.state } : {}),
         done: b.steps.filter((step) => step.state === "done").length,
         steps: b.steps.length,
         ...(b.reason ? { reason: b.reason } : {}),

@@ -26,6 +26,7 @@ import { Build, type BuildRequest, type BuildStatus, keepManifest } from "./buil
 import { PLAN, UNDERSTAND } from "./harness/server.ts";
 import { lockedPackages } from "./packages.ts";
 import { command, outcome, type Outcome, ownTools } from "./providers.ts";
+import { signedIn } from "./sign-in.ts";
 import { KINDS, loadRecipes, planRecipe, type Recipe, type Step } from "./recipe.ts";
 
 export interface RunOptions {
@@ -196,6 +197,19 @@ export class Runner {
     const request = this.build.request();
     this.build.setStatus({ build: request.build, id: request.id, version: request.version, phase: request.phase, state: "running", steps: [], started: now(), at: now() });
     if (!/^local\.[a-z0-9][a-z0-9-]*$/.test(request.id)) return this.fail("an app the agent builds has an id that starts with local.");
+    // A plan signs in the first time the builder runs (ADR-040): a build
+    // without its sign-in waits for it, and starts again once it's there.
+    if (request.path === "plan" && !this.options.standIn) {
+      const signed = await signedIn(request.provider, { home: this.options.home ?? process.env.HOME ?? "/var/lib/agentv/builder", proxy: this.options.proxy });
+      if (signed === null) return this.fail(`${request.provider}'s plan is coming soon: use a key for it`);
+      if (!signed) {
+        // Once, so a sign-in that doesn't take isn't asked for again and again.
+        if (request.signedIn) return this.fail(`the ${request.provider} plan's sign-in didn't take: try again`);
+        this.log(`${request.provider}'s plan isn't signed in yet`);
+        this.status({ state: "plan-sign-in", reason: `sign in to your ${request.provider} plan first`, step: undefined });
+        return this.build.status()!;
+      }
+    }
     if (request.phase === "understand") return this.understand(request);
     if (request.phase === "plan") return this.plan(request);
     return this.walk(request);

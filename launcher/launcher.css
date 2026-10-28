@@ -1772,3 +1772,16 @@ body.with-backdrop {
 .build-wishes {
   margin-top: 48px;
 }
+
+/* A plan's sign-in on a build's page: the CLI's link for the phone's camera. */
+.pair-qr.build-qr {
+  width: 360px;
+  height: 360px;
+  padding: 16px;
+}
+
+.pair-code.build-code {
+  margin: 0;
+  font-size: 80px;
+  letter-spacing: 12px;
+}

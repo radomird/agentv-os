@@ -3,7 +3,9 @@
 // its screenshot from the test TV, what it reaches in plain words and its
 // packages, and goes on the TV's home once it's approved with the PIN. A
 // plan, for a request no recipe fits, shows its steps, what it'll reach and
-// roughly what it costs, and is built once it's approved the same way.
+// roughly what it costs, and is built once it's approved the same way. And
+// the first build on a plan waits for its sign-in (ADR-040): the phone opens
+// the provider's page, and hands back the code it gives, behind the PIN.
 
 import { glyph } from "../launcher/glyphs.ts";
 import { api, h, prompt, toast, token } from "./lib.ts";
@@ -14,8 +16,10 @@ export interface PhoneBuild {
   build: string;
   id: string;
   name: string;
+  provider: string;
   state: string;
   phase: string;
+  signIn?: string;
   done: number;
   steps: number;
   reason?: string;
@@ -39,6 +43,7 @@ interface FullBuild {
     packages: { name: string; version?: string }[];
   };
   cost?: { low: number; high: number };
+  signIn?: { state: string; url?: string; code?: string; pastes?: boolean };
   shot: boolean;
 }
 
@@ -55,6 +60,7 @@ export function buildNotices(before: PhoneBuild[] | undefined, now: PhoneBuild[]
     const name = b.name.toLowerCase();
     if (b.state === "approve") toast(`${name} is ready: approve it here`, true);
     else if (b.state === "plan") toast(`a plan for ${name}: approve it here`, true);
+    else if (b.state === "plan-sign-in") toast(`sign in to your ${b.provider} plan to build ${name}`, true);
     else if (b.state === "failed") toast(`couldn't build ${name}: ${b.reason ?? "it stopped"}`);
   }
   // Approved and gone from the list: it's on the TV's home.
@@ -66,6 +72,15 @@ export function buildNotices(before: PhoneBuild[] | undefined, now: PhoneBuild[]
 // What the remote shows above its pad: the build waiting for a yes, or the
 // one going, or the one that failed.
 export function buildBanner(builds: PhoneBuild[] | undefined, open: (build: string) => void): HTMLElement | null {
+  const signing = builds?.find((b) => b.state === "plan-sign-in");
+  if (signing) {
+    return h(
+      "button",
+      { type: "button", class: "banner", "data-action": "plan-sign-in", "data-build": signing.build, onclick: () => open(signing.build) },
+      glyph("lock", 18),
+      h("span", {}, `sign in to your ${signing.provider} plan ›`),
+    );
+  }
   const waiting = builds?.find((b) => b.state === "approve" || b.state === "plan");
   if (waiting) {
     const name = waiting.name.toLowerCase();
@@ -117,6 +132,10 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
       b = (await api<{ builds: FullBuild[] }>("GET", "/api/phone/builds")).builds.find((x) => x.build === build);
     } catch (error) {
       failed(error);
+      return;
+    }
+    if (b?.state === "plan-sign-in") {
+      page.replaceChildren(...signInPage(b, back, failed));
       return;
     }
     if (!b || (b.state !== "approve" && b.state !== "plan")) {
@@ -185,4 +204,40 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
     }
   })();
   return page;
+}
+
+// The plan's sign-in (ADR-040): the provider's own page, opened here, and
+// the code it gives, typed into the CLI's prompt on the box. Its tokens stay
+// in the CLI's own files there; this page never sees them.
+function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
+  const name = lower(b);
+  const s = b.signIn;
+  const head = [prompt(`tv app sign-in ${b.provider}`), h("h1", {}, `sign in to your ${b.provider} plan`), h("p", { class: "note" }, `${name} is built on your ${b.provider} plan, and your agent isn't signed in to it yet. you sign in once.`)];
+  const leave = h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "back");
+  if (s?.state !== "waiting" || !s.url) return [...head, h("p", { class: "note" }, s?.state === "done" ? "you're signed in. your agent goes on." : "the sign-in is starting on the tv…"), leave];
+  const link = h("a", { class: "button primary", href: s.url, target: "_blank", rel: "noopener noreferrer", "data-action": "open-sign-in" }, `open ${b.provider}'s sign-in ›`);
+  if (s.code) {
+    return [...head, link, h("p", { class: "note" }, "sign in there, and enter this code when it asks:"), h("p", { class: "plan-code" }, s.code), h("p", { class: "note" }, "the tv goes on once you're in."), leave];
+  }
+  const field = h("input", { class: "field", type: "text", name: "code", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "paste the code here", "aria-label": "the sign-in code" }) as HTMLInputElement;
+  const send = async (event: Event) => {
+    event.preventDefault();
+    const code = field.value.trim();
+    if (!code) return toast("paste the code first");
+    try {
+      const answered = await withPin(`the ${b.provider} plan's sign-in`, (grant) => api("POST", `/api/phone/builds/${b.build}/code`, { code }, grant));
+      if (answered === null) return;
+      field.value = "";
+      toast("signing in on the tv…", true);
+    } catch (error) {
+      failed(error);
+    }
+  };
+  return [
+    ...head,
+    link,
+    h("p", { class: "note" }, "sign in there, then copy the code the page gives you and paste it here."),
+    h("form", { class: "plan-paste", onsubmit: (event: Event) => void send(event) }, field, h("button", { class: "button primary", type: "submit", "data-action": "send-code" }, glyph("lock", 20), h("span", {}, "send it with pin"))),
+    leave,
+  ];
 }

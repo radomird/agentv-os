@@ -9,30 +9,14 @@
 //
 // Usage: node start.ts <build-dir>
 
-import { createConnection, createServer, type Server } from "node:net";
 import { join, resolve } from "node:path";
 import { Build } from "../build.ts";
 import { gates } from "../gates/gates.ts";
 import { Runner } from "../run.ts";
+import { forward } from "./forward.ts";
 import { PROXY_PORT, RELAY_PORT } from "./ports.ts";
 
-export { PROXY_PORT, RELAY_PORT };
-
-// A port on this loopback that passes each connection to a socket file.
-export function forward(port: number, path: string): Promise<Server> {
-  // Half-open both ways, so a side that's done sending still gets its answer.
-  const server = createServer({ allowHalfOpen: true }, (client) => {
-    const upstream = createConnection({ path, allowHalfOpen: true });
-    client.on("error", () => upstream.destroy());
-    upstream.on("error", () => client.destroy());
-    client.pipe(upstream);
-    upstream.pipe(client);
-  });
-  return new Promise((done, fail) => {
-    server.once("error", fail);
-    server.listen(port, "127.0.0.1", () => done(server));
-  });
-}
+export { forward, PROXY_PORT, RELAY_PORT };
 
 // A build stopped while it was going, as the TV and the phone show it.
 export function stopped(build: Build): void {
