@@ -669,3 +669,20 @@ h1.with-icon .glyph {
 .build-approve a.button {
   text-decoration: none;
 }
+
+/* Share to the TV (ADR-050, S5.10): a link, a photo or a video, each with
+   its own button to send it. */
+.share-page h2 {
+  margin: 12px 0 0;
+  font-size: 22px;
+  color: var(--accent);
+}
+
+.note.hidden {
+  display: none;
+}
+
+/* A button with nothing to do yet, such as send before anything's picked. */
+.button:disabled {
+  opacity: 0.45;
+}

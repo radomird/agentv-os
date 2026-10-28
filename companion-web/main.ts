@@ -22,6 +22,7 @@ import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
+import { sharePage } from "./share.ts";
 
 const app = document.getElementById("app")!;
 
@@ -78,7 +79,7 @@ interface Ask {
   keyUrl: string;
 }
 
-type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "build" | "push";
+type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "share" | "build" | "push";
 let state: State | null = null;
 let mode: Mode = "remote";
 // The build being approved, while it's open.
@@ -86,6 +87,7 @@ let approving: string | null = null;
 // The photo page stays as it is while the page draws again around it, so a
 // photo picked isn't lost when something changes on the TV.
 let photoEl: HTMLElement | null = null;
+let shareEl: HTMLElement | null = null;
 // The push's page, kept while it's open so a redraw keeps what's typed.
 let pushEl: HTMLElement | null = null;
 
@@ -711,6 +713,21 @@ function draw(): void {
           glyph("photo", 18),
           h("span", {}, "send a photo for the background ›"),
         ),
+        // A link, a photo or a video for the TV to open (ADR-050).
+        h(
+          "button",
+          {
+            type: "button",
+            class: "button",
+            "data-action": "share",
+            onclick: () => {
+              mode = "share";
+              draw();
+            },
+          },
+          glyph("tv", 18),
+          h("span", {}, "share a link, a photo or a video ›"),
+        ),
       ),
     );
   } else if (mode === "push" && state.export?.github) {
@@ -728,6 +745,7 @@ function draw(): void {
     );
     body.append(pushEl);
   } else if (mode === "photo") body.append((photoEl ??= photoPage(failed)));
+  else if (mode === "share") body.append((shareEl ??= sharePage(failed)));
   else if (mode === "who") body.append(who());
   else if (mode === "update" && state.update) body.append(updatePage(state.update));
   else if (mode === "type") body.append(typing());
