@@ -5,12 +5,14 @@
 // timing is the NUC's), and what the launcher asks the TV session for.
 
 import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { HOME_UP } from "../../../daemon/screen.ts";
-import { FIXTURES, startBox } from "./box.mts";
+import { FIXTURES, ROOT, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -401,12 +403,32 @@ test("S2.17 Settings → Look changes how long the ambient screen waits", async 
   await page.close();
 });
 
-test("S5.2 Settings → Look offers Tokyo Night, Gruvbox and Catppuccin Latte, and picking one sets it with Omarchy's own command", async () => {
+test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first, each with its colours, and picking one sets it with Omarchy's own command", async () => {
   const page = await tv();
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="look"]').click();
   await page.waitForSelector('[data-action="theme-gruvbox"]');
-  assert.deepEqual(await page.locator('[data-action^="theme-"] span:first-child').allInnerTexts(), ["tokyo night", "gruvbox", "catppuccin latte"]);
+  const names = await page.locator(".look-item-name").allInnerTexts();
+  const shipped = readdirSync(join(ROOT, "themes"));
+  assert.equal(names.length, shipped.length, "every one of Omarchy's themes");
+  assert.equal(names[0], "tokyo night");
+  assert.ok(names.includes("gruvbox") && names.includes("rose pine") && names.includes("white"));
+  // Each with its own background and accent beside its name.
+  assert.deepEqual(
+    await page.locator('[data-action="theme-tokyo-night"] .look-swatch span').evaluateAll((els) => els.slice(0, 2).map((el) => getComputedStyle(el).backgroundColor)),
+    ["rgb(26, 27, 38)", "rgb(122, 162, 247)"],
+  );
+  // The list scrolls with the focus: down from the first theme to the last
+  // keeps the focused one in sight.
+  await page.locator('[data-action="theme-tokyo-night"]').hover();
+  for (let i = 1; i < Math.ceil(shipped.length / 2); i++) await page.keyboard.press("ArrowDown");
+  const sight = await page.evaluate(() => {
+    const list = document.querySelector(".look-list")!;
+    const at = document.querySelector(".look-item.focused")?.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    return { scrolled: list.scrollTop, inSight: Boolean(at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1) };
+  });
+  assert.ok(sight.scrolled > 0 && sight.inSight, JSON.stringify(sight));
   await page.locator('[data-action="theme-gruvbox"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
   await page.close();

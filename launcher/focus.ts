@@ -74,6 +74,10 @@ export class Focus {
     // A text field takes the keys while it has the focus, and lets go after.
     if (this.current instanceof HTMLInputElement) this.current.blur();
     this.current = el;
+    // A list longer than its box, marked data-scroll, such as every theme
+    // in Look (ADR-048), scrolls the element into view first, at once, so
+    // the ring lands where it is.
+    if (el.parentElement?.closest("[data-scroll]")) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
     this.place(el, from !== undefined, from);
     el.classList.add("focused");
     if (el instanceof HTMLInputElement) el.focus({ preventScroll: true });

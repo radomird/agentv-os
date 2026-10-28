@@ -5,9 +5,10 @@
 
 # Omarchy renders AgenTV's launcher.css.tpl into the current theme on every
 # theme change. This sends the result to AgenTV's daemon, which keeps only
-# the colours (ADR-012). It runs from Omarchy's theme-set hook and when the TV
-# session starts. A theme set before the template was there has no
-# launcher.css yet, so it's rendered here from the theme's colours.
+# the colours (ADR-012), with the theme's name, so Look knows which theme it
+# is (ADR-048). It runs from Omarchy's theme-set hook and when the TV session
+# starts. A theme set before the template was there has no launcher.css yet,
+# so it's rendered here from the theme's colours.
 
 set -euo pipefail
 
@@ -16,6 +17,11 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 theme="$HOME/.local/state/omarchy/current/theme"
 css="$theme/launcher.css"
+# The name, as omarchy-theme-install allows it, with its + kept as a +.
+name=$(head -n 1 "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
+if ! (LC_ALL=C; [[ $name =~ ^[a-z0-9_][a-z0-9._+-]{0,63}$ ]]); then
+  name=""
+fi
 
 if [[ ! -f $css ]]; then
   [[ -f $theme/colors.toml ]] || exit 0
@@ -30,7 +36,7 @@ fi
 
 # At the TV session's start the daemon may still be on its way up.
 if ! curl -fsS --max-time 5 --retry 3 --retry-connrefused --retry-delay 1 -o /dev/null -H 'Content-Type: text/css' --data-binary @"$css" \
-  "http://127.0.0.1:${AGENTV_PORT:-3000}/api/theme"; then
+  "http://127.0.0.1:${AGENTV_PORT:-3000}/api/theme${name:+?name=${name//+/%2B}}"; then
   echo "AgenTV's daemon didn't take the theme's colours" >&2
   exit 1
 fi

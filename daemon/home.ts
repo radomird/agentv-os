@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
 import { pin, problem, type Placed, type Size } from "../launcher/layout.ts";
@@ -866,11 +866,19 @@ export class Home {
     return readFile(join(this.state, "theme.css"), "utf8").catch(() => "");
   }
 
-  async saveTheme(css: string): Promise<boolean> {
+  // The name of the theme those colours are from, as Omarchy's hook said, or
+  // null from a hook that didn't say.
+  async themeName(): Promise<string | null> {
+    return (await readFile(join(this.state, "theme-name"), "utf8").catch(() => "")).trim() || null;
+  }
+
+  async saveTheme(css: string, name?: string | null): Promise<boolean> {
     const clean = cleanTheme(css);
     if (!clean) return false;
     await mkdir(this.state, { recursive: true });
     await writeFile(join(this.state, "theme.css"), clean);
+    if (name) await writeFile(join(this.state, "theme-name"), `${name}\n`);
+    else await rm(join(this.state, "theme-name"), { force: true });
     return true;
   }
 

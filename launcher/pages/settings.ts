@@ -265,15 +265,8 @@ export function settings(ctx: Ctx, open?: string): View {
       value: () => looks?.themes.find((look) => look.id === looks?.current)?.name ?? "omarchy theme",
       panel: () => [
         h("div", { class: "panel-title" }, "colours"),
-        ...(looks?.themes ?? []).map((look) =>
-          h(
-            "button",
-            { class: "button", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
-            h("span", {}, look.name),
-            h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
-          ),
-        ),
-        note("they come from your omarchy theme: one of these, or any other on omarchy's desktop, and the tv follows."),
+        lookList(),
+        note("every omarchy theme on this tv, and any you install on omarchy's desktop. the tv follows whichever omarchy has."),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         h(
           "button",
@@ -433,6 +426,32 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // Every theme Omarchy has (ADR-048), two to a row, each with its own
+  // colours beside its name, in a list that scrolls with the focus. Declared
+  // so it's there for a page drawn straight at Look, before this line runs.
+  function lookList(): HTMLElement {
+    const list = h(
+      "div",
+      { class: "look-list", "data-scroll": true },
+      ...(looks?.themes ?? []).map((look) => {
+        const swatch = h("span", { class: "look-swatch" });
+        for (const colour of [look.colors.background, look.colors.accent, look.colors.selection, look.colors.foreground]) {
+          const block = h("span", {});
+          block.style.background = colour;
+          swatch.append(block);
+        }
+        return h(
+          "button",
+          { class: "button look-item", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
+          swatch,
+          h("span", { class: "look-item-name" }, look.name),
+          h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
+        );
+      }),
+    );
+    list.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
+    return list;
+  }
   const setLook = async (look: ThemePreview) => {
     if (settingLook || look.id === looks?.current) return;
     settingLook = look.id;
