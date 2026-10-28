@@ -232,6 +232,7 @@ export async function startBox(
     omarchy: ROOT,
     themes: join(state, "..", "themes"),
     backgrounds: join(state, "..", "backgrounds"),
+    shared: join(state, "..", "shared"),
     // No packages' desktop entries or icons until a test puts some there.
     dataDirs: [join(state, "..", "share")],
     art: options.art,

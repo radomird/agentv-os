@@ -19,6 +19,7 @@
 // elsewhere can't change anything here.
 
 import { execFile } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -28,6 +29,7 @@ import { APPS_TILE, Home } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
+import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
@@ -84,6 +86,8 @@ export interface DaemonOptions {
   dataDirs?: string[];
   // The backgrounds and their credits: /var/lib/agentv/backgrounds.
   backgrounds?: string;
+  // What phones shared to the TV (ADR-050): /var/lib/agentv/shared.
+  shared?: string;
   // Tests point the museum archives at their own server.
   art?: Pick<ArtOptions, "endpoints" | "imageHosts" | "fetch">;
   // The phone companion's port on the home network, or none. 3001 on the box.
@@ -207,6 +211,7 @@ export class Daemon {
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
+  readonly shared: Shared;
   readonly pageApps: PageApps;
   readonly builds: Builds;
   // Stage B's asks of the services' Chromium, for the screen daemon.
@@ -315,6 +320,7 @@ export class Daemon {
     this.ai = new Ai({ state: options.state });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
+    this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.setupApps = new SetupApps({
@@ -703,8 +709,48 @@ export class Daemon {
     if (change.front === "home" || change.front === "app") next.front = change.front;
     if (typeof change.playing === "boolean") next.playing = change.playing;
     if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
+    const idle = this.idleHome();
     this.tv = next;
     this.phonesChanged();
+    // A share that waited while something played asks now (ADR-050).
+    if (!idle && this.idleHome()) void this.shareWaiting().then((share) => share && this.broadcast("shared", {}));
+  }
+
+  // Home in front with nothing playing: when the TV may ask about a share.
+  private idleHome(): boolean {
+    return this.tv.front === "home" && !this.tv.playing && this.tv.screen !== "ambient";
+  }
+
+  // The shares someone on this profile sees: an adult sees every one, and a
+  // child only those sent to them.
+  private async sharesFor(viewer: Profile): Promise<Share[]> {
+    const all = await this.shared.list();
+    return viewer.role === "adult" ? all : all.filter((share) => share.to === viewer.id);
+  }
+
+  // The oldest share sent to who's watching that the TV hasn't had an
+  // answer for.
+  private async shareWaiting(): Promise<Share | null> {
+    const viewer = await this.profiles.active();
+    return (await this.shared.list()).filter((share) => share.to === viewer.id && !share.answered).at(-1) ?? null;
+  }
+
+  // Who a share from this phone goes to: who's watching, unless it's a
+  // child's profile an adult hasn't allowed shares for (ADR-050).
+  private async shareTarget(phone: { name: string }): Promise<{ from: string; to: string } | { error: string }> {
+    const viewer = await this.profiles.active();
+    if (viewer.role === "child" && !(await this.shared.allowed()).includes(viewer.id)) {
+      return { error: `${viewer.name.toLowerCase()}'s profile doesn't take shares. an adult can allow it in settings → profiles` };
+    }
+    return { from: `${viewer.name.toLowerCase()} on ${phone.name}`, to: viewer.id };
+  }
+
+  // A share is in: the TV asks about it now if nothing's playing, or else
+  // once nothing is. The phone hears which.
+  private async shareIn(response: ServerResponse, share: Share, phone: { name: string }): Promise<void> {
+    this.log(`${phone.name} shared a ${share.kind}`);
+    this.broadcast("shared", {});
+    this.json(response, 200, { ok: true, share, waits: !this.idleHome() });
   }
 
   // The phone's state: who's watching, the lock, a sign-in, an update and
@@ -1116,6 +1162,42 @@ export class Daemon {
       return;
     }
 
+    // Share to the TV (ADR-050, S5.10): a link, a photo or a video, for
+    // who's watching. The TV asks before it shows any of them.
+    const sharing = /^\/api\/phone\/share\/(link|photo|video)$/.exec(path);
+    if (method === "POST" && sharing) {
+      const target = await this.shareTarget(phone);
+      if ("error" in target) {
+        this.json(response, 403, { ok: false, error: target.error });
+        return;
+      }
+      let result: { share?: Share; error?: string };
+      if (sharing[1] === "link") {
+        result = await this.shared.addLink(((await this.body(request)) as { url?: unknown } | undefined)?.url, target);
+      } else if (sharing[1] === "photo") {
+        let body: Buffer;
+        try {
+          body = await this.raw(request, MAX_PHOTO);
+        } catch (error) {
+          this.json(response, 413, { ok: false, error: (error as Error).message });
+          return;
+        }
+        result = await this.shared.addPhoto(body, url.searchParams.get("credit"), target);
+      } else {
+        if (Number(request.headers["content-length"]) > MAX_VIDEO) {
+          this.json(response, 413, { ok: false, error: `that video is too big: ${MAX_VIDEO / 1024 ** 3} gb at most` });
+          return;
+        }
+        result = await this.shared.addVideo(request, url.searchParams.get("name"), target);
+      }
+      if (!result.share) {
+        this.json(response, result.error?.includes("too big") ? 413 : 400, { ok: false, error: result.error });
+        return;
+      }
+      await this.shareIn(response, result.share, phone);
+      return;
+    }
+
     // AgenTV's sign-in screen (ADR-032, S4.9): the name and the password the
     // phone's password manager filled, typed into the service's form on the
     // TV, with Tab between them and Enter after. Never logged.
@@ -1489,6 +1571,32 @@ export class Daemon {
     } catch {
       return undefined;
     }
+  }
+
+  // A shared photo or video, in parts when the player asks for them, as a
+  // video's seeking does.
+  private async sendShared(request: IncomingMessage, response: ServerResponse, id: string): Promise<void> {
+    const file = await this.shared.file(id);
+    if (!file) {
+      this.json(response, 404, { ok: false, error: "that share's file isn't here" });
+      return;
+    }
+    const headers = { "Content-Type": file.type, "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" };
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range ?? ""));
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, file.size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), file.size - 1) : file.size - 1;
+      if (start >= file.size || start > end) {
+        response.writeHead(416, { "Content-Range": `bytes */${file.size}` });
+        response.end();
+        return;
+      }
+      response.writeHead(206, { ...headers, "Content-Range": `bytes ${start}-${end}/${file.size}`, "Content-Length": end - start + 1 });
+      createReadStream(file.path, { start, end }).pipe(response);
+      return;
+    }
+    response.writeHead(200, { ...headers, "Content-Length": file.size });
+    createReadStream(file.path).pipe(response);
   }
 
   private send(response: ServerResponse, type: string, body: Buffer | string, extra: Record<string, string> = {}): void {
@@ -2205,6 +2313,12 @@ export class Daemon {
       else {
         error = await this.profiles.remove(one![1]);
         if (!error) await this.home.forgetViewer(one![1]);
+        if (!error) await this.shared.forget(one![1]);
+      }
+      // Whether a child's profile takes shares from phones (ADR-050). An
+      // adult's always does.
+      if (profile && !error && (typeof body.shares === "boolean" || profile.role === "adult")) {
+        await this.shared.allow(profile.id, profile.role === "child" && body.shares === true);
       }
       if (error) {
         this.json(response, error === "there's no such profile" ? 404 : 400, { ok: false, error });
@@ -2536,6 +2650,56 @@ export class Daemon {
 
     // The backgrounds (ADR-012, board 13): which source the TV shows, the
     // photos with their credits, and each picture.
+    // Shared to the TV (ADR-050, S5.10): what's here for who's watching, the
+    // one to ask about now, if home's in front with nothing playing, and
+    // which children's profiles take shares.
+    if (method === "GET" && path === "/api/shared") {
+      const waiting = this.idleHome() ? await this.shareWaiting() : null;
+      this.json(response, 200, { ok: true, shares: await this.sharesFor(await this.profiles.active()), ask: waiting?.id ?? null, allowed: await this.shared.allowed() });
+      return;
+    }
+
+    // One of them: its file, Open or Not now, a photo as the background, or
+    // taken off the box. Only one who's watching sees.
+    const shared = /^\/api\/shared\/([0-9a-f]{16})(?:\/(file|answer|background))?$/.exec(path);
+    if (shared) {
+      const share = (await this.sharesFor(await this.profiles.active())).find((one) => one.id === shared[1]);
+      if (!share) {
+        this.json(response, 404, { ok: false, error: "that share isn't here" });
+        return;
+      }
+      if (method === "GET" && shared[2] === "file") {
+        await this.sendShared(request, response, share.id);
+        return;
+      }
+      if (method === "POST" && shared[2] === "answer") {
+        await this.shared.answer(share.id);
+        this.broadcast("shared", {});
+        this.json(response, 200, { ok: true });
+        return;
+      }
+      if (method === "POST" && shared[2] === "background") {
+        if (!(await this.adult(request, response, "a shared photo as the background"))) return;
+        const file = await this.shared.file(share.id);
+        const result = share.kind === "photo" && file ? await this.backgrounds.add(await readFile(file.path), { text: share.credit ?? null, from: share.from }) : { error: "only a photo can be the background" };
+        if (!result.state) {
+          this.json(response, 400, { ok: false, error: result.error });
+          return;
+        }
+        this.log("a shared photo is the background");
+        this.broadcast("background", result.state);
+        this.json(response, 200, { ok: true, background: result.item });
+        return;
+      }
+      if (method === "DELETE" && !shared[2]) {
+        if (!(await this.adult(request, response, "taking a share off"))) return;
+        await this.shared.remove(share.id);
+        this.broadcast("shared", {});
+        this.json(response, 200, { ok: true });
+        return;
+      }
+    }
+
     if (method === "GET" && path === "/api/backgrounds") {
       this.json(response, 200, { ok: true, ...(await this.backgrounds.read()) });
       return;
