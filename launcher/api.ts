@@ -287,8 +287,36 @@ export interface Available {
   error?: string;
 }
 
+// Shared to the TV (ADR-050, S5.10): a link, a photo or a video a paired
+// phone sent, with who sent it.
+export interface Share {
+  id: string;
+  kind: "link" | "photo" | "video";
+  from: string;
+  to: string;
+  at: string;
+  title: string;
+  url?: string;
+  credit?: string | null;
+  type?: string;
+  size?: number;
+  answered: boolean;
+}
+
+export interface SharedState {
+  shares: Share[];
+  // The one the TV asks about now, if any.
+  ask: string | null;
+  // The children's profiles that take shares.
+  allowed: string[];
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  shared: () => call<SharedState>("GET", "/api/shared"),
+  answerShare: (id: string) => call<{ ok: boolean }>("POST", `/api/shared/${id}/answer`),
+  shareBackground: (id: string, grant?: string) => call<{ background: Background }>("POST", `/api/shared/${id}/background`, undefined, grant),
+  removeShare: (id: string, grant?: string) => call<{ ok: boolean }>("DELETE", `/api/shared/${id}`, undefined, grant),
   // One of a page app's kit calls the daemon does, checked against its
   // manifest there (ADR-043): what it gives back.
   kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
@@ -315,8 +343,9 @@ export const daemon = {
   saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }, grant?: string) => call<WeatherPlace>("POST", "/api/weather", change, grant),
   // Profiles (ADR-009, S4.2).
   switchViewer: (id: string, grant?: string) => call<{ viewer: Viewer }>("POST", "/api/viewer", { id }, grant),
-  addViewer: (profile: Omit<Viewer, "id" | "locked"> & { locked?: boolean }, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
-  editViewer: (id: string, change: Partial<Omit<Viewer, "id">>, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
+  // shares: whether a child's profile takes shares from phones (ADR-050).
+  addViewer: (profile: Omit<Viewer, "id" | "locked"> & { locked?: boolean; shares?: boolean }, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
+  editViewer: (id: string, change: Partial<Omit<Viewer, "id">> & { shares?: boolean }, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
   // The provider key (S4.6): which provider has one, never the key.
   key: () => call<KeyState>("GET", "/api/key"),
@@ -465,6 +494,9 @@ export const screen = {
   // Puts an app in front, the way its manifest says to open it, or brings
   // it back where it was when it's open behind home.
   open: (app: string) => ask({ cmd: "open-app", app }),
+  // A link shared to the TV, in the app that declares its site, or in a
+  // browser page of its own that can't see the apps' sign-ins (ADR-050).
+  openShare: (id: string) => ask({ cmd: "open-share", share: id }),
   // Opens an app at an item, through its playback.open: an entry of its
   // tile, such as one to continue (ADR-016).
   openItem: (app: string, item: Item) => ask({ cmd: "open-app", app, item }),

@@ -1842,3 +1842,125 @@ body.with-backdrop.on-home {
   font-size: 80px;
   letter-spacing: 12px;
 }
+
+/* Shared to the TV (ADR-050, S5.10). The notice, over the page, never over
+   what's playing: who sent what, with Open and Not now. It sits under the
+   focus ring, which shows on its buttons. */
+#notice {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  display: none;
+  z-index: 9;
+}
+
+#notice.on {
+  display: block;
+}
+
+.notice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 760px;
+  padding: 28px 32px;
+  background: var(--dark-background);
+  border: 2px solid var(--selection);
+  border-left: 6px solid var(--accent);
+}
+
+.notice-title {
+  font-size: 32px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.notice-buttons,
+.shared-buttons {
+  display: flex;
+  gap: 24px;
+}
+
+/* A shared photo or video, full screen, under the focus ring and over
+   everything else the page has. */
+.shared-full {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--darker-background);
+}
+
+.shared-picture,
+.shared-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.shared-bar {
+  position: absolute;
+  left: 96px;
+  right: 96px;
+  bottom: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 24px 32px;
+  background: var(--dark-background);
+  border: 2px solid var(--selection);
+  font-size: 28px;
+}
+
+.shared-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The player's line shows while it's paused, or for a moment after a jump. */
+.shared-player {
+  opacity: 0;
+  transition: opacity var(--base) var(--ease);
+}
+
+.shared-player.shown {
+  opacity: 1;
+}
+
+.shared-time,
+.shared-state {
+  flex: none;
+  color: var(--accent-ink, var(--accent));
+}
+
+.shared-url {
+  font-size: 28px;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+}
+
+/* A share's tile in Apps → Shared: the photo itself, or what kind it is. */
+.tile-shared .tile-top {
+  overflow: hidden;
+}
+
+.tile-shared-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile-shared-kind {
+  color: var(--accent-ink, var(--accent));
+}
+
+/* Apps, down to the status bar, scrolls with the focus when it's longer. */
+.apps-page {
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-bottom: 64px;
+}
