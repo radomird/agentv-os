@@ -10,11 +10,21 @@
 # /etc/agentv, the person's home and the NAS shares. It has no
 # network of its own: its only way out is agentv-build-net's filter and
 # relay (builder/sandbox/start.ts).
+#
+# Everything it can write is mounted nosuid and nodev, so a set-user-ID or
+# set-group-ID bit it sets, or a device file, gives no one more rights
+# (ADR-052, S6.10): its build's folder and its home, which
+# var-lib-agentv-build.mount and var-lib-agentv-builder.mount mount that
+# way for the whole box, and its own /tmp and /var/tmp. That keeps what
+# RestrictSUIDSGID= gave without its system call filter, which also blocks
+# openat2(), and so bubblewrap, which a package's install script with
+# safeguards off runs in.
 
 [Unit]
 Description=AgenTV build %I
 BindsTo=agentv-build-net.service
 After=agentv-build-net.service
+RequiresMountsFor=/var/lib/agentv/build/%I /var/lib/agentv/builder
 
 [Service]
 Type=exec
@@ -34,16 +44,14 @@ TasksMax=512
 PrivateNetwork=yes
 ProtectSystem=strict
 ProtectHome=yes
-TemporaryFileSystem=/var/lib:ro
+TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
 BindPaths=/var/lib/agentv/build/%I /var/lib/agentv/builder
 InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
-PrivateTmp=yes
 PrivateDevices=yes
 PrivateIPC=yes
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
-RestrictSUIDSGID=yes
 LockPersonality=yes
 RestrictRealtime=yes
 ProtectKernelTunables=yes

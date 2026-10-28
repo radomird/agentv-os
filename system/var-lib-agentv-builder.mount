@@ -1,0 +1,17 @@
+# The builder's home, mounted on itself nosuid and nodev for the whole box
+# (ADR-052, S6.10). The provider's CLI and, on a plan, its sign-in live
+# here, and a build's unit binds it from here, so a set-user-ID or
+# set-group-ID bit, or a device file, the builder makes in it gives no one
+# more rights. agentv-builder@ waits for it.
+
+[Unit]
+Description=AgenTV builder's home, where set-user-ID bits and devices do nothing
+
+[Mount]
+What=/var/lib/agentv/builder
+Where=/var/lib/agentv/builder
+Type=none
+Options=bind,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
