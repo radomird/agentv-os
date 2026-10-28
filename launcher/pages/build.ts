@@ -26,6 +26,10 @@ export function builds(): BuildView[] {
   return state?.builds ?? [];
 }
 
+export function buildsState(): BuildsState | null {
+  return state;
+}
+
 // The builds that aren't on home: going, waiting for someone, or failed.
 export function underway(): BuildView[] {
   return builds().filter((b) => b.state !== "installed" && b.state !== "kept");
@@ -358,6 +362,130 @@ export function buildPage(ctx: Ctx, which: string): View {
         return true;
       }
       return false;
+    },
+  };
+}
+
+// --- An app your agent built ------------------------------------------------
+
+// Its details' buttons (Q117): a change in words, the same app built again
+// from its recipe, the version before back, or the app gone. Each new
+// version goes through the same gates and approval. Nothing for an app the
+// builder didn't make, or for a child.
+export function builtActions(ctx: Ctx, id: string): HTMLElement[] {
+  if (ctx.state.viewer.role !== "adult") return [];
+  const mine = builds().filter((b) => b.id === id);
+  const now = mine.find((b) => b.state === "installed");
+  if (!now) return [];
+  const kept = mine.find((b) => b.state === "kept");
+  const name = nameOf(now);
+  const fail = (error: unknown) => {
+    ctx.sounds.play("failure");
+    ctx.toast((error as Error).message, "fail");
+  };
+  const again = async () => {
+    try {
+      const made = await daemon.rebuildApp(id);
+      ctx.sounds.play("confirm");
+      await loadBuilds(ctx);
+      ctx.go(`build/${made.build}`);
+    } catch (error) {
+      fail(error);
+    }
+  };
+  const back = async () => {
+    const grant = await ctx.grant(`going back a version of ${name}`);
+    if (grant === null) return;
+    try {
+      await daemon.rollbackApp(id, grant || undefined);
+      ctx.sounds.play("confirm");
+      ctx.toast(`${name} goes back to ${kept!.version}`, "ok");
+    } catch (error) {
+      ctx.forgetGrant();
+      fail(error);
+    }
+  };
+  const remove = async () => {
+    const grant = await ctx.grant(`removing ${name}`);
+    if (grant === null) return;
+    try {
+      await daemon.removeBuilt(id, grant || undefined);
+      ctx.sounds.play("confirm");
+      ctx.toast(`${name} is gone, with every version of it`, "ok");
+      await loadBuilds(ctx);
+      ctx.back();
+    } catch (error) {
+      ctx.forgetGrant();
+      fail(error);
+    }
+  };
+  const button = (label: string, action: string, onclick: () => void) => h("button", { class: "button", "data-focus": true, "data-action": action, onclick }, label);
+  return [
+    button("change it →", "change", () => ctx.go(`change/${id}`)),
+    button("build it again", "rebuild", () => void again()),
+    ...(kept ? [button(`go back to ${kept.version}`, "rollback", () => void back())] : []),
+    button("remove", "remove-built", () => void remove()),
+  ];
+}
+
+// A change to an app your agent built, in words: a new version from the one
+// on home.
+export function buildChange(ctx: Ctx, id: string): View {
+  const now = builds().find((b) => b.id === id && b.state === "installed");
+  const name = now ? nameOf(now) : id;
+  const field = h("input", {
+    class: "music-search build-ask",
+    "data-focus": true,
+    "data-field": "change",
+    type: "text",
+    maxlength: "300",
+    placeholder: "slower blocks, and a bigger score",
+    "aria-label": `what should change in ${name}`,
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  let asking = false;
+  const ask = async () => {
+    const text = field.value.trim();
+    if (!text || asking) {
+      if (!text) ctx.toast("say what should change first", "fail");
+      return;
+    }
+    asking = true;
+    try {
+      const made = await daemon.changeApp(id, text);
+      ctx.sounds.play("confirm");
+      await loadBuilds(ctx);
+      ctx.back();
+      ctx.go(`build/${made.build}`);
+    } catch (error) {
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+    } finally {
+      asking = false;
+    }
+  };
+  const el = h(
+    "div",
+    { class: "screen" },
+    h(
+      "div",
+      { class: "page profile" },
+      ...heading(`tv app change ${id.replace(/^local\./, "")}`, `what should change in ${name}?`),
+      h("div", { class: "panel-title" }, "the change"),
+      field,
+      h("p", { class: "panel-note" }, `your agent builds a new version of ${name} with it, through the same checks, and you approve it on your phone. the version on home stays until then, and one press brings it back after.`),
+      h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "ask", onclick: () => void ask() }, "ask")),
+    ),
+    bar(ctx, "apps", "↵ ask · esc back"),
+  );
+  return {
+    el,
+    first: field,
+    act(action) {
+      if (action !== "ok" || ctx.focus.get() !== field) return false;
+      void ask();
+      return true;
     },
   };
 }

@@ -12,7 +12,7 @@ import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { addApp, installMoved } from "./pages/add-app.ts";
 import { appSetup } from "./pages/app-setup.ts";
-import { buildAsk, buildPage, buildsMoved, loadBuilds } from "./pages/build.ts";
+import { buildAsk, buildChange, buildPage, buildsMoved, loadBuilds } from "./pages/build.ts";
 import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
@@ -286,6 +286,7 @@ function viewFor(route: string): View {
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
   // Your agent's builds are an adult's too (ADR-043 to ADR-046).
   if (name === "build" && ctx.state.viewer.role === "adult") return arg ? buildPage(ctx, arg) : buildAsk(ctx);
+  if (name === "change" && arg && ctx.state.viewer.role === "adult") return buildChange(ctx, arg);
   if (name === "details") return details(ctx, arg);
   if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);

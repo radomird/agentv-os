@@ -12,6 +12,8 @@ import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
 import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
+import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
+import { buildsState, loadBuilds } from "./build.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -320,7 +322,7 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "phones", label: "phones", value: () => (phones ? String(phones.length) : ""), panel: () => phonesPanel(ctx) },
     { key: "pin", label: "adult pin", value: () => (pinSet() ? "on" : "off"), panel: pinPanel },
     { key: "ai", label: "ai", value: () => aiValue(ctx), panel: () => aiPanel(ctx) },
-    { key: "usage", label: "usage", value: () => "soon", panel: () => soon("ai spending shows here once the agent builds apps.") },
+    { key: "usage", label: "usage", value: usageValue, panel: () => usagePanel(ctx) },
     {
       key: "updates",
       label: "updates",
@@ -433,6 +435,13 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  void loadBuilds(ctx).then(() => {
+    const item = menu.querySelector<HTMLElement>('[data-key="usage"] .menu-value');
+    if (item) item.textContent = usageValue();
+    if (menu.querySelector(".open")?.getAttribute("data-key") === "usage" && !panel.contains(ctx.focus.get() ?? null)) {
+      show(sections.find((section) => section.key === "usage")!);
+    }
+  });
   const setLook = async (look: ThemePreview) => {
     if (settingLook || look.id === looks?.current) return;
     settingLook = look.id;
@@ -509,6 +518,14 @@ export function settings(ctx: Ctx, open?: string): View {
       }
       if (current?.dataset.adjust === "output-volume" && (action === "left" || action === "right")) {
         stepVolume(action === "right" ? 0.05 : -0.05);
+        return true;
+      }
+      // Your agent's caps, a step at a time, past the PIN (ADR-045).
+      const caps = buildsState()?.settings.cap;
+      if (caps && (current?.dataset.adjust === "cap-build" || current?.dataset.adjust === "cap-month") && (action === "left" || action === "right")) {
+        const by = action === "right" ? 1 : -1;
+        const cap = current.dataset.adjust === "cap-build" ? { ...caps, build: stepCap(BUILD_CAPS, caps.build, by) } : { ...caps, month: stepCap(MONTH_CAPS, caps.month, by) };
+        void changeBuilder(ctx, { cap }, current.dataset.adjust);
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {

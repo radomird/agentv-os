@@ -22,6 +22,7 @@ let daemon: Daemon;
 let url = "";
 let state = "";
 let builds = "";
+let apps = "";
 const errors: string[] = [];
 
 async function send(method: string, path: string, body?: unknown, grant?: string, base = url) {
@@ -34,7 +35,7 @@ async function send(method: string, path: string, body?: unknown, grant?: string
 }
 
 before(async () => {
-  ({ daemon, url, state, builds } = await startBox());
+  ({ daemon, url, state, builds, apps } = await startBox());
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
   // Claude with a key, its terms accepted on a paired phone.
   writeFileSync(join(state, "..", "key.json"), JSON.stringify({ set: true, provider: "claude", at: new Date().toISOString() }));
@@ -289,6 +290,101 @@ test("a child's profile has no + add your own, and no builds", async () => {
   assert.equal(await page.locator('[data-action="build"]').count(), 0);
   assert.equal(await page.locator(".build-tile").count(), 0);
   assert.equal((await fetch(`${url}/api/builds`)).status, 403);
-  await send("POST", "/api/viewer", { id: "radomir" }, grant);
+  const adult = ((await send("GET", "/api/viewers")).viewers as { id: string; role: string }[]).find((v) => v.role === "adult")!;
+  const back = await send("POST", "/api/viewer", { id: adult.id }, (await send("POST", "/api/pin/check", { pin: "2468" })).grant);
+  assert.equal(back.ok, true, JSON.stringify(back));
+  await page.close();
+});
+
+async function waitPad(page: Page, up: boolean): Promise<void> {
+  await page.waitForFunction((want) => document.getElementById("pin")?.classList.contains("on") === want, up);
+}
+
+test("ADR-045 Settings → usage shows the month's spend, and the caps and safeguards change past the PIN", async () => {
+  const month = new Date().toISOString().slice(0, 7);
+  writeFileSync(join(state, "..", "spend.json"), JSON.stringify({ month, spent: 3.456, builds: {} }));
+  writeFileSync(join(state, "..", "npm-warnings.json"), JSON.stringify({ apps: [{ id: "local.photos", version: "1.0.0", build: "b1", malware: ["evil-pkg@1.0.0"], serious: [], since: "" }] }));
+  const page = await tv();
+  await go(page, "settings/usage");
+  await page.waitForFunction(() => /\$3\.46 of \$20/.test(document.querySelector(".panel")?.textContent ?? ""));
+  const panel = await page.locator(".panel").innerText();
+  assert.match(panel, /a build may spend\s+‹ \$5 ›[\s\S]*a month may spend\s+‹ \$20 ›[\s\S]*npm safeguards\s+\[x\]/);
+  assert.match(panel, /photos 1\.0\.0: evil-pkg@1\.0\.0, known malware/);
+  await page.locator('[data-action="cap-build"]').focus();
+  await page.evaluate(() => (window as unknown as { agentvLauncher: { focus: { set(el: Element): void } } }).agentvLauncher.focus.set(document.querySelector('[data-action="cap-build"]')!));
+  await page.keyboard.press("ArrowRight");
+  await waitPad(page, true);
+  for (const digit of "2468") await page.keyboard.press(digit);
+  await waitPad(page, false);
+  await page.waitForFunction(() => /‹ \$10 ›/.test(document.querySelector('[data-action="cap-build"]')?.textContent ?? ""));
+  assert.deepEqual((await send("GET", "/api/builds")).settings.cap, { build: 10, month: 20 });
+  // The PIN entered once does for the rest of this visit.
+  await page.evaluate(() => (window as unknown as { agentvLauncher: { focus: { set(el: Element): void } } }).agentvLauncher.focus.set(document.querySelector('[data-action="cap-month"]')!));
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => /‹ \$50 ›/.test(document.querySelector('[data-action="cap-month"]')?.textContent ?? ""));
+  await page.locator('[data-action="safeguards"]').click();
+  await page.waitForFunction(() => /npm safeguards\s*\[ \]/.test(document.querySelector('[data-action="safeguards"]')?.textContent ?? ""));
+  assert.deepEqual((await send("GET", "/api/builds")).settings, { cap: { build: 10, month: 50 }, safeguards: false });
+  assert.match(await page.locator(".panel").innerText(), /safeguards are off[\s\S]*known malware is refused either way/);
+  await page.close();
+});
+
+// An app the builder made, on the box, as root's install leaves it.
+function builtApp(id: string, version: string): void {
+  const dir = join(apps, id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify({ schemaVersion: 1, id, name: "Blocks", version, author: "your agent", license: "MIT", description: "A falling-block puzzle", kinds: ["tv-app"], entryPoints: { page: "index.html" }, tv: { contract: 2, category: "games", runtime: "page", capabilities: ["launch"] } }));
+  writeFileSync(join(dir, "index.html"), "<!doctype html><p>blocks</p>");
+  const installed = JSON.parse(readFileSync(join(apps, "installed.json"), "utf8"));
+  installed[id] = { id, name: "Blocks", version, tier: "local", installedAt: new Date().toISOString() };
+  writeFileSync(join(apps, "installed.json"), JSON.stringify(installed, null, 2));
+}
+
+test("Q117 a built app's details ask for a change, build it again, go back a version or remove it", async () => {
+  const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
+  const asked = await send("POST", "/api/builds", { sentence: "a game of falling blocks" });
+  assert.ok(asked.build, JSON.stringify(asked));
+  const first = asked.build;
+  status(first.id, first.build, { phase: "build", state: "installed", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
+  builtApp(first.id, "1.0.0");
+  // Built again: 1.1.0 on home, 1.0.0 kept for going back.
+  const again = (await send("POST", `/api/builds/apps/${first.id}/rebuild`, {})).build;
+  status(first.id, first.build, { phase: "build", state: "kept", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
+  rmSync(join(state, "build-drop", "start.json"), { force: true }); // root took it
+  const dir = join(builds, first.id, again.version);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "status.json"), JSON.stringify({ build: again.build, id: first.id, version: again.version, phase: "build", state: "installed", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" }, started: "", at: new Date(Date.now() + 5).toISOString() }));
+  builtApp(first.id, again.version);
+
+  const page = await tv();
+  await go(page, `details/${first.id}`);
+  await page.waitForSelector('[data-action="rollback"]', { timeout: 10_000 });
+  assert.deepEqual(await page.locator(".actions .button").allInnerTexts().then((all) => all.slice(-4)), ["change it →", "build it again", "go back to 1.0.0", "remove"]);
+
+  // A change in words is a new version from the one on home.
+  await page.locator('[data-action="change"]').click();
+  await page.waitForSelector(".build-ask");
+  assert.match(await page.locator(".page").innerText(), /what should change in blocks\?/);
+  await page.locator(".build-ask").fill("slower blocks");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".build-page");
+  const change = drop("start");
+  assert.deepEqual([change.phase, change.change, change.from, change.recipe], ["build", "slower blocks", again.version, "game"]);
+  await send("POST", `/api/builds/${change.build}/forget`, {}, grant);
+
+  // Going back and removing are behind the PIN, which this visit has.
+  await go(page, `details/${first.id}`);
+  await page.waitForSelector('[data-action="rollback"]');
+  await page.locator('[data-action="rollback"]').click();
+  await waitPad(page, true);
+  for (const digit of "2468") await page.keyboard.press(digit);
+  await waitPad(page, false);
+  await page.waitForFunction(() => /blocks goes back to 1\.0\.0/.test(document.getElementById("toasts")?.textContent ?? ""));
+  assert.deepEqual(drop("install"), { build: first.build, id: first.id, version: "1.0.0" });
+  // With the remote, as the toast over the corner leaves it.
+  await page.evaluate(() => (window as unknown as { agentvLauncher: { focus: { set(el: Element): void } } }).agentvLauncher.focus.set(document.querySelector('[data-action="remove-built"]')!));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => /blocks is gone, with every version of it/.test(document.getElementById("toasts")?.textContent ?? ""));
+  assert.deepEqual(drop("remove"), { id: first.id });
   await page.close();
 });
