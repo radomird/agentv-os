@@ -70,12 +70,15 @@ test("a layout is kept only when the grid can draw it", async () => {
 test("the TV's settings change only to values they can take", async () => {
   // Updating overnight on its own is off until someone turns it on (Q79).
   assert.equal((await get("/api/home")).settings.updateOvernight, false);
-  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true })).status, 200);
+  // The ambient screen shows the backgrounds until someone picks Omarchy's
+  // terminal screensaver (ADR-049).
+  assert.equal((await get("/api/home")).settings.ambient, "pictures");
+  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal" })).status, 200);
   const settings = (await get("/api/home")).settings;
-  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true });
-  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes", updateOvernight: "on" });
+  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal" });
+  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes", updateOvernight: "on", ambient: "fireworks" });
   assert.deepEqual((await get("/api/home")).settings, settings);
-  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false });
+  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false, ambient: "pictures" });
 });
 
 test("a tile's content comes from its app's tile(), in its own worker", async () => {

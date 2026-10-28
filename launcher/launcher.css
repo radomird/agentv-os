@@ -931,6 +931,19 @@ button {
   color: var(--foreground);
 }
 
+/* Settings' panel, down to the status bar, and a section longer than that
+   scrolls with the focus or a mouse's wheel. What's in it keeps its height
+   rather than squeezing to fit. */
+.settings-panel {
+  max-height: calc(1080px - var(--bar) - 64px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-panel > * {
+  flex-shrink: 0;
+}
+
 /* Settings → Look: every theme Omarchy has (ADR-048), two to a row, in a
    list that scrolls with the focus or a mouse's wheel, with no scroll bar. */
 .look-list {

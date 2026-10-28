@@ -128,12 +128,15 @@ export interface TvSettings {
   sound: { on: boolean; volume: number };
   reduceMotion: boolean;
   idleMinutes: number;
+  // What the ambient screen shows: your backgrounds, one after another, or
+  // Omarchy's terminal screensaver (ADR-049).
+  ambient: "pictures" | "terminal";
   // Settings → Updates: install an update each night on its own, off by
   // default (ADR-025, Q79).
   updateOvernight: boolean;
 }
 
-const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false };
+const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, ambient: "pictures", updateOvernight: false };
 
 // The launcher's own tile, to all apps (board 19). Its id has no dot, so no
 // app can take it.
@@ -814,6 +817,7 @@ export class Home {
     }
     if (typeof c.reduceMotion === "boolean") next.reduceMotion = c.reduceMotion;
     if (typeof c.idleMinutes === "number" && [5, 10, 15, 30, 60].includes(c.idleMinutes)) next.idleMinutes = c.idleMinutes;
+    if (c.ambient === "pictures" || c.ambient === "terminal") next.ambient = c.ambient;
     if (typeof c.updateOvernight === "boolean") next.updateOvernight = c.updateOvernight;
     await mkdir(this.state, { recursive: true });
     await writeJson(join(this.state, "settings.json"), next);

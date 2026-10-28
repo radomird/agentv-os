@@ -275,8 +275,20 @@ export function settings(ctx: Ctx, open?: string): View {
         }),
         // Look's last: a theme your agent makes from a few words (S6.4).
         ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
-        note("every omarchy theme on this tv, and any your agent made. the tv follows whichever omarchy has."),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
+        // What the ambient screen shows (ADR-049).
+        h(
+          "button",
+          {
+            class: "button",
+            "data-focus": true,
+            "data-action": "ambient-style",
+            "data-adjust": "ambient-style",
+            onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style"),
+          },
+          h("span", {}, "ambient screen"),
+          h("span", { class: "button-value" }, s.ambient === "terminal" ? "terminal" : "backgrounds"),
+        ),
         h(
           "button",
           {
@@ -289,7 +301,7 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", {}, "ambient screen after"),
           h("span", { class: "button-value" }, `${s.idleMinutes} min`),
         ),
-        note("with nothing playing and no key pressed for that long. left and right change it."),
+        note("the tv follows omarchy's theme, and the ambient screen comes on after that long with nothing playing."),
       ],
     },
     {
@@ -373,7 +385,9 @@ export function settings(ctx: Ctx, open?: string): View {
     },
   ];
 
-  const panel = h("div", { class: "panel" });
+  // A section longer than the screen, such as Look, scrolls with the focus.
+  const panel = h("div", { class: "panel settings-panel", "data-scroll": true });
+  panel.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
   const show = (section: Section) => {
     ctx.remember(`settings/${section.key}`);
     panel.replaceChildren(...section.panel());
@@ -556,6 +570,10 @@ export function settings(ctx: Ctx, open?: string): View {
         const by = action === "right" ? 1 : -1;
         const cap = current.dataset.adjust === "cap-build" ? { ...caps, build: stepCap(BUILD_CAPS, caps.build, by) } : { ...caps, month: stepCap(MONTH_CAPS, caps.month, by) };
         void changeBuilder(ctx, { cap }, current.dataset.adjust);
+        return true;
+      }
+      if (current?.dataset.adjust === "ambient-style" && (action === "left" || action === "right")) {
+        void save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style");
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {

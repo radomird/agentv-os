@@ -55,6 +55,8 @@ export interface Settings {
   sound: { on: boolean; volume: number };
   reduceMotion: boolean;
   idleMinutes: number;
+  // Your backgrounds or Omarchy's terminal screensaver (ADR-049).
+  ambient: "pictures" | "terminal";
   // Install tested updates between 02:00 and 05:00 without asking (Q79).
   updateOvernight: boolean;
 }
