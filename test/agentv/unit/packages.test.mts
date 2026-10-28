@@ -146,6 +146,8 @@ test("with safeguards off, the wait is off and scripts run, under bubblewrap wit
   assert.ok(args.includes("--tmpfs /var/lib/agentv/builder"), "the builder's home, with its CLI and any sign-in, out of sight");
   assert.ok(args.includes(`--bind ${work} ${work}`), "only the work folder to write");
   assert.ok(!args.includes("--proc") && args.includes("--tmpfs /proc --ro-bind-try /proc/cpuinfo /proc/cpuinfo"), "no /proc of its own, only the machine's files from it");
+  // bubblewrap mounts each bind nosuid, and nodev but for --dev-bind (S6.10).
+  assert.ok(!/--dev-bind|--cap-add/.test(args), "no devices of the box's own and no capabilities in the jail");
   assert.deepEqual(ci.args.slice(ci.args.indexOf("--") + 1, ci.args.indexOf("--") + 3), ["npm", "ci"]);
   assert.ok(!ci.args.includes("--ignore-scripts"));
   assert.equal(ci.env.HOME, "/tmp/home");
