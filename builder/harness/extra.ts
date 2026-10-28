@@ -2,8 +2,9 @@
 // npm, the bundle, the test TV's checks and tests, and for a streaming
 // service stage A's look at its pages, a sample of an address, the contract
 // tests against the pages it kept, and in stage B its signed-in pages as
-// the TV's browser shows them. A step that lists one that isn't
-// here yet is told it isn't on this box yet.
+// the TV's browser shows them. And for a theme, its check, which draws its
+// backgrounds. A step that lists one that isn't here yet is told it isn't
+// on this box yet.
 //
 // The harness runs in the builder's sandbox, so what it fetches goes
 // through the sandbox's filter, at its fixed address there.
@@ -20,6 +21,7 @@ import { said as report } from "../gates/testtv.ts";
 import { PackageError, Packages } from "../packages.ts";
 import { writable } from "../recipe.ts";
 import { PAGE_PORT, PROXY_PORT } from "../sandbox/ports.ts";
+import { checkTheme, themeRules } from "../theme.ts";
 import { ToolError } from "./mcp.ts";
 import { findStep } from "./steps.ts";
 import { type Extra, inWork } from "./tools.ts";
@@ -153,5 +155,8 @@ export async function extraTools(dir: string, stepId: string): Promise<Extra> {
       const stage = findStep(build, stepId)?.stage;
       return (await contractTests(build, build.recipe(), { chromium: CHROMIUM, stage })).lines.join("\n");
     },
+    // The theme as Omarchy will read it, with its scenes drawn as pictures
+    // and a preview of the TV in it.
+    theme_check: async () => (await checkTheme(build.work, themeRules(build.recipe()), { chromium: CHROMIUM })).lines.join("\n"),
   };
 }

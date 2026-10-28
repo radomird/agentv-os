@@ -35,7 +35,7 @@ export const TOOLS = {
   look: "Open a page on the app's declared origins in a fresh browser with no sign-in, and see its structure, the origins it asked for and whether it plays protected video. With save, keep the page as a fixture.",
   page_snapshot: "See the structure of the service's page in the TV's browser, signed in, on the app's declared origins.",
   contract_tests: "Run the contract tests on the app against what was saved from the service's page.",
-  theme_check: "Check the theme folder the way Omarchy will read it.",
+  theme_check: "Check the theme folder the way Omarchy will read it, draw its scenes as pictures, and make its preview.",
   understood: "Say what you understood the request to be.",
   submit_plan: "Submit the plan for an adult to approve.",
 } as const;
