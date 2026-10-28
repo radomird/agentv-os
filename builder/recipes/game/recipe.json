@@ -1,0 +1,53 @@
+{
+  "kind": "game",
+  "name": "game",
+  "fits": "A game played on the TV with the remote, the phone or a gamepad: a falling-block puzzle, a platformer, an arcade or racing game, a quiz, a board game. It runs on the box and needs nothing from the internet. Not a game from a store or a streaming service.",
+  "runtime": "page",
+  "bounds": { "origins": false, "media": [], "tile": true, "notices": false },
+  "template": "../page/template",
+  "tests": "tests",
+  "cost": { "low": 0.5, "high": 3 },
+  "minutes": 20,
+  "steps": [
+    {
+      "id": "design",
+      "does": "Work out the game from the request and write it down in DESIGN.md: its rules, what each button does on the remote (the arrows, ok, play) and on a gamepad (the d-pad and left stick, A as ok, X, Y, the shoulders and start), what Back does (pause in play, leave from the pause or the title), how it looks at couch distance on a 1920 x 1080 TV, how hard it gets, and what it keeps between plays, such as the best scores. Keep it to one page. Say plainly what you leave out.",
+      "tools": ["read", "list", "write"],
+      "writes": ["DESIGN.md"],
+      "reads": ["kit"],
+      "needs": ["DESIGN.md"]
+    },
+    {
+      "id": "packages",
+      "does": "Decide whether the game needs any npm package, such as a physics engine. Most games need none: plain JavaScript and a canvas are enough, and are preferred. If one helps, look it up with npm_info and add it with npm_add at an exact version. Say why in NOTES.md.",
+      "tools": ["read", "npm_info", "npm_add", "write"],
+      "writes": ["NOTES.md"],
+      "reads": ["kit"]
+    },
+    {
+      "id": "build",
+      "does": "Write the game, starting from the template in app/. It's full screen, drawn on a canvas at 60 frames a second with requestAnimationFrame, and readable from the couch. Input comes only from agentv.input.on (keep each button's pressed and let go yourself; there are no key repeats), Back from agentv.onBack, and Home pauses it through agentv.onPause. The best scores go in agentv.storage and on the tile with agentv.tile.set. Call agentv.ready() once the first frame is drawn. Plain scripts in app/, or src/main.js bundled with bundle if you added packages. No inline scripts, eval or code from other sites. Fill in app/manifest.json's description and tile labels. Run check until it passes.",
+      "tools": ["read", "list", "write", "remove", "bundle", "check"],
+      "writes": ["app/**", "src/**", "NOTES.md"],
+      "reads": ["kit"],
+      "needs": ["app/index.html", "app/manifest.json"],
+      "turns": 60
+    },
+    {
+      "id": "tests",
+      "does": "Write tests in tests/ for what was asked: that the buttons do what DESIGN.md says, that the game can be won or lost, and that the best score is kept. Use the test API the tests reference describes. Run them with run_tests.",
+      "tools": ["read", "list", "write", "run_tests"],
+      "writes": ["tests/**"],
+      "reads": ["kit", "tests"],
+      "needs": ["tests"]
+    },
+    {
+      "id": "try",
+      "does": "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it asks for nothing from the internet.",
+      "tools": ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
+      "writes": ["app/**", "src/**", "tests/**", "NOTES.md"],
+      "reads": ["kit", "tests"],
+      "turns": 60
+    }
+  ]
+}
