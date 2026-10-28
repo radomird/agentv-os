@@ -47,7 +47,7 @@ import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
-import { currentTheme, previews } from "./themes.ts";
+import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -1452,6 +1452,13 @@ export class Daemon {
     return this.guarded(request, response, `${what} on a child's profile`);
   }
 
+  // Every theme Omarchy has, as the screen daemon handed them over, or the
+  // ones Omarchy ships until it has (ADR-048).
+  private async looks(): Promise<ThemePreview[]> {
+    const handed = await readFile(join(this.options.state, "themes.json"), "utf8").then((text) => cleanFound({ themes: JSON.parse(text) }), () => null);
+    return handed?.length ? handed : previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy");
+  }
+
   private async text(request: IncomingMessage): Promise<string> {
     let size = 0;
     const chunks: Buffer[] = [];
@@ -2676,20 +2683,43 @@ export class Daemon {
       return;
     }
 
-    // The looks setup and Settings offer (board 12), with the colours their
-    // previews draw, and which one the TV has.
+    // The looks setup and Settings offer (ADR-048, board 12): every theme
+    // Omarchy has, with the colours their previews draw, and which one the
+    // TV has.
     if (method === "GET" && path === "/api/themes") {
-      // Omarchy's, and each your agent made that's handed to Omarchy.
+      // Omarchy's, the person's own among them, then each your agent made
+      // that's handed to Omarchy, in place of the person's copy of it.
       const applied = await this.madeApplied();
       const made = madeThemes(this.themesDir).filter((theme) => applied[theme.app] && !applied[theme.app]!.error);
-      const looks = [...(await previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy")), ...made];
-      this.json(response, 200, { ok: true, themes: looks, current: currentTheme(await this.home.theme(), looks) });
+      const looks = [...(await this.looks()).filter((look) => !made.some((one) => one.id === look.id)), ...made];
+      this.json(response, 200, { ok: true, themes: looks, current: currentTheme(await this.home.theme(), looks, await this.home.themeName()) });
       return;
     }
 
-    // From Omarchy's theme-set hook, on this box: the theme's launcher.css.
+    // From the screen daemon, which can read the person's own themes: every
+    // theme Omarchy has, when the TV session starts and whenever one is
+    // installed or removed on the desktop.
+    if (method === "PUT" && path === "/api/themes") {
+      const body = await this.body(request);
+      const looks = cleanFound(body);
+      if (!looks) {
+        this.json(response, 400, { ok: false, error: "a list of omarchy's themes" });
+        return;
+      }
+      // As it came, and checked again each time it's read.
+      await mkdir(this.options.state, { recursive: true });
+      await writeFile(join(this.options.state, "themes.json.next"), JSON.stringify((body as { themes: unknown[] }).themes));
+      await rename(join(this.options.state, "themes.json.next"), join(this.options.state, "themes.json"));
+      this.broadcast("themes", {});
+      this.json(response, 200, { ok: true, count: looks.length });
+      return;
+    }
+
+    // From Omarchy's theme-set hook, on this box: the theme's launcher.css,
+    // and the theme's name.
     if (method === "POST" && path === "/api/theme") {
-      if (!(await this.home.saveTheme(await this.text(request)))) {
+      const name = url.searchParams.get("name");
+      if (!(await this.home.saveTheme(await this.text(request), name && THEME_NAME.test(name) ? name : null))) {
         this.json(response, 400, { ok: false, error: "that theme has no colours the TV can use" });
         return;
       }

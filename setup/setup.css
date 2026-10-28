@@ -755,6 +755,45 @@
   gap: 24px;
 }
 
+/* Every theme Omarchy has (ADR-048): five to a row, smaller, in a grid that
+   scrolls with the focus or a mouse's wheel, with no scroll bar. */
+.looks-all {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.looks-all .look {
+  gap: 14px;
+  padding: 14px;
+  scroll-margin: 20px 0;
+}
+
+.looks-all .look-screen {
+  height: 150px;
+  gap: 8px;
+  padding: 10px;
+}
+
+.looks-all .look-bar {
+  height: 12px;
+}
+
+.looks-all .look-name {
+  font-size: 26px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.looks-all .look-note {
+  font-size: 20px;
+}
+
 .look {
   display: flex;
   flex-direction: column;

@@ -267,22 +267,15 @@ export function settings(ctx: Ctx, open?: string): View {
       value: () => looks?.themes.find((look) => look.id === looks?.current)?.name ?? "omarchy theme",
       panel: () => [
         h("div", { class: "panel-title" }, "colours"),
-        ...(looks?.themes ?? []).map((look) =>
-          h(
-            "button",
-            { class: "button", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
-            h("span", {}, look.name),
-            h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
-          ),
-        ),
+        lookList(),
         // A theme your agent made: its page, where it can be removed.
         ...(looks?.themes ?? []).flatMap((look) => {
           const made = look.app ? buildsState()?.builds.find((b) => b.id === look.app && b.state === "installed") : undefined;
-          return made ? [h("button", { class: "button", "data-focus": true, "data-action": `theme-made-${look.id}`, onclick: () => ctx.go(`build/${made.build}`) }, h("span", {}, `${look.name}, made by your agent`), h("span", { class: "button-value" }, "→"))] : [];
+          return made ? [h("button", { class: "button wide", "data-focus": true, "data-action": `theme-made-${look.id}`, onclick: () => ctx.go(`build/${made.build}`) }, h("span", {}, `${look.name}, made by your agent`), h("span", { class: "button-value" }, "→"))] : [];
         }),
         // Look's last: a theme your agent makes from a few words (S6.4).
-        ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
-        note("they come from your omarchy theme: one of these, one your agent made, or any other on omarchy's desktop, and the tv follows."),
+        ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
+        note("every omarchy theme on this tv, and any your agent made. the tv follows whichever omarchy has."),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         h(
           "button",
@@ -442,6 +435,32 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // Every theme Omarchy has (ADR-048), two to a row, each with its own
+  // colours beside its name, in a list that scrolls with the focus. Declared
+  // so it's there for a page drawn straight at Look, before this line runs.
+  function lookList(): HTMLElement {
+    const list = h(
+      "div",
+      { class: "look-list", "data-scroll": true },
+      ...(looks?.themes ?? []).map((look) => {
+        const swatch = h("span", { class: "look-swatch" });
+        for (const colour of [look.colors.background, look.colors.accent, look.colors.selection, look.colors.foreground]) {
+          const block = h("span", {});
+          block.style.background = colour;
+          swatch.append(block);
+        }
+        return h(
+          "button",
+          { class: "button look-item", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
+          swatch,
+          h("span", { class: "look-item-name" }, look.name),
+          h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
+        );
+      }),
+    );
+    list.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
+    return list;
+  }
   void loadBuilds(ctx).then(() => {
     const item = menu.querySelector<HTMLElement>('[data-key="usage"] .menu-value');
     if (item) item.textContent = usageValue();

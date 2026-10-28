@@ -1482,7 +1482,15 @@ test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, 
   await new Promise((resolve) => setTimeout(resolve, 10));
   t.launcher.themeDone("Theme 'nowhere' does not exist");
   assert.deepEqual(await second, { ok: false, error: "Theme 'nowhere' does not exist" });
-  assert.deepEqual(t.launcher.themes, ["gruvbox", "nowhere"]);
+  // A theme installed on Omarchy's desktop can have any name Omarchy allows
+  // (ADR-048), and still nothing hidden or outside the themes folders.
+  const third = t.screen.fromHome({ cmd: "theme-set", theme: "neo_brutal+2.0" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  t.launcher.themeDone(null);
+  assert.deepEqual(await third, { ok: true });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: ".hidden" }), { ok: false, error: "an omarchy theme's name" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: "a/b" }), { ok: false, error: "an omarchy theme's name" });
+  assert.deepEqual(t.launcher.themes, ["gruvbox", "nowhere", "neo_brutal+2.0"]);
   assert.ok(t.lines.some((line) => line.includes("setting omarchy's theme to gruvbox")));
 });
 

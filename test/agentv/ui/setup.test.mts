@@ -12,7 +12,7 @@
 // QR codes here, and a stand-in screen daemon takes the update's requests.
 
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -840,21 +840,53 @@ function rendered(theme: string): string {
   return readFileSync(join(ROOT, "config/omarchy/themed/launcher.css.tpl"), "utf8").replace(/\{\{ *([a-z_]+) *\}\}/g, (_, key) => colors[key] ?? "#000000");
 }
 
-test("S5.2 the look: three of Omarchy's themes in their own colours, OK sets one with Omarchy's command, and the whole TV follows", async () => {
+// The background each of Omarchy's themes gives a preview, as the browser
+// writes it.
+function shippedBackground(theme: string): string {
+  const hex = /^background = "#([0-9a-fA-F]{6})"$/m.exec(readFileSync(join(ROOT, "themes", theme, "colors.toml"), "utf8"))![1];
+  return `rgb(${[0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
+}
+
+test("S5.2 S5.7 the look: every Omarchy theme in its own colours, Tokyo Night first, OK sets one with Omarchy's command, and the whole TV follows", async () => {
   await toApps("streaming");
   await post("/api/setup/finish", { step: "apps" });
-  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  await fetch(`${url}/api/theme?name=tokyo-night`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  const shipped = readdirSync(join(ROOT, "themes")).sort();
   const page = await tv();
   await page.waitForSelector(".looks .look");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a look.");
   assert.match(await textOf(page, ".setup-page .prompt"), /omarchy theme/);
-  assert.deepEqual(await page.locator(".look .look-name").allInnerTexts(), ["tokyo night", "gruvbox", "catppuccin latte", "describe your own"]);
+  const names = await page.locator(".look .look-name").allInnerTexts();
+  assert.equal(names.length, shipped.length + 1, "every one of Omarchy's themes, and describe your own");
+  assert.deepEqual([names[0], names[names.length - 1]], ["tokyo night", "describe your own"]);
+  assert.deepEqual(names.slice(1, -1), [...names.slice(1, -1)].sort((a, b) => a.localeCompare(b)), "the rest by name");
   assert.match(await textOf(page, ".bar"), /6\/6 look/);
   // Each preview is in its own theme's colours.
-  const backgrounds = await page.locator(".look:not(.look-own) .look-screen").evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
-  assert.deepEqual(backgrounds, ["rgb(26, 27, 38)", "rgb(40, 40, 40)", "rgb(239, 241, 245)"]);
+  const previews = await page.locator(".look:not(.look-own)").evaluateAll((els) =>
+    els.map((el) => [(el as HTMLElement).dataset.theme, getComputedStyle(el.querySelector(".look-screen")!).backgroundColor]),
+  );
+  assert.deepEqual(previews, previews.map(([theme]) => [theme, shippedBackground(theme!)]));
   assert.equal(await page.locator(".look.picked").getAttribute("data-theme"), "tokyo-night");
   assert.equal(await page.locator(".look.focused").getAttribute("data-theme"), "tokyo-night");
+
+  // More than fit: the grid scrolls as the focus goes down, and the focused
+  // look is always in sight, down to describe your own.
+  const inSight = () =>
+    page.evaluate(() => {
+      const grid = document.querySelector(".looks")!.getBoundingClientRect();
+      const at = document.querySelector(".look.focused")!.getBoundingClientRect();
+      // Where the ring was put, not where it is as it glides there.
+      const ring = parseFloat(document.getElementById("ring")!.style.top);
+      return at.top >= grid.top - 1 && at.bottom <= grid.bottom + 1 && Math.abs(ring - at.top) < 2;
+    });
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press("ArrowDown");
+    if ((await page.locator(".look.focused").count()) === 0) break;
+    assert.ok(await inSight(), `the focused look is in sight after ${i + 1} down`);
+  }
+  assert.ok((await page.locator(".looks").evaluate((el) => el.scrollTop)) > 0, "the grid scrolled");
+  await page.locator('[data-theme="own"]').hover();
+  assert.ok(await inSight());
 
   // Describe your own is kept for the TV's agent to make (S6.4).
   await page.locator('[data-theme="own"]').click();
@@ -866,19 +898,28 @@ test("S5.2 the look: three of Omarchy's themes in their own colours, OK sets one
   await page.waitForSelector(".looks .look");
   assert.ok((await (await fetch(`${url}/api/setup`)).json()).setup.wishes.includes("a theme: a calm forest at dusk"));
 
+  // A theme installed on Omarchy's desktop meanwhile: the screen daemon hands
+  // over the list, and it's in the grid, said to be installed.
+  await page.locator('[data-theme="own"]').hover();
+  const handed = shipped.map((id) => ({ id, mode: "dark", colors: { background: "#101010", dark_background: "#000000", accent: "#ff8800", selection: "#333333", foreground: "#cccccc", bright_foreground: "#ffffff" }, installed: false }));
+  await fetch(`${url}/api/themes`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themes: [...handed, { ...handed[0], id: "aurora", installed: true }] }) });
+  await page.waitForSelector('.look[data-theme="aurora"]', { timeout: 5000 });
+  assert.equal(await textOf(page, '.look[data-theme="aurora"] .look-note'), "installed");
+  assert.equal(await page.locator(".look.focused").getAttribute("data-theme"), "own", "the focus stays where it was");
+
   // Gruvbox: Omarchy's own command sets it, and its colours come back as
   // they do from Omarchy's desktop.
   await page.locator('[data-theme="gruvbox"]').click();
   await requested(page, "theme-set");
   assert.equal(await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.find((r) => r.cmd === "theme-set")?.theme), "gruvbox");
-  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("gruvbox") });
+  await fetch(`${url}/api/theme?name=gruvbox`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("gruvbox") });
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim() === "#282828", null, { timeout: 5000 });
   await page.waitForSelector('.look.picked[data-theme="gruvbox"]');
 
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".backs", { timeout: 10_000 });
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "background");
-  await fetch(`${url}/api/theme`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  await fetch(`${url}/api/theme?name=tokyo-night`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
   await page.close();
 });
 

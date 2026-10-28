@@ -931,6 +931,45 @@ button {
   color: var(--foreground);
 }
 
+/* Settings → Look: every theme Omarchy has (ADR-048), two to a row, in a
+   list that scrolls with the focus or a mouse's wheel, with no scroll bar. */
+.look-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-content: start;
+  max-height: 204px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.look-item {
+  gap: 20px;
+  min-height: 72px;
+  padding: 0 20px;
+  font-size: 28px;
+  scroll-margin: 12px 0;
+}
+
+.look-item-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.look-swatch {
+  display: flex;
+  flex-shrink: 0;
+  border: 2px solid var(--muted);
+}
+
+.look-swatch span {
+  width: 14px;
+  height: 36px;
+}
+
 .panel-big {
   font-size: 72px;
   font-weight: 800;

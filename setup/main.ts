@@ -415,6 +415,8 @@ async function start(): Promise<void> {
         link.href = `/api/theme.css?at=${Date.now()}`;
         view?.heard?.("theme", data);
       },
+      // A theme installed or removed on Omarchy's desktop (ADR-048).
+      themes: (data) => view?.heard?.("themes", data),
       updates: (data) => {
         ctx.updates = data as Updates;
         view?.heard?.("updates", data);

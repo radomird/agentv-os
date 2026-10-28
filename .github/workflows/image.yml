@@ -357,7 +357,7 @@ jobs:
             "S2.14=$(result S2.14)" "S2.15=$(result S2.15)" "S2.16=$(result S2.16)" "S2.17=$(result S2.17)" "S2.18=$(result S2.18)" "S2.19=$(result S2.19)" \
             "S3.3=$(result S3.3)" "S3.6=$(result S3.6)" "S3.8=$(result S3.8)" "S3.9=$(result S3.9)" "S3.10=$(result S3.10)" \
             "S4.4=$(result S4.4)" "S4.5=$(result S4.5)" "S4.6=$(result S4.6)" \
-            "S5.2=$(result S5.2)" "S5.3=$(result S5.3)" "S5.4=$(result S5.4)" "S5.5=$(result S5.5)" "S5.6=$(result S5.6)" \
+            "S5.2=$(result S5.2)" "S5.3=$(result S5.3)" "S5.4=$(result S5.4)" "S5.5=$(result S5.5)" "S5.6=$(result S5.6)" "S5.7=$(result S5.7)" \
             "S6.3=$(result S6.3)" "S6.4=$(result S6.4)" "S6.5=$(result S6.5)" "S6.8=$(result S6.8)" "S6.10=$(result S6.10)" \
             >>"$GITHUB_STEP_SUMMARY"
 

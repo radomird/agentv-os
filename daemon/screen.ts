@@ -55,6 +55,7 @@ import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
+import { OmarchyThemes } from "./omarchy-themes.ts";
 import { cdpPage } from "./page.ts";
 import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
@@ -64,6 +65,7 @@ import { RemoteInput } from "./remote.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
+import { THEME_NAME } from "./themes.ts";
 import { tvOn } from "./tv-power.ts";
 
 export type Role = "home" | "web" | "steam";
@@ -918,7 +920,7 @@ export class Screen {
   private themeRun: string | null = null;
 
   async setTheme(theme: unknown): Promise<object> {
-    if (typeof theme !== "string" || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(theme)) return { ok: false, error: "an omarchy theme's name" };
+    if (typeof theme !== "string" || !THEME_NAME.test(theme)) return { ok: false, error: "an omarchy theme's name" };
     if (this.themeRun) return { ok: false, error: `${this.themeRun.replace(/-/g, " ")} is still being set` };
     this.themeRun = theme;
     this.log(`setting omarchy's theme to ${theme}`);
@@ -2356,6 +2358,8 @@ async function main(): Promise<void> {
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
+  // Every theme Omarchy has, the person's own included, for Look (ADR-048).
+  void new OmarchyThemes({ omarchy: process.env.OMARCHY_PATH || "/usr/share/omarchy", home: homedir(), daemon: HOME_URL, log: (line) => console.log(line) }).start();
   // When Hyprland goes, so does the TV session, and this with it.
   await screen.start(() => {
     console.log("Hyprland went away; stopping");
