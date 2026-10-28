@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "local.stand-in",
+  "name": "Stand-in",
+  "version": "1.0.0",
+  "author": "your agent",
+  "license": "MIT",
+  "description": "A made-up streaming service, for the builder's tests",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "streaming",
+    "runtime": "web",
+    "homeUrl": "https://stand-in.test/",
+    "capabilities": ["launch", "signIn"],
+    "setup": [{ "type": "signIn" }],
+    "origins": ["https://stand-in.test"],
+    "childSafe": false
+  }
+}

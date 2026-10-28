@@ -10,16 +10,14 @@
 // On the box it runs in the builder's sandbox, whose only way out is its
 // filter, so the app reaches only the origins it declared.
 
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Manifest } from "../../apps/contract/manifest.ts";
-import { CdpPipe } from "../../daemon/cdp.ts";
+import type { CdpPipe } from "../../daemon/cdp.ts";
 import { pageAppId, pageOrigin, PageApps, refusal } from "../../daemon/page-apps.ts";
+import { headless } from "./chromium.ts";
 import type { Check } from "./host.ts";
 import { media } from "./media.ts";
 
@@ -124,33 +122,18 @@ export async function tryApp(o: TryOptions): Promise<TryReport> {
   });
   port = await new Promise<number>((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port)));
 
-  const profile = mkdtempSync(join(tmpdir(), "agentv-testtv-"));
-  const flags = [
-    "--headless=new",
-    "--remote-debugging-pipe",
-    `--user-data-dir=${profile}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-extensions",
-    "--disable-sync",
-    "--disable-component-update",
-    "--disable-breakpad",
-    // The sandbox's /dev is a small one of its own: shared memory goes in /tmp.
-    "--disable-dev-shm-usage",
-    "--disable-crash-reporter",
-    "--mute-audio",
-    "--window-size=1920,1080",
-    "--enable-precise-memory-info",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-backgrounding-occluded-windows",
-    "--autoplay-policy=no-user-gesture-required",
-    ...(o.proxy ? [`--proxy-server=${o.proxy}`, "--proxy-bypass-list=localhost;*.localhost;127.0.0.1"] : []),
-    `http://localhost:${port}/`,
-  ];
-  // In a process group of its own, so all of Chromium goes when it's done.
-  const browser = spawn(o.chromium, flags, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], detached: true });
-  const cdp = new CdpPipe(browser.stdio[3] as Writable, browser.stdio[4] as Readable);
+  const browser = headless(o.chromium, {
+    proxy: o.proxy,
+    url: `http://localhost:${port}/`,
+    flags: [
+      "--enable-precise-memory-info",
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+      "--disable-backgrounding-occluded-windows",
+      "--autoplay-policy=no-user-gesture-required",
+    ],
+  });
+  const cdp = browser.cdp;
   const home = `http://localhost:${port}/`;
   const report: TryReport = { ready: false, checks: [], tests: [], problems: [] };
   try {
@@ -188,34 +171,11 @@ export async function tryApp(o: TryOptions): Promise<TryReport> {
   } catch (error) {
     report.problems.push(`the test TV couldn't try it: ${(error as Error).message}`);
   } finally {
-    await stop(browser.pid);
+    await browser.close();
     server.closeAllConnections();
     server.close();
-    try {
-      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    } catch {}
   }
   return report;
-}
-
-// Chromium and every process it started, gently, then not.
-async function stop(pid: number | undefined): Promise<void> {
-  if (!pid) return;
-  const alive = () => {
-    try {
-      process.kill(-pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    return;
-  }
-  for (let i = 0; i < 30 && alive(); i++) await new Promise((resolve) => setTimeout(resolve, 100));
-  if (alive()) process.kill(-pid, "SIGKILL");
 }
 
 // The app's own page, with the test TV's runner first and the tests last,

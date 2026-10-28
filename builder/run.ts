@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { validatePackage } from "../apps/contract/manifest.ts";
 import { pagePermissions } from "../apps/contract/page.ts";
 import { Build, type BuildRequest, type BuildStatus, keepManifest } from "./build.ts";
-import { PLAN, UNDERSTAND } from "./harness/server.ts";
+import { PLAN, UNDERSTAND } from "./harness/steps.ts";
 import { lockedPackages } from "./packages.ts";
 import { command, outcome, type Outcome, ownTools } from "./providers.ts";
 import { signedIn } from "./sign-in.ts";

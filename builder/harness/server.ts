@@ -9,20 +9,12 @@
 
 import { join, resolve } from "node:path";
 import { Build } from "../build.ts";
-import type { Recipe, Step } from "../recipe.ts";
+import type { Recipe } from "../recipe.ts";
 import { serve } from "./mcp.ts";
+import { findStep, PLAN, UNDERSTAND } from "./steps.ts";
 import { stepTools, type Extra } from "./tools.ts";
 
-// AgenTV's own steps around a recipe's: what the request is, and with no
-// recipe, a plan for an adult.
-export const UNDERSTAND: Step = { id: "understand", does: "Say what the request is, and which recipe fits it.", tools: ["understood"] };
-export const PLAN: Step = { id: "plan", does: "Write a plan for a page app no recipe covers, for an adult to approve.", tools: ["read", "list", "submit_plan"], reads: ["kit"] };
-
-export function findStep(build: Build, id: string): Step | null {
-  if (id === UNDERSTAND.id) return UNDERSTAND;
-  if (id === PLAN.id) return PLAN;
-  return build.recipe().steps.find((step) => step.id === id) ?? null;
-}
+export { findStep, PLAN, UNDERSTAND };
 
 export async function harness(dir: string, stepId: string, extra?: Extra): Promise<void> {
   const build = new Build(dir);
