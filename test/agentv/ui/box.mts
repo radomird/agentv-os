@@ -7,10 +7,19 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
 
 export const ROOT = join(import.meta.dirname, "../../..");
 const SAMPLE = join(ROOT, "test/agentv/fixtures/apps/sample");
+
+// Rests the mouse in the top left corner, where nothing can take the focus,
+// right after a page loads. On the box, Chromium tells a page that loads
+// where the mouse is, and the launcher takes that first move as only saying
+// so. After this, a test's first hover is a real move.
+export async function rest(page: Page): Promise<void> {
+  await page.mouse.move(1, 1);
+}
 
 export interface Fixture {
   id: string;

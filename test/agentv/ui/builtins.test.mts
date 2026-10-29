@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { FIXTURES, startBox } from "./box.mts";
+import { FIXTURES, rest, startBox } from "./box.mts";
 import { startMet, type Met } from "./met.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -41,6 +41,7 @@ async function tv(): Promise<Page> {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
+  await rest(page);
   return page;
 }
 

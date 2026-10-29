@@ -590,8 +590,10 @@ focus.onMove = (el) => {
 
 // A mouse moves the focus by hovering, and a click is OK (ADR-015). The
 // pointer shows when the mouse moves and hides after 3 s. Only a real move
-// counts: Chromium also sends one when the page changes under a still mouse.
-let pointer = { x: -1, y: -1 };
+// counts: Chromium also sends one when the page changes under a still mouse,
+// and as the page loads, which only says where the mouse is. On the box, the
+// mouse rests in the middle of the screen, over a tile.
+let pointer: { x: number; y: number } | null = null;
 let hide = 0;
 document.body.classList.add("pointer-hidden");
 document.addEventListener("pointermove", (event) => {
@@ -604,8 +606,9 @@ document.addEventListener("pointermove", (event) => {
     if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
     wake();
   }
-  if (event.clientX === pointer.x && event.clientY === pointer.y) return;
+  const last = pointer;
   pointer = { x: event.clientX, y: event.clientY };
+  if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
   document.body.classList.remove("pointer-hidden");
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
