@@ -1,0 +1,40 @@
+{
+  "sentence": "put on the frozen soundtrack",
+  "route": {
+    "intent": "play",
+    "query": "Frozen",
+    "kind": "album",
+    "app": null,
+    "season": null,
+    "episode": null
+  },
+  "reply": {
+    "id": "router",
+    "object": "chat.completion",
+    "created": 1793289600,
+    "model": "grok-4.7",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null}",
+          "refusal": null
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 1544,
+      "completion_tokens": 52,
+      "total_tokens": 1596,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 12
+      },
+      "cost_in_usd_ticks": 34000000
+    }
+  }
+}
