@@ -345,7 +345,13 @@ test("each CLI's recorded output reads as the route, and its errors say why", ()
   assert.deepEqual(parseRoute(cliAnswer("chatgpt", readFileSync(join(FIXTURES, "cli/chatgpt.jsonl"), "utf8"), 0).value), route);
   assert.deepEqual(parseRoute(cliAnswer("grok", readFileSync(join(FIXTURES, "cli/grok.jsonl"), "utf8"), 0).value), route);
   assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true }), 1), /claude stopped: error_max_turns/);
-  assert.throws(() => cliAnswer("claude", "", 1, "Invalid API key · Please run /login\n"), /claude stopped \(exit 1\): Invalid API key/);
+  assert.throws(() => cliAnswer("claude", "", 1, "Something broke\n"), /claude stopped \(exit 1\): Something broke/);
+  // A plan signs in at the builder's first run (ADR-040), and the TV says so.
+  assert.throws(() => cliAnswer("claude", "", 1, "Invalid API key · Please run /login\n"), /^Error: the plan isn't signed in yet: it signs in the first time your agent builds something$/);
+  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login" }), 1), /the plan isn't signed in yet/);
+  // As the Mac's Claude Code said, with its auth status still saying it was
+  // signed in (2026-10-30): a sign-in that ran out says so.
+  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", terminal_reason: "api_error" }), 1), /^Error: the plan's sign-in ran out: it needs signing in again$/);
   assert.throws(() => cliAnswer("chatgpt", '{"type":"turn.failed","error":{"message":"usage limit"}}\n', 1), /codex stopped: usage limit/);
 });
 
@@ -372,7 +378,7 @@ else console.log(JSON.stringify({ type: "result", subtype: "success", is_error: 
     const slow = await new Router(cliBackend("claude", { home, work: scratch, timeoutMs: 300 })).route("slow", APPS);
     assert.deepEqual([slow.none, slow.error], ["failed", "claude didn't answer in time"]);
     const missing = await new Router(cliBackend("grok", { home, work: scratch })).route("play frozen", APPS);
-    assert.deepEqual([missing.none, missing.error], ["failed", "grok isn't on the box yet"]);
+    assert.deepEqual([missing.none, missing.error], ["failed", "grok isn't on the box yet: it comes with your agent's first build"]);
   } finally {
     delete process.env.AGENTV_SECRET;
     delete process.env.ANTHROPIC_API_KEY;

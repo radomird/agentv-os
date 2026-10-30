@@ -340,7 +340,7 @@ test("a child's profile routes only to children's apps", async () => {
   assert.equal(said.said.viewer, child.id);
 });
 
-test("with no router on the box, the TV says voice isn't set up yet", async () => {
+test("with no AI set up yet, the TV says what's missing, not a guess", async () => {
   const bare = new Daemon({ root: join(base, "root"), state: join(scratch, "bare"), builtins: null, port: 0, log: () => {}, keyStatus: join(base, "key.json") });
   const at = `http://127.0.0.1:${await bare.listen()}`;
   let said;
@@ -351,5 +351,16 @@ test("with no router on the box, the TV says voice isn't set up yet", async () =
   } finally {
     await bare.close();
   }
-  assert.deepEqual(said.said?.outcome, { kind: "none", why: "failed", say: "your agent didn't answer", detail: "voice isn't set up on this box yet" });
+  assert.deepEqual(said.said?.outcome, { kind: "none", why: "failed", say: "your agent didn't answer", detail: "set up your agent in settings → ai first" });
+});
+
+test("S7.4 the router alone, through the daemon, routes with the apps it's told of and does nothing", async () => {
+  routes = { "carry on": { ...NONE, intent: "continue" } };
+  asks.length = 0;
+  const apps = [{ id: "local.radio", name: "Radio", category: "music" }];
+  const answer = await (await post("/api/router/route", { sentence: "carry on", apps })).json();
+  assert.equal(answer.routed.route.intent, "continue");
+  assert.deepEqual(heard, apps);
+  assert.deepEqual(asks, [], "nothing was looked up or opened");
+  assert.equal((await post("/api/router/route", { apps })).status, 400);
 });

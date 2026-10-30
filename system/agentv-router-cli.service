@@ -1,0 +1,61 @@
+# The router on a plan (daemon/router-serve.ts, ADR-022, ADR-023): the
+# provider's own CLI, once per sentence, with no tools, as agentv-builder,
+# which signed in to the plan through the CLI's own login when the builder
+# first ran (ADR-040). The plan's tokens stay in the CLI's own files in the
+# builder's home, and AgenTV never reads them.
+#
+# Like a build (agentv-builder@.service), it has no network of its own:
+# its only way out is agentv-router's cli-net.sock, which reaches the plans'
+# providers' own hosts and nothing else. It sees the builder's home and
+# nothing else of /var/lib, no keys and no sign-ins of the TV's. It answers
+# the daemon on /run/agentv-router-cli/route.sock, for the agentv-router
+# group only.
+
+[Unit]
+Description=AgenTV router on a plan
+Wants=agentv-router.service
+After=agentv-router.service
+RequiresMountsFor=/var/lib/agentv/builder
+
+[Service]
+User=agentv-builder
+Group=agentv-builder
+SupplementaryGroups=agentv-router
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/daemon/router-serve.ts cli
+Environment=AGENTV_PATH=/usr/share/agentv HOME=/var/lib/agentv/builder
+WorkingDirectory=/var/lib/agentv/builder
+RuntimeDirectory=agentv-router-cli
+RuntimeDirectoryMode=0755
+Restart=on-failure
+TimeoutStopSec=5s
+UMask=0077
+MemoryMax=1G
+TasksMax=128
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
+BindPaths=/var/lib/agentv/builder
+InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+KeyringMode=private
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

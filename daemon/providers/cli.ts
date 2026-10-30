@@ -37,6 +37,7 @@ export interface CliOptions {
   home: string; // the builder's home, where the CLI and its sign-in live
   work?: string; // an empty folder of the run's own
   model?: string | null; // null: the CLI's own default for the plan
+  proxy?: string; // the only way out, http://127.0.0.1:8080, on the box
 }
 
 // The brief, with the schema in words, for a CLI that can't be given one.
@@ -55,6 +56,10 @@ export function cliCommand(provider: CliProvider, ask: Ask, options: CliOptions)
   const cli = join(options.home, ".local/bin", CLIS[provider]);
   const work = options.work ?? tmpdir();
   const env = baseEnv(options.home);
+  if (options.proxy) {
+    for (const name of ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"]) env[name] = options.proxy;
+    Object.assign(env, { NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" });
+  }
   const model = options.model === undefined ? (provider === "claude" ? ROUTER_MODELS.claude : null) : options.model;
 
   if (provider === "claude") {
@@ -174,8 +179,27 @@ const said = (stderr: string) => {
   return line ? `: ${line.slice(0, 160)}` : "";
 };
 
+// A plan signs in the first time the builder runs (ADR-040), so a CLI that
+// says it isn't signed in yet means that. One whose sign-in ran out and
+// couldn't be refreshed was signed in, and needs signing in again.
+export const NOT_SIGNED_IN = "the plan isn't signed in yet: it signs in the first time your agent builds something";
+export const SIGN_IN_RAN_OUT = "the plan's sign-in ran out: it needs signing in again";
+const signedOut = (text: string) => /\/login|not logged in|log ?in again|not signed in|unauthori[sz]ed/i.test(text);
+const ranOut = (text: string) => /session expired|could not be refreshed|token (has )?expired/i.test(text);
+
 // The answer in what the CLI printed, or why there isn't one.
 export function cliAnswer(provider: CliProvider, stdout: string, code: number | null, stderr = ""): Answer {
+  try {
+    return readAnswer(provider, stdout, code, stderr);
+  } catch (error) {
+    const said = `${(error as Error).message}\n${stderr}`;
+    if (ranOut(said)) throw new ProviderError(SIGN_IN_RAN_OUT);
+    if (signedOut(said)) throw new ProviderError(NOT_SIGNED_IN);
+    throw error;
+  }
+}
+
+function readAnswer(provider: CliProvider, stdout: string, code: number | null, stderr: string): Answer {
   if (provider === "chatgpt") {
     const events = lines(stdout);
     const failed = events.find((e) => e.type === "turn.failed" || e.type === "error");
@@ -222,7 +246,7 @@ export const runCli: CliRunner = (run, timeoutMs) =>
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
-      reject(new ProviderError(error.code === "ENOENT" ? `${run.command.split("/").pop()} isn't on the box yet` : error.message));
+      reject(new ProviderError(error.code === "ENOENT" ? `${run.command.split("/").pop()} isn't on the box yet: it comes with your agent's first build` : error.message));
     });
     child.on("close", (code) => {
       clearTimeout(timer);

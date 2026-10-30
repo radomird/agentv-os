@@ -4,11 +4,14 @@
 # it is. Its own state, such as whether setup is done, lives in
 # /var/lib/agentv/daemon, the backgrounds with their credits in
 # /var/lib/agentv/backgrounds, and what phones shared to the TV in
-# /var/lib/agentv/shared.
+# /var/lib/agentv/shared. What's said to the TV goes to the router
+# (agentv-router.service, agentv-router-cli.service), which only the
+# agentv-router group reaches.
 
 [Unit]
 Description=AgenTV daemon
 After=network.target
+Wants=agentv-router.service agentv-router-cli.service
 
 [Service]
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/daemon/server.ts --port 3000
@@ -20,6 +23,7 @@ Restart=on-failure
 # (ADR-033).
 TimeoutStopSec=5s
 DynamicUser=yes
+SupplementaryGroups=agentv-router
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
