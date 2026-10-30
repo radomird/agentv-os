@@ -51,6 +51,9 @@ import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
+import type { Routed, RouterApp } from "./router.ts";
+import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
+import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 
 export interface DaemonOptions {
@@ -120,6 +123,15 @@ export interface DaemonOptions {
   buildRun?: string; // /run/agentv-build
   spend?: string; // /var/lib/agentv/spend/spend.json
   npmWarnings?: string; // /var/lib/agentv/npm-check/warnings.json
+  // The router (ADR-013, ADR-023): one sentence and the apps who's watching
+  // can open, into a route, through the provider's API or a plan's CLI.
+  router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+}
+
+// With no router on this box: every sentence is none, and the TV says the
+// agent didn't answer, and why.
+async function notRouted(sentence: string): Promise<Routed> {
+  return { sentence, route: { intent: "none", query: null, kind: null, app: null, season: null, episode: null }, none: "failed", error: "voice isn't set up on this box yet", provider: "claude", via: "api", model: null, ms: 0 };
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -222,6 +234,11 @@ export class Daemon {
   readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: "the TV didn't answer in time: is its session running?" } });
   // A made theme's asks, for the screen daemon to hand it to Omarchy (S6.4).
   readonly themeAsks = new Asks<ThemeAsk, ThemeAnswer>({ clean: cleanTheme, late: { ok: false, error: "the TV didn't answer in time: is its session running?", late: true } });
+  // A sentence's asks of the TV session: looking X up in the apps, and
+  // opening what was chosen (daemon/say.ts).
+  readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?" } });
+  // What was said to the TV, routed and done (ADR-023).
+  readonly say: Say;
   // What it asked already, by theme, build and version, so a pass that read
   // the record before the last answer came doesn't ask again.
   private themesAsked = new Set<string>();
@@ -281,6 +298,29 @@ export class Daemon {
       pageTile: (id) => this.pageApps.tile(id),
       log: this.log,
       dataDirs: options.dataDirs,
+    });
+    // A sentence said to the TV: routed for who's watching, with only the
+    // apps they can open, and done through the TV session.
+    this.say = new Say({
+      route: options.router ?? notRouted,
+      viewer: () => this.profiles.active(),
+      apps: async (viewer) => {
+        const allowed = new Set((await this.home.apps(viewer)).map((app) => app.id));
+        return (await this.home.manifests())
+          .filter(({ manifest }) => allowed.has(manifest.id))
+          .map(({ manifest }) => ({
+            id: manifest.id,
+            name: manifest.name,
+            category: manifest.tv.category,
+            // Music looks in the library in the TV session rather than in a
+            // worker, so it can, though its manifest doesn't say so.
+            capabilities: manifest.id === MUSIC_APP ? [...manifest.tv.capabilities, "search"] : [...manifest.tv.capabilities],
+          }));
+      },
+      rows: (viewer) => this.ledger.recent(viewer, { limit: 50 }),
+      ask: (ask, ms) => this.sayAsks.ask(ask, ms),
+      changed: (said) => this.broadcast("said", said),
+      log: this.log,
     });
     // Page apps (ADR-043): each on an origin of its own, and the kit's calls
     // checked against its manifest.
@@ -426,6 +466,7 @@ export class Daemon {
     this.setupApps.stop();
     this.openLedger?.close();
     this.pageAsks.close();
+    this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
@@ -810,7 +851,46 @@ export class Daemon {
       builds: viewer.role === "adult" ? await this.phoneBuilds() : [],
       // An app the TV offered for Export, for an adult to save here.
       export: viewer.role === "adult" && this.exportOffer && this.exportOffer.until > Date.now() ? { id: this.exportOffer.id, name: this.exportOffer.name, version: this.exportOffer.version, github: this.exportOffer.github } : null,
+      // What was last said to the TV, and what came of it, for ten minutes:
+      // the phone shows it under its box, and up to three to choose from.
+      said: this.saidNow(),
     };
+  }
+
+  private saidNow(): object | null {
+    const said = this.say.current;
+    if (!said || Date.now() - Date.parse(said.at) > 10 * 60_000) return null;
+    const { route: _route, ...shown } = said;
+    return shown;
+  }
+
+  // Why the TV won't take a sentence now, or null: setup isn't done, or
+  // the TV is locked behind the PIN (ADR-034).
+  private async sayRefusal(): Promise<string | null> {
+    if (!(await this.setup()).done) return "the tv takes requests once setup is done";
+    if (this.pin.status((await this.profiles.active()).locked).locked) return "the tv is locked: unlock it first";
+    return null;
+  }
+
+  // A sentence, from the TV or a phone, once it's done.
+  private async sayIt(request: IncomingMessage, response: ServerResponse, from: string): Promise<void> {
+    const refused = await this.sayRefusal();
+    if (refused) {
+      this.json(response, 409, { ok: false, error: refused });
+      return;
+    }
+    const body = (await this.body(request)) as { sentence?: unknown } | undefined;
+    if (typeof body?.sentence !== "string" || !body.sentence.trim()) {
+      this.json(response, 400, { ok: false, error: "say something" });
+      return;
+    }
+    this.json(response, 200, { ok: true, said: await this.say.hear(body.sentence, from) });
+  }
+
+  private async sayPick(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const body = (await this.body(request)) as { n?: unknown; choice?: unknown } | undefined;
+    const picked = await this.say.pick(body?.n, body?.choice);
+    this.json(response, picked.said ? 200 : 409, picked.said ? { ok: true, said: picked.said } : { ok: false, error: picked.error });
   }
 
   private async phoneBuilds(): Promise<object[]> {
@@ -1113,6 +1193,21 @@ export class Daemon {
       }
       this.broadcast("page", { route: "settings" });
       this.json(response, 200, { ok: true });
+      return;
+    }
+
+    // A sentence for the TV (ADR-023): the phone keyboard's dictation, or
+    // what was typed, and one of up to three to choose from.
+    if (method === "POST" && path === "/api/phone/say") {
+      await this.sayIt(request, response, phone.name);
+      return;
+    }
+    if (method === "POST" && path === "/api/phone/say/pick") {
+      await this.sayPick(request, response);
+      return;
+    }
+    if (method === "POST" && path === "/api/phone/say/dismiss") {
+      this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
       return;
     }
 
@@ -2669,6 +2764,36 @@ export class Daemon {
         said = { ok: false, error: `the TV's answer couldn't be read: ${(error as Error).message}` };
       }
       const known = this.pageAsks.answer(Number(pageAnswer[1]), said);
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+    // A sentence said to the TV (ADR-023), here from the box itself, such
+    // as agentv selftest; and the TV's own pick and Back.
+    if (method === "GET" && path === "/api/say") {
+      this.json(response, 200, { ok: true, said: this.say.current });
+      return;
+    }
+    if (method === "POST" && path === "/api/say") {
+      await this.sayIt(request, response, "the tv");
+      return;
+    }
+    if (method === "POST" && path === "/api/say/pick") {
+      await this.sayPick(request, response);
+      return;
+    }
+    if (method === "POST" && path === "/api/say/dismiss") {
+      this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
+      return;
+    }
+    // A sentence's asks of the TV session: the screen daemon looks things up
+    // in the apps and opens them, as the person.
+    if (method === "GET" && path === "/api/say/ask") {
+      this.json(response, 200, { ok: true, ask: await this.sayAsks.take() });
+      return;
+    }
+    const sayAnswer = /^\/api\/say\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && sayAnswer) {
+      const known = this.sayAsks.answer(Number(sayAnswer[1]), await this.body(request));
       this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
       return;
     }

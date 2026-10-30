@@ -27,6 +27,8 @@ import { keyPage, planPage, termsHeard } from "./pages/key.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
+import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
 
@@ -228,7 +230,7 @@ async function askShared(): Promise<void> {
   // Apps → Shared follows too.
   if (history[history.length - 1] === "apps" && !noticeOpen && !pinOpen) redraw();
   const share = found?.ask ? found.shares.find((one) => one.id === found.ask) : undefined;
-  if (!share || answered.has(share.id) || noticeOpen || pinOpen || ambient || updatingShown) return;
+  if (!share || answered.has(share.id) || noticeOpen || pinOpen || saidOpen() || ambient || updatingShown) return;
   const before = focus.get();
   before?.classList.remove("focused");
   const answer = async (open: boolean) => {
@@ -553,6 +555,8 @@ function act(action: Action): void {
     } else pinOpen.act(action);
     return;
   }
+  // Up to three to choose from, for what was said, while they're up.
+  if (saidAct(action)) return;
   // A share's notice has the keys while it's up; Back is Not now.
   if (noticeOpen) {
     if (action === "up" || action === "down" || action === "left" || action === "right") focus.move(action);
@@ -738,6 +742,9 @@ async function start(): Promise<void> {
     background: () => void loadBackgrounds(),
     // A phone shared something, or the TV may ask about one now (ADR-050).
     shared: () => void askShared(),
+    // A sentence said to the TV (ADR-023): what was heard, then what came
+    // of it, or up to three to choose from.
+    said: (data) => saidHeard(data as Said | null),
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },
@@ -790,6 +797,9 @@ async function start(): Promise<void> {
     },
   }, () => void catchUp().catch(() => {}));
   void daemon.updates().then(setUpdates).catch(() => {});
+  setupSaid(ctx, () => {
+    if (view) focus.setRoot(view.el, view.first);
+  });
   void sounds.load();
   // The screen daemon calls these: Home when the home screen is already in
   // front, and the apps open behind it whenever that changes.

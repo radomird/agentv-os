@@ -75,4 +75,5 @@ S6.9  check     a build can't skip, add or leave its recipe's steps or use a too
 S6.10 image     a setuid or setgid file the builder writes gives no one more rights, and with safeguards off an npm install script runs, inside bubblewrap (layer 2 holds the mounts and the jail; the image layer probes them from inside, as agentv-builder)
 S7.1  evals     20 phrasings for each of the four requests, across kinds and with collisions between kinds, routed at 95% or better on Claude (layer 6 on its API; layer 2 checks the set and the scorer)
 S7.2  evals     the same set on ChatGPT, Gemini, Grok and Muse, each one's score kept and none of them blocking
+S7.3  check     a sentence the router can't route is "i didn't get that" on the TV and the phone, never a guessed action (layers 2 and 4; layer 6 holds Claude to none for each of the set's 20; spoken once stage 8 has a voice)
 S7.4  manual    with a Claude plan and no key, the same set routes through Claude Code at 95% or better, with the time per sentence recorded, under 5 s as the target (agentv selftest S7.4)

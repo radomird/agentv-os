@@ -1875,6 +1875,36 @@ body.with-backdrop.on-home {
   overflow-wrap: anywhere;
 }
 
+/* What was said to the TV (ADR-023): up to three to choose from, in the
+   notice's place and the same card, over home. */
+#said {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  display: none;
+  z-index: 9;
+}
+
+#said.on {
+  display: block;
+}
+
+.said-heard {
+  font-size: 28px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.said-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.said-choice {
+  text-align: left;
+}
+
 .notice-buttons,
 .shared-buttons {
   display: flex;
