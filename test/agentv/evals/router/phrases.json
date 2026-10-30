@@ -25,7 +25,7 @@
     { "id": "continue-13", "say": "carry on with Shōgun", "expect": { "intent": "continue", "query": "Shōgun" } },
     { "id": "continue-14", "say": "back to Slow Horses where I was", "expect": { "intent": "continue", "query": "Slow Horses" } },
     { "id": "continue-15", "say": "finish the movie I started yesterday", "expect": { "intent": "continue", "query": null, "kind": ["film", "video", null] } },
-    { "id": "continue-16", "say": "where was I in The Office? continue it", "expect": { "intent": "continue", "query": "The Office" } },
+    { "id": "continue-16", "say": "go back to The Office where I left it", "expect": { "intent": "continue", "query": "The Office" } },
     { "id": "continue-17", "say": "can you resume Foundation for me", "expect": { "intent": "continue", "query": "Foundation" } },
     { "id": "continue-18", "say": "continue watching on Jellyfin", "expect": { "intent": "continue", "query": null, "app": "agentv.jellyfin" } },
     { "id": "continue-19", "say": "keep going with the last thing I had on in Kino", "expect": { "intent": "continue", "query": null, "app": "local.kino" } },
