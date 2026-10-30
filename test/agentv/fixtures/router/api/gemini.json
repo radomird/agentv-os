@@ -1,0 +1,39 @@
+{
+  "sentence": "put on the frozen soundtrack",
+  "route": {
+    "intent": "play",
+    "query": "Frozen",
+    "kind": "album",
+    "app": null,
+    "season": null,
+    "episode": null
+  },
+  "reply": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "thinking about it",
+              "thought": true
+            },
+            {
+              "text": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null}"
+            }
+          ]
+        },
+        "finishReason": "STOP",
+        "index": 0
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 1498,
+      "candidatesTokenCount": 39,
+      "thoughtsTokenCount": 24,
+      "totalTokenCount": 1561
+    },
+    "modelVersion": "gemini-3.8-flash",
+    "responseId": "router"
+  }
+}
