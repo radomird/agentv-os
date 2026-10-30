@@ -134,5 +134,6 @@ export function score(results: Result[]): Score {
 // Whether a run meets the bars: S7.1's 95% and S7.3's every one, and on a
 // CLI, S7.4's 5 s, which is a target that's recorded rather than a bar.
 export function meets(s: Score): { routed: boolean; unroutable: boolean; seconds: boolean } {
-  return { routed: s.routed.percent >= BAR.routed, unroutable: s.unroutable.percent >= BAR.unroutable, seconds: s.ms.median < BAR.seconds * 1000 };
+  // With nothing answered there's no time to meet the target with.
+  return { routed: s.routed.percent >= BAR.routed, unroutable: s.unroutable.percent >= BAR.unroutable, seconds: s.failed < s.routed.of + s.unroutable.of && s.ms.median < BAR.seconds * 1000 };
 }

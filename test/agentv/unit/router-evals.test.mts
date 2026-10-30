@@ -69,8 +69,11 @@ test("the scorer counts only the slots a case names, and any of a list", () => {
   assert.deepEqual(wrong({ ...NONE, intent: "continue", query: "Frozen" }, e), ["intent continue, not play"]);
   assert.deepEqual(wrong({ ...NONE, intent: "play", query: null, app: "agentv.steam" }, { intent: "play", query: null, app: "agentv.steam" }), []);
   assert.deepEqual(wrong({ ...NONE, intent: "play", query: "Severance", season: 2, episode: 4 }, { intent: "play", query: "Severance", season: 2, episode: 3 }), ["episode 4, not 3"]);
-  // A provider that didn't answer is a miss, whatever was expected.
-  assert.equal(result(set.cases.at(-1)!, { sentence: "", route: { ...NONE }, none: "failed", error: "timeout", provider: "claude", via: "api", model: null, ms: 0 }).ok, false);
+  // A provider that didn't answer is a miss, whatever was expected, and
+  // with none answered there's no time per sentence to meet the target.
+  const unanswered = result(set.cases.at(-1)!, { sentence: "", route: { ...NONE }, none: "failed", error: "timeout", provider: "claude", via: "api", model: null, ms: 0 });
+  assert.equal(unanswered.ok, false);
+  assert.equal(meets(score([unanswered])).seconds, false);
 });
 
 test("S7.1 S7.3 a provider that answers as expected meets every bar, and one that guesses fails S7.3", async () => {
