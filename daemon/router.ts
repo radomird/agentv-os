@@ -65,7 +65,7 @@ The four requests:
 - continue: carry on with something they were watching or listening to, from where they got to. "continue my show", "carry on where I left off", "resume Severance", "keep watching", "next episode please". query is the title when they name one, else null.
 - play: start something by its name, or open an app. A film, a show, an episode, a song, an album, a playlist, an artist, photos or a game. "play Frozen", "put on the Frozen soundtrack", "watch season 2 episode 3 of Severance", "let's play Portal 2", "show me the photos from Lisbon", "open Steam". query is what to find. When they only name an app and nothing in it ("open Steam", "put Jellyfin on"), query is null and app is set.
 - whats_new: what's new or just came out to watch or listen to. "what's new", "anything new on Plex", "what came out this week". query is null.
-- new_episode: whether a show has a new episode or season out yet. "is there a new episode of Severance", "has the new season of Bluey come out", "any new episodes of my show". query is the show, or null when they don't name one.
+- new_episode: whether a show has a new episode or season out yet, or when it will. "is there a new episode of Severance", "has the new season of Bluey come out", "when does the new season start", "any new episodes of my show". query is the show, or null when they don't name one.
 
 The slots:
 - query: the title, name or words to find, as they said them, in their own language. Leave out the request's own words, such as play, watch, the film, the series, the soundtrack, season 2, on Jellyfin, for me, please. Keep the title's own words: "The Bear" stays "The Bear".
@@ -75,7 +75,7 @@ The slots:
 
 Answer none, with every slot null, for anything else, and whenever you aren't sure:
 - controls such as pause, stop, skip, louder, quieter, turn it off, go home, go back or switch who's watching;
-- questions, chat, the weather, the news, the time, shopping, lights, messages or settings;
+- any other question, chat, the weather, the news, the time, shopping, lights, messages or settings;
 - adding, building, buying or installing an app;
 - two requests in one sentence;
 - a sentence that's cut off, makes no sense, or isn't a request.
