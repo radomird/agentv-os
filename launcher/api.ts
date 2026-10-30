@@ -317,8 +317,30 @@ export interface SharedState {
   allowed: string[];
 }
 
+// A sentence said to the TV (ADR-023), as the daemon tells it: the sentence
+// as heard, then what came of it, which the TV shows and, from stage 8,
+// speaks. With more than one match, up to three to choose from.
+export interface Candidate {
+  app: string;
+  name: string;
+  item: Item & { subtitle?: string };
+}
+
+export type Outcome = { kind: "opened"; say: string; app: string; item?: Item } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "none"; say: string; why: string; detail?: string };
+
+export interface Said {
+  n: number;
+  sentence: string;
+  from: string;
+  state: "routing" | "done";
+  outcome?: Outcome;
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
+  pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
+  dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
   shared: () => call<SharedState>("GET", "/api/shared"),
   answerShare: (id: string) => call<{ ok: boolean }>("POST", `/api/shared/${id}/answer`),
   shareBackground: (id: string, grant?: string) => call<{ background: Background }>("POST", `/api/shared/${id}/background`, undefined, grant),

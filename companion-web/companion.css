@@ -189,6 +189,58 @@ h1 {
   gap: 18px;
 }
 
+/* Ask your TV (ADR-023): the box, and what the TV made of the last one. */
+.say {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.say-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.say-row .button {
+  padding: 0 18px;
+}
+
+.said {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 2px solid var(--selection);
+  border-left: 6px solid var(--accent);
+}
+
+.said.bad {
+  border-left-color: var(--red);
+}
+
+.said-heard,
+.said-say {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.said-heard {
+  font-size: 14px;
+  color: var(--foreground);
+}
+
+.said-say {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--bright-foreground);
+}
+
+.said-choice {
+  text-align: left;
+  padding: 0 14px;
+}
+
 .dpad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

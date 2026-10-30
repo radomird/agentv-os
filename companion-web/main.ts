@@ -8,7 +8,9 @@
 // - playback while something plays, and a trackpad for Omarchy's desktop;
 // - who's watching, arrange home, the update notice with Install tonight,
 //   and the adult PIN, which also unlocks the TV;
-// - Share → TV: a photo from the phone for the TV's background (S5.3).
+// - Share → TV: a photo from the phone for the TV's background (S5.3);
+// - ask your TV: a sentence for the box's agent, by dictation or typing,
+//   and up to three to choose from when it found more than one (ADR-023).
 // It follows the TV (ADR-037): a PIN pad whenever the TV asks for the PIN,
 // the keyboard for a text field, playback while something plays, the
 // trackpad on the desktop, and the d-pad otherwise. Every press shows,
@@ -22,6 +24,7 @@ import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
+import { sayBox, type Said } from "./say.ts";
 import { sharePage } from "./share.ts";
 
 const app = document.getElementById("app")!;
@@ -65,6 +68,8 @@ interface State {
   builds?: PhoneBuild[];
   // An app the TV offered for Export, to save here (ADR-045).
   export?: Offer | null;
+  // The last sentence said to the TV, and what came of it (ADR-023).
+  said?: Said | null;
 }
 
 interface Ask {
@@ -205,10 +210,14 @@ function feelSwitch(): HTMLElement {
   return button;
 }
 
+// Ask the TV (ADR-023), over the remote and playback.
+const asking = () => sayBox(state?.said, failed, () => void refresh(true));
+
 function remote(): HTMLElement {
   return h(
     "div",
     { class: "remote" },
+    asking(),
     h(
       "div",
       { class: "dpad" },
@@ -232,6 +241,7 @@ function playback(): HTMLElement {
   return h(
     "div",
     { class: "remote" },
+    asking(),
     h("p", { class: "label" }, "playing on the tv"),
     h("div", { class: "row play" }, key("playpause", "play-pause", "", "big", "play or pause"), key("next", "next", "", "big", "next")),
     h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), settingsKey()),
