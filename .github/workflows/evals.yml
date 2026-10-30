@@ -1,0 +1,89 @@
+name: Evals
+
+# Layer 6 (ADR-019): the router's phrase set on each provider's API, every
+# night and on a pull request that changes the router, its providers or the
+# set (test/agentv/evals/router). Claude is the reference: below 95% for
+# the four requests, or a sentence it can't route answered as anything but
+# none, fails its job (S7.1, S7.3). The other four are run and their scores
+# kept, and they don't block (S7.2).
+#
+# Each provider needs its key as this repo's secret, under the name the box
+# uses: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY and
+# META_API_KEY, each a project key with a monthly cap on the provider's
+# side. A run is about 100 short requests, a few cents. A provider with no
+# key yet is skipped, and its summary says so. A plan's CLI (S7.4) runs on
+# the NUC, with agentv selftest S7.4, since no runner holds a plan.
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  pull_request:
+    paths:
+      - daemon/router.ts
+      - daemon/providers/**
+      - test/agentv/evals/**
+      - .github/workflows/evals.yml
+  workflow_dispatch:
+    inputs:
+      model:
+        description: A model other than the router's own, for every provider that has it (leave empty for each one's own)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  router:
+    name: "Layer 6: the router on ${{ matrix.provider }}"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [claude, chatgpt, gemini, grok, muse]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --version
+      - name: The phrase set
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          MODEL: ${{ inputs.model }}
+          # Only this job's provider's key.
+          ANTHROPIC_API_KEY: ${{ matrix.provider == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
+          OPENAI_API_KEY: ${{ matrix.provider == 'chatgpt' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ matrix.provider == 'gemini' && secrets.GEMINI_API_KEY || '' }}
+          XAI_API_KEY: ${{ matrix.provider == 'grok' && secrets.XAI_API_KEY || '' }}
+          META_API_KEY: ${{ matrix.provider == 'muse' && secrets.META_API_KEY || '' }}
+        run: |
+          case "$PROVIDER" in
+            claude) key=ANTHROPIC_API_KEY ;;
+            chatgpt) key=OPENAI_API_KEY ;;
+            gemini) key=GEMINI_API_KEY ;;
+            grok) key=XAI_API_KEY ;;
+            muse) key=META_API_KEY ;;
+          esac
+          if [[ -z ${!key:-} ]]; then
+            printf '### Router evals: %s\n\nSkipped: there is no %s secret yet.\n' "$PROVIDER" "$key" >>"$GITHUB_STEP_SUMMARY"
+            echo "::notice::$PROVIDER skipped: no $key secret"
+            exit 0
+          fi
+          args=(--provider "$PROVIDER" --json "evals-$PROVIDER.json" --markdown "$GITHUB_STEP_SUMMARY")
+          [[ -n $MODEL ]] && args+=(--model "$MODEL")
+          # Claude is the reference, so only its run holds the bars.
+          [[ $PROVIDER == "claude" ]] && args+=(--strict)
+          test/agentv/evals/router/run "${args[@]}"
+      - name: Keep the answers
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evals-${{ matrix.provider }}
+          path: evals-${{ matrix.provider }}.json
+          if-no-files-found: ignore
+          retention-days: 90
