@@ -39,6 +39,8 @@ elif [[ $* == *api/tile/* ]]; then cat "$STATE/tile" 2>/dev/null || echo "{\"ok\
 elif [[ $* == *api/pin* ]]; then cat "$STATE/pin" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
 elif [[ $* == *api/updates/tonight* ]]; then cat "$STATE/tonight-code" 2>/dev/null || echo 403
 elif [[ $* == *api/key* ]]; then cat "$STATE/key" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
+elif [[ $* == *api/say* ]]; then cat "$STATE/say" 2>/dev/null || echo "{\"ok\":false,\"error\":\"no daemon\"}"
+elif [[ $* == *api/ai* ]]; then cat "$STATE/ai" 2>/dev/null || echo "{\"ok\":true,\"provider\":null,\"path\":null}"
 else cat "$STATE/health"; fi'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
 fake iw '
@@ -680,3 +682,71 @@ grep -qF "fail S4.6 agentv-key.path isn't running" "$SCRATCH/out" || fail "it sa
 rm -f "$state/no-key-path" "$etc/env"
 ! run4 S4.6 || fail "S4.6 fails with no env file"
 pass "S4.6 passes only with the key root's alone, mode 600, and the hand-over running"
+
+# --- Stage 7 ---------------------------------------------------------------
+
+echo '{"ok":true,"said":{"n":1,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
+run1 S7.3 || fail "S7.3 passes when the box says it didn't get it" "$(cat "$SCRATCH/out")"
+grep -qF 'pass S7.3 "the cat sat on the" came back as i didn'"'"'t get that, and nothing opened' "$SCRATCH/out" || fail "it says what came back" "$(cat "$SCRATCH/out")"
+grep -q 'api/say' "$state/curl.log" || fail "it asks the daemon"
+echo '{"ok":true,"said":{"n":2,"state":"done","outcome":{"kind":"none","why":"failed","say":"your agent didn'"'"'t answer","detail":"set up your agent in settings → ai first"}}}' >"$state/say"
+! run1 S7.3 || fail "S7.3 fails when the agent didn't answer"
+grep -qF "fail S7.3 your agent didn't answer: set up your agent in settings → ai first" "$SCRATCH/out" || fail "it says why" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"said":{"n":3,"state":"done","outcome":{"kind":"opened","app":"local.kino","say":"frozen, on kino"}}}' >"$state/say"
+! run1 S7.3 || fail "S7.3 fails on a guess"
+grep -qF "fail S7.3 it wasn't i didn't get that: frozen, on kino" "$SCRATCH/out" || fail "it says what it did instead" "$(cat "$SCRATCH/out")"
+pass "S7.3 passes only when a sentence that can't be routed comes back as i didn't get that"
+
+echo '{"ok":true,"provider":"claude","path":"key"}' >"$state/ai"
+run1 S7.4 || fail "S7.4 on a key says what to pick" "$(cat "$SCRATCH/out")"
+grep -qF "manual S7.4 S7.4 is for a Claude plan: pick it in Settings → AI" "$SCRATCH/out" || fail "it says to pick the plan" "$(cat "$SCRATCH/out")"
+
+# The phrase set, through a stand-in daemon that routes each as the set
+# expects, on Claude Code, and then wrongly.
+mkdir -p "$SCRATCH/agentv"
+for dir in daemon builder apps test; do
+  [[ -e $SCRATCH/agentv/$dir ]] || ln -s "$ROOT/$dir" "$SCRATCH/agentv/$dir"
+done
+echo '{"ok":true,"provider":"claude","path":"plan"}' >"$state/ai"
+router_port=$(node -e 'const s = require("net").createServer().listen(0, () => { console.log(s.address().port); s.close(); })')
+cat >"$SCRATCH/router.mjs" <<'ROUTER'
+import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+const set = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const first = (v) => (v === undefined ? null : Array.isArray(v) ? (v[0] ?? null) : v);
+let n = 0;
+createServer(async (request, response) => {
+  if (request.method !== "POST") return response.end("{}");
+  let body = "";
+  for await (const chunk of request) body += chunk;
+  const { sentence } = JSON.parse(body);
+  const c = set.cases.find((x) => x.say === sentence);
+  const e = c.expect;
+  const wrong = process.env.WRONG === "1" && n++ < 10;
+  const route = e.intent === "none" || wrong ? { intent: "none", query: null, kind: null, app: null, season: null, episode: null } : { intent: e.intent, query: first(e.query), kind: first(e.kind), app: first(e.app), season: e.season ?? null, episode: e.episode ?? null };
+  response.end(JSON.stringify({ ok: true, routed: { sentence, route, provider: "claude", via: process.env.VIA ?? "cli", model: "claude-haiku-5-5", ms: 1800 } }));
+}).listen(Number(process.argv[3]), "127.0.0.1");
+ROUTER
+VIA=cli node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
+router_pid=$!
+sleep 0.5
+AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 passes on the plan at 100%" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.4 80 of 80 routed right (100%) through Claude Code on the plan, median 1800 ms a sentence" "$SCRATCH/out" || fail "it says the score and the time" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.4 the time per sentence is under 5 s: median 1800 ms" "$SCRATCH/out" || fail "it says the time is under 5 s" "$(cat "$SCRATCH/out")"
+kill "$router_pid" 2>/dev/null || true
+wait "$router_pid" 2>/dev/null || true
+WRONG=1 VIA=cli node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
+router_pid=$!
+sleep 0.5
+! AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 fails below 95%"
+grep -qF "fail S7.4 70 of 80 routed right (87.5%)" "$SCRATCH/out" || fail "it says the score" "$(cat "$SCRATCH/out")"
+kill "$router_pid" 2>/dev/null || true
+wait "$router_pid" 2>/dev/null || true
+VIA=api node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
+router_pid=$!
+sleep 0.5
+! AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 fails through a key"
+grep -qF "fail S7.4 the box routed through its key, not the plan's CLI" "$SCRATCH/out" || fail "it says it went through the key" "$(cat "$SCRATCH/out")"
+kill "$router_pid" 2>/dev/null || true
+wait "$router_pid" 2>/dev/null || true
+pass "S7.4 runs the phrase set through the box's own router, and passes only at 95% on the plan's CLI, with the time per sentence"

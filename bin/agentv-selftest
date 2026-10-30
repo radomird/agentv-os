@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]... [--app <id>] [--item <json>]
-# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4]... [--app <id>] [--item <json>]
+# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3 | agentv selftest S7.4
 # agentv:requires-sudo=true
 
 # The acceptance checks CI can't see, run on the box itself (ADR-019, layer
@@ -75,6 +75,14 @@
 #   S4.6  with a key set in Settings → AI, it's root's alone in
 #         /etc/agentv/env, and this account can't read it.
 #
+# Stage 7, the router (S7 runs both), with the AI Settings → AI chose:
+#
+#   S7.3  a sentence that can't be routed comes back as "i didn't get that"
+#         on the TV and the phone, and nothing opens. It asks the provider.
+#   S7.4  the router's 100 phrasings through this box's own router, one at a
+#         time: on a Claude plan with no key, 95% or better, with the time
+#         per sentence. It takes a few minutes and counts against the plan.
+#
 # Stage 0:
 #
 #   S0.2  the root disk isn't encrypted, so there's no password at boot; the
@@ -97,12 +105,13 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]... [--app <id>] [--item <json>]"
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4]... [--app <id>] [--item <json>]"
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 STAGE4=(S4.5 S4.6)
+STAGE7=(S7.3 S7.4)
 checks=()
 app_id=""
 app_item=""
@@ -120,6 +129,8 @@ while (( $# )); do
     [sS]3) checks+=("${STAGE3[@]}") ;;
     [sS]4.5 | [sS]4.6) checks+=("S${arg:1}") ;;
     [sS]4) checks+=("${STAGE4[@]}") ;;
+    [sS]7.3 | [sS]7.4) checks+=("S${arg:1}") ;;
+    [sS]7) checks+=("${STAGE7[@]}") ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -848,6 +859,59 @@ s46() {
   fi
 }
 
+# What Settings → AI chose, as the daemon says it.
+ai_now() {
+  curl -fsS --max-time 5 "$(home_url)api/ai" 2>/dev/null || true
+}
+
+s73() {
+  local said outcome
+  said=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d '{"sentence": "the cat sat on the"}' "$(home_url)api/say" 2>/dev/null || true)
+  outcome=$(jq -c '.said.outcome // empty' <<<"$said" 2>/dev/null)
+  if [[ -z $outcome ]]; then
+    result fail S7.3 "the daemon didn't take the sentence: $(jq -r '.error // "no answer"' <<<"$said" 2>/dev/null)"
+  elif jq -e '.kind == "none" and (.why == "unroutable" or .why == "unreadable") and .say == "i didn'"'"'t get that"' <<<"$outcome" >/dev/null; then
+    result pass S7.3 "\"the cat sat on the\" came back as i didn't get that, and nothing opened"
+  elif jq -e '.why == "failed"' <<<"$outcome" >/dev/null; then
+    result fail S7.3 "your agent didn't answer: $(jq -r '.detail // .say' <<<"$outcome")"
+  else
+    result fail S7.3 "it wasn't i didn't get that: $(jq -r '.say' <<<"$outcome")"
+  fi
+  result manual S7.3 "the TV showed i didn't get that, and a paired phone too, under ask your tv. From stage 8 the TV says it as well"
+}
+
+s74() {
+  local ai json flags=() routed percent median
+  ai=$(ai_now)
+  if [[ $(jq -r '.ai.provider // .provider // empty' <<<"$ai") != "claude" || $(jq -r '.ai.path // .path // empty' <<<"$ai") != "plan" ]]; then
+    result manual S7.4 "S7.4 is for a Claude plan: pick it in Settings → AI, past the PIN, then run agentv selftest S7.4 again"
+    return 0
+  fi
+  json=$(mktemp)
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$AGENTV_PATH/test/agentv/evals/router/run.mts" --via box --daemon "$(home_url)" --json "$json" >"$json.out" 2>&1 || true
+  routed=$(jq -r '"\(.score.routed.right) of \(.score.routed.of)"' "$json" 2>/dev/null)
+  percent=$(jq -r '.score.routed.percent // 0' "$json" 2>/dev/null)
+  median=$(jq -r '.score.ms.median // 0' "$json" 2>/dev/null)
+  if [[ -z $routed || $routed == "null of null" ]]; then
+    result fail S7.4 "the phrase set didn't run: $(tail -n 3 "$json.out" | tr '\n' ' ')"
+  elif jq -e '.score.failed > 0' "$json" >/dev/null; then
+    result fail S7.4 "your agent didn't answer $(jq -r '.score.failed' "$json") of them: $(jq -r '[.results[] | select(.routed.none == "failed") | .routed.error][0]' "$json")"
+  elif [[ $(jq -r '.via' "$json") != "cli" ]]; then
+    result fail S7.4 "the box routed through its key, not the plan's CLI"
+  elif jq -e '.score.routed.percent >= 95 and .score.unroutable.percent >= 100' "$json" >/dev/null; then
+    result pass S7.4 "$routed routed right ($percent%) through Claude Code on the plan, median $median ms a sentence, p90 $(jq -r '.score.ms.p90' "$json") ms"
+  else
+    result fail S7.4 "$routed routed right ($percent%), none for $(jq -r '"\(.score.unroutable.right) of \(.score.unroutable.of)"' "$json"), median $median ms; the misses are in $json.out"
+  fi
+  if (( median > 0 && median < 5000 )); then
+    result pass S7.4 "the time per sentence is under 5 s: median $median ms, longest $(jq -r '.score.ms.max' "$json") ms"
+  elif (( median > 0 )); then
+    result fail S7.4 "the time per sentence is over the 5 s target: median $median ms"
+  fi
+  result manual S7.4 "paste the table from $json.out into the log; it has each request's score and the misses"
+}
+
 # ts_check <script> <id>: runs one of AgenTV's TypeScript checks, which
 # print their own pass, fail and manual lines for the id.
 ts_check() {
@@ -1214,6 +1278,8 @@ for id in "${checks[@]}"; do
     S3.9) s39 ;;
     S4.5) s45 ;;
     S4.6) s46 ;;
+    S7.3) s73 ;;
+    S7.4) s74 ;;
   esac
 done
 

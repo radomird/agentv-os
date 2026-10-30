@@ -52,6 +52,7 @@ import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
 import type { Routed, RouterApp } from "./router.ts";
+import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
@@ -126,12 +127,6 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
-}
-
-// With no router on this box: every sentence is none, and the TV says the
-// agent didn't answer, and why.
-async function notRouted(sentence: string): Promise<Routed> {
-  return { sentence, route: { intent: "none", query: null, kind: null, app: null, season: null, episode: null }, none: "failed", error: "voice isn't set up on this box yet", provider: "claude", via: "api", model: null, ms: 0 };
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -239,6 +234,7 @@ export class Daemon {
   readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?" } });
   // What was said to the TV, routed and done (ADR-023).
   readonly say: Say;
+  private routing?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
   // What it asked already, by theme, build and version, so a pass that read
   // the record before the last answer came doesn't ask again.
   private themesAsked = new Set<string>();
@@ -302,7 +298,7 @@ export class Daemon {
     // A sentence said to the TV: routed for who's watching, with only the
     // apps they can open, and done through the TV session.
     this.say = new Say({
-      route: options.router ?? notRouted,
+      route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
       viewer: () => this.profiles.active(),
       apps: async (viewer) => {
         const allowed = new Set((await this.home.apps(viewer)).map((app) => app.id));
@@ -855,6 +851,13 @@ export class Daemon {
       // the phone shows it under its box, and up to three to choose from.
       said: this.saidNow(),
     };
+  }
+
+  // The router this box's setup chose (daemon/router-client.ts), through
+  // its services' sockets.
+  private boxRoute(sentence: string, apps: RouterApp[]): Promise<Routed> {
+    this.routing ??= boxRouter({ ai: () => this.ai.read(), key: () => this.key.status() });
+    return this.routing(sentence, apps);
   }
 
   private saidNow(): object | null {
@@ -2783,6 +2786,19 @@ export class Daemon {
     }
     if (method === "POST" && path === "/api/say/dismiss") {
       this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
+      return;
+    }
+    // The router alone, with apps it's told of and nothing done, as the box
+    // routes: agentv selftest S7.4 runs the eval set through it.
+    if (method === "POST" && path === "/api/router/route") {
+      const body = (await this.body(request)) as { sentence?: unknown; apps?: unknown } | undefined;
+      const apps = Array.isArray(body?.apps) ? (body.apps as RouterApp[]).slice(0, 100) : [];
+      if (typeof body?.sentence !== "string") {
+        this.json(response, 400, { ok: false, error: "which sentence" });
+        return;
+      }
+      const route = this.options.router ?? ((sentence: string, list: RouterApp[]) => this.boxRoute(sentence, list));
+      this.json(response, 200, { ok: true, routed: await route(body.sentence.slice(0, 300), apps) });
       return;
     }
     // A sentence's asks of the TV session: the screen daemon looks things up
