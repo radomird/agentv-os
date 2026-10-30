@@ -349,6 +349,9 @@ test("each CLI's recorded output reads as the route, and its errors say why", ()
   // A plan signs in at the builder's first run (ADR-040), and the TV says so.
   assert.throws(() => cliAnswer("claude", "", 1, "Invalid API key · Please run /login\n"), /^Error: the plan isn't signed in yet: it signs in the first time your agent builds something$/);
   assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login" }), 1), /the plan isn't signed in yet/);
+  // As the Mac's Claude Code said, with its auth status still saying it was
+  // signed in (2026-10-30): a sign-in that ran out says so.
+  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", terminal_reason: "api_error" }), 1), /^Error: the plan's sign-in ran out: it needs signing in again$/);
   assert.throws(() => cliAnswer("chatgpt", '{"type":"turn.failed","error":{"message":"usage limit"}}\n', 1), /codex stopped: usage limit/);
 });
 

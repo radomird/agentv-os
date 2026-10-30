@@ -180,16 +180,21 @@ const said = (stderr: string) => {
 };
 
 // A plan signs in the first time the builder runs (ADR-040), so a CLI that
-// says it isn't signed in yet means that.
+// says it isn't signed in yet means that. One whose sign-in ran out and
+// couldn't be refreshed was signed in, and needs signing in again.
 export const NOT_SIGNED_IN = "the plan isn't signed in yet: it signs in the first time your agent builds something";
+export const SIGN_IN_RAN_OUT = "the plan's sign-in ran out: it needs signing in again";
 const signedOut = (text: string) => /\/login|not logged in|log ?in again|not signed in|unauthori[sz]ed/i.test(text);
+const ranOut = (text: string) => /session expired|could not be refreshed|token (has )?expired/i.test(text);
 
 // The answer in what the CLI printed, or why there isn't one.
 export function cliAnswer(provider: CliProvider, stdout: string, code: number | null, stderr = ""): Answer {
   try {
     return readAnswer(provider, stdout, code, stderr);
   } catch (error) {
-    if (signedOut(`${(error as Error).message}\n${stderr}`)) throw new ProviderError(NOT_SIGNED_IN);
+    const said = `${(error as Error).message}\n${stderr}`;
+    if (ranOut(said)) throw new ProviderError(SIGN_IN_RAN_OUT);
+    if (signedOut(said)) throw new ProviderError(NOT_SIGNED_IN);
     throw error;
   }
 }
