@@ -106,6 +106,24 @@ check >/dev/null
   fail "with nothing new, the check says so" "$(cat "$status")"
 pass "with nothing new, the check says so"
 
+# A check that couldn't look keeps what the last one found. A box's first
+# check, with nothing found before it, still writes every field the TV reads:
+# what's installed, and nothing new (2026-11-01, when Settings wouldn't open).
+cat >"$SCRATCH/bin/checkupdates" <<'SH'
+#!/bin/bash
+exit 1
+SH
+chmod +x "$SCRATCH/bin/checkupdates"
+before=$(jq -c 'del(.checked_at)' "$status")
+if "$ROOT/bin/agentv-update-check" >/dev/null 2>&1; then fail "a check that couldn't look says so"; fi
+[[ $(jq -Sc 'del(.checked_at) | .ok = true' "$status") == "$(jq -Sc '.ok = true' <<<"$before")" && $(jq -r .ok "$status") == "false" ]] ||
+  fail "a check that couldn't look keeps what the last one found" "$(cat "$status")"
+rm "$status"
+if "$ROOT/bin/agentv-update-check" >/dev/null 2>&1; then fail "a first check that couldn't look says so"; fi
+[[ $(jq -c '[.ok, .agentv, .omarchy, .packages, .waiting, .security, .notes]' "$status") == '[false,{"installed":"0.2.1-1","available":null},{"installed":"4.0.6-1","available":null},0,false,false,{"agentv":[],"agentv_date":null,"omarchy":[]}]' ]] ||
+  fail "a first check that couldn't look still has every field the TV reads" "$(cat "$status")"
+pass "a check that couldn't look keeps what it found before, and a first one still has every field the TV reads"
+
 # --- Installing from the TV ----------------------------------------------------
 
 sudoers="$SCRATCH/sudoers.d"

@@ -129,7 +129,14 @@ jq -n \
     }
   else
     # It couldn'\''t look: what it found last time stands, marked as such.
-    ($previous + { checked_at: $checked, ok: false, channel: $channel })
+    # With nothing from before, it'\''s what'\''s installed and nothing new, so
+    # the TV still has every field it reads.
+    ({
+      agentv: { installed: ($agentv_now | nonempty), available: null },
+      omarchy: { installed: ($omarchy_now | nonempty), available: null },
+      packages: 0, waiting: false, security: false,
+      notes: { agentv: [], agentv_date: null, omarchy: [] }
+    } + $previous + { checked_at: $checked, ok: false, channel: $channel })
   end' >"$STATE/status.json.new"
 chmod 644 "$STATE/status.json.new"
 mv "$STATE/status.json.new" "$STATE/status.json"
