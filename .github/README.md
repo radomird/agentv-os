@@ -92,6 +92,12 @@ Tried it on another box? [Tell me how it went](https://github.com/radomird/agent
 
 **Do I need an AI subscription?** Only for the agent and for "play": a key from one of the providers above, or a plan where its terms allow it. The rest works without one.
 
+## Support AgenTV
+
+AgenTV is free and open source. If it's useful to you and you'd like to help, you can [chip in through Stripe](https://buy.stripe.com/7sY4gzeMjdZs1oo7Wbgfu00) and pick the amount yourself. The checkout will say Indie AI Labs: that's where I build it.
+
+A star helps too, and so does [telling me how it ran on your box](https://github.com/radomird/agentv-os/issues/new?template=box-report.yml).
+
 ## Powered by Omarchy
 
 AgenTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4 and adds a TV session of its own beside Omarchy's desktop. The box logs in to the TV. When you need the full desktop, you switch over to Omarchy's and back.
