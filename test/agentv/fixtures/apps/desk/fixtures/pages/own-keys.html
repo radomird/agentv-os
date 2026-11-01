@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Own keys</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; padding: 48px; display: flex; gap: 24px; }
+  .tile { width: 300px; height: 180px; border-radius: 8px; background: #2a2a3a; display: grid; place-items: center; }
+  .tile.on { box-shadow: 0 0 0 6px #7aa2f7; }
+</style>
+</head>
+<body>
+<button class="tile on" id="tile-1" type="button">One</button>
+<button class="tile" id="tile-2" type="button">Two</button>
+<button class="tile" id="tile-3" type="button">Three</button>
+<script>
+  // Its own highlight, moved by the arrows, with no focus at all.
+  let on = 0;
+  const tiles = [...document.querySelectorAll(".tile")];
+  addEventListener("keydown", (event) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: 0, ArrowDown: 0 }[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    tiles[on].classList.remove("on");
+    on = Math.max(0, Math.min(tiles.length - 1, on + step));
+    tiles[on].classList.add("on");
+    document.title = `on ${on + 1}`;
+  });
+</script>
+</body>
+</html>

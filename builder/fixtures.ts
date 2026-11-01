@@ -42,7 +42,8 @@ export interface Check {
   page?: string;
   expect?: unknown;
   throws?: string;
-  after?: { url?: string; title?: string };
+  remote?: string[];
+  after?: { url?: string; title?: string; focused?: string };
   asks?: { url: string; headers?: Record<string, string> }[];
   op?: string;
   request?: Record<string, unknown>;

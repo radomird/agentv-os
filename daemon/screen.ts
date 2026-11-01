@@ -63,6 +63,7 @@ import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput } from "./remote.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "./remote-page.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
 import { answerSay, sayHosts } from "./say-watch.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
@@ -1452,6 +1453,7 @@ export class Screen {
       const running = this.apps.get("web");
       if (running?.cdp) {
         entry.target = await running.cdp.open(url).catch(() => undefined);
+        if (entry.target) void this.remotePage(running.cdp, entry.target);
       }
       if (!entry.target) {
         const app = this.launcher.web(url);
@@ -1672,10 +1674,17 @@ export class Screen {
       const pages = await cdp.pages().catch(() => []);
       if (pages.length > 0) {
         entry.target = pages[0].targetId;
+        await this.remotePage(cdp, entry.target);
         return;
       }
       await sleep(100);
     }
+  }
+
+  // The phone's d-pad in a web app's page, for a page made for a desktop:
+  // a ring on what the arrows focus, and Back (daemon/remote-page.ts).
+  private async remotePage(cdp: DevTools, target: string): Promise<void> {
+    await cdp.addScriptIn(target, REMOTE_PAGE, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
   }
 
   openSteam(id = "steam"): Promise<object> {
@@ -2047,7 +2056,8 @@ export const launcher: Launcher = {
     // translate or site notifications over the TV (ADR-032).
     const prefs = spawnSync("agentv-chromium-prefs", [SERVICES_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
     if (prefs.status !== 0) console.log(`couldn't turn off the services' Chromium's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    // Arrows the page doesn't take move its focus (daemon/remote-page.ts).
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
