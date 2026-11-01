@@ -24,8 +24,8 @@ name: Nightly
 # image layer went to two VMs at a time (2026-10-27) took the switch back to
 # the TV from 3 to 5 s to 6 to 10 s, against a 10 s bar. So the release's
 # run has one VM at a time, the whole runner, as when S1.3 was signed off.
-# Newer agentv-iso checks run S1.3 on its own themselves. That makes the
-# release's run about 20 minutes longer, still beside edge's.
+# Newer agentv-iso checks run S1.3 on its own themselves. The release's run
+# takes about 45 minutes instead of 33, about as long as edge's beside it.
 #
 # Started by hand, it can take another agentv-iso ref for edge's checks and
 # the update's (checks), so a fix to the checks can be seen in a full night
