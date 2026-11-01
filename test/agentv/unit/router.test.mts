@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Provider } from "../../../daemon/ai.ts";
@@ -314,7 +314,10 @@ test("S7.4 Claude Code on a plan: once, with the brief as its whole system promp
   for (const name of ["--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"]) assert.ok(run.args.includes(name), name);
   assert.ok(!run.args.includes("--mcp-config") && !run.args.includes("--allowedTools") && !run.args.includes("--bare"));
   // The plan's own sign-in, never a key: ANTHROPIC_API_KEY would win over it.
+  // The user's own name, which a Mac's Keychain finds the sign-in by.
   assert.equal(run.env.HOME, "/var/lib/agentv/builder");
+  assert.equal(run.env.USER, userInfo().username);
+  assert.equal(run.env.LOGNAME, userInfo().username);
   assert.ok(!Object.keys(run.env).some((name) => /API_KEY|AUTH_TOKEN|BASE_URL/.test(name)), Object.keys(run.env).join(" "));
 });
 
