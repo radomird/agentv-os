@@ -20,6 +20,10 @@ export interface Met {
   // The same, but only after the next reply: MET publishing a new forecast
   // just after someone asked.
   serveAfterNext(place: string): void;
+  // Other places' replies for the next few requests only, then this one's
+  // again: MET handing out an old forecast and a new one at once, as it did
+  // on 2026-11-01 while it published.
+  serveNext(...places: string[]): void;
   expiresIn(ms: number): void;
   close(): void;
 }
@@ -40,6 +44,7 @@ export async function startMet(place = "amsterdam"): Promise<Met> {
   let reply = recordedReply(place);
   const seen: Met["seen"] = [];
   let next: ReturnType<typeof recordedReply> | null = null;
+  const queued: ReturnType<typeof recordedReply>[] = [];
   let isDown = false;
   let expiresMs = 30 * 60_000;
   const server = createServer((request, response) => {
@@ -49,7 +54,7 @@ export async function startMet(place = "amsterdam"): Promise<Met> {
       return;
     }
     response.writeHead(200, { "Content-Type": "application/json", Expires: new Date(Date.now() + expiresMs).toUTCString() });
-    response.end(JSON.stringify(shifted(reply.body)));
+    response.end(JSON.stringify(shifted((queued.shift() ?? reply).body)));
     if (next) {
       reply = next;
       next = null;
@@ -67,6 +72,9 @@ export async function startMet(place = "amsterdam"): Promise<Met> {
     },
     serveAfterNext: (other) => {
       next = recordedReply(other);
+    },
+    serveNext: (...others) => {
+      queued.push(...others.map((other) => recordedReply(other)));
     },
     expiresIn: (ms) => {
       expiresMs = ms;
