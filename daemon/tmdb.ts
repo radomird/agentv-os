@@ -279,6 +279,7 @@ export class News {
   private feeds = new Map<string, Feed>();
   private running = new Map<string, Promise<Feed>>();
   private regionProviders = new Map<string, { at: number; list: WatchProvider[] }>();
+  private regionList?: { at: number; list: { code: string; name: string }[] };
   private loaded = false;
 
   constructor(options: NewsOptions) {
@@ -318,6 +319,23 @@ export class News {
       if (Date.now() > until) return false;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
+  }
+
+  // TMDB's regions, by their two letters and English names, for Settings to
+  // pick from.
+  async regions(): Promise<{ ok: boolean; regions: { code: string; name: string }[]; error?: string }> {
+    if (this.regionList && this.now().getTime() - this.regionList.at < PROVIDERS_MS) return { ok: true, regions: this.regionList.list };
+    const asked = await this.o.get("/watch/providers/regions");
+    if (!asked.ok) return { ok: false, regions: this.regionList?.list ?? [], error: asked.error };
+    const list = ((asked.data as { results?: unknown })?.results as unknown[] | undefined) ?? [];
+    const regions = list
+      .flatMap((r) => {
+        const v = (typeof r === "object" && r !== null ? r : {}) as Record<string, unknown>;
+        return typeof v.iso_3166_1 === "string" && /^[A-Z]{2}$/.test(v.iso_3166_1) && typeof v.english_name === "string" ? [{ code: v.iso_3166_1, name: v.english_name.slice(0, 60) }] : [];
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    this.regionList = { at: this.now().getTime(), list: regions };
+    return { ok: true, regions };
   }
 
   // The household's services: each streaming app on the box, with the
@@ -501,7 +519,7 @@ export class News {
   }
 }
 
-export const NO_KEY = "add a tmdb key in settings → what's new first";
+export const NO_KEY = "add a tmdb key in settings → new this week first";
 
 // The answer, from a show's air dates and the episode they last watched.
 export function answerEpisode(found: Show, watched: Pick<WatchRow, "season" | "episode"> | null, today: string): EpisodeAnswer {

@@ -40,7 +40,7 @@ export async function whatsNew(route: Route, ctx: ExecContext, app?: ExecApp): P
   const feed = await ctx.news.whatsNew({ app: app?.id ?? null, kind });
   if (!feed.ok) {
     if (feed.why === "no-key") return { kind: "none", why: "no-tmdb", say: NO_KEY };
-    if (feed.why === "no-region") return { kind: "none", why: "no-tmdb", say: "pick your region in settings → what's new first" };
+    if (feed.why === "no-region") return { kind: "none", why: "no-tmdb", say: "pick your region in settings → new this week first" };
     if (feed.why === "no-services") return { kind: "none", why: "not-found", say: `tmdb doesn't list your apps' services in ${feed.region?.toLowerCase() ?? "your region"}` };
     return { kind: "none", why: "failed", say: "tmdb didn't answer", ...(feed.error ? { detail: feed.error } : {}) };
   }

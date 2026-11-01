@@ -1,6 +1,6 @@
 // Settings (ADR-015, ADR-024, ADR-031): sections on the left, the focused one
-// on the right. Look, Sound, Weather, Adult PIN, Omarchy desktop and Power work
-// now; the sections later stages build say so.
+// on the right. Look, Sound, Weather, New this week, Adult PIN, Omarchy
+// desktop and Power work now; the sections later stages build say so.
 
 import { daemon, screen, type AudioState, type ThemePreview, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
@@ -14,6 +14,8 @@ import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
+import { loadNews, newsAdjust, newsPanel, newsValue } from "./tmdb.ts";
+import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -330,6 +332,8 @@ export function settings(ctx: Ctx, open?: string): View {
       ],
     },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
+    // What came out this week on the household's services, from TMDB (S8.1).
+    { key: "tmdb", label: "new this week", value: newsValue, panel: () => newsPanel(ctx) },
     { key: "profiles", label: "profiles", value: () => String(ctx.state.viewers.length), panel: () => profilesPanel(ctx) },
     { key: "phones", label: "phones", value: () => (phones ? String(phones.length) : ""), panel: () => phonesPanel(ctx) },
     { key: "pin", label: "adult pin", value: () => (pinSet() ? "on" : "off"), panel: pinPanel },
@@ -381,6 +385,11 @@ export function settings(ctx: Ctx, open?: string): View {
         note("the world's first open-source agentic tv os. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),
         note("weather data from met norway, under cc by 4.0."),
+        // TMDB's terms: its logo, less prominent than AgenTV's, and its
+        // notice; JustWatch's: credit for where to watch.
+        h("img", { class: "about-tmdb", src: TMDB_LOGO, alt: "tmdb" }),
+        note(TMDB_NOTICE),
+        note("where to watch is from justwatch, through tmdb."),
       ],
     },
   ];
@@ -426,6 +435,15 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = found.name;
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "weather" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "weather")!);
+      }
+    })
+    .catch(() => {});
+  void loadNews()
+    .then(() => {
+      const item = menu.querySelector<HTMLElement>('[data-key="tmdb"] .menu-value');
+      if (item) item.textContent = newsValue();
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "tmdb" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "tmdb")!);
       }
     })
     .catch(() => {});
@@ -563,6 +581,10 @@ export function settings(ctx: Ctx, open?: string): View {
       }
       if (current?.dataset.adjust === "city" && (action === "left" || action === "right")) {
         stepCity(action === "right" ? 1 : -1);
+        return true;
+      }
+      if (current?.dataset.adjust === "region" && (action === "left" || action === "right")) {
+        newsAdjust(action === "right" ? 1 : -1, ctx);
         return true;
       }
       if (current?.dataset.adjust === "output" && (action === "left" || action === "right")) {

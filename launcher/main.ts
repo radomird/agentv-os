@@ -24,6 +24,7 @@ import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { keyPage, planPage, termsHeard } from "./pages/key.ts";
+import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
@@ -345,6 +346,7 @@ function viewFor(route: string): View {
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
   if (name === "key") return keyPage(ctx);
+  if (name === "tmdb-key") return tmdbKeyPage(ctx);
   if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
@@ -758,6 +760,13 @@ async function start(): Promise<void> {
     // A page app set its tile (ADR-043): home's tiles ask again.
     tiles: () => {
       if (history[history.length - 1] === "home") redraw();
+    },
+    // The TMDB key or the region changed (S8.1): New this week asks again,
+    // and Settings shows it.
+    "whats-new": () => {
+      const route = history[history.length - 1];
+      if (route === "home") redraw();
+      else if (route.startsWith("settings")) void loadNews().then(redraw);
     },
     // A page app's notice, declared in its manifest.
     notice: (data) => {
