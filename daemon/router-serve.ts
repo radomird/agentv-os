@@ -22,6 +22,11 @@
 // path, one of the few read-only ones daemon/tmdb-api.ts lets through. It
 // logs the path, never what it asked for.
 //
+// And the provider's own voice for the TV's answers (stage 8, Q152): POST
+// /speak with the provider and a line, for the providers that have one
+// (daemon/providers/speech.ts), answered as WAV. It logs how long it took,
+// never the words.
+//
 // Usage: node router-serve.ts api|cli
 
 import { chmodSync, chownSync, readFileSync, rmSync } from "node:fs";
@@ -36,6 +41,7 @@ import { forward } from "../builder/sandbox/forward.ts";
 import { PLAN_HOSTS } from "../builder/sandbox/net.ts";
 import { keyFrom } from "../builder/sandbox/relay.ts";
 import { askTmdb, tmdbKeyFrom, tmdbPath, type TmdbAnswer } from "./tmdb-api.ts";
+import { speak, SPEECH_MAX, type Speech } from "./providers/speech.ts";
 
 const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
@@ -45,6 +51,8 @@ export const PER_MINUTE = 30;
 // And this many asks of TMDB: what's new for every app on the box takes a
 // few dozen, every few hours.
 export const TMDB_PER_MINUTE = 240;
+// And this many lines spoken: one an answer.
+export const SPEAK_PER_MINUTE = 30;
 
 export interface RouteRequest {
   provider: Provider;
@@ -90,6 +98,8 @@ export interface ServeOptions {
   route: (request: RouteRequest) => Promise<Routed>;
   // TMDB with the household's key (stage 8), on the api service only.
   tmdb?: (path: unknown) => Promise<TmdbAnswer>;
+  // The provider's own voice (stage 8), on the api service only.
+  speak?: (provider: Provider, text: string) => Promise<Speech>;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -99,6 +109,7 @@ export function routeServer(o: ServeOptions): Server {
   const now = o.now ?? Date.now;
   let recent: number[] = [];
   let tmdbAsks: number[] = [];
+  let spoken: number[] = [];
   return createServer(async (request, response) => {
     const answer = (status: number, data: object) => {
       response.writeHead(status, { "Content-Type": "application/json" });
@@ -116,7 +127,18 @@ export function routeServer(o: ServeOptions): Server {
       o.log?.(`tmdb ${typeof found === "string" ? "(refused)" : found.path.replace(/\d+/g, ":id")}: ${said.ok ? said.status : (said.error ?? "no answer")} in ${now() - started} ms`);
       return answer(200, said);
     }
-    if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: o.tmdb ? "only POST /route and /tmdb" : "only POST /route" });
+    if (request.method === "POST" && request.url === "/speak" && o.speak) {
+      const b = ((await body(request)) ?? {}) as { provider?: unknown; text?: unknown };
+      if (!PROVIDERS.includes(b.provider as Provider) || typeof b.text !== "string" || !b.text.trim()) return answer(400, { ok: false, error: "which provider, and what to say" });
+      spoken = spoken.filter((at) => now() - at < 60_000);
+      if (spoken.length >= SPEAK_PER_MINUTE) return answer(429, { ok: false, error: "too much to say at once: try again in a minute" });
+      spoken.push(now());
+      const started = now();
+      const said = await o.speak(b.provider as Provider, text(b.text, SPEECH_MAX));
+      o.log?.(`speech ${b.provider} ${said.model ?? ""}: ${said.ok ? `${said.wav!.length} bytes` : said.error} in ${now() - started} ms`);
+      return answer(200, said.ok ? { ok: true, wav: said.wav!.toString("base64"), model: said.model, voice: said.voice } : { ok: false, error: said.error });
+    }
+    if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: o.tmdb ? "only POST /route, /tmdb and /speak" : "only POST /route" });
     const asked = routeRequest(await body(request));
     if (typeof asked === "string") return answer(400, { ok: false, error: asked });
     recent = recent.filter((at) => now() - at < 60_000);
@@ -176,6 +198,12 @@ async function main(): Promise<void> {
       // A stand-in for TMDB, for the image checks, which only a drop-in of
       // root's can set, as for the provider's API.
       tmdb: (path) => askTmdb(tmdbKey(), path, process.env.AGENTV_TMDB_UPSTREAM ? { base: process.env.AGENTV_TMDB_UPSTREAM } : {}),
+      // A stand-in for the providers' voices, for the image checks, the same way.
+      speak: async (provider, words) => {
+        const found = key(provider);
+        if (!found) return { ok: false, error: "there's no key for this provider on the box" };
+        return speak(provider, found, words, process.env.AGENTV_SPEECH_UPSTREAM ? { base: process.env.AGENTV_SPEECH_UPSTREAM } : {});
+      },
       route: async ({ provider, sentence, apps }) => {
         const found = key(provider);
         // A stand-in for the provider's API, for the image checks, which

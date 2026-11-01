@@ -65,6 +65,7 @@ import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput } from "./remote.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
 import { answerSay, sayHosts } from "./say-watch.ts";
+import { VoicePlayer } from "./voice-play.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
@@ -2596,12 +2597,14 @@ async function main(): Promise<void> {
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // A sentence said to the TV (ADR-023): X looked up in the apps who's
-  // watching can open, and what was chosen opened, as the person.
+  // watching can open, and what was chosen opened, as the person. And what
+  // came of it said aloud (stage 8), through the box's sound output.
+  const voice = new VoicePlayer({ home: HOME_URL });
   new AskWatch<SayAsk, SayAnswer>({
     url: HOME_URL,
     path: "api/say/ask",
     what: "a sentence",
-    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
+    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the

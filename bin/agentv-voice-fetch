@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# agentv:summary=Fetch Piper and its voice for the TV's spoken answers
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# The TV says its answers aloud (stage 8), with the household's provider's
+# own voice when it has one, and with Piper on the box when it doesn't. Piper
+# isn't in AgenTV's package: the first time the daemon needs it, it leaves a
+# drop in its own state, and agentv-voice.path starts this as root. It
+# fetches Piper's last MIT release for x86_64 from GitHub and its cori voice
+# (British English, public domain) from Hugging Face, each checked against
+# the checksum below, and puts them in /var/lib/agentv/voice, where anyone
+# can read them and only root can change them. Nothing is kept if a check
+# fails.
+
+set -euo pipefail
+
+DIR=${AGENTV_VOICE_DIR:-/var/lib/agentv/voice}
+DROP=${AGENTV_VOICE_DROP:-/var/lib/private/agentv/daemon/voice-drop/fetch}
+BASE=${AGENTV_VOICE_BASE:-}
+
+PIPER_URL=${BASE:-https://github.com/rhasspy/piper/releases/download}/2023.11.14-2/piper_linux_x86_64.tar.gz
+PIPER_SHA256=a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992
+VOICE=en_GB-cori-medium
+VOICE_URL=${BASE:-https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0}/en/en_GB/cori/medium
+VOICE_SHA256=1899f98e5fb8310154f3c2973f4b8a929ba7245e722b3d3a85680b833d95f10d
+CONFIG_SHA256=e262c16d7f192f69d4edd6b4ef8a5915379e67495fcc402f1ab15eeb33da3d36
+
+rm -f "$DROP"
+if [[ -f $DIR/ready ]]; then
+  echo "agentv-voice-fetch: Piper is here already"
+  exit 0
+fi
+if [[ $(uname -m) != "x86_64" ]]; then
+  echo "agentv-voice-fetch: Piper's release here is for x86_64 only, so the TV shows its answers without saying them" >&2
+  exit 1
+fi
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+# fetch <url> <file> <sha256>
+fetch() {
+  if ! curl -fsSL --retry 3 --connect-timeout 20 --max-time 900 -o "$work/$2" "$1"; then
+    echo "agentv-voice-fetch: couldn't fetch $2; the TV will ask again later" >&2
+    exit 1
+  fi
+  if ! printf '%s  %s\n' "$3" "$work/$2" | sha256sum --check --status; then
+    echo "agentv-voice-fetch: $2 isn't the file it should be, so it isn't kept" >&2
+    exit 1
+  fi
+}
+
+fetch "$PIPER_URL" piper.tar.gz "$PIPER_SHA256"
+fetch "$VOICE_URL/$VOICE.onnx" "$VOICE.onnx" "$VOICE_SHA256"
+fetch "$VOICE_URL/$VOICE.onnx.json" "$VOICE.onnx.json" "$CONFIG_SHA256"
+
+mkdir "$work/voice"
+tar -xzf "$work/piper.tar.gz" -C "$work/voice" --no-same-owner --no-same-permissions
+[[ -x $work/voice/piper/piper ]] || { echo "agentv-voice-fetch: Piper's release has no piper in it" >&2; exit 1; }
+mv "$work/$VOICE.onnx" "$work/$VOICE.onnx.json" "$work/voice/"
+chmod -R u=rwX,go=rX "$work/voice"
+chmod 755 "$work/voice/piper/piper"
+
+# Into its folder, which agentv-voice.service's systemd makes, with ready
+# last: the daemon uses Piper only once that's there.
+install -d -m 755 "$DIR"
+rm -rf "${DIR:?}/ready" "${DIR:?}/piper" "$DIR/$VOICE.onnx" "$DIR/$VOICE.onnx.json"
+mv "$work/voice/piper" "$work/voice/$VOICE.onnx" "$work/voice/$VOICE.onnx.json" "$DIR/"
+touch "$DIR/ready"
+echo "agentv-voice-fetch: Piper and its $VOICE voice are in $DIR"

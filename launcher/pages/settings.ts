@@ -2,7 +2,7 @@
 // on the right. Look, Sound, Weather, New this week, Adult PIN, Omarchy
 // desktop and Power work now; the sections later stages build say so.
 
-import { daemon, screen, type AudioState, type ThemePreview, type WeatherPlace } from "../api.ts";
+import { daemon, screen, type AudioState, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -41,6 +41,17 @@ let weather: WeatherPlace | null = null;
 
 // The box's sound output and its volume (S2.19), the same way.
 let audio: AudioState | null = null;
+// Which voice says the TV's answers (stage 8), the same way.
+let voice: VoiceState | null = null;
+
+// The voice, as Settings → Sound says it.
+function voiceLine(state: VoiceState | null): string {
+  if (!state) return "";
+  if (!state.spoken) return "the tv shows its answers and doesn't say them.";
+  if (state.by === "provider") return `the tv says its answers in ${state.provider}'s own voice.`;
+  if (state.by === "piper") return "the tv says its answers with piper, on this box.";
+  return state.piper === "fetching" ? "the tv's voice, piper, is on its way to this box." : "the tv's voice, piper, comes to this box the first time it answers.";
+}
 // The looks Settings → Look offers (board 12), and which one the TV has.
 let looks: { themes: ThemePreview[]; current: string | null } | null = null;
 let settingLook: string | null = null;
@@ -316,6 +327,8 @@ export function settings(ctx: Ctx, open?: string): View {
       panel: () => [
         ...outputRows(),
         toggle("ui sounds", s.sound.on, "sound", () => save({ sound: { ...s.sound, on: !s.sound.on } }, "sound", "sound")),
+        // What the TV answers, said aloud (stage 8), and which voice says it.
+        toggle("spoken answers", s.spoken, "spoken", () => save({ spoken: !s.spoken }, "sound", "spoken")),
         h(
           "button",
           {
@@ -329,6 +342,7 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", { class: "button-value" }, `${Math.round(s.sound.volume * 100)}%`),
         ),
         note("left and right change how loud the ui sounds are."),
+        ...(voice ? [note(voiceLine({ ...voice, spoken: s.spoken }))] : []),
       ],
     },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
@@ -435,6 +449,16 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = found.name;
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "weather" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "weather")!);
+      }
+    })
+    .catch(() => {});
+  void daemon
+    .voice()
+    .then((found) => {
+      const changed = JSON.stringify(found) !== JSON.stringify(voice);
+      voice = found;
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "sound")!);
       }
     })
     .catch(() => {});

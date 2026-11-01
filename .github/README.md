@@ -42,7 +42,8 @@ Underneath it's Omarchy, so the full Linux desktop is one switch away.
 
 - **An agent that builds the apps you're missing.** A streaming service, a game, a better weather app. It follows a recipe for each kind of app, builds it inside AgenTV's app contract and tests it. The app stays on your box unless you export it.
 - **"Play" and a title,** said into your phone, across every app you have. It'll work with Claude, ChatGPT, Gemini, Grok or Muse Code.
-- **What's new this week** on the services you have, and whether there's a new episode of your show yet. It asks TMDB, with a key from your own TMDB account.
+- **What's new this week** on the services you have, and whether there's a new episode of your show yet. It'll ask TMDB, with a key from your own TMDB account.
+- **The TV will answer out loud,** in your AI provider's own voice when it has one, or with Piper on the box when it doesn't.
 - **TV setup from your phone,** from "hi." to home.
 - **Every Omarchy theme on the TV,** with the theme's own backgrounds, or your photos and open art archives instead. Omarchy's terminal screensaver comes along too.
 - **Share anything to the TV** from your phone: a link, a photo or a video.

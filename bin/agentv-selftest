@@ -78,7 +78,8 @@
 # Stage 7, the router (S7 runs all three), with the AI Settings → AI chose:
 #
 #   S7.3  a sentence that can't be routed comes back as "i didn't get that"
-#         on the TV and the phone, and nothing opens. It asks the provider.
+#         on the TV and the phone, and nothing opens, and the TV says it
+#         aloud (stage 8). It asks the provider.
 #   S7.4  the router's 100 phrasings through this box's own router, one at a
 #         time: on a Claude plan with no key, 95% or better, with the time
 #         per sentence. It takes a few minutes and counts against the plan.
@@ -881,8 +882,36 @@ ai_now() {
   curl -fsS --max-time 5 "$(home_url)api/ai" 2>/dev/null || true
 }
 
+# The TV's voice, as the daemon says it (stage 8).
+voice_now() {
+  curl -fsS --max-time 5 "$(home_url)api/voice" 2>/dev/null || echo '{}'
+}
+
+# Whether the TV said its answer aloud (stage 8, Q146), after the clip
+# numbered before. Piper may be on its way still, the first time.
+s73_spoken() {
+  local before=$1 voice started=$SECONDS
+  while true; do
+    voice=$(voice_now)
+    jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played != null' <<<"$voice" >/dev/null && break
+    jq -e '.spoken == false or .by == null' <<<"$voice" >/dev/null && break
+    (( SECONDS - started < 60 )) || break
+    sleep 1
+  done
+  if jq -e '.spoken == false' <<<"$voice" >/dev/null; then
+    result manual S7.3 "spoken answers are off in Settings → Sound: turn them on to hear i didn't get that"
+  elif jq -e '.by == null' <<<"$voice" >/dev/null; then
+    result manual S7.3 "the TV's voice, Piper, is on its way to this box ($(jq -r '.piper' <<<"$voice")): run agentv selftest S7.3 again in a few minutes to hear it"
+  elif jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played == true' <<<"$voice" >/dev/null; then
+    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "piper" end' <<<"$voice")"
+  else
+    result fail S7.3 "the TV didn't say it aloud: $(jq -r '.last.error // "no clip played"' <<<"$voice")"
+  fi
+}
+
 s73() {
-  local said outcome
+  local said outcome before
+  before=$(voice_now | jq -r '.last.clip // 0')
   said=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d '{"sentence": "the cat sat on the"}' "$(home_url)api/say" 2>/dev/null || true)
   outcome=$(jq -c '.said.outcome // empty' <<<"$said" 2>/dev/null)
   if [[ -z $outcome ]]; then
@@ -894,7 +923,8 @@ s73() {
   else
     result fail S7.3 "it wasn't i didn't get that: $(jq -r '.say' <<<"$outcome")"
   fi
-  result manual S7.3 "the TV showed i didn't get that, and a paired phone too, under ask your tv. From stage 8 the TV says it as well"
+  s73_spoken "$before"
+  result manual S7.3 "the TV showed i didn't get that, and a paired phone too, under ask your tv, and you heard it from the TV's speakers"
 }
 
 s74() {

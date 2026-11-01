@@ -45,6 +45,7 @@ import { ProviderKey } from "./key.ts";
 import { boxZone, cityOf } from "./place.ts";
 import { News, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { TmdbKey } from "./tmdb-key.ts";
+import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
@@ -137,6 +138,9 @@ export interface DaemonOptions {
   // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
   tmdb?: TmdbGet;
   tmdbStatus?: string;
+  // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
+  // provider's voice and Piper, for tests.
+  voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
 }
@@ -232,6 +236,12 @@ export class Daemon {
   // The TMDB key, and what's new and new episodes from TMDB (stage 8).
   readonly tmdbKey: TmdbKey;
   readonly news: News;
+  // The TV's spoken answers (stage 8), and the last few clips, by number,
+  // for the TV session to fetch and play.
+  readonly voice: Voice;
+  private clips = new Map<number, Clip>();
+  private clipCount = 0;
+  private lastSpoken: { clip: number; by: Clip["by"]; ms: number; played?: boolean; error?: string; at: string } | null = null;
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
@@ -345,6 +355,7 @@ export class Daemon {
           }));
       },
       rows: (viewer) => this.ledger.recent(viewer, { limit: 50 }),
+      speak: (text) => void this.speak(text),
       news: (viewer, apps) => {
         const ids = apps.map((app) => app.id);
         return {
@@ -394,6 +405,14 @@ export class Daemon {
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
+    this.voice = new Voice({
+      ...options.voice,
+      drop: join(options.state, "voice-drop", "fetch"),
+      ai: () => this.ai.read(),
+      key: () => this.key.status(),
+      spoken: async () => (await this.home.settings()).spoken,
+      log: this.log,
+    });
     this.news = new News({
       get: options.tmdb ?? tmdbViaRouter(),
       state: options.state,
@@ -463,6 +482,12 @@ export class Daemon {
     // when one moves on.
     this.buildsTimer = setInterval(() => void this.watchBuilds(), 2000);
     this.buildsTimer.unref();
+    // A box with its AI set up that will say its answers with Piper asks
+    // root for it now, so the first answer after an update is said too.
+    void this.voice.state().then(async (state) => {
+      const ai = await this.ai.read();
+      if (state.spoken && !state.provider && state.piper === "missing" && ai.provider && ai.accepted) this.voice.fetchPiper();
+    }, () => {});
     const lan = this.lan;
     const captive = this.captive;
     const phones = Promise.all([
@@ -1739,6 +1764,23 @@ export class Daemon {
 
   // On a child's profile, Settings and home's layout are an adult's, past the
   // PIN (ADR-009, ADR-015).
+  // --- Spoken answers (stage 8) ------------------------------------------------
+
+  // An answer, said aloud over HDMI: made into a clip here, and played by
+  // the TV session, which fetches it. The log says which voice and how long,
+  // never the words.
+  private async speak(text: string): Promise<void> {
+    const clip = await this.voice.make(text);
+    if (!clip) return;
+    const n = ++this.clipCount;
+    this.clips.set(n, clip);
+    for (const old of this.clips.keys()) if (old <= n - 3) this.clips.delete(old);
+    this.lastSpoken = { clip: n, by: clip.by, ms: clip.ms, at: new Date().toISOString() };
+    const played = await this.sayAsks.ask({ kind: "speak", clip: n }, 60_000);
+    if (this.lastSpoken.clip === n) Object.assign(this.lastSpoken, { played: played.ok, ...(played.error ? { error: played.error } : {}) });
+    this.log(`the tv said its answer with ${clip.by === "provider" ? `${clip.provider}'s voice` : "piper"}, made in ${clip.ms} ms${played.ok ? "" : `, but it didn't play: ${played.error ?? "no answer"}`}`);
+  }
+
   // --- What's new (stage 8) ---------------------------------------------------
 
   // The region setup chose (ADR-007): the country of the time zone Omarchy's
@@ -2973,6 +3015,24 @@ export class Daemon {
       }
       const route: Route = { ...NONE, intent: "play", query: title.title, kind: title.kind, app: title.app, season: title.season ?? null };
       this.json(response, 200, { ok: true, said: await this.say.act(route, "the tv", title.title) });
+      return;
+    }
+    // The TV's spoken answers (stage 8): which voice says them, whether
+    // Piper is here, and how the last one went.
+    if (method === "GET" && path === "/api/voice") {
+      this.json(response, 200, { ok: true, ...(await this.voice.state()), last: this.lastSpoken });
+      return;
+    }
+    // A clip, for the TV session to play: here only, on the TV's own port.
+    const voiceClip = /^\/api\/voice\/(\d+)$/.exec(path);
+    if (method === "GET" && voiceClip) {
+      const clip = this.clips.get(Number(voiceClip[1]));
+      if (!clip) {
+        this.json(response, 404, { ok: false, error: "that clip has gone" });
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": clip.wav.length, "Cache-Control": "no-store" });
+      response.end(clip.wav);
       return;
     }
     // TMDB's regions, for Settings → new this week to pick from.

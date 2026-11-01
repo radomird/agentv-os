@@ -25,13 +25,15 @@ import { cleanSentence, NONE, type Route, type Routed, type RouterApp } from "./
 // home's own page shows it only while home is in front.
 // And the listening bar over the app in front (ADR-054), as the phone's
 // box opens, its words come, the sentence is thought about and what came
-// of it, or it goes away.
+// of it, or it goes away. And what came of it said aloud (stage 8): the
+// daemon's clip, played through the box's sound output.
 export type LiveState = "open" | "words" | "closed" | "thinking" | "said";
 export type SayAsk =
   | { kind: "search"; query: string; apps: string[]; viewer: Viewer }
   | { kind: "open"; app: string; item?: Item }
   | { kind: "tell"; text: string }
-  | { kind: "live"; state: LiveState; text: string };
+  | { kind: "live"; state: LiveState; text: string }
+  | { kind: "speak"; clip: number };
 
 export interface SayAnswer {
   ok: boolean;
@@ -95,6 +97,9 @@ export interface SayOptions {
   news?: (viewer: Viewer, apps: ExecApp[]) => ExecNews;
   ask: (ask: SayAsk, ms: number) => Promise<SayAnswer>;
   changed: (said: Said | null) => void; // null: put away
+  // What came of a sentence, said aloud over HDMI (stage 8, Q146): the
+  // outcome's own line, "i didn't get that" too.
+  speak?: (text: string) => void;
   // The listening bar (ADR-054): whether one was up for this sentence,
   // which what came of it then takes over, whether a new box has it now,
   // and the bar over an app.
@@ -198,6 +203,7 @@ export class Say {
   private tell(said: Said): void {
     const outcome = said.outcome;
     if (!outcome || this.current?.n !== said.n) return;
+    this.o.speak?.(outcome.say);
     const text = outcome.kind === "choose" ? `${outcome.say}${outcome.say.endsWith("?") ? " " : ". "}your phone has them` : outcome.say;
     if (this.barred.delete(said.n) && !this.o.bar?.listening()) {
       this.o.bar?.show("said", text);
@@ -225,6 +231,7 @@ export class Say {
       said.outcome = await run(route, this.context(viewer, apps));
       said.at = this.now();
       this.show(said);
+      this.o.speak?.(said.outcome.say);
       return { said };
     }
     const opened = await this.open(app.id, candidate.item);
@@ -233,6 +240,7 @@ export class Say {
       : { kind: "none", why: "not-opened", say: `${app.name.toLowerCase()} didn't open ${candidate.item.title.toLowerCase()}`, ...(opened.error ? { detail: opened.error } : {}) };
     said.at = this.now();
     this.show(said);
+    this.o.speak?.(said.outcome.say);
     return { said };
   }
 

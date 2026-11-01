@@ -1,0 +1,13 @@
+# Piper for the TV's spoken answers (stage 8): when AgenTV's daemon first
+# needs it, it leaves a drop in its private state, and agentv-voice.service
+# fetches it as root.
+
+[Unit]
+Description=AgenTV voice hand-over
+
+[Path]
+PathExists=/var/lib/private/agentv/daemon/voice-drop/fetch
+Unit=agentv-voice.service
+
+[Install]
+WantedBy=paths.target

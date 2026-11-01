@@ -1,0 +1,24 @@
+# Fetches Piper and its cori voice for the TV's spoken answers into
+# /var/lib/agentv/voice, each checked against its checksum
+# (bin/agentv-voice-fetch). agentv-voice.path starts it when the daemon
+# asks. It can write only there and to the daemon's drop, which it takes
+# away.
+
+[Unit]
+Description=AgenTV voice for spoken answers
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-voice-fetch
+TimeoutStartSec=20min
+UMask=0022
+StateDirectory=agentv/voice
+StateDirectoryMode=0755
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/private/agentv/daemon/voice-drop
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
