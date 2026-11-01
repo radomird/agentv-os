@@ -10,7 +10,7 @@
 
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import type { Provider } from "../ai.ts";
 import { GROK_BUILT_INS } from "../../builder/providers.ts";
@@ -44,11 +44,13 @@ export function withSchema(ask: Ask): string {
   return `${ask.system}\n\nAnswer with one JSON object and nothing else, in this JSON schema:\n${JSON.stringify(ask.schema)}`;
 }
 
-// What every run has: the builder's home, a plain PATH, and nothing from
-// the service that starts it. No ANTHROPIC_API_KEY, which would win over
-// the plan's sign-in.
+// What every run has: the builder's home and name, a plain PATH, and
+// nothing from the service that starts it. No ANTHROPIC_API_KEY, which
+// would win over the plan's sign-in. The name is how Claude Code finds its
+// sign-in in a Mac's Keychain; on the box it's a file in the home.
 function baseEnv(home: string): Record<string, string> {
-  return { HOME: home, PATH: `${join(home, ".local/bin")}:/usr/local/bin:/usr/bin:/bin`, LANG: "C.UTF-8", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1" };
+  const user = userInfo().username;
+  return { HOME: home, USER: user, LOGNAME: user, PATH: `${join(home, ".local/bin")}:/usr/local/bin:/usr/bin:/bin`, LANG: "C.UTF-8", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1" };
 }
 
 export function cliCommand(provider: CliProvider, ask: Ask, options: CliOptions): CliRun {
