@@ -69,6 +69,7 @@ export interface BuildStatus {
   steps: { id: string; state: StepState }[];
   step?: string;
   reason?: string; // one line, why it failed
+  ranOut?: boolean; // waiting for the plan's sign-in again, since it ran out
   spent?: number; // dollars, with a key
   turns?: number;
   understood?: Understood;

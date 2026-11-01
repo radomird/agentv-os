@@ -20,6 +20,7 @@ export interface PhoneBuild {
   state: string;
   phase: string;
   signIn?: string;
+  ranOut?: boolean; // the plan's sign-in ran out, and it's asked for again
   done: number;
   steps: number;
   reason?: string;
@@ -45,6 +46,7 @@ interface FullBuild {
   };
   cost?: { low: number; high: number };
   signIn?: { state: string; url?: string; code?: string; pastes?: boolean };
+  ranOut?: boolean;
   understood?: { recipe: string | null };
   shot: boolean;
 }
@@ -62,7 +64,7 @@ export function buildNotices(before: PhoneBuild[] | undefined, now: PhoneBuild[]
     const name = b.name.toLowerCase();
     if (b.state === "approve") toast(`${name} is ready: approve it here`, true);
     else if (b.state === "plan") toast(`a plan for ${name}: approve it here`, true);
-    else if (b.state === "plan-sign-in") toast(`sign in to your ${b.provider} plan to build ${name}`, true);
+    else if (b.state === "plan-sign-in") toast(b.ranOut ? `your ${b.provider} plan's sign-in ran out: sign in again to build ${name}` : `sign in to your ${b.provider} plan to build ${name}`, true);
     else if (b.state === "failed") toast(`couldn't build ${name}: ${b.reason ?? "it stopped"}`);
   }
   // Approved and gone from the list: it's on the TV's home.
@@ -80,7 +82,7 @@ export function buildBanner(builds: PhoneBuild[] | undefined, open: (build: stri
       "button",
       { type: "button", class: "banner", "data-action": "plan-sign-in", "data-build": signing.build, onclick: () => open(signing.build) },
       glyph("lock", 18),
-      h("span", {}, `sign in to your ${signing.provider} plan ›`),
+      h("span", {}, `sign in to your ${signing.provider} plan${signing.ranOut ? " again" : ""} ›`),
     );
   }
   const waiting = builds?.find((b) => b.state === "approve" || b.state === "plan");
@@ -225,7 +227,11 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
 function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
   const name = lower(b);
   const s = b.signIn;
-  const head = [prompt(`tv app sign-in ${b.provider}`), h("h1", {}, `sign in to your ${b.provider} plan`), h("p", { class: "note" }, `${name} is built on your ${b.provider} plan, and your agent isn't signed in to it yet. you sign in once.`)];
+  const head = [
+    prompt(`tv app sign-in ${b.provider}`),
+    h("h1", {}, `sign in to your ${b.provider} plan${b.ranOut ? " again" : ""}`),
+    h("p", { class: "note" }, b.ranOut ? `${name} is built on your ${b.provider} plan, and your agent's sign-in to it ran out, so you sign in again.` : `${name} is built on your ${b.provider} plan, and your agent isn't signed in to it yet. you sign in once.`),
+  ];
   const leave = h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "back");
   if (s?.state !== "waiting" || !s.url) return [...head, h("p", { class: "note" }, s?.state === "done" ? "you're signed in. your agent goes on." : "the sign-in is starting on the tv…"), leave];
   const link = h("a", { class: "button primary", href: s.url, target: "_blank", rel: "noopener noreferrer", "data-action": "open-sign-in" }, `open ${b.provider}'s sign-in ›`);

@@ -431,8 +431,10 @@ export interface BuildView {
   };
   cost?: { low: number; high: number };
   minutes?: number;
-  // A plan's sign-in, the first time the builder runs on it (ADR-040).
+  // A plan's sign-in, the first time the builder runs on it (ADR-040), or
+  // again once it ran out.
   signIn?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
+  ranOut?: boolean;
   shot: boolean;
   at: string;
 }

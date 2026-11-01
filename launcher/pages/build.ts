@@ -53,7 +53,7 @@ export async function loadBuilds(ctx: Ctx): Promise<void> {
     if (b.state === "approve") ctx.toast(`${name} is ready: approve it on your phone`, "ok");
     else if (b.state === "plan") ctx.toast(`your agent has a plan for ${name}: approve it on your phone`, "ok");
     else if (b.state === "confirm") ctx.toast(`your agent read what you asked: check it in apps`, "ok");
-    else if (b.state === "plan-sign-in") ctx.toast(`sign in to your ${b.provider} plan to build ${name}`, "ok");
+    else if (b.state === "plan-sign-in") ctx.toast(b.ranOut ? `your ${b.provider} plan's sign-in ran out: sign in again to build ${name}` : `sign in to your ${b.provider} plan to build ${name}`, "ok");
     else if (b.state === "installed" && was === "approve") ctx.toast(madeTheme(b) ? `${name} is your theme now` : `${name} is on your home`, "ok");
     else if (b.state === "failed") ctx.toast(`couldn't build ${name}`, "fail");
   }
@@ -92,7 +92,7 @@ function tileWords(b: BuildView): { label: string; line: string; bad?: boolean }
     case "sign-in":
       return { label: "sign in", line: "it needs your sign-in" };
     case "plan-sign-in":
-      return { label: "sign in", line: `sign in to your ${b.provider} plan` };
+      return { label: "sign in", line: `sign in to your ${b.provider} plan${b.ranOut ? " again" : ""}` };
     case "failed":
       return { label: "couldn't build", line: `✗ ${b.reason ?? "it stopped"}`, bad: true };
     default:
@@ -136,7 +136,7 @@ export function buildNotice(): string {
   const name = nameOf(b);
   if (b.state === "approve") return `${name} is ready · approve it on your phone`;
   if (b.state === "plan") return `a plan for ${name} · approve it on your phone`;
-  if (b.state === "plan-sign-in") return `${name} · sign in to your ${b.provider} plan`;
+  if (b.state === "plan-sign-in") return `${name} · sign in to your ${b.provider} plan${b.ranOut ? " again" : ""}`;
   if (b.state === "failed") return `couldn't build ${name}`;
   if (b.state === "running" || b.state === "starting") return `building ${name}`;
   return "";
@@ -373,15 +373,16 @@ export function buildPage(ctx: Ctx, which: string): View {
     case "plan-sign-in": {
       // The plan's sign-in (ADR-040): the CLI's own link, as a QR code for
       // the phone's camera, and the code to enter on its page, or the code
-      // its page gives to paste on the phone.
+      // its page gives to paste on the phone. The same again when the
+      // plan's sign-in ran out.
       const s = b.signIn;
-      title = `sign in to your ${b.provider} plan.`;
+      title = `sign in to your ${b.provider} plan${b.ranOut ? " again" : ""}.`;
       if (s?.state === "waiting" && s.url) {
         const image = h("img", { src: `/api/builds/${b.build}/qr?at=${encodeURIComponent(b.at)}`, alt: `a qr code to sign in to ${b.provider}` });
         const qr = h("div", { class: "pair-qr build-qr" }, image);
         image.addEventListener("error", () => qr.classList.add("hidden"));
         body = [
-          note(`${name} is built on your ${b.provider} plan, and your agent isn't signed in to it yet. you sign in once.`),
+          note(b.ranOut ? `${name} is built on your ${b.provider} plan, and your agent's sign-in to it ran out, so you sign in again.` : `${name} is built on your ${b.provider} plan, and your agent isn't signed in to it yet. you sign in once.`),
           qr,
           s.code ? h("div", { class: "pair-code build-code" }, s.code) : null,
           note(s.code ? `scan it with your phone's camera, sign in, and enter the code there.` : "scan it with your phone's camera and sign in. then paste the code the page gives you on your phone's agentv page."),
@@ -389,7 +390,7 @@ export function buildPage(ctx: Ctx, which: string): View {
       } else if (s?.state === "done") {
         body = [note(`you're signed in. your agent goes on with ${name}.`)];
       } else {
-        body = [note(`starting the sign-in. ${name} is built on your ${b.provider} plan, and you sign in to it once, with your phone.`)];
+        body = [note(b.ranOut ? `starting the sign-in. your agent's sign-in to your ${b.provider} plan ran out, so you sign in again, with your phone.` : `starting the sign-in. ${name} is built on your ${b.provider} plan, and you sign in to it once, with your phone.`)];
       }
       buttons = [button("stop", "stop", () => void act(() => daemon.stopBuild(), `stopped ${name}`))];
       break;

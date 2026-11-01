@@ -42,6 +42,7 @@ export interface Outcome {
   spent?: number; // dollars, as the CLI reports them
   turns?: number;
   said?: string; // the agent's last words
+  ranOut?: boolean; // the CLI says the plan's sign-in ran out, or is gone
 }
 
 // The CLI each provider's plan or key goes through, as Omarchy names them.
@@ -346,9 +347,54 @@ export function command(provider: Provider, run: StepRun): Command {
   };
 }
 
+// Each CLI's own words, when a run fails, for a plan that needs signing in
+// again: its sign-in ran out and couldn't be refreshed, was revoked, or is
+// gone. Its status can still say it's signed in: Claude Code 2.1.302's did on
+// 2026-10-30. Not the words for a refresh that failed only this once, such
+// as another process holding Claude Code's refresh lock or a full disk,
+// which signing in again wouldn't help.
+const SIGN_IN_AGAIN = new RegExp(
+  [
+    // Claude Code: "Failed to authenticate: OAuth session expired and could
+    // not be refreshed" on a plan, "OAuth token revoked · Please run
+    // /login", the API's "OAuth token has expired", "OAuth refresh token is
+    // no longer valid", "Login expired · Please run /login" and "Not logged
+    // in · Please run /login".
+    "OAuth session expired",
+    "OAuth token revoked",
+    "OAuth (access )?token has (expired|been revoked)",
+    "refresh token is no longer valid",
+    "login expired",
+    "not logged in\\W+please run /login",
+    // Codex: "Your access token could not be refreshed because your refresh
+    // token has expired. Please log out and sign in again.", or was already
+    // used, or was revoked, and "Your authentication session could not be
+    // refreshed automatically".
+    "your access token could not be refreshed",
+    "authentication session could not be refreshed",
+    // Grok Build: "Your session has expired. Run `grok login` to sign in
+    // again.", "Authentication could not be refreshed", "Token expired. Run
+    // `grok login` to re-authenticate.", "Authentication rejected by server"
+    // and, headless, "Not signed in. To authenticate without a browser".
+    "your session (has )?expired",
+    "authentication could not be refreshed",
+    "token expired\\. run `grok login`",
+    "authentication rejected by server",
+    "not signed in\\. to authenticate",
+  ].join("|"),
+  "i",
+);
+
+// The words that ask for a sign-in again, in a failed run's own errors or in
+// what the CLI said on its way out.
+function signInAgain(errors: unknown[], stderr: string): { ranOut?: true } {
+  const words = [...errors.filter((e): e is string => typeof e === "string"), stderr].join("\n");
+  return SIGN_IN_AGAIN.test(words) ? { ranOut: true } : {};
+}
+
 // What a run's output says about how the step went. Each CLI writes one
-// JSON object a line.
-export function outcome(provider: Provider | "stand-in", lines: string[], exitCode: number | null): Outcome {
+// JSON object a line, and stderr is only read for why a run failed.
+export function outcome(provider: Provider | "stand-in", lines: string[], exitCode: number | null, stderr = ""): Outcome {
   const events = lines.flatMap((line) => {
     try {
       return [JSON.parse(line)];
@@ -357,8 +403,10 @@ export function outcome(provider: Provider | "stand-in", lines: string[], exitCo
     }
   });
   if (provider === "claude" || provider === "grok" || provider === "stand-in") {
+    // Grok Build says it couldn't start in an error line of its own.
+    const errors = events.filter((e) => e.type === "error").map((e) => e.message);
     const result = events.reverse().find((e) => e.type === "result");
-    if (!result) return { ok: false, reason: exitCode === 0 ? "the agent ended without a result" : `the agent stopped (exit ${exitCode})` };
+    if (!result) return { ok: false, reason: exitCode === 0 ? "the agent ended without a result" : `the agent stopped (exit ${exitCode})`, ...signInAgain(errors, stderr) };
     const reasons: Record<string, string> = {
       error_max_turns: "the step ran out of turns",
       error_max_budget_usd: "the build reached its spend cap",
@@ -371,25 +419,42 @@ export function outcome(provider: Provider | "stand-in", lines: string[], exitCo
       spent: typeof result.total_cost_usd === "number" ? result.total_cost_usd : undefined,
       turns: typeof result.num_turns === "number" ? result.num_turns : undefined,
       said: typeof result.result === "string" ? result.result.slice(0, 2000) : undefined,
+      ...(ok ? {} : signInAgain([result.result, ...(Array.isArray(result.errors) ? result.errors : []), ...errors], stderr)),
     };
   }
   if (provider === "chatgpt") {
-    const failed = events.find((e) => e.type === "turn.failed" || e.type === "error");
+    const failures = events.filter((e) => e.type === "turn.failed" || e.type === "error");
+    const failed = failures[0];
     const said = events.filter((e) => e.type === "item.completed" && e.item?.type === "agent_message").pop()?.item?.text;
     const turns = events.filter((e) => e.type === "turn.completed").length;
-    if (failed || exitCode !== 0) return { ok: false, reason: String(failed?.error?.message ?? failed?.message ?? `the agent stopped (exit ${exitCode})`).slice(0, 160), turns };
+    if (failed || exitCode !== 0) {
+      return {
+        ok: false,
+        reason: String(failed?.error?.message ?? failed?.message ?? `the agent stopped (exit ${exitCode})`).slice(0, 160),
+        turns,
+        ...signInAgain(failures.flatMap((e) => [e.error?.message, e.message]), stderr),
+      };
+    }
     return { ok: true, turns, said };
   }
   if (provider === "muse") {
     // muse exec --json's events aren't documented yet: its exit says how it
     // went, and its last words are the last message with text.
     const said = [...events].reverse().find((e) => typeof e.text === "string" || typeof e.message?.text === "string");
-    const error = events.find((e) => typeof e.type === "string" && /error|failed/.test(e.type));
-    if (exitCode !== 0 || error) return { ok: false, reason: String(error?.message ?? error?.error?.message ?? (exitCode === 1 ? "the agent stopped, or ran out of steps" : `the agent stopped (exit ${exitCode})`)).slice(0, 160) };
+    const errors = events.filter((e) => typeof e.type === "string" && /error|failed/.test(e.type));
+    const error = errors[0];
+    if (exitCode !== 0 || error) {
+      return {
+        ok: false,
+        reason: String(error?.message ?? error?.error?.message ?? (exitCode === 1 ? "the agent stopped, or ran out of steps" : `the agent stopped (exit ${exitCode})`)).slice(0, 160),
+        ...signInAgain(errors.flatMap((e) => [e.message, e.error?.message]), stderr),
+      };
+    }
     return { ok: true, said: String(said?.text ?? said?.message?.text ?? "").slice(0, 2000) || undefined };
   }
-  const error = events.find((e) => e.type === "error");
+  const errors = events.filter((e) => e.type === "error");
+  const error = errors[0];
   const result = events.reverse().find((e) => e.type === "result");
-  if (error || exitCode !== 0 || !result) return { ok: false, reason: String(error?.message ?? `the agent stopped (exit ${exitCode})`).slice(0, 160) };
+  if (error || exitCode !== 0 || !result) return { ok: false, reason: String(error?.message ?? `the agent stopped (exit ${exitCode})`).slice(0, 160), ...signInAgain(errors.map((e) => e.message), stderr) };
   return { ok: true, turns: result.stats?.tool_calls, said: typeof result.response === "string" ? result.response.slice(0, 2000) : undefined };
 }

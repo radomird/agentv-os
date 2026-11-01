@@ -152,6 +152,8 @@ export class Runner {
     const cwd = existsSync(this.build.work) ? this.build.work : this.build.dir;
     this.build.log({ step: step.id, started: true });
     const lines: string[] = [];
+    // What the CLI says on its way out, read only for why a step failed.
+    let stderr = "";
     // A CLI that says it offers the agent tools of its own, beyond the
     // harness's, is stopped before the agent can use one.
     let own: string[] = [];
@@ -173,7 +175,10 @@ export class Runner {
           if (own.length) child.kill("SIGKILL");
         }
       });
-      child.stderr.on("data", () => {});
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr = (stderr + chunk).slice(-4000);
+      });
       const timer = setTimeout(() => child.kill("SIGTERM"), Math.max(1000, deadline - Date.now()));
       child.on("error", () => done(null));
       child.on("close", (exit) => {
@@ -186,7 +191,7 @@ export class Runner {
       this.build.log({ step: step.id, ended: true, ok: false, ownTools: own });
       return { ok: false, reason: `the agent's CLI offered tools of its own: ${own.slice(0, 5).join(", ")}` };
     }
-    const result = outcome(this.options.standIn ? "stand-in" : request.provider, lines, code);
+    const result = outcome(this.options.standIn ? "stand-in" : request.provider, lines, code, stderr);
     if (Date.now() >= deadline) return { ok: false, reason: "the build took longer than it may" };
     this.spent += result.spent ?? 0;
     this.build.log({ step: step.id, ended: true, ok: result.ok, reason: result.reason, spent: result.spent, turns: result.turns });
@@ -197,22 +202,32 @@ export class Runner {
     const request = this.build.request();
     this.build.setStatus({ build: request.build, id: request.id, version: request.version, phase: request.phase, state: "running", steps: [], started: now(), at: now() });
     if (!/^local\.[a-z0-9][a-z0-9-]*$/.test(request.id)) return this.fail("an app the agent builds has an id that starts with local.");
-    // A plan signs in the first time the builder runs (ADR-040): a build
-    // without its sign-in waits for it, and starts again once it's there.
     if (request.path === "plan" && !this.options.standIn) {
       const signed = await signedIn(request.provider, { home: this.options.home ?? process.env.HOME ?? "/var/lib/agentv/builder", proxy: this.options.proxy });
       if (signed === null) return this.fail(`${request.provider}'s plan is coming soon: use a key for it`);
-      if (!signed) {
-        // Once, so a sign-in that doesn't take isn't asked for again and again.
-        if (request.signedIn) return this.fail(`the ${request.provider} plan's sign-in didn't take: try again`);
-        this.log(`${request.provider}'s plan isn't signed in yet`);
-        this.status({ state: "plan-sign-in", reason: `sign in to your ${request.provider} plan first`, step: undefined });
-        return this.build.status()!;
-      }
+      if (!signed) return this.signIn(request, false);
     }
     if (request.phase === "understand") return this.understand(request);
     if (request.phase === "plan") return this.plan(request);
     return this.walk(request);
+  }
+
+  // A plan signs in the first time the builder runs (ADR-040), and again
+  // when a step's CLI says the sign-in ran out, even if its status said it
+  // was in: the build waits for it, and the phase starts again once it's
+  // there. Once, so a sign-in that doesn't take isn't asked for again and
+  // again.
+  private signIn(request: BuildRequest, ranOut: boolean): BuildStatus {
+    if (request.signedIn) return this.fail(`the ${request.provider} plan's sign-in didn't take: try again`);
+    this.log(ranOut ? `${request.provider}'s plan's sign-in ran out` : `${request.provider}'s plan isn't signed in yet`);
+    const reason = ranOut ? `your ${request.provider} plan's sign-in ran out: it needs signing in again` : `sign in to your ${request.provider} plan first`;
+    this.status({ state: "plan-sign-in", reason, step: undefined, steps: [], ...(ranOut ? { ranOut } : {}) });
+    return this.build.status()!;
+  }
+
+  // Whether a step stopped because the plan's sign-in ran out.
+  private ranOut(request: BuildRequest, result: Outcome): boolean {
+    return request.path === "plan" && !result.ok && result.ranOut === true;
   }
 
   private async understand(request: BuildRequest): Promise<BuildStatus> {
@@ -228,6 +243,7 @@ export class Runner {
     ].join("\n");
     const result = await this.step(request, UNDERSTAND, prompt, Date.now() + 5 * 60_000);
     const understood = this.build.state().understood;
+    if (!understood && this.ranOut(request, result)) return this.signIn(request, true);
     if (!result.ok && !understood) return this.fail(result.reason ?? "the agent didn't say what it understood");
     if (!understood) return this.fail("the agent didn't say what it understood");
     this.status({ state: "confirm", step: undefined, steps: [{ id: UNDERSTAND.id, state: "done" }], understood });
@@ -255,6 +271,7 @@ export class Runner {
       .join("\n");
     const result = await this.step(request, PLAN, prompt, Date.now() + 10 * 60_000);
     const plan = this.build.state().plan;
+    if (!plan && this.ranOut(request, result)) return this.signIn(request, true);
     if (!plan) return this.fail(result.reason ?? "the agent didn't submit a plan");
     this.status({ state: "plan", step: undefined, steps: [{ id: PLAN.id, state: "done" }], plan });
     return this.build.status()!;
@@ -306,6 +323,7 @@ export class Runner {
       this.log(`step ${index + 1} of ${steps.length}: ${step.id}`);
       const result = await this.step(request, step, stepPrompt(request, recipe, step, index, steps.length, understood), deadline);
       if (!result.ok) {
+        if (this.ranOut(request, result)) return this.signIn(request, true);
         say(index, "failed");
         return this.fail(`${step.id}: ${result.reason ?? "it didn't finish"}`);
       }
