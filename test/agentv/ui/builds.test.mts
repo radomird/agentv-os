@@ -462,6 +462,63 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
   }
 });
 
+test("ADR-040 a plan whose sign-in ran out asks for it again on the TV and the phone, and says it ran out", async () => {
+  const tools = mkdtempSync(join(tmpdir(), "agentv-builds-ui-"));
+  writeFileSync(join(tools, "qrencode"), `#!/bin/bash\necho '<svg xmlns="http://www.w3.org/2000/svg" width="21" height="21"><rect width="21" height="21"/></svg>'\n`);
+  chmodSync(join(tools, "qrencode"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${tools}:${path}`;
+  try {
+    const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
+    assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
+    const accepted = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/terms`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${phoneToken}`, "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "claude", path: "plan" }),
+    });
+    assert.equal(accepted.status, 200);
+    const asked = (await send("POST", "/api/builds", { sentence: "a clock for the kitchen" })).build;
+    assert.equal(drop("start").path, "plan");
+    // Claude Code's status said it was signed in, and its first step said
+    // the sign-in ran out: the daemon asks root for a sign-in by itself.
+    status(asked.id, asked.build, { state: "plan-sign-in", ranOut: true, reason: "your claude plan's sign-in ran out: it needs signing in again" });
+    const signIn = join(state, "build-drop", "sign-in.json");
+    for (let i = 0; i < 100 && !existsSync(signIn); i++) await new Promise((done) => setTimeout(done, 100));
+    assert.deepEqual(drop("sign-in"), { build: asked.build, provider: "claude" });
+    rmSync(signIn);
+    const link = "https://claude.ai/oauth/authorize?code=true&client_id=stand-in&state=again";
+    const run = join(state, "..", "build-run", "sign-in");
+    mkdirSync(run, { recursive: true });
+    writeFileSync(join(run, "status.json"), JSON.stringify({ provider: "claude", state: "waiting", url: link, pastes: true, at: new Date(Date.now() + 50).toISOString() }));
+
+    const page = await tv();
+    await go(page, `build/${asked.build}`);
+    await page.waitForSelector('.build-page[data-state="plan-sign-in"] .build-qr img', { timeout: 10_000 });
+    const tvSays = await page$(page);
+    assert.match(tvSays, /sign in to your claude plan again\./);
+    assert.match(tvSays, /your agent's sign-in to it ran out, so you sign in again\./);
+    assert.doesNotMatch(tvSays, /you sign in once/);
+
+    const hand = await phone();
+    await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
+    assert.match(await hand.locator('[data-action="plan-sign-in"]').innerText(), /sign in to your claude plan again ›/);
+    await hand.locator('[data-action="plan-sign-in"]').tap();
+    await hand.waitForSelector('[data-action="open-sign-in"]');
+    assert.equal(await hand.locator('[data-action="open-sign-in"]').getAttribute("href"), link);
+    const phoneSays = await hand.locator(".page.build-approve").innerText();
+    assert.match(phoneSays, /sign in to your claude plan again/);
+    assert.match(phoneSays, /your agent's sign-in to it ran out, so you sign in again\./);
+    assert.doesNotMatch(phoneSays, /you sign in once/);
+
+    await send("POST", `/api/builds/${asked.build}/forget`, {}, grant);
+    await hand.close();
+    await page.close();
+  } finally {
+    process.env.PATH = path;
+    rmSync(tools, { recursive: true, force: true });
+  }
+});
+
 test("ADR-011 a streaming service's app learns the rest after the sign-in, and a stage B that failed offers removing the app, not the build", async () => {
   const asked = (await send("POST", "/api/builds", { sentence: "add stand-in" })).build;
   assert.ok(asked, "a new build starts");

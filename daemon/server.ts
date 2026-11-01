@@ -825,6 +825,7 @@ export class Daemon {
         state: b.state,
         phase: b.phase,
         ...(b.signIn ? { signIn: b.signIn.state } : {}),
+        ...(b.ranOut ? { ranOut: true } : {}),
         done: b.steps.filter((step) => step.state === "done").length,
         steps: b.steps.length,
         ...(b.reason ? { reason: b.reason } : {}),

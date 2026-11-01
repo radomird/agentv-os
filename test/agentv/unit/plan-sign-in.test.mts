@@ -5,15 +5,17 @@
 // for it; root starts it and hands over the phone's code
 // (builder/sandbox/hand-over.ts); and the daemon asks for it and starts the
 // build again once it's in (daemon/builds.ts). The plan's tokens stay in the
-// CLI's own files.
+// CLI's own files. A plan whose sign-in ran out, which its CLI's status can
+// still call signed in, is asked to sign in again the same way, once.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { Build, type BuildRequest } from "../../../builder/build.ts";
+import { outcome } from "../../../builder/providers.ts";
 import { Runner } from "../../../builder/run.ts";
 import { HandOver } from "../../../builder/sandbox/hand-over.ts";
 import { signedIn, signIn, type SignInStatus } from "../../../builder/sign-in.ts";
@@ -286,6 +288,113 @@ test("ADR-040 a build on a plan that isn't signed in waits for the sign-in, once
   assert.match((await run(build({ provider: "muse" }))).reason!, /muse's plan is coming soon: use a key/);
 });
 
+// --- A sign-in that ran out --------------------------------------------------
+
+// As the Mac's Claude Code 2.1.302 said on 2026-10-30, to every claude -p,
+// while claude auth status said it was signed in with "claude.ai".
+const RAN_OUT = JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", terminal_reason: "api_error" });
+const INIT = JSON.stringify({ type: "system", subtype: "init", tools: ["mcp__agentv__understood"] });
+
+test("ADR-040 a step whose CLI says the plan's sign-in ran out says so, in each CLI's own words", () => {
+  const ranOut = (...args: Parameters<typeof outcome>) => {
+    const o = outcome(...args);
+    return o.ok ? "ok" : o.ranOut === true;
+  };
+  // Claude Code, as recorded, and its words for a sign-in revoked or gone.
+  assert.equal(ranOut("claude", [INIT, RAN_OUT], 1), true);
+  assert.equal(outcome("claude", [INIT, RAN_OUT], 1).reason, "Failed to authenticate: OAuth session expired and could not be refreshed");
+  const claude = (result: string) => JSON.stringify({ type: "result", subtype: "success", is_error: true, result });
+  assert.equal(ranOut("claude", [claude("OAuth token revoked · Please run /login")], 1), true);
+  assert.equal(ranOut("claude", [claude("Not logged in · Please run /login")], 1), true);
+  // Codex 0.141's, in its own error events.
+  const codex = (message: string) => JSON.stringify({ type: "turn.failed", error: { message } });
+  assert.equal(ranOut("chatgpt", [codex("Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.")], 1), true);
+  assert.equal(ranOut("chatgpt", [JSON.stringify({ type: "error", message: "Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again." })], 1), true);
+  // Grok Build's, from its own source: in its result, in an error line, or,
+  // headless with no sign-in it can use, on its way out.
+  assert.equal(ranOut("grok", [JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, errors: ["Your session has expired. Run `grok login` to sign in again."] })], 1), true);
+  assert.equal(ranOut("grok", [JSON.stringify({ type: "error", message: "Authentication could not be refreshed. Run `grok login` to sign in again." })], 1), true);
+  assert.equal(ranOut("grok", [], 1, "Error: Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n"), true);
+
+  // Not a refresh that failed only this once, which signing in again
+  // wouldn't help, nor anything else that stopped a step.
+  assert.equal(ranOut("claude", [claude("Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. This is usually transient; retry in a moment.")], 1), false);
+  assert.equal(ranOut("claude", [], 1, "OAuth access token could not be refreshed: the disk that holds the Claude Code config directory is full\n"), false);
+  assert.equal(ranOut("grok", [JSON.stringify({ type: "error", message: "auth refresh failed: lock timeout" })], 1), false);
+  assert.equal(ranOut("chatgpt", [JSON.stringify({ type: "error", message: "MCP server agentv: streamable HTTP session expired with 404 Not Found" })], 1), false);
+  assert.equal(ranOut("claude", [JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true })], 1), false);
+  // And never the agent's own words on a step that went well.
+  assert.equal(ranOut("claude", [JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Done. The app says your session has expired when the OAuth session expired." })], 0, "Login expired"), "ok");
+});
+
+test("ADR-040 a build whose plan says it's signed in but whose sign-in ran out asks for the sign-in again, once, rather than failing its first step", async () => {
+  // claude auth status says claude.ai, and every claude -p says it ran out.
+  const h = home("claude", `#!/bin/bash
+if [[ $1 == auth && $2 == status ]]; then echo '{"loggedIn": true, "authMethod": "claude.ai"}'; exit 0; fi
+echo '${INIT}'
+echo '${RAN_OUT}'
+exit 1
+`);
+  const run = (b: Build) => new Runner(b.dir, { root: ROOT, home: h, log: () => {} }).run();
+  assert.equal(await signedIn("claude", { home: h }), true, "its status says it's in");
+  const waits = await run(build());
+  assert.deepEqual([waits.state, waits.reason, waits.ranOut, waits.steps, waits.step], ["plan-sign-in", "your claude plan's sign-in ran out: it needs signing in again", true, [], undefined]);
+  // After the sign-in, the build starts again once. If its CLI still says
+  // it ran out, the build fails, so a sign-in that doesn't take can't loop.
+  const again = await run(build({ signedIn: true }));
+  assert.deepEqual([again.state, again.reason], ["failed", "the claude plan's sign-in didn't take: try again"]);
+  // With a key, the same words fail the step: there's no plan to sign in.
+  const key = await run(build({ path: "key" }));
+  assert.deepEqual([key.state, key.reason], ["failed", "Failed to authenticate: OAuth session expired and could not be refreshed"]);
+});
+
+test("ADR-040 a sign-in that runs out halfway through a build asks for it again, and the build starts over once it's back", async () => {
+  // The Blocks recording, its second step ending as the sign-in ran out.
+  const recorded = join(ROOT, "test/agentv/fixtures/builds/blocks");
+  const copy = join(scratch, `recording${++count}`);
+  cpSync(recorded, copy, { recursive: true });
+  const base = JSON.parse(readFileSync(join(recorded, "recording.json"), "utf8"));
+  writeFileSync(join(copy, "recording.json"), JSON.stringify({ steps: { ...base.steps, packages: { fail: "Failed to authenticate: OAuth session expired and could not be refreshed" } } }));
+  const run = (b: Build) => new Runner(b.dir, { root: ROOT, home: join(scratch, "nohome"), standIn: join(copy, "recording.json"), log: () => {} }).run();
+  const blocks = { phase: "build", recipe: "game", name: "Blocks" } as const;
+
+  const b = build(blocks);
+  const waits = await run(b);
+  assert.deepEqual([waits.state, waits.ranOut, waits.steps], ["plan-sign-in", true, []]);
+  const log = readFileSync(join(b.dir, "log.jsonl"), "utf8");
+  assert.match(log, /"step":"design","ended":true,"ok":true/, "the step before it went as it should");
+  assert.doesNotMatch(log, /"failed"/, "the build didn't fail");
+
+  const again = await run(build({ ...blocks, signedIn: true }));
+  assert.deepEqual([again.state, again.reason], ["failed", "the claude plan's sign-in didn't take: try again"]);
+  const key = await run(build({ ...blocks, path: "key" }));
+  assert.deepEqual([key.state, key.reason], ["failed", "packages: the agent stopped with an error"]);
+});
+
+test("ADR-040 a sign-in AgenTV ended isn't done because the CLI's status still says it's in", async () => {
+  // A plan whose sign-in ran out: its status says claude.ai all along, and
+  // its login waits for a code that never comes.
+  const h = home("claude", `#!/bin/bash
+if [[ $1 == auth && $2 == status ]]; then echo '{"loggedIn": true, "authMethod": "claude.ai"}'; exit 0; fi
+printf 'https://claude.ai/oauth/authorize?code=true&state=again\\n\\nPaste code here if prompted > '
+read -r code
+exit 1
+`);
+  // Its terminal isn't what this is about: a stand-in script runs the CLI as
+  // it is, on any machine.
+  writeFileSync(join(h, ".local/bin/script"), '#!/bin/sh\nexec sh -c "$2" 2>/dev/null\n');
+  chmodSync(join(h, ".local/bin/script"), 0o755);
+  const folder = join(scratch, `again${count}`);
+  mkdirSync(folder);
+  const slow = await signIn("claude", { home: h, folder, minutes: 0.01, log: () => {} });
+  assert.deepEqual([slow.state, slow.reason], ["failed", "it took longer than 0.01 minutes"]);
+  const stop = new AbortController();
+  const stopped = signIn("claude", { home: h, folder, minutes: 1, stop: stop.signal, log: () => {} });
+  await until(() => read(folder)?.state === "waiting");
+  stop.abort();
+  assert.deepEqual([(await stopped).state, read(folder)!.reason], ["failed", "it was stopped"]);
+});
+
 // --- Root starts it, and hands over the code --------------------------------
 
 function handOver(running = false) {
@@ -424,4 +533,27 @@ test("a sign-in that didn't finish, or a stop, fails the build, which tries agai
   said({ state: "waiting", url: "https://claude.ai/x", at: "2026-10-27T18:22:00Z" });
   writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "stop", build: null, started: false, reason: "stopped", at: "2026-10-27T18:23:00Z" }));
   assert.deepEqual([(await builds.find(made.build))!.state, (await builds.find(made.build))!.reason], ["failed", "couldn't sign in to the plan: you stopped it"]);
+});
+
+test("ADR-040 a plan whose sign-in ran out gets a sign-in of its own, not the one before, and the TV and phone hear it's one again", async () => {
+  const { o, builds, take, status, said } = box();
+  const made = (await builds.ask("a game like tetris", { provider: "claude", path: "plan" })).build!;
+  take("start");
+  // The first sign-in finished long ago, and root's last word was on it.
+  said({ state: "done", at: "2026-10-27T09:00:00Z" });
+  writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "sign-in", build: made.build, started: true, at: "2026-10-27T08:59:00Z" }));
+  status(made.id, { build: made.build, state: "plan-sign-in", ranOut: true, reason: "your claude plan's sign-in ran out: it needs signing in again", at: "2026-10-27T18:01:00Z" });
+  const view = (await builds.find(made.build))!;
+  assert.deepEqual([view.state, view.ranOut, view.signIn], ["plan-sign-in", true, undefined]);
+  assert.equal(await builds.tend(), true);
+  assert.deepEqual(take("sign-in"), { build: made.build, provider: "claude" }, "a new sign-in, not the old one's done");
+  assert.equal(take("start"), null, "and no start before it's in");
+
+  said({ state: "done", at: "2026-10-27T18:05:00Z" });
+  assert.equal(await builds.tend(), true);
+  const again = take("start");
+  assert.deepEqual([again.phase, again.signedIn], ["understand", true]);
+  // A first sign-in isn't one again.
+  status(made.id, { build: made.build, state: "plan-sign-in", at: "2026-10-27T18:06:00Z" });
+  assert.equal((await builds.find(made.build))!.ranOut, undefined);
 });
