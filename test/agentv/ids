@@ -73,3 +73,6 @@ S6.7  manual    "browse the photos on my NAS" builds the same way, shows a share
 S6.8  image     a built app can't read /etc/agentv/env, other apps' data or sign-ins, or reach an origin it didn't declare, known malware is refused even with safeguards off, and the builder can't push to GitHub (layers 2 and 4, and the image layer)
 S6.9  check     a build can't skip, add or leave its recipe's steps or use a tool its step doesn't list, and a request with no recipe gets a plan an adult approves before anything is built (layer 2, with the stand-in provider replaying recorded builds through the real harness)
 S6.10 image     a setuid or setgid file the builder writes gives no one more rights, and with safeguards off an npm install script runs, inside bubblewrap (layer 2 holds the mounts and the jail; the image layer probes them from inside, as agentv-builder)
+S7.1  evals     20 phrasings for each of the four requests, across kinds and with collisions between kinds, routed at 95% or better on Claude (layer 6 on its API; layer 2 checks the set and the scorer)
+S7.2  evals     the same set on ChatGPT, Gemini, Grok and Muse, each one's score kept and none of them blocking
+S7.4  manual    with a Claude plan and no key, the same set routes through Claude Code at 95% or better, with the time per sentence recorded, under 5 s as the target (agentv selftest S7.4)
