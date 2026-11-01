@@ -312,6 +312,7 @@ jobs:
             s47="pass (layers 2 and 4: a tile moved on the phone's miniature grid moves on the TV within a second; the phone on the box's address is the image layer's)"
             s48="pass (layers 2 and 4: the phone's update notice with What's new, and Install tonight past the PIN; the night's install is the update check's, as from the TV)"
             s410="pass (layers 2 and 4: the TV's PIN pad on the phone within a second and its PIN doing what the TV asked; the keyboard, playback and the d-pad following the TV; each press shown and felt, quick taps unzoomed; real phones are the NUC's)"
+            s73="pass (layers 2 and 4: a route of none, an answer that doesn't fit the schema and a provider that doesn't answer each show i didn't get that or why on the TV and the phone, with nothing looked up or opened; Claude's own answers are layer 6's, and the spoken line comes with stage 8)"
           else
             s33="fail (layer 2: $UNIT, layer 4: $UI)"
             s36="fail (layer 2: $UNIT, layer 4: $UI)"
@@ -324,6 +325,7 @@ jobs:
             s47="fail (layer 2: $UNIT, layer 4: $UI)"
             s48="fail (layer 2: $UNIT, layer 4: $UI)"
             s410="fail (layer 2: $UNIT, layer 4: $UI)"
+            s73="fail (layer 2: $UNIT, layer 4: $UI)"
           fi
           # S3.1 here is every app in this repo; the official apps and the
           # private reference adapter run the same runner in their own repos.
@@ -334,4 +336,4 @@ jobs:
           fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
             "S2.12=$s212" "S2.13=$s213" "S2.18=$s218" "S2.19=$s219" "S3.1=$s31" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" \
-            "S4.2=$s42" "S4.7=$s47" "S4.8=$s48" "S4.10=$s410" "S6.9=$s69" >>"$GITHUB_STEP_SUMMARY"
+            "S4.2=$s42" "S4.7=$s47" "S4.8=$s48" "S4.10=$s410" "S6.9=$s69" "S7.3=$s73" >>"$GITHUB_STEP_SUMMARY"

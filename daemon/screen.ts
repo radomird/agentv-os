@@ -61,7 +61,10 @@ import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
+import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput } from "./remote.ts";
+import type { SayAnswer, SayAsk } from "./say.ts";
+import { answerSay, sayHosts } from "./say-watch.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
@@ -994,6 +997,27 @@ export class Screen {
     const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
     return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
+  }
+
+  // What a sentence said to the TV opens (daemon/say.ts): an app the way
+  // its tile opens it, at an item where there is one, or Music's own page
+  // once it plays.
+  sayOpen(app: string, item?: Item): Promise<{ ok?: boolean; error?: string }> {
+    if (app === MUSIC) return this.goHome("music", "a sentence") as Promise<{ ok?: boolean; error?: string }>;
+    return this.fromHome({ cmd: "open-app", app, ...(item ? { item } : {}) }, true) as Promise<{ ok?: boolean; error?: string }>;
+  }
+
+  // A sentence's outcome over the app in front, as a toast. With home in
+  // front, the launcher shows it itself.
+  async sayTell(text: string): Promise<{ ok?: boolean; error?: string }> {
+    if (!this.front()) return { ok: true };
+    return (await this.toast(text)) as { ok?: boolean; error?: string };
+  }
+
+  // A web app's page while it's open behind home, so its search can use it.
+  pageFor(id: string): PageBroker | undefined {
+    const entry = this.opens.find((o) => o.id === id && o.target);
+    return entry ? this.pageOf(entry) : undefined;
   }
 
   // A page app (ADR-043): home in front, then its frame there.
@@ -2523,6 +2547,15 @@ async function main(): Promise<void> {
     path: "api/themes/ask",
     what: "made themes",
     handle: (ask) => answerTheme(ask, screen),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // A sentence said to the TV (ADR-023): X looked up in the apps who's
+  // watching can open, and what was chosen opened, as the person.
+  new AskWatch<SayAsk, SayAnswer>({
+    url: HOME_URL,
+    path: "api/say/ask",
+    what: "a sentence",
+    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the
