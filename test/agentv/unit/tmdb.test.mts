@@ -194,6 +194,17 @@ test("the household's services are the streaming apps on the box, each with what
   ]);
 });
 
+test("with a key just kept, the daemon waits for the router's service to have it, which root starts again", async () => {
+  let asks = 0;
+  const { n } = news({ get: async () => (++asks < 3 ? { ok: false, error: "there's no tmdb key on the box" } : { ok: true, status: 200, data: {} }) });
+  assert.equal(await n.ready(5000), true);
+  assert.equal(asks, 3);
+  const { n: never } = news({ get: async () => ({ ok: false, error: "the router isn't running" }) });
+  assert.equal(await never.ready(300), false, "and stops waiting after a while");
+  const { n: other } = news({ get: async () => ({ ok: false, status: 401, error: "tmdb didn't take the key" }) });
+  assert.equal(await other.ready(300), true, "TMDB refusing the key is an answer, not a wait");
+});
+
 // --- What's new (S8.1) -----------------------------------------------------------------
 
 test("S8.1 what's new is the last 7 days on the household's services: digital releases, premieres, new shows and new seasons", async () => {

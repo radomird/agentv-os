@@ -2954,7 +2954,11 @@ export class Daemon {
         this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
         return;
       }
-      this.log(this.tmdbKey.status().set ? "a tmdb key is kept, root's alone" : "the tmdb key is off");
+      const kept = this.tmdbKey.status().set;
+      this.log(kept ? "a tmdb key is kept, root's alone" : "the tmdb key is off");
+      // Root starts the router's service again with the key: Settings shows
+      // the services once it has it.
+      if (kept) await this.news.ready();
       this.broadcast("whats-new", {});
       this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
       return;

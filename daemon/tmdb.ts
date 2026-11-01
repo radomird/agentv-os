@@ -307,6 +307,19 @@ export class News {
     return { ok: true, list };
   }
 
+  // Whether the router's service has the key yet: root starts it again
+  // just after keeping one, so a moment can pass before it does.
+  async ready(timeoutMs = 8000): Promise<boolean> {
+    const until = Date.now() + timeoutMs;
+    for (;;) {
+      const asked = await this.o.get("/configuration");
+      const waiting = !asked.ok && (asked.error === "there's no tmdb key on the box" || asked.error === "the router isn't running");
+      if (!waiting) return true;
+      if (Date.now() > until) return false;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
   // The household's services: each streaming app on the box, with the
   // services TMDB lists for the region by its name.
   async services(region: string): Promise<{ ok: boolean; services: Service[]; error?: string }> {
