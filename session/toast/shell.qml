@@ -25,6 +25,14 @@
 // keyboard, so typing goes to the page. The screen daemon shows and hides it:
 //   qs ipc -n -p /usr/share/agentv/session/toast call -- signin show "Jellyfin"
 //   qs ipc -n -p /usr/share/agentv/session/toast call -- signin hide
+//
+// And the listening bar (ADR-054), along the bottom over the app in front,
+// while someone talks to the TV from their phone: listening, the words as
+// the phone's dictation fills them in, thinking, then what came of it. It
+// moves to say it's listening, calmly and with opacity only, and stands
+// still with reduce motion. It never takes the keyboard or the mouse.
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- listen show <state> <words> <background> <foreground> <accent> <still>
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- listen hide
 
 import QtQuick
 import Quickshell
@@ -39,6 +47,13 @@ ShellRoot {
   property bool appInFront: false
   property bool cornerOpen: false
   property string signingIn: ""
+  property bool listenUp: false
+  property string listenState: ""
+  property string listenWords: ""
+  property string listenBackground: "#1a1b26"
+  property string listenForeground: "#a9b1d6"
+  property string listenAccent: "#7aa2f7"
+  property bool listenStill: false
 
   Timer {
     id: hideTimer
@@ -93,6 +108,38 @@ ShellRoot {
       root.signingIn = ""
       return "ok"
     }
+  }
+
+  IpcHandler {
+    target: "listen"
+
+    function show(state: string, words: string, background: string, foreground: string, accent: string, still: string): string {
+      root.listenState = state
+      root.listenWords = words
+      root.listenBackground = background
+      root.listenForeground = foreground
+      root.listenAccent = accent
+      root.listenStill = still === "true"
+      root.listenUp = true
+      // What came of it stays a moment, then goes.
+      if (state === "said")
+        listenDone.restart()
+      else
+        listenDone.stop()
+      return "ok"
+    }
+
+    // The bar fades as it is, and its words go once it's gone.
+    function hide(): string {
+      root.listenUp = false
+      return "ok"
+    }
+  }
+
+  Timer {
+    id: listenDone
+    interval: 6000
+    onTriggered: root.listenUp = false
   }
 
   Process {
@@ -357,6 +404,101 @@ ShellRoot {
         color: "#a9b1d6"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 24
+      }
+    }
+  }
+  PanelWindow {
+    visible: root.listenUp || listenBar.opacity > 0
+    anchors {
+      left: true
+      right: true
+      bottom: true
+    }
+    // The TV's 5% safe area at the bottom.
+    margins {
+      left: 96
+      right: 96
+      bottom: 54
+    }
+    implicitHeight: 112
+    color: "transparent"
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "agentv-listening"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    mask: Region {}
+
+    // It fades in and out as home's does, at the base speed (ADR-024).
+    Rectangle {
+      id: listenBar
+      anchors.fill: parent
+      color: root.listenBackground
+      border.color: root.listenAccent
+      border.width: 2
+      opacity: root.listenUp ? 1 : 0
+      onOpacityChanged: if (opacity === 0) {
+        root.listenState = ""
+        root.listenWords = ""
+      }
+
+      Behavior on opacity {
+        NumberAnimation { duration: 200; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.2, 0.8, 0.2, 1, 1, 1] }
+      }
+
+      // Three squares that brighten in turn while it listens or thinks.
+      Row {
+        id: dots
+        anchors.left: parent.left
+        anchors.leftMargin: 36
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 12
+        visible: root.listenState !== "said"
+
+        Repeater {
+          model: 3
+
+          Rectangle {
+            required property int index
+            width: 16
+            height: 16
+            color: root.listenAccent
+            opacity: root.listenStill ? 1 : 0.35
+
+            SequentialAnimation on opacity {
+              running: !root.listenStill && root.listenUp && root.listenState !== "said"
+              loops: Animation.Infinite
+              PauseAnimation { duration: index * 320 }
+              NumberAnimation { to: 1; duration: 480; easing.type: Easing.InOutSine }
+              NumberAnimation { to: 0.35; duration: 480; easing.type: Easing.InOutSine }
+              PauseAnimation { duration: (2 - index) * 320 }
+            }
+          }
+        }
+      }
+
+      Text {
+        anchors.left: dots.visible ? dots.right : parent.left
+        anchors.leftMargin: 36
+        anchors.right: says.left
+        anchors.rightMargin: 36
+        anchors.verticalCenter: parent.verticalCenter
+        elide: Text.ElideLeft
+        text: root.listenWords !== "" ? root.listenWords.toLowerCase() : "listening"
+        color: root.listenForeground
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 36
+      }
+
+      // "thinking", once the sentence is sent.
+      Text {
+        id: says
+        anchors.right: parent.right
+        anchors.rightMargin: 36
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.listenState === "thinking" ? "thinking" : ""
+        color: root.listenAccent
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 28
       }
     }
   }

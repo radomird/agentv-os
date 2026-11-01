@@ -28,6 +28,7 @@ import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
@@ -566,6 +567,8 @@ function act(action: Action): void {
     } else if (action === "back") noticeEl.querySelector<HTMLElement>('[data-action="share-later"]')?.click();
     return;
   }
+  // The listening bar (ADR-054): Back takes it away first.
+  if (listeningAct(action)) return;
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -745,6 +748,8 @@ async function start(): Promise<void> {
     // A sentence said to the TV (ADR-023): what was heard, then what came
     // of it, or up to three to choose from.
     said: (data) => saidHeard(data as Said | null),
+    // The phone's box opened, its words came, or it closed (ADR-054).
+    listening: (data) => listeningHeard(data as Heard),
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },

@@ -22,7 +22,15 @@ import { cleanSentence, type Route, type Routed, type RouterApp } from "./router
 // What the daemon asks of the screen daemon for a sentence: X looked up,
 // what was chosen opened, or a line shown over the app in front, since
 // home's own page shows it only while home is in front.
-export type SayAsk = { kind: "search"; query: string; apps: string[]; viewer: Viewer } | { kind: "open"; app: string; item?: Item } | { kind: "tell"; text: string };
+// And the listening bar over the app in front (ADR-054), as the phone's
+// box opens, its words come, the sentence is thought about and what came
+// of it, or it goes away.
+export type LiveState = "open" | "words" | "closed" | "thinking" | "said";
+export type SayAsk =
+  | { kind: "search"; query: string; apps: string[]; viewer: Viewer }
+  | { kind: "open"; app: string; item?: Item }
+  | { kind: "tell"; text: string }
+  | { kind: "live"; state: LiveState; text: string };
 
 export interface SayAnswer {
   ok: boolean;
@@ -83,6 +91,10 @@ export interface SayOptions {
   rows: (viewer: string) => WatchRow[];
   ask: (ask: SayAsk, ms: number) => Promise<SayAnswer>;
   changed: (said: Said | null) => void; // null: put away
+  // The listening bar (ADR-054): whether one was up for this sentence,
+  // which what came of it then takes over, whether a new box has it now,
+  // and the bar over an app.
+  bar?: { sent: () => boolean; listening: () => boolean; show: (state: "thinking" | "said", text: string) => void };
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -97,6 +109,8 @@ export class Say {
   private next = 1;
   // The newest sentence, as it stands.
   current: Said | null = null;
+  // The sentences the listening bar took over, by number.
+  private barred = new Set<number>();
 
   constructor(options: SayOptions) {
     this.o = options;
@@ -127,6 +141,10 @@ export class Say {
     const viewer = await this.o.viewer();
     const said: Said = { n: this.next++, sentence: cleanSentence(sentence), from, viewer: viewer.id, state: "routing", at: this.now() };
     this.current = said;
+    if (this.o.bar?.sent()) {
+      this.barred.add(said.n);
+      this.o.bar.show("thinking", said.sentence);
+    }
     this.show(said);
     const apps = await this.o.apps(viewer);
     // The apps that play something; Clock and Weather open from home.
@@ -147,12 +165,19 @@ export class Say {
     return said;
   }
 
-  // What came of it, over the app in front. An app that opened says so by
-  // being there.
+  // What came of it, over the app in front: on the listening bar when it
+  // was up, or else as a toast. An app that opened says so by being there,
+  // unless the bar was waiting to say it. A box opened again since has the
+  // bar for its own words.
   private tell(said: Said): void {
     const outcome = said.outcome;
-    if (!outcome || outcome.kind === "opened" || this.current?.n !== said.n) return;
+    if (!outcome || this.current?.n !== said.n) return;
     const text = outcome.kind === "choose" ? "which one? your phone has them" : outcome.say;
+    if (this.barred.delete(said.n) && !this.o.bar?.listening()) {
+      this.o.bar?.show("said", text);
+      return;
+    }
+    if (outcome.kind === "opened") return;
     void this.o.ask({ kind: "tell", text }, 5000);
   }
 

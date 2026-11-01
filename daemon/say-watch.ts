@@ -9,11 +9,12 @@ import type { Item } from "../apps/contract/contract.ts";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { MUSIC } from "./music.ts";
-import type { SayAnswer, SayAsk } from "./say.ts";
+import type { LiveState, SayAnswer, SayAsk } from "./say.ts";
 
 export interface SayScreen {
   open(app: string, item?: Item): Promise<{ ok?: boolean; error?: string }>;
   tell(text: string): Promise<{ ok?: boolean; error?: string }>;
+  live(state: LiveState, text: string): Promise<{ ok?: boolean; error?: string }>;
   page(app: string): PageBroker | undefined;
 }
 
@@ -54,6 +55,10 @@ async function searchOne(app: string, ask: Extract<SayAsk, { kind: "search" }>, 
 }
 
 export async function answerSay(ask: SayAsk, deps: SayDeps): Promise<SayAnswer> {
+  if (ask.kind === "live") {
+    const shown = await deps.screen.live(ask.state, ask.text.slice(0, 300));
+    return { ok: shown.ok === true, ...(shown.error ? { error: shown.error } : {}) };
+  }
   if (ask.kind === "tell") {
     const told = await deps.screen.tell(ask.text.slice(0, 200));
     return { ok: told.ok === true, ...(told.error ? { error: told.error } : {}) };

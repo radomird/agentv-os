@@ -78,6 +78,8 @@ export interface BoxOptions {
   art?: { endpoints: Record<"met" | "aic" | "commons", string>; imageHosts: string[] };
   // A stand-in router, for what's said to the TV (ADR-023).
   router?: ConstructorParameters<typeof Daemon>[0]["router"];
+  // How long the listening bar waits for new words (ADR-054).
+  listenIdleMs?: number;
 }
 
 // AgenTV's built-ins, with the weather pointed at the test's own server.
@@ -228,6 +230,7 @@ export async function startBox(
     interfaces: options.interfaces as never,
     keyStatus,
     router: options.router,
+    listenIdleMs: options.listenIdleMs,
     // The channel, as agentv channel keeps it: none, so stable, until a test
     // puts the box on edge (ADR-053).
     channelFile: join(state, "..", "channel"),

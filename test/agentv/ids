@@ -77,3 +77,4 @@ S7.1  evals     20 phrasings for each of the four requests, across kinds and wit
 S7.2  evals     the same set on ChatGPT, Gemini, Grok and Muse, each one's score kept and none of them blocking
 S7.3  check     a sentence the router can't route is "i didn't get that" on the TV and the phone, never a guessed action (layers 2 and 4; layer 6 holds Claude to none for each of the set's 20; spoken once stage 8 has a voice)
 S7.4  manual    with a Claude plan and no key, the same set routes through Claude Code at 95% or better, with the time per sentence recorded, under 5 s as the target (agentv selftest S7.4)
+S7.5  check     with a paired phone's "ask your tv" box open, a listening bar along the bottom of the TV shows the words as they arrive, then thinking and what came of it, over home and over an app, and closing the box, Back or a while with no words takes it away; the daemon keeps none of the words (ADR-054; layers 2 and 4; a real phone's dictation on the NUC)

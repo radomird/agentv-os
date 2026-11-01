@@ -54,6 +54,7 @@ import { Updates } from "./updates.ts";
 import type { Routed, RouterApp } from "./router.ts";
 import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
+import { Listening } from "./listening.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 
@@ -127,6 +128,8 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // How long the listening bar waits for new words before it goes (20 s).
+  listenIdleMs?: number;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -234,6 +237,8 @@ export class Daemon {
   readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?" } });
   // What was said to the TV, routed and done (ADR-023).
   readonly say: Say;
+  // The phone's box, open and its words, as the TV shows them (ADR-054).
+  readonly listening: Listening;
   private routing?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
   // What it asked already, by theme, build and version, so a pass that read
   // the record before the last answer came doesn't ask again.
@@ -297,7 +302,17 @@ export class Daemon {
     });
     // A sentence said to the TV: routed for who's watching, with only the
     // apps they can open, and done through the TV session.
+    // The listening bar: each change to the TV's pages and, for over an
+    // app, the TV session. Nothing of the words stays (ADR-054).
+    this.listening = new Listening({
+      idleMs: options.listenIdleMs,
+      changed: (heard) => {
+        this.toPages("listening", heard);
+        void this.sayAsks.ask({ kind: "live", state: heard.state, text: heard.text }, 3000);
+      },
+    });
     this.say = new Say({
+      bar: { sent: () => this.listening.sent(), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
       route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
       viewer: () => this.profiles.active(),
       apps: async (viewer) => {
@@ -735,8 +750,14 @@ export class Daemon {
 
   // Tells every page that's listening what changed, and the phones too.
   private broadcast(event: string, data: unknown): void {
-    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    this.toPages(event, data);
     this.phonesChanged();
+  }
+
+  // To the TV's own pages only, for what the phones needn't hear, such as
+  // the listening bar's words, which come from a phone (ADR-054).
+  private toPages(event: string, data: unknown): void {
+    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
   // Wakes every phone waiting for the state to change.
@@ -1210,6 +1231,18 @@ export class Daemon {
       await this.sayPick(request, response);
       return;
     }
+    // The box's words as the phone's dictation fills it in, or that it
+    // opened or closed (ADR-054). Kept nowhere: they go on to the TV.
+    if (method === "POST" && path === "/api/phone/say/live") {
+      const refused = await this.sayRefusal();
+      if (refused) {
+        this.json(response, 409, { ok: false, error: refused });
+        return;
+      }
+      const why = this.listening.change(phone.name, await this.body(request));
+      this.json(response, why ? 400 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
     if (method === "POST" && path === "/api/phone/say/dismiss") {
       this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
       return;
@@ -1667,6 +1700,8 @@ export class Daemon {
       this.log(status.locked ? "the tv is locked" : "the tv is unlocked");
       this.broadcast("pin", status);
     }
+    // A locked TV takes no words, so a listening bar goes (ADR-054).
+    if (status.locked) this.listening.close();
   }
 
   // On a child's profile, Settings and home's layout are an adult's, past the
@@ -2783,6 +2818,12 @@ export class Daemon {
     }
     if (method === "POST" && path === "/api/say/pick") {
       await this.sayPick(request, response);
+      return;
+    }
+    // Back on the TV, with the listening bar up.
+    if (method === "POST" && path === "/api/say/live/close") {
+      this.listening.close();
+      this.json(response, 200, { ok: true });
       return;
     }
     if (method === "POST" && path === "/api/say/dismiss") {

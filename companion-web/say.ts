@@ -3,6 +3,10 @@
 // what the TV made of the last one: what opened, why nothing did, or up to
 // three to choose from, which this phone can pick as the TV can. "i didn't
 // get that" means nothing happened (S7.3).
+//
+// While the box is open, the TV shows a listening bar with the words as
+// they arrive (ADR-054): the box says when it opens and closes, and sends
+// its words as they change, a fifth of a second after the last change.
 
 import { api, h } from "./lib.ts";
 
@@ -50,6 +54,14 @@ function answer(said: Said, failed: (error: unknown) => void, done: () => void):
   );
 }
 
+// The answer alone, drawn again under a box that's being filled in, so the
+// next sentence's words stay where they are.
+export function sayAnswer(said: Said | null | undefined, failed: (error: unknown) => void, done: () => void): void {
+  const box = document.querySelector(".say");
+  box?.querySelector(".said")?.remove();
+  if (box && said) box.append(answer(said, failed, done));
+}
+
 export function sayBox(said: Said | null | undefined, failed: (error: unknown) => void, done: () => void): HTMLElement {
   const field = h("input", {
     class: "field",
@@ -62,16 +74,45 @@ export function sayBox(said: Said | null | undefined, failed: (error: unknown) =
     enterkeyhint: "send",
     placeholder: "play frozen, or continue my show",
   }) as HTMLInputElement;
+  // The TV's listening bar: what the box holds, as it changes.
+  let sending = false;
+  let typed: ReturnType<typeof setTimeout> | undefined;
+  const live = (body: Record<string, unknown>) => api("POST", "/api/phone/say/live", body).catch(() => {});
+  // A quick send waits for the box's opening to reach the TV, so the bar
+  // is up for what comes of it.
+  let opened: Promise<unknown> = Promise.resolve();
+  field.addEventListener("focus", () => {
+    opened = live({ open: true });
+  });
+  field.addEventListener("input", () => {
+    clearTimeout(typed);
+    typed = setTimeout(() => void live({ text: field.value }), 200);
+  });
+  // Tapping "ask" takes the focus from the box before its press counts, so
+  // the box closes a moment after it loses the focus, unless it was sent.
+  let closing: ReturnType<typeof setTimeout> | undefined;
+  field.addEventListener("blur", () => {
+    clearTimeout(typed);
+    clearTimeout(closing);
+    closing = setTimeout(() => {
+      if (!sending) void live({ open: false });
+    }, 400);
+  });
   const go = async () => {
     const sentence = field.value.trim();
     if (!sentence) return;
+    sending = true;
+    clearTimeout(typed);
+    clearTimeout(closing);
     field.value = "";
     field.blur();
     try {
+      await opened;
       await api("POST", "/api/phone/say", { sentence });
     } catch (error) {
       failed(error);
     }
+    sending = false;
     done();
   };
   field.addEventListener("keydown", (event) => {
