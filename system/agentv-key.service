@@ -1,6 +1,7 @@
 # Moves the provider key the daemon was given into /etc/agentv/env, root's
 # alone (bin/agentv-key-store). agentv-key.path starts it. systemd makes
-# /etc/agentv if it isn't there yet, and lets only this write there.
+# /etc/agentv if it isn't there yet, and lets only this write there. Then
+# the router starts again, with the key as it is now.
 
 [Unit]
 Description=AgenTV provider key
@@ -8,6 +9,7 @@ Description=AgenTV provider key
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/agentv-key-store
+ExecStartPost=-/usr/bin/systemctl try-restart agentv-router.service
 UMask=0077
 ConfigurationDirectory=agentv
 ConfigurationDirectoryMode=0755
