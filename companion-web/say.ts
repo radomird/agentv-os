@@ -21,7 +21,7 @@ export interface Said {
   sentence: string;
   from: string;
   state: "routing" | "done";
-  outcome?: { kind: "opened"; say: string } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "none"; say: string; why: string; detail?: string };
+  outcome?: { kind: "opened"; say: string } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "told"; say: string } | { kind: "none"; say: string; why: string; detail?: string };
 }
 
 const KIND_WORDS: Record<string, string> = { film: "film", series: "show", episode: "episode", track: "song", album: "album", playlist: "playlist", "photo-album": "photos", game: "game" };

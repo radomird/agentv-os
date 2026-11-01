@@ -17,6 +17,11 @@
 // route. The daemon's group, agentv-router, is the only one that reaches
 // them. Neither logs what was said.
 //
+// The api service also holds the household's TMDB key, TMDB_API_KEY in the
+// same file, for what's new and new episodes (stage 8): POST /tmdb with a
+// path, one of the few read-only ones daemon/tmdb-api.ts lets through. It
+// logs the path, never what it asked for.
+//
 // Usage: node router-serve.ts api|cli
 
 import { chmodSync, chownSync, readFileSync, rmSync } from "node:fs";
@@ -30,12 +35,16 @@ import { Router, type Routed, type RouterApp } from "./router.ts";
 import { forward } from "../builder/sandbox/forward.ts";
 import { PLAN_HOSTS } from "../builder/sandbox/net.ts";
 import { keyFrom } from "../builder/sandbox/relay.ts";
+import { askTmdb, tmdbKeyFrom, tmdbPath, type TmdbAnswer } from "./tmdb-api.ts";
 
 const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
 // At most this many sentences a minute: a household talks slower than
 // that, and a stuck page can't spend the key.
 export const PER_MINUTE = 30;
+// And this many asks of TMDB: what's new for every app on the box takes a
+// few dozen, every few hours.
+export const TMDB_PER_MINUTE = 240;
 
 export interface RouteRequest {
   provider: Provider;
@@ -79,6 +88,8 @@ async function body(request: IncomingMessage): Promise<unknown> {
 
 export interface ServeOptions {
   route: (request: RouteRequest) => Promise<Routed>;
+  // TMDB with the household's key (stage 8), on the api service only.
+  tmdb?: (path: unknown) => Promise<TmdbAnswer>;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -87,12 +98,25 @@ export interface ServeOptions {
 export function routeServer(o: ServeOptions): Server {
   const now = o.now ?? Date.now;
   let recent: number[] = [];
+  let tmdbAsks: number[] = [];
   return createServer(async (request, response) => {
     const answer = (status: number, data: object) => {
       response.writeHead(status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(data));
     };
-    if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: "only POST /route" });
+    if (request.method === "POST" && request.url === "/tmdb" && o.tmdb) {
+      const path = ((await body(request)) as { path?: unknown } | null)?.path;
+      tmdbAsks = tmdbAsks.filter((at) => now() - at < 60_000);
+      if (tmdbAsks.length >= TMDB_PER_MINUTE) return answer(429, { ok: false, error: "too many asks of tmdb at once: try again in a minute" });
+      tmdbAsks.push(now());
+      const started = now();
+      const said = await o.tmdb(path);
+      const found = tmdbPath(path);
+      // The path's shape alone: a show's id says which show was asked about.
+      o.log?.(`tmdb ${typeof found === "string" ? "(refused)" : found.path.replace(/\d+/g, ":id")}: ${said.ok ? said.status : (said.error ?? "no answer")} in ${now() - started} ms`);
+      return answer(200, said);
+    }
+    if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: o.tmdb ? "only POST /route and /tmdb" : "only POST /route" });
     const asked = routeRequest(await body(request));
     if (typeof asked === "string") return answer(400, { ok: false, error: asked });
     recent = recent.filter((at) => now() - at < 60_000);
@@ -146,8 +170,12 @@ async function main(): Promise<void> {
     // started. agentv-key.service restarts it after a key is kept or taken
     // off, so it always has the one in /etc/agentv/env.
     const key = (provider: Provider) => (credentials ? keyFrom(readFileSync(join(credentials, "env"), "utf8"), provider) : null);
+    const tmdbKey = () => (credentials ? tmdbKeyFrom(readFileSync(join(credentials, "env"), "utf8")) : null);
     const server = routeServer({
       log,
+      // A stand-in for TMDB, for the image checks, which only a drop-in of
+      // root's can set, as for the provider's API.
+      tmdb: (path) => askTmdb(tmdbKey(), path, process.env.AGENTV_TMDB_UPSTREAM ? { base: process.env.AGENTV_TMDB_UPSTREAM } : {}),
       route: async ({ provider, sentence, apps }) => {
         const found = key(provider);
         // A stand-in for the provider's API, for the image checks, which

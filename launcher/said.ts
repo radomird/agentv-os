@@ -1,8 +1,9 @@
 // A sentence said to the TV (ADR-023), as home shows it: what was heard,
 // at once, then what came of it, as a toast. With more than one match, a
 // card over the page offers up to three to choose from, as the phone does
-// too. Back, or "none of these", puts it away. A sentence the router
-// couldn't route is "i didn't get that", and nothing else happens (S7.3).
+// too, and what's new offers its top three the same way (S8.1). Back, or
+// "none of these", puts it away. A sentence the router couldn't route is "i
+// didn't get that", and nothing else happens (S7.3).
 
 import { daemon, type Candidate, type Said } from "./api.ts";
 import { h } from "./dom.ts";
@@ -66,6 +67,14 @@ export function saidHeard(said: Said | null): void {
   const outcome = said.outcome;
   if (!outcome) return;
   if (outcome.kind === "opened") {
+    if (open) close();
+    ctx.sounds.play("confirm");
+    if (!barred) ctx.toast(outcome.say, "ok");
+    return;
+  }
+  // An answer, such as whether there's a new episode (S8.2): told, and
+  // nothing else happens.
+  if (outcome.kind === "told") {
     if (open) close();
     ctx.sounds.play("confirm");
     if (!barred) ctx.toast(outcome.say, "ok");

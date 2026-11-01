@@ -1,12 +1,14 @@
 # The provider key, handed over by AgenTV's daemon (ADR-009, S4.6): when it
 # leaves one in its private state, agentv-key.service moves it into
-# /etc/agentv/env as root.
+# /etc/agentv/env as root. The TMDB key (stage 8) comes the same way, in a
+# drop of its own.
 
 [Unit]
 Description=AgenTV provider key hand-over
 
 [Path]
 PathExists=/var/lib/private/agentv/daemon/key-drop/key.json
+PathExists=/var/lib/private/agentv/daemon/key-drop/tmdb.json
 Unit=agentv-key.service
 
 [Install]
