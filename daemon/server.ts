@@ -42,6 +42,9 @@ import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from 
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
+import { boxZone, cityOf } from "./place.ts";
+import { News, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
+import { TmdbKey } from "./tmdb-key.ts";
 import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
@@ -128,6 +131,10 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // TMDB, through the router's service, which holds the household's TMDB
+  // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
+  tmdb?: TmdbGet;
+  tmdbStatus?: string;
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
 }
@@ -205,6 +212,9 @@ function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
 }
 
+// A region, as TMDB names one: the country's two letters (ISO 3166-1).
+const REGION = /^[A-Z]{2}$/;
+
 export class Daemon {
   readonly server: Server;
   private options: DaemonOptions;
@@ -217,6 +227,9 @@ export class Daemon {
   readonly pin: Pin;
   readonly profiles: Profiles;
   readonly key: ProviderKey;
+  // The TMDB key, and what's new and new episodes from TMDB (stage 8).
+  readonly tmdbKey: TmdbKey;
+  readonly news: News;
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
@@ -329,6 +342,13 @@ export class Daemon {
           }));
       },
       rows: (viewer) => this.ledger.recent(viewer, { limit: 50 }),
+      news: (viewer, apps) => {
+        const ids = apps.map((app) => app.id);
+        return {
+          whatsNew: (only) => this.news.forViewer(viewer.role, ids, only),
+          episode: (query) => this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, ids),
+        };
+      },
       ask: (ask, ms) => this.sayAsks.ask(ask, ms),
       changed: (said) => this.broadcast("said", said),
       log: this.log,
@@ -370,6 +390,16 @@ export class Daemon {
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
+    this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
+    this.news = new News({
+      get: options.tmdb ?? tmdbViaRouter(),
+      state: options.state,
+      keySet: () => this.tmdbKey.status().set,
+      region: () => this.region(),
+      // Every app on the box but AgenTV's own.
+      apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
+      log: this.log,
+    });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
@@ -1706,6 +1736,38 @@ export class Daemon {
 
   // On a child's profile, Settings and home's layout are an adult's, past the
   // PIN (ADR-009, ADR-015).
+  // --- What's new (stage 8) ---------------------------------------------------
+
+  // The region setup chose (ADR-007): the country of the time zone Omarchy's
+  // installer set, unless Settings → what's new picked another.
+  private async region(): Promise<string | null> {
+    return (await this.whatsNewSettings()).region ?? (await this.zoneRegion());
+  }
+
+  private async zoneRegion(): Promise<string | null> {
+    return (await cityOf(await boxZone()))?.country ?? null;
+  }
+
+  private async whatsNewSettings(): Promise<{ region?: string }> {
+    const saved = await readFile(join(this.options.state, "whats-new-settings.json"), "utf8").then((text) => JSON.parse(text) as { region?: unknown }, () => ({}) as { region?: unknown });
+    return typeof saved.region === "string" && REGION.test(saved.region) ? { region: saved.region } : {};
+  }
+
+  // What Settings → what's new shows: whether there's a key, the region and
+  // the household's services, as TMDB matches the apps on the box.
+  private async whatsNewState(): Promise<object> {
+    const { error, ...key } = this.tmdbKey.status();
+    const region = await this.region();
+    const found = key.set && region ? await this.news.services(region) : null;
+    return {
+      key: { ...key, ...(error ? { error } : {}) },
+      region,
+      zoneRegion: await this.zoneRegion(),
+      picked: Boolean((await this.whatsNewSettings()).region),
+      ...(found ? { services: found.services, ...(found.ok ? {} : { error: found.error }) } : {}),
+    };
+  }
+
   private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
     if ((await this.profiles.active()).role !== "child") return true;
     return this.guarded(request, response, `${what} on a child's profile`);
@@ -2841,6 +2903,60 @@ export class Daemon {
       }
       const route = this.options.router ?? ((sentence: string, list: RouterApp[]) => this.boxRoute(sentence, list));
       this.json(response, 200, { ok: true, routed: await route(body.sentence.slice(0, 300), apps) });
+      return;
+    }
+    // What's new on the household's services, for who's watching (S8.1):
+    // only titles on the apps they can open.
+    if (method === "GET" && path === "/api/whats-new") {
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const fresh = new URL(request.url ?? "/", "http://box").searchParams.get("fresh") === "1";
+      if (fresh) await this.news.feed(viewer.role, true);
+      this.json(response, 200, { ok: true, feed: await this.news.forViewer(viewer.role, apps) });
+      return;
+    }
+    // Whether there's a new episode of a show, for who's watching, as the
+    // router's new_episode does, with nothing routed (S8.2's selftest).
+    if (method === "POST" && path === "/api/whats-new/episode") {
+      const body = (await this.body(request)) as { query?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const query = typeof body?.query === "string" ? body.query.slice(0, 120) : null;
+      this.json(response, 200, { ok: true, answer: await this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, apps) });
+      return;
+    }
+    if (method === "GET" && path === "/api/whats-new/settings") {
+      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      return;
+    }
+    // Settings → what's new: another region, or the time zone's again.
+    if (method === "PUT" && path === "/api/whats-new/settings") {
+      if (!(await this.adult(request, response, "what's new's region"))) return;
+      const body = (await this.body(request)) as { region?: unknown } | undefined;
+      if (body?.region !== null && !(typeof body?.region === "string" && REGION.test(body.region))) {
+        this.json(response, 400, { ok: false, error: "a region is two capital letters, such as NL" });
+        return;
+      }
+      await mkdir(this.options.state, { recursive: true });
+      await writeFile(join(this.options.state, "whats-new-settings.json"), `${JSON.stringify(body.region === null ? {} : { region: body.region })}\n`);
+      this.broadcast("whats-new", {});
+      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      return;
+    }
+    // The TMDB key, kept where only root can read it, or taken off. An
+    // adult's, past the PIN, as the provider key is.
+    if ((method === "PUT" || method === "DELETE") && path === "/api/tmdb-key") {
+      if (!this.guarded(request, response, "the tmdb key") || !(await this.adult(request, response, "the tmdb key"))) return;
+      const body = (method === "PUT" ? await this.body(request) : {}) as { key?: unknown } | undefined;
+      const why = await this.tmdbKey.store(method === "DELETE" ? null : (body?.key ?? ""));
+      if (why) {
+        this.log(`the tmdb key wasn't kept: ${why}`);
+        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        return;
+      }
+      this.log(this.tmdbKey.status().set ? "a tmdb key is kept, root's alone" : "the tmdb key is off");
+      this.broadcast("whats-new", {});
+      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
       return;
     }
     // A sentence's asks of the TV session: the screen daemon looks things up

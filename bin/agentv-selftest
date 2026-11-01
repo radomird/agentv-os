@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5]... [--app <id>] [--item <json>]
-# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3 | agentv selftest S7.4
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]
+# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3 | agentv selftest S7.4 | agentv selftest S8.2 --show "<a show you watch>"
 # agentv:requires-sudo=true
 
 # The acceptance checks CI can't see, run on the box itself (ADR-019, layer
@@ -85,6 +85,16 @@
 #   S7.5  the listening bar (ADR-054), watched from the couch with a real
 #         phone's dictation: it says what to try.
 #
+# Stage 8, what's new and new episodes from TMDB (S8 runs both), with a TMDB
+# key kept in Settings → what's new:
+#
+#   S8.1  what's new for who's watching, asked of TMDB afresh: titles that
+#         appeared on the household's services in the last 7 days, in the
+#         region setup chose.
+#   S8.2  whether there's a new episode of a show, with --show, or the
+#         newest show in the ledger: yes or no, with the next air date, and
+#         TMDB's dates beside it to check by eye.
+#
 # Stage 0:
 #
 #   S0.2  the root disk isn't encrypted, so there's no password at boot; the
@@ -107,16 +117,18 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5]... [--app <id>] [--item <json>]"
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]"
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 STAGE4=(S4.5 S4.6)
 STAGE7=(S7.3 S7.4 S7.5)
+STAGE8=(S8.1 S8.2)
 checks=()
 app_id=""
 app_item=""
+show=""
 while (( $# )); do
   arg=$1
   shift
@@ -133,6 +145,9 @@ while (( $# )); do
     [sS]4) checks+=("${STAGE4[@]}") ;;
     [sS]7.3 | [sS]7.4 | [sS]7.5) checks+=("S${arg:1}") ;;
     [sS]7) checks+=("${STAGE7[@]}") ;;
+    [sS]8.1 | [sS]8.2) checks+=("S${arg:1}") ;;
+    [sS]8) checks+=("${STAGE8[@]}") ;;
+    --show) show=${1:-}; shift || true; [[ -n $show && ${#show} -le 120 ]] || { usage >&2; exit 2; } ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -1256,6 +1271,55 @@ s39() {
   ts_check daemon/weather-check.ts S3.9
 }
 
+# Why what's new has nothing, as the TV says it.
+whats_new_why() {
+  case $1 in
+    no-key) echo "there's no TMDB key yet: add one in Settings → what's new, past the PIN" ;;
+    no-region) echo "there's no region yet: pick one in Settings → what's new" ;;
+    no-services) echo "TMDB lists none of this box's streaming apps for its region: Settings → what's new shows what each app matched" ;;
+    *) echo "TMDB didn't answer: ${2:-no answer}" ;;
+  esac
+}
+
+s81() {
+  local feed region count
+  feed=$(curl -sS --max-time 120 "$(home_url)api/whats-new?fresh=1" 2>/dev/null | jq -c '.feed // empty' 2>/dev/null || true)
+  if [[ -z $feed ]]; then
+    result fail S8.1 "the daemon didn't answer"
+    return 0
+  fi
+  region=$(jq -r '.region // "?"' <<<"$feed")
+  if ! jq -e '.ok' <<<"$feed" >/dev/null; then
+    result fail S8.1 "$(whats_new_why "$(jq -r '.why // ""' <<<"$feed")" "$(jq -r '.error // ""' <<<"$feed")")"
+    return 0
+  fi
+  count=$(jq '.titles | length' <<<"$feed")
+  if (( count == 0 )); then
+    result fail S8.1 "nothing appeared on $(jq -r '[.services[].name] | join(", ")' <<<"$feed") in $region from $(jq -r '.from' <<<"$feed") to $(jq -r '.to' <<<"$feed"), as TMDB has it"
+    return 0
+  fi
+  result pass S8.1 "$count titles new on $(jq -r '[.services[] | select(.providers | length > 0) | .name] | join(", ")' <<<"$feed") in $region since $(jq -r '.from' <<<"$feed"), such as $(jq -r '[.titles[:3][] | "\(.title)\(if .season then " (season \(.season))" else "" end)"] | join(", ")' <<<"$feed")"
+  result manual S8.1 "one of those is something you know came out this week on one of your services. On the phone, ask your tv \"what's new\": the TV says the top three and offers them, and choosing one plays it in its app"
+}
+
+s82() {
+  local body answer
+  body=$(jq -cn --arg show "$show" 'if $show == "" then {} else {query: $show} end')
+  answer=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d "$body" "$(home_url)api/whats-new/episode" 2>/dev/null | jq -c '.answer // empty' 2>/dev/null || true)
+  if [[ -z $answer ]]; then
+    result fail S8.2 "the daemon didn't answer"
+  elif ! jq -e '.ok' <<<"$answer" >/dev/null; then
+    case $(jq -r '.why // ""' <<<"$answer") in
+      no-key | no-region) result fail S8.2 "$(whats_new_why "$(jq -r '.why' <<<"$answer")")" ;;
+      which) result manual S8.2 "there's no show in this profile's ledger yet: watch an episode of one from the TV, or run agentv selftest S8.2 --show \"<its name>\"" ;;
+      *) result fail S8.2 "$(jq -r '.say' <<<"$answer")$(jq -r 'if .error then ": \(.error)" else "" end' <<<"$answer")" ;;
+    esac
+  else
+    result pass S8.2 "$(jq -r '.say' <<<"$answer")"
+    result manual S8.2 "TMDB has $(jq -r '.show' <<<"$answer")'s newest out as $(jq -r 'if .latest then "s\(.latest.season) e\(.latest.episode) on \(.latest.date)" else "none yet" end' <<<"$answer"), and the next as $(jq -r 'if .next then "s\(.next.season) e\(.next.episode) on \(.next.date)" elif .ended then "none: it has ended" else "not dated yet" end' <<<"$answer"). Check that against the show's own page, and that yes or no is right for what this profile has watched"
+  fi
+}
+
 echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 "$AGENTV_BIN_DIR/agentv-version" 2>/dev/null || true
 echo
@@ -1289,6 +1353,8 @@ for id in "${checks[@]}"; do
     S7.3) s73 ;;
     S7.4) s74 ;;
     S7.5) s75 ;;
+    S8.1) s81 ;;
+    S8.2) s82 ;;
   esac
 done
 

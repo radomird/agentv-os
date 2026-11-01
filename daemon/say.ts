@@ -14,10 +14,11 @@
 
 import type { Item } from "../apps/contract/contract.ts";
 import type { Viewer } from "./apps/loader.ts";
-import { execute, type ExecApp, type Opened, type Outcome } from "./executors/index.ts";
+import { execute, run, type ExecApp, type ExecContext, type ExecNews, type Opened, type Outcome } from "./executors/index.ts";
 import type { Found } from "./executors/play.ts";
+import { fromWhatsNew } from "./executors/whatsNew.ts";
 import type { WatchRow } from "./ledger.ts";
-import { cleanSentence, type Route, type Routed, type RouterApp } from "./router.ts";
+import { cleanSentence, NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 
 // What the daemon asks of the screen daemon for a sentence: X looked up,
 // what was chosen opened, or a line shown over the app in front, since
@@ -89,6 +90,9 @@ export interface SayOptions {
   viewer: () => Promise<Viewer & { name: string }>;
   apps: (viewer: Viewer) => Promise<ExecApp[]>;
   rows: (viewer: string) => WatchRow[];
+  // What's new and a show's air dates, from TMDB, for who's watching and the
+  // apps they can open (stage 8).
+  news?: (viewer: Viewer, apps: ExecApp[]) => ExecNews;
   ask: (ask: SayAsk, ms: number) => Promise<SayAnswer>;
   changed: (said: Said | null) => void; // null: put away
   // The listening bar (ADR-054): whether one was up for this sentence,
@@ -152,17 +156,23 @@ export class Say {
     const routed = await this.o.route(said.sentence, heard);
     this.o.log?.(`heard from ${from}: ${routed.route.intent}${routed.none ? ` (${routed.none})` : ""}, routed by ${routed.provider} in ${routed.ms} ms`);
     said.route = routed.route;
-    said.outcome = await execute(routed, {
-      apps,
-      rows: () => this.o.rows(viewer.id),
-      search: (query, ids) => this.search(query, ids, viewer),
-      open: (app, item) => this.open(app, item),
-    });
+    said.outcome = await execute(routed, this.context(viewer, apps));
     said.state = "done";
     said.at = this.now();
     this.show(said);
     this.tell(said);
     return said;
+  }
+
+  // What the executors may do for who's watching.
+  private context(viewer: Viewer, apps: ExecApp[]): ExecContext {
+    return {
+      apps,
+      rows: () => this.o.rows(viewer.id),
+      search: (query, ids) => this.search(query, ids, viewer),
+      open: (app, item) => this.open(app, item),
+      ...(this.o.news ? { news: this.o.news(viewer, apps) } : {}),
+    };
   }
 
   // What came of it, over the app in front: on the listening bar when it
@@ -172,7 +182,7 @@ export class Say {
   private tell(said: Said): void {
     const outcome = said.outcome;
     if (!outcome || this.current?.n !== said.n) return;
-    const text = outcome.kind === "choose" ? "which one? your phone has them" : outcome.say;
+    const text = outcome.kind === "choose" ? `${outcome.say}${outcome.say.endsWith("?") ? " " : ". "}your phone has them` : outcome.say;
     if (this.barred.delete(said.n) && !this.o.bar?.listening()) {
       this.o.bar?.show("said", text);
       return;
@@ -188,8 +198,19 @@ export class Say {
     const candidate = Number.isInteger(choice) ? said.outcome.candidates[choice as number] : undefined;
     if (!candidate) return { error: "that isn't one of them" };
     const viewer = await this.o.viewer();
-    const app = (await this.o.apps(viewer)).find((a) => a.id === candidate.app);
+    const apps = await this.o.apps(viewer);
+    const app = apps.find((a) => a.id === candidate.app);
     if (!app || viewer.id !== said.viewer) return { error: "someone else is watching now" };
+    // A title from what's new is TMDB's, not the app's: it's looked up in
+    // its app and played, as "play it on that app" would.
+    if (fromWhatsNew(candidate.item)) {
+      const item = candidate.item;
+      const route: Route = { ...NONE, intent: "play", query: item.title, kind: item.kind === "film" ? "film" : "series", app: app.id, season: item.season ?? null };
+      said.outcome = await run(route, this.context(viewer, apps));
+      said.at = this.now();
+      this.show(said);
+      return { said };
+    }
     const opened = await this.open(app.id, candidate.item);
     said.outcome = opened.ok
       ? { kind: "opened", app: app.id, item: candidate.item, say: `${candidate.item.title.toLowerCase()}, on ${app.name.toLowerCase()}` }
