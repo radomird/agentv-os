@@ -341,6 +341,8 @@ export const daemon = {
   said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
   pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
   dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
+  // Back on the TV with the listening bar up (ADR-054).
+  closeListening: () => call<{ ok: boolean }>("POST", "/api/say/live/close"),
   shared: () => call<SharedState>("GET", "/api/shared"),
   answerShare: (id: string) => call<{ ok: boolean }>("POST", `/api/shared/${id}/answer`),
   shareBackground: (id: string, grant?: string) => call<{ background: Background }>("POST", `/api/shared/${id}/background`, undefined, grant),

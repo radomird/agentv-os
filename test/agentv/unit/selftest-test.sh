@@ -750,3 +750,9 @@ grep -qF "fail S7.4 the box routed through its key, not the plan's CLI" "$SCRATC
 kill "$router_pid" 2>/dev/null || true
 wait "$router_pid" 2>/dev/null || true
 pass "S7.4 runs the phrase set through the box's own router, and passes only at 95% on the plan's CLI, with the time per sentence"
+
+# S7.5 is watched from the couch: the selftest says what to try.
+run1 S7.5 || fail "S7.5 is a manual check" "$(cat "$SCRATCH/out")"
+grep -qF "manual S7.5 on a paired phone, tap ask your tv and dictate play frozen" "$SCRATCH/out" || fail "it says what to try" "$(cat "$SCRATCH/out")"
+grep -qF "Try an iPhone and an Android phone" "$SCRATCH/out" || fail "on both kinds of phone" "$(cat "$SCRATCH/out")"
+pass "S7.5 says what to watch for on the TV with a real phone's dictation"

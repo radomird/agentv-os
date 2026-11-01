@@ -24,7 +24,7 @@ import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
-import { sayBox, type Said } from "./say.ts";
+import { sayAnswer, sayBox, type Said } from "./say.ts";
 import { sharePage } from "./share.ts";
 
 const app = document.getElementById("app")!;
@@ -210,8 +210,11 @@ function feelSwitch(): HTMLElement {
   return button;
 }
 
-// Ask the TV (ADR-023), over the remote and playback.
-const asking = () => sayBox(state?.said, failed, () => void refresh(true));
+// Ask the TV (ADR-023), over the remote and playback. Once a sentence is
+// answered the page is drawn again, as for any change: only the answer
+// while the box already holds the next one.
+const sayDone = () => void refresh();
+const asking = () => sayBox(state?.said, failed, sayDone);
 
 function remote(): HTMLElement {
   return h(
@@ -842,6 +845,7 @@ async function refresh(force = false, wait = false): Promise<void> {
   else {
     if (JSON.stringify(next.ai) !== JSON.stringify(before?.ai)) drawAsk();
     if (JSON.stringify(next.tv.pin) !== JSON.stringify(before?.tv.pin)) drawPad();
+    if (JSON.stringify(next.said) !== JSON.stringify(before?.said)) sayAnswer(next.said, failed, sayDone);
   }
 }
 

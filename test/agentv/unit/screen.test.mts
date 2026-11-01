@@ -328,6 +328,10 @@ class FakeLauncher implements Launcher {
   async toast(text: string) {
     this.toasts.push(text);
   }
+  listened: string[] = [];
+  async listen(state: string, text: string) {
+    this.listened.push(text ? `${state} ${text}` : state);
+  }
   async corner(on: boolean) {
     if (this.cornerFails > 0) {
       this.cornerFails--;
@@ -645,6 +649,30 @@ test("only web pages open on the TV", async () => {
   const { screen } = await tv();
   const answer = (await screen.handle({ cmd: "open", url: "file:///etc/passwd" })) as { ok: boolean };
   assert.equal(answer.ok, false);
+});
+
+test("ADR-054 the listening bar goes to the overlay over an app in front, and not over home, which draws its own", async () => {
+  const { hypr, launcher, screen } = await tv();
+  assert.deepEqual(await screen.sayLive("words", "play fro"), { ok: true });
+  assert.deepEqual(launcher.listened.at(-1), "closed", "over home, the overlay's bar goes");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  assert.deepEqual(await screen.sayLive("words", "play frozen"), { ok: true });
+  assert.deepEqual(launcher.listened.at(-1), "words play frozen");
+  await screen.sayLive("closed", "");
+  assert.deepEqual(launcher.listened.at(-1), "closed");
+});
+
+test("a sentence's outcome is a toast over an app in front, and not over home", async () => {
+  const { hypr, launcher, screen } = await tv();
+  await screen.sayTell("i didn't get that");
+  assert.deepEqual(launcher.toasts, [], "home shows it itself");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  await screen.sayTell("i didn't get that");
+  assert.deepEqual(launcher.toasts, ["i didn't get that"]);
 });
 
 test("a toast goes to the overlay", async () => {
