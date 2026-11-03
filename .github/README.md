@@ -28,7 +28,7 @@ Underneath it's Omarchy, so the full Linux desktop is one switch away.
 
 ## What you get today
 
-[0.1.4](https://github.com/radomird/agentv-os/releases/tag/v0.1.4) is out as a pre-release. Everything that was in 0.1.3 runs on my Intel NUC. The new parts pass their tests in a VM, but I haven't tried them on the NUC yet.
+[0.1.4](https://github.com/radomird/agentv-os/releases/tag/v0.1.4) is out as a pre-release. It all passes its tests in a VM. On my Intel NUC I've tried home, the apps and updates, but not yet the phone and PIN side, or anything new in 0.1.4.
 
 New in 0.1.4:
 
