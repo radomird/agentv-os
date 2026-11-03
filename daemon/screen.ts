@@ -63,7 +63,7 @@ import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput } from "./remote.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
 import { answerSay, sayHosts } from "./say-watch.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
@@ -1330,6 +1330,7 @@ export class Screen {
         const opened = await running.cdp.open(target.url).catch(() => undefined);
         if (opened) {
           for (const page of before) if (page.targetId !== opened) await running.cdp.close(page.targetId).catch(() => {});
+          await this.remotePage(running.cdp, opened, SHARED_PAGE);
           this.log("a shared link opens in the share browser");
           return;
         }
@@ -1340,6 +1341,17 @@ export class Screen {
       app.onExit(() => {
         if (this.apps.get("share") === app) this.apps.delete("share");
       });
+      // The d-pad's ring in the page it opened with.
+      if (app.cdp) {
+        const cdp = app.cdp;
+        void (async () => {
+          for (let tries = 0; tries < 50; tries++) {
+            const pages = await cdp.pages().catch(() => []);
+            if (pages.length > 0) return this.remotePage(cdp, pages[0].targetId, SHARED_PAGE);
+            await sleep(100);
+          }
+        })();
+      }
       this.log("a shared link opens in the share browser");
     }).then(() => ({ ok: true }));
   }
@@ -1703,9 +1715,10 @@ export class Screen {
   }
 
   // The phone's d-pad in a web app's page, for a page made for a desktop:
-  // a ring on what the arrows focus, and Back (daemon/remote-page.ts).
-  private async remotePage(cdp: DevTools, target: string): Promise<void> {
-    await cdp.addScriptIn(target, REMOTE_PAGE, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
+  // a ring on what the arrows focus, and Back (daemon/remote-page.ts). A
+  // shared link's page gets SHARED_PAGE, with no Back of its own.
+  private async remotePage(cdp: DevTools, target: string, source = REMOTE_PAGE): Promise<void> {
+    await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
   }
 
   openSteam(id = "steam"): Promise<object> {
@@ -2103,7 +2116,8 @@ export const launcher: Launcher = {
     // Its own prompts off too, as in the services' profile.
     const prefs = spawnSync("agentv-chromium-prefs", [SHARE_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
     if (prefs.status !== 0) console.log(`couldn't turn off the share browser's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    // The d-pad moves through a shared page as through an app's.
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
