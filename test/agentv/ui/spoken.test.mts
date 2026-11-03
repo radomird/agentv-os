@@ -1,6 +1,7 @@
 // Settings → Sound's spoken answers in a real Chromium (stage 8, layer 4):
 // the switch, on by default, and a line saying which voice says the TV's
-// answers: the provider's own, Piper on the box, or Piper on its way.
+// answers: the provider's own, Piper on the box, or none when Piper isn't
+// there.
 // Turning it off says the TV only shows them. What the voices sound like is
 // the NUC's.
 
@@ -54,16 +55,16 @@ test("Settings → Sound has spoken answers on, and says the provider's own voic
   }
 });
 
-test("with no voice of the provider's, it says Piper says them, or that Piper is on its way", async () => {
+test("with no voice of the provider's, it says Piper says them, or that Piper isn't on the box", async () => {
   let page = await tv({ by: "piper", piper: "ready" });
   try {
     await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("with piper, on this box"));
   } finally {
     await page.close();
   }
-  page = await tv({ by: null, piper: "fetching" });
+  page = await tv({ by: null, piper: "missing" });
   try {
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("piper, is on its way"));
+    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("piper isn't on this box"));
   } finally {
     await page.close();
   }

@@ -2,8 +2,8 @@
 // of its own is asked the way its docs say, and its answer is WAV; the
 // router's service speaks with the household's key and never logs the
 // words; the daemon picks the provider's voice when there's a key for one
-// that has it, and Piper on the box otherwise, which it asks root to fetch
-// the first time; every answer the TV shows is said, "i didn't get that"
+// that has it, and Piper on the box otherwise, from agentv-voice's folder;
+// every answer the TV shows is said, "i didn't get that"
 // included; and the TV session plays the clip through the box's player.
 
 import assert from "node:assert/strict";
@@ -18,7 +18,7 @@ import { NONE, type Routed } from "../../../daemon/router.ts";
 import { routeServer } from "../../../daemon/router-serve.ts";
 import { Say, type SayAnswer, type SayAsk } from "../../../daemon/say.ts";
 import { Daemon } from "../../../daemon/server.ts";
-import { Voice } from "../../../daemon/voice.ts";
+import { PIPER_VOICE, VOICE_DIR, Voice } from "../../../daemon/voice.ts";
 import { VoicePlayer } from "../../../daemon/voice-play.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-voice-"));
@@ -94,14 +94,11 @@ test("the router's service speaks with the key, a line at a time, and logs how l
 
 // --- Which voice -----------------------------------------------------------------------------
 
-function voice(options: { ai?: Partial<AiState>; key?: { set: boolean; provider: string | null }; spoken?: boolean; piperReady?: boolean; providerFails?: boolean; now?: () => number } = {}) {
+function voice(options: { ai?: Partial<AiState>; key?: { set: boolean; provider: string | null }; spoken?: boolean; providerFails?: boolean; now?: () => number } = {}) {
   const dir = mkdtempSync(join(scratch, "voice-"));
-  if (options.piperReady !== false) writeFileSync(join(dir, "ready"), "");
-  const drop = join(dir, "drop", "fetch");
   const used: string[] = [];
   const v = new Voice({
     dir,
-    drop,
     ai: async () => ({ provider: "claude", path: "key", accepted: true, ...options.ai }) as unknown as AiState,
     key: () => options.key ?? { set: true, provider: (options.ai?.provider as string) ?? "claude" },
     spoken: async () => options.spoken ?? true,
@@ -109,7 +106,7 @@ function voice(options: { ai?: Partial<AiState>; key?: { set: boolean; provider:
     piper: async () => (used.push("piper"), { ok: true, wav: WAV }),
     now: options.now,
   });
-  return { v, used, dir, drop };
+  return { v, used, dir };
 }
 
 test("with a key for a provider that has a voice, the TV says its answers in that voice", async () => {
@@ -139,20 +136,21 @@ test("with spoken answers off in Settings → Sound, nothing is said", async () 
   assert.deepEqual(used, []);
 });
 
-test("Piper that isn't here yet is asked of root once an hour, and that answer is only shown", async () => {
-  let now = 1_000_000;
+test("Piper is agentv-voice's: ready once its piper and the cori voice are in its folder, and without them an answer is only shown", async () => {
   const dir = mkdtempSync(join(scratch, "nopiper-"));
-  const drop = join(dir, "drop", "fetch");
-  const v = new Voice({ dir, drop, ai: async () => ({ provider: "claude", path: "key", accepted: true }) as unknown as AiState, key: () => ({ set: true, provider: "claude" }), spoken: async () => true, now: () => now });
+  const lines: string[] = [];
+  const v = new Voice({ dir, ai: async () => ({ provider: "claude", path: "key", accepted: true }) as unknown as AiState, key: () => ({ set: true, provider: "claude" }), spoken: async () => true, log: (line) => lines.push(line) });
+  assert.equal((await v.state()).piper, "missing");
+  assert.equal((await v.state()).by, null);
   assert.equal(await v.make("i didn't get that"), null);
-  assert.ok(existsSync(drop), "the daemon left its drop for agentv-voice.path");
-  assert.equal((await v.state()).piper, "fetching");
-  rmSync(drop);
-  await v.make("i didn't get that");
-  assert.ok(!existsSync(drop), "not again within the hour");
-  now += 3600_000;
-  await v.make("i didn't get that");
-  assert.ok(existsSync(drop), "and again after it");
+  assert.equal(await v.make("i didn't get that"), null);
+  assert.equal(lines.filter((line) => line.includes("piper isn't in")).length, 1, "the log says so once");
+  mkdirSync(join(dir, "piper"));
+  writeFileSync(join(dir, "piper", "piper"), "");
+  assert.equal((await v.state()).piper, "missing", "piper alone isn't enough");
+  writeFileSync(join(dir, `${PIPER_VOICE}.onnx`), "");
+  assert.deepEqual([(await v.state()).piper, (await v.state()).by], ["ready", "piper"]);
+  assert.equal(VOICE_DIR, "/usr/lib/agentv-voice");
 });
 
 // --- Every answer, said ----------------------------------------------------------------------

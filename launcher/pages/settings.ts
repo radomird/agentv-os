@@ -50,7 +50,7 @@ function voiceLine(state: VoiceState | null): string {
   if (!state.spoken) return "the tv shows its answers and doesn't say them.";
   if (state.by === "provider") return `the tv says its answers in ${state.provider}'s own voice.`;
   if (state.by === "piper") return "the tv says its answers with piper, on this box.";
-  return state.piper === "fetching" ? "the tv's voice, piper, is on its way to this box." : "the tv's voice, piper, comes to this box the first time it answers.";
+  return "piper isn't on this box, so the tv shows its answers without saying them. agentv update brings it back.";
 }
 // The looks Settings → Look offers (board 12), and which one the TV has.
 let looks: { themes: ThemePreview[]; current: string | null } | null = null;

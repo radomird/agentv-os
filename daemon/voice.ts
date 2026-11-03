@@ -10,31 +10,28 @@
 //   service, which alone holds the key (daemon/providers/speech.ts);
 // - otherwise, and whenever that one doesn't answer, Piper on the box, with
 //   its cori voice (British English, public domain), which needs no key and
-//   no network once it's here. Claude and Muse have no speech API, and a
-//   plan has no key, so they hear Piper.
+//   no network. Claude and Muse have no speech API, and a plan has no key,
+//   so they hear Piper.
 //
-// Piper isn't in AgenTV's package: the first time it's needed, the daemon
-// asks root to fetch it, pinned by checksum (bin/agentv-voice-fetch), and
-// that answer is shown and not said. Settings → Sound turns spoken answers
-// off.
+// Piper and cori come in their own package, agentv-voice, which agentv
+// depends on, so the TV speaks from its first boot (Q157). Settings → Sound
+// turns spoken answers off.
 //
 // Nothing here logs the words.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiState, Provider } from "./ai.ts";
 import { speaks } from "./providers/speech.ts";
 
-export const VOICE_DIR = "/var/lib/agentv/voice";
+export const VOICE_DIR = "/usr/lib/agentv-voice";
 export const PIPER_VOICE = "en_GB-cori-medium";
 const SPEAK_SOCKET = "/run/agentv-router/router.sock";
-// How long Piper may take for a line, and how often to ask root for it
-// again after a fetch that didn't work.
+// How long Piper may take for a line.
 const PIPER_MS = 20_000;
-const FETCH_AGAIN_MS = 3600_000;
 
 export interface Clip {
   wav: Buffer;
@@ -49,12 +46,11 @@ export interface VoiceState {
   spoken: boolean;
   by: "provider" | "piper" | null; // what says the next answer
   provider: Provider | null;
-  piper: "ready" | "fetching" | "missing";
+  piper: "ready" | "missing";
 }
 
 export interface VoiceOptions {
-  dir?: string; // Piper and its voice: /var/lib/agentv/voice
-  drop?: string; // where the daemon asks root to fetch it: <state>/voice-drop/fetch
+  dir?: string; // Piper and its voice, from agentv-voice: /usr/lib/agentv-voice
   ai: () => Promise<AiState>;
   key: () => { set: boolean; provider: string | null };
   spoken: () => Promise<boolean>;
@@ -121,7 +117,7 @@ export function piperOn(dir: string, timeoutMs = PIPER_MS): (text: string) => Pr
 export class Voice {
   private o: VoiceOptions;
   private dir: string;
-  private asked = Number.NEGATIVE_INFINITY;
+  private missingSaid = false;
 
   constructor(options: VoiceOptions) {
     this.o = options;
@@ -133,7 +129,7 @@ export class Voice {
   }
 
   piperReady(): boolean {
-    return Boolean(this.o.piper) || existsSync(join(this.dir, "ready"));
+    return Boolean(this.o.piper) || (existsSync(join(this.dir, "piper", "piper")) && existsSync(join(this.dir, `${PIPER_VOICE}.onnx`)));
   }
 
   // The provider whose own voice says the answers, or null for Piper: one
@@ -147,21 +143,8 @@ export class Voice {
 
   async state(): Promise<VoiceState> {
     const provider = await this.provider();
-    const piper = this.piperReady() ? "ready" : this.o.drop && existsSync(this.o.drop) ? "fetching" : "missing";
+    const piper = this.piperReady() ? "ready" : "missing";
     return { spoken: await this.o.spoken(), by: provider ? "provider" : piper === "ready" ? "piper" : null, provider, piper };
-  }
-
-  // Asks root to fetch Piper and its voice, at most once an hour.
-  fetchPiper(): void {
-    if (!this.o.drop || this.piperReady() || this.now() - this.asked < FETCH_AGAIN_MS) return;
-    this.asked = this.now();
-    try {
-      mkdirSync(join(this.o.drop, ".."), { recursive: true, mode: 0o700 });
-      writeFileSync(this.o.drop, `${new Date(this.now()).toISOString()}\n`);
-      this.o.log?.("asked for piper's voice, for the tv's spoken answers");
-    } catch (error) {
-      this.o.log?.(`couldn't ask for piper's voice: ${(error as Error).message}`);
-    }
   }
 
   // A line as the TV says it, or null when it isn't said: spoken answers are
@@ -176,7 +159,8 @@ export class Voice {
       this.o.log?.(`${provider}'s voice didn't answer (${said.error}), so piper says it`);
     }
     if (!this.o.piper && !this.piperReady()) {
-      this.fetchPiper();
+      if (!this.missingSaid) this.o.log?.(`piper isn't in ${this.dir}, so the tv shows its answers without saying them`);
+      this.missingSaid = true;
       return null;
     }
     const said = await (this.o.piper ?? piperOn(this.dir))(text);

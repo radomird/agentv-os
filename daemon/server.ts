@@ -407,7 +407,6 @@ export class Daemon {
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
     this.voice = new Voice({
       ...options.voice,
-      drop: join(options.state, "voice-drop", "fetch"),
       ai: () => this.ai.read(),
       key: () => this.key.status(),
       spoken: async () => (await this.home.settings()).spoken,
@@ -482,12 +481,6 @@ export class Daemon {
     // when one moves on.
     this.buildsTimer = setInterval(() => void this.watchBuilds(), 2000);
     this.buildsTimer.unref();
-    // A box with its AI set up that will say its answers with Piper asks
-    // root for it now, so the first answer after an update is said too.
-    void this.voice.state().then(async (state) => {
-      const ai = await this.ai.read();
-      if (state.spoken && !state.provider && state.piper === "missing" && ai.provider && ai.accepted) this.voice.fetchPiper();
-    }, () => {});
     const lan = this.lan;
     const captive = this.captive;
     const phones = Promise.all([

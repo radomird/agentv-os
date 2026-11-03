@@ -888,7 +888,7 @@ voice_now() {
 }
 
 # Whether the TV said its answer aloud (stage 8, Q146), after the clip
-# numbered before. Piper may be on its way still, the first time.
+# numbered before.
 s73_spoken() {
   local before=$1 voice started=$SECONDS
   while true; do
@@ -901,7 +901,7 @@ s73_spoken() {
   if jq -e '.spoken == false' <<<"$voice" >/dev/null; then
     result manual S7.3 "spoken answers are off in Settings → Sound: turn them on to hear i didn't get that"
   elif jq -e '.by == null' <<<"$voice" >/dev/null; then
-    result manual S7.3 "the TV's voice, Piper, is on its way to this box ($(jq -r '.piper' <<<"$voice")): run agentv selftest S7.3 again in a few minutes to hear it"
+    result fail S7.3 "the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)"
   elif jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played == true' <<<"$voice" >/dev/null; then
     result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "piper" end' <<<"$voice")"
   else

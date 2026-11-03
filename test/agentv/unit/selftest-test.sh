@@ -711,9 +711,9 @@ echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"mis
 echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":{"clip":3,"by":"provider","ms":900,"played":false,"error":"there'"'"'s no player for sound on this box"}}' >"$state/voice"
 ! run1 S7.3 || fail "S7.3 fails when the TV didn't say it"
 grep -qF "fail S7.3 the TV didn't say it aloud: there's no player for sound on this box" "$SCRATCH/out" || fail "it says why" "$(cat "$SCRATCH/out")"
-echo '{"ok":true,"spoken":true,"by":null,"provider":null,"piper":"fetching","last":null}' >"$state/voice"
-run1 S7.3 || fail "S7.3 with Piper on its way says to run it again" "$(cat "$SCRATCH/out")"
-grep -qF "manual S7.3 the TV's voice, Piper, is on its way to this box (fetching)" "$SCRATCH/out" || fail "it says Piper is coming" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"spoken":true,"by":null,"provider":null,"piper":"missing","last":null}' >"$state/voice"
+! run1 S7.3 || fail "S7.3 fails with no voice on the box"
+grep -qF "fail S7.3 the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)" "$SCRATCH/out" || fail "it says Piper is missing" "$(cat "$SCRATCH/out")"
 echo '{"spoken":false}' >"$state/voice"
 pass "S7.3's spoken half passes when the TV said it, and says which voice"
 

@@ -69,7 +69,7 @@ export interface VoiceState {
   spoken: boolean;
   by: "provider" | "piper" | null;
   provider: string | null;
-  piper: "ready" | "fetching" | "missing";
+  piper: "ready" | "missing";
 }
 
 export interface HomeState {
