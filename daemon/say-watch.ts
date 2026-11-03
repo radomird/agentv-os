@@ -15,6 +15,7 @@ export interface SayScreen {
   open(app: string, item?: Item): Promise<{ ok?: boolean; error?: string }>;
   tell(text: string): Promise<{ ok?: boolean; error?: string }>;
   live(state: LiveState, text: string): Promise<{ ok?: boolean; error?: string }>;
+  speak(clip: number): Promise<{ ok?: boolean; error?: string }>;
   page(app: string): PageBroker | undefined;
 }
 
@@ -58,6 +59,11 @@ export async function answerSay(ask: SayAsk, deps: SayDeps): Promise<SayAnswer> 
   if (ask.kind === "live") {
     const shown = await deps.screen.live(ask.state, ask.text.slice(0, 300));
     return { ok: shown.ok === true, ...(shown.error ? { error: shown.error } : {}) };
+  }
+  // What came of a sentence, said aloud (stage 8).
+  if (ask.kind === "speak") {
+    const played = await deps.screen.speak(ask.clip);
+    return { ok: played.ok === true, ...(played.error ? { error: played.error } : {}) };
   }
   if (ask.kind === "tell") {
     const told = await deps.screen.tell(ask.text.slice(0, 200));

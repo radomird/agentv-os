@@ -59,6 +59,17 @@ export interface Settings {
   ambient: "pictures" | "terminal";
   // Install tested updates between 02:00 and 05:00 without asking (Q79).
   updateOvernight: boolean;
+  // The TV says its answers aloud (stage 8).
+  spoken: boolean;
+}
+
+// Which voice says the TV's answers (stage 8): the provider's own, Piper on
+// the box, or none yet while Piper is fetched.
+export interface VoiceState {
+  spoken: boolean;
+  by: "provider" | "piper" | null;
+  provider: string | null;
+  piper: "ready" | "missing";
 }
 
 export interface HomeState {
@@ -425,6 +436,7 @@ export const daemon = {
   saveTmdbKey: (key: string, grant?: string) => call<NewsState>("PUT", "/api/tmdb-key", { key }, grant),
   removeTmdbKey: (grant?: string) => call<NewsState>("DELETE", "/api/tmdb-key", undefined, grant),
   openNew: (id: string) => call<{ said: Said }>("POST", "/api/whats-new/open", { id }),
+  voice: () => call<VoiceState>("GET", "/api/voice"),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
   saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),
