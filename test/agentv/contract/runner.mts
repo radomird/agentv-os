@@ -30,7 +30,14 @@
 //                        { "$match": "regex" }, { "$min": n }, { "$length": n },
 //                        { "$type": "number" }
 //               throws   a regex its error matches instead
-//               after    where its page is after the call: { url?, title? }
+//               remote   the phone's d-pad pressed in its page after the
+//                        call, or instead of one: "up", "down", "left",
+//                        "right", "enter" or "back". The page runs as on the
+//                        TV, with spatial navigation and the d-pad's ring and
+//                        Back (daemon/remote-page.ts).
+//               after    where its page is after the call and the keys:
+//                        { url?, title?, focused? }, focused being what has
+//                        focus, by its label or its text
 //               asks     requests it must have made: [{ url: "regex",
 //                        headers?: { name: "regex" } }]
 //
@@ -44,10 +51,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, Page, Route as PageRoute } from "playwright-core";
 import { validatePackage, type Manifest, type Tier } from "../../../apps/contract/manifest.ts";
-import { type CheckPage, checkApp, type Result } from "../../../builder/contract-run.ts";
+import { type CheckPage, checkApp, FOCUSED, REMOTE_KEYS, type Result, settled } from "../../../builder/contract-run.ts";
 import { type Contract, differences, Fixtures } from "../../../builder/fixtures.ts";
 import { MusicApp, MusicLibrary, type MusicPlayer, type Track } from "../../../daemon/music.ts";
 import { cdpPage } from "../../../daemon/page.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
 import type { Storage } from "../../../daemon/storage.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -131,6 +139,9 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
     const page: Page = await (await browser()).newPage();
     await page.route("**/*", (route) => answerRoute(served, route));
     const session = await page.context().newCDPSession(page);
+    // The d-pad's ring and Back, as the screen daemon gives every app's page.
+    await session.send("Page.enable");
+    await session.send("Page.addScriptToEvaluateOnNewDocument", { source: REMOTE_PAGE, worldName: REMOTE_WORLD });
     const broker = cdpPage(
       {
         async evaluateIn(_target: string, expression: string) {
@@ -148,6 +159,11 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
       },
       url: async () => page.url(),
       title: () => page.title(),
+      async press(key) {
+        await page.keyboard.press(REMOTE_KEYS[key].key);
+        await settled((expression) => page.evaluate(expression));
+      },
+      focused: () => page.evaluate(FOCUSED),
       close: () => page.close(),
     };
   };
@@ -171,7 +187,8 @@ export async function run(dirs: string[], log: (line: string) => void = console.
     if (!launched) {
       const require = createRequire(`${process.env.AGENTV_CONTRACT_MODULES ?? ROOT}/`);
       const { chromium } = require("playwright-core") as typeof import("playwright-core");
-      launched = await chromium.launch({ executablePath: process.env.AGENTV_CONTRACT_BROWSER });
+      // As the services' Chromium runs on the TV.
+      launched = await chromium.launch({ executablePath: process.env.AGENTV_CONTRACT_BROWSER, args: [SPATIAL_NAVIGATION] });
     }
     return launched;
   };
