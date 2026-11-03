@@ -127,6 +127,16 @@ export class CdpPipe {
     }
   }
 
+  // Runs source in one page now and in each document it loads after, in an
+  // isolated world of that name, which the page's own scripts can't reach.
+  async addScriptIn(targetId: string, source: string, worldName: string): Promise<void> {
+    const session = await this.attachTarget(targetId);
+    // Without Page enabled on the session, the script runs in the page there
+    // is now and in none it loads after.
+    await this.send("Page.enable", {}, session);
+    await this.send("Page.addScriptToEvaluateOnNewDocument", { source, worldName, runImmediately: true }, session);
+  }
+
   // Gives the page at prefix a function, window[name](json), that calls
   // handler here, and answers it through window[name + "Reply"](id, json). It
   // stays through reloads of the page. Only this pipe's holder can add one.
@@ -170,4 +180,4 @@ export class CdpPipe {
 
 // What the screen daemon uses of a browser's pipe, so the tests can stand in
 // for one.
-export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages">;
+export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn">;

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.desk",
+  "name": "Desk",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "A web app made for a desktop, for the phone's d-pad tests",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "streaming",
+    "runtime": "web",
+    "homeUrl": "https://desk.test/desktop.html",
+    "capabilities": ["launch"],
+    "origins": ["https://desk.test"],
+    "childSafe": true
+  }
+}
