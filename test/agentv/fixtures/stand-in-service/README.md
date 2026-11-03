@@ -1,6 +1,5 @@
 # A stand-in streaming service
 
-A made-up service for the builder's stage A and B tools in CI (ADR-011): its
-pages under `site/`, served on this machine by the tests, and the app the
-agent would write for it under `app/`. It's at `https://stand-in.test`, a
-name no real site can have.
+This is a made-up streaming service for testing the builder's tools in CI, before sign-in and after.
+
+Its pages are in `site/`, and the tests serve them on this machine. `app/` has the app the agent would write for it. It's at `https://stand-in.test`, a name no real site can have.
