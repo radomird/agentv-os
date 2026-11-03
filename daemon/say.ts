@@ -164,6 +164,22 @@ export class Say {
     return said;
   }
 
+  // A route the TV chose itself, such as a title on New this week (S8.1):
+  // done as a sentence's would be, with nothing routed, and the TV and the
+  // phones hear how it went. words is what they see as heard.
+  async act(route: Route, from: string, words: string): Promise<Said> {
+    const viewer = await this.o.viewer();
+    const said: Said = { n: this.next++, sentence: cleanSentence(words), from, viewer: viewer.id, state: "routing", route, at: this.now() };
+    this.current = said;
+    this.show(said);
+    said.outcome = await run(route, this.context(viewer, await this.o.apps(viewer)));
+    said.state = "done";
+    said.at = this.now();
+    this.show(said);
+    this.tell(said);
+    return said;
+  }
+
   // What the executors may do for who's watching.
   private context(viewer: Viewer, apps: ExecApp[]): ExecContext {
     return {

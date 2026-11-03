@@ -13,12 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { installLocal } from "../../../daemon/apps/install.ts";
+import { AskWatch } from "../../../daemon/asks.ts";
 import { execute, type ExecContext, type Outcome } from "../../../daemon/executors/index.ts";
 import { listed } from "../../../daemon/executors/whatsNew.ts";
 import type { WatchRow } from "../../../daemon/ledger.ts";
 import { NONE, type Route, type Routed } from "../../../daemon/router.ts";
 import { routeServer } from "../../../daemon/router-serve.ts";
-import { Say, type SayAsk } from "../../../daemon/say.ts";
+import { Say, type SayAnswer, type SayAsk } from "../../../daemon/say.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { askTmdb, tmdbPath, tmdbRequest } from "../../../daemon/tmdb-api.ts";
 import { answerEpisode, dayOf, News, sameService, spokenDay, type NewsApp, type TmdbGet } from "../../../daemon/tmdb.ts";
@@ -364,8 +365,8 @@ test("S8.1 'what's new' says the top three and offers them to choose from, and n
 
 test("what's new without a key says where to add one; a request for music says it only knows films and shows", async () => {
   const { ctx } = context(news({ key: false }).n);
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "no-tmdb", say: "add a tmdb key in settings → what's new first" });
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "copper hill" }), ctx), { kind: "none", why: "no-tmdb", say: "add a tmdb key in settings → what's new first" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "no-tmdb", say: "add a tmdb key in settings → new this week first" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "copper hill" }), ctx), { kind: "none", why: "no-tmdb", say: "add a tmdb key in settings → new this week first" });
   const { ctx: c2 } = context(news().n);
   assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new", kind: "album" }), c2), { kind: "none", why: "not-found", say: "what's new only knows films and shows" });
 });
@@ -459,6 +460,31 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     assert.equal(feed.titles[0].title, "Glass Harbour");
     const answer = (await send("POST", "/api/whats-new/episode", { query: "copper hill" })).data.answer as { yes: boolean };
     assert.equal(answer.yes, true);
+    // A title chosen on New this week is looked up in its app and played,
+    // through the TV session, as a sentence would be.
+    const asks: SayAsk[] = [];
+    const tvSession = new AskWatch<SayAsk, SayAnswer>({
+      url: `${url}/`,
+      path: "api/say/ask",
+      what: "a sentence",
+      handle: async (ask) => {
+        asks.push(ask);
+        if (ask.kind === "search") return { ok: true, found: [{ app: "local.lumen", items: [{ id: "lumen-104", kind: "film", title: "Glass Harbour" }] }] };
+        return { ok: true };
+      },
+      failed: (error) => ({ ok: false, error: error.message }),
+      log: () => {},
+      retryMs: 50,
+    });
+    tvSession.start();
+    try {
+      const opened = await send("POST", "/api/whats-new/open", { id: "tmdb:film:104" });
+      assert.deepEqual((opened.data.said as { outcome: unknown }).outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-104", kind: "film", title: "Glass Harbour" }, say: "glass harbour, on lumen+" });
+      assert.deepEqual(asks.filter((a) => a.kind !== "tell").map((a) => (a.kind === "search" ? `search ${a.query} in ${a.apps}` : a.kind === "open" ? `open ${a.app} ${a.item?.id}` : a.kind)), ["search Glass Harbour in local.lumen", "open local.lumen lumen-104"]);
+      assert.equal((await send("POST", "/api/whats-new/open", { id: "tmdb:film:999" })).status, 404);
+    } finally {
+      tvSession.stop();
+    }
     assert.ok(!JSON.stringify(await send("GET", "/api/whats-new/settings")).includes(KEY), "the key never comes back out");
     assert.ok(!lines.join("\n").includes(KEY), "nor is it logged");
     assert.equal((await send("PUT", "/api/whats-new/settings", { region: "the netherlands" })).status, 400);

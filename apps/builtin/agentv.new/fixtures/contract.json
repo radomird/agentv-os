@@ -1,0 +1,7 @@
+{
+  "settings": {},
+  "checks": [
+    { "name": "small: the logo alone", "call": "tile", "args": ["s"], "expect": { "headline": { "label": "" }, "refreshMins": 180 } },
+    { "name": "large: its name, until the daemon draws what's new", "call": "tile", "args": ["l"], "expect": { "headline": { "label": "new this week" } } }
+  ]
+}

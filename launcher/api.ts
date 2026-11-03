@@ -174,6 +174,23 @@ export interface KeyTerms {
 }
 
 // Settings → Weather: the forecast's city, and the cities it can be.
+// Settings → new this week (stage 8): whether there's a TMDB key, the
+// region, and each streaming app with the services TMDB lists by its name.
+export interface NewsService {
+  app: string;
+  name: string;
+  providers: { id: number; name: string }[];
+}
+
+export interface NewsState {
+  key: { set: boolean; at?: string; error?: string };
+  region: string | null;
+  zoneRegion: string | null;
+  picked: boolean;
+  services?: NewsService[];
+  error?: string;
+}
+
 export interface WeatherPlace {
   zone: string;
   name: string;
@@ -400,6 +417,14 @@ export const daemon = {
   },
   stopPlanTerms: () => call<{ ok: boolean }>("DELETE", "/api/ai/plan/terms"),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
+  // New this week (stage 8): the TMDB key, the region, TMDB's regions, and a
+  // title chosen on home, played in its app.
+  news: () => call<NewsState & { ok: boolean }>("GET", "/api/whats-new/settings"),
+  saveRegion: (region: string | null, grant?: string) => call<NewsState>("PUT", "/api/whats-new/settings", { region }, grant),
+  regions: () => call<{ regions: { code: string; name: string }[] }>("GET", "/api/whats-new/regions").then((r) => r.regions),
+  saveTmdbKey: (key: string, grant?: string) => call<NewsState>("PUT", "/api/tmdb-key", { key }, grant),
+  removeTmdbKey: (grant?: string) => call<NewsState>("DELETE", "/api/tmdb-key", undefined, grant),
+  openNew: (id: string) => call<{ said: Said }>("POST", "/api/whats-new/open", { id }),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
   saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),

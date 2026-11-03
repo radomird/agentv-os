@@ -54,12 +54,14 @@ import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
-import type { Routed, RouterApp } from "./router.ts";
+import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
+import { newItem } from "./executors/whatsNew.ts";
 import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
+import type { Viewer } from "./apps/loader.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -310,6 +312,7 @@ export class Daemon {
       goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
       pageTile: (id) => this.pageApps.tile(id),
+      newTile: (viewer, size) => this.newTile(viewer, size),
       log: this.log,
       dataDirs: options.dataDirs,
     });
@@ -1739,7 +1742,7 @@ export class Daemon {
   // --- What's new (stage 8) ---------------------------------------------------
 
   // The region setup chose (ADR-007): the country of the time zone Omarchy's
-  // installer set, unless Settings → what's new picked another.
+  // installer set, unless Settings → new this week picked another.
   private async region(): Promise<string | null> {
     return (await this.whatsNewSettings()).region ?? (await this.zoneRegion());
   }
@@ -1753,7 +1756,7 @@ export class Daemon {
     return typeof saved.region === "string" && REGION.test(saved.region) ? { region: saved.region } : {};
   }
 
-  // What Settings → what's new shows: whether there's a key, the region and
+  // What Settings → new this week shows: whether there's a key, the region and
   // the household's services, as TMDB matches the apps on the box.
   private async whatsNewState(): Promise<object> {
     const { error, ...key } = this.tmdbKey.status();
@@ -1765,6 +1768,38 @@ export class Daemon {
       zoneRegion: await this.zoneRegion(),
       picked: Boolean((await this.whatsNewSettings()).region),
       ...(found ? { services: found.services, ...(found.ok ? {} : { error: found.error }) } : {}),
+    };
+  }
+
+  // New this week's tile (S8.1): this week's titles on the apps who's
+  // watching can open, each with its poster, its app and its new season, or
+  // what it needs first.
+  private async newTile(viewer: Viewer, size: Size): Promise<unknown> {
+    const apps = await this.home.apps(viewer);
+    const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
+    const name = (id: string) => (apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
+    if (!feed.ok) {
+      const adult = viewer.role === "adult";
+      const why: Record<string, string> = {
+        "no-key": adult ? "add a tmdb key in settings → new this week" : "an adult adds a tmdb key in settings",
+        "no-region": adult ? "pick a region in settings → new this week" : "an adult picks a region in settings",
+        "no-services": `tmdb doesn't list your apps' services in ${(feed.region ?? "your region").toLowerCase()}`,
+      };
+      return { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 };
+    }
+    // The region on the right of the tile's head, as Weather has its city.
+    const region = ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "").toLowerCase();
+    if (!feed.titles.length) return { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 };
+    if (size === "s") return { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 };
+    return {
+      headline: { label: region },
+      entries: feed.titles.slice(0, 8).map((title) => ({
+        label: title.title.toLowerCase(),
+        caption: `${name(title.app)}${title.season ? ` · season ${title.season}` : ""}`,
+        ...(title.poster ? { image: title.poster } : {}),
+        item: newItem(title),
+      })),
+      refreshMins: 180,
     };
   }
 
@@ -2925,11 +2960,32 @@ export class Daemon {
       this.json(response, 200, { ok: true, answer: await this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, apps) });
       return;
     }
+    // A title on New this week, chosen on home: looked up in its app and
+    // played, as a sentence would, and the TV and the phones hear how it went.
+    if (method === "POST" && path === "/api/whats-new/open") {
+      const body = (await this.body(request)) as { id?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const title = (await this.news.forViewer(viewer.role, apps)).titles.find((t) => `tmdb:${t.kind}:${t.id}` === body?.id);
+      if (!title) {
+        this.json(response, 404, { ok: false, error: "that isn't new this week any more" });
+        return;
+      }
+      const route: Route = { ...NONE, intent: "play", query: title.title, kind: title.kind, app: title.app, season: title.season ?? null };
+      this.json(response, 200, { ok: true, said: await this.say.act(route, "the tv", title.title) });
+      return;
+    }
+    // TMDB's regions, for Settings → new this week to pick from.
+    if (method === "GET" && path === "/api/whats-new/regions") {
+      const found = await this.news.regions();
+      this.json(response, found.ok ? 200 : 502, found);
+      return;
+    }
     if (method === "GET" && path === "/api/whats-new/settings") {
       this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
       return;
     }
-    // Settings → what's new: another region, or the time zone's again.
+    // Settings → new this week: another region, or the time zone's again.
     if (method === "PUT" && path === "/api/whats-new/settings") {
       if (!(await this.adult(request, response, "what's new's region"))) return;
       const body = (await this.body(request)) as { region?: unknown } | undefined;

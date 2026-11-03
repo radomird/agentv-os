@@ -86,7 +86,7 @@
 #         phone's dictation: it says what to try.
 #
 # Stage 8, what's new and new episodes from TMDB (S8 runs both), with a TMDB
-# key kept in Settings → what's new:
+# key kept in Settings → new this week:
 #
 #   S8.1  what's new for who's watching, asked of TMDB afresh: titles that
 #         appeared on the household's services in the last 7 days, in the
@@ -1274,9 +1274,9 @@ s39() {
 # Why what's new has nothing, as the TV says it.
 whats_new_why() {
   case $1 in
-    no-key) echo "there's no TMDB key yet: add one in Settings → what's new, past the PIN" ;;
-    no-region) echo "there's no region yet: pick one in Settings → what's new" ;;
-    no-services) echo "TMDB lists none of this box's streaming apps for its region: Settings → what's new shows what each app matched" ;;
+    no-key) echo "there's no TMDB key yet: add one in Settings → new this week, past the PIN" ;;
+    no-region) echo "there's no region yet: pick one in Settings → new this week" ;;
+    no-services) echo "TMDB lists none of this box's streaming apps for its region: Settings → new this week shows what each app matched" ;;
     *) echo "TMDB didn't answer: ${2:-no answer}" ;;
   esac
 }
@@ -1299,7 +1299,7 @@ s81() {
     return 0
   fi
   result pass S8.1 "$count titles new on $(jq -r '[.services[] | select(.providers | length > 0) | .name] | join(", ")' <<<"$feed") in $region since $(jq -r '.from' <<<"$feed"), such as $(jq -r '[.titles[:3][] | "\(.title)\(if .season then " (season \(.season))" else "" end)"] | join(", ")' <<<"$feed")"
-  result manual S8.1 "one of those is something you know came out this week on one of your services. On the phone, ask your tv \"what's new\": the TV says the top three and offers them, and choosing one plays it in its app"
+  result manual S8.1 "one of those is something you know came out this week on one of your services. Home's New this week shows them with their posters (pin it from Apps if it isn't there), and choosing one plays it in its app. On the phone, ask your tv \"what's new\": the TV says the top three and offers them"
 }
 
 s82() {

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "agentv.new",
+  "name": "New this week",
+  "version": "1.0.0",
+  "author": "agentv",
+  "license": "MIT",
+  "description": "What came out this week on your services, from TMDB",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "utility",
+    "runtime": "builtin",
+    "capabilities": ["launch", "tile"],
+    "icon": "icon.svg",
+    "tiles": { "s": "logo", "m": "new this week", "l": "new this week" },
+    "childSafe": true
+  }
+}

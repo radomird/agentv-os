@@ -8,6 +8,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Daemon } from "../../../daemon/server.ts";
+import type { TmdbGet } from "../../../daemon/tmdb.ts";
 
 export const ROOT = join(import.meta.dirname, "../../..");
 const SAMPLE = join(ROOT, "test/agentv/fixtures/apps/sample");
@@ -80,6 +81,8 @@ export interface BoxOptions {
   router?: ConstructorParameters<typeof Daemon>[0]["router"];
   // How long the listening bar waits for new words (ADR-054).
   listenIdleMs?: number;
+  // A stand-in for TMDB, through the router's service (stage 8).
+  tmdb?: TmdbGet;
 }
 
 // AgenTV's built-ins, with the weather pointed at the test's own server.
@@ -149,6 +152,21 @@ function keyMover(state: string, status: string): void {
   }, 50).unref();
 }
 
+// The same for the TMDB key (stage 8): whether there's one, never the key.
+function tmdbKeyMover(state: string, status: string): void {
+  const drop = join(state, "key-drop", "tmdb.json");
+  setInterval(() => {
+    let request: { key: string | null };
+    try {
+      request = JSON.parse(readFileSync(drop, "utf8"));
+    } catch {
+      return;
+    }
+    rmSync(drop, { force: true });
+    writeFileSync(status, JSON.stringify({ set: request.key !== null, at: new Date().toISOString() }));
+  }, 50).unref();
+}
+
 // The official apps setup offers, as the signed index lists them.
 export const OFFICIAL = [
   { id: "agentv.jellyfin", name: "Jellyfin", description: "Your Jellyfin library on the TV" },
@@ -207,6 +225,8 @@ export async function startBox(
   mkdirSync(hotspot, { recursive: true });
   const keyStatus = join(state, "..", "key.json");
   keyMover(state, keyStatus);
+  const tmdbStatus = join(state, "..", "tmdb.json");
+  tmdbKeyMover(state, tmdbStatus);
   const setupAppsStatus = join(state, "..", "setup-apps.json");
   appsMover(state, apps, setupAppsStatus);
   // The phone companion and the setup hotspot's captive page too, on this
@@ -229,6 +249,9 @@ export async function startBox(
     hotspotRun: hotspot,
     interfaces: options.interfaces as never,
     keyStatus,
+    tmdbStatus,
+    // No TMDB unless a test stands one in: the box never asks the real one.
+    tmdb: options.tmdb ?? (async () => ({ ok: false, error: "tmdb couldn't be reached" })),
     router: options.router,
     listenIdleMs: options.listenIdleMs,
     // The channel, as agentv channel keeps it: none, so stable, until a test

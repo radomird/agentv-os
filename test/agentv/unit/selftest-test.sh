@@ -768,7 +768,7 @@ grep -q 'api/whats-new?fresh=1' "$state/curl.log" || fail "it asks for a fresh o
 grep -qF "manual S8.1 one of those is something you know came out this week" "$SCRATCH/out" || fail "and says what to check by eye" "$(cat "$SCRATCH/out")"
 echo '{"ok":true,"feed":{"ok":false,"why":"no-key","region":null,"titles":[],"services":[]}}' >"$state/whats-new"
 ! run1 S8.1 || fail "S8.1 fails with no TMDB key"
-grep -qF "fail S8.1 there's no TMDB key yet: add one in Settings → what's new, past the PIN" "$SCRATCH/out" || fail "it says where to add one" "$(cat "$SCRATCH/out")"
+grep -qF "fail S8.1 there's no TMDB key yet: add one in Settings → new this week, past the PIN" "$SCRATCH/out" || fail "it says where to add one" "$(cat "$SCRATCH/out")"
 echo '{"ok":true,"feed":{"ok":true,"region":"NL","from":"2026-10-25","to":"2026-11-01","services":[{"app":"local.kino","name":"Kino","providers":[]}],"titles":[]}}' >"$state/whats-new"
 ! run1 S8.1 || fail "S8.1 fails with nothing new"
 grep -qF "fail S8.1 nothing appeared on Kino in NL from 2026-10-25 to 2026-11-01" "$SCRATCH/out" || fail "it says where it looked" "$(cat "$SCRATCH/out")"
