@@ -2,14 +2,17 @@
 // provider routed it. Each one is plain code: a route opens an app at an
 // item, offers up to three to choose from, or says why it can't, in one
 // line the TV shows and, from stage 8, speaks. A route of none is "i
-// didn't get that", and nothing happens (S7.3).
+// didn't get that", and nothing happens (S7.3). What's new and new episodes
+// ask TMDB (stage 8, daemon/tmdb.ts): what's new offers up to three to
+// choose from, and a new episode is an answer, told.
 //
 // What needs the TV session, searching apps and opening them, goes to the
 // screen daemon as an ask (daemon/say.ts).
 
 import type { Item } from "../../apps/contract/contract.ts";
 import type { WatchRow } from "../ledger.ts";
-import type { Routed } from "../router.ts";
+import type { Route, Routed } from "../router.ts";
+import type { EpisodeAnswer, Feed } from "../tmdb.ts";
 import { continueItem, toContinue } from "./continue.ts";
 import { newEpisode } from "./newEpisode.ts";
 import { pick, rank, toOpen, words, type Found } from "./play.ts";
@@ -25,12 +28,14 @@ export interface Candidate {
 export type Outcome =
   | { kind: "opened"; say: string; app: string; item?: Item }
   | { kind: "choose"; say: string; candidates: Candidate[] }
+  | { kind: "told"; say: string; episode?: EpisodeAnswer }
   | { kind: "none"; say: string; why: NoneWhy; detail?: string };
 
 // Why nothing happened: the router couldn't route it, its answer didn't
 // fit, the provider didn't answer, an app it named isn't here, nothing
-// matched, that request comes later, or the app didn't open.
-export type NoneWhy = "unroutable" | "unreadable" | "failed" | "missing" | "not-found" | "soon" | "not-opened";
+// matched, that request comes later, the app didn't open, or what's new
+// needs a TMDB key or a region first.
+export type NoneWhy = "unroutable" | "unreadable" | "failed" | "missing" | "not-found" | "soon" | "not-opened" | "no-tmdb";
 
 export const DIDNT_GET = "i didn't get that";
 
@@ -44,11 +49,19 @@ export interface ExecApp {
 
 export type Opened = { ok: true } | { ok: false; error?: string };
 
+// TMDB for who's watching (daemon/tmdb.ts): what's new on the apps they can
+// open, and a show's air dates against their ledger.
+export interface ExecNews {
+  whatsNew: (only: { app: string | null; kind: "film" | "series" | null }) => Promise<Feed>;
+  episode: (query: string | null) => Promise<EpisodeAnswer>;
+}
+
 export interface ExecContext {
   apps: ExecApp[]; // the apps who's watching can open
   rows: () => WatchRow[]; // their ledger, newest first
   search: (query: string, apps: string[]) => Promise<Found[]>;
   open: (app: string, item?: Item) => Promise<Opened>;
+  news?: ExecNews;
 }
 
 const lower = (text: string) => text.toLowerCase();
@@ -74,7 +87,12 @@ export async function execute(routed: Routed, ctx: ExecContext): Promise<Outcome
     if (routed.none === "failed") return { kind: "none", why: "failed", say: "your agent didn't answer", ...(routed.error ? { detail: routed.error } : {}) };
     return { kind: "none", why: routed.none === "unreadable" ? "unreadable" : "unroutable", say: DIDNT_GET };
   }
+  return run(route, ctx);
+}
 
+// A route that isn't none, done: as the router gave it, or as choosing
+// something from what's new asks for it.
+export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
   // An app they named: one here, by its id or its name, or one that isn't.
   let app: ExecApp | undefined;
   if (route.app) {
@@ -83,8 +101,8 @@ export async function execute(routed: Routed, ctx: ExecContext): Promise<Outcome
     if (!app) return { kind: "none", why: "missing", say: `there's no ${lower(said)} on this tv` };
   }
 
-  if (route.intent === "whats_new") return { kind: "none", why: "soon", ...whatsNew(route) };
-  if (route.intent === "new_episode") return { kind: "none", why: "soon", ...newEpisode(route) };
+  if (route.intent === "whats_new") return whatsNew(route, ctx, app);
+  if (route.intent === "new_episode") return newEpisode(route, ctx);
 
   if (route.intent === "continue") {
     const row = toContinue(ctx.rows(), { ...route, app: app?.id ?? null }, new Set(ctx.apps.map((a) => a.id)));

@@ -1,10 +1,16 @@
-// Is there a new episode of X (ADR-003): the ledger's episode against
-// TMDB's air dates, answered yes or no with the next date. That's stage 8's
-// (S8.2), with its spoken answer. Until then the router still routes it,
-// and the TV says plainly that it can't check yet.
+// Is there a new episode of X (ADR-003, S8.2): TMDB's air dates against the
+// ledger (daemon/tmdb.ts), answered yes or no, with the next air date. The
+// TV and the phone show the answer, and the TV says it. Nothing opens.
 
 import type { Route } from "../router.ts";
+import type { ExecContext, Outcome } from "./index.ts";
 
-export function newEpisode(_route: Route): { say: string } {
-  return { say: "i can't check for new episodes yet" };
+export async function newEpisode(route: Route, ctx: ExecContext): Promise<Outcome> {
+  if (!ctx.news) return { kind: "none", why: "soon", say: "i can't check for new episodes on this tv yet" };
+  const answer = await ctx.news.episode(route.query);
+  if (!answer.ok) {
+    const why = answer.why === "no-key" || answer.why === "no-region" ? "no-tmdb" : answer.why === "failed" ? "failed" : "not-found";
+    return { kind: "none", why, say: answer.say, ...(answer.error ? { detail: answer.error } : {}) };
+  }
+  return { kind: "told", say: answer.say, episode: answer };
 }

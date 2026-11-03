@@ -1,9 +1,9 @@
 // A sentence said to the TV (daemon/say.ts, daemon/executors/, ADR-013,
 // ADR-023): play X across kinds through every app's search, one clear best
 // or up to three to choose from, continue from the ledger, the two requests
-// stage 8 answers, and a sentence the router can't route coming to "i
-// didn't get that" with nothing done (S7.3). Then the daemon's side, from a
-// phone, with a stand-in router and a stand-in screen daemon.
+// stage 8 answers from TMDB, and a sentence the router can't route coming
+// to "i didn't get that" with nothing done (S7.3). Then the daemon's side,
+// from a phone, with a stand-in router and a stand-in screen daemon.
 
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -174,10 +174,10 @@ test("continue opens from the ledger, and says when there's nothing to continue"
   assert.deepEqual(await execute(routed({ ...NONE, intent: "continue", query: "Andor" }), ctx), { kind: "none", why: "not-found", say: "there's nothing called andor to continue" });
 });
 
-test("what's new and new episodes are routed, and the TV says plainly it can't answer them yet (stage 8)", async () => {
+test("what's new and new episodes, with no way to ask TMDB, say so plainly and do nothing (tmdb.test.mts has the rest)", async () => {
   const { ctx, calls } = context();
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "soon", say: "i can't tell you what's new yet" });
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "Severance" }), ctx), { kind: "none", why: "soon", say: "i can't check for new episodes yet" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "soon", say: "i can't tell you what's new on this tv yet" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "Severance" }), ctx), { kind: "none", why: "soon", say: "i can't check for new episodes on this tv yet" });
   assert.deepEqual(calls, []);
 });
 

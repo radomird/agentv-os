@@ -1,7 +1,8 @@
-# Moves the provider key the daemon was given into /etc/agentv/env, root's
-# alone (bin/agentv-key-store). agentv-key.path starts it. systemd makes
-# /etc/agentv if it isn't there yet, and lets only this write there. Then
-# the router starts again, with the key as it is now.
+# Moves the provider key, or the TMDB key, the daemon was given into
+# /etc/agentv/env, root's alone (bin/agentv-key-store). agentv-key.path
+# starts it. systemd makes /etc/agentv if it isn't there yet, and lets only
+# this write there. Then the router starts again, with the keys as they are
+# now.
 
 [Unit]
 Description=AgenTV provider key

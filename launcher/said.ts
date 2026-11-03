@@ -1,8 +1,9 @@
 // A sentence said to the TV (ADR-023), as home shows it: what was heard,
 // at once, then what came of it, as a toast. With more than one match, a
 // card over the page offers up to three to choose from, as the phone does
-// too. Back, or "none of these", puts it away. A sentence the router
-// couldn't route is "i didn't get that", and nothing else happens (S7.3).
+// too, and what's new offers its top three the same way (S8.1). Back, or
+// "none of these", puts it away. A sentence the router couldn't route is "i
+// didn't get that", and nothing else happens (S7.3).
 
 import { daemon, type Candidate, type Said } from "./api.ts";
 import { h } from "./dom.ts";
@@ -37,11 +38,14 @@ export function saidOpen(): boolean {
   return open !== null;
 }
 
-function close(): void {
+// Puts the card away. A bar waiting on it goes too, unless a pick went
+// through: then the outcome takes the bar's place, whether its event comes
+// before the pick's reply or after it (Q162).
+function close(picked = false): void {
   if (!el) return;
   const before = open?.before;
   open = null;
-  cardClosed();
+  if (!picked) cardClosed();
   el.classList.remove("on");
   el.replaceChildren();
   restore();
@@ -71,6 +75,14 @@ export function saidHeard(said: Said | null): void {
     if (!barred) ctx.toast(outcome.say, "ok");
     return;
   }
+  // An answer, such as whether there's a new episode (S8.2): told, and
+  // nothing else happens.
+  if (outcome.kind === "told") {
+    if (open) close();
+    ctx.sounds.play("confirm");
+    if (!barred) ctx.toast(outcome.say, "ok");
+    return;
+  }
   if (outcome.kind === "none") {
     if (open) close();
     ctx.sounds.play("failure");
@@ -85,8 +97,10 @@ export function saidHeard(said: Said | null): void {
     } catch (error) {
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
+      close();
+      return;
     }
-    close();
+    close(true);
   };
   const buttons = outcome.candidates.map((c, i) => h("button", { class: "button said-choice", "data-focus": true, "data-action": "said-pick", "data-choice": String(i), onclick: () => void pick(i) }, label(c)));
   const none = h("button", { class: "button", "data-focus": true, "data-action": "said-none", onclick: () => dismiss() }, "none of these");

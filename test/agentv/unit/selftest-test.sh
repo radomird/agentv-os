@@ -40,6 +40,8 @@ elif [[ $* == *api/pin* ]]; then cat "$STATE/pin" 2>/dev/null || echo "{\"ok\":t
 elif [[ $* == *api/updates/tonight* ]]; then cat "$STATE/tonight-code" 2>/dev/null || echo 403
 elif [[ $* == *api/key* ]]; then cat "$STATE/key" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
 elif [[ $* == *api/say* ]]; then cat "$STATE/say" 2>/dev/null || echo "{\"ok\":false,\"error\":\"no daemon\"}"
+elif [[ $* == *api/whats-new/episode* ]]; then echo "$*" >"$STATE/episode-asked"; cat "$STATE/episode" 2>/dev/null || echo "{\"ok\":false}"
+elif [[ $* == *api/whats-new* ]]; then cat "$STATE/whats-new" 2>/dev/null || echo "{\"ok\":false}"
 elif [[ $* == *api/ai* ]]; then cat "$STATE/ai" 2>/dev/null || echo "{\"ok\":true,\"provider\":null,\"path\":null}"
 else cat "$STATE/health"; fi'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
@@ -756,3 +758,31 @@ run1 S7.5 || fail "S7.5 is a manual check" "$(cat "$SCRATCH/out")"
 grep -qF "manual S7.5 on a paired phone, tap ask your tv and dictate play frozen" "$SCRATCH/out" || fail "it says what to try" "$(cat "$SCRATCH/out")"
 grep -qF "Try an iPhone and an Android phone" "$SCRATCH/out" || fail "on both kinds of phone" "$(cat "$SCRATCH/out")"
 pass "S7.5 says what to watch for on the TV with a real phone's dictation"
+
+# --- Stage 8 ---------------------------------------------------------------
+
+echo '{"ok":true,"feed":{"ok":true,"region":"NL","from":"2026-10-25","to":"2026-11-01","services":[{"app":"local.kino","name":"Kino","providers":[{"id":901,"name":"Kino"}]},{"app":"local.lumen","name":"Lumen","providers":[]}],"titles":[{"kind":"film","id":1,"title":"Night Train","app":"local.kino","popularity":9},{"kind":"series","id":2,"title":"Copper Hill","season":3,"app":"local.kino","popularity":8}]}}' >"$state/whats-new"
+run1 S8.1 || fail "S8.1 passes with titles new this week" "$(cat "$SCRATCH/out")"
+grep -qF "pass S8.1 2 titles new on Kino in NL since 2026-10-25, such as Night Train, Copper Hill (season 3)" "$SCRATCH/out" || fail "it says which, where and since when" "$(cat "$SCRATCH/out")"
+grep -q 'api/whats-new?fresh=1' "$state/curl.log" || fail "it asks for a fresh one"
+grep -qF "manual S8.1 one of those is something you know came out this week" "$SCRATCH/out" || fail "and says what to check by eye" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"feed":{"ok":false,"why":"no-key","region":null,"titles":[],"services":[]}}' >"$state/whats-new"
+! run1 S8.1 || fail "S8.1 fails with no TMDB key"
+grep -qF "fail S8.1 there's no TMDB key yet: add one in Settings → what's new, past the PIN" "$SCRATCH/out" || fail "it says where to add one" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"feed":{"ok":true,"region":"NL","from":"2026-10-25","to":"2026-11-01","services":[{"app":"local.kino","name":"Kino","providers":[]}],"titles":[]}}' >"$state/whats-new"
+! run1 S8.1 || fail "S8.1 fails with nothing new"
+grep -qF "fail S8.1 nothing appeared on Kino in NL from 2026-10-25 to 2026-11-01" "$SCRATCH/out" || fail "it says where it looked" "$(cat "$SCRATCH/out")"
+pass "S8.1 passes with what's new from TMDB this week, and says why not when there's none"
+
+echo '{"ok":true,"answer":{"ok":true,"show":"Copper Hill","yes":true,"latest":{"season":3,"episode":1,"date":"2026-10-28"},"next":{"season":3,"episode":2,"date":"2026-11-04"},"ended":false,"say":"yes: copper hill s3 e1 came out on wed 28 oct. the next is s3 e2, on wed 4 nov"}}' >"$state/episode"
+run1 S8.2 --show "Copper Hill" || fail "S8.2 passes with a yes and the next date" "$(cat "$SCRATCH/out")"
+grep -qF "pass S8.2 yes: copper hill s3 e1 came out on wed 28 oct. the next is s3 e2, on wed 4 nov" "$SCRATCH/out" || fail "it says the answer" "$(cat "$SCRATCH/out")"
+grep -qF "manual S8.2 TMDB has Copper Hill's newest out as s3 e1 on 2026-10-28, and the next as s3 e2 on 2026-11-04" "$SCRATCH/out" || fail "and TMDB's dates beside it" "$(cat "$SCRATCH/out")"
+grep -qF '{"query":"Copper Hill"}' "$state/episode-asked" || fail "it asks about the show given" "$(cat "$state/episode-asked")"
+echo '{"ok":true,"answer":{"ok":false,"why":"which","say":"which show? say its name, and i'"'"'ll check"}}' >"$state/episode"
+run1 S8.2 || fail "S8.2 with no show anywhere says what to do" "$(cat "$SCRATCH/out")"
+grep -qF 'manual S8.2 there'"'"'s no show in this profile'"'"'s ledger yet' "$SCRATCH/out" || fail "it says to name one" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"answer":{"ok":false,"why":"not-found","say":"i couldn'"'"'t find a show called dune"}}' >"$state/episode"
+! run1 S8.2 --show dune || fail "S8.2 fails for a show TMDB doesn't have"
+grep -qF "fail S8.2 i couldn't find a show called dune" "$SCRATCH/out" || fail "it says so" "$(cat "$SCRATCH/out")"
+pass "S8.2 passes with yes or no and the next air date, with TMDB's dates to check by eye"
