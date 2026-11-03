@@ -38,11 +38,14 @@ export function saidOpen(): boolean {
   return open !== null;
 }
 
-function close(): void {
+// Puts the card away. A bar waiting on it goes too, unless a pick went
+// through: then the outcome takes the bar's place, whether its event comes
+// before the pick's reply or after it (Q162).
+function close(picked = false): void {
   if (!el) return;
   const before = open?.before;
   open = null;
-  cardClosed();
+  if (!picked) cardClosed();
   el.classList.remove("on");
   el.replaceChildren();
   restore();
@@ -94,8 +97,10 @@ export function saidHeard(said: Said | null): void {
     } catch (error) {
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
+      close();
+      return;
     }
-    close();
+    close(true);
   };
   const buttons = outcome.candidates.map((c, i) => h("button", { class: "button said-choice", "data-focus": true, "data-action": "said-pick", "data-choice": String(i), onclick: () => void pick(i) }, label(c)));
   const none = h("button", { class: "button", "data-focus": true, "data-action": "said-none", onclick: () => dismiss() }, "none of these");

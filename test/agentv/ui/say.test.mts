@@ -142,6 +142,40 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   await hand.close();
 });
 
+// Q162: a pick's reply and its outcome's event come back on two
+// connections, in either order. Here the reply comes first, and the
+// outcome after it, as the phone's pick.
+test("a pick whose reply comes before its outcome keeps the bar on 'which one?' until the outcome takes its place, with no toast", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await ask(hand, "play frozen");
+  await screen.waitForSelector("#said.on .said-choice");
+  await hand.waitForSelector('[data-said="choose"]');
+  await screen.route(/\/api\/say\/pick$/, (route) => route.fulfill({ json: { ok: true } }));
+  await screen.keyboard.press("Enter");
+  await screen.waitForFunction(() => !document.querySelector("#said.on"));
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
+  await hand.click('[data-action="said-pick"][data-choice="1"]');
+  await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "frozen, on sample");
+  assert.equal(await screen.locator(".toast", { hasText: "frozen, on sample" }).count(), 0);
+  await screen.close();
+  await hand.close();
+});
+
+test("a pick that fails puts the bar away and says why", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await ask(hand, "play frozen");
+  await screen.waitForSelector("#said.on .said-choice");
+  await screen.route(/\/api\/say\/pick$/, (route) => route.fulfill({ status: 409, json: { ok: false, error: "that choice has gone" } }));
+  await screen.keyboard.press("Enter");
+  await screen.waitForFunction(() => !document.querySelector("#said.on") && !document.querySelector("#listening.on"));
+  await screen.locator(".toast.fail", { hasText: "that choice has gone" }).waitFor();
+  await hand.click('[data-action="said-none"]').catch(() => {});
+  await screen.close();
+  await hand.close();
+});
+
 test("the phone can pick one too, and Back on the TV puts the choice away", async () => {
   const screen = await tv();
   const hand = await phone();
