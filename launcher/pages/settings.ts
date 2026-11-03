@@ -32,6 +32,12 @@ function note(text: string): HTMLElement {
   return h("p", { class: "panel-note" }, text);
 }
 
+// Settings → Sound's last line, which voice says the TV's answers, marked
+// so it can change in place.
+function voiceNote(text: string): HTMLElement {
+  return h("p", { class: "panel-note", "data-note": "voice" }, text);
+}
+
 function soon(what: string): HTMLElement[] {
   return [h("div", { class: "panel-big" }, "coming soon"), note(what)];
 }
@@ -343,7 +349,7 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", { class: "button-value" }, `${Math.round(s.sound.volume * 100)}%`),
         ),
         note("left and right change how loud the ui sounds are."),
-        ...(voice ? [note(voiceLine({ ...voice, spoken: s.spoken }))] : []),
+        ...(voice ? [voiceNote(voiceLine({ ...voice, spoken: s.spoken }))] : []),
       ],
     },
     // The box's country (ADR-055): the time zone and new this week follow it.
@@ -460,9 +466,17 @@ export function settings(ctx: Ctx, open?: string): View {
     .then((found) => {
       const changed = JSON.stringify(found) !== JSON.stringify(voice);
       voice = found;
-      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {
+      if (!changed || menu.querySelector(".open")?.getAttribute("data-key") !== "sound") return;
+      if (!panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "sound")!);
+        return;
       }
+      // With the focus on a control in the panel, drawing it again would
+      // move the focus, so only the voice line changes, or comes last.
+      const line = voiceLine({ ...found, spoken: s.spoken });
+      const kept = panel.querySelector<HTMLElement>('[data-note="voice"]');
+      if (kept) kept.textContent = line;
+      else panel.append(voiceNote(line));
     })
     .catch(() => {});
   void loadCountry()
