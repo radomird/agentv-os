@@ -18,7 +18,7 @@ import { validatePackage, type Manifest } from "../../../apps/contract/manifest.
 import { cdpCheckPage, checkApp } from "../../../builder/contract-run.ts";
 import { type Contract, Fixtures } from "../../../builder/fixtures.ts";
 import { CdpPipe } from "../../../daemon/cdp.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
 
 const DESK = resolve(import.meta.dirname, "../fixtures/apps/desk");
 const PAGES = join(DESK, "fixtures/pages");
@@ -74,9 +74,9 @@ interface State {
 }
 
 // A page opened as the screen daemon opens an app, with the ring and Back.
-async function app(name: string) {
+async function app(name: string, source = REMOTE_PAGE) {
   const target = await cdp.open(`${site}${name}`);
-  await cdp.addScriptIn(target, REMOTE_PAGE, REMOTE_WORLD);
+  await cdp.addScriptIn(target, source, REMOTE_WORLD);
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId: target, flatten: true });
   await cdp.send("Page.bringToFront", {}, sessionId);
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
@@ -208,4 +208,17 @@ test("the builder's contract tests on the box press the d-pad as the TV does (AD
   const failed = results.filter((result) => !result.ok);
   assert.deepEqual(failed, [], "every one of the stand-in's checks passes");
   assert.ok(results.some((result) => /OK presses/.test(result.name)));
+});
+
+test("a shared link's page gets the ring, and Back is left to the screen daemon, which closes it (ADR-050, Q164)", async () => {
+  const page = await app("desktop.html", SHARED_PAGE);
+  for (let tries = 0; tries < 4 && !(await page.state()).focused.startsWith("tile-"); tries++) await page.press("ArrowDown");
+  await page.press("ArrowRight");
+  await page.until((s) => s.focused === "tile-2" && ringAround(s), "the arrows move the focus, with the ring around it");
+  await cdp.evaluateIn(page.target, `location.href = "next.html?films"`);
+  await page.until((s) => s.page === "next.html?films", "a second page, so there's one to go back to");
+  await page.press("Escape");
+  await sleep(300);
+  assert.equal((await page.state()).page, "next.html?films", "a tap on Back doesn't go back a page");
+  await cdp.close(page.target);
 });

@@ -43,7 +43,7 @@ import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { boxZone, cityOf } from "./place.ts";
-import { News, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
+import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
@@ -1787,7 +1787,7 @@ export class Daemon {
 
   // What Settings → new this week shows: whether there's a key, the region and
   // the household's services, as TMDB matches the apps on the box.
-  private async whatsNewState(): Promise<object> {
+  private async whatsNewState(): Promise<{ error?: string } & Record<string, unknown>> {
     const { error, ...key } = this.tmdbKey.status();
     const region = await this.region();
     const found = key.set && region ? await this.news.services(region) : null;
@@ -3060,10 +3060,18 @@ export class Daemon {
       const kept = this.tmdbKey.status().set;
       this.log(kept ? "a tmdb key is kept, root's alone" : "the tmdb key is off");
       // Root starts the router's service again with the key: Settings shows
-      // the services once it has it.
-      if (kept) await this.news.ready();
+      // the services once it has it. The old one can answer that it's ready
+      // just before it stops, as it can with a key it had before, so a
+      // router gone by the time the services are asked for is waited for
+      // once more.
+      let state: { error?: string } = {};
+      if (kept) {
+        await this.news.ready();
+        state = await this.whatsNewState();
+        if (state.error === ROUTER_GONE && (await this.news.ready())) state = await this.whatsNewState();
+      } else state = await this.whatsNewState();
       this.broadcast("whats-new", {});
-      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      this.json(response, 200, { ok: true, ...state });
       return;
     }
     // A sentence's asks of the TV session: the screen daemon looks things up

@@ -29,6 +29,11 @@ import { match } from "./executors/play.ts";
 import type { TmdbAnswer } from "./tmdb-api.ts";
 
 export const TMDB_SOCKET = "/run/agentv-router/router.sock";
+
+// The router's service isn't there: no socket, nobody on it, or it went
+// away mid-answer as root stopped it to start it again with a new key.
+export const ROUTER_GONE = "the router isn't running";
+const ROUTER_DOWN = new Set(["ENOENT", "ECONNREFUSED", "ECONNRESET", "EPIPE"]);
 // Posters from TMDB's image host, which home's tiles may show (ADR-014).
 export const TMDB_POSTERS = "https://image.tmdb.org/t/p/w342";
 // "This week": a release can take TMDB's data a few days to show (the plan's
@@ -70,7 +75,7 @@ export function tmdbViaRouter(socket = TMDB_SOCKET, timeoutMs = 20_000): TmdbGet
         asked.destroy();
         resolve({ ok: false, error: "tmdb took too long to answer" });
       });
-      asked.on("error", (error: NodeJS.ErrnoException) => resolve({ ok: false, error: error.code === "ENOENT" || error.code === "ECONNREFUSED" ? "the router isn't running" : error.message }));
+      asked.on("error", (error: NodeJS.ErrnoException) => resolve({ ok: false, error: ROUTER_DOWN.has(error.code ?? "") ? ROUTER_GONE : error.message }));
       asked.end(JSON.stringify({ path }));
     });
 }
@@ -309,12 +314,13 @@ export class News {
   }
 
   // Whether the router's service has the key yet: root starts it again
-  // just after keeping one, so a moment can pass before it does.
+  // just after keeping one, so a moment can pass before it does, and the
+  // one that's stopping can still answer, or hang up mid-answer.
   async ready(timeoutMs = 8000): Promise<boolean> {
     const until = Date.now() + timeoutMs;
     for (;;) {
       const asked = await this.o.get("/configuration");
-      const waiting = !asked.ok && (asked.error === "there's no tmdb key on the box" || asked.error === "the router isn't running");
+      const waiting = !asked.ok && (asked.error === "there's no tmdb key on the box" || asked.error === ROUTER_GONE || asked.error === "the router didn't answer");
       if (!waiting) return true;
       if (Date.now() > until) return false;
       await new Promise((resolve) => setTimeout(resolve, 250));
