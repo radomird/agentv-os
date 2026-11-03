@@ -20,7 +20,7 @@ The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, the
 
 ## Copy
 
-- Write docs, UI text, commit messages and READMEs the way an indie dev explains their project to another dev: straightforward, grounded and easy to read the first time. Short sentences, plain words before project words, what actually happens in order, "you" and "I", and no inside references (ADRs, grilling numbers, acceptance ids) in public text. Omarchy's README and manual are the spirit to match.
+- Write docs, UI text, commit messages and READMEs the way an indie dev talks about their own project: first to the person who'll use it, then to another dev. Straightforward, grounded and easy to read the first time. Short sentences, plain words before project words, what actually happens in order, "you" and "I", and no inside references (ADRs, grilling numbers, acceptance ids) in public text. Omarchy's README is the spirit to match, and agentv-apps' README is the reference.
 - Say "will" for what isn't built yet, and mark planned features "coming soon" in READMEs.
 - No em dashes anywhere, ever. That includes code comments and commit messages.
 - Public lines say "Powered by Omarchy". Never call AgenTV Omarchy itself or suggest Basecamp endorses it.
