@@ -96,7 +96,8 @@ export function barTakes(said: Said | null): boolean {
   return true;
 }
 
-// The card was put away or picked from: a bar waiting on it goes too.
+// The card was put away, or a pick from it failed: a bar waiting on it goes
+// too. A pick that went through leaves the bar to its outcome.
 export function cardClosed(): void {
   if (state === "said" && !done) hide();
 }
