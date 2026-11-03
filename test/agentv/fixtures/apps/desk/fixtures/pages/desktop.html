@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stand-in</title>
+<style>
+  * { outline: none; }
+  body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; }
+  nav { display: flex; gap: 32px; padding: 24px 48px; }
+  nav a { color: #eee; text-decoration: none; }
+  .row { display: flex; gap: 24px; overflow-x: auto; scrollbar-width: none; padding: 24px 48px; }
+  .tile { flex: 0 0 360px; height: 200px; border-radius: 8px; background: #2a2a3a; display: grid; place-items: center; cursor: pointer; }
+  .tools { display: flex; gap: 24px; padding: 24px 48px; }
+  input, button { font: inherit; background: #2a2a3a; color: #eee; border: 0; border-radius: 6px; padding: 12px 20px; }
+</style>
+</head>
+<body>
+<nav>
+  <a id="home" href="desktop.html">Home</a>
+  <a id="films" href="next.html?films">Films</a>
+  <a id="series" href="next.html?series">Series</a>
+</nav>
+<div class="row" id="row"></div>
+<div class="tools">
+  <input id="search" placeholder="Search">
+  <button id="more" type="button">More</button>
+</div>
+<dialog id="dialog"><p>More</p><button id="close" type="button">Close</button></dialog>
+<script>
+  const row = document.getElementById("row");
+  for (let n = 1; n <= 8; n++) {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    tile.id = `tile-${n}`;
+    tile.textContent = `Title ${n}`;
+    tile.addEventListener("click", () => (document.title = `picked ${n}`));
+    row.append(tile);
+  }
+  document.getElementById("more").addEventListener("click", () => document.getElementById("dialog").showModal());
+  document.getElementById("close").addEventListener("click", () => document.getElementById("dialog").close());
+</script>
+</body>
+</html>
