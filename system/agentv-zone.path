@@ -1,0 +1,13 @@
+# The box's time zone, handed over by AgenTV's daemon when its country
+# changes in TV setup or Settings (ADR-055): agentv-zone.service sets it as
+# root.
+
+[Unit]
+Description=AgenTV time zone hand-over
+
+[Path]
+PathExists=/var/lib/private/agentv/daemon/zone-drop/zone.json
+Unit=agentv-zone.service
+
+[Install]
+WantedBy=paths.target

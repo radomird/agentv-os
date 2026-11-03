@@ -44,6 +44,7 @@ import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
 import { boxZone, cityOf } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
+import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
@@ -141,6 +142,9 @@ export interface DaemonOptions {
   // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
   // provider's voice and Piper, for tests.
   voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
+  // The box's country (ADR-055): a stand-in for its time zone, and how long
+  // a pick waits for root to set it, for tests.
+  country?: { zone?: () => Promise<string>; waitMs?: number };
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
 }
@@ -218,9 +222,6 @@ function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
 }
 
-// A region, as TMDB names one: the country's two letters (ISO 3166-1).
-const REGION = /^[A-Z]{2}$/;
-
 export class Daemon {
   readonly server: Server;
   private options: DaemonOptions;
@@ -235,6 +236,7 @@ export class Daemon {
   readonly key: ProviderKey;
   // The TMDB key, and what's new and new episodes from TMDB (stage 8).
   readonly tmdbKey: TmdbKey;
+  readonly country: CountryPlace;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -405,6 +407,7 @@ export class Daemon {
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
+    this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.voice = new Voice({
       ...options.voice,
       ai: () => this.ai.read(),
@@ -1776,19 +1779,10 @@ export class Daemon {
 
   // --- What's new (stage 8) ---------------------------------------------------
 
-  // The region setup chose (ADR-007): the country of the time zone Omarchy's
-  // installer set, unless Settings → new this week picked another.
+  // TMDB's region is the box's country (ADR-055): the one setup confirmed,
+  // or Settings picked, or else its time zone's.
   private async region(): Promise<string | null> {
-    return (await this.whatsNewSettings()).region ?? (await this.zoneRegion());
-  }
-
-  private async zoneRegion(): Promise<string | null> {
-    return (await cityOf(await boxZone()))?.country ?? null;
-  }
-
-  private async whatsNewSettings(): Promise<{ region?: string }> {
-    const saved = await readFile(join(this.options.state, "whats-new-settings.json"), "utf8").then((text) => JSON.parse(text) as { region?: unknown }, () => ({}) as { region?: unknown });
-    return typeof saved.region === "string" && REGION.test(saved.region) ? { region: saved.region } : {};
+    return (await this.country.read()).code;
   }
 
   // What Settings → new this week shows: whether there's a key, the region and
@@ -1800,8 +1794,6 @@ export class Daemon {
     return {
       key: { ...key, ...(error ? { error } : {}) },
       region,
-      zoneRegion: await this.zoneRegion(),
-      picked: Boolean((await this.whatsNewSettings()).region),
       ...(found ? { services: found.services, ...(found.ok ? {} : { error: found.error }) } : {}),
     };
   }
@@ -3028,28 +3020,30 @@ export class Daemon {
       response.end(clip.wav);
       return;
     }
-    // TMDB's regions, for Settings → new this week to pick from.
-    if (method === "GET" && path === "/api/whats-new/regions") {
-      const found = await this.news.regions();
-      this.json(response, found.ok ? 200 : 502, found);
-      return;
-    }
     if (method === "GET" && path === "/api/whats-new/settings") {
       this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
       return;
     }
-    // Settings → new this week: another region, or the time zone's again.
-    if (method === "PUT" && path === "/api/whats-new/settings") {
-      if (!(await this.adult(request, response, "what's new's region"))) return;
-      const body = (await this.body(request)) as { region?: unknown } | undefined;
-      if (body?.region !== null && !(typeof body?.region === "string" && REGION.test(body.region))) {
-        this.json(response, 400, { ok: false, error: "a region is two capital letters, such as NL" });
+    // The box's country (ADR-055): what it is, and the countries to pick
+    // from, for setup's country step and Settings → country.
+    if (method === "GET" && path === "/api/country") {
+      this.json(response, 200, { ok: true, ...(await this.country.read()), countries: await countries() });
+      return;
+    }
+    // Another country, or the same one confirmed: an adult's, past the PIN
+    // once there is one. TMDB's region follows, and the time zone moves
+    // when the box's isn't in that country.
+    if (method === "PUT" && path === "/api/country") {
+      if (!this.guarded(request, response, "the country") || !(await this.adult(request, response, "the country"))) return;
+      const body = (await this.body(request)) as { code?: unknown } | undefined;
+      const set = await this.country.set(body?.code);
+      if (set.error) {
+        this.json(response, 400, { ok: false, error: set.error });
         return;
       }
-      await mkdir(this.options.state, { recursive: true });
-      await writeFile(join(this.options.state, "whats-new-settings.json"), `${JSON.stringify(body.region === null ? {} : { region: body.region })}\n`);
+      this.broadcast("country", set.state);
       this.broadcast("whats-new", {});
-      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      this.json(response, 200, { ok: true, ...set.state });
       return;
     }
     // The TMDB key, kept where only root can read it, or taken off. An

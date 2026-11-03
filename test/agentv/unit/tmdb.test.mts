@@ -443,7 +443,11 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
   }
   const tmdb = standIn();
   const lines: string[] = [];
-  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: (line) => lines.push(line), keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: tmdb.get });
+  // The box's country is TMDB's region (ADR-055), from the tz database's
+  // tables here, on a box in Amsterdam's time zone.
+  process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
+  process.env.AGENTV_ISO3166_TAB = join(ROOT, "test/agentv/fixtures/met/iso3166.tab");
+  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: (line) => lines.push(line), keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: tmdb.get, country: { zone: async () => "Europe/Amsterdam" } });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const send = async (method: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}${path}`, { method, headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -462,7 +466,7 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     }
   }, 20);
   try {
-    await send("PUT", "/api/whats-new/settings", { region: "NL" });
+    assert.equal((await send("PUT", "/api/country", { code: "NL" })).data.code, "NL");
     const before = (await send("GET", "/api/whats-new")).data.feed as { why: string };
     assert.equal(before.why, "no-key");
     assert.deepEqual((await send("PUT", "/api/tmdb-key", { key: "short" })).data, { ok: false, error: "that doesn't look like a tmdb key" });
@@ -503,7 +507,7 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     }
     assert.ok(!JSON.stringify(await send("GET", "/api/whats-new/settings")).includes(KEY), "the key never comes back out");
     assert.ok(!lines.join("\n").includes(KEY), "nor is it logged");
-    assert.equal((await send("PUT", "/api/whats-new/settings", { region: "the netherlands" })).status, 400);
+    assert.equal((await send("PUT", "/api/country", { code: "the netherlands" })).status, 400);
     assert.deepEqual((await send("DELETE", "/api/tmdb-key")).data.key, { set: false, at: (JSON.parse(readFileSync(join(etc, "tmdb.json"), "utf8")) as { at: string }).at });
   } finally {
     clearInterval(root);
@@ -536,7 +540,7 @@ test("with a key just kept, Settings has the household's services even when the 
     }
     return tmdb.get(path);
   };
-  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: () => {}, keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: get });
+  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: () => {}, keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: get, country: { zone: async () => "Europe/Amsterdam" } });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const drop = join(base, "state", "key-drop", "tmdb.json");
   const root = setInterval(() => {
@@ -550,7 +554,6 @@ test("with a key just kept, Settings has the household's services even when the 
     }
   }, 20);
   try {
-    await fetch(`${url}/api/whats-new/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ region: "NL" }) });
     const kept = (await (await fetch(`${url}/api/tmdb-key`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "eyJhbGciOiJIUzI1NiJ9.stand-in-token.signature" }) })).json()) as { services?: { name: string }[]; error?: string };
     assert.equal(kept.error, undefined);
     assert.deepEqual(kept.services?.map((s) => s.name), ["Kino", "Lumen+"]);

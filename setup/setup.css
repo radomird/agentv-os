@@ -1101,3 +1101,14 @@
 .art-side .button {
   align-self: flex-start;
 }
+
+/* Where the TV is (ADR-055): a long country name gets a smaller headline,
+   so it stays on one line. */
+.setup-headline.long {
+  font-size: 72px;
+  min-height: 112px;
+}
+
+.country-foot {
+  margin-top: auto;
+}

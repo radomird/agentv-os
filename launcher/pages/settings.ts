@@ -14,7 +14,8 @@ import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
-import { loadNews, newsAdjust, newsPanel, newsValue } from "./tmdb.ts";
+import { countryPanel, countryValue, loadCountry } from "./country.ts";
+import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
@@ -345,6 +346,8 @@ export function settings(ctx: Ctx, open?: string): View {
         ...(voice ? [note(voiceLine({ ...voice, spoken: s.spoken }))] : []),
       ],
     },
+    // The box's country (ADR-055): the time zone and new this week follow it.
+    { key: "country", label: "country", value: countryValue, panel: () => countryPanel(ctx) },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
     // What came out this week on the household's services, from TMDB (S8.1).
     { key: "tmdb", label: "new this week", value: newsValue, panel: () => newsPanel(ctx) },
@@ -459,6 +462,15 @@ export function settings(ctx: Ctx, open?: string): View {
       voice = found;
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "sound")!);
+      }
+    })
+    .catch(() => {});
+  void loadCountry()
+    .then(() => {
+      const item = menu.querySelector<HTMLElement>('[data-key="country"] .menu-value');
+      if (item) item.textContent = countryValue();
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "country" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "country")!);
       }
     })
     .catch(() => {});
@@ -605,10 +617,6 @@ export function settings(ctx: Ctx, open?: string): View {
       }
       if (current?.dataset.adjust === "city" && (action === "left" || action === "right")) {
         stepCity(action === "right" ? 1 : -1);
-        return true;
-      }
-      if (current?.dataset.adjust === "region" && (action === "left" || action === "right")) {
-        newsAdjust(action === "right" ? 1 : -1, ctx);
         return true;
       }
       if (current?.dataset.adjust === "output" && (action === "left" || action === "right")) {

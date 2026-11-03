@@ -24,6 +24,10 @@ import { startArchives, type Archives } from "./archives.mts";
 import { startImmichShare } from "./immich-share.mts";
 import { ROOT, startBox } from "./box.mts";
 
+// Where the TV is (ADR-055): the country to confirm, or, on a box whose
+// time zone has no country, the picker.
+const COUNTRY = '[data-action="country-other"], [data-action="country-field"]';
+
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
 
@@ -341,10 +345,10 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   writeFileSync(join(updates, "progress.json"), JSON.stringify({ state: "done", step: "restart", percent: 100, detail: "", at: now(), from: { agentv: "0.2.1-1", omarchy: "4.0.6-1" }, to: { agentv: "0.3.0-1" } }));
   await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
   assert.match(await textOf(page, ".ready-list"), /\[x\] agentv 0\.3\.0/);
-  // Then on, by itself.
-  await page.waitForSelector(".providers", { timeout: 5000 });
+  // Then on, by itself, to where the TV is (ADR-055).
+  await page.waitForSelector(COUNTRY, { timeout: 5000 });
   const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
-  assert.deepEqual([setup.step, setup.ready.update, setup.ready.from, setup.ready.to], ["ai", "done", "0.2.1-1", "0.3.0-1"]);
+  assert.deepEqual([setup.step, setup.ready.update, setup.ready.from, setup.ready.to], ["country", "done", "0.2.1-1", "0.3.0-1"]);
   await page.close();
 });
 
@@ -356,7 +360,7 @@ test("S5.6 getting ready that loads again with the update in already moves on by
   await post("/api/setup/ready", { update: "done", from: "0.2.1-1", to: "0.3.0-1" });
   const page = await tv();
   await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
-  await page.waitForSelector(".providers", { timeout: 5000 });
+  await page.waitForSelector(COUNTRY, { timeout: 5000 });
   await page.close();
 });
 
@@ -368,7 +372,7 @@ test("getting ready carries on with the version it has when there's nothing newe
   writeFileSync(join(updates, "status.json"), JSON.stringify({ checked_at: now(), ok: true, channel: "stable", waiting: true, agentv: { installed: "0.2.1-1", available: "0.3.0-1" }, omarchy: { installed: "4.0.6-1", available: null }, packages: 0, security: false, notes: { agentv: [], agentv_date: null, omarchy: [] } }));
   await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "already up to date.", null, { timeout: 10_000 });
   assert.match(await textOf(page, ".ready-list"), /\[x\] agentv 0\.2\.1 · up to date/, "an update the nightly run hasn't passed waits");
-  await page.waitForSelector(".providers", { timeout: 5000 });
+  await page.waitForSelector(COUNTRY, { timeout: 5000 });
   await page.close();
 
   await fresh();
@@ -380,7 +384,7 @@ test("getting ready carries on with the version it has when there's nothing newe
   assert.match(await textOf(again, ".ready-list"), /\[!\] agentv 0\.2\.1 · couldn't update/);
   // Enter carries on at once.
   await again.keyboard.press("Enter");
-  await again.waitForSelector(".providers", { timeout: 5000 });
+  await again.waitForSelector(COUNTRY, { timeout: 5000 });
   await again.close();
 });
 
@@ -389,6 +393,7 @@ test("S5.6 setup picks up at the same step after the page loads again, as after 
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "country" });
   await post("/api/setup/finish", { step: "ai" });
   await post("/api/setup/finish", { step: "people" });
   const page = await tv();
@@ -396,18 +401,20 @@ test("S5.6 setup picks up at the same step after the page loads again, as after 
   await page.reload();
   await page.waitForSelector(".goals");
   assert.equal((await (await fetch(`${url}/health`)).json()).setup_step, "goal");
-  // Back goes to who watches and the AI step, which are finished, then to
-  // getting ready, which stays there: continue goes on.
+  // Back goes to who watches, the AI step and the country, which are
+  // finished, then to getting ready, which stays there: continue goes on.
   await page.keyboard.press("Escape");
   await page.waitForSelector(".people");
   await page.keyboard.press("Escape");
   await page.waitForSelector(".providers");
   await page.keyboard.press("Escape");
+  await page.waitForSelector(COUNTRY);
+  await page.keyboard.press("Escape");
   await page.waitForSelector(".ready-list");
   await page.waitForTimeout(3000);
-  assert.equal(await page.locator(".providers").count(), 0, "back to getting ready later doesn't move on by itself");
+  assert.equal(await page.locator(COUNTRY).count(), 0, "back to getting ready later doesn't move on by itself");
   await page.keyboard.press("Enter");
-  await page.waitForSelector(".providers");
+  await page.waitForSelector(COUNTRY);
   await page.close();
 });
 
@@ -416,6 +423,7 @@ test("what the tv is for: OK on one picks it, and setup moves on to its apps", a
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "country" });
   await post("/api/setup/finish", { step: "ai" });
   await post("/api/setup/finish", { step: "people" });
   const page = await tv();
@@ -471,6 +479,7 @@ test("setup's motion only moves transform and opacity, headings type out, and re
   // The heading types out: part of it is still to come right after it shows.
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "country" });
   await page.waitForSelector(".providers");
   await page.waitForFunction(() => document.querySelector(".setup-headline")?.textContent === "pick one.", null, { timeout: 2000 });
   assert.deepEqual(await check(page), []);
@@ -494,6 +503,7 @@ async function toAi(): Promise<void> {
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "country" });
 }
 
 const screenAsked = (page: Page, cmd: string) => page.evaluate((c) => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.filter((r) => r.cmd === c).length, cmd);

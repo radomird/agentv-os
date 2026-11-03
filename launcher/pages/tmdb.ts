@@ -1,12 +1,12 @@
 // Settings → new this week (stage 8, S8.1): the household's TMDB key, the
 // region, and which of TMDB's services each streaming app here is. The key
 // is typed or pasted on the TV with the phone's keyboard, handed to root
-// and never shown again, as the provider's is. The region is the country
-// of the time zone the installer set, unless one is picked here. What's
-// new comes from TMDB, and where a title is on from JustWatch, through
-// TMDB, which the panel and Settings → About credit.
+// and never shown again, as the provider's is. The region is the box's
+// country, which setup confirmed and Settings → country changes (ADR-055).
+// What's new comes from TMDB, and where a title is on from JustWatch,
+// through TMDB, which the panel and Settings → About credit.
 
-import { daemon, type NewsState } from "../api.ts";
+import { daemon, type Country, type NewsState } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -14,16 +14,16 @@ import { bar, heading } from "./parts.ts";
 // Kept between visits so Settings draws at once, and asked for again each
 // time it opens.
 export let newsState: NewsState | null = null;
-let regions: { code: string; name: string }[] = [];
+let countries: Country[] = [];
 
 export async function loadNews(): Promise<void> {
   newsState = await daemon.news().catch(() => newsState);
-  if (newsState?.key.set && !regions.length) regions = await daemon.regions().catch(() => []);
+  if (!countries.length) countries = await daemon.country().then((c) => c.countries, () => []);
 }
 
 function regionName(code: string | null): string {
-  if (!code) return "none yet";
-  return (regions.find((r) => r.code === code)?.name ?? code).toLowerCase();
+  if (!code) return "no country yet";
+  return (countries.find((c) => c.code === code)?.name ?? code).toLowerCase();
 }
 
 export function newsValue(): string {
@@ -52,16 +52,6 @@ export function newsPanel(ctx: Ctx): HTMLElement[] {
       credit,
     ];
   }
-  const saveRegion = async (region: string | null) => {
-    try {
-      newsState = await daemon.saveRegion(region, ctx.held() ?? undefined);
-      ctx.sounds.play("confirm");
-    } catch (error) {
-      ctx.sounds.play("failure");
-      ctx.toast((error as Error).message, "fail");
-    }
-    ctx.render("settings/tmdb", "region");
-  };
   const removeKey = async () => {
     const grant = await ctx.grant("the tmdb key");
     if (grant === null) return;
@@ -79,40 +69,15 @@ export function newsPanel(ctx: Ctx): HTMLElement[] {
   return [
     h("div", { class: "panel-title" }, "what came out this week in"),
     h("div", { class: "panel-big" }, regionName(state.region)),
-    h(
-      "button",
-      { class: "button", "data-focus": true, "data-action": "region", "data-adjust": "region", onclick: () => stepRegion(1, saveRegion) },
-      h("span", {}, "region"),
-      h("span", { class: "button-value" }, `‹ ${regionName(state.region)} ›`),
-    ),
-    ...(state.picked ? [button("own-region", "use the time zone's region", () => void saveRegion(null))] : []),
+    button("country", "another country →", () => ctx.go("country")),
     ...(state.services ?? []).map((service) => note(serviceLine(service))),
     ...(state.services && !state.services.length ? [note("there's no streaming app on this tv yet.")] : []),
     ...(state.error ? [note(`tmdb didn't answer: ${state.error}`)] : []),
     button("tmdb-key", "replace the key →", () => ctx.go("tmdb-key")),
     button("remove-tmdb-key", "take the key off", () => void removeKey()),
-    note("left and right pick another region. the key is only the system's, and it's never shown again."),
+    note("the country is the tv's own, so the time follows it too. the key is only the system's, and it's never shown again."),
     credit,
   ];
-}
-
-// The next region of TMDB's, by name, from the one shown.
-function stepRegion(by: number, save: (region: string | null) => Promise<void>): void {
-  if (!regions.length) return;
-  const at = regions.findIndex((r) => r.code === newsState?.region);
-  void save(regions[(at + by + regions.length) % regions.length].code);
-}
-
-export function newsAdjust(by: number, ctx: Ctx): void {
-  stepRegion(by, async (region) => {
-    try {
-      newsState = await daemon.saveRegion(region, ctx.held() ?? undefined);
-      ctx.sounds.play("move");
-    } catch (error) {
-      ctx.toast((error as Error).message, "fail");
-    }
-    ctx.render("settings/tmdb", "region");
-  });
 }
 
 // The key page: a field the phone's keyboard types or pastes into, then
@@ -145,7 +110,6 @@ export function tmdbKeyPage(ctx: Ctx): View {
       return;
     }
     field.value = "";
-    regions = await daemon.regions().catch(() => []);
     ctx.sounds.play("confirm");
     ctx.toast("the tmdb key is kept", "ok");
     ctx.back();
