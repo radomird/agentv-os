@@ -540,7 +540,7 @@ test("with a key just kept, Settings has the household's services even when the 
     }
     return tmdb.get(path);
   };
-  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: () => {}, keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: get });
+  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: () => {}, keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: get, country: { zone: async () => "Europe/Amsterdam" } });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const drop = join(base, "state", "key-drop", "tmdb.json");
   const root = setInterval(() => {
@@ -554,7 +554,6 @@ test("with a key just kept, Settings has the household's services even when the 
     }
   }, 20);
   try {
-    await fetch(`${url}/api/whats-new/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ region: "NL" }) });
     const kept = (await (await fetch(`${url}/api/tmdb-key`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "eyJhbGciOiJIUzI1NiJ9.stand-in-token.signature" }) })).json()) as { services?: { name: string }[]; error?: string };
     assert.equal(kept.error, undefined);
     assert.deepEqual(kept.services?.map((s) => s.name), ["Kino", "Lumen+"]);
