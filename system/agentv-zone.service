@@ -1,0 +1,14 @@
+# Sets the time zone the box's country takes (bin/agentv-zone-set), through
+# timedatectl. agentv-zone.path starts it when the daemon hands one over.
+
+[Unit]
+Description=AgenTV time zone
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-zone-set
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/private/agentv/daemon/zone-drop
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

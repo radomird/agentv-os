@@ -24,6 +24,7 @@ import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { keyPage, planPage, termsHeard } from "./pages/key.ts";
+import { countryPage, loadCountry } from "./pages/country.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
@@ -347,6 +348,7 @@ function viewFor(route: string): View {
   if (name === "profile") return profile(ctx, arg);
   if (name === "key") return keyPage(ctx);
   if (name === "tmdb-key") return tmdbKeyPage(ctx);
+  if (name === "country") return countryPage(ctx);
   if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
@@ -761,7 +763,13 @@ async function start(): Promise<void> {
     tiles: () => {
       if (history[history.length - 1] === "home") redraw();
     },
-    // The TMDB key or the region changed (S8.1): New this week asks again,
+    // The box's country changed (ADR-055): Settings shows it, and New this
+    // week asks again with the whats-new that comes with it.
+    country: () => {
+      const route = history[history.length - 1];
+      if (route.startsWith("settings")) void loadCountry().then(redraw);
+    },
+    // The TMDB key or the country changed (S8.1): New this week asks again,
     // and Settings shows it.
     "whats-new": () => {
       const route = history[history.length - 1];

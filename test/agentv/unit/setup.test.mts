@@ -72,6 +72,9 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   assert.match((await store.finish("ready")).error ?? "", /welcome isn't finished yet/);
   await store.finish("welcome");
   await store.finish("ready");
+  assert.equal((await store.read()).step, "country");
+  assert.match((await store.finish("ai")).error ?? "", /country isn't finished yet/);
+  await store.finish("country");
   assert.equal((await store.read()).step, "ai");
   assert.match((await store.go("goal")).error ?? "", /ai isn't finished yet/);
   await store.finish("ai");
@@ -91,7 +94,7 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   assert.equal((await store.read()).step, "background");
   await store.finish("background");
   assert.equal((await store.read()).step, "background", "the last step finished stays on it, for the page to mark setup done");
-  assert.deepEqual(STEPS, ["welcome", "ready", "ai", "people", "goal", "apps", "theme", "background"]);
+  assert.deepEqual(STEPS, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
 });
 
 test("getting ready keeps how bringing the box up to date goes, and when the check was asked for", async () => {
@@ -132,7 +135,8 @@ test("the box is online on a wired or Wi-Fi address that isn't its own setup hot
 test("the setup screens hear where setup is, how the box is online, the hotspot and the phones", async () => {
   const info = await (await fetch(`${url}/api/setup`)).json();
   assert.equal(info.setup.step, "welcome");
-  assert.deepEqual(info.steps, ["welcome", "ready", "ai", "people", "goal", "apps", "theme", "background"]);
+  assert.deepEqual(info.steps, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
+  assert.equal(info.parts.country, "1/6 country");
   assert.equal(info.parts.goal, "4/6 goal");
   assert.equal(info.parts.apps, "5/6 apps");
   assert.equal(info.parts.theme, "6/6 look");
@@ -159,6 +163,7 @@ test("S5.6 each step moved on is broadcast, kept, and said in /health, and setup
   assert.equal((await post("/api/setup/finish", { step: "goal" })).status, 400, "ready isn't finished yet");
   assert.equal((await post("/api/setup/ready", { update: "none", to: "0.2.1" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "ready" })).status, 200);
+  assert.equal((await post("/api/setup/finish", { step: "country" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "ai" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "people" })).status, 200);
   assert.equal((await post("/api/setup/goal", { goal: "streaming" })).status, 200);
@@ -210,6 +215,7 @@ test("with music as the goal, Music is on home from the start", async () => {
     await send("/api/setup/finish", { step: "welcome" });
     await send("/api/setup/ready", { update: "none" });
     await send("/api/setup/finish", { step: "ready" });
+    await send("/api/setup/finish", { step: "country" });
     await send("/api/setup/finish", { step: "ai" });
     await send("/api/setup/finish", { step: "people" });
     await send("/api/setup/goal", { goal: "music" });

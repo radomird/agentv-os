@@ -195,11 +195,22 @@ export interface NewsService {
 
 export interface NewsState {
   key: { set: boolean; at?: string; error?: string };
-  region: string | null;
-  zoneRegion: string | null;
-  picked: boolean;
+  region: string | null; // the box's country (ADR-055)
   services?: NewsService[];
   error?: string;
+}
+
+// The box's country (ADR-055), and the countries to pick from.
+export interface Country {
+  code: string;
+  name: string;
+}
+
+export interface CountryState {
+  code: string | null;
+  name: string | null;
+  picked: boolean;
+  zone: string;
 }
 
 export interface WeatherPlace {
@@ -431,8 +442,8 @@ export const daemon = {
   // New this week (stage 8): the TMDB key, the region, TMDB's regions, and a
   // title chosen on home, played in its app.
   news: () => call<NewsState & { ok: boolean }>("GET", "/api/whats-new/settings"),
-  saveRegion: (region: string | null, grant?: string) => call<NewsState>("PUT", "/api/whats-new/settings", { region }, grant),
-  regions: () => call<{ regions: { code: string; name: string }[] }>("GET", "/api/whats-new/regions").then((r) => r.regions),
+  country: () => call<CountryState & { countries: Country[] }>("GET", "/api/country"),
+  setCountry: (code: string, grant?: string) => call<CountryState>("PUT", "/api/country", { code }, grant),
   saveTmdbKey: (key: string, grant?: string) => call<NewsState>("PUT", "/api/tmdb-key", { key }, grant),
   removeTmdbKey: (grant?: string) => call<NewsState>("DELETE", "/api/tmdb-key", undefined, grant),
   openNew: (id: string) => call<{ said: Said }>("POST", "/api/whats-new/open", { id }),

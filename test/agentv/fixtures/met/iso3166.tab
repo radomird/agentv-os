@@ -1,0 +1,14 @@
+# A few lines of the tz database's iso3166.tab (public domain), for the
+# tests: the countries in zone.tab here, and one with no zone listed.
+AQ	Antarctica
+DE	Germany
+FR	France
+GB	Britain (UK)
+JP	Japan
+NL	Netherlands
+NO	Norway
+NZ	New Zealand
+PT	Portugal
+RS	Serbia
+SJ	Svalbard & Jan Mayen
+US	United States
