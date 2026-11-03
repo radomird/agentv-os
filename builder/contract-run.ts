@@ -12,6 +12,7 @@ import type { Manifest } from "../apps/contract/manifest.ts";
 import { validatePackage } from "../apps/contract/manifest.ts";
 import { AppHost, type PageBroker } from "../daemon/apps/loader.ts";
 import { cdpPage } from "../daemon/page.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../daemon/remote-page.ts";
 import type { Build } from "./build.ts";
 import { type Contract, differences, Fixtures } from "./fixtures.ts";
 import { headless } from "./gates/chromium.ts";
@@ -27,12 +28,37 @@ export interface Result {
   why: string[];
 }
 
-// The app's page while its checks run, in whichever browser runs them.
+// The phone's d-pad as a check presses it, by the virtual input device's
+// names, and the key each one is in the page (ADR-008).
+export const REMOTE_KEYS: Record<string, { key: string; code: number }> = {
+  up: { key: "ArrowUp", code: 38 },
+  down: { key: "ArrowDown", code: 40 },
+  left: { key: "ArrowLeft", code: 37 },
+  right: { key: "ArrowRight", code: 39 },
+  enter: { key: "Enter", code: 13 },
+  back: { key: "Escape", code: 27 },
+};
+
+// What has focus in the page, by what a screen reader would call it: its
+// label, or its text. Nothing when nothing has focus.
+export const FOCUSED = `(() => {
+  let el = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+  if (!el || el === document.body || el === document.documentElement) return "";
+  return (el.getAttribute("aria-label") || el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 200);
+})()`;
+
+// The app's page while its checks run, in whichever browser runs them. It
+// runs as the services' Chromium on the TV does, with spatial navigation and
+// the d-pad's ring and Back (daemon/remote-page.ts).
 export interface CheckPage {
   broker: PageBroker;
   goto(url: string): Promise<void>;
   url(): Promise<string>;
   title(): Promise<string>;
+  // One of REMOTE_KEYS, pressed and let go, and the page settled after it.
+  press(key: string): Promise<void>;
+  focused(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -41,7 +67,7 @@ export async function checkApp(o: { dir: string; manifest: Manifest; contract: C
   const { manifest, contract, served } = o;
   const app = manifest.id;
   const results: Result[] = [];
-  const page = contract.checks.some((check) => check.page) ? await o.openPage() : undefined;
+  const page = contract.checks.some((check) => check.page || check.remote) ? await o.openPage() : undefined;
   const host = new AppHost({ dir: o.dir, manifest, settings: contract.settings ?? {}, page: page?.broker, fetch: served.fetch, userAgent: "AgenTV-contract" });
   try {
     await host.start();
@@ -62,10 +88,17 @@ export async function checkApp(o: { dir: string; manifest: Manifest; contract: C
       host.setPage(check.page ? page?.broker : undefined);
       let value: unknown;
       let failed: Error | undefined;
-      try {
-        value = await host.call(VIEWER, check.call ?? "", ...(check.args ?? []));
-      } catch (error) {
-        failed = error as Error;
+      // A check of the d-pad alone calls nothing.
+      if (check.call || !check.remote) {
+        try {
+          value = await host.call(VIEWER, check.call ?? "", ...(check.args ?? []));
+        } catch (error) {
+          failed = error as Error;
+        }
+      }
+      for (const key of check.remote ?? []) {
+        if (!REMOTE_KEYS[key]) throw new Error(`the remote has no ${key}: ${Object.keys(REMOTE_KEYS).join(", ")}`);
+        await page!.press(key);
       }
       if (check.throws) {
         if (!failed) why.push(`it answered ${JSON.stringify(value)} instead of failing`);
@@ -83,6 +116,10 @@ export async function checkApp(o: { dir: string; manifest: Manifest; contract: C
         const title = await page.title();
         if (!new RegExp(check.after.title).test(title)) why.push(`its page's title is "${title}", not like /${check.after.title}/`);
       }
+      if (check.after?.focused !== undefined && page) {
+        const focused = await page.focused();
+        if (!new RegExp(check.after.focused).test(focused)) why.push(`what has focus is "${focused}", not like /${check.after.focused}/`);
+      }
       for (const ask of check.asks ?? []) {
         const made = served.asked.find((request) => new RegExp(ask.url).test(request.url) && Object.entries(ask.headers ?? {}).every(([name, value]) => new RegExp(value).test(request.headers[name.toLowerCase()] ?? "")));
         if (!made) why.push(`it never asked for /${ask.url}/${ask.headers ? ` with ${JSON.stringify(ask.headers)}` : ""}`);
@@ -98,10 +135,20 @@ export async function checkApp(o: { dir: string; manifest: Manifest; contract: C
   return results;
 }
 
+// A moment for what a key started, such as a page Enter or Back opened, to
+// load and draw.
+export async function settled(evaluate: (expression: string) => Promise<unknown>): Promise<void> {
+  await new Promise((done) => setTimeout(done, 250));
+  for (let tries = 0; tries < 50; tries++) {
+    if ((await evaluate("document.readyState").catch(() => "")) === "complete") return;
+    await new Promise((done) => setTimeout(done, 100));
+  }
+}
+
 // The app's page in a headless Chromium of its own, with every request it
 // makes answered from the fixtures, or refused. Nothing reaches a network.
 export async function cdpCheckPage(chromium: string, served: Fixtures): Promise<CheckPage> {
-  const browser = headless(chromium);
+  const browser = headless(chromium, { flags: [SPATIAL_NAVIGATION] });
   const { cdp } = browser;
   try {
     const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
@@ -119,6 +166,7 @@ export async function cdpCheckPage(chromium: string, served: Fixtures): Promise<
     });
     await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }, sessionId);
     await cdp.send("Page.enable", {}, sessionId);
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: REMOTE_PAGE, worldName: REMOTE_WORLD }, sessionId);
     let loaded: (() => void) | null = null;
     cdp.on("Page.loadEventFired", (_event, from) => {
       if (from === sessionId) loaded?.();
@@ -145,6 +193,14 @@ export async function cdpCheckPage(chromium: string, served: Fixtures): Promise<
       },
       url: () => evaluate("location.href"),
       title: () => evaluate("document.title"),
+      async press(name) {
+        const { key, code } = REMOTE_KEYS[name];
+        const base = { key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
+        await cdp.send("Input.dispatchKeyEvent", key === "Enter" ? { type: "keyDown", text: "\r", unmodifiedText: "\r", ...base } : { type: "rawKeyDown", ...base }, sessionId);
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...base }, sessionId);
+        await settled(evaluate);
+      },
+      focused: () => evaluate(FOCUSED),
       close: () => browser.close(),
     };
   } catch (error) {

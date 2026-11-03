@@ -10,6 +10,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
+import { REMOTE_PAGE, REMOTE_WORLD } from "../../../daemon/remote-page.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
@@ -151,6 +152,11 @@ class FakeBrowser implements DevTools {
       return 1;
     }
     return 0;
+  }
+  // What runs in each page as it loads, in which world.
+  scripts: { targetId: string; source: string; world: string }[] = [];
+  async addScriptIn(targetId: string, source: string, world: string) {
+    this.scripts.push({ targetId, source, world });
   }
   target(url: string): string {
     const page = this.pageList.find((p) => p.url === url);
@@ -1051,6 +1057,17 @@ async function openApp(t: Awaited<ReturnType<typeof tv>>, id: string, address: s
   assert.equal(t.screen.front()?.address, address);
   return t.launcher.browser.target(url);
 }
+
+test("the d-pad's ring and Back go into every web app's page, the first one and the ones after it (ADR-008)", async () => {
+  const t = await tv();
+  const first = await openApp(t, "agentv.tube", "0xb");
+  await sleep(20);
+  const second = await openApp(t, "agentv.player", "0xc");
+  await sleep(20);
+  const remote = t.launcher.browser.scripts.filter((s) => s.source === REMOTE_PAGE && s.world === REMOTE_WORLD).map((s) => s.targetId);
+  assert.deepEqual(remote, [first, second]);
+  assert.deepEqual(t.launcher.homeBrowser.scripts, [], "home moves its own focus");
+});
 
 async function open(screen: Screen): Promise<any[]> {
   return ((await screen.handle({ cmd: "status" })) as any).open;
