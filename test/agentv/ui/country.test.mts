@@ -97,7 +97,7 @@ test("ADR-055 another country is typed on the phone's keyboard, and the time zon
     await page.waitForSelector(".providers");
     const now = await country();
     assert.deepEqual([now.code, now.picked, now.zone], ["US", true, "America/New_York"]);
-    assert.equal(zone(), "America/New_York", "the zone most of its people live in (Q166)");
+    assert.equal(zone(), "America/New_York", "the zone most of its people live in (Q167)");
   } finally {
     await page.close();
   }

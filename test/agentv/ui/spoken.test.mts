@@ -55,6 +55,32 @@ test("Settings → Sound has spoken answers on, and says the provider's own voic
   }
 });
 
+test("a voice that's known only once the focus is in the panel still shows, and the focus stays put", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on("pageerror", (error) => errors.push(error.message));
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(`${url}/api/voice`, async (route) => {
+    await held;
+    await route.fulfill({ json: { ok: true, spoken: true, provider: "gemini", last: null, by: "provider", piper: "missing" } });
+  });
+  try {
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".grid .tile.focused");
+    await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/sound"));
+    await page.waitForSelector('[data-action="spoken"]');
+    await page.keyboard.press("ArrowRight");
+    const focused = () => page.evaluate(() => document.querySelector(".settings-panel .focused")?.getAttribute("data-action") ?? null);
+    const before = await focused();
+    assert.ok(before, "the focus is on a control in the panel");
+    release();
+    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("gemini's own voice"));
+    assert.equal(await focused(), before);
+  } finally {
+    await page.close();
+  }
+});
+
 test("with no voice of the provider's, it says Piper says them, or that Piper isn't on the box", async () => {
   let page = await tv({ by: "piper", piper: "ready" });
   try {

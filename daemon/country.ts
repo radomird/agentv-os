@@ -7,7 +7,7 @@
 // - TMDB's region, for New this week and new episodes (daemon/tmdb.ts).
 // - The box's time zone, when another country is picked: the installer's
 //   zone stays when it's in that country, and otherwise the zone most of
-//   the country's people live in (MAIN, Q166), or the first the tz
+//   the country's people live in (MAIN, Q167), or the first the tz
 //   database lists for it. Root sets it (bin/agentv-zone-set, through
 //   agentv-zone.path), and Clock, Weather and the TV's own clock follow.
 //
@@ -31,7 +31,7 @@ export interface CountryState {
 }
 
 // The zone most of a country's people live in, for a country with more than
-// one (Q166). A country not here takes the first zone zone.tab lists for it.
+// one (Q167). A country not here takes the first zone zone.tab lists for it.
 export const MAIN: Record<string, string> = {
   AR: "America/Argentina/Buenos_Aires",
   AU: "Australia/Sydney",
