@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   policy:
-    name: "Layer 1: policy, lint and secrets"
+    name: "Lint, secrets and house rules"
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -61,7 +61,7 @@ jobs:
         run: test/agentv/policy/check-test.sh --ci
 
   unit:
-    name: "Layer 2: unit tests"
+    name: "Unit tests"
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -77,7 +77,7 @@ jobs:
       - run: test/agentv/unit/run
 
   contract:
-    name: "Layer 3: every app against its fixtures"
+    name: "Each app against its recorded replies"
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -91,7 +91,7 @@ jobs:
         run: test/agentv/contract/run
 
   ui:
-    name: "Layer 4: the launcher in Chromium"
+    name: "TV and phone screens in Chromium"
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -102,7 +102,7 @@ jobs:
         run: test/agentv/ui/run
 
   omarchy-tests:
-    name: "Omarchy's own tests, no worse than at the base"
+    name: "Omarchy's own tests, no new failures"
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -149,7 +149,7 @@ jobs:
   # those when they're there, so the three are tested together before any
   # of them merges.
   changes:
-    name: Does this need the image layer
+    name: "Does this need a VM test?"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -237,6 +237,7 @@ jobs:
             echo "It builds the ISO and installs it, because $why." >>"$GITHUB_STEP_SUMMARY"
           fi
   image:
+    name: VM test
     needs: changes
     if: needs.changes.outputs.image == 'true'
     # image.yml asks for contents: write, for the nightly run's tested.json.
@@ -255,7 +256,7 @@ jobs:
     secrets: inherit
 
   report:
-    name: Acceptance ids
+    name: "Which acceptance checks passed"
     if: always()
     needs: [policy, unit, contract, ui, omarchy-tests]
     runs-on: ubuntu-26.04

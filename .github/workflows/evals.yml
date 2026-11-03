@@ -39,7 +39,7 @@ concurrency:
 
 jobs:
   router:
-    name: "Layer 6: the router on ${{ matrix.provider }}"
+    name: "Voice router on ${{ matrix.provider }}"
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:

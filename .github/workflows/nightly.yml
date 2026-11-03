@@ -82,6 +82,7 @@ jobs:
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
 
   image:
+    name: Install and test ${{ matrix.packages }}
     needs: which
     strategy:
       fail-fast: false
