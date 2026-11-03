@@ -1,6 +1,6 @@
-# Music fixtures
+# Music test data
 
-Two short albums of tones and a playlist, for the Music app's tests. `make` made them with ffmpeg, so they're ours to give away, under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+This is what the Music app's tests use: two short albums of tones and a playlist. `make` made them with ffmpeg just for this, so they're free to share under [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
 
 - `Test Tones`, by AgenTV (2026): MP3, FLAC and Ogg Vorbis, with `cover.jpg` next to them.
 - `Night Shift`, by Pixel Band (2025): Opus, AAC with its cover inside, and WAV.
