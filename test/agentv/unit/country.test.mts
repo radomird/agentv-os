@@ -1,5 +1,5 @@
 // The box's country (ADR-055): the tz database's countries, the time zone a
-// country takes (Q166), the one setting that setup confirms and Settings
+// country takes (Q167), the one setting that setup confirms and Settings
 // changes, the zone handed to root only when it moves, the daemon's routes
 // behind the PIN, and setup's country step, which a box already past it
 // skips.
@@ -27,7 +27,7 @@ test("the countries are the tz database's, each with a zone of its own, by name"
   assert.equal(all.find((c) => c.code === "GB")?.name, "Britain (UK)");
 });
 
-test("Q166 a country keeps the box's zone when it's in it, or takes the zone most of its people live in", async () => {
+test("Q167 a country keeps the box's zone when it's in it, or takes the zone most of its people live in", async () => {
   assert.equal(await zoneFor("US", "America/Chicago"), "America/Chicago", "the installer's zone stays");
   assert.equal(await zoneFor("US", "Europe/Oslo"), "America/New_York");
   assert.equal(MAIN.US, "America/New_York");
