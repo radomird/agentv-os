@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { REMOTE_PAGE, REMOTE_WORLD } from "../../../daemon/remote-page.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
@@ -1365,6 +1365,11 @@ test("S5.10 a shared link with no app of its own opens in the share browser, on 
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: two }), { ok: true });
   assert.equal(t.launcher.started.filter((s) => s.role === "share").length, 1);
   assert.deepEqual(t.launcher.shareCdp.pageList.map((page) => page.url), ["https://example.net/read"]);
+  // Both pages get the d-pad's ring, without the apps' Back (Q164).
+  await sleep(20);
+  const shared = t.launcher.shareCdp.scripts.filter((s) => s.world === REMOTE_WORLD);
+  assert.equal(shared.length, 2, "the first page and the next one");
+  assert.ok(shared.every((s) => s.source === SHARED_PAGE));
   // Back closes it, and home's in front again.
   t.screen.back("down", Date.now());
   await t.screen.idle();

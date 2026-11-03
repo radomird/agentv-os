@@ -20,6 +20,10 @@
 //   something full screen, and not when there's no page to go back to.
 //   Holding Back for a second still goes home (ADR-031), so a hold never
 //   goes back a page first.
+//
+// A link shared from a phone opens in the share browser (ADR-050), which
+// gets the same spatial navigation and SHARED_PAGE: the ring without Back,
+// since Back there closes the page.
 
 // For the services' Chromium's command line.
 export const SPATIAL_NAVIGATION = "--enable-spatial-navigation";
@@ -35,8 +39,10 @@ const GAP = 3;
 // to the middle.
 const EDGE = 0.15;
 
-// holdMs: the screen daemon's hold on Back that goes home.
-export function remotePage(holdMs = 1000): string {
+// holdMs: the screen daemon's hold on Back that goes home. back: whether a
+// tap on Back goes back a page.
+export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
+  const back = o.back ?? true;
   return `(() => {
   if (window.top !== window || window.__agentvRemote) return;
   window.__agentvRemote = true;
@@ -110,6 +116,7 @@ export function remotePage(holdMs = 1000): string {
     "keydown",
     (event) => {
       if (event.key === "Escape") {
+        if (!${back}) return;
         // Whether a dialog or full screen is up is read now, since the
         // press itself can close it.
         if (!event.repeat) backDown = { event, busy: busy(), at: performance.now() };
@@ -132,7 +139,7 @@ export function remotePage(holdMs = 1000): string {
   addEventListener(
     "keyup",
     (event) => {
-      if (event.key !== "Escape" || !backDown) return;
+      if (!${back} || event.key !== "Escape" || !backDown) return;
       const down = backDown;
       backDown = null;
       if (down.busy || performance.now() - down.at >= ${holdMs}) return;
@@ -160,3 +167,4 @@ export function remotePage(holdMs = 1000): string {
 }
 
 export const REMOTE_PAGE = remotePage();
+export const SHARED_PAGE = remotePage(1000, { back: false });
