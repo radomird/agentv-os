@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders } from "node:http";
+import { createServer as socketServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -22,7 +23,7 @@ import { routeServer } from "../../../daemon/router-serve.ts";
 import { Say, type SayAnswer, type SayAsk } from "../../../daemon/say.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { askTmdb, tmdbPath, tmdbRequest } from "../../../daemon/tmdb-api.ts";
-import { answerEpisode, dayOf, News, sameService, spokenDay, type NewsApp, type TmdbGet } from "../../../daemon/tmdb.ts";
+import { answerEpisode, dayOf, News, ROUTER_GONE, sameService, spokenDay, tmdbViaRouter, type NewsApp, type TmdbGet } from "../../../daemon/tmdb.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-tmdb-"));
@@ -204,6 +205,21 @@ test("with a key just kept, the daemon waits for the router's service to have it
   assert.equal(await never.ready(300), false, "and stops waiting after a while");
   const { n: other } = news({ get: async () => ({ ok: false, status: 401, error: "tmdb didn't take the key" }) });
   assert.equal(await other.ready(300), true, "TMDB refusing the key is an answer, not a wait");
+});
+
+test("a router that hangs up mid-answer, as root stops it to start it again, isn't running, and the daemon waits for it", async () => {
+  const socket = join(mkdtempSync(join(scratch, "router-")), "router.sock");
+  const router = socketServer((connection) => connection.once("data", () => connection.destroy()));
+  await new Promise<void>((resolve) => router.listen(socket, resolve));
+  try {
+    const get = tmdbViaRouter(socket, 2000);
+    assert.deepEqual(await get("/configuration"), { ok: false, error: ROUTER_GONE });
+    const { n } = news({ get });
+    assert.equal(await n.ready(300), false, "it's waited for, not taken as ready");
+  } finally {
+    await new Promise((resolve) => router.close(resolve));
+  }
+  assert.deepEqual(await tmdbViaRouter(socket, 2000)("/configuration"), { ok: false, error: ROUTER_GONE }, "and with nobody on the socket, it isn't running either");
 });
 
 // --- What's new (S8.1) -----------------------------------------------------------------
@@ -489,6 +505,55 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     assert.ok(!lines.join("\n").includes(KEY), "nor is it logged");
     assert.equal((await send("PUT", "/api/whats-new/settings", { region: "the netherlands" })).status, 400);
     assert.deepEqual((await send("DELETE", "/api/tmdb-key")).data.key, { set: false, at: (JSON.parse(readFileSync(join(etc, "tmdb.json"), "utf8")) as { at: string }).at });
+  } finally {
+    clearInterval(root);
+    await daemon.close();
+  }
+});
+
+test("with a key just kept, Settings has the household's services even when the old router answers just before it stops", async () => {
+  const base = join(scratch, "restart");
+  const etc = join(base, "etc");
+  mkdirSync(etc, { recursive: true });
+  const apps = join(base, "apps");
+  for (const [id, name] of [["local.kino", "Kino"], ["local.lumen", "Lumen+"]]) {
+    const dir = join(scratch, `restart-${id}`);
+    cpSync(join(ROOT, "test/agentv/fixtures/apps/pager"), dir, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ ...manifest, id, name, author: "your agent", tv: { ...manifest.tv, childSafe: false } }));
+    await installLocal(dir, apps, async () => true);
+  }
+  // The router's service: once root keeps the key, the old one answers
+  // one more ask and stops, and the new one is up a moment later, as on a
+  // box where agentv-key.service starts it again.
+  const tmdb = standIn();
+  let router: "up" | "stopping" | "down" = "up";
+  const get: TmdbGet = async (path) => {
+    if (router === "down") return { ok: false, error: ROUTER_GONE };
+    if (router === "stopping") {
+      router = "down";
+      setTimeout(() => (router = "up"), 400);
+    }
+    return tmdb.get(path);
+  };
+  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: () => {}, keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: get });
+  const url = `http://127.0.0.1:${await daemon.listen()}`;
+  const drop = join(base, "state", "key-drop", "tmdb.json");
+  const root = setInterval(() => {
+    try {
+      const { key } = JSON.parse(readFileSync(drop, "utf8"));
+      rmSync(drop);
+      writeFileSync(join(etc, "tmdb.json"), JSON.stringify({ set: key !== null, at: new Date().toISOString() }));
+      router = "stopping";
+    } catch {
+      // Nothing dropped yet.
+    }
+  }, 20);
+  try {
+    await fetch(`${url}/api/whats-new/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ region: "NL" }) });
+    const kept = (await (await fetch(`${url}/api/tmdb-key`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "eyJhbGciOiJIUzI1NiJ9.stand-in-token.signature" }) })).json()) as { services?: { name: string }[]; error?: string };
+    assert.equal(kept.error, undefined);
+    assert.deepEqual(kept.services?.map((s) => s.name), ["Kino", "Lumen+"]);
   } finally {
     clearInterval(root);
     await daemon.close();
