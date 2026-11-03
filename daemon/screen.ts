@@ -137,6 +137,9 @@ export interface Launcher {
   shareTarget(id: string): Promise<{ url: string; app?: string }>;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
+  // The listening bar over the app in front (ADR-054), in a state with its
+  // words, or gone with "closed".
+  listen(state: string, text: string): Promise<void>;
   // Tells the overlay whether an app is in front, so the mouse's Home
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
@@ -1008,11 +1011,29 @@ export class Screen {
     return this.fromHome({ cmd: "open-app", app, ...(item ? { item } : {}) }, true) as Promise<{ ok?: boolean; error?: string }>;
   }
 
+  // The listening bar over the app in front (ADR-054). With home in front,
+  // the launcher draws its own, so the overlay's goes.
+  async sayLive(state: string, text: string): Promise<{ ok?: boolean; error?: string }> {
+    try {
+      if (this.appInFront()) await this.launcher.listen(state, text);
+      else await this.launcher.listen("closed", "");
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
+
   // A sentence's outcome over the app in front, as a toast. With home in
   // front, the launcher shows it itself.
   async sayTell(text: string): Promise<{ ok?: boolean; error?: string }> {
-    if (!this.front()) return { ok: true };
+    if (!this.appInFront()) return { ok: true };
     return (await this.toast(text)) as { ok?: boolean; error?: string };
+  }
+
+  // An app's window in front, not home's, and not the ambient screen.
+  private appInFront(): boolean {
+    const front = this.front();
+    return Boolean(front && front.role !== "home") && !this.ambient;
   }
 
   // A web app's page while it's open behind home, so its search can use it.
@@ -2023,6 +2044,20 @@ function track(role: Role, child: ChildProcess, group = false, cdp?: CdpPipe): A
   };
 }
 
+// The listening bar's look, as home's: the theme's background, words and
+// accent from its CSS, and whether reduce motion is on, read again at most
+// every 10 s.
+let look: { at: number; args: string[] } | null = null;
+async function barLook(): Promise<string[]> {
+  if (look && Date.now() - look.at < 10_000) return look.args;
+  const css = await fetch(`${HOME_URL}api/theme.css`, { signal: AbortSignal.timeout(3000) }).then((r) => r.text(), () => "");
+  const home = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json(), () => ({}));
+  const colour = (name: string, fallback: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{3,8})\\b`).exec(css)?.[1] ?? fallback;
+  const args = [colour("background", "#1a1b26"), colour("foreground", "#a9b1d6"), colour("accent", "#7aa2f7"), (home as { settings?: { reduceMotion?: boolean } }).settings?.reduceMotion ? "true" : "false"];
+  look = { at: Date.now(), args };
+  return args;
+}
+
 export const launcher: Launcher = {
   async homeReady() {
     for (let tries = 0; tries < 60; tries++) {
@@ -2133,6 +2168,17 @@ export const launcher: Launcher = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(app ? { app: app.id, name: app.name } : { app: null }),
       signal: AbortSignal.timeout(5000),
+    });
+  },
+
+  async listen(state, text) {
+    const args = state === "closed" ? ["listen", "hide"] : ["listen", "show", state, text, ...(await barLook())];
+    return new Promise((resolve, reject) => {
+      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
     });
   },
 
@@ -2565,7 +2611,7 @@ async function main(): Promise<void> {
     url: HOME_URL,
     path: "api/say/ask",
     what: "a sentence",
-    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
+    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the

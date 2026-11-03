@@ -2,7 +2,9 @@
 // (ADR-023, layer 4): the phone's box takes it, both show what the TV made
 // of it, up to three to choose from on either, Back puts them away, and a
 // sentence that can't be routed is "i didn't get that" on both, with
-// nothing opened (S7.3). The router and the screen daemon are stand-ins.
+// nothing opened (S7.3). While the phone's box is open, the TV's listening
+// bar shows the words as they arrive, then thinking, then what came of it
+// (ADR-054). The router and the screen daemon are stand-ins.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -32,14 +34,20 @@ const dir = mkdtempSync(join(tmpdir(), "agentv-say-ui-"));
 // What the stand-in router makes of each sentence; anything else is none.
 const ROUTES: Record<string, Route> = {
   "play frozen": { ...NONE, intent: "play", query: "Frozen" },
+  "play the frozen film": { ...NONE, intent: "play", query: "Frozen", kind: "film" },
+  "play the frozen soundtrack": { ...NONE, intent: "play", query: "Frozen", kind: "album" },
 };
+// One the router takes a while over, as a real one can.
+const SLOW = "play the frozen soundtrack";
 
 before(async () => {
   const passwd = join(dir, "passwd");
   writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
   process.env.AGENTV_PASSWD = passwd;
   ({ daemon, url } = await startBox(0, undefined, {
+    listenIdleMs: 1500,
     router: async (sentence) => {
+      if (sentence === SLOW) await new Promise((resolve) => setTimeout(resolve, 800));
       const route = ROUTES[sentence];
       return { sentence, route: route ?? { ...NONE }, ...(route ? {} : { none: "unroutable" as const }), provider: "claude", via: "api", model: "test", ms: 5 };
     },
@@ -124,7 +132,10 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   await until(() => asks.some((a) => a.kind === "open"));
   assert.deepEqual(asks.find((a) => a.kind === "open"), { kind: "open", app: "agentv.sample", item: { id: "a1", kind: "album", title: "Frozen", subtitle: "Various Artists · Frozen" }, n: (asks.find((a) => a.kind === "open") as SayAsk & { n: number }).n });
   await screen.waitForFunction(() => !document.querySelector("#said.on"));
-  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.ok")].some((t) => t.textContent === "frozen, on sample"));
+  // Asked from the phone's box, so the listening bar says what came of it,
+  // in place of a toast (ADR-054).
+  await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "frozen, on sample");
+  assert.equal(await screen.locator(".toast.ok", { hasText: "frozen, on sample" }).count(), 0);
   await hand.waitForSelector('[data-said="opened"]');
   assert.equal(await hand.locator(".said-say").textContent(), "frozen, on sample");
   await screen.close();
@@ -158,11 +169,140 @@ test("S7.3 a sentence that can't be routed is 'i didn't get that' on the TV and 
   await ask(hand, "turn the lights off");
   await hand.waitForSelector('[data-said="none"]');
   assert.equal(await hand.locator(".said-say").textContent(), "i didn't get that");
-  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.fail")].some((t) => t.textContent === "i didn't get that"));
+  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"] .listening-words')?.textContent === "i didn't get that");
   assert.equal(await screen.locator("#said.on").count(), 0);
-  // Only the line for over an app in front: nothing looked up or opened.
-  await until(() => asks.length > 0);
-  assert.deepEqual(asks.map((a) => a.kind), ["tell"]);
+  // Only the bar, for over an app in front: nothing looked up or opened.
+  await until(() => asks.some((a) => a.kind === "live" && a.state === "said"));
+  assert.deepEqual(asks.filter((a) => a.kind !== "live"), []);
+  // Said with no box open, there's no bar, and it's a toast.
+  asks.length = 0;
+  await fetch(`${url}/api/say`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentence: "turn the lights off" }) });
+  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.fail")].some((t) => t.textContent === "i didn't get that"));
+  await until(() => asks.some((a) => a.kind === "tell"));
   await screen.close();
   await hand.close();
 });
+
+// The bar's states, as the TV draws them, each one once.
+async function watchBar(screen: Page): Promise<() => Promise<string[]>> {
+  await screen.evaluate(() => {
+    const w = window as unknown as { barStates: string[] };
+    w.barStates = [];
+    new MutationObserver(() => {
+      const bar = document.getElementById("listening");
+      const now = bar?.classList.contains("on") ? `${bar.dataset.state}: ${bar.querySelector(".listening-words")?.textContent}` : "off";
+      if (w.barStates.at(-1) !== now) w.barStates.push(now);
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+  });
+  return () => screen.evaluate(() => (window as unknown as { barStates: string[] }).barStates);
+}
+
+test("ADR-054 the phone's box brings a listening bar to the TV, and its words show there as they arrive", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  const states = await watchBar(screen);
+  await hand.focus("#say-text");
+  await screen.waitForSelector('#listening.on[data-state="listening"]');
+  assert.equal(await screen.locator(".listening-words").textContent(), "listening");
+  assert.equal(await screen.locator(".listening-dots span").count(), 3);
+  // As the dictation fills the box: a fifth of a second after the last
+  // change, the TV has the words so far.
+  asks.length = 0;
+  await hand.type("#say-text", "play fro", { delay: 20 });
+  await screen.waitForFunction(() => document.querySelector("#listening .listening-words")?.textContent === "play fro");
+  await until(() => asks.some((a) => a.kind === "live" && a.state === "words" && a.text === "play fro"));
+  // Closed on the phone, unsent: the bar goes.
+  await hand.evaluate(() => (document.getElementById("say-text") as HTMLInputElement).blur());
+  await screen.waitForFunction(() => !document.querySelector("#listening.on"));
+  assert.deepEqual((await states()).filter((s) => !s.startsWith("listening: play f") || s === "listening: play fro"), ["listening: listening", "listening: play fro", "off"]);
+  await screen.close();
+  await hand.close();
+});
+
+test("ADR-054 sent from the box, the bar says it's thinking, then what came of it, or brings the which one? card", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  const states = await watchBar(screen);
+  await ask(hand, "turn the lights off");
+  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"]'));
+  const seen = await states();
+  assert.ok(seen.includes("thinking: turn the lights off"), seen.join(" | "));
+  assert.equal(seen.at(-1), "said: i didn't get that");
+  assert.equal(await screen.locator(".toast", { hasText: "i didn't get that" }).count(), 0, "the bar, not a toast");
+  // Which one: the bar says so, with the card over home, and goes with it.
+  await ask(hand, "play frozen");
+  await screen.waitForSelector("#said.on .said-choice");
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
+  await screen.keyboard.press("Escape");
+  await screen.waitForFunction(() => !document.querySelector("#said.on") && !document.querySelector("#listening.on"));
+  await screen.close();
+  await hand.close();
+});
+
+test("ADR-054 what opened is on the bar, and a box opened again while a sentence is thought about keeps its words, on the TV and the phone", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  const states = await watchBar(screen);
+  await ask(hand, "play the frozen film");
+  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"] .listening-words')?.textContent === "frozen, on sample");
+  assert.ok((await states()).includes("thinking: play the frozen film"));
+  await hand.waitForSelector('[data-said="opened"]');
+  assert.equal(await hand.locator(".said-say").textContent(), "frozen, on sample");
+  assert.equal(await screen.locator(".toast", { hasText: "frozen, on sample" }).count(), 0, "the bar, not a toast");
+  // The next one, begun while the last is thought about: the bar and the
+  // phone's box keep its words, and what came of the last is a toast.
+  await ask(hand, SLOW);
+  await screen.waitForSelector('#listening.on[data-state="thinking"]');
+  assert.equal(await screen.locator(".listening-says").textContent(), "thinking");
+  await hand.waitForSelector('[data-said="routing"]');
+  await hand.type("#say-text", "continue my show");
+  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="listening"] .listening-words')?.textContent === "continue my show");
+  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.ok")].some((t) => t.textContent === "frozen, on sample"));
+  await hand.waitForSelector('[data-said="opened"]');
+  assert.equal(await hand.inputValue("#say-text"), "continue my show");
+  assert.equal(await hand.evaluate(() => document.activeElement?.id), "say-text");
+  assert.equal(await screen.locator(".listening-words").textContent(), "continue my show");
+  assert.equal(await screen.locator(".listening-says").textContent(), "");
+  await hand.evaluate(() => (document.getElementById("say-text") as HTMLInputElement).blur());
+  await screen.waitForFunction(() => !document.querySelector("#listening.on"));
+  await screen.close();
+  await hand.close();
+});
+
+test("ADR-054 Back on the TV takes the bar away, and so does a while with no new words", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await hand.focus("#say-text");
+  await screen.waitForSelector("#listening.on");
+  await screen.keyboard.press("Escape");
+  await screen.waitForFunction(() => !document.querySelector("#listening.on"));
+  // The daemon heard Back too: a new word brings it up again.
+  await hand.type("#say-text", "pl");
+  await screen.waitForSelector("#listening.on");
+  // And with no new words for a while, it goes by itself.
+  await screen.waitForFunction(() => !document.querySelector("#listening.on"), undefined, { timeout: 5000 });
+  await screen.close();
+  await hand.close();
+});
+
+test("ADR-054 the bar moves only by opacity, and stands still with reduce motion", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await hand.focus("#say-text");
+  await screen.waitForSelector("#listening.on");
+  const look = () => screen.evaluate(() => {
+    const dot = getComputedStyle(document.querySelector(".listening-dots span")!);
+    const bar = getComputedStyle(document.getElementById("listening")!);
+    return { dot: dot.animationName, bar: bar.transitionProperty, opacity: dot.opacity };
+  });
+  const moving = await look();
+  assert.equal(moving.dot, "listening-dot");
+  assert.equal(moving.bar, "opacity");
+  await screen.evaluate(() => document.documentElement.classList.add("reduce-motion"));
+  const still = await look();
+  assert.deepEqual([still.dot, still.opacity], ["none", "1"]);
+  await hand.evaluate(() => (document.getElementById("say-text") as HTMLInputElement).blur());
+  await screen.close();
+  await hand.close();
+});
+

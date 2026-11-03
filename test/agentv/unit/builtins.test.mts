@@ -14,13 +14,24 @@ import { FIXTURES, ROOT, startBox } from "../ui/box.mts";
 import { startMet, type Met } from "../ui/met.mts";
 
 // daemon/weather-check.ts, as agentv selftest runs it, against this box and
-// a forecast at forecast.
-function weatherCheck(id: string, forecast: string): Promise<string> {
+// a forecast at forecast. It asks MET again every 20 ms for up to 600 ms
+// here, where the box asks every 15 s for up to 2 minutes.
+function weatherCheck(id: string, forecast: string, env: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve) => {
     execFile(
       process.execPath,
       [...process.execArgv.filter((arg) => arg === "--experimental-strip-types"), "--disable-warning=ExperimentalWarning", join(ROOT, "daemon/weather-check.ts"), id],
-      { env: { ...process.env, AGENTV_HOME_URL: `${url}/`, AGENTV_MET_URL: forecast, AGENTV_PATH: ROOT } },
+      {
+        env: {
+          ...process.env,
+          AGENTV_HOME_URL: `${url}/`,
+          AGENTV_MET_URL: forecast,
+          AGENTV_PATH: ROOT,
+          AGENTV_MET_AGAIN_MS: "20",
+          AGENTV_MET_FOR_MS: "600",
+          ...env,
+        },
+      },
       (_error, stdout, stderr) => resolve(`${stdout}${stderr}`),
     );
   });
@@ -99,8 +110,10 @@ test("S3.8 S3.9 agentv selftest compares the weather tiles with MET's forecast, 
   // Another forecast than the tile's: Oslo's heavy rain.
   const oslo = await startMet("oslo");
   try {
-    assert.match(await weatherCheck("S3.8", oslo.url), /^fail S3\.8 the tile shows wind for amsterdam .*, but MET says heavyrain/m);
-    assert.match(await weatherCheck("S3.9", oslo.url), /^fail S3\.9 the weather tiles don't match MET for amsterdam/m);
+    // Asking again doesn't help a tile that's wrong for every forecast.
+    assert.match(await weatherCheck("S3.8", oslo.url), /^fail S3\.8 the tile shows wind for amsterdam .*, but MET says heavyrain.* \(asked MET \d+ times/m);
+    assert.match(await weatherCheck("S3.9", oslo.url), /^fail S3\.9 the weather tiles don't match MET for amsterdam.* \(asked MET \d+ times/m);
+    assert.ok(Number(/asked MET (\d+) times/.exec(await weatherCheck("S3.9", oslo.url))?.[1]) >= 3, "it asked MET again");
   } finally {
     oslo.close();
   }
@@ -132,6 +145,40 @@ test("S3.9 agentv selftest compares MET's forecast with tiles drawn from it, not
     assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.icon, "wind");
   } finally {
     met.serve("amsterdam");
+  }
+});
+
+test("S3.8 S3.9 agentv selftest asks MET again when it hands out another forecast than the one the tiles were drawn from", async () => {
+  // The app keeps Amsterdam's forecast for 30 minutes, as MET's Expires
+  // says, so tiles drawn again for the check still come from it. Then MET
+  // hands out Oslo's for the check's own two fetches, before and after the
+  // tiles, and Amsterdam's again after that: 2026-11-01, when a box's large
+  // tile had today as partly cloudy, both of the check's fetches had it
+  // cloudy, and another box got partly cloudy two minutes later.
+  met.expiresIn(30 * 60_000);
+  for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
+  const asked = met.seen.length;
+  try {
+    // Asking only before and after the tiles, as the check did, fails a box
+    // whose tiles are right.
+    met.serveNext("oslo", "oslo");
+    assert.match(await weatherCheck("S3.9", met.url, { AGENTV_MET_FOR_MS: "0" }), /^fail S3\.9 the weather tiles don't match MET for amsterdam/m);
+    assert.equal(met.seen.length, asked + 2, "the app kept its forecast, and only the check asked MET");
+
+    // Asking again finds the forecast the tiles were drawn from.
+    met.serveNext("oslo", "oslo");
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+    met.serveNext("oslo", "oslo");
+    assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows wind at 12° for amsterdam/m);
+  } finally {
+    // The app asks MET again from here on, as the tests after this expect:
+    // the weather moves to Oslo and back, with replies that are good until now.
+    met.expiresIn(0);
+    await post("/api/weather", { zone: "Europe/Oslo" });
+    await get("/api/tile/agentv.weather/s");
+    await post("/api/weather", { zone: null });
+    for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
+    met.expiresIn(30 * 60_000);
   }
 });
 

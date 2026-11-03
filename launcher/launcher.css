@@ -1905,6 +1905,78 @@ body.with-backdrop.on-home {
   text-align: left;
 }
 
+/* The listening bar (ADR-054): along the bottom, in the TV's safe area,
+   while someone talks to the TV from their phone. Three squares brighten
+   in turn while it listens or thinks; what came of it stands still. */
+#listening {
+  position: fixed;
+  left: 96px;
+  right: 96px;
+  bottom: 54px;
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  height: 112px;
+  padding: 0 36px;
+  background: var(--dark-background);
+  border: 2px solid var(--accent);
+  z-index: 19;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--base) var(--ease);
+}
+
+#listening.on {
+  opacity: 1;
+}
+
+.listening-dots {
+  display: flex;
+  gap: 12px;
+  flex: none;
+}
+
+.listening-dots span {
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: listening-dot 1600ms ease-in-out infinite;
+}
+
+.listening-dots span:nth-child(2) { animation-delay: 320ms; }
+.listening-dots span:nth-child(3) { animation-delay: 640ms; }
+
+#listening[data-state="said"] .listening-dots {
+  display: none;
+}
+
+@keyframes listening-dot {
+  0%, 60%, 100% { opacity: 0.35; }
+  30% { opacity: 1; }
+}
+
+.listening-words {
+  flex: 1;
+  min-width: 0;
+  font-size: 36px;
+  color: var(--bright-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* "thinking", once the sentence is sent. */
+.listening-says {
+  flex: none;
+  font-size: 28px;
+  color: var(--accent);
+}
+
+:root.reduce-motion .listening-dots span {
+  animation: none;
+  opacity: 1;
+}
+
 .notice-buttons,
 .shared-buttons {
   display: flex;

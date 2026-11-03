@@ -6,6 +6,7 @@
 
 import { daemon, type Candidate, type Said } from "./api.ts";
 import { h } from "./dom.ts";
+import { barTakes, cardClosed } from "./listening.ts";
 import type { Ctx } from "./main.ts";
 
 // What a kind is, beside a title, as the daemon says it.
@@ -27,7 +28,9 @@ export function setupSaid(c: Ctx, back: () => void): void {
   restore = back;
   el = h("div", { id: "said", "aria-live": "polite" });
   document.body.append(el);
-  void daemon.said().then((said) => said && saidHeard(said), () => {});
+  // As home loads: a choice still waiting comes back, but an outcome from
+  // before isn't a toast again.
+  void daemon.said().then((said) => said?.state === "done" && said.outcome?.kind === "choose" && saidHeard(said), () => {});
 }
 
 export function saidOpen(): boolean {
@@ -38,6 +41,7 @@ function close(): void {
   if (!el) return;
   const before = open?.before;
   open = null;
+  cardClosed();
   el.classList.remove("on");
   el.replaceChildren();
   restore();
@@ -45,14 +49,17 @@ function close(): void {
 }
 
 // What the daemon says about the newest sentence, or null once it's away.
+// With the listening bar up, the bar shows what was heard and what came of
+// it in place of the toasts (ADR-054).
 export function saidHeard(said: Said | null): void {
+  const barred = barTakes(said);
   if (!said) {
     if (open) close();
     return;
   }
   if (open && open.n !== said.n) close();
   if (said.state === "routing") {
-    if (said.n > heard) ctx.toast(`"${said.sentence}"`);
+    if (said.n > heard && !barred) ctx.toast(`"${said.sentence}"`);
     heard = Math.max(heard, said.n);
     return;
   }
@@ -61,13 +68,13 @@ export function saidHeard(said: Said | null): void {
   if (outcome.kind === "opened") {
     if (open) close();
     ctx.sounds.play("confirm");
-    ctx.toast(outcome.say, "ok");
+    if (!barred) ctx.toast(outcome.say, "ok");
     return;
   }
   if (outcome.kind === "none") {
     if (open) close();
     ctx.sounds.play("failure");
-    ctx.toast(outcome.detail ? `${outcome.say} · ${outcome.detail}` : outcome.say, "fail");
+    if (!barred) ctx.toast(outcome.detail ? `${outcome.say} · ${outcome.detail}` : outcome.say, "fail");
     return;
   }
   if (open?.n === said.n || !el) return;
