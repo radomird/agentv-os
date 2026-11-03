@@ -53,6 +53,21 @@ The agentv-apps README is the reference: it's written exactly this way.
 | Steam has nothing to record, so its checks are the contract's own and that it does nothing more. | Steam doesn't talk to a server, so there's nothing to record for it. Its tests just make sure it follows the rules and doesn't try anything else. |
 | Each app's `fixtures/README.md` says what's in them. | Each app's `fixtures` folder has a short README about what's in it. |
 
+## Commit messages and pull request titles
+
+The same voice, kept short. Write them dev to dev.
+
+- **The subject says what changed, in plain words,** as a short sentence in the imperative. Keep it to about 60 characters, and leave off the full stop.
+- **The body says why,** in a sentence or two, plus anything a reviewer should know. Leave out a blow-by-blow of the diff.
+- **No inside references in a public repo's subject or title:** no ADR or grilling numbers, and no acceptance ids. Put them in the body if a reviewer needs them. agentv-planning is private, so its commits may use them.
+- **No em dashes,** and end with the trailer the session gives you.
+
+| Don't write | Write |
+| --- | --- |
+| S3.8 and S3.9: ask MET again when the tiles match neither forecast | Ask the weather service again when the tiles don't match |
+| The router on the box: the key the router's alone, and a plan's CLI as the builder (S7.3, S7.4) | Run the voice router on the box, apart from the daemon |
+| Update GitHub funding configuration | Add a Sponsor button that opens the Stripe page |
+
 ## Hard rules
 
 - **No em dashes anywhere, ever,** and no en dashes used as dashes either. Use a comma, colon, period or parentheses. Search the text for the em dash character (U+2014) before you finish.
