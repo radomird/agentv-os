@@ -22,13 +22,26 @@ It works with any TV that has HDMI. AgenTV runs on the box, not the TV, so it do
 
 I wanted a TV I could just talk to. Sit down, say "continue the show I was watching" into your phone, and it knows which app that was.
 
-And when an app is missing, you shouldn't have to wait for someone to write it. Ask for a streaming service or a game, and AgenTV's own agent will build the app on your box and test it. That part is coming soon.
+And when an app is missing, you shouldn't have to wait for someone to write it. Ask for a streaming service or a game, and AgenTV's own agent builds the app on your box and tests it.
 
 Underneath it's Omarchy, so the full Linux desktop is one switch away.
 
 ## What you get today
 
-[0.1.3](https://github.com/radomird/agentv-os/releases/tag/v0.1.3) is out as a pre-release. I've tested it on my Intel NUC.
+[0.1.4](https://github.com/radomird/agentv-os/releases/tag/v0.1.4) is out as a pre-release. Everything that was in 0.1.3 runs on my Intel NUC. The new parts pass their tests in a VM, but I haven't tried them on the NUC yet.
+
+New in 0.1.4:
+
+- **TV setup,** from "hi." to home. It asks where the TV is, which AI you use and who watches. Then it helps you pick your apps, a theme and a background.
+- **An agent that builds the apps you're missing.** Ask for a streaming service, a game or a better weather app. It follows a recipe for each kind of app, builds it to AgenTV's rules for apps, and tests it. The app stays on your box unless you export it.
+- **"Play" and a title,** said into your phone, across every app you have. Claude, ChatGPT, Gemini, Grok and Muse Code all work.
+- **The TV answers out loud.** It uses your AI provider's own voice when the provider has one and you've given AgenTV a key. Otherwise it's Piper, a voice that runs right on the box.
+- **What's new this week** on the services you have, and whether there's a new episode of your show yet. The list comes from TMDB, with a key from your own TMDB account. You add the key in _Settings > New this week_.
+- **Every Omarchy theme on the TV,** with the theme's own backgrounds, or your photos and open art archives instead. Omarchy's terminal screensaver comes along too.
+- **Share to the TV** from your phone: a link, a photo or a video.
+- **Web apps made for a desktop** work with your phone's arrows too.
+
+Already in 0.1.3:
 
 - **Your phone is the remote.** Scan the code on the TV and your phone's browser becomes the remote and the keyboard. There's no app to install. It changes with what's on the TV: a PIN pad when the TV asks for your PIN, a keyboard for search, play and pause while something's on.
 - **Continue** on home picks up what you were watching.
@@ -40,14 +53,8 @@ Underneath it's Omarchy, so the full Linux desktop is one switch away.
 
 ## What's coming
 
-- **An agent that builds the apps you're missing.** A streaming service, a game, a better weather app. It follows a recipe for each kind of app, builds it to AgenTV's app rules, and tests it. The app stays on your box unless you export it.
-- **"Play" and a title,** said into your phone, across every app you have. It'll work with Claude, ChatGPT, Gemini, Grok or Muse Code.
-- **What's new this week** on the services you have, and whether there's a new episode of your show yet. It'll ask TMDB, with a key from your own TMDB account.
-- **The TV will answer out loud,** in your AI provider's own voice when it has one, or with Piper on the box when it doesn't.
-- **TV setup from your phone,** from "hi." to home.
-- **Every Omarchy theme on the TV,** with the theme's own backgrounds, or your photos and open art archives instead. Omarchy's terminal screensaver comes along too.
-- **Share anything to the TV** from your phone: a link, a photo or a video.
 - **An iPhone app:** remote, keyboard and microphone in one.
+- **A "Back to TV" button** on Omarchy's desktop.
 
 | | |
 | --- | --- |
@@ -70,11 +77,11 @@ You'll need:
 - a USB stick of 8 GB or more;
 - a keyboard, for Omarchy's installer.
 
-1. Download [the 0.1.3 ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.3-x86_64.iso) (about 6.5 GB) and [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.3-x86_64.iso.sha256). To check the download, put both in one folder and run `shasum -a 256 -c agentv-0.1.3-x86_64.iso.sha256` on a Mac, or `sha256sum -c` on Linux. Each [agentv-iso release](https://github.com/radomird/agentv-iso/releases) links to its own ISO.
+1. Download [the 0.1.4 ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso) (about 6.5 GB) and [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso.sha256). To check the download, put both in one folder and run `shasum -a 256 -c agentv-0.1.4-x86_64.iso.sha256` on a Mac, or `sha256sum -c` on Linux. Each [agentv-iso release](https://github.com/radomird/agentv-iso/releases) links to its own ISO.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux, like [Omarchy's manual](../manual/02-getting-started.md) says.
 3. Boot the box from the stick and answer Omarchy's usual installer questions. It wipes the box's disk.
-4. The box reboots into AgenTV. TV setup is coming soon, so for now a new box starts on a welcome page. Run `agentv setup skip` to go to home.
-5. Pair your phone in _Settings > Phones_.
+4. The box reboots into AgenTV, and TV setup starts on the TV. Scan its code with your phone, and setup takes you the rest of the way to home.
+5. Want another phone on it later? Pair it in _Settings > Phones_.
 
 ### Tested boxes
 
