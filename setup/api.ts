@@ -56,7 +56,8 @@ export interface Offer {
   maker: string;
   cli: string;
   cliName: string;
-  plan: { offered: boolean; name: string; note?: string };
+  // bestEffort: offered on edge before a build has run on it (ADR-053).
+  plan: { offered: boolean; name: string; note?: string; bestEffort?: boolean };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   summary: Record<Path, string>;

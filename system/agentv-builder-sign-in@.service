@@ -1,0 +1,59 @@
+# A plan's sign-in, the first time the builder runs on it (ADR-022,
+# ADR-040): the instance is the provider, like claude. The provider's own
+# CLI signs in as agentv-builder, in the same sandbox as a build
+# (agentv-builder@.service), and keeps what it gets in its own files in the
+# builder's home. AgenTV shows the link it prints and types the code the
+# person pastes on the phone into its prompt (builder/sign-in.ts), and sees
+# nothing else. agentv-build.service starts this once root has made its
+# folder and the filter's sign-in ticket.
+#
+# Like a build, everything it writes is nosuid and nodev (ADR-052): the
+# builder's home from var-lib-agentv-builder.mount, its folder in /run, and
+# its own /tmp and /var/tmp. It runs no bubblewrap, so it keeps
+# RestrictSUIDSGID= as well.
+
+[Unit]
+Description=AgenTV builder's %i sign-in
+BindsTo=agentv-build-net.service
+After=agentv-build-net.service
+RequiresMountsFor=/var/lib/agentv/builder
+
+[Service]
+Type=exec
+User=agentv-builder
+Group=agentv-builder
+SupplementaryGroups=agentv-build-net
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/agentv/builder/sign-in.ts %i
+ExecStopPost=+/usr/bin/rm -f /run/agentv-build/sign-in.json
+Environment=AGENTV_PATH=/usr/share/agentv HOME=/var/lib/agentv/builder AGENTV_SIGN_IN=/run/agentv-build/sign-in
+WorkingDirectory=/var/lib/agentv/builder
+# The person has 15 minutes; this is the box's own stop.
+RuntimeMaxSec=20min
+TimeoutStopSec=10s
+UMask=0022
+MemoryMax=1G
+TasksMax=128
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
+BindPaths=/var/lib/agentv/builder /run/agentv-build/sign-in
+InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+KeyringMode=private
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

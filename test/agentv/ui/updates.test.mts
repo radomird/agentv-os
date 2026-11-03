@@ -81,11 +81,14 @@ test("S2.13 a new release shows one toast on home, and the bar says so until it'
   assert.equal(await page.locator(".toast").innerText(), "agentv 0.3.0 is ready · settings → updates");
   assert.match(await page.locator(".bar").innerText(), /settings ●/);
   assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 is ready · settings → updates/);
+  // Home tells the box it showed the toast as it shows it. The page closes
+  // only once the box has it, as the TV's page never closes that quickly.
+  await page.waitForFunction(async () => (await (await fetch("/api/updates")).json()).toasted === "0.3.0");
   await page.close();
   // Once: the next time home shows, no toast.
   const again = await tv();
   await again.waitForTimeout(800);
-  assert.equal(await again.locator(".toast").count(), 0);
+  assert.deepEqual(await again.locator(".toast").allInnerTexts(), []);
   assert.match(await again.locator(".bar").innerText(), /settings ●/);
   await again.close();
 });

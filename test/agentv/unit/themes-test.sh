@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Guards the looks setup and Settings offer (board 12, Q55, S5.2): Omarchy's
-# own Tokyo Night, Gruvbox and Catppuccin Latte in their own colours, which
-# one the TV has, and the user path unit that hands a new theme's colours to
-# the TV as soon as Omarchy has swapped it in.
+# Guards the looks setup and Settings offer (board 12, ADR-048, S5.2, S5.7):
+# every theme Omarchy has, the person's installed ones too, in their own
+# colours, which one the TV has, and the user path unit that hands a new
+# theme's colours to the TV as soon as Omarchy has swapped it in.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"

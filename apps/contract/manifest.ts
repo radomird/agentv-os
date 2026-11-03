@@ -4,14 +4,20 @@
 // schemaVersion 1, the required fields, safe relative entry points that
 // exist, no symlinks and no reserved id. Then the tv block's own rules, and a
 // look at the code: Node has to be able to run it as it is, and it may import
-// only files from its own package.
+// only files from its own package. A page app (contract 2, ADR-043) has no
+// code for Node: its page runs in a sandboxed frame, and page.ts checks it.
 
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, posix } from "node:path";
 import type { TileSize } from "./contract.ts";
+import { checkPage, pageOriginProblem } from "./page.ts";
 
-export const CONTRACT = 1;
+// The contract's newest version. Contract 2 adds the page runtime (ADR-043);
+// apps on contract 1 don't change, so web, native and built-in apps may say
+// either, and a page app says 2.
+export const CONTRACT = 2;
+export const CONTRACTS = [1, 2];
 
 // Where an app came from decides its tier, never the manifest (PHASE-1-PLAN.md):
 // the project's signed index or a built-in for official, the index's community
@@ -30,14 +36,20 @@ export type Category = (typeof CATEGORIES)[number];
 export const CAPABILITIES = ["launch", "signIn", "search", "playback", "profiles", "nowPlaying", "tile"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+// What a page app may read on the box through the daemon, read-only.
+export const MEDIA = ["photos", "music"] as const;
+export type Media = (typeof MEDIA)[number];
+
 export type SetupStep = { type: "field"; key: string; label: string } | { type: "signIn" };
 
 export interface TvBlock {
   contract: number;
   category: Category;
   // builtin: one of AgenTV's own apps in apps/builtin/, which come with
-  // AgenTV and which the launcher opens itself (ADR-015, ADR-017)
-  runtime: "web" | "native" | "builtin";
+  // AgenTV and which the launcher opens itself (ADR-015, ADR-017).
+  // page: an app that is its own page, which the box serves from an origin
+  // of its own and shows in a sandboxed frame (contract 2, ADR-043).
+  runtime: "web" | "native" | "builtin" | "page";
   homeUrl?: string; // web: may start with a setup field, like "{serverUrl}/web/"
   package?: { pacman?: string; flatpak?: string }; // native
   exec?: string[]; // native: the command and its arguments
@@ -47,6 +59,8 @@ export interface TvBlock {
   icon?: string;
   tiles?: Partial<Record<TileSize, string>>;
   childSafe?: boolean;
+  media?: Media[]; // page: the box's photos or music, read-only
+  notices?: boolean; // page: a notice on the TV and the phone
 }
 
 export interface Manifest {
@@ -58,7 +72,8 @@ export interface Manifest {
   license: string;
   description: string;
   kinds: Kind[];
-  entryPoints: { tvApp?: string; backgroundSource?: string };
+  // A page app's entry point is its page; every other TV app's is its code.
+  entryPoints: { tvApp?: string; backgroundSource?: string; page?: string };
   tv: TvBlock;
 }
 
@@ -75,6 +90,7 @@ const FIELD_KEY = /^[A-Za-z][A-Za-z0-9]*$/;
 const COMMAND = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 const PACKAGE = /^[A-Za-z0-9@._+-]+$/;
 const CODE = [".ts", ".js"];
+const PAGE_CAPABILITIES: Capability[] = ["launch", "tile"];
 const ICONS = [".png", ".svg", ".webp", ".jpg", ".jpeg"];
 const TILE_LABEL_MAX = 24;
 
@@ -200,7 +216,11 @@ function checkId(id: string, author: unknown, tier: Tier, problem: (text: string
 }
 
 function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>, tier: Tier, problem: (text: string) => void): void {
-  if (tv.contract !== CONTRACT) problem(`tv.contract has to be ${CONTRACT}`);
+  if (!CONTRACTS.includes(tv.contract as number)) {
+    problem(`tv.contract has to be ${CONTRACTS.join(" or ")}`);
+  } else if (tv.runtime === "page" && tv.contract !== 2) {
+    problem("a page app is on contract 2");
+  }
   if (!CATEGORIES.includes(tv.category as Category)) problem(`tv.category has to be one of ${CATEGORIES.join(", ")}`);
 
   const fields = new Set<string>();
@@ -252,6 +272,11 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
           problem("each of tv.origins is an origin, like https://example.org");
           continue;
         }
+        if (tv.runtime === "page") {
+          const why = pageOriginProblem(origin);
+          if (why) problem(why);
+          continue;
+        }
         addresses.push(origin);
         const field = fieldOrigin(origin);
         if (field ? origin !== `{${placeholders(origin)[0]}}` : originOf(origin) !== origin) {
@@ -297,8 +322,34 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
     if (tv.homeUrl !== undefined || tv.package !== undefined || tv.exec !== undefined) {
       problem("a built-in app has no tv.homeUrl, tv.package or tv.exec");
     }
+  } else if (tv.runtime === "page") {
+    // Its own page, in a sandboxed frame (ADR-043): nothing to set up and
+    // no sign-in, and it reaches the box only through the app kit.
+    if (tv.homeUrl !== undefined || tv.package !== undefined || tv.exec !== undefined) {
+      problem("a page app has no tv.homeUrl, tv.package or tv.exec");
+    }
+    if (tv.setup !== undefined) problem("a page app has no setup steps");
+    for (const capability of capabilities) {
+      if (CAPABILITIES.includes(capability as Capability) && !PAGE_CAPABILITIES.includes(capability as Capability)) {
+        problem(`a page app's capabilities are ${PAGE_CAPABILITIES.join(" and ")}, not ${String(capability)}`);
+      }
+    }
   } else if (kinds.includes("tv-app")) {
-    problem("tv.runtime has to be web or native");
+    problem("tv.runtime has to be web, native or page");
+  }
+
+  if (tv.media !== undefined) {
+    if (tv.runtime !== "page") {
+      problem("only a page app declares tv.media");
+    } else if (!Array.isArray(tv.media) || tv.media.length === 0 || !tv.media.every((m) => MEDIA.includes(m as Media))) {
+      problem(`tv.media lists what the app reads on the box: ${MEDIA.join(" or ")}`);
+    } else if (new Set(tv.media).size !== tv.media.length) {
+      problem("tv.media lists the same thing twice");
+    }
+  }
+  if (tv.notices !== undefined) {
+    if (tv.runtime !== "page") problem("only a page app declares tv.notices");
+    else if (typeof tv.notices !== "boolean") problem("tv.notices is true or false");
   }
 
   for (const address of addresses) {
@@ -382,13 +433,30 @@ export function validatePackage(dir: string, tier: Tier = "community"): Result {
     }
   }
 
+  // A page app's entry point is its page, and it has no code for Node.
+  const page = isObject(m.tv) && m.tv.runtime === "page";
   const code: string[] = [];
   if (!isObject(m.entryPoints)) {
     problem("entryPoints has to be an object");
   } else {
     for (const [key, path] of Object.entries(m.entryPoints)) {
+      if (key === "page") {
+        if (!page) {
+          problem("only a page app has entryPoints.page");
+          continue;
+        }
+        const why = unsafePath(path);
+        if (why) problem(`the entry point page ${why}: '${String(path)}'`);
+        else if (extname(path as string) !== ".html") problem(`the entry point page is an .html file, not '${String(path)}'`);
+        else if (!files.has(posix.normalize(path as string))) problem(`the entry point page '${String(path)}' isn't in the package`);
+        continue;
+      }
       if (!Object.values(KINDS).includes(key as "tvApp")) {
-        problem(`'${key}' isn't an entry point; they're ${Object.values(KINDS).join(" and ")}`);
+        problem(`'${key}' isn't an entry point; they're ${Object.values(KINDS).join(", ")} and page`);
+        continue;
+      }
+      if (page && key === "tvApp") {
+        problem("a page app's entry point is its page, entryPoints.page, not entryPoints.tvApp");
         continue;
       }
       const why = unsafePath(path);
@@ -401,14 +469,20 @@ export function validatePackage(dir: string, tier: Tier = "community"): Result {
       }
     }
     for (const kind of kinds) {
-      if (!(KINDS[kind] in m.entryPoints)) problem(`the kind ${kind} needs entryPoints.${KINDS[kind]}`);
+      const needs = page && kind === "tv-app" ? "page" : KINDS[kind];
+      if (!(needs in m.entryPoints)) problem(`the kind ${kind} needs entryPoints.${needs}`);
     }
   }
 
-  for (const file of files) {
-    if (CODE.includes(extname(file))) code.push(file);
+  if (page) {
+    if (kinds.some((kind) => kind !== "tv-app")) problem("a page app is a tv-app and nothing else");
+    checkPage(dir, files, m, problem);
+  } else {
+    for (const file of files) {
+      if (CODE.includes(extname(file))) code.push(file);
+    }
+    for (const file of [...code].sort()) checkCode(dir, files, file, problem);
   }
-  for (const file of [...code].sort()) checkCode(dir, files, file, problem);
 
   if (!isObject(m.tv)) {
     problem("the manifest needs a tv block");

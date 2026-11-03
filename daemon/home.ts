@@ -6,13 +6,15 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, watch, type FSWatcher } from "node:fs";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
+import { pagePermissions } from "../apps/contract/page.ts";
 import { pin, problem, type Placed, type Size } from "../launcher/layout.ts";
 import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
 import type { Ledger, WatchRow } from "./ledger.ts";
+import { legible } from "./legible.ts";
 import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
 import { DATA_DIRS, packageIcon } from "./package-icon.ts";
 import { siteIcon } from "./site-icon.ts";
@@ -112,26 +114,53 @@ export function asAddress(typed: string): string | null {
 // Whose data a built-in app shows, as its terms ask.
 const CREDITS: Record<string, string> = {
   "agentv.weather": "weather data from met norway, under cc by 4.0",
+  "agentv.new": "this product uses the tmdb api but is not endorsed or certified by tmdb. where to watch is from justwatch",
 };
 
 const WEATHER = "agentv.weather";
 const CLOCK = "agentv.clock";
 // The built-ins on every home from the start (ADR-015). Music joins them
-// when it's the household's goal, which setup asks (ADR-017); otherwise it's
-// in Apps.
+// when it's the household's goal, which setup asks (ADR-017), and New this
+// week, large, when it's streaming (ADR-006, S8.1); otherwise they're in
+// Apps.
 const PINNED = [CLOCK, WEATHER];
 const MUSIC_APP = "agentv.music";
+export const NEW_APP = "agentv.new";
+const GOAL_PINS: Record<string, string[]> = { music: [MUSIC_APP], streaming: [NEW_APP] };
+// The size a built-in is pinned at, when it isn't small: the largest that
+// fits, from this one down.
+const PIN_SIZE: Record<string, Size> = { [NEW_APP]: "l" };
+
+// A tile pinned in the first place it fits: a built-in that's pinned large
+// at the largest of its sizes that fits, from that one down, and anything
+// else small.
+function pinBuiltin(layout: Placed[], id: string, sizes: Size[] = ["s"]): Placed[] | null {
+  const want = PIN_SIZE[id];
+  if (!want) return pin(layout, id);
+  for (const size of (["l", "m", "s"] as Size[]).slice((["l", "m", "s"] as Size[]).indexOf(want))) {
+    if (!sizes.includes(size)) continue;
+    const placed = pin(layout, id, size);
+    if (placed) return placed;
+  }
+  return null;
+}
 
 export interface TvSettings {
   sound: { on: boolean; volume: number };
   reduceMotion: boolean;
   idleMinutes: number;
+  // What the ambient screen shows: your backgrounds, one after another, or
+  // Omarchy's terminal screensaver (ADR-049).
+  ambient: "pictures" | "terminal";
   // Settings → Updates: install an update each night on its own, off by
   // default (ADR-025, Q79).
   updateOvernight: boolean;
+  // Settings → Sound: the TV says its answers aloud (stage 8), on by
+  // default.
+  spoken: boolean;
 }
 
-const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false };
+const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, ambient: "pictures", updateOvernight: false, spoken: true };
 
 // The launcher's own tile, to all apps (board 19). Its id has no dot, so no
 // app can take it.
@@ -178,6 +207,13 @@ export function sizesOf(manifest: Manifest): SizeChoice[] {
   return sizes;
 }
 
+// What a page app reaches, as its details say (ADR-043): what it declared,
+// or nothing outside this TV.
+function pageReach(manifest: Manifest): string[] {
+  const { declared } = pagePermissions(manifest);
+  return declared.length ? declared : ["nothing outside this tv"];
+}
+
 function maker(tier: AppTier, manifest: Manifest): string {
   if (tier === "built-in") return "built in";
   if (tier === "official") return "official · made by agentv";
@@ -193,9 +229,13 @@ export interface HomeOptions {
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
   // Who's watching now (daemon/profiles.ts). Without it, the box's owner.
   viewer?: () => Promise<Viewer & { name: string; avatar?: string }>;
+  // What a page app's tile shows: what it last set (ADR-043).
+  pageTile?: (id: string) => Promise<unknown>;
   // What the TV is for, from setup (ADR-006): Music is on home from the
-  // start when it's music.
+  // start when it's music, and New this week when it's streaming.
   goal?: () => Promise<string | null>;
+  // New this week's tile, which the daemon draws from TMDB (S8.1).
+  newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
@@ -251,6 +291,8 @@ export class Home {
   private log: (line: string) => void;
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
   private goal?: () => Promise<string | null>;
+  private pageTile?: (id: string) => Promise<unknown>;
+  private newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   private dataDirs: string[];
 
   constructor(options: HomeOptions) {
@@ -263,6 +305,8 @@ export class Home {
     this.log = options.log ?? (() => {});
     this.viewerOf = options.viewer;
     this.goal = options.goal;
+    this.pageTile = options.pageTile;
+    this.newTile = options.newTile;
     this.dataDirs = options.dataDirs ?? DATA_DIRS;
   }
 
@@ -357,7 +401,16 @@ export class Home {
         runtime: manifest.tv.runtime,
         icon,
         sizes: sizesOf(manifest),
-        reach: reach.length ? reach : manifest.tv.runtime === "native" ? ["its own window on this tv"] : builtin ? ["nothing outside this tv"] : ["nothing yet"],
+        reach:
+          manifest.tv.runtime === "page"
+            ? pageReach(manifest)
+            : reach.length
+              ? reach
+              : manifest.tv.runtime === "native"
+                ? ["its own window on this tv"]
+                : builtin
+                  ? ["nothing outside this tv"]
+                  : ["nothing yet"],
         needsSetup: fields.some((field) => field.type === "field" && !values[field.key]),
         signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
@@ -405,6 +458,11 @@ export class Home {
   // The services' Chromium is the box's, so a sign-in is too, not a viewer's.
   private signIns(): Promise<Record<string, { signedIn: boolean; at: string }>> {
     return readJson(join(this.state, "signins.json"), {});
+  }
+
+  // Whether an app said it's signed in, the last time it was asked.
+  async isSignedIn(id: string): Promise<boolean> {
+    return (await this.signIns())[id]?.signedIn === true;
   }
 
   // Notes what an app said. False when it isn't an app here, or it has no
@@ -687,13 +745,15 @@ export class Home {
   // What opening an app means, for the screen daemon: its home address with
   // its setup fields filled in, or its command. Nothing, for an app a child's
   // profile can't open.
-  async launch(id: string, viewer?: Viewer): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | null> {
+  async launch(id: string, viewer?: Viewer): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | { runtime: "page"; name: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
     if (viewer?.role === "child" && !(await this.apps(viewer)).some((app) => app.id === id)) return null;
     const tv = found.manifest.tv;
     const name = found.manifest.name;
     if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name };
+    // A page app opens on home, in its frame (ADR-043).
+    if (tv.runtime === "page") return { runtime: "page", name };
     const values = (await this.appSettings())[id] ?? {};
     const url = (tv.homeUrl ?? "").replace(/^\{([A-Za-z][A-Za-z0-9]*)\}/, (_, key: string) => (values[key] ?? "").replace(/\/+$/, ""));
     try {
@@ -703,6 +763,23 @@ export class Home {
     } catch {
       return null;
     }
+  }
+
+  // The web app whose sites include a shared link's, of those who's watching
+  // may open (ADR-050), or null for none.
+  async appForUrl(url: string, viewer?: Viewer): Promise<string | null> {
+    let origin: string;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      return null;
+    }
+    const theirs = new Set((await this.apps(viewer)).map((app) => app.id));
+    const settings = await this.appSettings();
+    for (const { manifest } of await this.manifests()) {
+      if (manifest.tv.runtime === "web" && theirs.has(manifest.id) && allowedOrigins(manifest, settings[manifest.id] ?? {}).has(origin)) return manifest.id;
+    }
+    return null;
   }
 
   // --- Layouts and settings ---------------------------------------------
@@ -723,7 +800,7 @@ export class Home {
     const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
     const goal = (await this.goal?.().catch(() => null)) ?? null;
-    const first = goal === "music" ? [...PINNED, MUSIC_APP] : PINNED;
+    const first = [...PINNED, ...(GOAL_PINS[goal ?? ""] ?? [])];
     const builtins = all.filter((id) => first.includes(id));
     const unpinned = all.filter((id) => !first.includes(id));
     const pinned = await readJson<Record<string, string[]>>(join(this.state, "builtins-pinned.json"), {});
@@ -732,14 +809,14 @@ export class Home {
       let kept = saved.filter((tile) => sizes.has(tile.id));
       if (!problem(kept, (id) => sizes.get(id))) {
         if (fresh.length === 0) return kept;
-        for (const id of fresh) kept = pin(kept, id) ?? kept;
+        for (const id of fresh) kept = pinBuiltin(kept, id, sizes.get(id)) ?? kept;
         await this.markPinned(viewer, fresh, kept);
         return kept;
       }
     }
     let layout: Placed[] = [];
     for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(APPS_TILE)) {
-      layout = pin(layout, id) ?? layout;
+      layout = pinBuiltin(layout, id, sizes.get(id)) ?? layout;
     }
     if (fresh.length) await this.markPinned(viewer, fresh, saved ? layout : undefined);
     return layout;
@@ -785,7 +862,9 @@ export class Home {
     }
     if (typeof c.reduceMotion === "boolean") next.reduceMotion = c.reduceMotion;
     if (typeof c.idleMinutes === "number" && [5, 10, 15, 30, 60].includes(c.idleMinutes)) next.idleMinutes = c.idleMinutes;
+    if (c.ambient === "pictures" || c.ambient === "terminal") next.ambient = c.ambient;
     if (typeof c.updateOvernight === "boolean") next.updateOvernight = c.updateOvernight;
+    if (typeof c.spoken === "boolean") next.spoken = c.spoken;
     await mkdir(this.state, { recursive: true });
     await writeJson(join(this.state, "settings.json"), next);
     return null;
@@ -810,6 +889,10 @@ export class Home {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
     const capabilities = found.manifest.tv.capabilities;
+    // A page app sets its tile through the kit while it runs (ADR-043).
+    if (found.manifest.tv.runtime === "page") return capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null;
+    // New this week is TMDB's, through the daemon, which keeps it itself.
+    if (id === NEW_APP && found.tier === "built-in") return (await this.newTile?.(viewer, size)) ?? null;
     if (!capabilities.includes("tile")) {
       // The free medium continue tile, drawn from the ledger each time.
       if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return null;
@@ -866,11 +949,20 @@ export class Home {
     return readFile(join(this.state, "theme.css"), "utf8").catch(() => "");
   }
 
-  async saveTheme(css: string): Promise<boolean> {
+  // The name of the theme those colours are from, as Omarchy's hook said, or
+  // null from a hook that didn't say.
+  async themeName(): Promise<string | null> {
+    return (await readFile(join(this.state, "theme-name"), "utf8").catch(() => "")).trim() || null;
+  }
+
+  async saveTheme(css: string, name?: string | null): Promise<boolean> {
     const clean = cleanTheme(css);
     if (!clean) return false;
     await mkdir(this.state, { recursive: true });
-    await writeFile(join(this.state, "theme.css"), clean);
+    // With the colours for text that read in it (ADR-048, S5.8).
+    await writeFile(join(this.state, "theme.css"), legible(clean));
+    if (name) await writeFile(join(this.state, "theme-name"), `${name}\n`);
+    else await rm(join(this.state, "theme-name"), { force: true });
     return true;
   }
 

@@ -1,0 +1,6 @@
+{
+  "files": ["colors.toml", "icons.theme", "backgrounds/*.png", "backgrounds/*.svg", "preview.png"],
+  "colors": ["accent", "selection", "muted", "background", "dark_background", "darker_background", "lighter_background", "foreground", "dark_foreground", "light_foreground", "bright_foreground", "red", "yellow", "orange", "green", "cyan", "blue", "magenta", "brown", "bright_red", "bright_yellow", "bright_green", "bright_cyan", "bright_blue", "bright_magenta"],
+  "contrast": 4.5,
+  "say": "A theme holds only these files, every one of these colours as #rrggbb, and its foreground on its background at a contrast of 4.5 or more."
+}

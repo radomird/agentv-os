@@ -14,14 +14,78 @@
 #
 # A drop with no provider takes the key off. One provider has a key at a
 # time, and the env file's other lines, such as a TMDB key, stay.
+#
+# The TMDB key (stage 8) comes the same way, in a drop of its own beside the
+# provider's: it's TMDB_API_KEY in the env file, which only the router's
+# service reads, and /etc/agentv/tmdb.json says whether there's one. A drop
+# with no key takes it off.
 
 set -euo pipefail
 
 AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
 DROP=${AGENTV_KEY_DROP:-/var/lib/private/agentv/daemon/key-drop/key.json}
+TMDB_DROP=${AGENTV_TMDB_DROP:-$(dirname -- "$DROP")/tmdb.json}
 VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY XAI_API_KEY META_API_KEY)
+# A key goes in the env file as it is, so it can't hold anything the file
+# would read as something else.
+KEY_SHAPE='^[A-Za-z0-9_.:-]{20,300}$'
 
-[[ -f $DROP ]] || exit 0
+# The env file with every line but these, then the one given, root's alone.
+rewrite() {
+  local line="$1" next other keep
+  shift
+  umask 077
+  next="$AGENTV_ETC/.env.next"
+  : >"$next"
+  if [[ -f $AGENTV_ETC/env ]]; then
+    while IFS= read -r other || [[ -n $other ]]; do
+      keep=1
+      for var in "$@"; do
+        [[ $other == "$var="* ]] && keep=0
+      done
+      (( keep )) && printf '%s\n' "$other" >>"$next"
+    done <"$AGENTV_ETC/env"
+  fi
+  [[ -n $line ]] && printf '%s\n' "$line" >>"$next"
+  chmod 600 "$next"
+  mv -f "$next" "$AGENTV_ETC/env"
+}
+
+install -d -m 755 "$AGENTV_ETC"
+tmdb_bad=0
+
+# The TMDB key first, so a drop of each at once keeps both.
+if [[ -f $TMDB_DROP ]]; then
+  # A drop that isn't JSON with a key in it changes nothing, rather than
+  # take the key off.
+  readable=0
+  jq -e 'type == "object" and has("key") and (.key == null or (.key | type) == "string")' "$TMDB_DROP" >/dev/null 2>&1 && readable=1
+  tmdb=$(jq -r '.key // empty' "$TMDB_DROP" 2>/dev/null || true)
+  rm -f "$TMDB_DROP"
+  tmdb_status() {
+    local next="$AGENTV_ETC/.tmdb.json.next"
+    jq -n --argjson set "$1" --arg error "${2:-}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
+      '{set: $set, at: $at} + (if $error == "" then {} else {error: $error} end)' >"$next"
+    chmod 644 "$next"
+    mv -f "$next" "$AGENTV_ETC/tmdb.json"
+  }
+  if (( ! readable )) || [[ -n $tmdb && ! $tmdb =~ $KEY_SHAPE ]]; then
+    echo "agentv-key-store: that doesn't look like a TMDB key; nothing changed" >&2
+    tmdb_bad=1
+    tmdb_status "$(jq -r '.set // false' "$AGENTV_ETC/tmdb.json" 2>/dev/null || echo false)" "that doesn't look like a tmdb key"
+  else
+    rewrite "${tmdb:+TMDB_API_KEY=$tmdb}" TMDB_API_KEY
+    if [[ -n $tmdb ]]; then
+      tmdb_status true
+      echo "agentv-key-store: kept a TMDB key in $AGENTV_ETC/env"
+    else
+      tmdb_status false
+      echo "agentv-key-store: took the TMDB key off"
+    fi
+  fi
+fi
+
+[[ -f $DROP ]] || exit "$tmdb_bad"
 provider=$(jq -r '.provider // empty' "$DROP" 2>/dev/null || true)
 key=$(jq -r '.key // empty' "$DROP" 2>/dev/null || true)
 rm -f "$DROP"
@@ -34,7 +98,6 @@ status() {
   mv -f "$next" "$AGENTV_ETC/key.json"
 }
 
-install -d -m 755 "$AGENTV_ETC"
 case "$provider" in
   claude) var=ANTHROPIC_API_KEY ;;
   chatgpt) var=OPENAI_API_KEY ;;
@@ -47,29 +110,13 @@ case "$provider" in
     exit 1
     ;;
 esac
-# A key goes in the env file as it is, so it can't hold anything the file
-# would read as something else.
-if [[ -n $var && ! $key =~ ^[A-Za-z0-9_.:-]{20,300}$ ]]; then
+if [[ -n $var && ! $key =~ $KEY_SHAPE ]]; then
   echo "agentv-key-store: that doesn't look like a key; nothing changed" >&2
   status "$(jq -r '.provider // empty' "$AGENTV_ETC/key.json" 2>/dev/null || true)" "that doesn't look like a key"
   exit 1
 fi
 
-umask 077
-next="$AGENTV_ETC/.env.next"
-: >"$next"
-if [[ -f $AGENTV_ETC/env ]]; then
-  while IFS= read -r line || [[ -n $line ]]; do
-    keep=1
-    for other in "${VARS[@]}"; do
-      [[ $line == "$other="* ]] && keep=0
-    done
-    (( keep )) && printf '%s\n' "$line" >>"$next"
-  done <"$AGENTV_ETC/env"
-fi
-[[ -n $var ]] && printf '%s=%s\n' "$var" "$key" >>"$next"
-chmod 600 "$next"
-mv -f "$next" "$AGENTV_ETC/env"
+rewrite "${var:+$var=$key}" "${VARS[@]}"
 status "$provider"
 if [[ -n $var ]]; then
   echo "agentv-key-store: kept a key for $provider in $AGENTV_ETC/env"

@@ -1,8 +1,9 @@
 // AgenTV's built-in apps in the daemon (daemon/home.ts, daemon/place.ts):
-// Clock, Music and Weather come with AgenTV and say so in their details;
-// Clock and Weather are pinned to each viewer's home once, take where the
-// box is from its time zone, and Settings → Weather can pick another city
-// (ADR-015, ADR-016, ADR-017, S3.8).
+// Clock, Music, New this week and Weather come with AgenTV and say so in
+// their details; Clock and Weather are pinned to each viewer's home once,
+// New this week too, large, for a streaming household, take where the box
+// is from its time zone, and Settings → Weather can pick another city
+// (ADR-015, ADR-016, ADR-017, S3.8, S8.1).
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -14,13 +15,24 @@ import { FIXTURES, ROOT, startBox } from "../ui/box.mts";
 import { startMet, type Met } from "../ui/met.mts";
 
 // daemon/weather-check.ts, as agentv selftest runs it, against this box and
-// a forecast at forecast.
-function weatherCheck(id: string, forecast: string): Promise<string> {
+// a forecast at forecast. It asks MET again every 20 ms for up to 600 ms
+// here, where the box asks every 15 s for up to 2 minutes.
+function weatherCheck(id: string, forecast: string, env: Record<string, string> = {}): Promise<string> {
   return new Promise((resolve) => {
     execFile(
       process.execPath,
       [...process.execArgv.filter((arg) => arg === "--experimental-strip-types"), "--disable-warning=ExperimentalWarning", join(ROOT, "daemon/weather-check.ts"), id],
-      { env: { ...process.env, AGENTV_HOME_URL: `${url}/`, AGENTV_MET_URL: forecast, AGENTV_PATH: ROOT } },
+      {
+        env: {
+          ...process.env,
+          AGENTV_HOME_URL: `${url}/`,
+          AGENTV_MET_URL: forecast,
+          AGENTV_PATH: ROOT,
+          AGENTV_MET_AGAIN_MS: "20",
+          AGENTV_MET_FOR_MS: "600",
+          ...env,
+        },
+      },
       (_error, stdout, stderr) => resolve(`${stdout}${stderr}`),
     );
   });
@@ -51,11 +63,11 @@ async function post(path: string, body: unknown): Promise<{ status: number; data
   return { status: response.status, data: await response.json() };
 }
 
-test("Clock, Music and Weather come with AgenTV, first, and their details say they're built in", async () => {
+test("Clock, Music, New this week and Weather come with AgenTV, first, and their details say they're built in", async () => {
   const home = await get("/api/home");
-  assert.deepEqual(home.apps.slice(0, 3).map((app: any) => app.id), ["agentv.clock", "agentv.music", "agentv.weather"]);
-  const [clock, music, weather] = home.apps;
-  for (const app of [clock, music, weather]) {
+  assert.deepEqual(home.apps.slice(0, 4).map((app: any) => app.id), ["agentv.clock", "agentv.music", "agentv.new", "agentv.weather"]);
+  const [clock, music, news, weather] = home.apps;
+  for (const app of [clock, music, news, weather]) {
     assert.equal(app.tier, "built-in");
     assert.equal(app.maker, "built in");
     assert.equal(app.owner, undefined);
@@ -67,6 +79,12 @@ test("Clock, Music and Weather come with AgenTV, first, and their details say th
   assert.equal(weather.credit, "weather data from met norway, under cc by 4.0");
   assert.deepEqual(weather.reach, ["127.0.0.1:" + new URL(met.url).port]);
   assert.deepEqual(clock.reach, ["nothing outside this tv"]);
+  // New this week is TMDB's, through the daemon (S8.1), and credits TMDB and
+  // JustWatch as their terms ask.
+  assert.deepEqual(news.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m new this week", "l new this week"]);
+  assert.equal(news.credit, "this product uses the tmdb api but is not endorsed or certified by tmdb. where to watch is from justwatch");
+  assert.equal(news.category, "utility", "the router never hears of it as something to play");
+  assert.equal(news.forChildren, true);
   assert.deepEqual(music.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m now playing", "l now playing and recent"]);
   assert.equal(music.category, "music");
   assert.deepEqual(music.reach, ["nothing outside this tv"]);
@@ -79,6 +97,44 @@ test("on a new box Clock and Weather are on home first, pinned small, and Music 
     { id: "agentv.weather", size: "s", x: 1, y: 0 },
   ]);
   assert.ok(!layout.some((tile: any) => tile.id === "agentv.music"));
+  assert.ok(!layout.some((tile: any) => tile.id === "agentv.new"), "New this week waits in apps unless the TV is for streaming");
+});
+
+test("S8.1 a streaming household's home gets New this week once, at the largest size that fits, and its tile says what it needs", async () => {
+  const viewer = (await get("/api/home")).viewer.id;
+  // The box's own files, as they were, put back after.
+  const kept = ["setup.json", "layouts.json", "builtins-pinned.json"].map((name) => {
+    try {
+      return { name, text: readFileSync(join(state, name), "utf8") };
+    } catch {
+      return { name, text: null };
+    }
+  });
+  try {
+    writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true, goal: "streaming" }));
+    writeFileSync(join(state, "builtins-pinned.json"), "{}");
+    writeFileSync(join(state, "layouts.json"), "{}");
+    const layout = (await get("/api/home")).layout;
+    // The built-ins in their order, New this week large between the two.
+    assert.deepEqual(layout.slice(0, 3), [
+      { id: "agentv.clock", size: "s", x: 0, y: 0 },
+      { id: "agentv.new", size: "l", x: 1, y: 0 },
+      { id: "agentv.weather", size: "s", x: 3, y: 0 },
+    ]);
+    // On a saved home with only a medium's room left, it's medium.
+    writeFileSync(join(state, "builtins-pinned.json"), JSON.stringify({ [viewer]: ["agentv.clock", "agentv.weather"] }));
+    const full = [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "agentv.clock", x: 2, y: 0, size: "m" }, { id: "agentv.weather", x: 2, y: 1, size: "m" }, { id: "apps", x: 0, y: 2, size: "s" }];
+    writeFileSync(join(state, "layouts.json"), JSON.stringify({ [viewer]: full }));
+    assert.deepEqual((await get("/api/home")).layout.find((tile: any) => tile.id === "agentv.new"), { id: "agentv.new", size: "m", x: 1, y: 2 });
+    // With no TMDB key, its tile says where to add one.
+    const tile = await get("/api/tile/agentv.new/l");
+    assert.equal(tile.tile.headline.caption, "add a tmdb key in settings → new this week");
+  } finally {
+    for (const { name, text } of kept) {
+      if (text === null) rmSync(join(state, name), { force: true });
+      else writeFileSync(join(state, name), text);
+    }
+  }
 });
 
 test("S3.8 the weather tile shows the forecast for the time zone's city, asked for with its coordinates", async () => {
@@ -99,8 +155,10 @@ test("S3.8 S3.9 agentv selftest compares the weather tiles with MET's forecast, 
   // Another forecast than the tile's: Oslo's heavy rain.
   const oslo = await startMet("oslo");
   try {
-    assert.match(await weatherCheck("S3.8", oslo.url), /^fail S3\.8 the tile shows wind for amsterdam .*, but MET says heavyrain/m);
-    assert.match(await weatherCheck("S3.9", oslo.url), /^fail S3\.9 the weather tiles don't match MET for amsterdam/m);
+    // Asking again doesn't help a tile that's wrong for every forecast.
+    assert.match(await weatherCheck("S3.8", oslo.url), /^fail S3\.8 the tile shows wind for amsterdam .*, but MET says heavyrain.* \(asked MET \d+ times/m);
+    assert.match(await weatherCheck("S3.9", oslo.url), /^fail S3\.9 the weather tiles don't match MET for amsterdam.* \(asked MET \d+ times/m);
+    assert.ok(Number(/asked MET (\d+) times/.exec(await weatherCheck("S3.9", oslo.url))?.[1]) >= 3, "it asked MET again");
   } finally {
     oslo.close();
   }
@@ -132,6 +190,40 @@ test("S3.9 agentv selftest compares MET's forecast with tiles drawn from it, not
     assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.icon, "wind");
   } finally {
     met.serve("amsterdam");
+  }
+});
+
+test("S3.8 S3.9 agentv selftest asks MET again when it hands out another forecast than the one the tiles were drawn from", async () => {
+  // The app keeps Amsterdam's forecast for 30 minutes, as MET's Expires
+  // says, so tiles drawn again for the check still come from it. Then MET
+  // hands out Oslo's for the check's own two fetches, before and after the
+  // tiles, and Amsterdam's again after that: 2026-11-01, when a box's large
+  // tile had today as partly cloudy, both of the check's fetches had it
+  // cloudy, and another box got partly cloudy two minutes later.
+  met.expiresIn(30 * 60_000);
+  for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
+  const asked = met.seen.length;
+  try {
+    // Asking only before and after the tiles, as the check did, fails a box
+    // whose tiles are right.
+    met.serveNext("oslo", "oslo");
+    assert.match(await weatherCheck("S3.9", met.url, { AGENTV_MET_FOR_MS: "0" }), /^fail S3\.9 the weather tiles don't match MET for amsterdam/m);
+    assert.equal(met.seen.length, asked + 2, "the app kept its forecast, and only the check asked MET");
+
+    // Asking again finds the forecast the tiles were drawn from.
+    met.serveNext("oslo", "oslo");
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+    met.serveNext("oslo", "oslo");
+    assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows wind at 12° for amsterdam/m);
+  } finally {
+    // The app asks MET again from here on, as the tests after this expect:
+    // the weather moves to Oslo and back, with replies that are good until now.
+    met.expiresIn(0);
+    await post("/api/weather", { zone: "Europe/Oslo" });
+    await get("/api/tile/agentv.weather/s");
+    await post("/api/weather", { zone: null });
+    for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
+    met.expiresIn(30 * 60_000);
   }
 });
 

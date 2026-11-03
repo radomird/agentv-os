@@ -8,7 +8,9 @@
 // - playback while something plays, and a trackpad for Omarchy's desktop;
 // - who's watching, arrange home, the update notice with Install tonight,
 //   and the adult PIN, which also unlocks the TV;
-// - Share → TV: a photo from the phone for the TV's background (S5.3).
+// - Share → TV: a photo from the phone for the TV's background (S5.3);
+// - ask your TV: a sentence for the box's agent, by dictation or typing,
+//   and up to three to choose from when it found more than one (ADR-023).
 // It follows the TV (ADR-037): a PIN pad whenever the TV asks for the PIN,
 // the keyboard for a text field, playback while something plays, the
 // trackpad on the desktop, and the d-pad otherwise. Every press shows,
@@ -17,10 +19,13 @@
 
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { arrange } from "./arrange.ts";
+import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild, pushBanner, pushPage } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
+import { sayAnswer, sayBox, type Said } from "./say.ts";
+import { sharePage } from "./share.ts";
 
 const app = document.getElementById("app")!;
 
@@ -55,6 +60,16 @@ interface State {
   // What setup's AI step asks of the phone (ADR-023): the provider's terms
   // for an adult to accept, then the key.
   ai: Ask | null;
+  // The latest notices from page apps that declared them (ADR-043), newest
+  // first.
+  notices?: { app: string; name: string; text: string; at: string }[];
+  // An adult's builds that aren't on home yet: how each is going, and the
+  // ones waiting for a yes here (ADR-043, ADR-046).
+  builds?: PhoneBuild[];
+  // An app the TV offered for Export, to save here (ADR-045).
+  export?: Offer | null;
+  // The last sentence said to the TV, and what came of it (ADR-023).
+  said?: Said | null;
 }
 
 interface Ask {
@@ -69,12 +84,17 @@ interface Ask {
   keyUrl: string;
 }
 
-type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo";
+type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "share" | "build" | "push";
 let state: State | null = null;
 let mode: Mode = "remote";
+// The build being approved, while it's open.
+let approving: string | null = null;
 // The photo page stays as it is while the page draws again around it, so a
 // photo picked isn't lost when something changes on the TV.
 let photoEl: HTMLElement | null = null;
+let shareEl: HTMLElement | null = null;
+// The push's page, kept while it's open so a redraw keeps what's typed.
+let pushEl: HTMLElement | null = null;
 
 // The page each thing on the TV opens. The PIN pad comes over whatever page
 // is showing.
@@ -190,10 +210,17 @@ function feelSwitch(): HTMLElement {
   return button;
 }
 
+// Ask the TV (ADR-023), over the remote and playback. Once a sentence is
+// answered the page is drawn again, as for any change: only the answer
+// while the box already holds the next one.
+const sayDone = () => void refresh();
+const asking = () => sayBox(state?.said, failed, sayDone);
+
 function remote(): HTMLElement {
   return h(
     "div",
     { class: "remote" },
+    asking(),
     h(
       "div",
       { class: "dpad" },
@@ -217,6 +244,7 @@ function playback(): HTMLElement {
   return h(
     "div",
     { class: "remote" },
+    asking(),
     h("p", { class: "label" }, "playing on the tv"),
     h("div", { class: "row play" }, key("playpause", "play-pause", "", "big", "play or pause"), key("next", "next", "", "big", "next")),
     h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), settingsKey()),
@@ -645,8 +673,43 @@ function draw(): void {
       ),
     );
   }
+  // An app the TV offered for Export, to save here, or to push to GitHub.
+  const saving = exportBanner(state.export, failed);
+  if (saving) banners.push(saving);
+  if (mode === "push" && !state.export?.github) mode = "remote";
+  if (mode !== "push") pushEl = null;
+  const pushing =
+    mode === "push"
+      ? null
+      : pushBanner(state.export, () => {
+          mode = "push";
+          draw();
+        });
+  if (pushing) banners.push(pushing);
+  // Your agent's build: the one waiting for a yes, or how the newest is going.
+  if (mode !== "build") {
+    const building = buildBanner(state.builds, (build) => {
+      mode = "build";
+      approving = build;
+      draw();
+    });
+    if (building) banners.push(building);
+  }
   const body = h("div", {});
-  if (mode === "home") {
+  if (mode === "build" && approving) {
+    body.append(
+      buildPage(
+        approving,
+        () => {
+          mode = "remote";
+          approving = null;
+          draw();
+        },
+        failed,
+        () => refresh(true),
+      ),
+    );
+  } else if (mode === "home") {
     void arrange(body).then(() =>
       body.append(
         h(
@@ -663,9 +726,39 @@ function draw(): void {
           glyph("photo", 18),
           h("span", {}, "send a photo for the background ›"),
         ),
+        // A link, a photo or a video for the TV to open (ADR-050).
+        h(
+          "button",
+          {
+            type: "button",
+            class: "button",
+            "data-action": "share",
+            onclick: () => {
+              mode = "share";
+              draw();
+            },
+          },
+          glyph("tv", 18),
+          h("span", {}, "share a link, a photo or a video ›"),
+        ),
       ),
     );
+  } else if (mode === "push" && state.export?.github) {
+    pushEl ??= h(
+      "div",
+      {},
+      ...pushPage(
+        { ...state.export, github: state.export.github },
+        () => {
+          mode = "remote";
+          draw();
+        },
+        failed,
+      ),
+    );
+    body.append(pushEl);
   } else if (mode === "photo") body.append((photoEl ??= photoPage(failed)));
+  else if (mode === "share") body.append((shareEl ??= sharePage(failed)));
   else if (mode === "who") body.append(who());
   else if (mode === "update" && state.update) body.append(updatePage(state.update));
   else if (mode === "type") body.append(typing());
@@ -734,6 +827,11 @@ async function refresh(force = false, wait = false): Promise<void> {
   const { version: _now, ...now } = next;
   const changed = JSON.stringify(now) !== JSON.stringify(was);
   state = next;
+  // A build that moved on says so here as it does on the TV.
+  buildNotices(before?.builds, next.builds);
+  // A page app's new notice shows here as it does on the TV.
+  const notice = next.notices?.[0];
+  if (before && notice && notice.at !== before.notices?.[0]?.at) toast(`${notice.name.toLowerCase()}: ${notice.text}`, true);
   const moved = before !== null && next.tv.view !== before.tv.view;
   const follow = FOLLOW[next.tv.view];
   if (moved && follow && (mode === "remote" || mode === "type" || mode === "play" || mode === "mouse")) {
@@ -747,6 +845,7 @@ async function refresh(force = false, wait = false): Promise<void> {
   else {
     if (JSON.stringify(next.ai) !== JSON.stringify(before?.ai)) drawAsk();
     if (JSON.stringify(next.tv.pin) !== JSON.stringify(before?.tv.pin)) drawPad();
+    if (JSON.stringify(next.said) !== JSON.stringify(before?.said)) sayAnswer(next.said, failed, sayDone);
   }
 }
 

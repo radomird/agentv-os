@@ -55,8 +55,21 @@ export interface Settings {
   sound: { on: boolean; volume: number };
   reduceMotion: boolean;
   idleMinutes: number;
+  // Your backgrounds or Omarchy's terminal screensaver (ADR-049).
+  ambient: "pictures" | "terminal";
   // Install tested updates between 02:00 and 05:00 without asking (Q79).
   updateOvernight: boolean;
+  // The TV says its answers aloud (stage 8).
+  spoken: boolean;
+}
+
+// Which voice says the TV's answers (stage 8): the provider's own, Piper on
+// the box, or none yet while Piper is fetched.
+export interface VoiceState {
+  spoken: boolean;
+  by: "provider" | "piper" | null;
+  provider: string | null;
+  piper: "ready" | "missing";
 }
 
 export interface HomeState {
@@ -153,6 +166,12 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
+  // The plans setup and Settings → AI offer on this box's channel, and which
+  // of them only as best effort, on edge (ADR-053).
+  plans?: { provider: string; name?: string; bestEffort: boolean }[];
+  // What builds use now: the AI picked, by plan or key, and whether its terms
+  // are accepted (Q143).
+  ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
 }
 
 // The terms a key waits for, when nobody here has accepted that provider's
@@ -166,6 +185,23 @@ export interface KeyTerms {
 }
 
 // Settings → Weather: the forecast's city, and the cities it can be.
+// Settings → new this week (stage 8): whether there's a TMDB key, the
+// region, and each streaming app with the services TMDB lists by its name.
+export interface NewsService {
+  app: string;
+  name: string;
+  providers: { id: number; name: string }[];
+}
+
+export interface NewsState {
+  key: { set: boolean; at?: string; error?: string };
+  region: string | null;
+  zoneRegion: string | null;
+  picked: boolean;
+  services?: NewsService[];
+  error?: string;
+}
+
 export interface WeatherPlace {
   zone: string;
   name: string;
@@ -213,15 +249,18 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
 export interface Background {
   id: string;
   type: string;
-  kind: "photo" | "art" | "folder";
+  kind: "photo" | "art" | "folder" | "theme";
   credit: { text: string | null; from: string };
   added: string;
 }
 
 export interface Backgrounds {
-  source: "field" | "photos" | "art" | "folder";
+  source: "theme" | "field" | "photos" | "art" | "folder";
   current: string | null;
   items: Background[];
+  // The Omarchy theme's own (ADR-048): the theme, the one Omarchy shows,
+  // and its backgrounds. A box from before them has none.
+  theme?: { name: string | null; current: string | null; items: Background[] };
 }
 
 // A work from a museum archive, as the art picker lists it.
@@ -240,11 +279,20 @@ export function creditLine(item: Background): string {
   return item.credit.text ?? (item.kind === "photo" ? `photo · ${item.credit.from}` : item.credit.from);
 }
 
-// The pictures the chosen source shows: the photos, the art or a folder's.
+// The pictures the chosen source shows: the theme's own, the photos, the art
+// or a folder's.
 export function shownPictures(backgrounds: Backgrounds | null): Background[] {
-  const kinds: Record<Backgrounds["source"], Background["kind"] | null> = { field: null, photos: "photo", art: "art", folder: "folder" };
+  if (backgrounds?.source === "theme") return backgrounds.theme?.items ?? [];
+  const kinds: Record<Backgrounds["source"], Background["kind"] | null> = { theme: null, field: null, photos: "photo", art: "art", folder: "folder" };
   const kind = backgrounds ? kinds[backgrounds.source] : null;
   return kind ? backgrounds!.items.filter((item) => item.kind === kind) : [];
+}
+
+// The one of them on screen: for the theme's own, the one Omarchy shows.
+export function shownCurrent(backgrounds: Backgrounds | null): Background | undefined {
+  const pictures = shownPictures(backgrounds);
+  const current = backgrounds?.source === "theme" ? backgrounds.theme?.current : backgrounds?.current;
+  return pictures.find((one) => one.id === current) ?? pictures[0];
 }
 
 // One of Omarchy's themes setup and Settings offer (board 12), with the
@@ -255,6 +303,7 @@ export interface ThemePreview {
   note: string;
   mode: "light" | "dark";
   colors: { background: string; dark_background: string; accent: string; selection: string; foreground: string; bright_foreground: string };
+  app?: string; // a theme your agent made: its build's id
 }
 
 // Apps → add an app (ADR-042): an official app that isn't on the TV yet, and
@@ -272,8 +321,63 @@ export interface Available {
   error?: string;
 }
 
+// Shared to the TV (ADR-050, S5.10): a link, a photo or a video a paired
+// phone sent, with who sent it.
+export interface Share {
+  id: string;
+  kind: "link" | "photo" | "video";
+  from: string;
+  to: string;
+  at: string;
+  title: string;
+  url?: string;
+  credit?: string | null;
+  type?: string;
+  size?: number;
+  answered: boolean;
+}
+
+export interface SharedState {
+  shares: Share[];
+  // The one the TV asks about now, if any.
+  ask: string | null;
+  // The children's profiles that take shares.
+  allowed: string[];
+}
+
+// A sentence said to the TV (ADR-023), as the daemon tells it: the sentence
+// as heard, then what came of it, which the TV shows and, from stage 8,
+// speaks. With more than one match, up to three to choose from.
+export interface Candidate {
+  app: string;
+  name: string;
+  item: Item & { subtitle?: string };
+}
+
+export type Outcome = { kind: "opened"; say: string; app: string; item?: Item } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "told"; say: string } | { kind: "none"; say: string; why: string; detail?: string };
+
+export interface Said {
+  n: number;
+  sentence: string;
+  from: string;
+  state: "routing" | "done";
+  outcome?: Outcome;
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
+  pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
+  dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
+  // Back on the TV with the listening bar up (ADR-054).
+  closeListening: () => call<{ ok: boolean }>("POST", "/api/say/live/close"),
+  shared: () => call<SharedState>("GET", "/api/shared"),
+  answerShare: (id: string) => call<{ ok: boolean }>("POST", `/api/shared/${id}/answer`),
+  shareBackground: (id: string, grant?: string) => call<{ background: Background }>("POST", `/api/shared/${id}/background`, undefined, grant),
+  removeShare: (id: string, grant?: string) => call<{ ok: boolean }>("DELETE", `/api/shared/${id}`, undefined, grant),
+  // One of a page app's kit calls the daemon does, checked against its
+  // manifest there (ADR-043): what it gives back.
+  kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
@@ -297,8 +401,9 @@ export const daemon = {
   saveWeather: (change: { zone?: string | null; units?: "c" | "f" | null }, grant?: string) => call<WeatherPlace>("POST", "/api/weather", change, grant),
   // Profiles (ADR-009, S4.2).
   switchViewer: (id: string, grant?: string) => call<{ viewer: Viewer }>("POST", "/api/viewer", { id }, grant),
-  addViewer: (profile: Omit<Viewer, "id" | "locked"> & { locked?: boolean }, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
-  editViewer: (id: string, change: Partial<Omit<Viewer, "id">>, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
+  // shares: whether a child's profile takes shares from phones (ADR-050).
+  addViewer: (profile: Omit<Viewer, "id" | "locked"> & { locked?: boolean; shares?: boolean }, grant?: string) => call<{ profile: Viewer }>("POST", "/api/viewers", profile, grant),
+  editViewer: (id: string, change: Partial<Omit<Viewer, "id">> & { shares?: boolean }, grant?: string) => call<{ profile: Viewer }>("PUT", `/api/viewers/${id}`, change, grant),
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
   // The provider key (S4.6): which provider has one, never the key.
   key: () => call<KeyState>("GET", "/api/key"),
@@ -312,7 +417,26 @@ export const daemon = {
   },
   // Settings → AI stopped waiting for a key's terms.
   stopKeyTerms: () => call<{ ok: boolean }>("DELETE", "/api/key/terms"),
+  // The household's plan for builds, from Settings → AI (Q143), or the terms
+  // it waits for.
+  usePlan: async (provider: string, grant?: string): Promise<{ provider: string; path: "plan" } | { terms: KeyTerms }> => {
+    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+    const data = await response.json();
+    if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "PUT /api/ai/plan failed");
+    return data as { provider: string; path: "plan" };
+  },
+  stopPlanTerms: () => call<{ ok: boolean }>("DELETE", "/api/ai/plan/terms"),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
+  // New this week (stage 8): the TMDB key, the region, TMDB's regions, and a
+  // title chosen on home, played in its app.
+  news: () => call<NewsState & { ok: boolean }>("GET", "/api/whats-new/settings"),
+  saveRegion: (region: string | null, grant?: string) => call<NewsState>("PUT", "/api/whats-new/settings", { region }, grant),
+  regions: () => call<{ regions: { code: string; name: string }[] }>("GET", "/api/whats-new/regions").then((r) => r.regions),
+  saveTmdbKey: (key: string, grant?: string) => call<NewsState>("PUT", "/api/tmdb-key", { key }, grant),
+  removeTmdbKey: (grant?: string) => call<NewsState>("DELETE", "/api/tmdb-key", undefined, grant),
+  openNew: (id: string) => call<{ said: Said }>("POST", "/api/whats-new/open", { id }),
+  voice: () => call<VoiceState>("GET", "/api/voice"),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
   saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),
@@ -324,7 +448,72 @@ export const daemon = {
   removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),
   lock: () => call<{ locked: boolean }>("POST", "/api/pin/lock"),
   image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
+  // The builder (ADR-043 to ADR-046): an adult's asks, and how each goes.
+  builds: () => call<BuildsState>("GET", "/api/builds"),
+  ask: (sentence: string) => call<{ build: BuildView }>("POST", "/api/builds", { sentence }).then((r) => r.build),
+  confirm: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/confirm`).then((r) => r.build),
+  retry: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/retry`).then((r) => r.build),
+  forget: (build: string) => call<{ ok: boolean }>("POST", `/api/builds/${build}/forget`),
+  stopBuild: () => call<{ ok: boolean }>("POST", "/api/builds/stop"),
+  builderSettings: (change: Partial<BuilderSettings>, grant?: string) => call<{ settings: BuilderSettings }>("PUT", "/api/builds/settings", change, grant).then((r) => r.settings),
+  // A built app's next version, the one before it back, or the app gone.
+  changeApp: (id: string, text: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/change`, { text }).then((r) => r.build),
+  rebuildApp: (id: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rebuild`).then((r) => r.build),
+  rollbackApp: (id: string, grant?: string) => call<{ build: BuildView }>("POST", `/api/builds/apps/${id}/rollback`, undefined, grant).then((r) => r.build),
+  removeBuilt: (id: string, grant?: string) => call<{ ok: boolean }>("POST", `/api/builds/apps/${id}/remove`, undefined, grant),
+  // Export (ADR-045): offered to an adult's phone, which saves the .zip.
+  exportApp: (id: string) => call<{ ok: boolean }>("POST", `/api/apps/${id}/export`, {}),
 };
+
+// The builder (ADR-043 to ADR-046): one build as the TV shows it, from what
+// was asked to the app on home.
+export interface BuildView {
+  build: string;
+  id: string;
+  version: string;
+  sentence: string;
+  name?: string;
+  provider: "claude" | "chatgpt" | "gemini" | "grok" | "muse";
+  path: "plan" | "key";
+  state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
+  phase: "understand" | "plan" | "build" | "stage-b";
+  step?: string;
+  steps: { id: string; state: "waiting" | "running" | "done" | "failed" }[];
+  reason?: string;
+  spent?: number;
+  understood?: { name: string; recipe: string | null; says: string; address?: string; category?: string };
+  plan?: {
+    name: string;
+    says: string;
+    steps: { id: string; does: string }[];
+    permissions: { origins: string[]; media: string[]; tile: boolean; notices: boolean };
+    packages: { name: string; version?: string }[];
+    cost?: { low: number; high: number };
+  };
+  cost?: { low: number; high: number };
+  minutes?: number;
+  // A plan's sign-in, the first time the builder runs on it (ADR-040), or
+  // again once it ran out.
+  signIn?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
+  ranOut?: boolean;
+  shot: boolean;
+  at: string;
+}
+
+export interface BuilderSettings {
+  cap: { build: number; month: number }; // dollars, with a key
+  safeguards: boolean;
+}
+
+export interface BuildsState {
+  builds: BuildView[];
+  settings: BuilderSettings;
+  spend: { month: string; spent: number; cap: BuilderSettings["cap"] };
+  warnings: { id: string; version: string; build: string; malware: string[]; serious: string[]; since: string }[];
+  wishes: string[]; // what setup's "+ add your own" kept
+  // Each theme your agent made that the TV handed to Omarchy, or why not.
+  themes?: Record<string, { version: string; name?: string; error?: string }>;
+}
 
 // Things that changed, as the daemon tells them. opened runs each time the
 // stream opens: the first time, a moment after the page asked for what it
@@ -355,6 +544,7 @@ export interface Running {
 interface Reply {
   ok: boolean;
   error?: string;
+  value?: unknown;
   apps?: Running[];
   [key: string]: unknown;
 }
@@ -383,6 +573,9 @@ export const screen = {
   // Puts an app in front, the way its manifest says to open it, or brings
   // it back where it was when it's open behind home.
   open: (app: string) => ask({ cmd: "open-app", app }),
+  // A link shared to the TV, in the app that declares its site, or in a
+  // browser page of its own that can't see the apps' sign-ins (ADR-050).
+  openShare: (id: string) => ask({ cmd: "open-share", share: id }),
   // Opens an app at an item, through its playback.open: an entry of its
   // tile, such as one to continue (ADR-016).
   openItem: (app: string, item: Item) => ask({ cmd: "open-app", app, item }),
@@ -390,6 +583,13 @@ export const screen = {
   running: async () => (await ask({ cmd: "running" })).apps ?? [],
   // Closes an app open behind home, such as a game still running.
   quit: (app: string) => ask({ cmd: "quit", app }),
+  // A page app's photos and music, from the TV session (ADR-043). A photo
+  // from a slow NAS takes a while.
+  kit: async (app: string, name: string, args: unknown[]) => {
+    const reply = await ask({ cmd: "kit", app, call: name, args }, 60_000);
+    if (!reply.ok) throw new Error(reply.error ?? "that didn't work");
+    return reply.value;
+  },
   // A key on the ambient screen: back to what was in front.
   wake: () => ask({ cmd: "wake" }),
   // Settings → Updates: Check now and Install now.

@@ -145,9 +145,21 @@ export async function apps(ctx: Ctx): Promise<View> {
 }
 
 // "+ add your own" (board 10): what to add, in a few words, typed here or on
-// the phone. The TV's agent will build it once it can; setup keeps it.
-export function addYourOwn(ctx: Ctx): View {
-  const field = h("input", { class: "text-field wish-field", "data-focus": true, "data-action": "wish", type: "text", maxlength: "80", placeholder: "app to add", "aria-label": "app to add", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+// the phone. The TV's agent will build it once it can; setup keeps it. The
+// look step's "describe your own" keeps a theme the same way (S6.4).
+export function addYourOwn(ctx: Ctx, kind?: "theme"): View {
+  const theme = kind === "theme";
+  const field = h("input", {
+    class: "text-field wish-field",
+    "data-focus": true,
+    "data-action": "wish",
+    type: "text",
+    maxlength: theme ? "70" : "80",
+    placeholder: theme ? "a calm forest at dusk" : "app to add",
+    "aria-label": theme ? "theme to make" : "app to add",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
   const keep = async () => {
     const text = field.value.trim();
     if (!text) {
@@ -156,7 +168,7 @@ export function addYourOwn(ctx: Ctx): View {
       return;
     }
     try {
-      ctx.info.setup = (await setup.wish(text)).setup;
+      ctx.info.setup = (await setup.wish(theme ? `a theme: ${text}` : text)).setup;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
@@ -178,11 +190,15 @@ export function addYourOwn(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading("what should I add?", "add your own.", ctx.reduced())),
+    h("div", {}, ...heading(theme ? "what should it look like?" : "what should I add?", theme ? "describe your own." : "add your own.", ctx.reduced())),
     h("div", { class: "wish-row" }, h("span", { class: "wish-caret" }, ">"), field),
     h("span", { class: "setup-note" }, "type here, or on your phone."),
     h("div", { class: "wish-actions" }, go, not),
-    h("p", { class: "setup-note" }, "your tv's agent will build it soon, with a $5 cap. I'll keep it till then."),
+    h(
+      "p",
+      { class: "setup-note" },
+      theme ? "your tv's agent will make it soon: its colours and a background or two, for the tv and omarchy's desktop. I'll keep it till then." : "your tv's agent will build it soon, with a $5 cap. I'll keep it till then.",
+    ),
   );
   return { el, first: field, info: "↵ keep · esc back" };
 }

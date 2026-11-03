@@ -1,12 +1,17 @@
 // Apps (ADR-015): everything on the box, on the home screen or not. Enter
 // opens an app, i shows its details, p puts it on home or takes it off, and e
-// edits home. An adult adds AgenTV's official apps from here (ADR-042).
+// edits home. An adult adds AgenTV's official apps from here (ADR-042), and
+// asks their agent for one of their own, whose builds show here until
+// they're on home (ADR-043 to ADR-046). What a phone shared waits under
+// Shared until someone takes it off, with Delete (ADR-050).
 
 import { screen, type App } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
+import { buildTile, underway } from "./build.ts";
 import { logo } from "./home.ts";
 import { bar, heading, togglePin } from "./parts.ts";
+import { removeShare, shares, sharedTile } from "./shared.ts";
 
 function appTile(ctx: Ctx, app: App): HTMLElement {
   return h(
@@ -47,23 +52,26 @@ export function apps(ctx: Ctx): View {
         )
       : null;
 
-  const add = h(
-    "button",
-    {
-      class: "tile size-s",
-      "data-focus": true,
-      onclick: () => ctx.toast("asking the agent for an app is coming soon"),
-    },
-    h("div", { class: "tile-top" }, h("span", { class: "tile-label" }, "coming soon")),
-    h("span", { class: "tile-name" }, "+ add your own"),
-  );
+  // Your agent makes one from what you say (ADR-043 to ADR-046), for an adult.
+  const add =
+    ctx.state.viewer.role === "adult"
+      ? h(
+          "button",
+          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "build", onclick: () => ctx.go("build") },
+          h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, "make one")),
+          h("span", { class: "tile-name" }, "+ add your own"),
+        )
+      : null;
+  const building = underway();
+  const shared = shares();
 
   const el = h(
     "div",
     { class: "screen" },
     h(
       "div",
-      { class: "page" },
+      // Longer than the screen with a few shares, it scrolls with the focus.
+      { class: "page apps-page", "data-scroll": true },
       h(
         "div",
         { class: "page-head" },
@@ -72,17 +80,25 @@ export function apps(ctx: Ctx): View {
       ),
       h("div", { class: "section" }, "# on your home"),
       on.length ? h("div", { class: "row" }, ...on.map((app) => appTile(ctx, app))) : h("div", { class: "empty" }, "nothing yet"),
+      ...(building.length ? [h("div", { class: "section" }, "# your agent's builds"), h("div", { class: "row" }, ...building.map((b) => buildTile(ctx, b)))] : []),
       h("div", { class: "section" }, "# not on your home"),
-      h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(official ? [official] : []), add),
+      h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(official ? [official] : []), ...(add ? [add] : [])),
+      ...(shared.length ? [h("div", { class: "section" }, "# shared"), h("div", { class: "row" }, ...shared.map((share) => sharedTile(ctx, share)))] : []),
     ),
-    bar(ctx, "apps", "↵ open · i details · p pin to home · e edit home"),
+    bar(ctx, "apps", shared.length ? "↵ open · i details · p pin to home · e edit home · del takes a share off" : "↵ open · i details · p pin to home · e edit home"),
   );
+  el.querySelector(".apps-page")!.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
   const installed = new Set(ctx.state.apps.map((app) => app.id));
   return {
     el,
     first: el.querySelector<HTMLElement>(".row [data-focus]") ?? undefined,
     act(action) {
       const id = ctx.focus.get()?.dataset.id;
+      const share = shared.find((one) => one.id === ctx.focus.get()?.dataset.share);
+      if (action === "remove" && share) {
+        void removeShare(ctx, share).then((gone) => gone && ctx.render("apps"));
+        return true;
+      }
       if (action === "info" && id && installed.has(id)) {
         ctx.go(`details/${id}`);
         return true;

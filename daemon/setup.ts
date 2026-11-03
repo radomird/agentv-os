@@ -220,6 +220,16 @@ export class Setup {
     return { state: await this.save(state) };
   }
 
+  // A wish the household has now asked the builder for, kept no longer.
+  async asked(text: string): Promise<void> {
+    const words = text.trim().replace(/\s+/g, " ").toLowerCase();
+    const state = await this.read();
+    const left = state.wishes.filter((w) => w.toLowerCase() !== words);
+    if (left.length === state.wishes.length) return;
+    state.wishes = left;
+    await this.save(state);
+  }
+
   // The soundtrack muted or playing again.
   async setMuted(muted: unknown): Promise<{ state?: SetupState; error?: string }> {
     if (typeof muted !== "boolean") return { error: 'send {"muted": true} or {"muted": false}' };

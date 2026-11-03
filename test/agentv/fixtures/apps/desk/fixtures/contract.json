@@ -1,0 +1,16 @@
+{
+  "routes": [
+    { "url": "https://desk.test/desktop.html", "file": "pages/desktop.html" },
+    { "url": "https://desk.test/next.html", "file": "pages/next.html" },
+    { "url": "https://desk.test/own-keys.html", "file": "pages/own-keys.html" }
+  ],
+  "checks": [
+    { "name": "launch opens its site", "page": "https://desk.test/next.html", "call": "launch", "after": { "url": "^https://desk\\.test/desktop\\.html$" } },
+    { "name": "the d-pad reaches the row of titles on a page with no arrow keys of its own", "page": "https://desk.test/desktop.html", "remote": ["down", "down"], "after": { "focused": "^Title 1$" } },
+    { "name": "right goes along the row, past the edge of the screen", "page": "https://desk.test/desktop.html", "remote": ["down", "down", "right", "right", "right", "right", "right", "right", "right"], "after": { "focused": "^Title 8$" } },
+    { "name": "OK presses the title that has focus", "page": "https://desk.test/desktop.html", "remote": ["down", "down", "right", "right", "right", "enter"], "after": { "focused": "^Title 4$", "title": "^picked 4$" } },
+    { "name": "up from the row reaches the links along the top, and OK opens one", "page": "https://desk.test/desktop.html", "remote": ["down", "down", "up", "enter"], "after": { "url": "/next\\.html\\?(films|series)$" } },
+    { "name": "and Back goes back a page", "remote": ["back"], "after": { "url": "/desktop\\.html$" } },
+    { "name": "a page that moves its own focus with the arrows keeps them", "page": "https://desk.test/own-keys.html", "remote": ["right"], "after": { "title": "^on 2$", "focused": "^$" } }
+  ]
+}

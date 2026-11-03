@@ -1,8 +1,8 @@
 // Settings (ADR-015, ADR-024, ADR-031): sections on the left, the focused one
-// on the right. Look, Sound, Weather, Adult PIN, Omarchy desktop and Power work
-// now; the sections later stages build say so.
+// on the right. Look, Sound, Weather, New this week, Adult PIN, Omarchy
+// desktop and Power work now; the sections later stages build say so.
 
-import { daemon, screen, type AudioState, type ThemePreview, type WeatherPlace } from "../api.ts";
+import { daemon, screen, type AudioState, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -12,6 +12,10 @@ import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
 import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
+import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
+import { buildsState, loadBuilds } from "./build.ts";
+import { loadNews, newsAdjust, newsPanel, newsValue } from "./tmdb.ts";
+import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -37,6 +41,17 @@ let weather: WeatherPlace | null = null;
 
 // The box's sound output and its volume (S2.19), the same way.
 let audio: AudioState | null = null;
+// Which voice says the TV's answers (stage 8), the same way.
+let voice: VoiceState | null = null;
+
+// The voice, as Settings → Sound says it.
+function voiceLine(state: VoiceState | null): string {
+  if (!state) return "";
+  if (!state.spoken) return "the tv shows its answers and doesn't say them.";
+  if (state.by === "provider") return `the tv says its answers in ${state.provider}'s own voice.`;
+  if (state.by === "piper") return "the tv says its answers with piper, on this box.";
+  return "piper isn't on this box, so the tv shows its answers without saying them. agentv update brings it back.";
+}
 // The looks Settings → Look offers (board 12), and which one the TV has.
 let looks: { themes: ThemePreview[]; current: string | null } | null = null;
 let settingLook: string | null = null;
@@ -265,16 +280,28 @@ export function settings(ctx: Ctx, open?: string): View {
       value: () => looks?.themes.find((look) => look.id === looks?.current)?.name ?? "omarchy theme",
       panel: () => [
         h("div", { class: "panel-title" }, "colours"),
-        ...(looks?.themes ?? []).map((look) =>
-          h(
-            "button",
-            { class: "button", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
-            h("span", {}, look.name),
-            h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
-          ),
-        ),
-        note("they come from your omarchy theme: one of these, or any other on omarchy's desktop, and the tv follows."),
+        lookList(),
+        // A theme your agent made: its page, where it can be removed.
+        ...(looks?.themes ?? []).flatMap((look) => {
+          const made = look.app ? buildsState()?.builds.find((b) => b.id === look.app && b.state === "installed") : undefined;
+          return made ? [h("button", { class: "button wide", "data-focus": true, "data-action": `theme-made-${look.id}`, onclick: () => ctx.go(`build/${made.build}`) }, h("span", {}, `${look.name}, made by your agent`), h("span", { class: "button-value" }, "→"))] : [];
+        }),
+        // Look's last: a theme your agent makes from a few words (S6.4).
+        ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
+        // What the ambient screen shows (ADR-049).
+        h(
+          "button",
+          {
+            class: "button",
+            "data-focus": true,
+            "data-action": "ambient-style",
+            "data-adjust": "ambient-style",
+            onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style"),
+          },
+          h("span", {}, "ambient screen"),
+          h("span", { class: "button-value" }, s.ambient === "terminal" ? "terminal" : "backgrounds"),
+        ),
         h(
           "button",
           {
@@ -287,7 +314,7 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", {}, "ambient screen after"),
           h("span", { class: "button-value" }, `${s.idleMinutes} min`),
         ),
-        note("with nothing playing and no key pressed for that long. left and right change it."),
+        note("the tv follows omarchy's theme, and the ambient screen comes on after that long with nothing playing."),
       ],
     },
     {
@@ -300,6 +327,8 @@ export function settings(ctx: Ctx, open?: string): View {
       panel: () => [
         ...outputRows(),
         toggle("ui sounds", s.sound.on, "sound", () => save({ sound: { ...s.sound, on: !s.sound.on } }, "sound", "sound")),
+        // What the TV answers, said aloud (stage 8), and which voice says it.
+        toggle("spoken answers", s.spoken, "spoken", () => save({ spoken: !s.spoken }, "sound", "spoken")),
         h(
           "button",
           {
@@ -313,14 +342,17 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", { class: "button-value" }, `${Math.round(s.sound.volume * 100)}%`),
         ),
         note("left and right change how loud the ui sounds are."),
+        ...(voice ? [note(voiceLine({ ...voice, spoken: s.spoken }))] : []),
       ],
     },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
+    // What came out this week on the household's services, from TMDB (S8.1).
+    { key: "tmdb", label: "new this week", value: newsValue, panel: () => newsPanel(ctx) },
     { key: "profiles", label: "profiles", value: () => String(ctx.state.viewers.length), panel: () => profilesPanel(ctx) },
     { key: "phones", label: "phones", value: () => (phones ? String(phones.length) : ""), panel: () => phonesPanel(ctx) },
     { key: "pin", label: "adult pin", value: () => (pinSet() ? "on" : "off"), panel: pinPanel },
     { key: "ai", label: "ai", value: () => aiValue(ctx), panel: () => aiPanel(ctx) },
-    { key: "usage", label: "usage", value: () => "soon", panel: () => soon("ai spending shows here once the agent builds apps.") },
+    { key: "usage", label: "usage", value: usageValue, panel: () => usagePanel(ctx) },
     {
       key: "updates",
       label: "updates",
@@ -367,11 +399,18 @@ export function settings(ctx: Ctx, open?: string): View {
         note("the world's first open-source agentic tv os. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),
         note("weather data from met norway, under cc by 4.0."),
+        // TMDB's terms: its logo, less prominent than AgenTV's, and its
+        // notice; JustWatch's: credit for where to watch.
+        h("img", { class: "about-tmdb", src: TMDB_LOGO, alt: "tmdb" }),
+        note(TMDB_NOTICE),
+        note("where to watch is from justwatch, through tmdb."),
       ],
     },
   ];
 
-  const panel = h("div", { class: "panel" });
+  // A section longer than the screen, such as Look, scrolls with the focus.
+  const panel = h("div", { class: "panel settings-panel", "data-scroll": true });
+  panel.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
   const show = (section: Section) => {
     ctx.remember(`settings/${section.key}`);
     panel.replaceChildren(...section.panel());
@@ -413,6 +452,25 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  void daemon
+    .voice()
+    .then((found) => {
+      const changed = JSON.stringify(found) !== JSON.stringify(voice);
+      voice = found;
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "sound")!);
+      }
+    })
+    .catch(() => {});
+  void loadNews()
+    .then(() => {
+      const item = menu.querySelector<HTMLElement>('[data-key="tmdb"] .menu-value');
+      if (item) item.textContent = newsValue();
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "tmdb" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "tmdb")!);
+      }
+    })
+    .catch(() => {});
   void loadPhones()
     .then(() => {
       const item = menu.querySelector<HTMLElement>('[data-key="phones"] .menu-value');
@@ -425,7 +483,7 @@ export function settings(ctx: Ctx, open?: string): View {
   void daemon
     .key()
     .then((found) => {
-      setKeyState({ set: found.set, provider: found.provider });
+      setKeyState({ set: found.set, provider: found.provider, plans: found.plans, ai: found.ai });
       const item = menu.querySelector<HTMLElement>('[data-key="ai"] .menu-value');
       if (item) item.textContent = aiValue(ctx);
       if (menu.querySelector(".open")?.getAttribute("data-key") === "ai" && !panel.contains(ctx.focus.get() ?? null)) {
@@ -433,6 +491,39 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // Every theme Omarchy has (ADR-048), two to a row, each with its own
+  // colours beside its name, in a list that scrolls with the focus. Declared
+  // so it's there for a page drawn straight at Look, before this line runs.
+  function lookList(): HTMLElement {
+    const list = h(
+      "div",
+      { class: "look-list", "data-scroll": true },
+      ...(looks?.themes ?? []).map((look) => {
+        const swatch = h("span", { class: "look-swatch" });
+        for (const colour of [look.colors.background, look.colors.accent, look.colors.selection, look.colors.foreground]) {
+          const block = h("span", {});
+          block.style.background = colour;
+          swatch.append(block);
+        }
+        return h(
+          "button",
+          { class: "button look-item", "data-focus": true, "data-action": `theme-${look.id}`, onclick: () => void setLook(look) },
+          swatch,
+          h("span", { class: "look-item-name" }, look.name),
+          h("span", { class: "button-value" }, settingLook === look.id ? "setting…" : look.id === looks?.current ? "■ on" : "□"),
+        );
+      }),
+    );
+    list.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
+    return list;
+  }
+  void loadBuilds(ctx).then(() => {
+    const item = menu.querySelector<HTMLElement>('[data-key="usage"] .menu-value');
+    if (item) item.textContent = usageValue();
+    if (menu.querySelector(".open")?.getAttribute("data-key") === "usage" && !panel.contains(ctx.focus.get() ?? null)) {
+      show(sections.find((section) => section.key === "usage")!);
+    }
+  });
   const setLook = async (look: ThemePreview) => {
     if (settingLook || look.id === looks?.current) return;
     settingLook = look.id;
@@ -449,25 +540,38 @@ export function settings(ctx: Ctx, open?: string): View {
     // Still on Settings, after the few seconds Omarchy takes.
     if (menu.isConnected) ctx.render("settings/look", `theme-${look.id}`);
   };
+  // Against what this page drew, not what another Settings drawn since has
+  // seen: a redraw while this one waited, such as for a build's news, mustn't
+  // keep the list it started with.
+  const drew = JSON.stringify(looks);
   void daemon
     .themes()
     .then((found) => {
-      const changed = JSON.stringify(found) !== JSON.stringify(looks);
+      const changed = JSON.stringify(found) !== drew;
       looks = found;
+      if (!menu.isConnected) return;
       const item = menu.querySelector<HTMLElement>('[data-key="look"] .menu-value');
       if (item) item.textContent = sections.find((section) => section.key === "look")!.value();
-      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "look" && !panel.contains(ctx.focus.get() ?? null)) {
-        show(sections.find((section) => section.key === "look")!);
+      if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "look") {
+        // A theme your agent made since, say: drawn again, with the focus
+        // where it was.
+        const at = ctx.focus.get() ?? null;
+        if (!panel.contains(at)) show(sections.find((section) => section.key === "look")!);
+        else if (menu.isConnected) ctx.render("settings/look", at?.getAttribute("data-action") ?? undefined);
       }
     })
     .catch(() => {});
+  // The sound, too, against what this page drew: a Settings drawn again
+  // while another one's ask waited has no output on it yet.
+  const heard = JSON.stringify(audio);
   void screen
     .audio()
     .then((found) => {
       // Away from the TV, it says so; a TV with no outputs says that.
       const next = found.ok ? { ...found, outputs: found.outputs ?? [] } : found;
-      const changed = JSON.stringify(next) !== JSON.stringify(audio);
+      const changed = JSON.stringify(next) !== heard;
       audio = next;
+      if (!menu.isConnected) return;
       const item = menu.querySelector<HTMLElement>('[data-key="sound"] .menu-value');
       if (item) item.textContent = sections.find((section) => section.key === "sound")!.value();
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {
@@ -503,12 +607,28 @@ export function settings(ctx: Ctx, open?: string): View {
         stepCity(action === "right" ? 1 : -1);
         return true;
       }
+      if (current?.dataset.adjust === "region" && (action === "left" || action === "right")) {
+        newsAdjust(action === "right" ? 1 : -1, ctx);
+        return true;
+      }
       if (current?.dataset.adjust === "output" && (action === "left" || action === "right")) {
         stepOutput(action === "right" ? 1 : -1);
         return true;
       }
       if (current?.dataset.adjust === "output-volume" && (action === "left" || action === "right")) {
         stepVolume(action === "right" ? 0.05 : -0.05);
+        return true;
+      }
+      // Your agent's caps, a step at a time, past the PIN (ADR-045).
+      const caps = buildsState()?.settings.cap;
+      if (caps && (current?.dataset.adjust === "cap-build" || current?.dataset.adjust === "cap-month") && (action === "left" || action === "right")) {
+        const by = action === "right" ? 1 : -1;
+        const cap = current.dataset.adjust === "cap-build" ? { ...caps, build: stepCap(BUILD_CAPS, caps.build, by) } : { ...caps, month: stepCap(MONTH_CAPS, caps.month, by) };
+        void changeBuilder(ctx, { cap }, current.dataset.adjust);
+        return true;
+      }
+      if (current?.dataset.adjust === "ambient-style" && (action === "left" || action === "right")) {
+        void save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style");
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {

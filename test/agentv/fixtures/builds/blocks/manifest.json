@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "local.app",
+  "name": "App",
+  "version": "1.0.0",
+  "author": "your agent",
+  "license": "MIT",
+  "description": "A falling-block game for the remote and a gamepad",
+  "kinds": ["tv-app"],
+  "entryPoints": { "page": "index.html" },
+  "tv": {
+    "contract": 2,
+    "category": "games",
+    "runtime": "page",
+    "capabilities": ["launch", "tile"],
+    "icon": "icon.svg",
+    "tiles": { "s": "logo", "m": "best score" },
+    "childSafe": true
+  }
+}

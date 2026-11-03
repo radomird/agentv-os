@@ -4,7 +4,7 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { creditLine, daemon, listen, screen, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Updates } from "./api.ts";
+import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
@@ -12,18 +12,25 @@ import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { addApp, installMoved } from "./pages/add-app.ts";
 import { appSetup } from "./pages/app-setup.ts";
+import { buildAsk, buildChange, buildPage, buildsMoved, loadBuilds } from "./pages/build.ts";
 import { apps } from "./pages/apps.ts";
 import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
+import { hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
-import { keyPage, termsHeard } from "./pages/key.ts";
+import { keyPage, planPage, termsHeard } from "./pages/key.ts";
+import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
+import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
+import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
+import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
 
@@ -210,6 +217,50 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
   return next;
 }
 
+// A share's notice (ADR-050, S5.10): who sent what, with Open and Not now.
+// The daemon names one only with home in front and nothing playing, the
+// oldest first, and the next one comes once this one's answered. It never
+// comes over a PIN pad, the ambient screen or an install.
+const noticeEl = document.getElementById("notice")!;
+let noticeOpen: { share: Share; before: HTMLElement | undefined } | null = null;
+// The shares answered here, so a look at them that left before the answer,
+// and comes back after it, doesn't ask again.
+const answered = new Set<string>();
+
+async function askShared(): Promise<void> {
+  const found = await loadShared();
+  // Apps → Shared follows too.
+  if (history[history.length - 1] === "apps" && !noticeOpen && !pinOpen) redraw();
+  const share = found?.ask ? found.shares.find((one) => one.id === found.ask) : undefined;
+  if (!share || answered.has(share.id) || noticeOpen || pinOpen || saidOpen() || ambient || updatingShown) return;
+  const before = focus.get();
+  before?.classList.remove("focused");
+  const answer = async (open: boolean) => {
+    answered.add(share.id);
+    closeNotice();
+    sounds.play(open ? "forward" : "back");
+    await daemon.answerShare(share.id).catch(() => {});
+    if (open) await openShare(ctx, share);
+    void askShared();
+  };
+  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "share-open", onclick: () => void answer(true) }, "open");
+  const no = h("button", { class: "button", "data-focus": true, "data-action": "share-later", onclick: () => void answer(false) }, "not now");
+  const card = h("div", { class: "notice-card" }, h("div", { class: "notice-title" }, `${share.from} sent ${shareWhat(share)}`), h("div", { class: "notice-buttons" }, yes, no));
+  noticeEl.replaceChildren(card);
+  noticeEl.classList.add("on");
+  noticeOpen = { share, before };
+  focus.setRoot(card, yes);
+  sounds.play("forward");
+}
+
+function closeNotice(): void {
+  const before = noticeOpen?.before;
+  noticeOpen = null;
+  noticeEl.classList.remove("on");
+  noticeEl.replaceChildren();
+  if (view) focus.setRoot(view.el, before?.isConnected ? before : view.first);
+}
+
 // The PIN, checked by the daemon, which gives the grant: kept for the rest
 // of this visit to Settings with hold, and for this one action without.
 let checking = false;
@@ -282,6 +333,11 @@ function viewFor(route: string): View {
   if (name === "apps") return apps(ctx);
   // Adding an app is an adult's, and a child's profile doesn't see it (ADR-042).
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
+  // Your agent's builds are an adult's too (ADR-043 to ADR-046).
+  if (name === "build" && ctx.state.viewer.role === "adult") return arg ? buildPage(ctx, arg) : buildAsk(ctx);
+  // Look's "describe your own": a theme, made the same way (S6.4).
+  if (name === "describe" && ctx.state.viewer.role === "adult") return buildAsk(ctx, "theme");
+  if (name === "change" && arg && ctx.state.viewer.role === "adult") return buildChange(ctx, arg);
   if (name === "details") return details(ctx, arg);
   if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
@@ -290,10 +346,16 @@ function viewFor(route: string): View {
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
   if (name === "key") return keyPage(ctx);
+  if (name === "tmdb-key") return tmdbKeyPage(ctx);
+  if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
   if (name === "music") return music(ctx, arg);
+  // A page app, full screen in its frame (ADR-043).
+  if (name === "app" && arg) return pageView(ctx, arg);
+  // A photo or a video a phone shared (ADR-050).
+  if (name === "shared" && arg) return sharedView(ctx, arg);
   return home(ctx);
 }
 
@@ -302,8 +364,11 @@ function viewFor(route: string): View {
 function show(route: string, direction?: "forward" | "back", action?: string): void {
   // Home ends a visit to Settings, and the PIN's grant with it.
   if (route === "home") held = null;
+  // Any page but a page app's puts the one in front behind home, paused.
+  if (!route.startsWith("app/")) hidePages(ctx);
   tell({ screen: route === "home" ? "home" : "menu" });
   view = viewFor(route);
+  document.body.classList.toggle("on-home", route === "home");
   const el = view.el;
   if (direction) {
     el.classList.add(direction === "forward" ? "page-forward" : "page-back");
@@ -314,6 +379,13 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   page.replaceChildren(el);
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
+  // Under a share's notice too, which has the keys (ADR-050): the page gets
+  // the focus back on the same tile once the notice is answered.
+  if (noticeOpen) {
+    const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
+    noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }
@@ -324,14 +396,15 @@ function apply(settings: Settings): void {
   document.documentElement.classList.toggle("reduce-motion", settings.reduceMotion);
 }
 
-// The background (ADR-012, S5.3): the photo or work chosen, behind home,
-// dimmed so the tiles read over it; or the theme's own colour with none.
+// The background (ADR-012, ADR-048, S5.3, S5.8): the theme's own, as on
+// Omarchy's desktop, or the photo or work chosen, behind home only, dimmed so
+// the tiles read over it; or the theme's own colour with none. Settings,
+// Apps and the other pages keep the theme's colour.
 const backdropEl = document.getElementById("backdrop")!;
 let backgrounds: Backgrounds | null = null;
 
 function drawBackdrop(): void {
-  const pictures = shownPictures(backgrounds);
-  const item = pictures.find((one) => one.id === backgrounds?.current) ?? pictures[0];
+  const item = shownCurrent(backgrounds);
   const shown = backdropEl.querySelector("img")?.dataset.id;
   if (item && item.id !== shown) backdropEl.replaceChildren(h("img", { class: "backdrop-picture", src: `/api/backgrounds/${item.id}`, alt: "", "data-id": item.id }));
   else if (!item) backdropEl.replaceChildren();
@@ -365,7 +438,7 @@ function setAmbient(on: boolean): void {
     const pictures = h("div", { class: "ambient-pictures" });
     const credit = h("div", { class: "ambient-credit" });
     const photos = shownPictures(backgrounds);
-    let at = Math.max(0, photos.findIndex((item) => item.id === backgrounds?.current));
+    let at = Math.max(0, photos.findIndex((item) => item.id === shownCurrent(backgrounds)?.id));
     const next = () => {
       const item = photos[at % photos.length];
       at++;
@@ -485,6 +558,19 @@ function act(action: Action): void {
     } else pinOpen.act(action);
     return;
   }
+  // Up to three to choose from, for what was said, while they're up.
+  if (saidAct(action)) return;
+  // A share's notice has the keys while it's up; Back is Not now.
+  if (noticeOpen) {
+    if (action === "up" || action === "down" || action === "left" || action === "right") focus.move(action);
+    else if (action === "ok") {
+      sounds.play("select");
+      focus.get()?.click();
+    } else if (action === "back") noticeEl.querySelector<HTMLElement>('[data-action="share-later"]')?.click();
+    return;
+  }
+  // The listening bar (ADR-054): Back takes it away first.
+  if (listeningAct(action)) return;
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -533,7 +619,7 @@ document.addEventListener("pointermove", (event) => {
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
   const el = (event.target as Element | null)?.closest<HTMLElement>("[data-focus]");
-  if (el && (pinOpen ? pinEl.contains(el) : view?.el.contains(el) && !view.busy?.())) focus.set(el);
+  if (el && (pinOpen ? pinEl.contains(el) : noticeOpen ? noticeEl.contains(el) : view?.el.contains(el) && !view.busy?.())) focus.set(el);
 });
 document.addEventListener("click", (event) => {
   if (event.detail === 0) return; // a click from the keyboard, already played
@@ -560,10 +646,16 @@ async function refresh(): Promise<void> {
   redraw();
 }
 
+// Whose home is on the TV. Word of one switch can come twice, from its own
+// event and from the events' catch-up as they start, and it's made once.
+let shownViewer = "";
+
 async function switched(): Promise<void> {
-  held = null;
   ctx.state = await homeState();
   apply(ctx.state.settings);
+  if (ctx.state.viewer.id === shownViewer) return redraw();
+  shownViewer = ctx.state.viewer.id;
+  held = null;
   const child = ctx.state.viewer.role === "child";
   if (child) {
     for (const id of ctx.running.keys()) {
@@ -572,20 +664,27 @@ async function switched(): Promise<void> {
   }
   // Edit mode was the last viewer's home, and a child starts on their own.
   if (child || history[history.length - 1].startsWith("edit")) history = ["home"];
+  await loadBuilds(ctx);
+  // A child's profile sees only what was shared with it (ADR-050).
+  if (history[history.length - 1].startsWith("shared/")) history = ["home"];
   redraw();
+  void askShared();
   // The apps still open take the service's profile for who's watching now.
   void screen.viewer();
 }
 
 // What changed while the page wasn't hearing the daemon's events: another
-// viewer, as a switch from the phone, or anything else on home.
+// viewer, as a switch from the phone, a share to ask about, or anything else
+// on home.
 async function catchUp(): Promise<void> {
   const was = ctx.state.viewer.id;
   const state = await homeState();
   if (state.viewer.id !== was) return switched();
+  await loadBuilds(ctx);
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void askShared();
 }
 
 // The page again, in place, with the focus where it was.
@@ -597,7 +696,8 @@ function redraw(): void {
 // Which apps are open behind home, from the screen daemon. Home's tiles show
 // it; edit mode doesn't, so it isn't redrawn under the viewer's hands.
 function setRunning(apps: Running[]): void {
-  const next = new Map(apps.map((app) => [app.id, app]));
+  // The page apps open behind home are home's own, not the screen daemon's.
+  const next = new Map([...apps, ...pageRunning()].map((app) => [app.id, app]));
   if (JSON.stringify([...next]) === JSON.stringify([...ctx.running])) return;
   ctx.running = next;
   if (history[history.length - 1] === "home") redraw();
@@ -610,9 +710,12 @@ async function start(): Promise<void> {
     focus.refresh();
   });
   ctx.state = await daemon.home();
+  shownViewer = ctx.state.viewer.id;
   apply(ctx.state.settings);
   await loadBackgrounds();
+  await loadBuilds(ctx);
   show("home");
+  void askShared();
   setLock(ctx.state.pin?.locked === true);
   window.addEventListener(
     "keydown",
@@ -642,13 +745,38 @@ async function start(): Promise<void> {
     },
     // A photo came from a phone, or another source was chosen.
     background: () => void loadBackgrounds(),
+    // A phone shared something, or the TV may ask about one now (ADR-050).
+    shared: () => void askShared(),
+    // A sentence said to the TV (ADR-023): what was heard, then what came
+    // of it, or up to three to choose from.
+    said: (data) => saidHeard(data as Said | null),
+    // The phone's box opened, its words came, or it closed (ADR-054).
+    listening: (data) => listeningHeard(data as Heard),
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
+    // A page app set its tile (ADR-043): home's tiles ask again.
+    tiles: () => {
+      if (history[history.length - 1] === "home") redraw();
+    },
+    // The TMDB key or the region changed (S8.1): New this week asks again,
+    // and Settings shows it.
+    "whats-new": () => {
+      const route = history[history.length - 1];
+      if (route === "home") redraw();
+      else if (route.startsWith("settings")) void loadNews().then(redraw);
+    },
+    // A page app's notice, declared in its manifest.
+    notice: (data) => {
+      const notice = data as { name?: string; text?: string };
+      if (notice.text) ctx.toast(`${(notice.name ?? "an app").toLowerCase()}: ${notice.text}`, "ok");
+    },
     // An app added from Apps, or picked in setup, is installing.
     "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),
+    // A build moved on (ADR-043 to ADR-046): its tile, its page and home's bar.
+    builds: () => buildsMoved(ctx, history[history.length - 1], redraw),
     // Someone else is watching (S4.2): their home, at once. A child's profile
     // closes the apps open behind home that children can't open.
     viewer: () => void switched(),
@@ -683,6 +811,9 @@ async function start(): Promise<void> {
     },
   }, () => void catchUp().catch(() => {}));
   void daemon.updates().then(setUpdates).catch(() => {});
+  setupSaid(ctx, () => {
+    if (view) focus.setRoot(view.el, view.first);
+  });
   void sounds.load();
   // The screen daemon calls these: Home when the home screen is already in
   // front, and the apps open behind it whenever that changes.
@@ -690,10 +821,18 @@ async function start(): Promise<void> {
     agentvHome: () => void;
     agentvRunning: (json: string) => void;
     agentvAmbient: (on: boolean) => void;
+    agentvPage: (id: string) => void;
     agentvLauncher: object;
   };
   w.agentvHome = () => act("home");
   w.agentvAmbient = (on) => setAmbient(on);
+  // A page app opened from elsewhere, such as Apps or the phone, through
+  // the screen daemon, which put home in front first. One installed a moment
+  // ago may not be in home's list yet, so home reads it again first.
+  w.agentvPage = (id) => {
+    if (ctx.state.apps.some((app) => app.id === id)) openPage(ctx, id);
+    else void refresh().then(() => openPage(ctx, id));
+  };
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the

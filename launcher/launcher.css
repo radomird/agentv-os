@@ -208,7 +208,7 @@ button {
 }
 
 .tile-label {
-  color: var(--bright-magenta);
+  color: var(--bright-magenta-ink, var(--bright-magenta));
   text-align: right;
 }
 
@@ -247,12 +247,12 @@ button {
 }
 
 .tile-state {
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
   text-align: right;
 }
 
 .tile-sign-in {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .tile-apps {
@@ -294,12 +294,12 @@ button {
   font-size: 64px;
 }
 
-.mono-0 { background: var(--bright-magenta); }
-.mono-1 { background: var(--blue); }
-.mono-2 { background: var(--green); }
-.mono-3 { background: var(--bright-yellow); }
-.mono-4 { background: var(--bright-cyan); }
-.mono-5 { background: var(--yellow); }
+.mono-0 { background: var(--bright-magenta); color: var(--bright-magenta-on, var(--background)); }
+.mono-1 { background: var(--blue); color: var(--blue-on, var(--background)); }
+.mono-2 { background: var(--green); color: var(--green-on, var(--background)); }
+.mono-3 { background: var(--bright-yellow); color: var(--bright-yellow-on, var(--background)); }
+.mono-4 { background: var(--bright-cyan); color: var(--bright-cyan-on, var(--background)); }
+.mono-5 { background: var(--yellow); color: var(--yellow-on, var(--background)); }
 
 /* What an app's tile() sends, drawn here in the theme (ADR-016), with icons
    from the launcher's own pixel set (pixels.ts). Laid out as canvas boards
@@ -331,12 +331,12 @@ button {
   color: var(--foreground);
 }
 
-.ink-0 { color: var(--bright-magenta); }
-.ink-1 { color: var(--blue); }
-.ink-2 { color: var(--green); }
-.ink-3 { color: var(--bright-yellow); }
-.ink-4 { color: var(--bright-cyan); }
-.ink-5 { color: var(--yellow); }
+.ink-0 { color: var(--bright-magenta-ink, var(--bright-magenta)); }
+.ink-1 { color: var(--blue-ink, var(--blue)); }
+.ink-2 { color: var(--green-ink, var(--green)); }
+.ink-3 { color: var(--bright-yellow-ink, var(--bright-yellow)); }
+.ink-4 { color: var(--bright-cyan-ink, var(--bright-cyan)); }
+.ink-5 { color: var(--yellow-ink, var(--yellow)); }
 
 .tile-content {
   flex: 1;
@@ -466,6 +466,60 @@ button {
   cursor: pointer;
 }
 
+/* New this week (S8.1, canvas board 14): posters in a row, each with its
+   title and the app it's on under it, then TMDB's and JustWatch's credit. */
+.new-tile .entries {
+  gap: 16px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.new-tile .entry img {
+  order: -1;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+}
+
+.new-tile.size-m .entry img {
+  width: auto;
+  height: 140px;
+}
+
+.new-tile .entry-label {
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--bright-foreground);
+}
+
+.new-tile.size-m .entry-item .entry-label {
+  font-size: 20px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.new-tile .entry-caption {
+  font-size: 18px;
+  color: var(--foreground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.new-credit {
+  font-size: 18px;
+  color: var(--foreground);
+}
+
+/* TMDB's logo in Settings → About: smaller than AgenTV's own name above it,
+   as TMDB's terms ask. */
+.about-tmdb {
+  display: block;
+  height: 28px;
+  width: auto;
+  margin-top: 8px;
+}
+
 /* Things to continue sit at the tile's foot, as on canvas board 26. */
 .tile-content > .entries:only-child:has(.entry-item) {
   margin-top: auto;
@@ -513,7 +567,7 @@ button {
 }
 
 .size-m .entries .entry-icon:first-child .entry-label {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 /* Large: a row of days under the headline, each a column. */
@@ -532,7 +586,7 @@ button {
 }
 
 .size-l .entries .entry-icon:first-child .entry-label {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 /* The built-in Clock: the time ticks here (canvas board 26). */
@@ -644,7 +698,7 @@ button {
   justify-content: flex-end;
   padding: 16px;
   border: 4px dashed var(--yellow);
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
   font-size: 22px;
   font-weight: 800;
   pointer-events: none;
@@ -657,7 +711,7 @@ button {
 
 .drop.no-room {
   border-color: var(--red);
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 /* The size bar: the app's own words for each size. */
@@ -687,7 +741,7 @@ button {
 }
 
 .sizebar-name {
-  color: var(--bright-cyan);
+  color: var(--bright-cyan-ink, var(--bright-cyan));
 }
 
 .sizebar-chips {
@@ -706,7 +760,7 @@ button {
 }
 
 .chip b {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
   margin-right: 0.6em;
 }
 
@@ -729,7 +783,7 @@ button {
 }
 
 .chip.unpin {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .chip.done {
@@ -756,7 +810,7 @@ button {
 }
 
 .prompt b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 400;
 }
 
@@ -826,11 +880,11 @@ button {
 }
 
 .button-value {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
 }
 
 .button.danger {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .details {
@@ -847,7 +901,7 @@ button {
 }
 
 .maker {
-  color: var(--bright-magenta);
+  color: var(--bright-magenta-ink, var(--bright-magenta));
   font-size: 32px;
   font-weight: 700;
 }
@@ -931,6 +985,58 @@ button {
   color: var(--foreground);
 }
 
+/* Settings' panel, down to the status bar, and a section longer than that
+   scrolls with the focus or a mouse's wheel. What's in it keeps its height
+   rather than squeezing to fit. */
+.settings-panel {
+  max-height: calc(1080px - var(--bar) - 64px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-panel > * {
+  flex-shrink: 0;
+}
+
+/* Settings → Look: every theme Omarchy has (ADR-048), two to a row, in a
+   list that scrolls with the focus or a mouse's wheel, with no scroll bar. */
+.look-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-content: start;
+  max-height: 204px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.look-item {
+  gap: 20px;
+  min-height: 72px;
+  padding: 0 20px;
+  font-size: 28px;
+  scroll-margin: 12px 0;
+}
+
+.look-item-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.look-swatch {
+  display: flex;
+  flex-shrink: 0;
+  border: 2px solid var(--muted);
+}
+
+.look-swatch span {
+  width: 14px;
+  height: 36px;
+}
+
 .panel-big {
   font-size: 72px;
   font-weight: 800;
@@ -944,7 +1050,7 @@ button {
 /* The provider's terms a key waits for (Q104). */
 .terms-row::before {
   content: "· ";
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .panel .button {
@@ -986,14 +1092,19 @@ button {
 
 /* A game still running behind home, and its Quit (ADR-031). */
 .tile-quit {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
-/* The background (ADR-012, S5.3): the photo chosen, behind home and its
-   pages, dimmed with the theme's own colour so the tiles read over it. */
+/* The background (ADR-012, ADR-048, S5.3): the theme's own or the photo
+   chosen, behind home only, dimmed with the theme's own colour so the tiles
+   read over it. */
 #backdrop {
   position: fixed;
   inset: 0;
+}
+
+body:not(.on-home) #backdrop {
+  display: none;
 }
 
 .backdrop-picture {
@@ -1010,7 +1121,7 @@ button {
   background: color-mix(in srgb, var(--background) 62%, transparent);
 }
 
-body.with-backdrop {
+body.with-backdrop.on-home {
   background: var(--darker-background);
 }
 
@@ -1147,7 +1258,7 @@ body.with-backdrop {
 }
 
 .update-next {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 800;
 }
 
@@ -1157,7 +1268,7 @@ body.with-backdrop {
 }
 
 .panel-title.security {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .notes {
@@ -1171,7 +1282,7 @@ body.with-backdrop {
 }
 
 .notes b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
 }
 
 /* Install now, Tonight and Later, side by side (boards 29 and 30). */
@@ -1241,7 +1352,7 @@ body.with-backdrop {
 }
 
 .updating-step b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 400;
 }
 
@@ -1250,7 +1361,7 @@ body.with-backdrop {
 }
 
 .updating-step.now b {
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
 }
 
 /* Something's off after an update (board 33): what the check found, then Go
@@ -1271,13 +1382,13 @@ body.with-backdrop {
 }
 
 .check-row b {
-  color: var(--green);
+  color: var(--green-ink, var(--green));
   font-weight: 400;
 }
 
 .check-row.bad,
 .check-row.bad b {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .check-actions {
@@ -1294,7 +1405,7 @@ body.with-backdrop {
   margin: -12px 0 36px;
   font-size: 160px;
   line-height: 1;
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
   font-variant-numeric: tabular-nums;
 }
 
@@ -1334,7 +1445,7 @@ body.with-backdrop {
 }
 
 .pin-message.bad {
-  color: var(--red);
+  color: var(--red-ink, var(--red));
 }
 
 .pin-boxes {
@@ -1481,7 +1592,7 @@ body.with-backdrop {
   font-size: 120px;
   font-weight: 800;
   letter-spacing: 18px;
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 /* --- Music (ADR-017) ---------------------------------------------------- */
@@ -1552,7 +1663,7 @@ body.with-backdrop {
 }
 
 .now-label {
-  color: var(--accent);
+  color: var(--accent-ink, var(--accent));
 }
 
 .now-text {
@@ -1636,7 +1747,7 @@ body.with-backdrop {
 }
 
 .source .button-value.problem {
-  color: var(--yellow);
+  color: var(--yellow-ink, var(--yellow));
 }
 
 .scan-progress:not(:empty) {
@@ -1690,4 +1801,322 @@ body.with-backdrop {
 .music-tile .entries .album-cover {
   width: 120px;
   height: 120px;
+}
+
+/* Page apps (ADR-043): each full screen in its own frame over home, above
+   the focus ring and under the toasts, the PIN pad and the ambient screen.
+   Only the one in front shows; the others wait behind home, paused. */
+#page-apps {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 15;
+  background: var(--darker-background);
+}
+
+#page-apps.on {
+  display: block;
+}
+
+.page-app {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.page-app.on {
+  display: block;
+}
+
+.page-app-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--darker-background);
+}
+
+.page-app-cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: var(--foreground);
+  background: var(--darker-background);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--base) var(--ease);
+}
+
+.page-app.loading .page-app-cover {
+  opacity: 1;
+}
+
+/* Your agent's builds (boards 10, 17 and 20): what was asked, how far it
+   is, and what it understood, on its own page. */
+.build-said {
+  margin: 0 0 24px;
+  font-size: 30px;
+}
+
+.build-value {
+  color: var(--bright-foreground);
+}
+
+.build-bar {
+  max-width: 1100px;
+  margin-bottom: 24px;
+}
+
+.build-steps {
+  margin-bottom: 36px;
+  font-size: 30px;
+}
+
+.updating-step.bad,
+.updating-step.bad b {
+  color: var(--red-ink, var(--red));
+}
+
+.build-wishes {
+  margin-top: 48px;
+}
+
+/* A plan's sign-in on a build's page: the CLI's link for the phone's camera. */
+.pair-qr.build-qr {
+  width: 360px;
+  height: 360px;
+  padding: 16px;
+}
+
+.pair-code.build-code {
+  margin: 0;
+  font-size: 80px;
+  letter-spacing: 12px;
+}
+
+/* Shared to the TV (ADR-050, S5.10). The notice, over the page, never over
+   what's playing: who sent what, with Open and Not now. It sits under the
+   focus ring, which shows on its buttons. */
+#notice {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  display: none;
+  z-index: 9;
+}
+
+#notice.on {
+  display: block;
+}
+
+.notice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 760px;
+  padding: 28px 32px;
+  background: var(--dark-background);
+  border: 2px solid var(--selection);
+  border-left: 6px solid var(--accent);
+}
+
+.notice-title {
+  font-size: 32px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+/* What was said to the TV (ADR-023): up to three to choose from, in the
+   notice's place and the same card, over home. */
+#said {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  display: none;
+  z-index: 9;
+}
+
+#said.on {
+  display: block;
+}
+
+.said-heard {
+  font-size: 28px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.said-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.said-choice {
+  text-align: left;
+}
+
+/* The listening bar (ADR-054): along the bottom, in the TV's safe area,
+   while someone talks to the TV from their phone. Three squares brighten
+   in turn while it listens or thinks; what came of it stands still. */
+#listening {
+  position: fixed;
+  left: 96px;
+  right: 96px;
+  bottom: 54px;
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  height: 112px;
+  padding: 0 36px;
+  background: var(--dark-background);
+  border: 2px solid var(--accent);
+  z-index: 19;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--base) var(--ease);
+}
+
+#listening.on {
+  opacity: 1;
+}
+
+.listening-dots {
+  display: flex;
+  gap: 12px;
+  flex: none;
+}
+
+.listening-dots span {
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: listening-dot 1600ms ease-in-out infinite;
+}
+
+.listening-dots span:nth-child(2) { animation-delay: 320ms; }
+.listening-dots span:nth-child(3) { animation-delay: 640ms; }
+
+#listening[data-state="said"] .listening-dots {
+  display: none;
+}
+
+@keyframes listening-dot {
+  0%, 60%, 100% { opacity: 0.35; }
+  30% { opacity: 1; }
+}
+
+.listening-words {
+  flex: 1;
+  min-width: 0;
+  font-size: 36px;
+  color: var(--bright-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* "thinking", once the sentence is sent. */
+.listening-says {
+  flex: none;
+  font-size: 28px;
+  color: var(--accent);
+}
+
+:root.reduce-motion .listening-dots span {
+  animation: none;
+  opacity: 1;
+}
+
+.notice-buttons,
+.shared-buttons {
+  display: flex;
+  gap: 24px;
+}
+
+/* A shared photo or video, full screen, under the focus ring and over
+   everything else the page has. */
+.shared-full {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--darker-background);
+}
+
+.shared-picture,
+.shared-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.shared-bar {
+  position: absolute;
+  left: 96px;
+  right: 96px;
+  bottom: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 24px 32px;
+  background: var(--dark-background);
+  border: 2px solid var(--selection);
+  font-size: 28px;
+}
+
+.shared-line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The player's line shows while it's paused, or for a moment after a jump. */
+.shared-player {
+  opacity: 0;
+  transition: opacity var(--base) var(--ease);
+}
+
+.shared-player.shown {
+  opacity: 1;
+}
+
+.shared-time,
+.shared-state {
+  flex: none;
+  color: var(--accent-ink, var(--accent));
+}
+
+.shared-url {
+  font-size: 28px;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+}
+
+/* A share's tile in Apps → Shared: the photo itself, or what kind it is. */
+.tile-shared .tile-top {
+  overflow: hidden;
+}
+
+.tile-shared-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile-shared-kind {
+  color: var(--accent-ink, var(--accent));
+}
+
+/* Apps, down to the status bar, scrolls with the focus when it's longer. */
+.apps-page {
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-bottom: 64px;
 }

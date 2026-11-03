@@ -8,9 +8,9 @@
 import { glyph } from "../launcher/glyphs.ts";
 import { h, prompt, toast, token, Unpaired } from "./lib.ts";
 
-const LONGEST = 3840;
+export const LONGEST = 3840;
 
-async function draw(file: File, longest: number, type: string, quality: number): Promise<{ blob: Blob; url: string }> {
+export async function draw(file: File, longest: number, type: string, quality: number): Promise<{ blob: Blob; url: string }> {
   const bitmap = await createImageBitmap(file).catch(() => {
     throw new Error("that photo couldn't be read");
   });

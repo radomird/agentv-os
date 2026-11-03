@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "local.app",
+  "name": "App",
+  "version": "1.0.0",
+  "author": "your agent",
+  "license": "MIT",
+  "description": "What it is, in one line",
+  "kinds": ["tv-app"],
+  "entryPoints": { "page": "index.html" },
+  "tv": {
+    "contract": 2,
+    "category": "utility",
+    "runtime": "page",
+    "capabilities": ["launch"],
+    "childSafe": false
+  }
+}

@@ -250,6 +250,7 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "people") return people(ctx);
   if (to === "goal") return goal(ctx);
   if (to === "apps/add") return addYourOwn(ctx);
+  if (to === "theme/own") return addYourOwn(ctx, "theme");
   if (to === "apps") return apps(ctx);
   if (to === "theme") return theme(ctx);
   if (to === "background/photos") return photos(ctx);
@@ -333,13 +334,16 @@ focus.onMove = () => sounds.play("move");
 
 // A mouse moves the focus by hovering, and a click is OK (ADR-015). Only a
 // real move counts: Chromium also sends one when the page changes under a
-// still mouse.
-let pointer = { x: -1, y: -1 };
+// still mouse, and as the page loads, which only says where the mouse is.
+// On the box, an update in getting ready loads the page again, with the
+// mouse resting in the middle of the screen.
+let pointer: { x: number; y: number } | null = null;
 let hide = 0;
 document.body.classList.add("pointer-hidden");
 document.addEventListener("pointermove", (event) => {
-  if (event.clientX === pointer.x && event.clientY === pointer.y) return;
+  const last = pointer;
   pointer = { x: event.clientX, y: event.clientY };
+  if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
   document.body.classList.remove("pointer-hidden");
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
@@ -414,6 +418,8 @@ async function start(): Promise<void> {
         link.href = `/api/theme.css?at=${Date.now()}`;
         view?.heard?.("theme", data);
       },
+      // A theme installed or removed on Omarchy's desktop (ADR-048).
+      themes: (data) => view?.heard?.("themes", data),
       updates: (data) => {
         ctx.updates = data as Updates;
         view?.heard?.("updates", data);

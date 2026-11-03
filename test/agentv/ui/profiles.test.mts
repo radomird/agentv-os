@@ -197,6 +197,24 @@ test("S4.2 S4.5 on a child's profile: only children's apps, the apps children ca
   await page.close();
 });
 
+test("S4.2 the same switch heard twice, as the events' catch-up and the switch's own event can both bring it, is made once", async () => {
+  const page = await tv();
+  const leo = await byName("leo");
+  await send("POST", "/api/viewer", { id: leo.id });
+  await page.waitForFunction(() => document.querySelector(".bar-right span")?.textContent === "leo");
+  await page.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "viewer"));
+  await go(page, "profile/radomir");
+  await page.waitForSelector('.page.profile [data-action="watch"]');
+  // Word of the same switch again, then a switch to an adult, which keeps
+  // the page where it is.
+  await send("POST", "/api/viewer", { id: leo.id });
+  await send("POST", "/api/viewer", { id: "radomir" }, await grant());
+  await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""), undefined, { timeout: 5000 });
+  assert.equal((await sent(page, "viewer")).length, 2, "the screen daemon hears each switch once");
+  assert.equal(await page.locator(".page.profile").count(), 1, "the page stays where it was");
+  await page.close();
+});
+
 test("S4.2 an adult ticks an app for children in its details, past the PIN", async () => {
   const page = await tv();
   await go(page, "details/agentv.sample");

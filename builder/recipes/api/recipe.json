@@ -1,0 +1,61 @@
+{
+  "kind": "api",
+  "name": "app on a public api",
+  "fits": "An app built on a public web API that needs no key or sign-in and allows this use: a better weather app, public transport times, the news from a public feed, a sky or tide chart. Not a streaming service, and not a site without an API.",
+  "runtime": "page",
+  "bounds": { "origins": true, "media": [], "tile": true, "notices": true },
+  "template": "../page/template",
+  "tests": "tests",
+  "cost": { "low": 0.5, "high": 3 },
+  "minutes": 20,
+  "steps": [
+    {
+      "id": "design",
+      "does": "Work out the app from the request and write it down in DESIGN.md: what it shows on its one or few screens, how the arrows and ok move, what Back does, what goes on its tile on home, and whether a notice would help (only if asked). Keep it to one page, at couch distance on a 1920 x 1080 TV.",
+      "tools": ["read", "list", "write"],
+      "writes": ["DESIGN.md"],
+      "reads": ["kit"],
+      "needs": ["DESIGN.md"]
+    },
+    {
+      "id": "api",
+      "does": "Choose the public API it uses: one that needs no key and no sign-in, whose terms allow an app like this, and that answers a browser (CORS). Declare each origin it reaches with declare_origin, saying why, and nothing else. Fetch a sample with fetch_sample to see the answer's shape, and write down in NOTES.md the API, its terms, what it asks of callers (a User-Agent, credit, how often), and how the app keeps to that. Never scrape a site that has no API.",
+      "tools": ["read", "write", "declare_origin", "fetch_sample"],
+      "writes": ["NOTES.md"],
+      "reads": ["kit"],
+      "needs": ["NOTES.md"]
+    },
+    {
+      "id": "packages",
+      "does": "Decide whether the app needs any npm package, such as a chart library. Most need none, which is preferred. If one helps, look it up with npm_info and add it with npm_add at an exact version. Say why in NOTES.md.",
+      "tools": ["read", "npm_info", "npm_add", "write"],
+      "writes": ["NOTES.md"],
+      "reads": ["kit"]
+    },
+    {
+      "id": "build",
+      "does": "Write the app, starting from the template in app/. Its manifest's tv.origins are the ones you declared, and nothing else. It asks the API no more often than its terms allow, keeps the last answer in agentv.storage for a quick start, shows a plain line when the API doesn't answer, and credits the source where its terms ask. Its tile shows the one thing worth a glance, with agentv.tile.set. Input from agentv.input.on, Back from agentv.onBack, and agentv.ready() once something is drawn. No inline scripts, eval or code from other sites. Run check until it passes.",
+      "tools": ["read", "list", "write", "remove", "bundle", "check", "fetch_sample"],
+      "writes": ["app/**", "src/**", "NOTES.md"],
+      "reads": ["kit"],
+      "needs": ["app/index.html", "app/manifest.json"],
+      "turns": 60
+    },
+    {
+      "id": "tests",
+      "does": "Write tests in tests/ for what was asked: what it shows from a sample answer, how the arrows move, that its tile is set, and what it shows when the API doesn't answer. Use the test API the tests reference describes, and run them with run_tests.",
+      "tools": ["read", "list", "write", "run_tests"],
+      "writes": ["tests/**"],
+      "reads": ["kit", "tests"],
+      "needs": ["tests"]
+    },
+    {
+      "id": "try",
+      "does": "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only the origins it declared.",
+      "tools": ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
+      "writes": ["app/**", "src/**", "tests/**", "NOTES.md"],
+      "reads": ["kit", "tests"],
+      "turns": 60
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import { h } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { loadShared, sharesAllowed } from "./shared.ts";
 
 // The theme's colours an avatar can be, in the daemon's order.
 export const AVATARS = ["blue", "green", "magenta", "yellow", "cyan", "orange", "red"];
@@ -48,6 +49,8 @@ export function profile(ctx: Ctx, id: string): View {
     role: found?.role ?? ("adult" as Viewer["role"]),
     avatar: found?.avatar ?? AVATARS.find((a) => !ctx.state.viewers.some((v) => v.avatar === a)) ?? "blue",
     locked: found?.locked ?? false,
+    // A child's profile takes what phones share only once an adult allows it (ADR-050).
+    shares: found ? sharesAllowed().includes(found.id) : false,
   };
   const watching = found?.id === ctx.state.viewer.id;
 
@@ -56,6 +59,7 @@ export function profile(ctx: Ctx, id: string): View {
   const roleValue = value("");
   const colourValue = value("");
   const lockValue = value("");
+  const sharesValue = value("");
   const preview = h("span", {});
   // Only an adult's profile locks; a child's is guarded already.
   const lock = h(
@@ -64,19 +68,29 @@ export function profile(ctx: Ctx, id: string): View {
     h("span", { class: "with-icon" }, glyph("lock", 24), h("span", {}, "ask for the pin to open")),
     lockValue,
   ) as HTMLButtonElement;
+  // Only a child's profile is asked; an adult's always takes them.
+  const shares = h(
+    "button",
+    { class: "button", "data-focus": true, "data-action": "shares", "data-adjust": "shares", onclick: () => step("shares", 1) },
+    h("span", { class: "with-icon" }, glyph("phone", 24), h("span", {}, "take what phones share")),
+    sharesValue,
+  ) as HTMLButtonElement;
   const draw = () => {
     roleValue.textContent = `‹ ${draft.role} ›`;
     colourValue.textContent = `‹ ${draft.avatar} ›`;
     lockValue.textContent = `‹ ${draft.locked ? "yes" : "no"} ›`;
+    sharesValue.textContent = `‹ ${draft.shares ? "yes" : "no"} ›`;
     lock.style.display = draft.role === "child" ? "none" : "";
+    shares.style.display = draft.role === "child" ? "" : "none";
     preview.replaceChildren(avatar({ name: name.value.trim() || "?", avatar: draft.avatar }, true));
   };
   name.addEventListener("input", draw);
-  const step = (what: "role" | "avatar" | "lock", by: number) => {
+  const step = (what: "role" | "avatar" | "lock" | "shares", by: number) => {
     if (what === "role") {
       draft.role = draft.role === "adult" ? "child" : "adult";
       if (draft.role === "child") draft.locked = false;
     } else if (what === "lock") draft.locked = !draft.locked;
+    else if (what === "shares") draft.shares = !draft.shares;
     else draft.avatar = AVATARS[(AVATARS.indexOf(draft.avatar) + by + AVATARS.length) % AVATARS.length];
     ctx.sounds.play("move");
     draw();
@@ -92,7 +106,7 @@ export function profile(ctx: Ctx, id: string): View {
   const save = async () => {
     const grant = await ctx.grant("changing profiles");
     if (grant === null) return;
-    const change = { name: name.value.trim(), role: draft.role, avatar: draft.avatar, locked: draft.role === "adult" && draft.locked };
+    const change = { name: name.value.trim(), role: draft.role, avatar: draft.avatar, locked: draft.role === "adult" && draft.locked, shares: draft.role === "child" && draft.shares };
     try {
       if (fresh) await daemon.addViewer(change, grant || undefined);
       else await daemon.editViewer(id, change, grant || undefined);
@@ -100,6 +114,7 @@ export function profile(ctx: Ctx, id: string): View {
       if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
       return failed(error);
     }
+    await loadShared();
     ctx.sounds.play("confirm");
     ctx.toast(fresh ? `${change.name} is here now` : `${change.name} is saved`, "ok");
     ctx.back();
@@ -141,7 +156,7 @@ export function profile(ctx: Ctx, id: string): View {
       "div",
       { class: "page profile" },
       h("div", { class: "profile-head" }, preview, h("div", {}, ...heading("tv settings · profiles", fresh ? "a new profile" : found!.name))),
-      h("div", { class: "profile-form" }, name, role, colour, lock, h("div", { class: "check-actions" }, ...buttons)),
+      h("div", { class: "profile-form" }, name, role, colour, lock, shares, h("div", { class: "check-actions" }, ...buttons)),
       h("p", { class: "panel-note" }, watching ? "watching now." : "a child sees only the apps ticked for children."),
     ),
     bar(ctx, "settings", "←→ change · ↵ select · esc back"),
@@ -152,8 +167,8 @@ export function profile(ctx: Ctx, id: string): View {
     first: fresh ? name : buttons[0],
     act(action) {
       const current = ctx.focus.get();
-      if ((action === "left" || action === "right") && (current === role || current === colour || current === lock)) {
-        step(current === role ? "role" : current === lock ? "lock" : "avatar", action === "right" ? 1 : -1);
+      if ((action === "left" || action === "right") && (current === role || current === colour || current === lock || current === shares)) {
+        step(current === role ? "role" : current === lock ? "lock" : current === shares ? "shares" : "avatar", action === "right" ? 1 : -1);
         return true;
       }
       return false;

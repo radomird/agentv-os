@@ -81,6 +81,7 @@ jobs:
       ref: ${{ needs.open.outputs.sha }}
       packages: build
       update-test: true
+      own-repo: true
     secrets: inherit
 
   decide:

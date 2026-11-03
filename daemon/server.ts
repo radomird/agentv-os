@@ -19,29 +19,50 @@
 // elsewhere can't change anything here.
 
 import { execFile } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
-import { installedPackage, userAgent } from "./identity.ts";
-import { Ai, OFFERS, TERMS_READ, type Provider } from "./ai.ts";
+import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
+import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
+import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
+import { Builds, type Provider as BuildProvider } from "./builds.ts";
+import { Asks } from "./asks.ts";
+import { exportRefusal, packageFiles, zipFolder } from "./export.ts";
+import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal, type SignIn } from "./github.ts";
+import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
+import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
+import { boxZone, cityOf } from "./place.ts";
+import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
+import { TmdbKey } from "./tmdb-key.ts";
+import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
+import { NetFilter } from "./net-filter.ts";
+import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
-import { currentTheme, previews } from "./themes.ts";
+import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
+import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
+import { newItem } from "./executors/whatsNew.ts";
+import { boxRouter } from "./router-client.ts";
+import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
+import { Listening } from "./listening.ts";
+import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
+import type { Viewer } from "./apps/loader.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -61,6 +82,8 @@ export interface DaemonOptions {
   // writes, and how long that may take.
   keyStatus?: string;
   keyWaitMs?: number;
+  // The channel `agentv channel` sets: /etc/agentv/channel (ADR-053).
+  channelFile?: string;
   // Setup's apps: what agentv-setup-apps writes as it installs them
   // (/run/agentv-setup-apps/state.json), how long it may take to start, and
   // the official apps in the index, in place of the signed index itself.
@@ -69,11 +92,15 @@ export interface DaemonOptions {
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
+  // The themes your agent made, as root put them: /var/lib/agentv/themes.
+  themes?: string;
   // Where packages put their desktop entries and icons, for a native app's
   // icon: /usr/local/share, /usr/share and flatpak's.
   dataDirs?: string[];
   // The backgrounds and their credits: /var/lib/agentv/backgrounds.
   backgrounds?: string;
+  // What phones shared to the TV (ADR-050): /var/lib/agentv/shared.
+  shared?: string;
   // Tests point the museum archives at their own server.
   art?: Pick<ArtOptions, "endpoints" | "imageHosts" | "fetch">;
   // The phone companion's port on the home network, or none. 3001 on the box.
@@ -95,6 +122,27 @@ export interface DaemonOptions {
   hotspotAddress?: string;
   // How long a phone's ask for the state waits for a change (25 s).
   phoneWaitMs?: number;
+  // The filter home's Chromium goes through (ADR-043): its port, 3005 on
+  // the box, or none. Only the origins page apps declared get through.
+  homeProxyPort?: number;
+  // The builder (ADR-011): its builds, root's answers, the spend and the
+  // nightly package check, where root and the builder write them.
+  builds?: string; // /var/lib/agentv/build
+  buildRun?: string; // /run/agentv-build
+  spend?: string; // /var/lib/agentv/spend/spend.json
+  npmWarnings?: string; // /var/lib/agentv/npm-check/warnings.json
+  // The router (ADR-013, ADR-023): one sentence and the apps who's watching
+  // can open, into a route, through the provider's API or a plan's CLI.
+  router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // TMDB, through the router's service, which holds the household's TMDB
+  // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
+  tmdb?: TmdbGet;
+  tmdbStatus?: string;
+  // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
+  // provider's voice and Piper, for tests.
+  voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
+  // How long the listening bar waits for new words before it goes (20 s).
+  listenIdleMs?: number;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -133,6 +181,16 @@ const MAX_BODY = 64 * 1024;
 const PHONE_WAIT_MS = 25_000;
 const FIELD_KINDS = ["text", "search", "email", "password", "number", "url"];
 
+// An app the TV offered for Export (ADR-045), for ten minutes, with the
+// person's GitHub sign-in when they have one.
+interface ExportOffer {
+  id: string;
+  name: string;
+  version: string;
+  until: number;
+  github: SignIn | null;
+}
+
 // What's on the TV, for the phone's remote to follow (ADR-037). The TV's page
 // says what it shows: the PIN pad, what asks for it and how many digits are
 // in, a text field with the focus and its kind, and home, a menu or the
@@ -160,6 +218,9 @@ function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
 }
 
+// A region, as TMDB names one: the country's two letters (ISO 3166-1).
+const REGION = /^[A-Z]{2}$/;
+
 export class Daemon {
   readonly server: Server;
   private options: DaemonOptions;
@@ -172,12 +233,45 @@ export class Daemon {
   readonly pin: Pin;
   readonly profiles: Profiles;
   readonly key: ProviderKey;
+  // The TMDB key, and what's new and new episodes from TMDB (stage 8).
+  readonly tmdbKey: TmdbKey;
+  readonly news: News;
+  // The TV's spoken answers (stage 8), and the last few clips, by number,
+  // for the TV session to fetch and play.
+  readonly voice: Voice;
+  private clips = new Map<number, Clip>();
+  private clipCount = 0;
+  private lastSpoken: { clip: number; by: Clip["by"]; ms: number; played?: boolean; error?: string; at: string } | null = null;
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
+  readonly shared: Shared;
+  readonly pageApps: PageApps;
+  readonly builds: Builds;
+  // Stage B's asks of the services' Chromium, for the screen daemon.
+  readonly pageAsks = new PageAsks();
+  // Export's asks of the person's GitHub sign-in, for the screen daemon.
+  readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: "the TV didn't answer in time: is its session running?" } });
+  // A made theme's asks, for the screen daemon to hand it to Omarchy (S6.4).
+  readonly themeAsks = new Asks<ThemeAsk, ThemeAnswer>({ clean: cleanTheme, late: { ok: false, error: "the TV didn't answer in time: is its session running?", late: true } });
+  // A sentence's asks of the TV session: looking X up in the apps, and
+  // opening what was chosen (daemon/say.ts).
+  readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?" } });
+  // What was said to the TV, routed and done (ADR-023).
+  readonly say: Say;
+  // The phone's box, open and its words, as the TV shows them (ADR-054).
+  readonly listening: Listening;
+  private routing?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // What it asked already, by theme, build and version, so a pass that read
+  // the record before the last answer came doesn't ask again.
+  private themesAsked = new Set<string>();
+  private buildsSeen = "";
+  private buildsTimer?: ReturnType<typeof setInterval>;
+  // What home's Chromium reaches the internet through.
+  readonly homeProxy?: NetFilter;
   private art: ArtArchives;
   private immich: ImmichAlbum;
   private immichBusy = false;
@@ -200,6 +294,14 @@ export class Daemon {
   // The provider whose terms a key from Settings → AI waits for (Q104), which
   // the phones show for an adult to accept.
   private keyTerms: Provider | null = null;
+  // The provider whose terms a plan picked in Settings → AI waits for (Q143),
+  // the same way.
+  private planTerms: Provider | null = null;
+  // The last few page apps' notices, for the phones (ADR-043).
+  private notices: { app: string; name: string; text: string; at: string }[] = [];
+  // An app the TV offered for Export, for an adult's phone to save, or to
+  // push when the person's account here is signed in to GitHub (ADR-045).
+  private exportOffer: ExportOffer | null = null;
   // Omarchy's desktop's relay for the phone's trackpad, while it's on.
   private desktops = new Set<ServerResponse>();
   private ledgerPath: string;
@@ -219,17 +321,113 @@ export class Daemon {
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
+      pageTile: (id) => this.pageApps.tile(id),
+      newTile: (viewer, size) => this.newTile(viewer, size),
       log: this.log,
       dataDirs: options.dataDirs,
     });
+    // A sentence said to the TV: routed for who's watching, with only the
+    // apps they can open, and done through the TV session.
+    // The listening bar: each change to the TV's pages and, for over an
+    // app, the TV session. Nothing of the words stays (ADR-054).
+    this.listening = new Listening({
+      idleMs: options.listenIdleMs,
+      changed: (heard) => {
+        this.toPages("listening", heard);
+        void this.sayAsks.ask({ kind: "live", state: heard.state, text: heard.text }, 3000);
+      },
+    });
+    this.say = new Say({
+      bar: { sent: () => this.listening.sent(), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
+      route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
+      viewer: () => this.profiles.active(),
+      apps: async (viewer) => {
+        const allowed = new Set((await this.home.apps(viewer)).map((app) => app.id));
+        return (await this.home.manifests())
+          .filter(({ manifest }) => allowed.has(manifest.id))
+          .map(({ manifest }) => ({
+            id: manifest.id,
+            name: manifest.name,
+            category: manifest.tv.category,
+            // Music looks in the library in the TV session rather than in a
+            // worker, so it can, though its manifest doesn't say so.
+            capabilities: manifest.id === MUSIC_APP ? [...manifest.tv.capabilities, "search"] : [...manifest.tv.capabilities],
+          }));
+      },
+      rows: (viewer) => this.ledger.recent(viewer, { limit: 50 }),
+      speak: (text) => void this.speak(text),
+      news: (viewer, apps) => {
+        const ids = apps.map((app) => app.id);
+        return {
+          whatsNew: (only) => this.news.forViewer(viewer.role, ids, only),
+          episode: (query) => this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, ids),
+        };
+      },
+      ask: (ask, ms) => this.sayAsks.ask(ask, ms),
+      changed: (said) => this.broadcast("said", said),
+      log: this.log,
+    });
+    // Page apps (ADR-043): each on an origin of its own, and the kit's calls
+    // checked against its manifest.
+    this.pageApps = new PageApps({
+      state: options.state,
+      root: options.root,
+      find: async (id) => {
+        const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === id && manifest.tv.runtime === "page");
+        return found ? { manifest: found.manifest, dir: found.dir } : null;
+      },
+      viewer: async () => {
+        const viewer = await this.profiles.active();
+        return { id: viewer.id, name: viewer.name, role: viewer.role };
+      },
+      notice: (app, text) => {
+        this.log(`${app.id} sent a notice`);
+        this.notices = [{ app: app.id, name: app.name, text, at: now() }, ...this.notices].slice(0, 5);
+        this.broadcast("notice", { app: app.id, name: app.name, text });
+      },
+      tileChanged: (id) => this.broadcast("tiles", { app: id }),
+      log: this.log,
+    });
+    if (options.homeProxyPort !== undefined) {
+      this.homeProxy = new NetFilter({
+        // The origins the page apps on the box declared, as they are now.
+        policy: async (host, port, scheme) => {
+          const origin = new URL(`${scheme}://${host.includes(":") ? `[${host}]` : host}:${port}`).origin;
+          for (const { manifest } of await this.home.manifests()) {
+            if (manifest.tv.runtime === "page" && (manifest.tv.origins ?? []).includes(origin)) return true;
+          }
+          return false;
+        },
+        log: (line) => this.log(`home's proxy: ${line}`),
+      });
+    }
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
+    this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
+    this.voice = new Voice({
+      ...options.voice,
+      ai: () => this.ai.read(),
+      key: () => this.key.status(),
+      spoken: async () => (await this.home.settings()).spoken,
+      log: this.log,
+    });
+    this.news = new News({
+      get: options.tmdb ?? tmdbViaRouter(),
+      state: options.state,
+      keySet: () => this.tmdbKey.status().set,
+      region: () => this.region(),
+      // Every app on the box but AgenTV's own.
+      apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
+      log: this.log,
+    });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
-    this.ai = new Ai({ state: options.state });
+    this.ai = new Ai({ state: options.state, channel: () => this.channel() });
+    this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
+    this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.setupApps = new SetupApps({
@@ -279,11 +477,16 @@ export class Daemon {
   }
 
   listen(): Promise<number> {
+    // The builds, looked at every two seconds: the TV and the phones hear
+    // when one moves on.
+    this.buildsTimer = setInterval(() => void this.watchBuilds(), 2000);
+    this.buildsTimer.unref();
     const lan = this.lan;
     const captive = this.captive;
     const phones = Promise.all([
       lan ? new Promise<void>((resolve) => lan.listen(this.options.lanPort, this.options.lanHost ?? "0.0.0.0", () => resolve())) : null,
       captive ? new Promise<void>((resolve) => captive.listen(this.options.setupPort, this.options.setupHost ?? "0.0.0.0", () => resolve())) : null,
+      this.homeProxy?.listen(this.options.homeProxyPort, "127.0.0.1"),
     ]);
     return phones.then(
       () =>
@@ -314,14 +517,20 @@ export class Daemon {
   }
 
   close(): Promise<void> {
+    clearInterval(this.buildsTimer);
     for (const stream of this.streams) stream.end();
     for (const stream of this.remotes) stream.end();
     this.lan?.close();
     this.captive?.close();
+    void this.homeProxy?.close();
     this.home.stop();
     this.updates.stop();
     this.setupApps.stop();
     this.openLedger?.close();
+    this.pageAsks.close();
+    this.sayAsks.close();
+    this.exportAsks.close();
+    this.themeAsks.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -337,14 +546,269 @@ export class Daemon {
     return values;
   }
 
+  // Settings → AI's state: which provider has a key (never the key), the
+  // plans this box's channel offers (ADR-053), and what builds use now, by
+  // plan or key, and whether its terms are accepted (Q143).
+  private async keyState(): Promise<object> {
+    const { set, provider } = this.key.status();
+    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name, bestEffort: offer.plan.bestEffort === true }));
+    const ai = await this.ai.read();
+    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
+  }
+
+  // The channel this box updates from, as `agentv channel` says it: the one
+  // /etc/agentv/channel names, or else the one its package was built for.
+  // A checkout's daemon, with neither, is on stable.
+  private async channel(): Promise<string> {
+    const chosen = (await readFile(this.options.channelFile ?? "/etc/agentv/channel", "utf8").catch(() => "")).split("\n")[0].trim();
+    if (chosen) return chosen;
+    const built = (await this.settings()).AGENTV_CHANNEL;
+    return built === "dev" ? "stable" : built || "stable";
+  }
+
   setup(): Promise<SetupState> {
     return this.setupState.read();
   }
 
+  // --- The builder (ADR-011, ADR-043 to ADR-046) ---------------------------
+
+  private async watchBuilds(): Promise<void> {
+    // A build waiting for its plan's sign-in gets one, and goes on after it,
+    // and a streaming service's app learns the rest once it's signed in.
+    await this.builds.tend({ signedIn: (id) => this.home.isSignedIn(id) }).catch(() => false);
+    await this.tendThemes().catch(() => {});
+    const now = JSON.stringify([await this.builds.list().catch(() => []), await this.madeApplied()]);
+    if (now === this.buildsSeen) return;
+    this.buildsSeen = now;
+    this.broadcast("builds", {});
+  }
+
+  private async buildsState() {
+    return {
+      builds: await this.builds.list(),
+      settings: await this.builds.settings(),
+      spend: await this.builds.spend(),
+      warnings: this.builds.warnings(),
+      // What setup's "+ add your own" kept for the builder.
+      wishes: (await this.setup()).wishes,
+      // Each made theme the TV has handed to Omarchy, or why it couldn't.
+      themes: await this.madeApplied(),
+    };
+  }
+
+  // --- Themes your agent made (S6.4) ---------------------------------------
+
+  private get themesDir(): string {
+    return this.options.themes ?? THEMES;
+  }
+
+  // Which version of each made theme the screen daemon handed to Omarchy,
+  // or why it couldn't. Each version goes once, so a theme the person
+  // changed from isn't set again.
+  private async madeApplied(): Promise<Record<string, { version: string; name?: string; error?: string }>> {
+    try {
+      return JSON.parse(await readFile(join(this.options.state, "made-themes.json"), "utf8"));
+    } catch {
+      return {};
+    }
+  }
+
+  // A change to that record, one after another, so two answers at once
+  // don't write over each other.
+  private changeApplied(change: (applied: Record<string, { version: string; name?: string; error?: string }>) => void): Promise<void> {
+    this.appliedChanging = this.appliedChanging.then(async () => {
+      const applied = await this.madeApplied();
+      change(applied);
+      await mkdir(this.options.state, { recursive: true });
+      await writeFile(join(this.options.state, "made-themes.json.next"), JSON.stringify(applied, null, 2));
+      await rename(join(this.options.state, "made-themes.json.next"), join(this.options.state, "made-themes.json"));
+    });
+    return this.appliedChanging;
+  }
+
+  private appliedChanging: Promise<void> = Promise.resolve();
+
+  // A theme an adult approved, once root put it in place: the screen daemon,
+  // as the person, hands it to Omarchy and sets it, so the TV and the desktop
+  // change together. One that's removed goes from Omarchy too.
+  private async tendThemes(): Promise<void> {
+    const applied = await this.madeApplied();
+    const placed = new Map(madeThemes(this.themesDir).map((theme) => [theme.app, theme.version]));
+    const asks: { id: string; key: string; ask: ThemeAsk; version?: string }[] = [];
+    for (const view of await this.builds.list()) {
+      if (view.state !== "installed" || view.understood?.recipe !== "theme") continue;
+      if (placed.get(view.id) !== view.version || applied[view.id]?.version === view.version) continue;
+      asks.push({ id: view.id, key: `take ${view.id} ${view.build} ${view.version}`, ask: { kind: "take", id: view.id }, version: view.version });
+    }
+    for (const id of Object.keys(applied)) if (!placed.has(id)) asks.push({ id, key: `drop ${id}`, ask: { kind: "drop", id } });
+    for (const { id, key, ask, version } of asks) {
+      if (this.themesAsked.has(key)) continue;
+      this.themesAsked.add(key);
+      void this.themeAsks
+        .ask(ask, 120_000)
+        .then(async (said) => {
+          // The TV didn't answer: the next pass asks again.
+          if (said.late) return void this.themesAsked.delete(key);
+          await this.changeApplied((now) => {
+            if (ask.kind === "drop") delete now[id];
+            else now[id] = { version: version!, ...(said.ok ? { name: said.name } : { error: said.error }) };
+          });
+          for (const asked of [...this.themesAsked]) if (asked.startsWith(ask.kind === "drop" ? `take ${id} ` : `drop ${id}`)) this.themesAsked.delete(asked);
+          this.log(ask.kind === "drop" ? `${id} is gone from omarchy's themes` : said.ok ? `${id} ${version} is the theme now, on the tv and the desktop` : `${id} ${version} couldn't be set: ${said.error}`);
+          void this.watchBuilds();
+        })
+        .catch((error: Error) => {
+          this.themesAsked.delete(key);
+          this.log(`made themes: ${error.message}`);
+        });
+    }
+  }
+
+  // The AI a build runs on: picked, its terms accepted, and a key there for
+  // a key's path.
+  private async builderAi(): Promise<{ ai?: { provider: BuildProvider; path: "plan" | "key" }; error?: string }> {
+    const ai = await this.ai.read();
+    if (!ai.provider || !ai.path || !ai.accepted) return { error: "pick the AI in Settings → AI, and accept its terms on the phone, first" };
+    if (ai.path === "key") {
+      const key = this.key.status();
+      if (!key.set || key.provider !== ai.provider) return { error: "there's no key for the AI yet: add one in Settings → AI" };
+    }
+    return { ai: { provider: ai.provider, path: ai.path } };
+  }
+
+  // The TV's asks of the builder, and the phone's when phone is given. True
+  // when it was one.
+  private async builderApi(method: string | undefined, path: string, request: IncomingMessage, response: ServerResponse, phone?: { name: string }): Promise<boolean> {
+    const base = phone ? "/api/phone/builds" : "/api/builds";
+    if (path !== base && !path.startsWith(`${base}/`)) return false;
+    const answer = (result: { build?: unknown; error?: string }, done?: string) => {
+      if (result.error) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      if (done) this.log(done);
+      void this.watchBuilds();
+      this.json(response, 200, { ok: true, ...(result.build ? { build: result.build } : {}) });
+    };
+    const viewer = await this.profiles.active();
+    if (viewer.role !== "adult") {
+      this.json(response, 403, { ok: false, error: "an adult asks the builder" });
+      return true;
+    }
+    if (method === "GET" && path === base) {
+      this.json(response, 200, { ok: true, ...(await this.buildsState()) });
+      return true;
+    }
+    const [, build, action] = /^\/api\/(?:phone\/)?builds\/([a-z0-9-]+)(?:\/([a-z]+))?$/.exec(path) ?? [];
+    const app = /^\/api\/builds\/apps\/(local\.[a-z0-9-]+)\/([a-z]+)$/.exec(path);
+
+    if (phone) {
+      if (method === "GET" && action === "shot") {
+        const view = await this.builds.find(build);
+        const png = view?.shot ? await readFile(this.builds.shot(view)).catch(() => null) : null;
+        if (!png) {
+          this.json(response, 404, { ok: false, error: "there's no screenshot" });
+          return true;
+        }
+        response.writeHead(200, { "Content-Type": "image/png", "Content-Length": png.length, "Cache-Control": "no-store" });
+        response.end(png);
+        return true;
+      }
+      // The code the plan's sign-in page gave, for the CLI's prompt, behind
+      // the PIN like the rest of the AI's settings (ADR-040).
+      if (method === "POST" && action === "code") {
+        if (!this.guarded(request, response, "the plan's sign-in")) return true;
+        const body = (await this.body(request)) as { code?: unknown } | undefined;
+        answer(await this.builds.signInCode(build, body?.code), `${viewer.name} handed the plan's sign-in a code on ${phone.name}`);
+        return true;
+      }
+      // An adult's yes, behind the PIN: a plan, or the app itself (ADR-043, ADR-046).
+      if (method === "POST" && (action === "approve" || action === "plan")) {
+        if (!this.guarded(request, response, action === "plan" ? "a build's plan" : "a built app")) return true;
+        if (action === "plan") answer(await this.builds.approvePlan(build), `${viewer.name} approved a plan on ${phone.name}`);
+        else answer(await this.builds.approve(build), `${viewer.name} approved a built app on ${phone.name}`);
+        return true;
+      }
+      this.json(response, 404, { ok: false, error: "not found" });
+      return true;
+    }
+
+    if (method === "POST" && path === base) {
+      const ai = await this.builderAi();
+      if (!ai.ai) return answer({ error: ai.error }), true;
+      const body = (await this.body(request)) as { sentence?: unknown } | undefined;
+      const installed = (await this.home.manifests()).map(({ manifest }) => manifest.id);
+      const result = await this.builds.ask(body?.sentence, ai.ai, installed);
+      if (result.build) await this.setupState.asked(result.build.sentence);
+      answer(result, `${viewer.name} asked the builder for an app`);
+      return true;
+    }
+    if (method === "POST" && path === `${base}/stop`) {
+      await this.builds.stop();
+      answer({}, "the build was stopped");
+      return true;
+    }
+    if (method === "PUT" && path === `${base}/settings`) {
+      if (!this.guarded(request, response, "the builder's caps and safeguards")) return true;
+      const result = await this.builds.setSettings(await this.body(request));
+      if (result.error) return answer({ error: result.error }), true;
+      this.log(`the builder's settings changed: $${result.settings!.cap.build} a build, $${result.settings!.cap.month} a month, safeguards ${result.settings!.safeguards ? "on" : "off"}`);
+      this.json(response, 200, { ok: true, settings: result.settings });
+      return true;
+    }
+    if (method === "POST" && app) {
+      const [, id, what] = app;
+      if (what === "rollback" || what === "remove") {
+        if (!this.guarded(request, response, what === "remove" ? "removing a built app" : "going back a version")) return true;
+        if (what === "rollback") answer(await this.builds.rollback(id), `${viewer.name} went back a version of ${id}`);
+        else {
+          const result = await this.builds.remove(id);
+          if (!result.error) await this.pageApps.forget(id);
+          answer(result, `${viewer.name} removed ${id}`);
+        }
+        return true;
+      }
+      if (what === "change" || what === "rebuild") {
+        const ai = await this.builderAi();
+        if (!ai.ai) return answer({ error: ai.error }), true;
+        const body = (await this.body(request)) as { text?: unknown } | undefined;
+        answer(await this.builds.next(id, what === "change" ? (body?.text ?? "") : undefined, ai.ai), `${viewer.name} asked for a new version of ${id}`);
+        return true;
+      }
+    }
+    // The plan's sign-in link as a QR code, for the phone's camera.
+    if (method === "GET" && build && action === "qr") {
+      const url = (await this.builds.find(build))?.signIn?.url;
+      const svg = url ? await this.qr(url) : null;
+      if (!svg) {
+        this.json(response, 404, { ok: false, error: url ? "there's no qr code without qrencode" : "nothing is signing in" });
+        return true;
+      }
+      this.send(response, TYPES[".svg"], svg, { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" });
+      return true;
+    }
+    if (method === "POST" && build && action === "forget") {
+      answer(await this.builds.forget(build), `${viewer.name} put a build away`);
+      return true;
+    }
+    if (method === "POST" && build && (action === "confirm" || action === "retry")) {
+      answer(action === "confirm" ? await this.builds.confirm(build) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
+      return true;
+    }
+    this.json(response, 404, { ok: false, error: "not found" });
+    return true;
+  }
+
   // Tells every page that's listening what changed, and the phones too.
   private broadcast(event: string, data: unknown): void {
-    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    this.toPages(event, data);
     this.phonesChanged();
+  }
+
+  // To the TV's own pages only, for what the phones needn't hear, such as
+  // the listening bar's words, which come from a phone (ADR-054).
+  private toPages(event: string, data: unknown): void {
+    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
   // Wakes every phone waiting for the state to change.
@@ -379,19 +843,63 @@ export class Daemon {
     if (change.front === "home" || change.front === "app") next.front = change.front;
     if (typeof change.playing === "boolean") next.playing = change.playing;
     if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
+    const idle = this.idleHome();
     this.tv = next;
     this.phonesChanged();
+    // A share that waited while something played asks now (ADR-050).
+    if (!idle && this.idleHome()) void this.shareWaiting().then((share) => share && this.broadcast("shared", {}));
+  }
+
+  // Home in front with nothing playing: when the TV may ask about a share.
+  private idleHome(): boolean {
+    return this.tv.front === "home" && !this.tv.playing && this.tv.screen !== "ambient";
+  }
+
+  // The shares someone on this profile sees: an adult sees every one, and a
+  // child only those sent to them.
+  private async sharesFor(viewer: Profile): Promise<Share[]> {
+    const all = await this.shared.list();
+    return viewer.role === "adult" ? all : all.filter((share) => share.to === viewer.id);
+  }
+
+  // The oldest share sent to who's watching that the TV hasn't had an
+  // answer for.
+  private async shareWaiting(): Promise<Share | null> {
+    const viewer = await this.profiles.active();
+    return (await this.shared.list()).filter((share) => share.to === viewer.id && !share.answered).at(-1) ?? null;
+  }
+
+  // Who a share from this phone goes to: who's watching, unless it's a
+  // child's profile an adult hasn't allowed shares for (ADR-050).
+  private async shareTarget(phone: { name: string }): Promise<{ from: string; to: string } | { error: string }> {
+    const viewer = await this.profiles.active();
+    if (viewer.role === "child" && !(await this.shared.allowed()).includes(viewer.id)) {
+      return { error: `${viewer.name.toLowerCase()}'s profile doesn't take shares. an adult can allow it in settings → profiles` };
+    }
+    return { from: `${viewer.name.toLowerCase()} on ${phone.name}`, to: viewer.id };
+  }
+
+  // A share is in: the TV asks about it now if nothing's playing, or else
+  // once nothing is. The phone hears which.
+  private async shareIn(response: ServerResponse, share: Share, phone: { name: string }): Promise<void> {
+    this.log(`${phone.name} shared a ${share.kind}`);
+    this.broadcast("shared", {});
+    this.json(response, 200, { ok: true, share, waits: !this.idleHome() });
   }
 
   // The phone's state: who's watching, the lock, a sign-in, an update and
   // what's on the TV, with the count it's at.
   private async phoneState(phone: unknown): Promise<object> {
+    // The count before anything's read: a change while it's read leaves the
+    // phone a count behind, so it asks again at once, and never a count
+    // ahead of what it was told, with its next ask waiting 25 s.
+    const version = this.phoneVersion;
     const viewer = await this.profiles.active();
     const pin = this.pin.status(viewer.locked);
     const setup = await this.setup();
     return {
       ok: true,
-      version: this.phoneVersion,
+      version,
       phone,
       viewer,
       viewers: await this.profiles.list(),
@@ -404,13 +912,89 @@ export class Daemon {
       // What setup's AI step asks of the phone (ADR-023): the provider's
       // terms for an adult to accept, then the key.
       ai: await this.aiAsk(setup),
+      // Page apps' notices, as the TV shows them (ADR-043).
+      notices: this.notices,
+      // The builds an adult follows here too: how each is going, and the
+      // ones waiting for their yes (ADR-043, ADR-046).
+      builds: viewer.role === "adult" ? await this.phoneBuilds() : [],
+      // An app the TV offered for Export, for an adult to save here.
+      export: viewer.role === "adult" && this.exportOffer && this.exportOffer.until > Date.now() ? { id: this.exportOffer.id, name: this.exportOffer.name, version: this.exportOffer.version, github: this.exportOffer.github } : null,
+      // What was last said to the TV, and what came of it, for ten minutes:
+      // the phone shows it under its box, and up to three to choose from.
+      said: this.saidNow(),
     };
+  }
+
+  // The router this box's setup chose (daemon/router-client.ts), through
+  // its services' sockets.
+  private boxRoute(sentence: string, apps: RouterApp[]): Promise<Routed> {
+    this.routing ??= boxRouter({ ai: () => this.ai.read(), key: () => this.key.status() });
+    return this.routing(sentence, apps);
+  }
+
+  private saidNow(): object | null {
+    const said = this.say.current;
+    if (!said || Date.now() - Date.parse(said.at) > 10 * 60_000) return null;
+    const { route: _route, ...shown } = said;
+    return shown;
+  }
+
+  // Why the TV won't take a sentence now, or null: setup isn't done, or
+  // the TV is locked behind the PIN (ADR-034).
+  private async sayRefusal(): Promise<string | null> {
+    if (!(await this.setup()).done) return "the tv takes requests once setup is done";
+    if (this.pin.status((await this.profiles.active()).locked).locked) return "the tv is locked: unlock it first";
+    return null;
+  }
+
+  // A sentence, from the TV or a phone, once it's done.
+  private async sayIt(request: IncomingMessage, response: ServerResponse, from: string): Promise<void> {
+    const refused = await this.sayRefusal();
+    if (refused) {
+      this.json(response, 409, { ok: false, error: refused });
+      return;
+    }
+    const body = (await this.body(request)) as { sentence?: unknown } | undefined;
+    if (typeof body?.sentence !== "string" || !body.sentence.trim()) {
+      this.json(response, 400, { ok: false, error: "say something" });
+      return;
+    }
+    this.json(response, 200, { ok: true, said: await this.say.hear(body.sentence, from) });
+  }
+
+  private async sayPick(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const body = (await this.body(request)) as { n?: unknown; choice?: unknown } | undefined;
+    const picked = await this.say.pick(body?.n, body?.choice);
+    this.json(response, picked.said ? 200 : 409, picked.said ? { ok: true, said: picked.said } : { ok: false, error: picked.error });
+  }
+
+  private async phoneBuilds(): Promise<object[]> {
+    const builds = await this.builds.list().catch(() => []);
+    return builds
+      .filter((b) => b.state !== "installed" && b.state !== "kept")
+      .map((b) => ({
+        build: b.build,
+        id: b.id,
+        name: b.name ?? b.sentence,
+        provider: b.provider,
+        state: b.state,
+        phase: b.phase,
+        ...(b.signIn ? { signIn: b.signIn.state } : {}),
+        ...(b.ranOut ? { ranOut: true } : {}),
+        done: b.steps.filter((step) => step.state === "done").length,
+        steps: b.steps.length,
+        ...(b.reason ? { reason: b.reason } : {}),
+      }));
   }
 
   private async aiAsk(setup: SetupState): Promise<object | null> {
     if (this.keyTerms) {
       const offer = OFFERS[this.keyTerms];
       return { ask: "terms", provider: this.keyTerms, path: "key", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.key, summary: offer.summary.key, keyUrl: offer.keyUrl };
+    }
+    if (this.planTerms) {
+      const offer = OFFERS[this.planTerms];
+      return { ask: "terms", provider: this.planTerms, path: "plan", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.plan, summary: offer.summary.plan, keyUrl: offer.keyUrl };
     }
     if (setup.done || setup.step !== "ai") return null;
     const ai = await this.ai.read();
@@ -688,6 +1272,33 @@ export class Daemon {
       return;
     }
 
+    // A sentence for the TV (ADR-023): the phone keyboard's dictation, or
+    // what was typed, and one of up to three to choose from.
+    if (method === "POST" && path === "/api/phone/say") {
+      await this.sayIt(request, response, phone.name);
+      return;
+    }
+    if (method === "POST" && path === "/api/phone/say/pick") {
+      await this.sayPick(request, response);
+      return;
+    }
+    // The box's words as the phone's dictation fills it in, or that it
+    // opened or closed (ADR-054). Kept nowhere: they go on to the TV.
+    if (method === "POST" && path === "/api/phone/say/live") {
+      const refused = await this.sayRefusal();
+      if (refused) {
+        this.json(response, 409, { ok: false, error: refused });
+        return;
+      }
+      const why = this.listening.change(phone.name, await this.body(request));
+      this.json(response, why ? 400 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
+    if (method === "POST" && path === "/api/phone/say/dismiss") {
+      this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
+      return;
+    }
+
     // Arrange home (S4.7): the viewer's grid and the apps that can go on it.
     if (method === "GET" && path === "/api/phone/home") {
       const viewer = await this.profiles.active();
@@ -760,6 +1371,42 @@ export class Daemon {
       this.log(`${phone.name} sent a photo for the background`);
       this.broadcast("background", result.state);
       this.json(response, 200, { ok: true, background: result.item });
+      return;
+    }
+
+    // Share to the TV (ADR-050, S5.10): a link, a photo or a video, for
+    // who's watching. The TV asks before it shows any of them.
+    const sharing = /^\/api\/phone\/share\/(link|photo|video)$/.exec(path);
+    if (method === "POST" && sharing) {
+      const target = await this.shareTarget(phone);
+      if ("error" in target) {
+        this.json(response, 403, { ok: false, error: target.error });
+        return;
+      }
+      let result: { share?: Share; error?: string };
+      if (sharing[1] === "link") {
+        result = await this.shared.addLink(((await this.body(request)) as { url?: unknown } | undefined)?.url, target);
+      } else if (sharing[1] === "photo") {
+        let body: Buffer;
+        try {
+          body = await this.raw(request, MAX_PHOTO);
+        } catch (error) {
+          this.json(response, 413, { ok: false, error: (error as Error).message });
+          return;
+        }
+        result = await this.shared.addPhoto(body, url.searchParams.get("credit"), target);
+      } else {
+        if (Number(request.headers["content-length"]) > MAX_VIDEO) {
+          this.json(response, 413, { ok: false, error: `that video is too big: ${MAX_VIDEO / 1024 ** 3} gb at most` });
+          return;
+        }
+        result = await this.shared.addVideo(request, url.searchParams.get("name"), target);
+      }
+      if (!result.share) {
+        this.json(response, result.error?.includes("too big") ? 413 : 400, { ok: false, error: result.error });
+        return;
+      }
+      await this.shareIn(response, result.share, phone);
       return;
     }
 
@@ -896,6 +1543,20 @@ export class Daemon {
         this.json(response, 200, { ok: true, accepted: recorded.acceptance });
         return;
       }
+      // Settings → AI's plan, waiting for its provider's terms (Q143).
+      if (this.planTerms && body?.provider === this.planTerms && body?.path === "plan") {
+        const provider = this.planTerms;
+        const recorded = await this.ai.record(provider, "plan", { phone: phone.name, viewer: viewer.name });
+        if (!recorded.acceptance) {
+          this.json(response, 400, { ok: false, error: recorded.error });
+          return;
+        }
+        this.planTerms = null;
+        this.log(`${viewer.name} accepted ${provider}'s terms for a plan, on ${phone.name}, for settings`);
+        this.broadcast("terms", { provider, path: "plan", accepted: recorded.acceptance });
+        this.json(response, 200, { ok: true, accepted: recorded.acceptance });
+        return;
+      }
       const result = await this.ai.accept(body?.provider, body?.path, { phone: phone.name, viewer: viewer.name });
       if (!result.state) {
         this.json(response, 400, { ok: false, error: result.error });
@@ -933,6 +1594,88 @@ export class Daemon {
       return;
     }
 
+    if (await this.builderApi(method, path, request, response, phone)) return;
+
+    // Export (ADR-045): the app the TV offered, as a .zip for this phone, an
+    // adult's, and never one that drives a service's own site.
+    const exporting = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/export$/.exec(path);
+    if (method === "GET" && exporting) {
+      if ((await this.profiles.active()).role !== "adult") {
+        this.json(response, 403, { ok: false, error: "an adult exports an app" });
+        return;
+      }
+      const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === exporting[1]);
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      if (!found || refusal) {
+        this.json(response, 400, { ok: false, error: refusal });
+        return;
+      }
+      const zip = zipFolder(found.dir, `${found.manifest.id}-${found.manifest.version}`);
+      if (this.exportOffer?.id === found.manifest.id) {
+        this.exportOffer = null;
+        this.phonesChanged();
+      }
+      this.log(`${found.manifest.id} was exported to ${phone.name}`);
+      response.writeHead(200, {
+        "Content-Type": "application/zip",
+        "Content-Length": zip.length,
+        "Content-Disposition": `attachment; filename="${found.manifest.id}-${found.manifest.version}.zip"`,
+        "Cache-Control": "no-store",
+      });
+      response.end(zip);
+      return;
+    }
+
+    // The push to a repo of the person's own, asked here each time behind
+    // the PIN, and done by the screen daemon as the person, with their own
+    // GitHub sign-in. AgenTV's own repos are refused (ADR-045).
+    const pushing = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/push$/.exec(path);
+    if (method === "POST" && pushing) {
+      const viewer = await this.profiles.active();
+      if (viewer.role !== "adult") {
+        this.json(response, 403, { ok: false, error: "an adult exports an app" });
+        return;
+      }
+      if (!this.guarded(request, response, "pushing an app to GitHub")) return;
+      const offer = this.exportOffer;
+      if (!offer || offer.id !== pushing[1] || offer.until <= Date.now()) {
+        this.json(response, 400, { ok: false, error: "export it from its details on the tv first" });
+        return;
+      }
+      if (!offer.github) {
+        this.json(response, 400, { ok: false, error: "this box isn't signed in to GitHub" });
+        return;
+      }
+      const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === offer.id);
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      if (!found || refusal) {
+        this.json(response, 400, { ok: false, error: refusal });
+        return;
+      }
+      const body = (await this.body(request)) as { repo?: unknown } | undefined;
+      const repo = parseRepo(body?.repo, offer.github.login);
+      const refused = "error" in repo ? repo.error : repoRefusal(repo, agentvOwner());
+      if (refused || "error" in repo) {
+        this.json(response, 400, { ok: false, error: refused });
+        return;
+      }
+      const files = packageFiles(found.dir).map(({ path, data }) => ({ path, data: data.toString("base64") }));
+      this.log(`${viewer.name} pushes ${offer.id} to github.com/${repo.owner}/${repo.name} from ${phone.name}`);
+      const said = await this.exportAsks.ask({ kind: "push", id: offer.id, name: offer.name, version: offer.version, repo, files }, 5 * 60_000);
+      if (!said.ok) {
+        this.log(`${offer.id} wasn't pushed: ${said.error}`);
+        this.json(response, 502, { ok: false, error: said.error });
+        return;
+      }
+      this.log(`${offer.id} is on github.com/${repo.owner}/${repo.name}${said.pushed === false ? ", which had it already" : ""}`);
+      if (this.exportOffer === offer) {
+        this.exportOffer = null;
+        this.phonesChanged();
+      }
+      this.json(response, 200, { ok: true, url: said.url, pushed: said.pushed });
+      return;
+    }
+
     // The adult PIN, entered on the phone: a grant, and the TV unlocked.
     if (method === "POST" && path === "/api/phone/pin") {
       const locked = (await this.pinStatus()).locked;
@@ -963,6 +1706,15 @@ export class Daemon {
       "X-Content-Type-Options": "nosniff",
     });
     response.end(body);
+  }
+
+  // Whether the person's account here is signed in to GitHub, asked of the
+  // screen daemon, which runs as them. If it is, the phone offers a push too.
+  private async offerPush(offer: ExportOffer): Promise<void> {
+    const said = await this.exportAsks.ask({ kind: "sign-in" }, 30_000);
+    if (this.exportOffer !== offer || !said.ok || !said.via || !said.login) return;
+    offer.github = { via: said.via, login: said.login };
+    this.phonesChanged();
   }
 
   // The grant a page got for the PIN, sent with a guarded request.
@@ -999,13 +1751,103 @@ export class Daemon {
       this.log(status.locked ? "the tv is locked" : "the tv is unlocked");
       this.broadcast("pin", status);
     }
+    // A locked TV takes no words, so a listening bar goes (ADR-054).
+    if (status.locked) this.listening.close();
   }
 
   // On a child's profile, Settings and home's layout are an adult's, past the
   // PIN (ADR-009, ADR-015).
+  // --- Spoken answers (stage 8) ------------------------------------------------
+
+  // An answer, said aloud over HDMI: made into a clip here, and played by
+  // the TV session, which fetches it. The log says which voice and how long,
+  // never the words.
+  private async speak(text: string): Promise<void> {
+    const clip = await this.voice.make(text);
+    if (!clip) return;
+    const n = ++this.clipCount;
+    this.clips.set(n, clip);
+    for (const old of this.clips.keys()) if (old <= n - 3) this.clips.delete(old);
+    this.lastSpoken = { clip: n, by: clip.by, ms: clip.ms, at: new Date().toISOString() };
+    const played = await this.sayAsks.ask({ kind: "speak", clip: n }, 60_000);
+    if (this.lastSpoken.clip === n) Object.assign(this.lastSpoken, { played: played.ok, ...(played.error ? { error: played.error } : {}) });
+    this.log(`the tv said its answer with ${clip.by === "provider" ? `${clip.provider}'s voice` : "piper"}, made in ${clip.ms} ms${played.ok ? "" : `, but it didn't play: ${played.error ?? "no answer"}`}`);
+  }
+
+  // --- What's new (stage 8) ---------------------------------------------------
+
+  // The region setup chose (ADR-007): the country of the time zone Omarchy's
+  // installer set, unless Settings → new this week picked another.
+  private async region(): Promise<string | null> {
+    return (await this.whatsNewSettings()).region ?? (await this.zoneRegion());
+  }
+
+  private async zoneRegion(): Promise<string | null> {
+    return (await cityOf(await boxZone()))?.country ?? null;
+  }
+
+  private async whatsNewSettings(): Promise<{ region?: string }> {
+    const saved = await readFile(join(this.options.state, "whats-new-settings.json"), "utf8").then((text) => JSON.parse(text) as { region?: unknown }, () => ({}) as { region?: unknown });
+    return typeof saved.region === "string" && REGION.test(saved.region) ? { region: saved.region } : {};
+  }
+
+  // What Settings → new this week shows: whether there's a key, the region and
+  // the household's services, as TMDB matches the apps on the box.
+  private async whatsNewState(): Promise<{ error?: string } & Record<string, unknown>> {
+    const { error, ...key } = this.tmdbKey.status();
+    const region = await this.region();
+    const found = key.set && region ? await this.news.services(region) : null;
+    return {
+      key: { ...key, ...(error ? { error } : {}) },
+      region,
+      zoneRegion: await this.zoneRegion(),
+      picked: Boolean((await this.whatsNewSettings()).region),
+      ...(found ? { services: found.services, ...(found.ok ? {} : { error: found.error }) } : {}),
+    };
+  }
+
+  // New this week's tile (S8.1): this week's titles on the apps who's
+  // watching can open, each with its poster, its app and its new season, or
+  // what it needs first.
+  private async newTile(viewer: Viewer, size: Size): Promise<unknown> {
+    const apps = await this.home.apps(viewer);
+    const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
+    const name = (id: string) => (apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
+    if (!feed.ok) {
+      const adult = viewer.role === "adult";
+      const why: Record<string, string> = {
+        "no-key": adult ? "add a tmdb key in settings → new this week" : "an adult adds a tmdb key in settings",
+        "no-region": adult ? "pick a region in settings → new this week" : "an adult picks a region in settings",
+        "no-services": `tmdb doesn't list your apps' services in ${(feed.region ?? "your region").toLowerCase()}`,
+      };
+      return { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 };
+    }
+    // The region on the right of the tile's head, as Weather has its city.
+    const region = ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "").toLowerCase();
+    if (!feed.titles.length) return { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 };
+    if (size === "s") return { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 };
+    return {
+      headline: { label: region },
+      entries: feed.titles.slice(0, 8).map((title) => ({
+        label: title.title.toLowerCase(),
+        caption: `${name(title.app)}${title.season ? ` · season ${title.season}` : ""}`,
+        ...(title.poster ? { image: title.poster } : {}),
+        item: newItem(title),
+      })),
+      refreshMins: 180,
+    };
+  }
+
   private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
     if ((await this.profiles.active()).role !== "child") return true;
     return this.guarded(request, response, `${what} on a child's profile`);
+  }
+
+  // Every theme Omarchy has, as the screen daemon handed them over, or the
+  // ones Omarchy ships until it has (ADR-048).
+  private async looks(): Promise<ThemePreview[]> {
+    const handed = await readFile(join(this.options.state, "themes.json"), "utf8").then((text) => cleanFound({ themes: JSON.parse(text) }), () => null);
+    return handed?.length ? handed : previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy");
   }
 
   private async text(request: IncomingMessage): Promise<string> {
@@ -1038,6 +1880,32 @@ export class Daemon {
     } catch {
       return undefined;
     }
+  }
+
+  // A shared photo or video, in parts when the player asks for them, as a
+  // video's seeking does.
+  private async sendShared(request: IncomingMessage, response: ServerResponse, id: string): Promise<void> {
+    const file = await this.shared.file(id);
+    if (!file) {
+      this.json(response, 404, { ok: false, error: "that share's file isn't here" });
+      return;
+    }
+    const headers = { "Content-Type": file.type, "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" };
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range ?? ""));
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, file.size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), file.size - 1) : file.size - 1;
+      if (start >= file.size || start > end) {
+        response.writeHead(416, { "Content-Range": `bytes */${file.size}` });
+        response.end();
+        return;
+      }
+      response.writeHead(206, { ...headers, "Content-Range": `bytes ${start}-${end}/${file.size}`, "Content-Length": end - start + 1 });
+      createReadStream(file.path, { start, end }).pipe(response);
+      return;
+    }
+    response.writeHead(200, { ...headers, "Content-Length": file.size });
+    createReadStream(file.path).pipe(response);
   }
 
   private send(response: ServerResponse, type: string, body: Buffer | string, extra: Record<string, string> = {}): void {
@@ -1103,6 +1971,14 @@ export class Daemon {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    // A page app's own origin gets its files and the kit, and nothing else
+    // of the daemon's (ADR-043).
+    const port = (this.server.address() as { port: number }).port;
+    const page = pageAppId(request.headers.host, port);
+    if (page) {
+      await this.pageApps.serve(page, request, response, port);
+      return;
+    }
     const allowed = this.allowed(request);
     if (!allowed.ok) {
       this.log(`refused ${request.method} ${request.url}: ${allowed.why}`);
@@ -1606,8 +2482,8 @@ export class Daemon {
 
     // Which provider has a key. The key itself never comes back.
     if (method === "GET" && path === "/api/key") {
-      const { set, provider, error } = this.key.status();
-      this.json(response, 200, { ok: true, set, provider, ...(error ? { error } : {}) });
+      const { error } = this.key.status();
+      this.json(response, 200, { ok: true, ...(await this.keyState()), ...(error ? { error } : {}) });
       return;
     }
 
@@ -1636,8 +2512,14 @@ export class Daemon {
       }
       const { set } = this.key.status();
       this.log(set ? `a key for ${provider} is kept, root's alone` : "the provider key is off");
+      // A key kept from Settings → AI is what builds use from now on, its
+      // terms accepted first (Q104, Q143), in place of a plan picked before.
+      if (set && typeof provider === "string" && Object.hasOwn(OFFERS, provider)) {
+        const chosen = await this.ai.choose(provider, "key");
+        if (chosen.state) this.broadcast("ai", chosen.state);
+      }
       this.broadcast("key", { set, provider: this.key.status().provider });
-      this.json(response, 200, { ok: true, set, provider: this.key.status().provider });
+      this.json(response, 200, { ok: true, ...(await this.keyState()) });
       return;
     }
 
@@ -1653,11 +2535,58 @@ export class Daemon {
 
     // --- The AI provider and its terms (ADR-022, ADR-023) --------------------
 
+    // Settings → AI: the household's plan for builds, in place of a key
+    // (Q143). An adult's, past the PIN. A plan whose terms nobody here has
+    // accepted waits for them, as a key does: the phones show them, an adult
+    // accepts, and the TV asks again. Only a plan this box's channel offers
+    // (ADR-053).
+    if (method === "PUT" && path === "/api/ai/plan") {
+      if (!this.guarded(request, response, "the ai plan") || !(await this.adult(request, response, "the ai plan"))) return;
+      const body = (await this.body(request)) as { provider?: unknown } | undefined;
+      const provider = body?.provider;
+      if (typeof provider !== "string" || !Object.hasOwn(OFFERS, provider)) {
+        this.json(response, 400, { ok: false, error: PROVIDER_LIST });
+        return;
+      }
+      const offer = (await this.ai.offers())[provider as Provider];
+      if (!offer.plan.offered) {
+        this.json(response, 400, { ok: false, error: `${offer.plan.name} is coming soon. use an api key for now` });
+        return;
+      }
+      if (!(await this.ai.acceptance(provider as Provider, "plan"))) {
+        if (this.planTerms !== provider) {
+          this.planTerms = provider as Provider;
+          this.phonesChanged();
+        }
+        this.json(response, 409, { ok: false, error: `${offer.name}'s terms come first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.plan, summary: offer.summary.plan } });
+        return;
+      }
+      const chosen = await this.ai.choose(provider, "plan");
+      if (!chosen.state) {
+        this.json(response, 400, { ok: false, error: chosen.error });
+        return;
+      }
+      this.log(`builds use the ${provider} plan now, from settings`);
+      this.broadcast("ai", chosen.state);
+      this.json(response, 200, { ok: true, ...chosen.state });
+      return;
+    }
+
+    // Settings → AI stopped waiting for a plan's terms: the phones stop asking.
+    if (method === "DELETE" && path === "/api/ai/plan/terms") {
+      if (this.planTerms) {
+        this.planTerms = null;
+        this.phonesChanged();
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     // Which provider, by plan or key, whether its terms are accepted, how the
     // first run of its CLI went, and what each provider offers.
     if (method === "GET" && path === "/api/ai") {
       const { set, provider } = this.key.status();
-      this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: OFFERS, read: TERMS_READ, key: { set, provider } });
+      this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: await this.ai.offers(), channel: await this.channel(), read: TERMS_READ, key: { set, provider } });
       return;
     }
 
@@ -1746,6 +2675,12 @@ export class Daemon {
       else {
         error = await this.profiles.remove(one![1]);
         if (!error) await this.home.forgetViewer(one![1]);
+        if (!error) await this.shared.forget(one![1]);
+      }
+      // Whether a child's profile takes shares from phones (ADR-050). An
+      // adult's always does.
+      if (profile && !error && (typeof body.shares === "boolean" || profile.role === "adult")) {
+        await this.shared.allow(profile.id, profile.role === "child" && body.shares === true);
       }
       if (error) {
         this.json(response, error === "there's no such profile" ? 404 : 400, { ok: false, error });
@@ -1847,6 +2782,24 @@ export class Daemon {
 
     // What an app said when the screen daemon asked whether it's signed in
     // (ADR-032), for its tile.
+    // Export from an app's details (ADR-045): the phone of an adult who's
+    // watching saves it, so the TV offers it there for ten minutes.
+    const offer = /^\/api\/apps\/(local\.[a-z0-9-]+)\/export$/.exec(path);
+    if (method === "POST" && offer) {
+      if (!(await this.adult(request, response, "exporting an app"))) return;
+      const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === offer[1]);
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      if (!found || refusal) {
+        this.json(response, 400, { ok: false, error: refusal });
+        return;
+      }
+      this.exportOffer = { id: found.manifest.id, name: found.manifest.name, version: found.manifest.version, until: Date.now() + 10 * 60_000, github: null };
+      this.phonesChanged();
+      void this.offerPush(this.exportOffer);
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     const signedIn = /^\/api\/apps\/([a-z0-9.-]+)\/signed-in$/.exec(path);
     if (method === "POST" && signedIn) {
       const body = (await this.body(request)) as { signedIn?: unknown } | undefined;
@@ -1941,6 +2894,250 @@ export class Daemon {
       return;
     }
 
+    if (await this.builderApi(method, path, request, response)) return;
+
+    // Stage B (ADR-011): a page of the service the running build is
+    // learning, as the signed-in browser shows it, from the builder's way
+    // out. Only while the build is in stage B, on its declared origins.
+    if (method === "POST" && path === "/api/builder/page") {
+      const running = this.builds.stageB();
+      if (!running) {
+        this.json(response, 409, { ok: false, error: "no build is learning a service now" });
+        return;
+      }
+      const body = (await this.body(request)) as { url?: unknown } | undefined;
+      let url: URL;
+      try {
+        url = new URL(String(body?.url));
+      } catch {
+        this.json(response, 400, { ok: false, error: "an address like https://service.example/" });
+        return;
+      }
+      if (url.protocol !== "https:" || !running.origins.includes(url.origin)) {
+        this.json(response, 403, { ok: false, error: `${url.origin} isn't one of ${running.id}'s declared origins` });
+        return;
+      }
+      this.json(response, 200, await this.pageAsks.ask(url.href, running.origins));
+      return;
+    }
+    // The screen daemon takes each ask, and answers it.
+    if (method === "GET" && path === "/api/builder/page-ask") {
+      this.json(response, 200, { ok: true, ask: await this.pageAsks.take() });
+      return;
+    }
+    const pageAnswer = /^\/api\/builder\/page-ask\/(\d+)$/.exec(path);
+    if (method === "POST" && pageAnswer) {
+      // A page's copy is bigger than any other body the daemon takes.
+      let said: unknown;
+      try {
+        said = JSON.parse((await this.raw(request, ANSWER_MAX)).toString("utf8"));
+      } catch (error) {
+        said = { ok: false, error: `the TV's answer couldn't be read: ${(error as Error).message}` };
+      }
+      const known = this.pageAsks.answer(Number(pageAnswer[1]), said);
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+    // A sentence said to the TV (ADR-023), here from the box itself, such
+    // as agentv selftest; and the TV's own pick and Back.
+    if (method === "GET" && path === "/api/say") {
+      this.json(response, 200, { ok: true, said: this.say.current });
+      return;
+    }
+    if (method === "POST" && path === "/api/say") {
+      await this.sayIt(request, response, "the tv");
+      return;
+    }
+    if (method === "POST" && path === "/api/say/pick") {
+      await this.sayPick(request, response);
+      return;
+    }
+    // Back on the TV, with the listening bar up.
+    if (method === "POST" && path === "/api/say/live/close") {
+      this.listening.close();
+      this.json(response, 200, { ok: true });
+      return;
+    }
+    if (method === "POST" && path === "/api/say/dismiss") {
+      this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
+      return;
+    }
+    // The router alone, with apps it's told of and nothing done, as the box
+    // routes: agentv selftest S7.4 runs the eval set through it.
+    if (method === "POST" && path === "/api/router/route") {
+      const body = (await this.body(request)) as { sentence?: unknown; apps?: unknown } | undefined;
+      const apps = Array.isArray(body?.apps) ? (body.apps as RouterApp[]).slice(0, 100) : [];
+      if (typeof body?.sentence !== "string") {
+        this.json(response, 400, { ok: false, error: "which sentence" });
+        return;
+      }
+      const route = this.options.router ?? ((sentence: string, list: RouterApp[]) => this.boxRoute(sentence, list));
+      this.json(response, 200, { ok: true, routed: await route(body.sentence.slice(0, 300), apps) });
+      return;
+    }
+    // What's new on the household's services, for who's watching (S8.1):
+    // only titles on the apps they can open.
+    if (method === "GET" && path === "/api/whats-new") {
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const fresh = new URL(request.url ?? "/", "http://box").searchParams.get("fresh") === "1";
+      if (fresh) await this.news.feed(viewer.role, true);
+      this.json(response, 200, { ok: true, feed: await this.news.forViewer(viewer.role, apps) });
+      return;
+    }
+    // Whether there's a new episode of a show, for who's watching, as the
+    // router's new_episode does, with nothing routed (S8.2's selftest).
+    if (method === "POST" && path === "/api/whats-new/episode") {
+      const body = (await this.body(request)) as { query?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const query = typeof body?.query === "string" ? body.query.slice(0, 120) : null;
+      this.json(response, 200, { ok: true, answer: await this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, apps) });
+      return;
+    }
+    // A title on New this week, chosen on home: looked up in its app and
+    // played, as a sentence would, and the TV and the phones hear how it went.
+    if (method === "POST" && path === "/api/whats-new/open") {
+      const body = (await this.body(request)) as { id?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const title = (await this.news.forViewer(viewer.role, apps)).titles.find((t) => `tmdb:${t.kind}:${t.id}` === body?.id);
+      if (!title) {
+        this.json(response, 404, { ok: false, error: "that isn't new this week any more" });
+        return;
+      }
+      const route: Route = { ...NONE, intent: "play", query: title.title, kind: title.kind, app: title.app, season: title.season ?? null };
+      this.json(response, 200, { ok: true, said: await this.say.act(route, "the tv", title.title) });
+      return;
+    }
+    // The TV's spoken answers (stage 8): which voice says them, whether
+    // Piper is here, and how the last one went.
+    if (method === "GET" && path === "/api/voice") {
+      this.json(response, 200, { ok: true, ...(await this.voice.state()), last: this.lastSpoken });
+      return;
+    }
+    // A clip, for the TV session to play: here only, on the TV's own port.
+    const voiceClip = /^\/api\/voice\/(\d+)$/.exec(path);
+    if (method === "GET" && voiceClip) {
+      const clip = this.clips.get(Number(voiceClip[1]));
+      if (!clip) {
+        this.json(response, 404, { ok: false, error: "that clip has gone" });
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": clip.wav.length, "Cache-Control": "no-store" });
+      response.end(clip.wav);
+      return;
+    }
+    // TMDB's regions, for Settings → new this week to pick from.
+    if (method === "GET" && path === "/api/whats-new/regions") {
+      const found = await this.news.regions();
+      this.json(response, found.ok ? 200 : 502, found);
+      return;
+    }
+    if (method === "GET" && path === "/api/whats-new/settings") {
+      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      return;
+    }
+    // Settings → new this week: another region, or the time zone's again.
+    if (method === "PUT" && path === "/api/whats-new/settings") {
+      if (!(await this.adult(request, response, "what's new's region"))) return;
+      const body = (await this.body(request)) as { region?: unknown } | undefined;
+      if (body?.region !== null && !(typeof body?.region === "string" && REGION.test(body.region))) {
+        this.json(response, 400, { ok: false, error: "a region is two capital letters, such as NL" });
+        return;
+      }
+      await mkdir(this.options.state, { recursive: true });
+      await writeFile(join(this.options.state, "whats-new-settings.json"), `${JSON.stringify(body.region === null ? {} : { region: body.region })}\n`);
+      this.broadcast("whats-new", {});
+      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      return;
+    }
+    // The TMDB key, kept where only root can read it, or taken off. An
+    // adult's, past the PIN, as the provider key is.
+    if ((method === "PUT" || method === "DELETE") && path === "/api/tmdb-key") {
+      if (!this.guarded(request, response, "the tmdb key") || !(await this.adult(request, response, "the tmdb key"))) return;
+      const body = (method === "PUT" ? await this.body(request) : {}) as { key?: unknown } | undefined;
+      const why = await this.tmdbKey.store(method === "DELETE" ? null : (body?.key ?? ""));
+      if (why) {
+        this.log(`the tmdb key wasn't kept: ${why}`);
+        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        return;
+      }
+      const kept = this.tmdbKey.status().set;
+      this.log(kept ? "a tmdb key is kept, root's alone" : "the tmdb key is off");
+      // Root starts the router's service again with the key: Settings shows
+      // the services once it has it. The old one can answer that it's ready
+      // just before it stops, as it can with a key it had before, so a
+      // router gone by the time the services are asked for is waited for
+      // once more.
+      let state: { error?: string } = {};
+      if (kept) {
+        await this.news.ready();
+        state = await this.whatsNewState();
+        if (state.error === ROUTER_GONE && (await this.news.ready())) state = await this.whatsNewState();
+      } else state = await this.whatsNewState();
+      this.broadcast("whats-new", {});
+      this.json(response, 200, { ok: true, ...state });
+      return;
+    }
+    // A sentence's asks of the TV session: the screen daemon looks things up
+    // in the apps and opens them, as the person.
+    if (method === "GET" && path === "/api/say/ask") {
+      this.json(response, 200, { ok: true, ask: await this.sayAsks.take() });
+      return;
+    }
+    const sayAnswer = /^\/api\/say\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && sayAnswer) {
+      const known = this.sayAsks.answer(Number(sayAnswer[1]), await this.body(request));
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+    // Export's asks of the person's GitHub sign-in: the screen daemon, which
+    // runs as them, takes each and answers it (ADR-045).
+    if (method === "GET" && path === "/api/export/ask") {
+      this.json(response, 200, { ok: true, ask: await this.exportAsks.take() });
+      return;
+    }
+    const exportAnswer = /^\/api\/export\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && exportAnswer) {
+      const known = this.exportAsks.answer(Number(exportAnswer[1]), await this.body(request));
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+    // A made theme's asks: the screen daemon, as the person, hands it to
+    // Omarchy and sets it, or takes it away (S6.4).
+    if (method === "GET" && path === "/api/themes/ask") {
+      this.json(response, 200, { ok: true, ask: await this.themeAsks.take() });
+      return;
+    }
+    const themeAnswer = /^\/api\/themes\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && themeAnswer) {
+      const known = this.themeAsks.answer(Number(themeAnswer[1]), await this.body(request));
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+
+    // A page app's kit call from home, for the app whose frame it came
+    // from: checked against its manifest, then done (ADR-043).
+    if (method === "POST" && path === "/api/kit") {
+      const body = ((await this.body(request)) ?? {}) as { app?: unknown; call?: unknown; args?: unknown };
+      const result = await this.pageApps.call(body.app, body.call, Array.isArray(body.args) ? body.args : []);
+      if (result.error) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.json(response, 200, { ok: true, value: result.value ?? null });
+      return;
+    }
+
+    // The TV session asks before it reads a page app's photos or music.
+    const kit = /^\/api\/apps\/([a-z0-9.-]+)\/kit$/.exec(path);
+    if (method === "GET" && kit) {
+      const why = await this.pageApps.allows(kit[1], url.searchParams.get("call"));
+      this.json(response, why ? 403 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
+
     const launch = /^\/api\/apps\/([a-z0-9.-]+)\/launch$/.exec(path);
     if (method === "GET" && launch) {
       const target = await this.home.launch(launch[1], await this.profiles.active());
@@ -1969,6 +3166,68 @@ export class Daemon {
 
     // The backgrounds (ADR-012, board 13): which source the TV shows, the
     // photos with their credits, and each picture.
+    // Shared to the TV (ADR-050, S5.10): what's here for who's watching, the
+    // one to ask about now, if home's in front with nothing playing, and
+    // which children's profiles take shares.
+    if (method === "GET" && path === "/api/shared") {
+      const waiting = this.idleHome() ? await this.shareWaiting() : null;
+      this.json(response, 200, { ok: true, shares: await this.sharesFor(await this.profiles.active()), ask: waiting?.id ?? null, allowed: await this.shared.allowed() });
+      return;
+    }
+
+    // One of them: its file, Open or Not now, a photo as the background, a
+    // link's app, or taken off the box. Only one who's watching sees.
+    const shared = /^\/api\/shared\/([0-9a-f]{16})(?:\/(file|answer|background|target))?$/.exec(path);
+    if (shared) {
+      const share = (await this.sharesFor(await this.profiles.active())).find((one) => one.id === shared[1]);
+      if (!share) {
+        this.json(response, 404, { ok: false, error: "that share isn't here" });
+        return;
+      }
+      if (method === "GET" && shared[2] === "file") {
+        await this.sendShared(request, response, share.id);
+        return;
+      }
+      // Where a link opens, for the screen daemon: the app that declares its
+      // site, if who's watching may open one, or else a browser page of its
+      // own.
+      if (method === "GET" && shared[2] === "target") {
+        if (share.kind !== "link" || !share.url) {
+          this.json(response, 400, { ok: false, error: "only a link opens in an app" });
+          return;
+        }
+        const app = await this.home.appForUrl(share.url, await this.profiles.active());
+        this.json(response, 200, { ok: true, url: share.url, ...(app ? { app } : {}) });
+        return;
+      }
+      if (method === "POST" && shared[2] === "answer") {
+        await this.shared.answer(share.id);
+        this.broadcast("shared", {});
+        this.json(response, 200, { ok: true });
+        return;
+      }
+      if (method === "POST" && shared[2] === "background") {
+        if (!(await this.adult(request, response, "a shared photo as the background"))) return;
+        const file = await this.shared.file(share.id);
+        const result = share.kind === "photo" && file ? await this.backgrounds.add(await readFile(file.path), { text: share.credit ?? null, from: share.from }) : { error: "only a photo can be the background" };
+        if (!result.state) {
+          this.json(response, 400, { ok: false, error: result.error });
+          return;
+        }
+        this.log("a shared photo is the background");
+        this.broadcast("background", result.state);
+        this.json(response, 200, { ok: true, background: result.item });
+        return;
+      }
+      if (method === "DELETE" && !shared[2]) {
+        if (!(await this.adult(request, response, "taking a share off"))) return;
+        await this.shared.remove(share.id);
+        this.broadcast("shared", {});
+        this.json(response, 200, { ok: true });
+        return;
+      }
+    }
+
     if (method === "GET" && path === "/api/backgrounds") {
       this.json(response, 200, { ok: true, ...(await this.backgrounds.read()) });
       return;
@@ -1995,6 +3254,39 @@ export class Daemon {
       }
       this.broadcast("background", result.state);
       this.json(response, 200, { ok: true, ...result.state });
+      return;
+    }
+
+    // From the screen daemon (ADR-048): the theme Omarchy has now, which of
+    // its backgrounds Omarchy shows, and the pictures, each only once. The
+    // answer says which it should send.
+    if (method === "PUT" && path === "/api/backgrounds/theme") {
+      const result = await this.backgrounds.offerTheme(await this.body(request));
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true, need: result.need });
+      return;
+    }
+
+    const own = /^\/api\/backgrounds\/theme\/([0-9a-f]{16})$/.exec(path);
+    if (method === "POST" && own) {
+      let body: Buffer;
+      try {
+        body = await this.raw(request, MAX_PHOTO);
+      } catch (error) {
+        this.json(response, 413, { ok: false, error: (error as Error).message });
+        return;
+      }
+      const result = await this.backgrounds.addThemeFile(own[1], body);
+      if (!result.state) {
+        this.json(response, 400, { ok: false, error: result.error });
+        return;
+      }
+      this.broadcast("background", result.state);
+      this.json(response, 200, { ok: true });
       return;
     }
 
@@ -2116,17 +3408,43 @@ export class Daemon {
       return;
     }
 
-    // The looks setup and Settings offer (board 12), with the colours their
-    // previews draw, and which one the TV has.
+    // The looks setup and Settings offer (ADR-048, board 12): every theme
+    // Omarchy has, with the colours their previews draw, and which one the
+    // TV has.
     if (method === "GET" && path === "/api/themes") {
-      const looks = await previews(this.options.omarchy ?? process.env.OMARCHY_PATH ?? "/usr/share/omarchy");
-      this.json(response, 200, { ok: true, themes: looks, current: currentTheme(await this.home.theme(), looks) });
+      // Omarchy's, the person's own among them, then each your agent made
+      // that's handed to Omarchy, in place of the person's copy of it.
+      const applied = await this.madeApplied();
+      const made = madeThemes(this.themesDir).filter((theme) => applied[theme.app] && !applied[theme.app]!.error);
+      const looks = [...(await this.looks()).filter((look) => !made.some((one) => one.id === look.id)), ...made];
+      this.json(response, 200, { ok: true, themes: looks, current: currentTheme(await this.home.theme(), looks, await this.home.themeName()) });
       return;
     }
 
-    // From Omarchy's theme-set hook, on this box: the theme's launcher.css.
+    // From the screen daemon, which can read the person's own themes: every
+    // theme Omarchy has, when the TV session starts and whenever one is
+    // installed or removed on the desktop.
+    if (method === "PUT" && path === "/api/themes") {
+      const body = await this.body(request);
+      const looks = cleanFound(body);
+      if (!looks) {
+        this.json(response, 400, { ok: false, error: "a list of omarchy's themes" });
+        return;
+      }
+      // As it came, and checked again each time it's read.
+      await mkdir(this.options.state, { recursive: true });
+      await writeFile(join(this.options.state, "themes.json.next"), JSON.stringify((body as { themes: unknown[] }).themes));
+      await rename(join(this.options.state, "themes.json.next"), join(this.options.state, "themes.json"));
+      this.broadcast("themes", {});
+      this.json(response, 200, { ok: true, count: looks.length });
+      return;
+    }
+
+    // From Omarchy's theme-set hook, on this box: the theme's launcher.css,
+    // and the theme's name.
     if (method === "POST" && path === "/api/theme") {
-      if (!(await this.home.saveTheme(await this.text(request)))) {
+      const name = url.searchParams.get("name");
+      if (!(await this.home.saveTheme(await this.text(request), name && THEME_NAME.test(name) ? name : null))) {
         this.json(response, 400, { ok: false, error: "that theme has no colours the TV can use" });
         return;
       }
@@ -2194,6 +3512,7 @@ async function main(): Promise<void> {
     port,
     lanPort: process.env.AGENTV_LAN_PORT === "off" ? undefined : Number(process.env.AGENTV_LAN_PORT ?? 3001),
     setupPort: process.env.AGENTV_SETUP_PORT === "off" ? undefined : Number(process.env.AGENTV_SETUP_PORT ?? 3002),
+    homeProxyPort: process.env.AGENTV_HOME_PROXY_PORT === "off" ? undefined : Number(process.env.AGENTV_HOME_PROXY_PORT ?? 3005),
   });
   const listening = await daemon.listen();
   const phones = daemon.lanPort ? `, for phones on port ${daemon.lanPort}` : "";

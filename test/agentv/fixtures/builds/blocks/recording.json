@@ -1,0 +1,35 @@
+{
+  "about": "A game build replayed through the real harness: 'a game like tetris', as the stand-in provider gives it. The files beside it are what the agent wrote.",
+  "steps": {
+    "understand": {
+      "calls": [{ "tool": "understood", "args": { "name": "Blocks", "recipe": "game", "says": "A falling-block puzzle for the remote and a gamepad, keeping the best score." } }],
+      "said": "understood",
+      "spent": 0.02
+    },
+    "design": {
+      "calls": [
+        { "tool": "read", "args": { "path": "@kit/kit.md" } },
+        { "tool": "write", "args": { "path": "DESIGN.md", "file": "DESIGN.md" } }
+      ],
+      "said": "wrote DESIGN.md",
+      "spent": 0.08
+    },
+    "packages": { "calls": [{ "tool": "write", "args": { "path": "NOTES.md", "content": "No packages: plain JavaScript and a canvas.\n" } }], "said": "no packages", "spent": 0.02 },
+    "build": {
+      "calls": [
+        { "tool": "list", "args": {} },
+        { "tool": "write", "args": { "path": "app/index.html", "file": "index.html" } },
+        { "tool": "write", "args": { "path": "app/game.js", "file": "game.js" } },
+        { "tool": "write", "args": { "path": "app/style.css", "file": "style.css" } },
+        { "tool": "write", "args": { "path": "app/icon.svg", "file": "icon.svg" } },
+        { "tool": "write", "args": { "path": "app/manifest.json", "file": "manifest.json" } },
+        { "tool": "remove", "args": { "path": "app/main.js" } },
+        { "tool": "check", "args": {} }
+      ],
+      "said": "the game passes the static checks",
+      "spent": 0.4
+    },
+    "tests": { "calls": [{ "tool": "write", "args": { "path": "tests/blocks.test.js", "content": "test(\"ok drops a piece\", async (t) => {\n  await t.press(\"ok\");\n  await t.frames(5);\n  t.ok(true, \"it dropped\");\n});\n" } }], "said": "wrote a test", "spent": 0.05 },
+    "try": { "calls": [{ "tool": "check", "args": {} }], "said": "it passes", "spent": 0.05 }
+  }
+}

@@ -10,9 +10,10 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -136,8 +137,11 @@ class FakeBrowser implements DevTools {
   async pages() {
     return this.pageList;
   }
-  async evaluateIn(targetId: string, expression: string) {
+  // What ran in a page, past whether it plays.
+  ran: string[] = [];
+  async evaluateIn(targetId: string, expression: string): Promise<any> {
     if (expression.includes("some((m) => !m.paused")) return this.playing.get(targetId) ?? false;
+    this.ran.push(expression);
     if (expression === PAUSE && this.playing.get(targetId)) {
       this.playing.set(targetId, false);
       this.heldByHome.add(targetId);
@@ -148,6 +152,11 @@ class FakeBrowser implements DevTools {
       return 1;
     }
     return 0;
+  }
+  // What runs in each page as it loads, in which world.
+  scripts: { targetId: string; source: string; world: string }[] = [];
+  async addScriptIn(targetId: string, source: string, world: string) {
+    this.scripts.push({ targetId, source, world });
   }
   target(url: string): string {
     const page = this.pageList.find((p) => p.url === url);
@@ -301,8 +310,33 @@ class FakeLauncher implements Launcher {
   async idleMinutes() {
     return this.minutes;
   }
+  style: "pictures" | "terminal" = "pictures";
+  async ambientStyle() {
+    return this.style;
+  }
+  screensaver() {
+    return this.launch("screensaver");
+  }
+  // The share browser (ADR-050), and where each shared link opens.
+  shareCdp = new FakeBrowser();
+  shareBrowser(url: string) {
+    const app = this.launch("share", url);
+    app.cdp = this.shareCdp;
+    this.shareCdp.addPage(url);
+    return app;
+  }
+  shares = new Map<string, { url: string; app?: string }>();
+  async shareTarget(id: string) {
+    const found = this.shares.get(id);
+    if (!found) throw new Error("that share isn't here");
+    return found;
+  }
   async toast(text: string) {
     this.toasts.push(text);
+  }
+  listened: string[] = [];
+  async listen(state: string, text: string) {
+    this.listened.push(text ? `${state} ${text}` : state);
   }
   async corner(on: boolean) {
     if (this.cornerFails > 0) {
@@ -621,6 +655,30 @@ test("only web pages open on the TV", async () => {
   const { screen } = await tv();
   const answer = (await screen.handle({ cmd: "open", url: "file:///etc/passwd" })) as { ok: boolean };
   assert.equal(answer.ok, false);
+});
+
+test("ADR-054 the listening bar goes to the overlay over an app in front, and not over home, which draws its own", async () => {
+  const { hypr, launcher, screen } = await tv();
+  assert.deepEqual(await screen.sayLive("words", "play fro"), { ok: true });
+  assert.deepEqual(launcher.listened.at(-1), "closed", "over home, the overlay's bar goes");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  assert.deepEqual(await screen.sayLive("words", "play frozen"), { ok: true });
+  assert.deepEqual(launcher.listened.at(-1), "words play frozen");
+  await screen.sayLive("closed", "");
+  assert.deepEqual(launcher.listened.at(-1), "closed");
+});
+
+test("a sentence's outcome is a toast over an app in front, and not over home", async () => {
+  const { hypr, launcher, screen } = await tv();
+  await screen.sayTell("i didn't get that");
+  assert.deepEqual(launcher.toasts, [], "home shows it itself");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  await screen.sayTell("i didn't get that");
+  assert.deepEqual(launcher.toasts, ["i didn't get that"]);
 });
 
 test("a toast goes to the overlay", async () => {
@@ -1000,6 +1058,17 @@ async function openApp(t: Awaited<ReturnType<typeof tv>>, id: string, address: s
   return t.launcher.browser.target(url);
 }
 
+test("the d-pad's ring and Back go into every web app's page, the first one and the ones after it (ADR-008)", async () => {
+  const t = await tv();
+  const first = await openApp(t, "agentv.tube", "0xb");
+  await sleep(20);
+  const second = await openApp(t, "agentv.player", "0xc");
+  await sleep(20);
+  const remote = t.launcher.browser.scripts.filter((s) => s.source === REMOTE_PAGE && s.world === REMOTE_WORLD).map((s) => s.targetId);
+  assert.deepEqual(remote, [first, second]);
+  assert.deepEqual(t.launcher.homeBrowser.scripts, [], "home moves its own focus");
+});
+
 async function open(screen: Screen): Promise<any[]> {
   return ((await screen.handle({ cmd: "status" })) as any).open;
 }
@@ -1212,6 +1281,162 @@ test("S2.17 with no input and nothing playing, the ambient screen starts, and th
   assert.equal(t.screen.ambient, false);
   assert.equal(t.screen.front()?.address, "0xb");
   assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(false)"));
+});
+
+test("S5.9 with the terminal screensaver chosen, it comes in front on the ambient screen's timing, and a key on it brings back what was there", async () => {
+  const t = await tv({ idleReportMs: 0 });
+  t.launcher.minutes = 0.003;
+  t.launcher.style = "terminal";
+  const page = await openApp(t, "agentv.tube", "0xb");
+  t.launcher.browser.playing.set(page, false);
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  // Home's ambient screen first, behind it, then Omarchy's effect in its foot.
+  assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(true)"));
+  const saver = t.launcher.last("screensaver");
+  t.hypr.open("0xc", saver.pid, "org.agentv.screensaver");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "screensaver");
+  assert.equal(t.hypr.active, "0xc");
+  assert.equal(t.hypr.get("0xc").fullscreen, 2);
+  assert.equal(t.hypr.get("0xb").workspace.name, HELD_WORKSPACE, "the film stays open behind it");
+  // A key on it, from the remote or the phone: it ends, and the film's back.
+  t.hypr.close("0xc");
+  saver.exit();
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.address, "0xb");
+  assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(false)"));
+  assert.ok(t.lines.some((line) => line.includes("the ambient screen ends: a key on the terminal screensaver")));
+  t.screen.stop();
+});
+
+test("S5.9 input on the seat ends the terminal screensaver too, and with the TV off home waits on its plain ambient screen", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 100 });
+  t.launcher.minutes = 0.003;
+  t.launcher.style = "terminal";
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  const saver = t.launcher.last("screensaver");
+  t.hypr.open("0xc", saver.pid, "org.agentv.screensaver");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "screensaver");
+  t.screen.seatIdle(false);
+  await sleep(50);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, false);
+  assert.equal(saver.stopped, true, "the screensaver is stopped");
+  t.hypr.close("0xc");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+
+  // The TV off for a while: home's ambient screen, with no effect running
+  // for no one.
+  const before = t.launcher.started.filter((one) => one.role === "screensaver").length;
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.launcher.started.filter((one) => one.role === "screensaver").length, before);
+  t.screen.stop();
+});
+
+test("S5.10 a shared link with no app of its own opens in the share browser, on its own profile, the next one in the same window, and Back closes it", async () => {
+  const t = await tv();
+  const one = "a".repeat(16);
+  const two = "b".repeat(16);
+  t.launcher.shares.set(one, { url: "https://example.org/watch" });
+  t.launcher.shares.set(two, { url: "https://example.net/read" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: one }), { ok: true });
+  const browser = t.launcher.last("share");
+  assert.equal(t.launcher.started.at(-1)?.url, "https://example.org/watch");
+  assert.equal(t.launcher.started.filter((s) => s.role === "web").length, 0, "never the services' Chromium, with the apps' sign-ins");
+  t.hypr.open("0xd", browser.pid);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "share");
+  // A window it doesn't know is known by its profile too.
+  t.launcher.profiles.set(4242, SHARE_PROFILE);
+  assert.equal(t.screen.roleOf(4242), "share");
+  // The next link takes the same browser's window.
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: two }), { ok: true });
+  assert.equal(t.launcher.started.filter((s) => s.role === "share").length, 1);
+  assert.deepEqual(t.launcher.shareCdp.pageList.map((page) => page.url), ["https://example.net/read"]);
+  // Both pages get the d-pad's ring, without the apps' Back (Q164).
+  await sleep(20);
+  const shared = t.launcher.shareCdp.scripts.filter((s) => s.world === REMOTE_WORLD);
+  assert.equal(shared.length, 2, "the first page and the next one");
+  assert.ok(shared.every((s) => s.source === SHARED_PAGE));
+  // Back closes it, and home's in front again.
+  t.screen.back("down", Date.now());
+  await t.screen.idle();
+  assert.equal(browser.stopped, true);
+  t.hypr.close("0xd");
+  browser.exit();
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: "c".repeat(16) }), { ok: false, error: "that share isn't here" });
+  t.screen.stop();
+});
+
+test("S5.10 a tap on Back closes the share browser, whichever half of it arrives first", async () => {
+  // As with any tap, the release can reach the TV session before its press,
+  // which is then taken for the same tap and goes no further.
+  const t = await tv({ backHoldMs: 80 });
+  t.launcher.shares.set("e".repeat(16), { url: "https://example.org/watch" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: "e".repeat(16) }), { ok: true });
+  const browser = t.launcher.last("share");
+  t.hypr.open("0xd", browser.pid);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "share");
+  const now = Date.now();
+  t.screen.back("up", now - 3);
+  t.screen.back("down", now);
+  await t.screen.idle();
+  assert.equal(browser.stopped, true, t.lines.join("\n"));
+  assert.equal(t.lines.filter((line) => line.includes("the share browser closes")).length, 1);
+  t.screen.stop();
+});
+
+test("S5.10 a shared link opens in the app that declares its site, going there if the app's open already", async () => {
+  const t = await tv();
+  const id = "d".repeat(16);
+  t.launcher.shares.set(id, { url: "https://agentv.tube.example/watch?v=1", app: "agentv.tube" });
+  await openApp(t, "agentv.tube", "0xb");
+  await t.screen.handle({ cmd: "home" });
+  const before = t.launcher.started.length;
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: id }), { ok: true });
+  assert.ok(t.launcher.browser.ran.includes(`location.href = "https://agentv.tube.example/watch?v=1"`));
+  assert.equal(t.screen.front()?.address, "0xb", "the app comes back, at the link");
+  assert.equal(t.launcher.started.length, before, "nothing new started");
+  t.screen.stop();
+});
+
+test("S5.10 a shared video in home's player, or a page in the share browser, plays as far as the ambient screen and the notices go", async () => {
+  const t = await tv();
+  await t.screen.tellContext();
+  // Home's own player.
+  t.launcher.homeBrowser.answer = (expression) => (expression.includes("playing:") ? { playing: true } : undefined);
+  await t.screen.tellContext();
+  t.launcher.homeBrowser.answer = undefined;
+  await t.screen.tellContext();
+  // A page in the share browser.
+  t.launcher.shares.set("e".repeat(16), { url: "https://example.org/video" });
+  await t.screen.fromHome({ cmd: "open-share", share: "e".repeat(16) });
+  t.hypr.open("0xe", t.launcher.last("share").pid);
+  await t.screen.idle();
+  t.launcher.shareCdp.playing.set(t.launcher.shareCdp.target("https://example.org/video"), true);
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts, [
+    { front: "home", playing: false },
+    { front: "home", playing: true },
+    { front: "home", playing: false },
+    { front: "app", playing: true },
+  ]);
+  t.screen.stop();
 });
 
 test("S2.17 something playing, or input again, keeps the ambient screen away", async () => {
@@ -1482,7 +1707,15 @@ test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, 
   await new Promise((resolve) => setTimeout(resolve, 10));
   t.launcher.themeDone("Theme 'nowhere' does not exist");
   assert.deepEqual(await second, { ok: false, error: "Theme 'nowhere' does not exist" });
-  assert.deepEqual(t.launcher.themes, ["gruvbox", "nowhere"]);
+  // A theme installed on Omarchy's desktop can have any name Omarchy allows
+  // (ADR-048), and still nothing hidden or outside the themes folders.
+  const third = t.screen.fromHome({ cmd: "theme-set", theme: "neo_brutal+2.0" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  t.launcher.themeDone(null);
+  assert.deepEqual(await third, { ok: true });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: ".hidden" }), { ok: false, error: "an omarchy theme's name" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: "a/b" }), { ok: false, error: "an omarchy theme's name" });
+  assert.deepEqual(t.launcher.themes, ["gruvbox", "nowhere", "neo_brutal+2.0"]);
   assert.ok(t.lines.some((line) => line.includes("setting omarchy's theme to gruvbox")));
 });
 
@@ -1510,4 +1743,53 @@ test("a folder as the background: the TV session finds it among Music's sources 
   assert.deepEqual(await copying, { ok: true, count: 12 });
   assert.deepEqual(sent, [{ source: { name: "pictures", path: "/home/owner/Pictures" }, grant: "g" }]);
   assert.ok(t.lines.includes("background: 12 pictures from pictures"));
+});
+
+// --- Stage B's look at a signed-in page (ADR-011) -----------------------------
+
+test("ADR-011 stage B reads a service's page out of sight in the services' Chromium, on the app's origins only, and closes it", async () => {
+  const t = await tv();
+  await openApp(t, "stand-in", "0xc");
+  const browser = t.launcher.browser;
+  // The page opens in a window of its own, which the browser hands Hyprland.
+  browser.open = async (url: string) => {
+    const target = browser.addPage(url);
+    t.hypr.open("0xd", t.launcher.last("web").pid);
+    return target;
+  };
+  browser.evaluateIn = async (_target: string, expression: string) => {
+    if (expression === "[location.href, document.readyState]") return ["https://stand-in.test/browse", "complete"];
+    if (expression === "location.href") return "https://stand-in.test/browse";
+    if (expression.includes("const selector = (el)")) return { url: "https://stand-in.test/browse", title: "Stand-in", lines: ['button "R" button[data-testid="profile-menu"]'] };
+    if (expression.includes("cloneNode(true)")) return "<!doctype html>\n<html><body><button data-testid=\"profile-menu\">R</button></body></html>";
+    return 0;
+  };
+  const said = await t.screen.snapshot("https://stand-in.test/browse", ["https://stand-in.test"]);
+  await t.screen.idle();
+  assert.equal(said.ok, true, said.error);
+  assert.deepEqual(said.lines, ['button "R" button[data-testid="profile-menu"]']);
+  assert.match(said.html!, /profile-menu/);
+  assert.equal(t.screen.front()?.address, "0xc", "the app in front stays in front");
+  assert.ok(!t.hypr.onTv().includes("0xd"), "the page it opened stays out of sight");
+  assert.equal(browser.closed.length, 1, "and it's closed again");
+});
+
+test("ADR-011 stage B refuses a page off the app's origins, before it opens or after it went there", async () => {
+  const t = await tv();
+  assert.match((await t.screen.snapshot("https://stand-in.test/", ["https://stand-in.test"])).error!, /the services' Chromium isn't open/);
+  await openApp(t, "stand-in", "0xc");
+  const browser = t.launcher.browser;
+  const opened = browser.pageList.length;
+  assert.match((await t.screen.snapshot("https://elsewhere.test/", ["https://stand-in.test"])).error!, /isn't one of the app's origins/);
+  assert.match((await t.screen.snapshot("http://stand-in.test/", ["https://stand-in.test"])).error!, /isn't one of the app's origins/);
+  assert.equal(browser.pageList.length, opened, "nothing opened");
+  // A page that sends the browser elsewhere is read no further.
+  browser.evaluateIn = async (_target: string, expression: string) => {
+    if (expression === "[location.href, document.readyState]") return ["https://login.elsewhere.test/?next=x", "complete"];
+    if (expression === "location.href") return "https://login.elsewhere.test/?next=x";
+    throw new Error(`it read ${expression.slice(0, 30)}`);
+  };
+  const said = await t.screen.snapshot("https://stand-in.test/account", ["https://stand-in.test"]);
+  assert.equal(said.error, "it went to https://login.elsewhere.test/, which isn't one of the app's origins");
+  assert.equal(browser.closed.length, 1);
 });

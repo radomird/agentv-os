@@ -381,6 +381,48 @@ test("S4.10 every press shows, clicks and buzzes, quick taps each count and neve
 // A real picture for the phone to send: 4 × 4 red pixels, as a PNG.
 const RED_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP4z8AARwzEcQCukw/x0F8jngAAAABJRU5ErkJggg==", "base64");
 
+test("S5.10 the phone shares a link, a photo and a video to the TV, each with who sent it, and says the TV will ask", async () => {
+  const hand = await phone();
+  try {
+    await hand.locator('[data-mode="home"]').tap();
+    await hand.locator('button[data-action="share"]').tap();
+    await hand.waitForSelector(".share-page");
+    for (const action of ["share-link", "share-photo", "share-video"]) assert.equal(await hand.locator(`[data-action="${action}"]`).isDisabled(), true, `nothing for ${action} before it's picked`);
+    const toastSays = (text: RegExp) => hand.waitForFunction((source) => new RegExp(source).test(document.getElementById("toast")?.textContent ?? ""), text.source);
+    // A link.
+    await hand.locator("#share-link").fill("https://www.example.org/watch?v=1");
+    await hand.locator('[data-action="share-link"]').tap();
+    await toastSays(/the tv is asking about the link now/);
+    // A photo, drawn again first, with who took it.
+    await hand.locator("#share-photo").setInputFiles({ name: "red.png", mimeType: "image/png", buffer: RED_PNG });
+    await hand.waitForSelector(".share-page .photo-preview:not(.hidden)");
+    await hand.locator("#share-credit").fill("photo by ana");
+    await hand.locator('[data-action="share-photo"]').tap();
+    await toastSays(/the tv is asking about the photo now/);
+    // A video, as it is, while something plays on the TV: it waits.
+    await post("/api/tv/context", { front: "app", playing: true });
+    const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(4), Buffer.from("isomiso2"), Buffer.alloc(2000, 7)]);
+    await hand.locator("#share-video").setInputFiles({ name: "beach.mp4", mimeType: "video/mp4", buffer: MP4 });
+    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /beach\.mp4, 1 mb/);
+    await hand.locator('[data-action="share-video"]').tap();
+    await toastSays(/the tv has the video\. it'll ask once nothing's playing\./);
+    await post("/api/tv/context", { front: "home", playing: false });
+
+    const shared = await (await fetch(`${url}/api/shared`)).json();
+    assert.deepEqual(shared.shares.slice(0, 3).map((one: { kind: string }) => one.kind), ["video", "photo", "link"]);
+    assert.match(shared.shares[0].from, / on (iphone|android phone|phone)$/);
+    assert.equal(shared.shares[0].title, "beach.mp4");
+    assert.equal(shared.shares[1].credit, "photo by ana");
+    assert.equal(shared.shares[1].type, "image/jpeg", "the phone drew the photo again, so nothing else of the file went along");
+    assert.equal(shared.shares[2].url, "https://www.example.org/watch?v=1");
+    // The oldest it hasn't had an answer for is the one it asks about.
+    assert.equal(shared.ask, shared.shares[2].id);
+    for (const one of shared.shares.slice(0, 3)) await fetch(`${url}/api/shared/${one.id}`, { method: "DELETE" });
+  } finally {
+    await hand.close();
+  }
+});
+
 test("S5.3 a photo shared from the phone becomes the TV's background, with its credit on the ambient screen", async () => {
   const screen = await tv();
   const hand = await phone();

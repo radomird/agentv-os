@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# What broke in a nightly run, for the issue the Nightly opens: for each leg
+# whose image layer failed, the checks that failed and the lines that say
+# why, a "not ok" row or a wait that timed out. A grep for "not ok" alone
+# misses a check that stopped while it waited, as the stable leg's did on
+# 2026-10-31. Each leg's log is in its artifact,
+# image-<leg>-<run>-<attempt>/image.log. Runs on bash 3.2 too.
+#
+# Usage: .github/scripts/nightly-broke <folder with the image artifacts>
+
+# shellcheck disable=SC2016 # the backticks are Markdown, not commands
+set -euo pipefail
+
+dir="${1:?usage: nightly-broke <folder with the image artifacts>}"
+ESC=$(printf '\033')
+found=0
+
+for log in "$dir"/image-*/image.log; do
+  [[ -f $log ]] || continue
+  leg=${log%/image.log}
+  leg=${leg##*/image-}
+  leg=${leg%%-*}
+  clean="$dir/.$leg.log"
+  sed "s/$ESC\[[0-9;]*m//g" "$log" >"$clean"
+
+  # The list the image checks end with, once per pass.
+  failed=$(awk '/AgenTV image check\(s\) failed:$/ { on = 1; next }
+    on && /^  [^ ]+$/ { sub(/^  /, ""); print; next }
+    { on = 0 }' "$clean" | awk '!seen[$0]++')
+  # Each check's lines that say why, under the check they came from.
+  awk '/^==> [A-Za-z0-9._-]+-test\.sh$/ { check = $2; next }
+    /^not ok - / || /^Timed out after / || /^VM exited / { print check "\t" $0 }' "$clean" >"$clean.why"
+  [[ -n $failed || -s $clean.why ]] || continue
+
+  found=1
+  count=$(grep -c . <<<"$failed" || true)
+  if (( count == 1 )); then
+    printf '**%s**: 1 image check failed.\n' "$leg"
+  elif (( count > 1 )); then
+    printf '**%s**: %d image checks failed.\n' "$leg" "$count"
+  else
+    printf '**%s**:\n' "$leg"
+  fi
+  while IFS= read -r check; do
+    [[ -n $check ]] || continue
+    lines=$(awk -F '\t' -v c="$check" '$1 == c { print $2 }' "$clean.why")
+    if [[ -n $lines ]]; then
+      while IFS= read -r line; do
+        printf -- '- `%s`: %s\n' "$check" "$line"
+      done <<<"$lines"
+    else
+      printf -- "- \`%s\`: no line says why; its output is in the run's log\n" "$check"
+    fi
+  done <<<"$failed"
+  # Lines from a check the list doesn't name, if the list was cut short.
+  awk -F '\t' 'NR == FNR { named[$0] = 1; next } !($1 in named) { print "- `" $1 "`: " $2 }' \
+    <(printf '%s\n' "$failed") "$clean.why"
+  echo
+done
+
+if (( ! found )); then
+  echo "No image check said what broke, so the build or the install may have stopped first."
+  echo
+fi

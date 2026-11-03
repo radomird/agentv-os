@@ -39,28 +39,41 @@
 import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
 import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
+import { AskWatch } from "./asks.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
+import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
+import { dropTheme, takeTheme, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
+import { OmarchyThemes } from "./omarchy-themes.ts";
 import { cdpPage } from "./page.ts";
+import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
+import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
+import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput } from "./remote.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import type { SayAnswer, SayAsk } from "./say.ts";
+import { answerSay, sayHosts } from "./say-watch.ts";
+import { VoicePlayer } from "./voice-play.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
+import { THEME_NAME } from "./themes.ts";
 import { tvOn } from "./tv-power.ts";
 
-export type Role = "home" | "web" | "steam";
+export type Role = "home" | "web" | "steam" | "screensaver" | "share";
 
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:agentv-held";
@@ -70,7 +83,13 @@ export const HOME_URL = "http://127.0.0.1:3000/";
 // launcher's start, or the welcome page's.
 export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" in window || "agentvWelcome" in window)`;
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
+// The daemon's filter for home's Chromium (daemon/net-filter.ts).
+export const HOME_PROXY = "http://127.0.0.1:3005";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
+// The share browser's own profile (ADR-050): a link a phone shared opens
+// there when no app declares its site, so it never sees the apps' sign-ins.
+// It's the person's, like Music's state.
+export const SHARE_PROFILE = join(homedir(), ".local", "state", "agentv", "chromium-share");
 // Apps kept open behind home, besides a game (ADR-031).
 export const KEEP_OPEN = 2;
 // How each provider's agent CLI says its version, which its first run asks
@@ -113,13 +132,20 @@ export interface Launcher {
   // running, it hands the window to that one and exits. A browser this
   // starts has a DevTools pipe, and the daemon opens later windows with it.
   web(url: string): App;
+  // The share browser, on a profile of its own, with a DevTools pipe.
+  shareBrowser(url: string): App;
+  // Where a shared link opens: the app that declares its site, or none.
+  shareTarget(id: string): Promise<{ url: string; app?: string }>;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
+  // The listening bar over the app in front (ADR-054), in a state with its
+  // words, or gone with "closed".
+  listen(state: string, text: string): Promise<void>;
   // Tells the overlay whether an app is in front, so the mouse's Home
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
   // What opening an installed app means, from AgenTV's daemon, or null.
-  appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | null>;
+  appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | { runtime: "page"; name?: string } | null>;
   // AgenTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
@@ -150,6 +176,11 @@ export interface Launcher {
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
+  // What the ambient screen shows, from Settings: the backgrounds, or the
+  // terminal screensaver (ADR-049).
+  ambientStyle(): Promise<"pictures" | "terminal">;
+  // The terminal screensaver, Omarchy's effect in a foot of its own.
+  screensaver(): App;
   // Tells AgenTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037).
   tvContext(change: { front: "home" | "app"; playing: boolean }): Promise<void>;
@@ -233,6 +264,11 @@ export interface Sound {
   handle(request: Record<string, unknown>): Promise<object>;
 }
 
+// A page app's photos and music (daemon/page-media.ts, ADR-043).
+export interface PageMediaRequests {
+  handle(app: unknown, call: unknown, args: unknown[]): Promise<{ ok: boolean; value?: unknown; error?: string }>;
+}
+
 // A folder's pictures handed to the daemon as the background
 // (picture-folder.ts, ADR-012).
 export interface Pictures {
@@ -246,6 +282,7 @@ interface Options {
   music?: Music;
   sound?: Sound;
   pictures?: Pictures;
+  pageMedia?: PageMediaRequests;
   signIn?: SignIn;
   profiles?: ProfilesForViewer;
   now?: () => number;
@@ -289,6 +326,7 @@ export class Screen {
   private playback?: Playback;
   private music?: Music;
   private pictures?: Pictures;
+  private pageMedia?: PageMediaRequests;
   private sound?: Sound;
   private signIn?: SignIn;
   private profiles?: ProfilesForViewer;
@@ -302,9 +340,14 @@ export class Screen {
   private apps = new Map<Role, App>();
   private opens: Open[] = [];
   private want: { role: Role; until: number; app?: string } | null = null;
+  // Until when a services' window that opens is stage B's look at a page,
+  // which stays out of sight (snapshot).
+  private quietUntil = 0;
   private backHoldMs: number;
   private backDown = 0;
   private backUp = 0;
+  // A press of Back has come and its release hasn't yet.
+  private backPressed = false;
   private backTimer: ReturnType<typeof setTimeout> | null = null;
   // The ambient screen, and the window to go back to after it.
   ambient = false;
@@ -352,6 +395,7 @@ export class Screen {
     this.playback = options.playback;
     this.music = options.music;
     this.pictures = options.pictures;
+    this.pageMedia = options.pageMedia;
     this.sound = options.sound;
     this.signIn = options.signIn;
     this.profiles = options.profiles;
@@ -416,7 +460,9 @@ export class Screen {
     try {
       const front = this.front();
       const app = Boolean(front && front.role !== "home") && !this.ambient;
-      let playing = app ? await this.playing() : false;
+      // Home pauses an app it comes in front of, so with home in front this
+      // is a shared video in home's own player (ADR-050).
+      let playing = this.ambient ? false : await this.playing();
       if (!playing && this.music) {
         const now = (await this.music.handle({ op: "now" }).catch(() => null)) as { now?: { playing?: boolean } | null } | null;
         playing = now?.now?.playing === true;
@@ -508,6 +554,7 @@ export class Screen {
     const profile = this.launcher.profile(pid);
     if (profile === HOME_PROFILE) return "home";
     if (profile === SERVICES_PROFILE) return "web";
+    if (profile === SHARE_PROFILE) return "share";
     return null;
   }
 
@@ -544,8 +591,9 @@ export class Screen {
     const window = this.remember(client);
     const front = this.front();
     const wanted = this.want && window.role === this.want.role && this.now() <= this.want.until;
+    const quiet = !wanted && window.role === "web" && this.now() <= this.quietUntil;
 
-    if (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front)) {
+    if (!quiet && (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front))) {
       const app = wanted ? this.want?.app : undefined;
       if (wanted) this.want = null;
       this.log(`in front: ${describe(window)}`);
@@ -579,6 +627,11 @@ export class Screen {
       }
       this.opens = this.opens.filter((o) => o.address !== address);
       this.running();
+    }
+    // The terminal screensaver ended on a key: back to what was there.
+    if (window?.role === "screensaver") {
+      if (this.ambient) await this.endAmbient("a key on the terminal screensaver");
+      return;
     }
     if (!window || !wasFront || this.ending) return;
 
@@ -780,6 +833,8 @@ export class Screen {
       return { ok: false, error: "that needs the pin", pin: true };
     }
     switch (request?.cmd) {
+      case "open-share":
+        return this.openShare(String(request.share ?? ""));
       case "open-app": {
         const id = String(request.app ?? "");
         // An item too, such as one to continue: the app opens it with its own
@@ -799,6 +854,8 @@ export class Screen {
           if (item) void Promise.resolve(ready).then(() => this.playback?.play?.(id, item));
           return reply;
         }
+        // A page app opens on home, in its frame (ADR-043).
+        if (target.runtime === "page") return this.openPage(id);
         if (target.exec[0] === "steam") return this.openSteam(id);
         return { ok: false, error: "that app can't be opened from the tv yet" };
       }
@@ -815,6 +872,11 @@ export class Screen {
       // The Music page (ADR-017).
       case "music":
         return this.musicRequest(request);
+      // A page app's photos or music, read-only (ADR-043). The daemon says
+      // whether its manifest allows each call.
+      case "kit":
+        if (!this.pageMedia) return { ok: false, error: "photos and music aren't here" };
+        return this.pageMedia.handle(request.app, request.call, Array.isArray(request.args) ? request.args : []);
       // A folder, a USB drive or a share as the background (ADR-012).
       case "background-folder":
         return this.backgroundFolder(String(request.source ?? ""), typeof request.grant === "string" ? request.grant : undefined);
@@ -891,7 +953,7 @@ export class Screen {
   private themeRun: string | null = null;
 
   async setTheme(theme: unknown): Promise<object> {
-    if (typeof theme !== "string" || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(theme)) return { ok: false, error: "an omarchy theme's name" };
+    if (typeof theme !== "string" || !THEME_NAME.test(theme)) return { ok: false, error: "an omarchy theme's name" };
     if (this.themeRun) return { ok: false, error: `${this.themeRun.replace(/-/g, " ")} is still being set` };
     this.themeRun = theme;
     this.log(`setting omarchy's theme to ${theme}`);
@@ -942,6 +1004,53 @@ export class Screen {
     return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
   }
 
+  // What a sentence said to the TV opens (daemon/say.ts): an app the way
+  // its tile opens it, at an item where there is one, or Music's own page
+  // once it plays.
+  sayOpen(app: string, item?: Item): Promise<{ ok?: boolean; error?: string }> {
+    if (app === MUSIC) return this.goHome("music", "a sentence") as Promise<{ ok?: boolean; error?: string }>;
+    return this.fromHome({ cmd: "open-app", app, ...(item ? { item } : {}) }, true) as Promise<{ ok?: boolean; error?: string }>;
+  }
+
+  // The listening bar over the app in front (ADR-054). With home in front,
+  // the launcher draws its own, so the overlay's goes.
+  async sayLive(state: string, text: string): Promise<{ ok?: boolean; error?: string }> {
+    try {
+      if (this.appInFront()) await this.launcher.listen(state, text);
+      else await this.launcher.listen("closed", "");
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
+
+  // A sentence's outcome over the app in front, as a toast. With home in
+  // front, the launcher shows it itself.
+  async sayTell(text: string): Promise<{ ok?: boolean; error?: string }> {
+    if (!this.appInFront()) return { ok: true };
+    return (await this.toast(text)) as { ok?: boolean; error?: string };
+  }
+
+  // An app's window in front, not home's, and not the ambient screen.
+  private appInFront(): boolean {
+    const front = this.front();
+    return Boolean(front && front.role !== "home") && !this.ambient;
+  }
+
+  // A web app's page while it's open behind home, so its search can use it.
+  pageFor(id: string): PageBroker | undefined {
+    const entry = this.opens.find((o) => o.id === id && o.target);
+    return entry ? this.pageOf(entry) : undefined;
+  }
+
+  // A page app (ADR-043): home in front, then its frame there.
+  async openPage(id: string): Promise<object> {
+    await this.home("a page app");
+    const reply = (await this.inHome(`(() => { const open = window.agentvPage; if (open) open(${JSON.stringify(id)}); return { went: !!open }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    if (!reply.ok) return reply;
+    return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
+  }
+
   // Home, from any input (ADR-031): the app in front pauses and goes out of
   // sight, and the home screen comes to the front. With the home screen
   // already there, it goes back to its own home page. A game's guide button
@@ -978,14 +1087,27 @@ export class Screen {
   // tap.
   back(edge: "down" | "up", at: number): object {
     if (edge === "up") {
+      // A release that came before its press: the press is then taken for
+      // the same tap, and goes no further.
+      const first = !this.backPressed && at > this.backUp + BACK_SLACK_MS;
+      this.backPressed = false;
       this.backUp = Math.max(this.backUp, at);
       if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
       }
+      if (first && this.front()?.role === "share") void this.closeShare("back");
       return { ok: true };
     }
     if (at <= this.backUp + BACK_SLACK_MS || at <= this.backDown) return { ok: true };
+    this.backPressed = true;
+    // A shared link's browser page closes on Back (ADR-050), on whichever
+    // half of the tap comes first.
+    if (this.front()?.role === "share") {
+      this.backDown = at;
+      void this.closeShare("back");
+      return { ok: true };
+    }
     this.backDown = at;
     if (this.backTimer) clearTimeout(this.backTimer);
     this.backTimer = setTimeout(
@@ -1160,20 +1282,99 @@ export class Screen {
   // Whether an open app's page is playing.
   private async playing(): Promise<boolean> {
     const cdp = this.apps.get("web")?.cdp;
-    if (!cdp) return false;
-    for (const entry of this.opens.filter((o) => o.target)) {
-      const answer = await Promise.race([
-        cdp.evaluateIn(entry.target!, `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`).catch(() => false),
-        sleep(500).then(() => false),
-      ]);
+    for (const entry of cdp ? this.opens.filter((o) => o.target) : []) {
+      const answer = await Promise.race([cdp!.evaluateIn(entry.target!, MEDIA_PLAYING).catch(() => false), sleep(500).then(() => false)]);
       if (answer === true) return true;
+    }
+    // A shared link's page in the share browser, and a shared video in
+    // home's own player (ADR-050).
+    const share = this.apps.get("share")?.cdp;
+    for (const page of share ? await share.pages().catch(() => []) : []) {
+      const answer = await Promise.race([share!.evaluateIn(page.targetId, MEDIA_PLAYING).catch(() => false), sleep(500).then(() => false)]);
+      if (answer === true) return true;
+    }
+    if (this.apps.has("home")) {
+      const home = (await Promise.race([this.inHome(`({ playing: ${MEDIA_PLAYING} })`), sleep(500).then(() => ({}))])) as { playing?: boolean };
+      if (home.playing === true) return true;
     }
     return false;
   }
 
+  // --- Shared to the TV (ADR-050, S5.10) ------------------------------------
+
+  // A link a phone shared, from its notice or Apps → Shared: in the app that
+  // declares its site, if who's watching may open one, or else in the share
+  // browser, on a profile of its own, so it never sees the apps' sign-ins.
+  async openShare(id: string): Promise<object> {
+    if (!/^[0-9a-f]{16}$/.test(id)) return { ok: false, error: "which share" };
+    let target: { url: string; app?: string };
+    try {
+      target = await this.launcher.shareTarget(id);
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+    if (!/^https?:/.test(target.url)) return { ok: false, error: "only a web page opens on the tv" };
+    if (target.app) {
+      // Open already: it goes to the link, and comes back where it was.
+      const open = this.opens.find((o) => o.id === target.app && o.target && o.address && this.windows.has(o.address));
+      const cdp = this.apps.get("web")?.cdp;
+      if (open && cdp) await cdp.evaluateIn(open.target!, `location.href = ${JSON.stringify(target.url)}`).catch(() => {});
+      this.log(`a shared link opens in ${target.app}`);
+      return this.openWeb(target.url, target.app);
+    }
+    return this.queue(async () => {
+      // One shared page at a time: the newest takes the browser's window.
+      const running = this.apps.get("share");
+      this.want = { role: "share", until: this.now() + 30_000 };
+      if (running?.cdp) {
+        const before = [...(await running.cdp.pages().catch(() => []))];
+        const opened = await running.cdp.open(target.url).catch(() => undefined);
+        if (opened) {
+          for (const page of before) if (page.targetId !== opened) await running.cdp.close(page.targetId).catch(() => {});
+          await this.remotePage(running.cdp, opened, SHARED_PAGE);
+          this.log("a shared link opens in the share browser");
+          return;
+        }
+      }
+      running?.stop();
+      const app = this.launcher.shareBrowser(target.url);
+      this.apps.set("share", app);
+      app.onExit(() => {
+        if (this.apps.get("share") === app) this.apps.delete("share");
+      });
+      // The d-pad's ring in the page it opened with.
+      if (app.cdp) {
+        const cdp = app.cdp;
+        void (async () => {
+          for (let tries = 0; tries < 50; tries++) {
+            const pages = await cdp.pages().catch(() => []);
+            if (pages.length > 0) return this.remotePage(cdp, pages[0].targetId, SHARED_PAGE);
+            await sleep(100);
+          }
+        })();
+      }
+      this.log("a shared link opens in the share browser");
+    }).then(() => ({ ok: true }));
+  }
+
+  // The share browser closes, and home comes back.
+  private closeShare(why: string): Promise<void> {
+    return this.queue(async () => {
+      const app = this.apps.get("share");
+      if (!app) return;
+      this.log(`the share browser closes: ${why}`);
+      if (this.want?.role === "share") this.want = null;
+      app.stop();
+      const home = this.homeWindow();
+      if (home) await this.toFront(home.address);
+    });
+  }
+
   // The home screen in front on its ambient screen. What was in front stays
-  // open behind it, unless the TV went off and it closed.
-  showAmbient(): Promise<object> {
+  // open behind it, unless the TV went off and it closed. With the terminal
+  // screensaver chosen in Settings, it comes in front of that, except once
+  // the TV is off, when there's no one to see it (ADR-049).
+  showAmbient(terminal = true): Promise<object> {
     return this.queue(async () => {
       if (this.ambient) return;
       const front = this.front();
@@ -1184,20 +1385,46 @@ export class Screen {
       this.ambientAt = this.now();
       this.log(`the ambient screen${this.ambientFrom ? `, over ${this.ambientFrom}` : ""}`);
       await this.inHome("window.agentvAmbient?.(true)");
+      if (terminal && !this.tvOff && (await this.launcher.ambientStyle().catch(() => "pictures" as const)) === "terminal") this.startScreensaver();
     }).then(() => ({ ok: true }));
+  }
+
+  // Omarchy's terminal screensaver, in front once its window opens. It ends
+  // on a key, and its window closing ends the ambient screen.
+  private startScreensaver(): void {
+    if (this.apps.has("screensaver")) return;
+    try {
+      const app = this.launcher.screensaver();
+      this.apps.set("screensaver", app);
+      app.onExit(() => {
+        if (this.apps.get("screensaver") === app) this.apps.delete("screensaver");
+      });
+      this.want = { role: "screensaver", until: this.now() + 15_000 };
+      this.log(`the terminal screensaver (pid ${app.pid})`);
+    } catch (error) {
+      this.log(`no terminal screensaver: ${(error as Error).message}`);
+    }
   }
 
   // A key on the ambient screen: back to what was in front, or home.
   wake(why = "asked"): Promise<object> {
-    return this.queue(async () => {
-      if (!this.ambient) return;
-      this.ambient = false;
-      this.log(`the ambient screen ends: ${why}`);
-      const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
-      this.ambientFrom = null;
-      await this.inHome("window.agentvAmbient?.(false)");
-      if (back) await this.toFront(back);
-    }).then(() => ({ ok: true }));
+    return this.queue(() => this.endAmbient(why)).then(() => ({ ok: true }));
+  }
+
+  private async endAmbient(why: string): Promise<void> {
+    if (!this.ambient) return;
+    this.ambient = false;
+    this.log(`the ambient screen ends: ${why}`);
+    const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
+    this.ambientFrom = null;
+    if (this.want?.role === "screensaver") this.want = null;
+    this.apps.get("screensaver")?.stop();
+    await this.inHome("window.agentvAmbient?.(false)");
+    if (back) await this.toFront(back);
+    else if (this.front()?.role === "screensaver") {
+      const home = this.homeWindow();
+      if (home) await this.toFront(home.address);
+    }
   }
 
   private pollTv(): void {
@@ -1238,11 +1465,13 @@ export class Screen {
       if (!this.tvOff) return;
       this.log("the TV has been off for a while; closing every app");
       for (const entry of [...this.opens]) await this.closeOpen(entry);
+      // And a shared link's page.
+      this.apps.get("share")?.stop();
       this.ambient = false;
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
       await this.launcher.lock().catch(() => {});
-    }).then(() => void this.showAmbient());
+    }).then(() => void this.showAmbient(false));
   }
 
   openWeb(url: string, id = url): Promise<object> {
@@ -1258,6 +1487,7 @@ export class Screen {
       const running = this.apps.get("web");
       if (running?.cdp) {
         entry.target = await running.cdp.open(url).catch(() => undefined);
+        if (entry.target) void this.remotePage(running.cdp, entry.target);
       }
       if (!entry.target) {
         const app = this.launcher.web(url);
@@ -1425,16 +1655,71 @@ export class Screen {
     );
   }
 
+  // Stage B's look at a page of a service the household signed in to
+  // (ADR-011, daemon/page-asks.ts): opened out of sight in the services'
+  // Chromium, read only while it's on the app's declared origins, and
+  // closed. The build gets the page's structure and a copy without its
+  // scripts, never the browser.
+  async snapshot(url: string, origins: string[]): Promise<PageAnswer> {
+    const on = (address: string) => {
+      try {
+        const at = new URL(address);
+        return at.protocol === "https:" && origins.includes(at.origin);
+      } catch {
+        return false;
+      }
+    };
+    if (!on(url)) return { ok: false, error: "that isn't one of the app's origins" };
+    const cdp = this.apps.get("web")?.cdp;
+    if (!cdp) return { ok: false, error: "the services' Chromium isn't open: open the app on the TV once, then try again" };
+    this.quietUntil = this.now() + 15_000;
+    let target: string | undefined;
+    try {
+      target = await cdp.open(url);
+      const until = this.now() + 30_000;
+      for (;;) {
+        const [at, ready] = (await cdp.evaluateIn(target, "[location.href, document.readyState]").catch(() => ["about:blank", ""])) as [string, string];
+        if (at !== "about:blank" && ready === "complete") break;
+        if (this.now() > until) break;
+        await new Promise((done) => setTimeout(done, 250));
+      }
+      // A page that draws itself once it's loaded gets a moment to.
+      await new Promise((done) => setTimeout(done, 1500));
+      const at = String(await cdp.evaluateIn(target, "location.href"));
+      if (!on(at)) return { ok: false, error: `it went to ${at.replace(/[?#].*$/, "")}, which isn't one of the app's origins` };
+      // The builder's own reading of a page, as its look reads one, loaded
+      // only when a build asks, so the TV session starts without it.
+      const { OUTLINE, SNAPSHOT } = await import("../builder/browse.ts");
+      const outline = (await cdp.evaluateIn(target, OUTLINE)) as { url: string; title: string; lines: string[] };
+      const html = String(await cdp.evaluateIn(target, SNAPSHOT));
+      this.log(`stage B looked at a page of ${new URL(at).origin}`);
+      return { ok: true, url: outline.url, title: outline.title, lines: outline.lines, html };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    } finally {
+      this.quietUntil = 0;
+      if (target) await cdp.close(target).catch(() => {});
+    }
+  }
+
   // The page a new services' Chromium opened with.
   private async firstPage(cdp: DevTools, entry: Open): Promise<void> {
     for (let tries = 0; tries < 50 && !entry.target; tries++) {
       const pages = await cdp.pages().catch(() => []);
       if (pages.length > 0) {
         entry.target = pages[0].targetId;
+        await this.remotePage(cdp, entry.target);
         return;
       }
       await sleep(100);
     }
+  }
+
+  // The phone's d-pad in a web app's page, for a page made for a desktop:
+  // a ring on what the arrows focus, and Back (daemon/remote-page.ts). A
+  // shared link's page gets SHARED_PAGE, with no Back of its own.
+  private async remotePage(cdp: DevTools, target: string, source = REMOTE_PAGE): Promise<void> {
+    await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
   }
 
   openSteam(id = "steam"): Promise<object> {
@@ -1732,6 +2017,9 @@ function chromium(): string {
   return existsSync("/usr/lib/chromium/chromium") ? "/usr/lib/chromium/chromium" : "chromium";
 }
 
+// Whether an audio or video element in a page plays.
+const MEDIA_PLAYING = `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`;
+
 const CHROMIUM_FLAGS = [
   "--ozone-platform=wayland",
   "--kiosk",
@@ -1770,6 +2058,20 @@ function track(role: Role, child: ChildProcess, group = false, cdp?: CdpPipe): A
   };
 }
 
+// The listening bar's look, as home's: the theme's background, words and
+// accent from its CSS, and whether reduce motion is on, read again at most
+// every 10 s.
+let look: { at: number; args: string[] } | null = null;
+async function barLook(): Promise<string[]> {
+  if (look && Date.now() - look.at < 10_000) return look.args;
+  const css = await fetch(`${HOME_URL}api/theme.css`, { signal: AbortSignal.timeout(3000) }).then((r) => r.text(), () => "");
+  const home = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json(), () => ({}));
+  const colour = (name: string, fallback: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{3,8})\\b`).exec(css)?.[1] ?? fallback;
+  const args = [colour("background", "#1a1b26"), colour("foreground", "#a9b1d6"), colour("accent", "#7aa2f7"), (home as { settings?: { reduceMotion?: boolean } }).settings?.reduceMotion ? "true" : "false"];
+  look = { at: Date.now(), args };
+  return args;
+}
+
 export const launcher: Launcher = {
   async homeReady() {
     for (let tries = 0; tries < 60; tries++) {
@@ -1788,7 +2090,10 @@ export const launcher: Launcher = {
     const child = spawn(
       chromium(),
       // The home screen's sounds play without waiting for a first key press.
-      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe", "--autoplay-policy=no-user-gesture-required"],
+      // Home reaches the internet only through the daemon's filter, which
+      // lets through the origins page apps declared (ADR-043). This box's own
+      // addresses, the daemon and the page apps' origins, stay direct.
+      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe", "--autoplay-policy=no-user-gesture-required", `--proxy-server=${HOME_PROXY}`],
       { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] },
     );
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
@@ -1800,11 +2105,31 @@ export const launcher: Launcher = {
     // translate or site notifications over the TV (ADR-032).
     const prefs = spawnSync("agentv-chromium-prefs", [SERVICES_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
     if (prefs.status !== 0) console.log(`couldn't turn off the services' Chromium's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    // Arrows the page doesn't take move its focus (daemon/remote-page.ts).
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
     return track("web", child, false, cdp);
+  },
+
+  shareBrowser(url) {
+    // Its own prompts off too, as in the services' profile.
+    const prefs = spawnSync("agentv-chromium-prefs", [SHARE_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
+    if (prefs.status !== 0) console.log(`couldn't turn off the share browser's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
+    // The d-pad moves through a shared page as through an app's.
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+      stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
+    });
+    const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
+    return track("share", child, false, cdp);
+  },
+
+  async shareTarget(id) {
+    const response = await fetch(`${HOME_URL}api/shared/${encodeURIComponent(id)}/target`, { signal: AbortSignal.timeout(5000) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || typeof data.url !== "string") throw new Error(data.error ?? "that share isn't here");
+    return { url: data.url, ...(typeof data.app === "string" ? { app: data.app } : {}) };
   },
 
   steam(mode) {
@@ -1861,6 +2186,17 @@ export const launcher: Launcher = {
     });
   },
 
+  async listen(state, text) {
+    const args = state === "closed" ? ["listen", "hide"] : ["listen", "show", state, text, ...(await barLook())];
+    return new Promise((resolve, reject) => {
+      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
+    });
+  },
+
   toast(text) {
     return new Promise((resolve, reject) => {
       execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "toast", "show", text], { timeout: 5000 }, (error, stdout) => {
@@ -1878,6 +2214,7 @@ export const launcher: Launcher = {
     const name = typeof target.name === "string" ? target.name : undefined;
     if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url, name };
     if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String), name };
+    if (target.runtime === "page") return { runtime: "page", name };
     return null;
   },
 
@@ -2016,6 +2353,22 @@ export const launcher: Launcher = {
     const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
     const minutes = (await response.json())?.settings?.idleMinutes;
     return typeof minutes === "number" && minutes > 0 ? minutes : 10;
+  },
+
+  async ambientStyle() {
+    const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
+    return (await response.json())?.settings?.ambient === "terminal" ? "terminal" : "pictures";
+  },
+
+  screensaver() {
+    // In foot, with Omarchy's own settings for its screensaver, as a window
+    // the screen daemon knows by the process it started.
+    const omarchy = process.env.OMARCHY_PATH || "/usr/share/omarchy";
+    const child = spawn("foot", [`--config=${join(omarchy, "default", "foot", "screensaver.ini")}`, "--app-id=org.agentv.screensaver", "agentv-screensaver"], {
+      stdio: ["ignore", "ignore", "inherit"],
+      env: { ...process.env, OMARCHY_PATH: omarchy },
+    });
+    return track("screensaver", child);
   },
 
   // Each kill stops one instance and returns once it's gone, as Omarchy's
@@ -2200,12 +2553,45 @@ export function musicApp(home = HOME_URL, log: (line: string) => void = console.
   });
 }
 
+// Page apps' photos and music (ADR-043): Music's sources and library, here
+// in the TV session, with the daemon asked about each call first.
+function pageMedia(home = HOME_URL): PageMedia {
+  return new PageMedia({
+    storage: new Storage(),
+    library: new MusicLibrary(),
+    async allowed(app, call) {
+      const response = await fetch(`${home}api/apps/${encodeURIComponent(app)}/kit?call=${encodeURIComponent(call)}`, { signal: AbortSignal.timeout(5000) });
+      if (response.ok) return null;
+      return (await response.json().catch(() => ({}))).error ?? "that isn't allowed";
+    },
+  });
+}
+
+// A made theme's ask, as this person: the theme copied into Omarchy's
+// themes as theirs and set, or taken away again (daemon/made-themes.ts).
+// Another theme still being set is waited for.
+export async function answerTheme(ask: ThemeAsk, screen: { setTheme(theme: unknown): Promise<object> }, o: { home?: string; omarchy?: string; themes?: string; waitMs?: number } = {}): Promise<ThemeAnswer> {
+  const home = o.home ?? homedir();
+  if (ask.kind === "drop") {
+    dropTheme({ id: ask.id, home });
+    return { ok: true };
+  }
+  const took = takeTheme({ themes: o.themes ?? THEMES, id: ask.id, home, omarchy: o.omarchy ?? (process.env.OMARCHY_PATH || "/usr/share/omarchy") });
+  if (!took.name) return { ok: false, error: took.error };
+  for (let tries = 0; ; tries++) {
+    const set = (await screen.setTheme(took.name)) as { ok: boolean; error?: string };
+    if (set.ok) return { ok: true, name: took.name };
+    if (!/still being set/.test(set.error ?? "") || tries >= 30) return { ok: false, error: set.error ?? "omarchy didn't set it" };
+    await new Promise((done) => setTimeout(done, o.waitMs ?? 2000));
+  }
+}
+
 async function main(): Promise<void> {
   const music = musicApp();
   // Full volume on each new default output, or the level Settings chose.
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), signIn: signInWatch(), profiles: serviceProfiles() });
+  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN.
   new RemoteInput({
@@ -2214,9 +2600,42 @@ async function main(): Promise<void> {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
     },
   }).start();
+  // Stage B's asks to see a service's signed-in pages, from the builder.
+  new PageAskWatch({ url: HOME_URL, snapshot: (url, origins) => screen.snapshot(url, origins) }).start();
+  // Export's push to a repo of the person's own (ADR-045): this runs as
+  // them, so their own GitHub sign-in pushes it, and nothing else holds it.
+  new AskWatch<GitHubAsk, GitHubAnswer>({
+    url: HOME_URL,
+    path: "api/export/ask",
+    what: "Export's push",
+    handle: answerGitHub({ userAgent: userAgent() }),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // A theme your agent made (S6.4): a theme of this person's in Omarchy now,
+  // and set, so the TV and the desktop change together.
+  new AskWatch<ThemeAsk, ThemeAnswer>({
+    url: HOME_URL,
+    path: "api/themes/ask",
+    what: "made themes",
+    handle: (ask) => answerTheme(ask, screen),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // A sentence said to the TV (ADR-023): X looked up in the apps who's
+  // watching can open, and what was chosen opened, as the person. And what
+  // came of it said aloud (stage 8), through the box's sound output.
+  const voice = new VoicePlayer({ home: HOME_URL });
+  new AskWatch<SayAsk, SayAnswer>({
+    url: HOME_URL,
+    path: "api/say/ask",
+    what: "a sentence",
+    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
+  // Every theme Omarchy has, the person's own included, for Look (ADR-048).
+  void new OmarchyThemes({ omarchy: process.env.OMARCHY_PATH || "/usr/share/omarchy", home: homedir(), daemon: HOME_URL, log: (line) => console.log(line) }).start();
   // When Hyprland goes, so does the TV session, and this with it.
   await screen.start(() => {
     console.log("Hyprland went away; stopping");

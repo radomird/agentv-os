@@ -22,6 +22,26 @@ function box(el: Element): Box {
   return { left: r.left / z, top: r.top / z, right: r.right / z, bottom: r.bottom / z, width: r.width / z, height: r.height / z };
 }
 
+// Where an element is as the arrows see it from the focused one. In a list
+// that scrolls (data-scroll) and doesn't hold the focus, only the part in
+// sight counts, and an element scrolled out of it isn't there: the list's
+// hidden rows run on under the buttons below it. In the list that holds the
+// focus, every row counts, so the arrows go on to the next and it scrolls in.
+function seen(el: HTMLElement, from: HTMLElement): Box | null {
+  let at = box(el);
+  for (let list = el.parentElement?.closest<HTMLElement>("[data-scroll]"); list; list = list.parentElement?.closest<HTMLElement>("[data-scroll]")) {
+    if (list.contains(from)) continue;
+    const clip = box(list);
+    const left = Math.max(at.left, clip.left);
+    const top = Math.max(at.top, clip.top);
+    const right = Math.min(at.right, clip.right);
+    const bottom = Math.min(at.bottom, clip.bottom);
+    if (right - left < 1 || bottom - top < 1) return null;
+    at = { left, top, right, bottom, width: right - left, height: bottom - top };
+  }
+  return at;
+}
+
 // How far a candidate is in a direction: the gap along it, plus twice how far
 // off to the side it is when the two don't line up. Null when it isn't that way.
 export function distance(from: Box, to: Box, direction: Direction): number | null {
@@ -74,6 +94,10 @@ export class Focus {
     // A text field takes the keys while it has the focus, and lets go after.
     if (this.current instanceof HTMLInputElement) this.current.blur();
     this.current = el;
+    // A list longer than its box, marked data-scroll, such as every theme
+    // in Look (ADR-048), scrolls the element into view first, at once, so
+    // the ring lands where it is.
+    if (el.parentElement?.closest("[data-scroll]")) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
     this.place(el, from !== undefined, from);
     el.classList.add("focused");
     if (el instanceof HTMLInputElement) el.focus({ preventScroll: true });
@@ -94,7 +118,9 @@ export class Focus {
     let bestScore = Infinity;
     for (const el of this.focusables()) {
       if (el === current) continue;
-      const score = distance(from, box(el), direction);
+      const to = seen(el, current);
+      if (!to) continue;
+      const score = distance(from, to, direction);
       if (score !== null && score < bestScore) {
         best = el;
         bestScore = score;

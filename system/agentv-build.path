@@ -1,0 +1,12 @@
+# A build the daemon wants (ADR-011): when it leaves start.json or stop.json
+# in its private state, agentv-build.service hands it over as root.
+
+[Unit]
+Description=AgenTV build hand-over
+
+[Path]
+PathExistsGlob=/var/lib/private/agentv/daemon/build-drop/*.json
+Unit=agentv-build.service
+
+[Install]
+WantedBy=paths.target

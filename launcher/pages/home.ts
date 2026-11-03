@@ -13,12 +13,17 @@ import { clock, h, monogram, tint } from "../dom.ts";
 import { span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
+import { buildNotice, homeBuildTile } from "./build.ts";
+import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
 
 export const CLOCK = "agentv.clock";
 export const WEATHER = "agentv.weather";
 export const MUSIC = "agentv.music";
+// New this week, home's top rail for streaming (S8.1): TMDB's, drawn by the
+// daemon, with posters.
+export const NEW = "agentv.new";
 
 // How many entries each size fits, in order (ADR-016): small has room for
 // one line under its headline, medium for a few columns, large for a week.
@@ -126,8 +131,13 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
           ),
         )
       : null;
-  const entries = (data.entries ?? []).slice(0, FITS[size]);
+  // New this week shows posters in a row: four on the large tile, as on the
+  // canvas (board 14), and three on the medium one, with TMDB's and
+  // JustWatch's credit under them.
+  const isNew = app.id === NEW && app.tier === "built-in";
+  const entries = (data.entries ?? []).slice(0, isNew ? (size === "l" ? 4 : 3) : FITS[size]);
   el.classList.add("has-content");
+  el.classList.toggle("new-tile", isNew);
   // Choosing an entry that carries an item opens it (ADR-016); the tile
   // keeps them for its click.
   (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems = entries;
@@ -139,6 +149,7 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
       { class: "tile-content" },
       now,
       entries.length ? h("div", { class: `entries entries-${entries.length}` }, ...entries.map((item, at) => entry(app, item, size, at))) : null,
+      isNew && entries.length && size === "l" ? h("span", { class: "new-credit" }, "from tmdb · where to watch from justwatch") : null,
     ),
   );
 }
@@ -236,6 +247,7 @@ export function openBuiltin(ctx: Ctx, app: App): void {
   if (app.id === CLOCK) ctx.ambient();
   else if (app.id === WEATHER) ctx.go("settings/weather");
   else if (app.id === MUSIC) ctx.go("music");
+  else if (app.id === NEW) ctx.go("settings/tmdb");
   else ctx.go(`details/${app.id}`);
 }
 
@@ -258,6 +270,16 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
             // A click on an entry that carries an item opens it there.
             const chosen = (event.target as Element).closest<HTMLElement>("[data-entry]");
             const item = chosen ? (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems?.[Number(chosen.dataset.entry)]?.item : undefined;
+            // A title on New this week plays in its own app, looked up
+            // there by its name (S8.1), and the TV says how it went.
+            if (item && app.id === NEW && app.tier === "built-in") {
+              try {
+                await daemon.openNew(item.id);
+              } catch (error) {
+                ctx.toast((error as Error).message, "fail");
+              }
+              return;
+            }
             if (item && app.tier !== "built-in") {
               const reply = await screen.openItem(app.id, item);
               if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open ${item.title}`, "fail");
@@ -265,6 +287,11 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
             }
             if (app.tier === "built-in") {
               openBuiltin(ctx, app);
+              return;
+            }
+            // A page app opens here, in its frame (ADR-043).
+            if (app.runtime === "page") {
+              openPage(ctx, app.id);
               return;
             }
             // A field it needs isn't filled in, such as its server's
@@ -325,10 +352,15 @@ export function home(ctx: Ctx): View {
     const tile = tileFor(ctx, placed);
     if (tile) grid.append(tile);
   }
+  // Your agent's newest build, while it isn't on home yet (boards 19, 20).
+  const building = homeBuildTile(ctx);
+  if (building) grid.append(building);
 
-  // A new release says so in the bar (ADR-025, board 31), until Later.
+  // A new release says so in the bar (ADR-025, board 31), until Later, and
+  // a build that's going or waiting says so after it.
   const next = release(ctx.updates);
-  const notice = !next ? "" : tonight(ctx.updates) ? `agentv ${next} installs tonight` : later(ctx.updates) ? "" : `agentv ${next} is ready · settings → updates`;
+  const update = !next ? "" : tonight(ctx.updates) ? `agentv ${next} installs tonight` : later(ctx.updates) ? "" : `agentv ${next} is ready · settings → updates`;
+  const notice = update || buildNotice();
   const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice));
   return {
     el,
