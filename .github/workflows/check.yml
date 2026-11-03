@@ -31,14 +31,14 @@ jobs:
   policy:
     name: "Layer 1: policy, lint and secrets"
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      # Full history, no file contents until needed: the gate compares trees
-      # with the base and reads only the files AgenTV added.
+      # Full history with every file, in one download. The secrets scan reads
+      # every AgenTV commit since the Omarchy base, and a blobless clone made
+      # it fetch each file on its own, which outgrew the time limit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          filter: blob:none
           persist-credentials: false
 
       - name: Install shellcheck and gitleaks
