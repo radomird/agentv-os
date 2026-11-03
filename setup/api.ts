@@ -2,7 +2,10 @@
 // is, how the box is online, the setup hotspot and the phones, and each step
 // moving on.
 
-export type Step = "welcome" | "ready" | "ai" | "people" | "goal" | "apps" | "theme" | "background";
+import type { Country, CountryState } from "../launcher/api.ts";
+
+export type { Country, CountryState };
+export type Step = "welcome" | "ready" | "country" | "ai" | "people" | "goal" | "apps" | "theme" | "background";
 export type Goal = "streaming" | "music" | "media" | "gaming";
 export type UpdateFirst = "checking" | "installing" | "done" | "none" | "failed" | "skipped";
 
@@ -129,5 +132,8 @@ export const setup = {
   apps: () => call<SetupApps>("GET", "/api/setup/apps"),
   install: async (ids: string[], grant?: string) => (await call<{ apps: Installs }>("POST", "/api/setup/apps", { install: ids }, grant)).apps,
   wish: (text: string) => call<{ setup: SetupState }>("POST", "/api/setup/wish", { text }),
+  // The box's country (ADR-055): the time zone and new this week follow it.
+  country: () => call<CountryState & { countries: Country[] }>("GET", "/api/country"),
+  setCountry: (code: string, grant?: string) => call<CountryState>("PUT", "/api/country", { code }, grant),
   pair: async () => (await call<{ pairing: { code: string; until: string; url: string | null } | null }>("POST", "/api/phones/pair")).pairing,
 };

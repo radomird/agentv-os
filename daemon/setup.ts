@@ -11,11 +11,12 @@ import { dirname, join } from "node:path";
 import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 
 // The steps, in order. The welcome screen covers the Wi-Fi and pairing,
-// getting ready brings the box up to date first (board 35), the AI
+// getting ready brings the box up to date first (board 35), the country
+// confirms the installer's time zone's or picks another (ADR-055), the AI
 // provider comes with its terms (ADR-023), then who watches (ADR-009), what
 // the TV is for, its apps (board 09), its look (board 12) and its
 // background (board 13).
-export const STEPS = ["welcome", "ready", "ai", "people", "goal", "apps", "theme", "background"] as const;
+export const STEPS = ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"] as const;
 export type Step = (typeof STEPS)[number];
 
 // How the status bar counts the steps: six parts, as on the canvas, with the
@@ -23,6 +24,7 @@ export type Step = (typeof STEPS)[number];
 export const PARTS: Record<Step, string> = {
   welcome: "1/6 connect",
   ready: "1/6 getting ready",
+  country: "1/6 country",
   ai: "2/6 ai",
   people: "3/6 people",
   goal: "4/6 goal",
@@ -128,6 +130,12 @@ export class Setup {
     if (STEPS.includes(data.step as Step)) state.step = data.step as Step;
     const finished = (data.finished ?? {}) as Record<string, unknown>;
     for (const step of STEPS) if (typeof finished[step] === "string" && AT.test(finished[step] as string)) state.finished[step] = finished[step] as string;
+    // A box that was past getting ready when an update brought the country
+    // step keeps going: the country stays its time zone's, which Settings →
+    // country can change.
+    if (!state.finished.country && STEPS.slice(STEPS.indexOf("country") + 1).some((step) => state.finished[step] || state.step === step)) {
+      state.finished.country = state.finished.ready ?? now();
+    }
     state.keyboard = data.keyboard === true;
     if (GOALS.includes(data.goal as Goal)) state.goal = data.goal as Goal;
     const ready = (data.ready ?? {}) as Record<string, unknown>;

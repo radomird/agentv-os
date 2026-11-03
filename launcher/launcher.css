@@ -2120,3 +2120,27 @@ body.with-backdrop.on-home {
   scrollbar-width: none;
   padding-bottom: 64px;
 }
+
+/* The country picker (ADR-055): setup's country step and Settings → country.
+   A field the phone's keyboard types into, and eight countries, two by four. */
+.country-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+  margin-top: 32px;
+}
+
+.country-picker .music-search {
+  margin: 0;
+}
+
+.country-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.country-list .button-value {
+  white-space: nowrap;
+}

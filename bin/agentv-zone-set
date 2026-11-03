@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# agentv:summary=Set the box's time zone to the one its country takes
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+# The box's country (ADR-055), picked in TV setup or Settings, moves its
+# time zone with it. The daemon leaves the zone in a drop in its private
+# state, and agentv-zone.path starts this as root. It takes only a zone the
+# tz database lists in zone.tab, sets it with timedatectl, and takes the
+# drop away either way.
+
+set -euo pipefail
+
+DROP=${AGENTV_ZONE_DROP:-/var/lib/private/agentv/daemon/zone-drop/zone.json}
+ZONE_TAB=${AGENTV_ZONE_TAB:-/usr/share/zoneinfo/zone.tab}
+
+[[ -f $DROP ]] || exit 0
+zone=$(jq -r 'if type == "object" and (.zone | type) == "string" then .zone else empty end' "$DROP" 2>/dev/null || true)
+rm -f "$DROP"
+
+listed() {
+  awk -F '\t' -v zone="$1" '!/^#/ && $3 == zone { found = 1 } END { exit !found }' "$ZONE_TAB"
+}
+
+if [[ ! $zone =~ ^[A-Za-z_]+(/[A-Za-z0-9_+-]+){1,2}$ ]] || ! listed "$zone"; then
+  echo "agentv-zone-set: the drop's zone isn't one zone.tab lists, so the box keeps its own" >&2
+  exit 1
+fi
+timedatectl set-timezone "$zone"
+echo "agentv-zone-set: the box's time zone is $zone"

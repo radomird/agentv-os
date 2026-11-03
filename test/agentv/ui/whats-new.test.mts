@@ -118,11 +118,10 @@ test("S8.1 Settings → new this week takes the key from the phone's keyboard, t
     assert.ok(panel.includes("lumen: lumen"), panel);
     assert.ok(panel.includes("where to watch from justwatch"), panel);
     assert.ok(!panel.includes("stand-in-token"), "the key never comes back");
-    // Choosing the region, or right on it, picks the next of TMDB's regions.
-    await page.click('[data-action="region"]');
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("norway"));
-    await page.click('[data-action="own-region"]');
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("netherlands"));
+    // The region is the box's country (ADR-055), changed in Settings →
+    // country, which "another country" opens.
+    await page.click('[data-action="country"]');
+    await page.waitForSelector(".country-picker");
   } finally {
     await page.close();
   }

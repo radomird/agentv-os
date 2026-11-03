@@ -104,6 +104,7 @@ export function useZone(dir: string, zone: string): void {
   symlinkSync(`/usr/share/zoneinfo/${zone}`, link);
   process.env.AGENTV_LOCALTIME = link;
   process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
+  process.env.AGENTV_ISO3166_TAB = join(ROOT, "test/agentv/fixtures/met/iso3166.tab");
 }
 
 export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}): { apps: string; state: string; builtins?: string } {
@@ -149,6 +150,25 @@ function keyMover(state: string, status: string): void {
     }
     rmSync(drop, { force: true });
     writeFileSync(status, JSON.stringify({ set: request.provider !== null, provider: request.provider, at: new Date().toISOString() }));
+  }, 50).unref();
+}
+
+// What agentv-zone-set does as root (ADR-055), for a box with no root: the
+// zone the daemon hands over becomes the box's, through its localtime link.
+function zoneMover(state: string): void {
+  const drop = join(state, "zone-drop", "zone.json");
+  setInterval(() => {
+    let request: { zone?: unknown };
+    try {
+      request = JSON.parse(readFileSync(drop, "utf8"));
+    } catch {
+      return;
+    }
+    rmSync(drop, { force: true });
+    const link = process.env.AGENTV_LOCALTIME;
+    if (!link || typeof request.zone !== "string") return;
+    rmSync(link, { force: true });
+    symlinkSync(`/usr/share/zoneinfo/${request.zone}`, link);
   }, 50).unref();
 }
 
@@ -227,6 +247,7 @@ export async function startBox(
   keyMover(state, keyStatus);
   const tmdbStatus = join(state, "..", "tmdb.json");
   tmdbKeyMover(state, tmdbStatus);
+  zoneMover(state);
   const setupAppsStatus = join(state, "..", "setup-apps.json");
   appsMover(state, apps, setupAppsStatus);
   // The phone companion and the setup hotspot's captive page too, on this
