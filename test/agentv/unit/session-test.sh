@@ -109,6 +109,23 @@ SCREEN_STATUS=2 run "$bin/agentv-tv" || fail "agentv tv on the desktop"
   fail "on Omarchy's desktop it closes the windows and ends the session" "$(cat "$calls")"
 pass "S1.3 on Omarchy's desktop, agentv tv closes its windows and ends its session"
 
+HYPRLAND_INSTANCE_SIGNATURE=omarchy run "$bin/agentv-tv" || fail "agentv tv from Omarchy's Hyprland"
+! grep -q "^agentv-screen" "$calls" || fail "from Omarchy's own Hyprland it doesn't ask the TV session's daemon" "$(cat "$calls")"
+{ grep -qx "close-all" "$calls" && grep -q "^uwsm stop" "$calls"; } ||
+  fail "and still closes the windows and ends the session" "$(cat "$calls")"
+HYPRLAND_INSTANCE_SIGNATURE=tv AGENTV_SESSION=tv run "$bin/agentv-tv" || fail "agentv tv from the TV session's Hyprland"
+[[ $(cat "$calls") == "agentv-screen home" ]] || fail "the TV session's Hyprland still asks its daemon" "$(cat "$calls")"
+pass "S1.3 Back to TV's keys on Omarchy's desktop go straight to ending its session"
+
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"; sleep 30'
+took=$SECONDS
+HYPRLAND_INSTANCE_SIGNATURE=omarchy run "$bin/agentv-tv" || fail "agentv tv with windows that don't close"
+took=$((SECONDS - took))
+(( took < 8 )) || fail "a close that hangs is cut off after a few seconds (took $took s)"
+grep -q "^uwsm stop" "$calls" || fail "and the session still ends" "$(cat "$calls")"
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"'
+pass "S1.3 Back to TV doesn't wait long on windows that don't close"
+
 # --- agentv-desktop-hook ----------------------------------------------------
 
 loader="$SCRATCH/home/.local/state/omarchy/toggles/hypr/agentv-back-to-tv.lua"
