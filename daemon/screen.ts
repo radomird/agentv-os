@@ -95,6 +95,15 @@ export const KEEP_OPEN = 2;
 // How each provider's agent CLI says its version, which its first run asks
 // for: xAI's grok has a version command, not a flag.
 const VERSION_ARGS: Record<Cli, string[]> = { claude: ["--version"], codex: ["--version"], gemini: ["--version"], grok: ["version"], muse: ["--version"] };
+// Each CLI's mise package, as Omarchy 4.0.x's own wrappers named them, for a
+// box whose Omarchy has neither a wrapper nor a shim for it.
+const MISE_PACKAGES: Record<Cli, string> = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  grok: "npm:@xai-official/grok",
+  muse: "http:muse[url=https://api.meta.ai/muse-launcher.sh,bin=muse,version_list_url=https://api.meta.ai/muse-code/channels/muse-stable,version_json_path=.version]",
+};
 // How far before its press a tap's release can read the clock (see back).
 const BACK_SLACK_MS = 50;
 
@@ -2250,11 +2259,16 @@ export const launcher: Launcher = {
   },
 
   firstRun(cli) {
-    // Omarchy's wrapper in the owner's ~/.local/bin, which mise fills in on
-    // its first run. Its download can take a while on a slow line.
-    const wrapper = join(process.env.HOME ?? "", ".local", "bin", cli);
+    // The provider's CLI as Omarchy has it for the owner, which mise fetches
+    // on its first run: 4.0.x put a wrapper in ~/.local/bin, and 4.5 has a
+    // lazy mise shim in ~/.local/share/mise/shims instead. 4.5 has no Gemini
+    // CLI of its own, so with neither, mise runs the CLI from its package
+    // itself. The download can take a while on a slow line.
+    const home = process.env.HOME ?? "";
+    const own = [join(home, ".local", "bin", cli), join(home, ".local", "share", "mise", "shims", cli)].find((path) => existsSync(path));
+    const [command, args] = own ? [own, VERSION_ARGS[cli]] : ["mise", ["x", MISE_PACKAGES[cli], "--", cli, ...VERSION_ARGS[cli]]];
     return new Promise((resolve) => {
-      execFile(wrapper, VERSION_ARGS[cli], { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
+      execFile(command, args, { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
         const first = (text: string) => text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
         if (error) resolve({ error: first(stderr) || error.message.split("\n")[0] });
         else resolve({ version: first(stdout) });
