@@ -30,7 +30,11 @@ name: Image
 # the image checks run that many VMs at a time (agentv-iso's
 # test/agentv/image/run): two, unless a calling workflow asks for one, as the
 # nightly run does for a release, whose own checks time S1.3 beside another
-# VM. A run by hand has two.
+# VM. A run by hand has two. With omarchy-channel, the update checks also
+# move the box to the Omarchy on that channel, from the TV, and try Restart
+# and Shut down on it (agentv-iso's omarchy-update check): rc tries the next
+# Omarchy release before its stable channel serves it. Nightly runs leave it
+# empty, so tested.json only ever lists what stable boxes can get.
 
 on:
   workflow_dispatch:
@@ -76,6 +80,10 @@ on:
         description: "Point the box's update check at the packages built from that ref, instead of edge"
         type: boolean
         default: false
+      omarchy-channel:
+        description: "Also move the box to the Omarchy on this channel after the update, from the TV: rc, or empty to stay on stable"
+        type: string
+        default: ""
   workflow_call:
     inputs:
       ref:
@@ -111,6 +119,9 @@ on:
       own-repo:
         type: boolean
         default: false
+      omarchy-channel:
+        type: string
+        default: ""
       lanes:
         type: number
         default: 2
@@ -257,6 +268,7 @@ jobs:
 
       - name: Build, install, boot, check
         env:
+          AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
           AGENTV_TEST_TESTED_OUT: ${{ inputs.nightly && '/w/test-runs/tested-packages.txt' || '' }}
           AGENTV_TEST_KEEP_DISK: ${{ inputs.keep-disk && '/w/test-runs/installed-disk' || '' }}
           FROM_DISK: ${{ steps.night.outputs.found }}
@@ -275,6 +287,7 @@ jobs:
         env:
           AGENTV_TEST_UPDATE_REPO: /w/test-runs/update-repo
           AGENTV_TEST_UPDATE_VERSION: ${{ steps.update.outputs.version }}
+          AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
           set -o pipefail
@@ -282,7 +295,12 @@ jobs:
           mv iso/release iso-next/release
           trap 'mv iso-next/test-runs iso/test-runs; mv iso-next/release iso/release' EXIT
           echo "The update to agentv $AGENTV_TEST_UPDATE_VERSION, checked with agentv-iso $UPDATE_CHECKS" | tee -a "$GITHUB_STEP_SUMMARY"
-          iso-next/test/agentv/image/ci --again s0.5-update update-tv 2>&1 | tee -a image.log
+          checks=(s0.5-update update-tv)
+          if [[ -n $AGENTV_TEST_OMARCHY_CHANNEL ]]; then
+            checks+=(omarchy-update)
+            echo "Then the box moves to the Omarchy on $AGENTV_TEST_OMARCHY_CHANNEL, from the TV" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          iso-next/test/agentv/image/ci --again "${checks[@]}" 2>&1 | tee -a image.log
 
       # Only a night where every check passed becomes tested.json.
       - name: Sign and publish tested.json

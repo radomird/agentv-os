@@ -226,8 +226,8 @@ case "$*" in
 esac'
 # polkit, with AgenTV's power rule there unless it isn't (S2.18).
 fake pkcheck '[[ ! -f $STATE/no-power-rule ]]'
-fake omarchy-system-shutdown 'exit 0'
-fake omarchy-system-reboot 'exit 0'
+# Omarchy 4.5's restart and shut down; 4.0.x had a command for each.
+fake omarchy-system 'exit 0'
 # A terminal opened in the session: the daemon keeps it out of sight.
 fake foot '
 jq ".windows += [{title: \"agentv selftest\", workspace: \"special:agentv-held\", front: false}]" "$STATE/screen.json" >"$STATE/screen.json.new" && mv "$STATE/screen.json.new" "$STATE/screen.json"
@@ -348,7 +348,7 @@ for line in \
   "manual S2.16 over a playing app" \
   "pass S2.18 polkit lets" \
   "pass S2.18 AgenTV's units stop within 5 s, so none holds up a restart or a shut down" \
-  "pass S2.18 Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there" \
+  "pass S2.18 Omarchy's omarchy-system is there to restart and shut down" \
   "pass S2.18 Settings opened at Power on the TV" \
   "manual S2.18 on the TV, Power is in Settings now" \
   "pass S2.19 LG TV (HDMI) plays at 100%" \
