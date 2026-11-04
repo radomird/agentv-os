@@ -26,7 +26,7 @@ Everything AgenTV adds goes under `test/agentv/`, one folder per ADR-019 layer:
 ## Rules
 
 - **Name each test after the acceptance id it covers,** for example `S3.10 playback app without tile() gets a continue tile`. A test that covers no id is fine, but say what it guards.
-- **Contract tests use saved fixtures,** never a live sign-in. The hand-written Disney+ adapter is the yardstick: an agent-built app must pass the same suite (ADR-011). Disney+ fixtures and tests live in the private `agentv-adapters` repo, never here.
+- **Contract tests use saved fixtures,** never a live sign-in. The hand-written Disney+ app is the yardstick: an agent-built app must pass the same suite (ADR-011). The official streaming apps, their stand-in pages and their tests live in `agentv-apps`, and the pages captured from a signed-in session stay in the private `agentv-adapters` repo (ADR-066). None of them is ever here.
 - **UI tests run on a fake daemon** in headless Chromium at 1920 × 1080 (TV) and 390 × 844 (phone). Compare each screen with its reference image from the canvas. An intended visual change updates the reference image in the same commit.
 - **Keep Omarchy's hygiene:** restore what you change with traps, close what you open, and save `success-<step>.png` and `failure-<step>.png` for every visually distinct state.
 
