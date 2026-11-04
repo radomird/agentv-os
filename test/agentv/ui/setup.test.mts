@@ -1047,10 +1047,14 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
 
 // The theme's own backgrounds as the screen daemon hands them over: one of
 // Tokyo Night's, which Omarchy shows.
-async function themeBackground(theme: string, file: string): Promise<string> {
-  const body = readFileSync(join(ROOT, "themes", theme, "backgrounds", file));
+// One of the theme's own backgrounds, whatever Omarchy ships it as: 4.0 had
+// jpg and png files, 4.5 has webp ones.
+async function themeBackground(theme: string): Promise<string> {
+  const dir = join(ROOT, "themes", theme, "backgrounds");
+  const file = readdirSync(dir).filter((name) => /\.(jpe?g|png|webp)$/i.test(name)).sort()[0];
+  const body = readFileSync(join(dir, file));
   const id = createHash("sha256").update(body).digest("hex").slice(0, 16);
-  const type = file.endsWith(".png") ? "image/png" : "image/jpeg";
+  const type = file.endsWith(".png") ? "image/png" : file.endsWith(".webp") ? "image/webp" : "image/jpeg";
   await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme, current: id, files: [{ id, type }] }) });
   await fetch(`${url}/api/backgrounds/theme/${id}`, { method: "POST", body: new Uint8Array(body) });
   return id;
@@ -1060,7 +1064,7 @@ test("S5.8 the background: the theme's own first, as on Omarchy's desktop, and p
   await toApps("streaming");
   await post("/api/setup/finish", { step: "apps" });
   await post("/api/setup/finish", { step: "theme" });
-  const id = await themeBackground("tokyo-night", "6-oma.jpg");
+  const id = await themeBackground("tokyo-night");
   await post("/api/backgrounds", { source: "theme" });
   const page = await tv();
   await page.waitForSelector(".backs .back");

@@ -19,6 +19,17 @@ WORK=$(mktemp -d)
 BASE_TREE="$(dirname "$ROOT")/.agentv-omarchy-base.$$"
 trap 'git worktree remove --force "$BASE_TREE" >/dev/null 2>&1 || true; rm -rf "$WORK" "$BASE_TREE"' EXIT
 
+# A fork's clone may not have upstream's tag for the base, as it didn't for
+# v4.5.0, which the sync only fetches for itself. Fetch it from upstream then.
+if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
+  upstream=$(sed -n '1{s/[[:space:]]//g;p;}' .github/omarchy-upstream)
+  if [[ $base == v* ]]; then
+    git fetch --quiet --no-tags "https://github.com/$upstream.git" "+refs/tags/$base:refs/tags/$base"
+  else
+    git fetch --quiet --no-tags "https://github.com/$upstream.git" "$base"
+  fi
+fi
+
 git worktree add --quiet --detach "$BASE_TREE" "$base^{commit}"
 
 # As root, as in a cloud session, some of Omarchy's tests mount tmpfs over
