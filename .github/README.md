@@ -77,7 +77,7 @@ You'll need:
 - a USB stick of 8 GB or more;
 - a keyboard, for Omarchy's installer.
 
-1. Download [the 0.1.4 ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso) (about 6.5 GB) and [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso.sha256). To check the download, put both in one folder and run `shasum -a 256 -c agentv-0.1.4-x86_64.iso.sha256` on a Mac, or `sha256sum -c` on Linux. Each [agentv-iso release](https://github.com/radomird/agentv-iso/releases) links to its own ISO.
+1. Download [the 0.1.4 ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso) (about 6.6 GB) and [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso.sha256). To check the download, put both in one folder and run `shasum -a 256 -c agentv-0.1.4-x86_64.iso.sha256` on a Mac, or `sha256sum -c` on Linux. Each [agentv-iso release](https://github.com/radomird/agentv-iso/releases) links to its own ISO.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux, like [Omarchy's manual](../manual/02-getting-started.md) says.
 3. Boot the box from the stick and answer Omarchy's usual installer questions. It wipes the box's disk.
 4. The box reboots into AgenTV, and TV setup starts on the TV. Scan its code with your phone, and setup takes you the rest of the way to home.
