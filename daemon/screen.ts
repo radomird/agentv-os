@@ -2331,20 +2331,26 @@ export const launcher: Launcher = {
   },
 
   power(what) {
-    // Omarchy's commands schedule the power-off in this session's systemd,
-    // and find themselves again through OMARCHY_PATH, which that systemd
+    // Omarchy's command schedules the power-off in this session's systemd,
+    // and finds itself again through OMARCHY_PATH, which that systemd
     // doesn't carry. polkit lets the owner do it from there (ADR-033).
-    const command = what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown";
-    return new Promise((resolve) => {
-      const child = spawn(command, [], {
-        stdio: "ignore",
-        detached: true,
-        env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" },
+    // Omarchy 4.5 has omarchy-system reboot|shutdown. 4.0.x had a command
+    // for each, which a box keeps until its Omarchy channel serves 4.5, so
+    // when omarchy-system isn't there, those run instead.
+    const run = (command: string, args: string[]) =>
+      new Promise<boolean | "missing">((resolve) => {
+        const child = spawn(command, args, {
+          stdio: "ignore",
+          detached: true,
+          env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" },
+        });
+        child.on("error", (error: NodeJS.ErrnoException) => resolve(error.code === "ENOENT" ? "missing" : false));
+        child.on("exit", (code) => resolve(code === 0));
+        child.unref();
       });
-      child.on("error", () => resolve(false));
-      child.on("exit", (code) => resolve(code === 0));
-      child.unref();
-    });
+    return run("omarchy-system", [what === "restart" ? "reboot" : "shutdown"]).then(async (done) =>
+      done === "missing" ? (await run(what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown", [])) === true : done,
+    );
   },
 
   async idleMinutes() {

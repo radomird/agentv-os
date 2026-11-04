@@ -12,8 +12,8 @@ for art in screensaver about; do
 done
 
 # The splash takes the colours of the owner's current Omarchy theme, Tokyo
-# Night unless they've changed it.
-colors="$AGENTV_OWNER_HOME/.config/omarchy/current/theme/colors.toml"
+# Night unless they've changed it. Omarchy keeps it under ~/.local/state.
+colors="$AGENTV_OWNER_HOME/.local/state/omarchy/current/theme/colors.toml"
 theme_color() {
   local value=""
   [[ -f $colors ]] && value=$(sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"\(#[0-9a-fA-F]\{6\}\)\".*/\1/p" "$colors" | head -n 1)
@@ -28,10 +28,11 @@ foreground=$(theme_color foreground '#c0caf5')
 # runs before the login screen, when nothing of the owner's is running. So
 # the owner may use sudo without a password for this one call; a root bash is
 # all of root anyway, so naming each command would protect nothing. The rule
-# goes right after, and also if anything here fails. It uses the name omarchy
-# sudo passwordless uses, so Omarchy's own tmpfiles rule removes it at the
-# next boot even if the power goes out halfway through.
-rule="/etc/sudoers.d/99-omarchy-nopasswd-$AGENTV_OWNER"
+# goes right after, and also if anything here fails, and AgenTV's own tmpfiles
+# rule (system/tmpfiles/agentv-sudo.conf) removes it at the next boot even if
+# the power goes out halfway through. The name is AgenTV's own, since Omarchy
+# removes anything named like its own grants that it didn't write.
+rule="/etc/sudoers.d/99-agentv-branding-$AGENTV_OWNER"
 trap 'rm -f "$rule"' EXIT
 printf '%s ALL=(root) NOPASSWD: ALL\n' "$AGENTV_OWNER" >"$rule"
 chmod 0440 "$rule"
