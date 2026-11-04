@@ -8,8 +8,10 @@ Item {
   id: root
 
   property string backgroundPath: ""
+  property string videoPosterPath: ""
   property int backgroundVersion: 0
   property bool fingerprintConfigured: false
+  property bool fingerprintUnavailable: false
   property bool authenticatingPassword: false
   property string failureMessage: ""
   property int failedAttempts: 0
@@ -18,7 +20,7 @@ Item {
   property string passwordText: ""
   property bool syncingPasswordText: false
 
-  readonly property string placeholderText: "Enter Password"
+  readonly property string placeholderText: Commons.I18n.t("lock.enterPassword")
   readonly property int fieldWidth: 381
   readonly property int fieldHeight: 67
   readonly property int outlineThickness: 3
@@ -39,19 +41,13 @@ Item {
     ? Border.surfaceSpec("lock", "border-error", Commons.Color.lock.borderError, root.outlineThickness, "border-alpha")
     : Border.surfaceSpec("lock", "border-active", Commons.Color.lock.borderActive, root.outlineThickness, "border-alpha")
 
+  // A video wallpaper shows its still poster: nothing plays behind the lock.
+  readonly property bool video: Util.isVideoPath(root.backgroundPath)
+
   signal submitPassword(string password)
   signal passwordTextEdited(string password)
   signal clearFailureRequested()
   signal wakeRequested()
-
-  // Cache-busts the lock background by appending `?v=`. Adding a query
-  // string keeps Image's loader happy while forcing it to reload when the
-  // user picks a new background mid-session.
-  function fileUrl(path) {
-    if (!path) return ""
-    var encoded = String(path).split("/").map(encodeURIComponent).join("/")
-    return "file://" + encoded + "?v=" + backgroundVersion
-  }
 
   function forcePasswordFocus() {
     passwordInput.forceActiveFocus()
@@ -61,6 +57,14 @@ Item {
     passwordTextEdited("")
   }
 
+  // Waking a DPMS-blanked display can stall the compositor for seconds while
+  // the monitor modesets, so the wake key's release arrives late and client-side
+  // key repeat floods the field with that character. A held key has no business
+  // typing a password; only holding Backspace/Delete to clear stays useful.
+  function dropsAutoRepeat(key) {
+    return key !== Qt.Key_Backspace && key !== Qt.Key_Delete
+  }
+
   function syncPasswordText() {
     if (passwordInput.text === passwordText) return
     syncingPasswordText = true
@@ -68,10 +72,21 @@ Item {
     syncingPasswordText = false
   }
 
+  // The field loses focus while a password is checked (it is disabled then),
+  // and forcing focus onto it would not stick until the check ends.
+  function restorePasswordFocus() {
+    if (inputEnabled && passwordInput.enabled && !passwordInput.activeFocus) forcePasswordFocus()
+  }
+
   onPasswordTextChanged: syncPasswordText()
   onInputEnabledChanged: {
     if (inputEnabled) Qt.callLater(forcePasswordFocus)
   }
+
+  // A VT switch, which the NVIDIA driver forces around every suspend, takes the
+  // keyboard away and Qt drops the field's focus with it. Nothing gives it back
+  // when the keyboard returns, so typing went nowhere until the field was clicked.
+  Window.onActiveFocusItemChanged: Qt.callLater(restorePasswordFocus)
   Component.onCompleted: {
     syncPasswordText()
     if (inputEnabled) Qt.callLater(forcePasswordFocus)
@@ -91,22 +106,26 @@ Item {
     anchors.fill: parent
     color: Commons.Color.background
 
-    Image {
+    BackgroundMedia {
       id: wallpaper
+      objectName: "lockWallpaper"
       anchors.fill: parent
-      source: root.loadBackground ? root.fileUrl(root.backgroundPath) : ""
-      fillMode: Image.PreserveAspectCrop
-      asynchronous: true
-      cache: false
-      sourceSize.width: width
-      sourceSize.height: height
+      path: root.loadBackground ? (root.video ? root.videoPosterPath : root.backgroundPath) : ""
+      version: root.backgroundVersion
+      // Decode only once sized, at the lock's own size: an unsized first
+      // request decoded the file at its native resolution, then again once
+      // sized. That size is what the lock service keeps decoded ahead of the
+      // lock, so the first frame has the wallpaper.
+      cached: true
+      constrainDecode: true
+      decodeSize: Qt.size(width, height)
     }
 
     MultiEffect {
       anchors.fill: wallpaper
       source: wallpaper
       autoPaddingEnabled: false
-      blurEnabled: root.loadBackground && wallpaper.status === Image.Ready
+      blurEnabled: root.loadBackground && wallpaper.ready
       blur: 1.0
       blurMax: 128
       blurMultiplier: 1.25
@@ -177,6 +196,10 @@ Item {
 
         Keys.onPressed: function(event) {
           root.wakeRequested()
+          if (event.isAutoRepeat && root.dropsAutoRepeat(event.key)) {
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_Escape || (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_U)) {
             root.passwordTextEdited("")
             event.accepted = true
@@ -187,7 +210,7 @@ Item {
       Text {
         textFormat: Text.PlainText
         anchors.fill: passwordInput
-        text: root.authenticatingPassword ? "Checking…" : (root.failureMessage.length > 0 ? root.failureMessage : root.placeholderText)
+        text: root.authenticatingPassword ? Commons.I18n.t("lock.checking") : (root.failureMessage.length > 0 ? root.failureMessage : root.placeholderText)
         visible: passwordInput.text.length === 0
         color: root.authenticatingPassword ? Commons.Color.lock.text : (root.failureMessage.length > 0 ? Commons.Color.lock.textError : Commons.Color.lock.placeholder)
         font.family: Style.font.family
@@ -201,20 +224,41 @@ Item {
       // Fingerprint hint pinned inside the field's right edge when a sensor is
       // enrolled, so the user knows they can touch to unlock instead of typing.
       // Matches hyprlock, which draws its fingerprint icon in the same spot.
+      // A reader the shell cannot reach crosses out rather than disappears, so
+      // it stops inviting touches that can never unlock.
       Text {
         id: fingerprintIcon
         objectName: "fingerprintIndicator"
+        textFormat: Text.PlainText
         anchors.right: parent.right
         anchors.rightMargin: inputField.borderRight + 18
         anchors.verticalCenter: parent.verticalCenter
         visible: root.fingerprintConfigured
-        text: "󰈷"
-        color: Commons.Color.lock.placeholder
+        text: root.fingerprintUnavailable ? "󰺱" : "󰈷"
+        color: root.fingerprintUnavailable ? Commons.Color.lock.textError : Commons.Color.lock.placeholder
         font.family: Style.font.family
         font.pixelSize: Math.round(root.fieldFontSize * 1.1)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
       }
+    }
+
+    // The crossed-out icon has no meaning to a user who has never seen it — it
+    // is not intuitive that it signals a broken reader — so the words carry the
+    // explanation and the icon only reinforces it.
+    Text {
+      objectName: "fingerprintUnavailableNotice"
+      textFormat: Text.PlainText
+      anchors.top: inputField.bottom
+      anchors.topMargin: 18
+      anchors.horizontalCenter: inputField.horizontalCenter
+      visible: root.fingerprintConfigured && root.fingerprintUnavailable
+      text: Commons.I18n.t("lock.fingerprintUnavailable")
+      color: Commons.Color.lock.textError
+      font.family: Style.font.family
+      font.pixelSize: Style.font.heading
+      font.italic: true
+      horizontalAlignment: Text.AlignHCenter
     }
   }
 }
