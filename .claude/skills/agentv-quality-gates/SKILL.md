@@ -26,7 +26,9 @@ Layers 2 to 4 (unit, contract, UI) join the gate as their code lands. They shoul
 ## Pull requests
 
 - Layers 1 to 4 must be green, and the target is under 10 minutes.
+- A pull request runs only the checks its files can affect. Lint, secrets and house rules always run. One that only changes `.claude/`, the README in `.github/` or the image and nightly workflows skips the unit, contract, screen and Omarchy tests. One that only touches AgenTV's own folders (`daemon/`, `launcher/`, `setup/`, `companion-web/`, `apps/`, `builder/`, `branding/`, `session/`, `test/agentv/`, `.github/`) skips Omarchy's own tests, unless it adds or changes a `.service` or `.conf` file. A push to `agentv` runs everything.
 - Layer 5, the image test, runs on a pull request that touches `install/`, `system/`, `config/hypr/`, `migrations/`, `session/` or the screen daemon's Hyprland and input files (`daemon/screen.ts`, `daemon/hyprland.ts`, `daemon/input.py`), and on every `agentv-iso` pull request. Anything else gets it from the "image" label (add it again to run it again), from the nightly run once it's merged, and from agentv-iso on every release tag. It runs in GitHub Actions on `ubuntu-26.04` with KVM, because the Mac can't run the x86_64 ISO. See `agentv-acceptance-tests`.
+- **To rerun one image check,** run the Image workflow (`image.yml`) by hand on your branch, with `ref` set to your branch, `checks` set to the check's file name in agentv-iso's `test/agentv/image/` without `-test.sh` (`s5.6-setup`, or several with spaces between them), and `from-disk` and `own-repo` on. It starts from the night's box with your packages on it, so you get the answer in minutes. Set `iso-ref` to your agentv-iso branch if the check changed there. Leave `from-disk` off if your change touches `install/`, `config/` or `branding/`, and for `s0.4-branding`, which needs the ISO.
 
 ## Acceptance ids
 
