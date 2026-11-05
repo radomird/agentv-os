@@ -52,7 +52,8 @@ import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
-import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
+import { network, Setup, type SetupState } from "./setup.ts";
+import { Features } from "./features.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
@@ -247,6 +248,8 @@ export class Daemon {
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
+  // The switches phase 2's screens land behind (PHASE-2-PLAN.md).
+  readonly features: Features;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -426,7 +429,8 @@ export class Daemon {
     });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
-    this.setupState = new Setup({ path: join(options.state, "setup.json") });
+    this.features = new Features({ state: options.state });
+    this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
@@ -910,8 +914,9 @@ export class Daemon {
       signIn: this.signingIn ? { name: this.signingIn.name } : null,
       update: await this.phoneUpdate(),
       tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
-      // TV setup's step, while it's on (stage 5): the phone says where it is.
-      setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step], muted: setup.muted },
+      // TV setup's step, while it's on (stage 5): the phone says where it is,
+      // and with setup's own switch on, its number of the 12.
+      setup: setup.done ? null : await this.phoneSetup(setup),
       // What setup's AI step asks of the phone (ADR-023): the provider's
       // terms for an adult to accept, then the key.
       ai: await this.aiAsk(setup),
@@ -1071,6 +1076,12 @@ export class Daemon {
 
   // The update notice the TV shows, for the phone (S4.8): what there is to
   // install, What's new, and whether it's going in tonight.
+  private async phoneSetup(setup: SetupState): Promise<object> {
+    const progress = await this.setupState.progress();
+    const n = progress.numbers?.[setup.step];
+    return { step: setup.step, part: progress.parts[setup.step] ?? setup.step, ...(n ? { n, of: progress.of } : {}), muted: setup.muted };
+  }
+
   private async phoneUpdate(): Promise<object | null> {
     const state = await this.updates.read();
     const status = state.status as {
@@ -2046,8 +2057,8 @@ export class Daemon {
         version: (await this.settings()).AGENTV_VERSION,
         running: this.running,
         setup: await this.setup(),
-        steps: STEPS,
-        parts: PARTS,
+        // The steps shown, in order, and what the status bar says for each.
+        ...(await this.setupState.progress()),
         network: network(hotspot, this.options.interfaces?.()),
         hotspot,
         phones: this.phones.list().map((phone) => phone.name),
