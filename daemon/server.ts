@@ -42,7 +42,7 @@ import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from 
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
-import { boxZone, cityOf } from "./place.ts";
+import { boxZone, cityOf, clockZone } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
@@ -2010,6 +2010,9 @@ export class Daemon {
         // What this process runs, which after an update and before AgenTV's
         // services restart is still the package from before (agentv-restart).
         running: this.running,
+        // The time zone the daemon's clock goes by, which follows the box's
+        // when the country moves it.
+        zone: clockZone(),
         screen: setup.done ? "home" : "welcome",
         // The setup step on the TV, while setup isn't done.
         setup_step: setup.done ? null : setup.step,

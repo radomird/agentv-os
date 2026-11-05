@@ -16,7 +16,7 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { boxZone, cities } from "./place.ts";
+import { boxZone, cities, followZone } from "./place.ts";
 
 export interface Country {
   code: string; // "NO", ISO 3166-1
@@ -123,6 +123,8 @@ export class CountryPlace {
   private o: CountryOptions;
   private path: string;
   readonly drop: string;
+  // The box's zone as this daemon last saw it.
+  private seen: string | null = null;
 
   constructor(options: CountryOptions) {
     this.o = options;
@@ -134,6 +136,16 @@ export class CountryPlace {
     return (this.o.zone ?? boxZone)();
   }
 
+  // The daemon's clock follows the box's zone once it moves, as it does when
+  // a country in another zone is picked. Node takes the zone as the daemon
+  // starts and keeps it, so what's new's "today" would otherwise stay on the
+  // old zone until the daemon restarts.
+  private follow(zone: string): void {
+    const moved = this.seen !== null && zone !== this.seen;
+    this.seen = zone;
+    if (moved && followZone(zone)) this.o.log?.(`the daemon's clock follows the time zone to ${zone}`);
+  }
+
   private async saved(): Promise<string | null> {
     const data = await readFile(this.path, "utf8").then((text) => JSON.parse(text) as { code?: unknown }, () => ({}) as { code?: unknown });
     return typeof data.code === "string" && /^[A-Z]{2}$/.test(data.code) ? data.code : null;
@@ -141,6 +153,7 @@ export class CountryPlace {
 
   async read(): Promise<CountryState> {
     const zone = await this.zone();
+    this.follow(zone);
     const saved = await this.saved();
     const code = saved ?? (await zoneCountry(zone));
     const country = code ? await countryOf(code) : null;
@@ -153,6 +166,7 @@ export class CountryPlace {
     const country = typeof code === "string" ? await countryOf(code) : null;
     if (!country) return { error: "a country is two capital letters the tz database knows, such as NO" };
     const before = await this.zone();
+    this.follow(before);
     const zone = await zoneFor(country.code, before);
     await mkdir(dirname(this.path), { recursive: true });
     const next = join(dirname(this.path), ".country.json.next");
