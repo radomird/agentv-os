@@ -64,6 +64,10 @@ import { Listening } from "./listening.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
+import { Features } from "./features.ts";
+import type { Kit, Route as Routes } from "./routes/kit.ts";
+import { features } from "./routes/features.ts";
+import { display } from "./routes/display.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -309,11 +313,21 @@ export class Daemon {
   private ledgerPath: string;
   private openLedger?: Ledger;
   private running: string;
+  // The feature switches (daemon/features.ts).
+  readonly features: Features;
+  // Each track's routes, in daemon/routes/, one line each.
+  private routes: Routes[];
 
   constructor(options: DaemonOptions) {
     this.options = options;
     this.running = options.running ?? installedPackage();
     this.log = options.log ?? ((line) => console.log(line));
+    this.features = new Features({ state: options.state });
+    const kit = this.kit();
+    this.routes = [
+      features(kit),
+      display(kit),
+    ];
     this.home = new Home({
       appsDir: options.apps ?? "/var/lib/agentv/apps",
       state: options.state,
@@ -534,6 +548,7 @@ export class Daemon {
     this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
+    for (const route of this.routes) route.close?.();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -800,6 +815,19 @@ export class Daemon {
     }
     this.json(response, 404, { ok: false, error: "not found" });
     return true;
+  }
+
+  // What a track's routes get from the daemon (daemon/routes/kit.ts).
+  private kit(): Kit {
+    return {
+      state: this.options.state,
+      features: this.features,
+      log: (line) => this.log(line),
+      json: (response, status, data) => this.json(response, status, data),
+      body: (request) => this.body(request),
+      broadcast: (event, data) => this.broadcast(event, data),
+      port: () => (this.server.address() as { port: number }).port,
+    };
   }
 
   // Tells every page that's listening what changed, and the phones too.
@@ -1980,6 +2008,10 @@ export class Daemon {
     const url = new URL(request.url ?? "/", "http://localhost");
     const path = url.pathname;
     const method = request.method;
+
+    for (const route of this.routes) {
+      if (await route.handle(method ?? "", path, request, response)) return;
+    }
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

@@ -41,6 +41,10 @@ class FakeHyprland implements Hyprland {
     this.handler = handler;
   }
 
+  async eval(code: string) {
+    this.dispatched.push(code);
+  }
+
   async dispatch(expression: string) {
     this.dispatched.push(expression);
     let m;

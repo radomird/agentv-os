@@ -23,8 +23,41 @@ hl.env("ELECTRON_OZONE_PLATFORM_HINT", "wayland")
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
 
--- The TV's preferred mode. Auto scale keeps the UI the same size on a 4K TV.
+-- The TV's mode and scale (ADR-062). The screen daemon (daemon/display.ts)
+-- sets them for the size picked, the TV's full resolution at a scale that
+-- turns it into a 1600, 1920 or 2400 wide canvas, and keeps the last ones it
+-- set on one line in ~/.local/state/agentv/display, such as
+-- "HDMI-A-1 3840x2160@60 2". The session starts at that line, so there's no
+-- flash of another mode before the daemon looks. With no line (the sizes
+-- switched off, or a TV it hasn't seen yet), the TV's preferred mode at
+-- Hyprland's automatic scale.
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
+
+local function kept_display()
+  local state = os.getenv("XDG_STATE_HOME")
+  if not state or state == "" then
+    state = (os.getenv("HOME") or "") .. "/.local/state"
+  end
+  local file = io.open(state .. "/agentv/display", "r")
+  if not file then
+    return nil
+  end
+  local line = file:read("*l") or ""
+  file:close()
+  -- Only a plain connector name, mode and number, since they go into the
+  -- monitor's rule.
+  local output, mode, scale = line:match("^([%w%._%-]+) (%d+x%d+@[%d%.]+) ([%d%.]+)$")
+  scale = tonumber(scale)
+  if output and #output <= 32 and scale and scale > 0 and scale <= 8 then
+    return { output = output, mode = mode, scale = scale }
+  end
+  return nil
+end
+
+local kept = kept_display()
+if kept then
+  hl.monitor({ output = kept.output, mode = kept.mode, position = "auto", scale = kept.scale })
+end
 
 -- The keyboard layout the installer set, the way Omarchy's desktop reads it.
 local function vconsole()

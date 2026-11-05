@@ -52,6 +52,7 @@ import { CdpPipe, type DevTools } from "./cdp.ts";
 import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
 import { dropTheme, takeTheme, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
+import { DisplayWatch, displayFile } from "./display.ts";
 import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
@@ -1753,7 +1754,10 @@ export class Screen {
         return;
       }
       try {
-        const app = this.launcher.steam(monitor);
+        // The TV's mode in logical pixels, as Hyprland's scale makes it, so
+        // Steam follows the size picked (ADR-062).
+        const scale = monitor.scale && monitor.scale > 0 ? monitor.scale : 1;
+        const app = this.launcher.steam({ width: Math.round(monitor.width / scale), height: Math.round(monitor.height / scale), refreshRate: monitor.refreshRate });
         this.apps.set("steam", app);
         app.onExit(() => {
           if (this.apps.get("steam") === app) this.apps.delete("steam");
@@ -2611,7 +2615,12 @@ async function main(): Promise<void> {
   // Full volume on each new default output, or the level Settings chose.
   const sound = new Audio({ pulse: new Pactl() });
   sound.start();
-  const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
+  const hyprland = connect();
+  // The TV's mode and scale for the size picked (ADR-062), before home
+  // starts, so it draws at its canvas from the first frame.
+  const display = new DisplayWatch({ hyprland, url: HOME_URL, file: displayFile(process.env, homedir()) });
+  await display.start();
+  const screen = new Screen({ hyprland, launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN.
   new RemoteInput({
