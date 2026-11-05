@@ -65,6 +65,7 @@ import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput, sendInput } from "./remote.ts";
 import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
+import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
 import { answerSay, sayHosts } from "./say-watch.ts";
 import { VoicePlayer } from "./voice-play.ts";
@@ -251,6 +252,8 @@ export interface Playback {
   opened(id: string, page?: PageBroker): void;
   closed(id: string): void;
   play?(id: string, item: unknown): void;
+  // One of the app's playback calls, for the phone's play and pause.
+  call?(id: string, path: string): Promise<unknown>;
 }
 
 // What asks an app with signIn whether it's signed in (signin.ts).
@@ -551,6 +554,21 @@ export class Screen {
       };
     }
     return { kind: "native", id: front.address, overlay: true };
+  }
+
+  // What's in front for the phone's play and pause (daemon/remote-play.ts):
+  // an app's page, with the app's own playback calls, home with its player
+  // and Music, or a native window, for the media key.
+  playbackFront(): PlaybackFront {
+    const front = this.typingFront();
+    if (!front || front.kind === "native") return front && { kind: "native", id: front.id };
+    if (front.id === "home") {
+      const music = this.music;
+      return { kind: "home", evaluate: front.evaluate, music: music ? (request) => music.handle(request) : undefined };
+    }
+    const playback = this.playback;
+    const id = front.id;
+    return { kind: "page", id, evaluate: front.evaluate, app: playback?.call ? (path) => playback.call!(id, path) : undefined };
   }
 
   // Stops the timers, for the tests.
@@ -2093,7 +2111,6 @@ function chromium(): string {
 }
 
 // Whether an audio or video element in a page plays.
-const MEDIA_PLAYING = `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`;
 
 const CHROMIUM_FLAGS = [
   "--ozone-platform=wayland",
@@ -2695,6 +2712,7 @@ async function main(): Promise<void> {
   // Install now from a phone, which the daemon let past the PIN. What the
   // new remote types goes into the field in front as it's typed (ADR-065).
   const typing = new PhoneTyping({ front: () => screen.typingFront(), keys: (request) => sendInput(request), bar: (bar) => launcher.typingBar!(bar) });
+  const playing = new PhonePlayback({ front: () => screen.playbackFront(), keys: (request) => sendInput(request) });
   new RemoteInput({
     url: `${HOME_URL}api/remote`,
     command: async (cmd) => {
@@ -2703,7 +2721,10 @@ async function main(): Promise<void> {
     ask: async (ask) => {
       if (ask.kind === "text") return typing.text(ask.value, ask.caret, ask.bar);
       if (ask.kind === "done") return typing.done();
-      return { ok: false, why: "play and pause aren't here yet" };
+      // Play and pause, then the phone's remote hears at once what plays.
+      const answer = ask.action === "next" ? await playing.next() : await playing.toggle();
+      void screen.tellContext();
+      return answer;
     },
   }).start();
   // Stage B's asks to see a service's signed-in pages, from the builder.

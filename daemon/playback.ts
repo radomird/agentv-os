@@ -112,6 +112,17 @@ export class PlaybackWatch {
     return attempt();
   }
 
+  // One of the app's own playback calls, such as playback.pause from the
+  // phone's play and pause (ADR-065). It throws when the app isn't open
+  // here, has no playback, or has no such call.
+  async call(id: string, path: string): Promise<unknown> {
+    const watching = this.watching.get(id);
+    const host = watching ? await watching.host : null;
+    if (!watching || !host) throw new Error(`${id} has no playback here`);
+    host.setPage(watching.page);
+    return host.call(await this.deps.viewer(), path);
+  }
+
   // One read, unless the last is still going. True when a state came and
   // went to the ledger.
   private async read(id: string): Promise<boolean> {

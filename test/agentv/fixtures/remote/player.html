@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A player</title>
+<script src="tone.js"></script>
+</head>
+<body style="margin: 0; background: #000">
+  <div id="host"></div>
+  <iframe id="frame" src="player-frame.html" width="640" height="360"></iframe>
+<script>
+  // Like a streaming site's player: the video is inside a shadow root, or,
+  // with ?in=frame, inside a frame of the same site. Either way it plays.
+  const where = new URLSearchParams(location.search).get("in") || "shadow";
+  if (where === "shadow") {
+    const video = Object.assign(document.createElement("video"), { id: "video", src: tone(), loop: true, width: 1280, height: 720 });
+    document.getElementById("host").attachShadow({ mode: "open" }).append(video);
+    window.ready = video.play().then(() => "playing");
+  } else {
+    const frame = document.getElementById("frame");
+    window.ready = new Promise((done) => frame.addEventListener("load", () => done(frame.contentWindow.start())));
+  }
+</script>
+</body>
+</html>

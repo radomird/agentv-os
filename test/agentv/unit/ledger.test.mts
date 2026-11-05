@@ -191,6 +191,26 @@ test("an item chosen on a tile opens with the app's playback.open once its page 
   watch.stop();
 });
 
+test("T8.2 the phone's play and pause calls the open app's own playback, and one that isn't open has none", async () => {
+  const called: string[] = [];
+  const host = {
+    setPage() {},
+    async call(_viewer: Viewer, path: string) {
+      if (path === "playback.readPlaybackState") return null;
+      called.push(path);
+    },
+    stop() {},
+  } as unknown as AppHost;
+  const watch = new PlaybackWatch({ host: async (id) => (id === "agentv.tube" ? host : null), viewer: async () => ({ id: "radomir", role: "adult" }), record: async () => {}, first: 5, every: 1000 });
+  watch.opened("agentv.tube");
+  await watch.call("agentv.tube", "playback.pause");
+  assert.deepEqual(called, ["playback.pause"]);
+  await assert.rejects(watch.call("agentv.radio", "playback.pause"), /agentv.radio has no playback here/);
+  watch.opened("agentv.music");
+  await assert.rejects(watch.call("agentv.music", "playback.pause"), /has no playback here/);
+  watch.stop();
+});
+
 // --- The daemon's ledger requests ---------------------------------------------
 
 let daemon: Daemon;

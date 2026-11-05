@@ -1,8 +1,12 @@
 // The phone's remote (ADR-065, PHASE-2-PLAN.md "Shared interfaces"): what
-// you type on the phone, in the TV's field as you type it.
+// you type on the phone, in the TV's field as you type it, and play and
+// pause in every app.
 //
-//   POST /api/phone/text  { "value": "…", "caret": 5 } on each change,
-//                         { "done": true } for Enter
+//   POST /api/phone/text      { "value": "…", "caret": 5 } on each change,
+//                             { "done": true } for Enter
+//   POST /api/phone/playback  { "action": "toggle" | "next" }, answered
+//                             { "ok": true, "by": "app" | "page" | "key" }
+//                             or { "ok": false, "why": "nothing is playing" }
 //
 // Each change goes to the screen daemon on its stream (daemon/remote.ts),
 // which puts it in the field in front and answers here. Only the newest
@@ -17,8 +21,10 @@ import { barText, type Bar } from "../remote-text.ts";
 
 // The most a phone sends at once, in characters.
 export const TEXT_MAX = 500;
-// How long a change waits for the screen daemon's answer.
+// How long a change waits for the screen daemon's answer, and play and
+// pause, which can wait on an app's own pause.
 const ANSWER_MS = 3000;
+const PLAYBACK_MS = 12_000;
 
 export interface RemoteAnswer {
   ok: boolean;
@@ -74,6 +80,15 @@ export class PhoneRemote {
   async phone(method: string, path: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     if (method === "POST" && path === "/api/phone/text") {
       await this.text(request, response);
+      return true;
+    }
+    if (method === "POST" && path === "/api/phone/playback") {
+      const action = ((await this.o.body(request)) as { action?: unknown } | undefined)?.action;
+      if (action !== "toggle" && action !== "next") {
+        this.o.json(response, 400, { ok: false, error: 'the action is "toggle" or "next"' });
+        return true;
+      }
+      this.reply(response, await this.ask({ kind: "playback", action }, PLAYBACK_MS));
       return true;
     }
     return false;

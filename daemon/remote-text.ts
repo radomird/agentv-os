@@ -156,7 +156,7 @@ export function typeIn(value: string, caret: number | null): string {
 // and kept from a field that took only so much.
 export interface TextAnswer {
   ok: boolean;
-  by?: "page" | "key";
+  by?: "app" | "page" | "key";
   why?: string;
   value?: string;
   kept?: number;
