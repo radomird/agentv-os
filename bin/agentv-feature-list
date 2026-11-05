@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# agentv:summary=List the feature switches and whether each is on
+
+# Something new lands switched off until its design is signed off. Edge
+# boxes can turn any switch on with agentv feature on <name>.
+
+set -euo pipefail
+
+port=${AGENTV_PORT:-3000}
+if ! features=$(curl -fsS --max-time 5 "http://127.0.0.1:$port/api/features" 2>/dev/null); then
+  echo "AgenTV's daemon isn't answering. Try: sudo systemctl restart agentv-daemon" >&2
+  exit 1
+fi
+while IFS=$'\t' read -r name state; do
+  printf '%-12s %s\n' "$name" "$state"
+done < <(jq -r 'to_entries[] | "\(.key)\t\(if .value then "on" else "off" end)"' <<<"$features")
