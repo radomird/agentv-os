@@ -366,7 +366,14 @@ export interface Candidate {
   item: Item & { subtitle?: string };
 }
 
-export type Outcome = { kind: "opened"; say: string; app: string; item?: Item } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "told"; say: string } | { kind: "none"; say: string; why: string; detail?: string };
+export type Outcome =
+  | { kind: "opened"; say: string; app: string; item?: Item }
+  | { kind: "choose"; say: string; candidates: Candidate[] }
+  | { kind: "told"; say: string }
+  // From the Ask box (ADR-068): a build it started, or a change waiting for an adult's ok.
+  | { kind: "build"; say: string; build: string; what: string; app?: string }
+  | { kind: "change"; say: string; app: string; name: string; what: string; recipe: string | null }
+  | { kind: "none"; say: string; why: string; detail?: string };
 
 export interface Said {
   n: number;

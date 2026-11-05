@@ -50,6 +50,9 @@ import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
 import { Features } from "./features.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
+import { askRoutes, type AskRoutes } from "./routes/ask.ts";
+import { NO_AI } from "./executors/index.ts";
+import type { ExecBuilds } from "./executors/make.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
@@ -411,10 +414,12 @@ export class Daemon {
         const allowed = new Set((await this.home.apps(viewer)).map((app) => app.id));
         return (await this.home.manifests())
           .filter(({ manifest }) => allowed.has(manifest.id))
-          .map(({ manifest }) => ({
+          .map(({ manifest, tier }) => ({
             id: manifest.id,
             name: manifest.name,
             category: manifest.tv.category,
+            // An app the agent made, which a change can be asked of.
+            ...(tier === "local" ? { made: true } : {}),
             // Music looks in the library in the TV session rather than in a
             // worker, so it can, though its manifest doesn't say so.
             capabilities: manifest.id === MUSIC_APP ? [...manifest.tv.capabilities, "search"] : [...manifest.tv.capabilities],
@@ -429,6 +434,8 @@ export class Daemon {
           episode: (query) => this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, ids),
         };
       },
+      // Make and change, while the askbuilds switch is on (ADR-068).
+      builds: async (viewer) => ((await this.features.on("askbuilds")) ? this.execBuilds(viewer) : undefined),
       ask: (ask, ms) => this.sayAsks.ask(ask, ms),
       changed: (said) => this.broadcast("said", said),
       log: this.log,
@@ -1358,6 +1365,7 @@ export class Daemon {
     if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
 
     if (await this.setupRoutes.handle("phone", request, response, url)) return;
+    if (path.startsWith("/api/phone/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -1827,6 +1835,65 @@ export class Daemon {
     this.json(response, 404, { ok: false, error: "not found" });
   }
 
+  // The builder for make and change from the Ask box (ADR-068), for who's
+  // watching: adults only, with the AI set up the way a build needs it.
+  private execBuilds(viewer: { id: string; role: "adult" | "child" }): ExecBuilds {
+    return {
+      adult: viewer.role === "adult",
+      ready: async () => {
+        const ai = await this.ai.read();
+        if (!ai.provider || !ai.path) return NO_AI;
+        if (!ai.accepted) return `an adult accepts ${OFFERS[ai.provider].name}'s terms on a phone first`;
+        const key = this.key.status();
+        if (ai.path === "key" && !(key.set && key.provider === ai.provider)) return `add ${OFFERS[ai.provider].name}'s key in settings → ai first`;
+        return null;
+      },
+      make: async (what) => {
+        const ai = await this.builderAi();
+        if (!ai.ai) return { error: ai.error };
+        const installed = (await this.home.manifests()).map(({ manifest }) => manifest.id);
+        const asked = await this.builds.ask(what, ai.ai, installed);
+        if (!asked.build) return { error: asked.error };
+        void this.watchBuilds();
+        this.log(`${viewer.id} asked the builder for an app from the ask box`);
+        return { build: asked.build.build };
+      },
+      recipe: async (app) => (await this.builds.list()).find((b) => b.id === app && b.state === "installed")?.understood?.recipe ?? null,
+    };
+  }
+
+  // What the Ask box's routes need of the daemon.
+  private askKit(): AskRoutes {
+    return {
+      on: () => this.features.on("askbuilds"),
+      adult: async () => (await this.profiles.active()).role === "adult",
+      said: () => this.say.current,
+      find: (build) => this.builds.find(build),
+      confirm: async (build) => {
+        const done = await this.builds.confirm(build);
+        void this.watchBuilds();
+        return done;
+      },
+      forget: async (build) => {
+        const done = await this.builds.forget(build);
+        void this.watchBuilds();
+        return done;
+      },
+      change: async (app, what) => {
+        const ai = await this.builderAi();
+        if (!ai.ai) return { error: ai.error };
+        const made = await this.builds.next(app, what, ai.ai);
+        void this.watchBuilds();
+        return made;
+      },
+      settle: (n, outcome) => this.say.settle(n, outcome),
+      dismiss: (n) => this.say.dismiss(n),
+      body: (request) => this.body(request),
+      json: (response, status, data) => this.json(response, status, data),
+      log: this.log,
+    };
+  }
+
   // What the switches' routes need of the daemon.
   private featureKit(): FeatureRoutes {
     return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed: (all) => this.broadcast("features", all), log: this.log };
@@ -2118,6 +2185,7 @@ export class Daemon {
     if (await lookRoute({ root: this.options.root, state: this.options.state, broadcast: (event, data) => this.broadcast(event, data), adult: (q, s, what) => this.adult(q, s, what) }, request, response)) return;
     if (await desktopPasswordRoute({ setup2: () => this.features.on("setup2"), password: this.desktopPassword, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: (text) => this.log(text), grant: (q) => this.grant(q), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) }, request, response, path)) return;
     if (await this.setupRoutes.handle("tv", request, response, url)) return;
+    if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

@@ -85,8 +85,9 @@ export function saidHeard(said: Said | null): void {
     return;
   }
   // An answer, such as whether there's a new episode (S8.2): told, and
-  // nothing else happens.
-  if (outcome.kind === "told") {
+  // nothing else happens. A build or a change from the Ask box says what
+  // it is the same way.
+  if (outcome.kind === "told" || outcome.kind === "build" || outcome.kind === "change") {
     if (open) close();
     ctx.sounds.play("confirm");
     if (!barred) ctx.toast(outcome.say, "ok");

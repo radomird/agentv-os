@@ -182,6 +182,9 @@ export interface Routed {
   // the schema, or the provider didn't answer.
   none?: "unroutable" | "unreadable" | "failed";
   error?: string; // one line, when the provider didn't answer
+  // When it failed because the AI isn't set up yet: no AI picked, its
+  // terms not accepted, no key for it, or a plan that can't route.
+  setup?: "ai" | "terms" | "key" | "plan";
   provider: Provider;
   via: "api" | "cli";
   model: string | null;
