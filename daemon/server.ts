@@ -25,7 +25,7 @@ import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { APPS_TILE, Home } from "./home.ts";
+import { APPS_TILE, gridNamed, Home } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
@@ -2171,7 +2171,8 @@ export class Daemon {
         this.settings(),
         this.setup(),
         this.home.apps(viewer),
-        this.home.layout(viewer.id, viewer.role),
+        // Terminal at more on screen asks for its 5 × 4 grid's layout.
+        this.home.layout(viewer.id, viewer.role, gridNamed(url.searchParams.get("grid"))),
         this.home.settings(),
         this.profiles.list(),
       ]);
@@ -2193,15 +2194,16 @@ export class Daemon {
 
     if (method === "PUT" && path === "/api/layout") {
       if (!(await this.adult(request, response, "changing home"))) return;
-      const body = (await this.body(request)) as { layout?: unknown } | undefined;
+      const body = (await this.body(request)) as { layout?: unknown; grid?: unknown } | undefined;
       const viewer = await this.profiles.active();
-      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role);
+      const grid = gridNamed(body?.grid);
+      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role, grid);
       if (why) {
         this.json(response, 400, { ok: false, error: why });
         return;
       }
-      const layout = await this.home.layout(viewer.id, viewer.role);
-      this.broadcast("layout", { viewer: viewer.id, layout });
+      const layout = await this.home.layout(viewer.id, viewer.role, grid);
+      this.broadcast("layout", { viewer: viewer.id, layout, grid: `${grid.columns}x${grid.rows}` });
       this.json(response, 200, { ok: true, layout });
       return;
     }

@@ -34,6 +34,8 @@ import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
+import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
+import { lookHome } from "./looks/homes.ts";
 
 export interface View {
   el: HTMLElement;
@@ -53,6 +55,9 @@ export interface Ctx {
   sounds: Sounds;
   focus: Focus;
   go(route: string): void;
+  // A section of the bar (home, apps, ask, settings): Back from it goes
+  // home, its parent, whichever page the bar was on (principle 2).
+  top(route: string): void;
   back(): void;
   edit(): void;
   render(route: string, action?: string): void;
@@ -100,6 +105,18 @@ const ctx: Ctx = {
     history.push(route);
     show(route, "forward");
     sounds.play("forward");
+  },
+  top(route) {
+    if (route === "home") {
+      act("home");
+      return;
+    }
+    if (history[history.length - 1] === route) return;
+    const before = history;
+    history = ["home"];
+    ctx.go(route);
+    // Settings on a child's profile waits for the PIN, and stays put without it.
+    if (history.length === 1) history = before;
   },
   back() {
     if (history.length <= 1) return;
@@ -332,6 +349,9 @@ const ACTIONS: Record<string, string> = {
 function viewFor(route: string): View {
   const [name, arg] = route.split("/");
   if (name === "apps") return apps(ctx);
+  // The bar's Ask: for now, asking your agent to make something (D5 makes
+  // it the Ask box, track 11).
+  if (name === "ask" && ctx.state.viewer.role === "adult") return buildAsk(ctx);
   // Adding an app is an adult's, and a child's profile doesn't see it (ADR-042).
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
   // Your agent's builds are an adult's too (ADR-043 to ADR-046).
@@ -358,7 +378,8 @@ function viewFor(route: string): View {
   if (name === "app" && arg) return pageView(ctx, arg);
   // A photo or a video a phone shared (ADR-050).
   if (name === "shared" && arg) return sharedView(ctx, arg);
-  return home(ctx);
+  // Home in the look the box has (ADR-063), or phase 1's with the looks off.
+  return lookId() ? lookHome(ctx) : home(ctx);
 }
 
 // Draws a page. With a direction it slides in; an action names the element
@@ -368,7 +389,7 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   if (route === "home") held = null;
   // Any page but a page app's puts the one in front behind home, paused.
   if (!route.startsWith("app/")) hidePages(ctx);
-  tell({ screen: route === "home" ? "home" : "menu" });
+  if (!preview()) tell({ screen: route === "home" ? "home" : "menu" });
   view = viewFor(route);
   document.body.classList.toggle("on-home", route === "home");
   const el = view.el;
@@ -537,6 +558,8 @@ function toastRelease(): void {
 }
 
 function act(action: Action): void {
+  // A preview, as setup frames one, only shows home.
+  if (preview()) return;
   // An install is running: keys wait. One that failed goes away on a key.
   if (updatingShown) {
     if (updatingFailed) {
@@ -705,10 +728,20 @@ function setRunning(apps: Running[]): void {
   if (history[history.length - 1] === "home") redraw();
 }
 
+// The look and the size (ADR-063, ADR-062): what the box has, or what a
+// preview's address says, and the page laid out on that size's canvas.
+async function lookAgain(): Promise<void> {
+  await loadLook();
+  applyLook();
+  await previewColours();
+  fit(canvas());
+  focus.refresh();
+}
+
 async function start(): Promise<void> {
-  fit();
+  await lookAgain();
   window.addEventListener("resize", () => {
-    fit();
+    fit(canvas());
     focus.refresh();
   });
   ctx.state = await daemon.home();
@@ -717,6 +750,12 @@ async function start(): Promise<void> {
   await loadBackgrounds();
   await loadBuilds(ctx);
   show("home");
+  // A preview is home and nothing else: no sounds, no keys and no word to
+  // the TV session.
+  if (preview()) {
+    sounds.on = false;
+    return;
+  }
   void askShared();
   setLock(ctx.state.pin?.locked === true);
   window.addEventListener(
@@ -733,6 +772,10 @@ async function start(): Promise<void> {
   listenInput(act);
   listen({
     layout: () => void refresh(),
+    // Another look was picked, in Settings or on the phone: the page again,
+    // drawn in it. The display's size changes the same way.
+    look: () => void lookAgain().then(redraw),
+    display: () => void lookAgain().then(redraw),
     settings: () => void refresh(),
     theme: () => {
       const link = document.getElementById("theme") as HTMLLinkElement;
@@ -791,7 +834,10 @@ async function start(): Promise<void> {
     // The phone's Settings button (ADR-037), for an adult's profile. (Not
     // "open", which EventSource sends itself.)
     page: (data) => {
-      if ((data as { route?: string }).route === "settings" && ctx.state.viewer.role === "adult") ctx.go("settings");
+      const route = (data as { route?: string }).route;
+      if (route === "settings" && ctx.state.viewer.role === "adult") ctx.go("settings");
+      // The phone's Apps, beside Settings, in every look (ADR-063).
+      else if (route === "apps" && lookId()) ctx.top("apps");
     },
     viewers: () => void refresh(),
     // A phone was paired or forgotten: pairing is done, and Settings says so.

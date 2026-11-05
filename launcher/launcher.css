@@ -37,8 +37,8 @@
 html,
 body {
   margin: 0;
-  width: 1920px;
-  height: 1080px;
+  width: var(--canvas-width, 1920px);
+  height: var(--canvas-height, 1080px);
   overflow: hidden;
   background: var(--background);
   color: var(--bright-foreground);
@@ -989,7 +989,7 @@ button {
    scrolls with the focus or a mouse's wheel. What's in it keeps its height
    rather than squeezing to fit. */
 .settings-panel {
-  max-height: calc(1080px - var(--bar) - 64px);
+  max-height: calc(var(--canvas-height, 1080px) - var(--bar) - 64px);
   overflow-y: auto;
   scrollbar-width: none;
 }

@@ -5,10 +5,14 @@ import { daemon, type App } from "../api.ts";
 import { clock, h } from "../dom.ts";
 import { pin, unpin } from "../layout.ts";
 import type { Ctx } from "../main.ts";
+import { lookBar } from "../looks/bars.ts";
+import { currentGrid, lookId } from "../looks/looks.ts";
 
 // The bar: the mode, then links to apps and settings, or what this mode's
 // keys do; on the right, info and the clock.
 export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | string)[]): HTMLElement {
+  // With the looks on, each draws its own (ADR-063).
+  if (lookId()) return lookBar(ctx, mode, info, step);
   const time = h("span", { class: "bar-clock" }, clock());
   const timer = setInterval(() => {
     if (!time.isConnected) clearInterval(timer);
@@ -35,7 +39,7 @@ export function heading(command: string, title: string): HTMLElement[] {
 // when nothing changed.
 export async function togglePin(ctx: Ctx, id: string): Promise<boolean> {
   const onHome = ctx.state.layout.some((tile) => tile.id === id);
-  const layout = onHome ? unpin(ctx.state.layout, id) : pin(ctx.state.layout, id);
+  const layout = onHome ? unpin(ctx.state.layout, id) : pin(ctx.state.layout, id, "s", currentGrid());
   if (!layout) {
     ctx.toast("there's no room on home: make room in edit home first", "fail");
     ctx.sounds.play("failure");

@@ -4,6 +4,7 @@
 // the TV session, on a computer or in the tests, there's no screen daemon.
 
 import type { Placed, Size } from "./layout.ts";
+import { gridName } from "./looks/looks.ts";
 
 export interface SizeChoice {
   size: Size;
@@ -376,7 +377,8 @@ export interface Said {
 }
 
 export const daemon = {
-  home: () => call<HomeState>("GET", "/api/home"),
+  // Terminal at more on screen has a grid and a layout of its own (D6).
+  home: () => call<HomeState>("GET", gridName() ? `/api/home?grid=${gridName()}` : "/api/home"),
   said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
   pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
   dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
@@ -391,7 +393,7 @@ export const daemon = {
   kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
-  saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
+  saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", gridName() ? { layout, grid: gridName() } : { layout }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
   updates: () => call<Updates>("GET", "/api/updates"),
