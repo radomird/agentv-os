@@ -351,7 +351,7 @@ export class Daemon {
       },
     });
     this.say = new Say({
-      bar: { sent: () => this.listening.sent(), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
+      bar: { sent: (from) => this.listening.sent(from), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
       route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
       viewer: () => this.profiles.active(),
       apps: async (viewer) => {
