@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { FEATURE_NAMES, FEATURES, Features, isFeature } from "../../../daemon/features.ts";
+import { FEATURE_NAMES, FEATURES, featureOn, Features, features, isFeature } from "../../../daemon/features.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-features-"));
@@ -84,6 +84,16 @@ test("a wrong change changes nothing", async () => {
   const unknown = await features.set({ nope: true });
   assert.ok(!unknown.ok && unknown.status === 404 && unknown.error.includes("boxcheck, sizes, looks"));
   assert.equal(existsSync(join(state, "features.json")), false);
+});
+
+test("with no channel, as in a test, features.json counts, through the class or the two functions", async () => {
+  const state = join(scratch, "no-channel");
+  mkdirSync(state, { recursive: true });
+  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: true }));
+  assert.equal(await new Features({ state }).on("setup2"), true);
+  assert.deepEqual(await new Features({ state }).all(), await features(state));
+  assert.equal(await featureOn(state, "setup2"), true);
+  assert.equal(await featureOn(state, "looks"), false);
 });
 
 test("a features.json someone broke reads as the defaults, keeping what it can", async () => {

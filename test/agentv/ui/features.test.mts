@@ -26,15 +26,19 @@ after(async () => {
   await browser?.close();
 });
 
+// The TV pages' own module for the switches, as the page imports it.
+const MODULE = "/launcher/features.ts";
+type PageFeatures = typeof import("../../../launcher/features.ts");
+
 // Home on the TV, and the switches as its page reads them.
 async function home(url: string): Promise<{ page: Page; on: (name: string) => Promise<boolean>; marked: () => Promise<string> }> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
-  await page.evaluate(() => import("/launcher/features.ts").then((m) => m.features()));
+  await page.evaluate((path) => (import(path) as Promise<PageFeatures>).then((m) => m.features()), MODULE);
   return {
     page,
-    on: (name) => page.evaluate((name) => import("/launcher/features.ts").then((m) => m.featureOn(name)), name),
+    on: (name) => page.evaluate(([path, name]) => (import(path) as Promise<PageFeatures>).then((m) => m.featureOn(name)), [MODULE, name]),
     marked: () => page.evaluate(() => document.documentElement.dataset.features ?? ""),
   };
 }
@@ -65,10 +69,11 @@ test("T12.1 a switch turned on shows on the TV without a reload, and off again",
     tv = await home(url);
     assert.equal(await tv.on("remote2"), false);
     const seen = tv.page.evaluate(
-      () =>
+      (path) =>
         new Promise<boolean>((resolve) => {
-          void import("/launcher/features.ts").then((m) => m.onFeatures((all) => all.remote2 && resolve(true)));
+          void (import(path) as Promise<PageFeatures>).then((m) => m.onFeatures((all) => all.remote2 && resolve(true)));
         }),
+      MODULE,
     );
     const answer = await put(url, { remote2: true });
     assert.equal(answer.status, 200);

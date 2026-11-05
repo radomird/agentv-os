@@ -40,8 +40,10 @@ export function isFeature(name: unknown): name is Feature {
 
 export interface FeaturesOptions {
   state: string; // the daemon's own state: features.json goes in it
-  // The channel this box updates from, as `agentv channel` says it.
-  channel: () => Promise<string>;
+  // The channel this box updates from, as `agentv channel` says it. The
+  // daemon always gives it. Without it, as in a test, what features.json
+  // says counts, as on edge.
+  channel?: () => Promise<string>;
   defaults?: FeatureMap; // for tests
 }
 
@@ -54,7 +56,7 @@ export class Features {
 
   constructor(options: FeaturesOptions) {
     this.path = join(options.state, "features.json");
-    this.channel = options.channel;
+    this.channel = options.channel ?? (async () => "edge");
     this.defaults = { ...FEATURES, ...options.defaults };
   }
 
@@ -85,6 +87,11 @@ export class Features {
       all[name] = changed === undefined || (changed && !edge) ? this.defaults[name] : changed;
     }
     return all;
+  }
+
+  // The same, by the name some tracks wrote to the spec before this landed.
+  all(): Promise<FeatureMap> {
+    return this.read();
   }
 
   async on(name: Feature): Promise<boolean> {
@@ -125,4 +132,15 @@ export class Features {
     writeFileSync(`${this.path}.next`, `${JSON.stringify(changes, null, 2)}\n`);
     renameSync(`${this.path}.next`, this.path);
   }
+}
+
+// Every switch, and one switch, from the daemon's state, for code that has
+// no Features of its own. Inside the daemon, use daemon.features, which
+// knows the box's channel.
+export function features(state: string): Promise<FeatureMap> {
+  return new Features({ state }).read();
+}
+
+export function featureOn(state: string, name: Feature): Promise<boolean> {
+  return new Features({ state }).on(name);
 }
