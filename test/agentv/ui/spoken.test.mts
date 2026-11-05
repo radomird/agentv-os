@@ -55,6 +55,35 @@ test("Settings → Sound has spoken answers on, and says the provider's own voic
   }
 });
 
+// Settings draws again on many of the daemon's events. Drawn again while
+// the first draw's ask for the voice waited, the second draw's answer is
+// the same voice the first one already kept, and its line still shows.
+test("Settings drawn again while it asks for the voice still shows which voice says the answers", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on("pageerror", (error) => errors.push(error.message));
+  const held: (() => void)[] = [];
+  await page.route(`${url}/api/voice`, async (route) => {
+    await new Promise<void>((resolve) => held.push(resolve));
+    await route.fulfill({ json: { ok: true, spoken: true, provider: "gemini", last: null, by: "provider", piper: "missing" } });
+  });
+  try {
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".grid .tile.focused");
+    const go = () => page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/sound"));
+    await go();
+    await page.waitForSelector('[data-action="spoken"]');
+    await go();
+    for (let tries = 0; held.length < 2 && tries < 250; tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(held.length, 2, "each draw asked for the voice");
+    held[0]();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    held[1]();
+    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("gemini's own voice"), undefined, { timeout: 5000 });
+  } finally {
+    await page.close();
+  }
+});
+
 test("a voice that's known only once the focus is in the panel still shows, and the focus stays put", async () => {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on("pageerror", (error) => errors.push(error.message));
