@@ -15,6 +15,7 @@ node_test "$ROOT/test/agentv/unit/hotspot.test.mts"
 
 export AGENTV_HOTSPOT_RUN="$SCRATCH/run" AGENTV_DAEMON_PRIVATE="$SCRATCH/daemon" AGENTV_NM_CONNECTIONS="$SCRATCH/connections"
 export AGENTV_HOTSPOT_DROP="$AGENTV_DAEMON_PRIVATE/hotspot-drop/request.json"
+export AGENTV_HOTSPOT_HANDED="$SCRATCH/etc/agentv/hotspot.json"
 export FAKE="$SCRATCH/fake"
 mkdir -p "$SCRATCH/bin" "$FAKE" "$AGENTV_DAEMON_PRIVATE/hotspot-drop"
 : >"$FAKE/rules"
@@ -199,6 +200,7 @@ FAKE_ONLINE=1 hotspot boot || fail "boot opens the hotspot on a box with no netw
 grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "without holding up the boot" "$(cat "$FAKE/calls")"
 pass "on first boot it opens only with setup not done and no network"
 
+
 hotspot status
 [[ $(cat "$SCRATCH/out") == "The setup hotspot is closed. The box joined new:net at 192.168.77.23."$'\n'"The last try said: that isn't a wi-fi network and password." ]] ||
   fail "status says where the box is, and the last try's reason" "$(cat "$SCRATCH/out")"
@@ -209,6 +211,32 @@ hotspot status
 [[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $ssid, password $password. Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: that password didn't work for new:net." ]] ||
   fail "and while it's on, its name, password and the last try's reason" "$(cat "$SCRATCH/out")"
 pass "status says how it stands"
+
+# A box a phone set up from the USB stick: the same network as there, even
+# on Ethernet, and the file goes when setup ends.
+mkdir -p "$(dirname "$AGENTV_HOTSPOT_HANDED")"
+printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
+: >"$FAKE/calls"
+FAKE_ONLINE=0 hotspot boot || fail "boot opens the handed-over network" "$(cat "$SCRATCH/out")"
+grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "even on a box that's online, where a phone is waiting on it" "$(cat "$FAKE/calls")"
+rm -f "$AGENTV_HOTSPOT_RUN/state.json"
+hotspot run || fail "it opens" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) == "AgenTV-1a2b" && $(state .password) == "abcdefghjk" ]] || fail "with the name and password the USB stick handed over" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+grep -q "ssid AgenTV-1a2b .*wifi-sec.psk abcdefghjk" "$FAKE/calls" || fail "as the access point's own" "$(grep "connection add" "$FAKE/calls")"
+printf '%s' '{"stop":true}' >"$AGENTV_HOTSPOT_DROP"
+hotspot drop || fail "setup ending closes it"
+[[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the handed-over network goes with it"
+pass "a box set up from the phone opens the USB stick's network again at first boot, even online, until setup ends"
+
+printf '%s\n' '{"ssid":"not ours","password":"x"}' >"$AGENTV_HOTSPOT_HANDED"
+rm -f "$AGENTV_HOTSPOT_RUN/state.json"
+: >"$FAKE/calls"
+FAKE_ONLINE=0 hotspot boot >/dev/null
+if grep -q "systemctl start" "$FAKE/calls"; then fail "a handed-over file that isn't AgenTV's network changes nothing"; fi
+hotspot run >/dev/null || true
+[[ $(state .ssid) != "not ours" ]] || fail "and isn't opened"
+rm -f "$AGENTV_HOTSPOT_HANDED"
+pass "a handed-over file that isn't AgenTV's own network is ignored"
 
 grep -qx "PathExists=/var/lib/private/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
 grep -qx "ExecStopPost=/usr/bin/agentv-hotspot down" "$ROOT/system/agentv-hotspot.service" || fail "the hotspot's unit cleans up however it stops"
