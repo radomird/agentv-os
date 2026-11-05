@@ -24,7 +24,8 @@ function rules(file: string) {
 
 test("S2.18 the owner (wheel) may restart and power off from the TV session, with other sessions open, never past a block", () => {
   const power = rules("50-agentv-power.rules");
-  for (const id of ["power-off", "power-off-multiple-sessions", "reboot", "reboot-multiple-sessions"]) {
+  // T2.2: and ask for the boot menu on the next boot, before restarting.
+  for (const id of ["power-off", "power-off-multiple-sessions", "reboot", "reboot-multiple-sessions", "set-reboot-to-boot-loader-menu"]) {
     assert.equal(power(`org.freedesktop.login1.${id}`, ["wheel"]), YES, id);
     assert.equal(power(`org.freedesktop.login1.${id}`, ["users"]), null, `${id} isn't for someone outside wheel`);
   }

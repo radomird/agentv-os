@@ -3,34 +3,54 @@
 // down 10 seconds, which Cancel stops, then the screen daemon turns the box
 // off through Omarchy's own command. Only an adult gets here, never while an
 // update runs, and the adult PIN, when there is one, asks first (ADR-009).
+//
+// Restart to the boot menu (ADR-060) is a restart whose next boot waits on
+// the boot menu, where a snapshot can be picked, so nobody has to catch the
+// quiet second at power on. It's behind the boot switch, and only on a box
+// whose boot loader takes the request.
 
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
+import { featureOn } from "../features.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { installing } from "./updates.ts";
 
 export const COUNTDOWN_S = 10;
 
+export type Power = "restart" | "shutdown" | "bootmenu";
+
 // The Power section of Settings: the two choices, or why not now.
 export function powerPanel(ctx: Ctx): HTMLElement[] {
   if (installing(ctx.updates)) {
     return [h("div", { class: "panel-big" }, "updating"), h("p", { class: "panel-note" }, "not while an update runs. it restarts the box itself when it needs to.")];
   }
+  // It shows once the switch and the box both say yes.
+  const bootMenu = h("button", { class: "button hidden", "data-focus": true, "data-action": "bootmenu", onclick: () => ctx.go("power/bootmenu") }, "restart to the boot menu →");
+  void Promise.all([featureOn("boot"), screen.bootMenu()]).then(([on, can]) => {
+    if (on && can) bootMenu.classList.remove("hidden");
+  });
   return [
     h("div", { class: "panel-title" }, "the box"),
     h("button", { class: "button", "data-focus": true, "data-action": "restart", onclick: () => ctx.go("power/restart") }, "restart →"),
     h("button", { class: "button", "data-focus": true, "data-action": "shutdown", onclick: () => ctx.go("power/shutdown") }, "shut down →"),
+    bootMenu,
     h("p", { class: "panel-note" }, "each asks first. shut down waits 10 seconds, and the box's power button turns it back on."),
   ];
 }
 
-export function power(ctx: Ctx, what: "restart" | "shutdown"): View {
-  const restart = what === "restart";
+export function power(ctx: Ctx, what: Power): View {
+  // The boot menu's is a restart too, that waits on the menu.
+  const restart = what !== "shutdown";
+  const menu = what === "bootmenu";
   const summary = h(
     "div",
     { class: "panel-note check-summary" },
-    restart ? "the apps close, then agentv starts again on home." : "the apps close, and the box is off 10 seconds after you choose. its power button turns it back on.",
+    menu
+      ? "it waits on the menu, where you can pick a snapshot."
+      : restart
+        ? "the apps close, then agentv starts again on home."
+        : "the apps close, and the box is off 10 seconds after you choose. its power button turns it back on.",
   );
   const count = h("div", { class: "power-count hidden" });
   const choose = h(
@@ -40,8 +60,8 @@ export function power(ctx: Ctx, what: "restart" | "shutdown"): View {
   );
   const cancel = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: () => stop() }, "cancel");
   const actions = h("div", { class: "check-actions" }, choose, cancel);
-  const question = restart ? "restart the box?" : "shut down the box?";
-  const [prompt, title] = heading(`tv power ${what}`, question);
+  const question = menu ? "restart to the boot menu?" : restart ? "restart the box?" : "shut down the box?";
+  const [prompt, title] = heading(`tv power ${menu ? "boot-menu" : what}`, question);
   const el = h("div", { class: "screen" }, h("div", { class: "page power" }, prompt, title, summary, count, actions), bar(ctx, "power", "↵ select · esc cancel"));
 
   let timer = 0;
@@ -80,7 +100,7 @@ export function power(ctx: Ctx, what: "restart" | "shutdown"): View {
     timer = 0;
     actions.classList.add("hidden");
     title.textContent = restart ? "restarting." : "shutting down.";
-    summary.textContent = restart ? "restarting now." : "shutting down now.";
+    summary.textContent = menu ? "restarting to the boot menu now." : restart ? "restarting now." : "shutting down now.";
     const reply = await screen.power(what, grant);
     if (reply.pin) ctx.forgetGrant();
     if (reply.ok) {
