@@ -536,10 +536,16 @@ function checkAfterUpdate(): void {
 // One toast per release, on home, for an adult, never during setup or an
 // install (ADR-025). Setup has no launcher, and nothing plays while home is
 // in front.
+// The release this page toasted. Home asks for the updates as it starts and
+// again as its events start, and an answer from before the box heard the
+// toast still says it hasn't been shown.
+let toastedHere: string | null = null;
+
 function toastRelease(): void {
   const version = release(ctx.updates);
-  if (!version || ctx.updates.toasted === version || updatingShown || ambient) return;
+  if (!version || ctx.updates.toasted === version || toastedHere === version || updatingShown || ambient) return;
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
+  toastedHere = version;
   ctx.updates.toasted = version;
   ctx.toast(`agentv ${version} is ready · settings → updates`, "ok");
   void daemon.toasted(version).catch(() => {});
