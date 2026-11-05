@@ -1080,6 +1080,12 @@ export class Screen {
     return this.goHome(section ? `settings/${section}` : "settings", "agentv screen settings");
   }
 
+  // Apps or Settings from the phone's menu: home comes in front of an app
+  // first, so the page isn't drawn out of sight (ADR-065).
+  phonePage(route: "apps" | "settings"): Promise<object> {
+    return this.goHome(route, "the phone");
+  }
+
   // Apps on the TV, or its add an app (agentv screen apps [add]), as from
   // home: the image checks add an app with keys from there (ADR-042).
   async appsPage(page: string): Promise<object> {
@@ -2717,6 +2723,8 @@ async function main(): Promise<void> {
     url: `${HOME_URL}api/remote`,
     command: async (cmd) => {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
+      // The phone's menu (ADR-065): home in front, then the page.
+      if (cmd === "apps" || cmd === "settings") await screen.phonePage(cmd);
     },
     ask: async (ask) => {
       if (ask.kind === "text") return typing.text(ask.value, ask.caret, ask.bar);

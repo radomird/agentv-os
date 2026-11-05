@@ -1141,6 +1141,19 @@ test("T8.2 the phone's play and pause reaches the app in front, with its own pla
   t.screen.stop();
 });
 
+test("T8.3 Settings and Apps from the phone's menu bring home in front of the app first", async () => {
+  const t = await tv();
+  await openApp(t, "agentv.tube", "0xb");
+  assert.deepEqual(await t.screen.phonePage("settings"), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes('go("settings")')));
+  await openApp(t, "agentv.player", "0xc");
+  assert.deepEqual(await t.screen.phonePage("apps"), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes('go("apps")')));
+  t.screen.stop();
+});
+
 test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it again plays it where it was", async () => {
   const t = await tv();
   const page = await openApp(t, "agentv.tube", "0xb");

@@ -7,6 +7,8 @@
 //   POST /api/phone/playback  { "action": "toggle" | "next" }, answered
 //                             { "ok": true, "by": "app" | "page" | "key" }
 //                             or { "ok": false, "why": "nothing is playing" }
+//   POST /api/phone/apps      Apps on the TV, from the remote's menu, with
+//                             home brought in front of an app first
 //
 // Each change goes to the screen daemon on its stream (daemon/remote.ts),
 // which puts it in the field in front and answers here. Only the newest
@@ -16,6 +18,7 @@
 // logs what's typed.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { WatchRow } from "../ledger.ts";
 import type { RemoteAsk } from "../remote.ts";
 import { barText, type Bar } from "../remote-text.ts";
 
@@ -50,6 +53,15 @@ export interface PhoneRemoteOptions {
   json(response: ServerResponse, status: number, data: unknown): void;
   body(request: IncomingMessage): Promise<unknown>;
   answerMs?: number;
+}
+
+// What's playing, for the card on the phone's remote: the newest row of the
+// ledger, while something plays and its app has read it in the last 30 s.
+export function nowPlaying(rows: WatchRow[], name: (app: string) => string, now = Date.now()): { title: string; app: string; left?: number } | null {
+  const row = rows[0];
+  if (!row || now - Date.parse(row.updated_at) > 30_000) return null;
+  const left = row.duration_s && row.position_s !== null ? Math.max(0, Math.round((row.duration_s - row.position_s) / 60)) : null;
+  return { title: row.title.toLowerCase(), app: name(row.app_id).toLowerCase(), ...(left === null ? {} : { left }) };
 }
 
 // Only what an answer can carry, within bounds.
@@ -89,6 +101,11 @@ export class PhoneRemote {
         return true;
       }
       this.reply(response, await this.ask({ kind: "playback", action }, PLAYBACK_MS));
+      return true;
+    }
+    if (method === "POST" && path === "/api/phone/apps") {
+      const sent = this.o.send({ cmd: "apps" });
+      this.o.json(response, sent ? 200 : 503, sent ? { ok: true } : { ok: false, error: "the tv session isn't on" });
       return true;
     }
     return false;

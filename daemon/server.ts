@@ -64,7 +64,7 @@ import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
 import { cleanField, type Field } from "./remote-text.ts";
-import { PhoneRemote } from "./routes/remote.ts";
+import { nowPlaying, PhoneRemote } from "./routes/remote.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
@@ -946,6 +946,8 @@ export class Daemon {
       signIn: this.signingIn ? { name: this.signingIn.name } : null,
       update: await this.phoneUpdate(),
       tv: { ...tv, view: remoteView(tv, this.signingIn !== null) },
+      // What's playing, for the new remote's card.
+      nowPlaying: remote2 && tv.playing ? await this.nowPlaying(viewer.id) : null,
       // TV setup's step, while it's on (stage 5): the phone says where it is.
       setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step], muted: setup.muted },
       // What setup's AI step asks of the phone (ADR-023): the provider's
@@ -962,6 +964,16 @@ export class Daemon {
       // the phone shows it under its box, and up to three to choose from.
       said: this.saidNow(),
     };
+  }
+
+  // The newest row of the ledger, while it's fresh, with its app's name.
+  private async nowPlaying(viewer: string): Promise<object | null> {
+    const names = new Map((await this.home.manifests().catch(() => [])).map(({ manifest }) => [manifest.id, manifest.name]));
+    try {
+      return nowPlaying(this.ledger.recent(viewer, { limit: 1 }), (app) => names.get(app) ?? app);
+    } catch {
+      return null;
+    }
   }
 
   // A field in an app's page, with the app's name for the phone's keyboard
@@ -1319,6 +1331,8 @@ export class Daemon {
         return;
       }
       this.broadcast("page", { route: "settings" });
+      // Over an app, home comes in front first (ADR-065).
+      this.remote({ cmd: "settings" });
       this.json(response, 200, { ok: true });
       return;
     }
