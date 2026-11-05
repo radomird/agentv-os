@@ -1125,6 +1125,22 @@ test("T8.1 an app's page says when its focus moves, and the daemon hears the fie
   t.screen.stop();
 });
 
+test("T8.2 the phone's play and pause reaches the app in front, with its own playback calls, or home with Music", async () => {
+  const calls: string[] = [];
+  const playback: Playback = { opened() {}, closed() {}, call: async (id, path) => void calls.push(`${id} ${path}`) };
+  const music = { handle: async (request: Record<string, unknown>) => ({ ok: true, op: request.op }), scan: async () => {} };
+  const t = await tv({ playback, music });
+  const home = t.screen.playbackFront();
+  assert.equal(home?.kind, "home");
+  assert.deepEqual(await (home as { music: (r: object) => Promise<object> }).music({ op: "now" }), { ok: true, op: "now" });
+  await openApp(t, "agentv.tube", "0xb");
+  const front = t.screen.playbackFront();
+  assert.deepEqual([front?.kind, (front as { id: string }).id], ["page", "agentv.tube"]);
+  await (front as { app: (path: string) => Promise<unknown> }).app("playback.pause");
+  assert.deepEqual(calls, ["agentv.tube playback.pause"]);
+  t.screen.stop();
+});
+
 test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it again plays it where it was", async () => {
   const t = await tv();
   const page = await openApp(t, "agentv.tube", "0xb");
