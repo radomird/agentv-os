@@ -621,12 +621,52 @@ jobs:
             echo "This job runs the checks that look at the ISO itself: $box" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
+      # The slow part of the root image, Omarchy's 900 or so packages
+      # pacstrapped into btrfs, from an earlier build when nothing in it
+      # changed (agentv-iso's bin/agentv-iso-root-cache). Only runs on agentv
+      # keep one others can read, and an ISO that's kept is made from
+      # scratch, though it still leaves its part for the next run.
+      - name: The root image's slow part, from an earlier build
+        id: root-cached
+        if: steps.night.outputs.key == '' && !inputs.keep-iso
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: iso/release/root-cache
+          key: agentv-root-image-none
+          restore-keys: agentv-root-image-
+
       - name: Build the ISO and install it
         id: build
         if: steps.night.outputs.key == ''
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_ROOT_CACHE: "1"
+          AGENTV_ROOT_CACHE_FRESH: ${{ inputs.keep-iso && '1' || '' }}
         run: set -o pipefail; iso/test/agentv/image/ci --hand-on iso/test-runs/box --no-checks 2>&1 | tee -a image.log
+
+      - name: Which root image it used
+        id: root
+        if: steps.build.outcome == 'success'
+        env:
+          HAD: ${{ steps.root-cached.outputs.cache-matched-key }}
+        run: |
+          key=$(cat iso/release/root-cache/key 2>/dev/null || true)
+          how=$(cat iso/release/root-cache/how 2>/dev/null || true)
+          echo "key=$key" >>"$GITHUB_OUTPUT"
+          if [[ $how == "hit" ]]; then
+            echo "The root image's Omarchy part came from an earlier build ($key)." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [[ -n $key ]]; then
+            echo "The root image's Omarchy part was built in this run ($key)." | tee -a "$GITHUB_STEP_SUMMARY"
+            [[ $HAD == "agentv-root-image-$key" ]] || echo "save=true" >>"$GITHUB_OUTPUT"
+          fi
+          echo "Build: $(cat iso/test-runs/build-seconds 2>/dev/null || echo ?) s." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the root image's slow part
+        if: steps.root.outputs.save == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: iso/release/root-cache
+          key: agentv-root-image-${{ steps.root.outputs.key }}
 
       # The installed box, under this run's own key: the cache hands a few GB
       # back in about a minute, where an artifact took 20 (see "The night's
