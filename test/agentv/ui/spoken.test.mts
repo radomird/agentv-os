@@ -138,3 +138,41 @@ test("turning spoken answers off keeps it off, and says the TV only shows them",
     await page.close();
   }
 });
+
+// Settings changed elsewhere ask the page for home again. An answer that
+// left before this page saved a setting, and came after, doesn't put the
+// old setting back.
+test("an answer about home from before a switch is turned off doesn't turn it back on", async () => {
+  const page = await tv({ by: "piper", piper: "ready" });
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let asked = false;
+  let fulfilled: () => void = () => {};
+  const done = new Promise<void>((resolve) => (fulfilled = resolve));
+  await page.route(`${url}/api/home`, async (route) => {
+    if (asked) return route.continue();
+    asked = true;
+    const answer = await route.fetch();
+    await held;
+    await route.fulfill({ response: answer });
+    fulfilled();
+  });
+  try {
+    // A change from somewhere else, such as the phone: the page asks for home.
+    await fetch(`${url}/api/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spoken: true }) });
+    for (let tries = 0; !asked && tries < 250; tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(asked, "the page asked for home");
+    await page.click('[data-action="spoken"]');
+    await page.waitForFunction(() => document.querySelector('[data-action="spoken"] .button-value')?.textContent === "[ ]");
+    await page.waitForTimeout(300);
+    release();
+    await done;
+    await page.waitForTimeout(300);
+    assert.equal(await page.textContent('[data-action="spoken"] .button-value'), "[ ]");
+    assert.equal((await daemon.home.settings()).spoken, false);
+    await page.click('[data-action="spoken"]');
+    await page.waitForFunction(() => document.querySelector('[data-action="spoken"] .button-value')?.textContent === "[x]");
+  } finally {
+    await page.close();
+  }
+});
