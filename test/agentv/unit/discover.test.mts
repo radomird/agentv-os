@@ -31,7 +31,7 @@ import {
   wsdResolve,
   type Run,
 } from "../../../daemon/discover.ts";
-import { kindsOf } from "../../../daemon/routes/discover.ts";
+import { kindsOf, loginOf } from "../../../daemon/routes/discover.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/discover");
@@ -125,6 +125,13 @@ test("T10.1 NFS: rpcbind says where MOUNT is, and MOUNT lists the exports", () =
   assert.deepEqual(nfsExports(Buffer.alloc(4)), []);
 });
 
+test("a NAS's user name and password, as smbclient takes them", () => {
+  assert.deepEqual(loginOf({ host: "nas.local", user: "radomir", password: "a b,c=d" }), { host: "nas.local", user: "radomir", password: "a b,c=d" });
+  for (const no of [null, {}, { host: "nas.local", user: "", password: "x" }, { host: "nas.local", user: "my name", password: "x" }, { host: "nas.local", user: "a:b", password: "x" }, { host: "nas.local", user: "r", password: "line\nbreak" }, { host: "", user: "r", password: "x" }, { host: "nas.local", user: "r", password: 5 }]) {
+    assert.equal(typeof loginOf(no), "string", JSON.stringify(no));
+  }
+});
+
 test("the kinds a list asks for", () => {
   assert.deepEqual(kindsOf(null), ["jellyfin", "emby", "plex", "immich", "smb", "nfs"]);
   assert.deepEqual(kindsOf("jellyfin,emby"), ["jellyfin", "emby"]);
@@ -146,6 +153,7 @@ let rpc: TcpServer;
 const asked: string[] = [];
 const quietAsked: string[] = [];
 let smbAsked: string[][] = [];
+let smbEnv: (Record<string, string> | undefined)[] = [];
 let smbAnswer = { stdout: fixture("smbclient-list.txt"), stderr: "", code: 0 };
 let jellyfinQuiet = false;
 
@@ -222,8 +230,9 @@ before(async () => {
   for (const type of ["smb", "nfs"]) writeFileSync(join(scratch, `${type}.txt`), fixture(`avahi-${type}.txt`).replaceAll("192.168.77.10", "127.0.0.1"));
   writeFileSync(join(bin, "avahi-browse"), `#!/bin/bash\necho "$*" >>"${scratch}/avahi-args"\ntype=\${!#}\ncat "${scratch}/\${type:1:3}.txt"\nexec sleep 60\n`);
   chmodSync(join(bin, "avahi-browse"), 0o755);
-  const run: Run = async (command, args) => {
+  const run: Run = async (command, args, _timeoutMs, env) => {
     smbAsked.push([command, ...args]);
+    smbEnv.push(env);
     return smbAnswer;
   };
 
@@ -328,6 +337,24 @@ test("a NAS's shares: smbclient's list and its NFS exports, only for a machine t
   const login = await (await fetch(`${url}/api/discover/shares?host=127.0.0.1`)).json();
   assert.equal(login.login, true);
   assert.deepEqual(login.shares.map((share: { kind: string }) => share.kind), ["nfs", "nfs", "nfs"]);
+
+  // Then with the user name and password typed on the phone: the password
+  // goes in smbclient's environment, never its command line, and each
+  // share's address has the user name, ready for Music's sources.
+  smbAnswer = { stdout: fixture("smbclient-list.txt"), stderr: "", code: 0 };
+  smbAsked = [];
+  smbEnv = [];
+  const signedIn = await fetch(`${url}/api/discover/shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "nas.local", user: "radomir", password: "tunes, at 9 = fine" }) });
+  assert.equal(signedIn.status, 200);
+  const listed = await signedIn.json();
+  assert.equal(listed.login, undefined);
+  assert.deepEqual(listed.shares.filter((share: { kind: string }) => share.kind === "smb").map((share: { uri: string }) => share.uri), ["smb://radomir@nas.local/music", "smb://radomir@nas.local/photos", "smb://radomir@nas.local/films"]);
+  assert.deepEqual(smbAsked, [["smbclient", "-L", "//nas.local", "-I", "127.0.0.1", "-U", "radomir", "-g"]]);
+  assert.deepEqual(smbEnv, [{ PASSWD: "tunes, at 9 = fine" }]);
+  assert.ok(!smbAsked.flat().some((arg) => arg.includes("tunes")));
+  // A user name or password smbclient would read wrongly is refused.
+  const refusedLogin = await fetch(`${url}/api/discover/shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ host: "nas.local", user: "me@home", password: "x" }) });
+  assert.equal(refusedLogin.status, 400);
 
   // Anywhere the box didn't find is never asked.
   smbAsked = [];

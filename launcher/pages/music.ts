@@ -7,6 +7,7 @@
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
+import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "./network.ts";
 import { bar, heading } from "./parts.ts";
 
 interface AlbumInfo {
@@ -143,6 +144,7 @@ function albumTile(ctx: Ctx, album: AlbumInfo): HTMLElement {
 
 export function music(ctx: Ctx, album?: string): View {
   if (album === "sources") return sources(ctx);
+  if (album?.startsWith("nas:")) return nas(ctx, album.slice(4));
   if (album) return albumPage(ctx, album);
   const results = h("div", { class: "row music-results" });
   const albums = h("div", { class: "row" }, h("div", { class: "empty" }, "…"));
@@ -279,6 +281,38 @@ function albumPage(ctx: Ctx, id: string): View {
   return { el, first };
 }
 
+// A NAS the box found (pages/network.ts): its folders, after a sign-in typed
+// on the phone if it wants one. The one picked becomes a source, with the
+// password kept where only root reads it, as for a share typed in.
+function nas(ctx: Ctx, host: string): View {
+  let adding = false;
+  const add = async (share: ShareFound, password?: string) => {
+    if (adding) return;
+    adding = true;
+    ctx.toast("mounting the share");
+    const reply = await screen.music("add-share", { uri: share.uri, ...(password ? { password } : {}) });
+    adding = false;
+    if (reply.ok) {
+      ctx.sounds.play("confirm");
+      ctx.toast(`${share.name} is a music source now`, "ok");
+      ctx.back();
+      return;
+    }
+    ctx.sounds.play("failure");
+    ctx.toast(reply.error ?? "that share didn't mount", "fail");
+    // A folder shown to a guest that wants a user name to open.
+    if (/user name and password/.test(reply.error ?? "") && !password) folders.signIn();
+  };
+  const folders = shareList({ host, focus: ctx.focus, pick: (share, password) => void add(share, password) });
+  const el = h(
+    "div",
+    { class: "screen" },
+    h("div", { class: "page music" }, ...heading(`music sources ${host}`, `${host}.`), h("div", { class: "panel-note" }, "pick the folder with your music"), folders.el),
+    bar(ctx, "music", "↵ add it · esc back"),
+  );
+  return { el, first: folders.first() };
+}
+
 // Where the music comes from: folders, USB drives and shares, a new share,
 // and reading them all again.
 function sources(ctx: Ctx): View {
@@ -328,6 +362,16 @@ function sources(ctx: Ctx): View {
     },
     "read them all again",
   );
+  // With the discover switch on, the NASes on the network come first, and
+  // the share's address typed on the phone second.
+  const onNetwork = h("div", { class: "found" });
+  shown(onNetwork, false);
+  void discoverOn().then((on) => {
+    if (!on) return;
+    const found = foundList({ kinds: NAS, machines: true, focus: ctx.focus, typed: address, pick: (one) => ctx.go(`music/nas:${one.host}`) });
+    onNetwork.replaceChildren(h("div", { class: "section" }, "# on your network"), found.el);
+    shown(onNetwork, true);
+  });
   const el = h(
     "div",
     { class: "screen" },
@@ -337,6 +381,7 @@ function sources(ctx: Ctx): View {
       ...heading("music sources", "sources."),
       list,
       progress,
+      onNetwork,
       h("div", { class: "section" }, "# a nas share"),
       h("div", { class: "share-form" }, address, password),
       hint,
