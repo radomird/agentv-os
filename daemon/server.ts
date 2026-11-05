@@ -64,6 +64,8 @@ import { Listening } from "./listening.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
+import { Discover, type DiscoverOptions } from "./discover.ts";
+import { discoverRoute } from "./routes/discover.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -147,6 +149,8 @@ export interface DaemonOptions {
   country?: { zone?: () => Promise<string>; waitMs?: number };
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
+  // Servers and shares on the home network: stand-ins' ports, for tests.
+  discover?: DiscoverOptions;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -277,6 +281,7 @@ export class Daemon {
   private art: ArtArchives;
   private immich: ImmichAlbum;
   private immichBusy = false;
+  readonly discover: Discover;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The setup hotspot's captive page.
@@ -433,6 +438,7 @@ export class Daemon {
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
+    this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), ...options.discover });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -534,6 +540,7 @@ export class Daemon {
     this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
+    this.discover.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -1233,6 +1240,7 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
+    if (await discoverRoute(this.discover, method, path, url, response, true)) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -2010,6 +2018,8 @@ export class Daemon {
       response.writeHead(204).end();
       return;
     }
+
+    if (await discoverRoute(this.discover, method, path, url, response)) return;
 
     if (method === "GET" && path === "/api/state") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

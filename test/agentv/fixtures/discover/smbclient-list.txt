@@ -1,0 +1,6 @@
+Disk|music|Music library
+Disk|photos|
+Disk|films|
+Disk|backup$|
+IPC|IPC$|IPC Service (Samba 4.19.5-Ubuntu)
+SMB1 disabled -- no workgroup available
