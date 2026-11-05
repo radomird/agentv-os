@@ -41,7 +41,7 @@ export function saidOpen(): boolean {
 // The page under the card was drawn again, as home is when something
 // changes elsewhere. The card keeps the keys, and the focus goes back to the
 // same tile in the new page once the card is put away.
-export function saidPageDrawn(find: (was: string | undefined) => HTMLElement | null): void {
+export function saidPageDrawn(find: (was: string | undefined) => HTMLElement | null | undefined): void {
   if (!open) return;
   const was = open.before?.dataset.action ?? open.before?.dataset.id;
   open.before = find(was) ?? undefined;
