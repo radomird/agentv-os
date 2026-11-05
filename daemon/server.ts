@@ -30,7 +30,7 @@ import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
-import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
+import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO, themeVideoRoute } from "./backgrounds.ts";
 import { Features, featuresRoute } from "./features.ts";
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
@@ -3226,6 +3226,8 @@ export class Daemon {
         return;
       }
     }
+
+    if (await themeVideoRoute(this.backgrounds, { method, path, request, response, body: () => this.body(request), json: (status, data) => this.json(response, status, data) })) return;
 
     if (method === "GET" && path === "/api/backgrounds") {
       this.json(response, 200, { ok: true, ...(await this.backgrounds.read()) });

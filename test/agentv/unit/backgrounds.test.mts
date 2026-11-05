@@ -16,6 +16,8 @@ const scratch = mkdtempSync(join(tmpdir(), "agentv-backgrounds-"));
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 2)]);
 const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP"), Buffer.alloc(64, 3)]);
+// A theme with no intro due, and Omarchy's intros on.
+const NO_INTRO = { intros: true, introDue: null, introShown: null };
 
 let daemon: Daemon;
 let url = "";
@@ -58,7 +60,7 @@ test("a credit is one line of plain text", () => {
 test("S5.3 a photo becomes the background at once, kept with its credit, and the oldest goes once there are too many", async () => {
   const dir = join(scratch, "store");
   const store = new Backgrounds({ dir });
-  assert.deepEqual(await store.read(), { source: "theme", current: null, items: [], theme: { name: null, current: null, items: [] } }, "a new box: the theme's own, none yet");
+  assert.deepEqual(await store.read(), { source: "theme", current: null, items: [], theme: { name: null, current: null, items: [], ...NO_INTRO }, softwareVideo: false }, "a new box: the theme's own, none yet");
   assert.match((await store.add(Buffer.from("not a picture"), { from: "iphone" })).error ?? "", /jpeg, png or webp/);
   const first = await store.add(JPEG, { text: "photo by ana on unsplash", from: "radomir on iphone" });
   assert.equal(first.state?.source, "photos");
@@ -94,7 +96,7 @@ test("S5.8 the theme's own backgrounds: each kept once, by what's in it, the one
   const b = { id: pictureId(PNG), type: "image/png" as const };
   const offered = await store.offerTheme({ theme: "tokyo-night", current: b.id, files: [a, b] });
   assert.deepEqual(offered.need, [a.id, b.id], "it asks for each it doesn't have");
-  assert.deepEqual(offered.state?.theme, { name: "tokyo-night", current: null, items: [] }, "none shown until they're here");
+  assert.deepEqual(offered.state?.theme, { name: "tokyo-night", current: null, items: [], ...NO_INTRO }, "none shown until they're here");
   assert.match((await store.addThemeFile(a.id, PNG)).error ?? "", /isn't the background it said/);
   assert.match((await store.addThemeFile(pictureId(WEBP), WEBP)).error ?? "", /isn't one of the theme's/);
   assert.equal((await store.addThemeFile(a.id, JPEG)).state?.theme.current, a.id, "the first that's here, until the one Omarchy shows is");
@@ -131,7 +133,7 @@ test("a box from before the theme's own keeps the source it had", async () => {
   const dir = join(scratch, "before");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "backgrounds.json"), JSON.stringify({ source: "field", current: null, items: [] }));
-  assert.deepEqual(await new Backgrounds({ dir }).read(), { source: "field", current: null, items: [], theme: { name: null, current: null, items: [] } });
+  assert.deepEqual(await new Backgrounds({ dir }).read(), { source: "field", current: null, items: [], theme: { name: null, current: null, items: [], ...NO_INTRO }, softwareVideo: false });
 });
 
 test("S5.8 the screen daemon hands the theme's own over through the daemon's local side, which the TV hears", async () => {
