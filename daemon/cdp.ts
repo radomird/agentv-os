@@ -18,6 +18,10 @@ export class CdpPipe {
   private buffer = "";
   private sessions = new Map<string, string>();
   private listeners = new Map<string, ((params: any, sessionId?: string) => void)[]>();
+  // bindIn's handlers, by the session and the function's name, and the keys
+  // each page has, so closing it takes them away.
+  private bindings = new Map<string, (payload: string) => void>();
+  private bound = new Map<string, string[]>();
 
   constructor(out: Writable, input: Readable) {
     this.out = out;
@@ -32,6 +36,9 @@ export class CdpPipe {
     input.on("close", fail);
     input.on("error", fail);
     out.on("error", fail);
+    this.on("Runtime.bindingCalled", (params, sessionId) => {
+      this.bindings.get(`${sessionId}\0${params.name}`)?.(String(params.payload ?? ""));
+    });
   }
 
   private receive(chunk: string): void {
@@ -109,6 +116,8 @@ export class CdpPipe {
 
   async close(targetId: string): Promise<void> {
     this.sessions.delete(`target:${targetId}`);
+    for (const key of this.bound.get(targetId) ?? []) this.bindings.delete(key);
+    this.bound.delete(targetId);
     await this.send("Target.closeTarget", { targetId });
   }
 
@@ -135,6 +144,19 @@ export class CdpPipe {
     // is now and in none it loads after.
     await this.send("Page.enable", {}, session);
     await this.send("Page.addScriptToEvaluateOnNewDocument", { source, worldName, runImmediately: true }, session);
+  }
+
+  // Gives the isolated world of that name in one page, by its target id, a
+  // function, window[name](text), that calls handler here. Each document the
+  // page loads after has it too, and the page's own scripts can't reach it.
+  // Chromium says when it's called only with Runtime on for the page.
+  async bindIn(targetId: string, name: string, worldName: string, handler: (payload: string) => void): Promise<void> {
+    const session = await this.attachTarget(targetId);
+    const key = `${session}\0${name}`;
+    this.bindings.set(key, handler);
+    this.bound.set(targetId, [...(this.bound.get(targetId) ?? []).filter((k) => k !== key), key]);
+    await this.send("Runtime.enable", {}, session);
+    await this.send("Runtime.addBinding", { name, executionContextName: worldName }, session);
   }
 
   // Gives the page at prefix a function, window[name](json), that calls
@@ -180,4 +202,4 @@ export class CdpPipe {
 
 // What the screen daemon uses of a browser's pipe, so the tests can stand in
 // for one.
-export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn">;
+export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn"> & Partial<Pick<CdpPipe, "bindIn">>;

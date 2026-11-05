@@ -5,7 +5,7 @@
 // its sound (ADR-024).
 
 import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
-import { fieldKind, tell } from "./context.ts";
+import { fieldOf, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
@@ -31,6 +31,7 @@ import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
+import { typingField, typingHeard } from "./typing.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
@@ -81,7 +82,11 @@ const page = document.getElementById("page")!;
 const sounds = new Sounds();
 const focus = new Focus(document.getElementById("ring")!);
 // A text field with the focus opens the phone's keyboard (ADR-037).
-focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
+focus.onSet = (el) => {
+  const field = el instanceof HTMLInputElement ? fieldOf(el) : null;
+  tell({ field });
+  typingField(field);
+};
 let history: string[] = ["home"];
 let view: View | undefined;
 
@@ -822,6 +827,8 @@ async function start(): Promise<void> {
     // A provider's terms accepted on a phone, for a key Settings → AI waits
     // to keep (Q104).
     terms: (data) => termsHeard(data),
+    // What a phone is typing, as it's typed (ADR-065).
+    typing: (data) => typingHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {

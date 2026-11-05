@@ -3,9 +3,22 @@
 // daemon, holds its stream open and hands each one to the virtual input
 // device (input.py), so they reach whatever's in front. What's typed can be
 // a password, so it's never logged (ADR-032).
+//
+// The new remote (ADR-065) also asks things the daemon waits on: a change to
+// what's typed, Enter, and play or pause. Each one comes on the same stream,
+// in order with the keys, and the answer goes back over the daemon's port.
 
 import { createConnection } from "node:net";
 import { join } from "node:path";
+import { type Bar, NativeTyping } from "./remote-text.ts";
+
+// What the daemon asks of the TV session for a phone, numbered for the
+// answer: the field in front holds value (daemon/remote-text.ts), Enter, or
+// play and pause in whatever plays.
+export type RemoteAsk =
+  | { n: number; kind: "text"; value: string; caret: number | null; bar: Bar | null }
+  | { n: number; kind: "done" }
+  | { n: number; kind: "playback"; action: "toggle" | "next" };
 
 export interface RemoteOptions {
   url: string; // the daemon's stream: http://127.0.0.1:3000/api/remote
@@ -17,6 +30,9 @@ export interface RemoteOptions {
   // What the TV session does for a phone, past the PIN the daemon checked:
   // {"cmd": "update-install"}, Install now from the phone (S4.8).
   command?: (cmd: string) => Promise<void>;
+  // Answers the daemon's asks. Without it, as on Omarchy's desktop, text is
+  // typed as keystrokes and play and pause is the media key.
+  ask?: (ask: RemoteAsk) => Promise<object>;
   log?: (line: string) => void;
   retryMs?: number;
 }
@@ -46,6 +62,8 @@ export class RemoteInput {
   private as: string;
   private send: (request: Record<string, unknown>) => Promise<void>;
   private command: (cmd: string) => Promise<void>;
+  private ask: (ask: RemoteAsk) => Promise<object>;
+  private native = new NativeTyping();
   private log: (line: string) => void;
   private retryMs: number;
   private stopped = false;
@@ -59,6 +77,7 @@ export class RemoteInput {
     this.as = options.as ?? "1";
     this.send = options.send ?? ((request) => sendInput(request));
     this.command = options.command ?? (async () => {});
+    this.ask = options.ask ?? ((ask) => this.keystrokes(ask));
     this.log = options.log ?? ((line) => console.log(line));
     this.retryMs = options.retryMs ?? 2000;
   }
@@ -112,6 +131,14 @@ export class RemoteInput {
     } catch {
       return;
     }
+    if (request.ask && typeof request.ask === "object") {
+      const ask = request.ask as RemoteAsk;
+      this.chain = this.chain.then(async () => {
+        const answer = await this.ask(ask).catch((error: Error) => ({ ok: false, why: error.message }));
+        void this.reply(ask.n, answer);
+      });
+      return;
+    }
     const cmd = typeof request.cmd === "string" ? request.cmd : null;
     this.chain = this.chain
       .then(() => (cmd ? this.command(cmd) : this.send(request)))
@@ -122,5 +149,32 @@ export class RemoteInput {
         // Never the text itself: only what went wrong.
         this.log(`phone input: ${error.message}`);
       });
+  }
+
+  // The answer to an ask, over the daemon's port, with the same header.
+  private async reply(n: number, answer: object): Promise<void> {
+    try {
+      await fetch(`${this.url}/answer/${Number(n)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-AgenTV-Screen": this.as },
+        body: JSON.stringify(answer),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (error) {
+      this.log(`phone input: an answer didn't reach the daemon (${(error as Error).message})`);
+    }
+  }
+
+  // With nothing in front but native windows: keystrokes for text, and the
+  // media key for play and pause.
+  private async keystrokes(ask: RemoteAsk): Promise<object> {
+    if (ask.kind === "text") return this.native.type(ask.value, "", this.send);
+    if (ask.kind === "done") {
+      this.native.reset();
+      await this.send({ key: "enter" });
+      return { ok: true, by: "key" };
+    }
+    await this.send({ key: ask.action === "next" ? "next" : "playpause" });
+    return { ok: true, by: "key" };
   }
 }
