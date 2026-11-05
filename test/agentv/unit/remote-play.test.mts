@@ -103,3 +103,13 @@ test("T8.2 what plays is found through shadow roots and frames, so the phone swi
     assert.ok(expression.includes("el.shadowRoot") && expression.includes("contentDocument"), "it looks in shadow roots and frames");
   }
 });
+
+test("T8.3 what's playing for the phone's card is the ledger's newest row while it's fresh, with the minutes left", async () => {
+  const { nowPlaying } = await import("../../../daemon/routes/remote.ts");
+  const row = { id: 1, viewer_id: "radomir", app_id: "local.mytv", kind: "film" as const, title: "Sintel", season: null, episode: null, position_s: 480, duration_s: 888, started_at: "2026-11-05T10:00:00+00:00", updated_at: "2026-11-05T10:00:20+00:00" };
+  const at = Date.parse("2026-11-05T10:00:30Z");
+  assert.deepEqual(nowPlaying([row], () => "My TV", at), { title: "sintel", app: "my tv", left: 7 });
+  assert.deepEqual(nowPlaying([{ ...row, duration_s: null }], () => "My TV", at), { title: "sintel", app: "my tv" });
+  assert.equal(nowPlaying([row], () => "My TV", at + 60_000), null, "a row nothing has read for a while isn't playing");
+  assert.equal(nowPlaying([], () => "x", at), null);
+});
