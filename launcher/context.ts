@@ -4,7 +4,8 @@
 // it changes, a few changes at a time. Never a digit of the PIN.
 
 type Pin = { title: string; for: string; digits: number; error: string | null } | null;
-type Context = { pin: Pin; field: { kind: string } | null; screen: "home" | "menu" | "ambient" };
+type Field = { kind: string; label?: string };
+type Context = { pin: Pin; field: Field | null; screen: "home" | "menu" | "ambient" };
 
 const now: Context = { pin: null, field: null, screen: "home" };
 let timer = 0;
@@ -24,4 +25,11 @@ export function tell(change: Partial<Context>): void {
 export function fieldKind(el: HTMLInputElement): string {
   if (el.inputMode === "numeric" || el.type === "number") return "number";
   return ["search", "email", "password", "url"].includes(el.type) ? el.type : "text";
+}
+
+// The field for the phone: its kind, and its name for the phone's keyboard
+// to say what it's typing in (ADR-065).
+export function fieldOf(el: HTMLInputElement): Field {
+  const label = el.getAttribute("aria-label") || el.labels?.[0]?.textContent || el.placeholder || "";
+  return { kind: fieldKind(el), label: label.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 40) };
 }
