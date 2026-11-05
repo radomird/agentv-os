@@ -54,6 +54,7 @@ import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, Setup, type SetupState } from "./setup.ts";
 import { Features } from "./features.ts";
+import { SetupRoutes } from "./routes/setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
@@ -250,6 +251,16 @@ export class Daemon {
   readonly setupState: Setup;
   // The switches phase 2's screens land behind (PHASE-2-PLAN.md).
   readonly features: Features;
+  // Setup's own routes (daemon/routes/setup.ts), and what they may use.
+  private setupRoutes = new SetupRoutes({
+    setup: () => this.setupState,
+    country: () => this.country,
+    json: (response, status, data) => this.json(response, status, data),
+    body: (request) => this.body(request),
+    broadcast: (event, data) => this.broadcast(event, data),
+    log: (line) => this.log(line),
+    adult: async (request, response, what) => this.guarded(request, response, what) && (await this.adult(request, response, what)),
+  });
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -1139,6 +1150,7 @@ export class Daemon {
       await this.file(response, join("companion-web", "setup.html"));
       return;
     }
+    if (await this.setupRoutes.handle("captive", request, response, url)) return;
     if (method === "GET" && CAPTIVE_FILES.includes(path.slice(1))) {
       await this.file(response, path.slice(1));
       return;
@@ -1244,6 +1256,8 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
+
+    if (await this.setupRoutes.handle("phone", request, response, url)) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -1991,6 +2005,8 @@ export class Daemon {
     const url = new URL(request.url ?? "/", "http://localhost");
     const path = url.pathname;
     const method = request.method;
+
+    if (await this.setupRoutes.handle("tv", request, response, url)) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

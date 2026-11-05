@@ -426,6 +426,8 @@ async function start(): Promise<void> {
         view?.heard?.("key", data);
       },
       background: (data) => view?.heard?.("background", data),
+      // The phone's time zone, for the location step.
+      location: (data) => view?.heard?.("location", data),
       "setup-apps": (data) => {
         ctx.installs = data as Installs;
         view?.heard?.("setup-apps", data);
