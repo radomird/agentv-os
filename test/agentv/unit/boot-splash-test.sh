@@ -22,7 +22,9 @@ fake() {
   printf '#!/bin/bash\n%s\n' "$2" >"$bin/$1"
   chmod +x "$bin/$1"
 }
-fake plymouth 'echo "plymouth $*" >>"$CALLS"'
+fake plymouth 'echo "plymouth $*" >>"$CALLS"; [[ $1 != --ping ]] || [[ -n ${PLYMOUTH_UP:-} ]]'
+fake systemd-run 'echo "systemd-run $*" >>"$CALLS"'
+fake logger ':'
 fake quickshell 'echo "quickshell $* background=$AGENTV_SPLASH_BACKGROUND logo=$AGENTV_SPLASH_LOGO" >>"$CALLS"'
 fake qs 'echo "qs $*" >>"$CALLS"; exit 1'
 fake agentv-channel 'echo "${CHANNEL:-edge}"'
@@ -48,9 +50,17 @@ pass "agentv-boot-splash's default for the boot switch is daemon/features.ts's"
 
 printf '{"boot": true}\n' >"$state/features.json"
 splash quit || fail "quit runs with the switch on" "$(cat "$SCRATCH/out")"
-[[ $(cat "$calls") == "plymouth quit --retain-splash" && -f $note ]] ||
-  fail "with the switch on, Plymouth leaves its last frame up and the boot gets its note" "$(cat "$calls")"
-pass "T2.1 with the boot switch on, Plymouth leaves the splash on the screen as it quits"
+[[ $(tail -n 1 "$calls") == "plymouth deactivate" && -f $note ]] ||
+  fail "with the switch on, Plymouth lets go of the screen but keeps its last frame up, and the boot gets its note" "$(cat "$calls")"
+grep -qx "systemd-run --no-block --quiet --collect --on-active=120 --unit=agentv-boot-splash-fallback /usr/bin/plymouth quit" "$calls" ||
+  fail "and quits by itself two minutes later if nothing releases it" "$(cat "$calls")"
+pass "T2.1 with the boot switch on, Plymouth keeps the splash up for the TV session, with a way out if it never comes"
+
+splash release || fail "release runs with nothing to release" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "plymouth --ping" ]] || fail "with Plymouth gone, release does nothing" "$(cat "$calls")"
+PLYMOUTH_UP=1 splash release || fail "release runs" "$(cat "$SCRATCH/out")"
+[[ $(tail -n 1 "$calls") == "plymouth quit --retain-splash" ]] || fail "release quits Plymouth, leaving the screen as the TV session drew it" "$(cat "$calls")"
+pass "T2.1 once the TV session has the screen, Plymouth quits and leaves it as it is"
 
 CHANNEL=stable splash quit || fail "quit runs on stable" "$(cat "$SCRATCH/out")"
 [[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "a switch turned on while on edge is off on stable" "$(cat "$calls")"
@@ -79,6 +89,8 @@ pass "T2.1 the TV session draws the splash, in the colour Plymouth drew, only wh
 
 splash "done" || fail "done never fails, splash or not" "$(cat "$SCRATCH/out")"
 [[ $(cat "$calls") == "qs ipc -n -p /usr/share/agentv/session/splash call splash done" ]] || fail "done ends the splash" "$(cat "$calls")"
+grep -qx 'ExecStart=/usr/bin/agentv-boot-splash release' "$ROOT/system/agentv-boot-splash-release.service" ||
+  fail "the release has a unit of its own, for the TV session to start"
 splash nope && fail "an unknown part is refused"
 pass "T2.1 done ends the splash, and doesn't fail when there's none"
 
@@ -93,6 +105,8 @@ pass "T2.1 Plymouth waits for first boot's work, and quits through agentv-boot-s
 hypr="$ROOT/session/hypr.lua"
 start=$(sed -n '/^hl.on("hyprland.start", function()$/,/^end)$/p' "$hypr" | grep -m 1 'hl.exec_cmd(')
 [[ $start == '  hl.exec_cmd("agentv-boot-splash tv")' ]] || fail "the TV session starts the splash before anything else" "$start"
+grep -qF 'hl.exec_cmd("systemctl start --no-block agentv-boot-splash-release.service")' "$hypr" ||
+  fail "then tells Plymouth it has the screen"
 grep -qF 'background_color = splash_background() or "rgb(1a1b26)",' "$hypr" || fail "the TV session's first frame takes the splash's colour"
 grep -qF 'io.open("/run/agentv-boot-splash", "r")' "$hypr" || fail "hypr.lua reads the boot's note"
 grep -qF 'NOTE=${AGENTV_BOOT_SPLASH_NOTE:-/run/agentv-boot-splash}' "$ROOT/bin/agentv-boot-splash" ||

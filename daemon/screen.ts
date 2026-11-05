@@ -837,6 +837,7 @@ export class Screen {
     if (!app.cdp) return;
     await Promise.race([app.cdp.evaluate(HOME_URL, TWO_FRAMES).catch(() => null), sleep(2000)]);
     if (this.ending || this.apps.get("home") !== app) return;
+    this.log("home's page has drawn, so the splash goes");
     this.launcher.splashDone?.();
   }
 

@@ -1,0 +1,12 @@
+# Straight to the TV (ADR-060): once the TV session has the screen, Plymouth
+# quits and leaves it as it is. Before that, Plymouth only let go of the
+# screen, so the boot splash stayed up until the session's first frame
+# replaced it. The TV session starts this as it begins (session/hypr.lua),
+# and polkit lets the owner start this one unit (50-agentv-splash.rules).
+
+[Unit]
+Description=AgenTV: Plymouth hands the screen to the TV session
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-boot-splash release
