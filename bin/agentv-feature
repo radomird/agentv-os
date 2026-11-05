@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# agentv:summary=List the switches for what's still being built, or turn one on or off (edge only)
+# agentv:args=list | on <name> | off <name>
+# agentv:examples=agentv feature list | agentv feature on dynamicbg
+
+# Something you can see on the TV that isn't finished yet lands switched off.
+# On the edge channel you can turn it on to try it, and off again. The daemon
+# keeps the switches, so they last across restarts.
+
+set -euo pipefail
+
+port=${AGENTV_PORT:-3000}
+daemon="http://127.0.0.1:$port/api/features"
+
+usage() {
+  echo "Usage: agentv feature list | on <name> | off <name>"
+}
+
+unreachable() {
+  echo "AgenTV's daemon isn't answering. Try: sudo systemctl restart agentv-daemon" >&2
+  exit 1
+}
+
+case ${1:-list} in
+  list)
+    (( $# <= 1 )) || { usage >&2; exit 2; }
+    answer=$(curl -fsS --max-time 5 "$daemon") || unreachable
+    jq -r 'to_entries[] | "\(.key)\t\(if .value then "on" else "off" end)"' <<<"$answer"
+    ;;
+  on | off)
+    (( $# == 2 )) && [[ $2 =~ ^[a-z0-9]{1,20}$ ]] || { usage >&2; exit 2; }
+    body=$(jq -cn --arg name "$2" --argjson on "$([[ $1 == "on" ]] && echo true || echo false)" '{name: $name, on: $on}')
+    answer=$(curl -sS --max-time 5 -X PUT -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' "$daemon") || unreachable
+    status=${answer##*$'\n'}
+    answer=${answer%$'\n'*}
+    if [[ $status != "200" ]]; then
+      echo "$(jq -r '.error // "that didn'"'"'t work"' <<<"$answer" 2>/dev/null || echo "that didn't work")" >&2
+      exit 1
+    fi
+    echo "$2 is $1."
+    ;;
+  -h | --help | help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

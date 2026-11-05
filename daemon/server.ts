@@ -31,6 +31,7 @@ import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
+import { Features, featuresRoute } from "./features.ts";
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
@@ -250,6 +251,7 @@ export class Daemon {
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
+  readonly features: Features;
   readonly shared: Shared;
   readonly pageApps: PageApps;
   readonly builds: Builds;
@@ -430,6 +432,7 @@ export class Daemon {
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
+    this.features = new Features({ state: options.state, channel: () => this.channel() });
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
@@ -2010,6 +2013,8 @@ export class Daemon {
       response.writeHead(204).end();
       return;
     }
+
+    if (await featuresRoute(this.features, { method, path, request, response, body: () => this.body(request), json: (status, data) => this.json(response, status, data), broadcast: (event, data) => this.broadcast(event, data) })) return;
 
     if (method === "GET" && path === "/api/state") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
