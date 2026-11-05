@@ -55,6 +55,9 @@ import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
+import { featureOn } from "./features.ts";
+import { featuresRoute } from "./routes/features.ts";
+import { lookRoute } from "./routes/look.ts";
 import { Updates } from "./updates.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 import { newItem } from "./executors/whatsNew.ts";
@@ -322,6 +325,7 @@ export class Daemon {
       userAgent: userAgent(options.root),
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
+      looks: () => featureOn(options.state, "looks"),
       changed: (event) => this.broadcast(event, {}),
       pageTile: (id) => this.pageApps.tile(id),
       newTile: (viewer, size) => this.newTile(viewer, size),
@@ -3446,6 +3450,9 @@ export class Daemon {
       this.json(response, 200, { ok: true });
       return;
     }
+
+    if (await featuresRoute(this.options.state, request, response)) return;
+    if (await lookRoute({ root: this.options.root, state: this.options.state, broadcast: (event, data) => this.broadcast(event, data), adult: (q, s, what) => this.adult(q, s, what) }, request, response)) return;
 
     if (method === "GET" && path === "/api/events") {
       response.writeHead(200, {
