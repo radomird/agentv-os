@@ -27,6 +27,10 @@ name: Nightly
 # Newer agentv-iso checks run S1.3 on its own themselves. The release's run
 # takes about 45 minutes instead of 33, about as long as edge's beside it.
 #
+# Edge's checks are shared out across four jobs, two VMs each, the way a
+# pull request's are (image.yml). The release's run signs tested.json and
+# checks its update with tonight's agentv-iso, so it stays in one job.
+#
 # Started by hand, it can take another agentv-iso ref for edge's checks and
 # the update's (checks), so a fix to the checks can be seen in a full night
 # before it merges. The release keeps its own.
@@ -44,6 +48,10 @@ on:
 permissions:
   contents: write
   issues: write
+  # The edge leg's checks are shared out across jobs (image.yml), and its
+  # last job deletes the run's box from the cache, or the ISO when a check
+  # failed.
+  actions: write
 
 concurrency:
   group: nightly

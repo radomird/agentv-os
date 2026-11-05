@@ -42,12 +42,14 @@ import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from 
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
-import { boxZone, cityOf } from "./place.ts";
+import { boxZone, cityOf, clockZone } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
+import { Features } from "./features.ts";
+import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
@@ -139,6 +141,8 @@ export interface DaemonOptions {
   // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
   tmdb?: TmdbGet;
   tmdbStatus?: string;
+  // The clock what's new goes by, for tests that pin the day.
+  newsNow?: () => Date;
   // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
   // provider's voice and Piper, for tests.
   voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
@@ -237,6 +241,8 @@ export class Daemon {
   // The TMDB key, and what's new and new episodes from TMDB (stage 8).
   readonly tmdbKey: TmdbKey;
   readonly country: CountryPlace;
+  // The feature switches every phase 2 track's screens hide behind.
+  readonly features: Features;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -340,7 +346,7 @@ export class Daemon {
       },
     });
     this.say = new Say({
-      bar: { sent: () => this.listening.sent(), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
+      bar: { sent: (from) => this.listening.sent(from), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
       route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
       viewer: () => this.profiles.active(),
       apps: async (viewer) => {
@@ -408,6 +414,7 @@ export class Daemon {
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
+    this.features = new Features({ state: options.state, channel: () => this.channel() });
     this.voice = new Voice({
       ...options.voice,
       ai: () => this.ai.read(),
@@ -422,6 +429,7 @@ export class Daemon {
       region: () => this.region(),
       // Every app on the box but AgenTV's own.
       apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
+      now: options.newsNow,
       log: this.log,
     });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
@@ -1234,6 +1242,9 @@ export class Daemon {
       return;
     }
 
+    // Routes in files of their own (daemon/routes/), one line each.
+    if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
+
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
     // within a second (ADR-037). With no count, it answers at once.
@@ -1700,6 +1711,11 @@ export class Daemon {
     this.json(response, 404, { ok: false, error: "not found" });
   }
 
+  // What the switches' routes need of the daemon.
+  private featureKit(): FeatureRoutes {
+    return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed: (all) => this.broadcast("features", all), log: this.log };
+  }
+
   private json(response: ServerResponse, status: number, data: unknown): void {
     const body = JSON.stringify(data);
     response.writeHead(status, {
@@ -1981,6 +1997,9 @@ export class Daemon {
     const path = url.pathname;
     const method = request.method;
 
+    // Routes in files of their own (daemon/routes/), one line each.
+    if (await featureRoutes(this.featureKit(), request, response, path)) return;
+
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
       this.json(response, 200, {
@@ -1991,6 +2010,9 @@ export class Daemon {
         // What this process runs, which after an update and before AgenTV's
         // services restart is still the package from before (agentv-restart).
         running: this.running,
+        // The time zone the daemon's clock goes by, which follows the box's
+        // when the country moves it.
+        zone: clockZone(),
         screen: setup.done ? "home" : "welcome",
         // The setup step on the TV, while setup isn't done.
         setup_step: setup.done ? null : setup.step,

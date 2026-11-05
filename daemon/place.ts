@@ -72,6 +72,20 @@ export async function boxZone(): Promise<string> {
   return match ? match[1].replace(/^(posix|right)\//, "") : "UTC";
 }
 
+// The zone this process's clock goes by. Node takes the box's as it starts
+// and keeps it, so a zone root set since only counts once it's followed.
+export function clockZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+// Moves this process's clock to a zone, through TZ, which Node follows as
+// soon as it's set. True when the clock moved.
+export function followZone(zone: string): boolean {
+  if (zone === process.env.TZ || zone === clockZone()) return false;
+  process.env.TZ = zone;
+  return true;
+}
+
 export async function cityOf(zone: string): Promise<City | null> {
   return (await cities()).get(zone) ?? null;
 }

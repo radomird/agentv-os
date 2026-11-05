@@ -7,6 +7,8 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test } from "node:test";
+import type { Feature, FeatureMap } from "../../../daemon/features.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import type { TmdbGet } from "../../../daemon/tmdb.ts";
 
@@ -83,6 +85,18 @@ export interface BoxOptions {
   listenIdleMs?: number;
   // A stand-in for TMDB, through the router's service (stage 8).
   tmdb?: TmdbGet;
+  // Feature switches to set (daemon/features.ts). A box with one turned on
+  // is on edge, since only edge turns them on.
+  features?: Partial<FeatureMap>;
+}
+
+// A switched screen's check, run with its switch off and then on, each time
+// on a box of its own (PHASE-2-PLAN.md, "Feature switches"). The check gets
+// whether the switch is on and the options that set it, for startBox.
+export function bothWays(feature: Feature, title: string, check: (on: boolean, options: Pick<BoxOptions, "features">) => Promise<void>): void {
+  for (const on of [false, true]) {
+    test(`${title}, with ${feature} ${on ? "on" : "off"}`, () => check(on, { features: { [feature]: on } }));
+  }
 }
 
 // AgenTV's built-ins, with the weather pointed at the test's own server.
@@ -134,6 +148,10 @@ export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}
   if (options.forecast) settings["agentv.weather"] = { forecastUrl: options.forecast };
   writeFileSync(join(state, "app-settings.json"), JSON.stringify(settings));
   if (options.zone) useZone(dir, options.zone);
+  if (options.features) {
+    writeFileSync(join(state, "features.json"), JSON.stringify(options.features));
+    if (Object.values(options.features).some(Boolean)) writeFileSync(join(dir, "channel"), "edge\n");
+  }
   return { apps, state, builtins: options.builtins ? builtins(dir, options.forecast) : undefined };
 }
 
