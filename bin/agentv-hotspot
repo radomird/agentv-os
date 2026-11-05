@@ -18,6 +18,12 @@
 #   agentv hotspot stop    close it
 #   agentv hotspot status  how it stands
 #
+# A box installed from the phone carries on with the phone's network: the
+# USB stick's first screen opened AgenTV-<4 characters> for the phone, and
+# hands its name and password over in /etc/agentv/hotspot.json. At first
+# boot this opens that same network, even on Ethernet, so the phone joins
+# it again by itself and carries on. The file goes once setup ends.
+#
 # The rest is for AgenTV's own units, as root: run (agentv-hotspot.service),
 # down (after it stops), boot (agentv-hotspot-boot.service) and drop
 # (agentv-hotspot-drop.service). The home Wi-Fi's password never goes on a
@@ -32,6 +38,7 @@ RUN=${AGENTV_HOTSPOT_RUN:-/run/agentv-hotspot}
 DAEMON_STATE=${AGENTV_DAEMON_PRIVATE:-/var/lib/private/agentv/daemon}
 DROP=${AGENTV_HOTSPOT_DROP:-$DAEMON_STATE/hotspot-drop/request.json}
 CONNECTIONS=${AGENTV_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
+HANDED=${AGENTV_HOTSPOT_HANDED:-/etc/agentv/hotspot.json}
 PORT=${AGENTV_SETUP_PORT:-3002}
 ADDRESS=10.42.0.1
 CONNECTION=agentv-setup
@@ -66,6 +73,18 @@ random() {
   local out
   out=$(head -c 512 /dev/urandom | LC_ALL=C tr -dc "$1")
   printf '%s' "${out:0:$2}"
+}
+
+# The network the USB stick's first screen opened for a phone, as "<ssid>
+# <password>", or nothing.
+handed() {
+  local ssid password
+  [[ -f $HANDED ]] || return 0
+  ssid=$(jq -r '.ssid // empty' "$HANDED" 2>/dev/null || true)
+  password=$(jq -r '.password // empty' "$HANDED" 2>/dev/null || true)
+  if [[ $ssid =~ ^AgenTV-[0-9a-f]{4}$ && $password =~ ^[a-z0-9]{8,63}$ ]]; then
+    printf '%s %s\n' "$ssid" "$password"
+  fi
 }
 
 # The networks the radio can see, strongest first, as JSON. It looks before
@@ -133,9 +152,14 @@ run() {
   mv -f "$RUN/.networks.json.next" "$RUN/networks.json"
 
   # One name and password for the whole boot, so a phone that joined once
-  # still knows it when the hotspot comes back after a wrong password.
+  # still knows it when the hotspot comes back after a wrong password. The
+  # first time, the one the USB stick handed over, so the phone that set
+  # the box up from there is already on it.
   ssid=$(state_get .ssid)
   password=$(state_get .password)
+  if [[ $ssid != AgenTV-* || -z $password ]]; then
+    read -r ssid password <<<"$(handed)" || true
+  fi
   if [[ $ssid != AgenTV-* || -z $password ]]; then
     ssid="AgenTV-$(random 0123456789abcdef 4)"
     password=$(random abcdefghjkmnpqrstuvwxyz23456789 10)
@@ -181,11 +205,17 @@ down() {
 
 # Only when TV setup isn't done, the box has Wi-Fi, and once NetworkManager
 # has tried every connection it knows, none of them is up. Ethernet, or Wi-Fi
-# set up in the installer, goes straight to pairing.
+# set up in the installer, goes straight to pairing, unless a phone is
+# waiting on the network the USB stick handed over.
 boot() {
   [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]] && return 0
   nm-online -q -s -t 60 || true
   [[ -n $(wifi_device) ]] || return 0
+  if [[ -n $(handed) ]]; then
+    echo "agentv-hotspot: setup isn't done and a phone set this box up from the USB stick, so its network opens again"
+    systemctl start --no-block agentv-hotspot.service
+    return 0
+  fi
   nm-online -q -x -t 5 && return 0
   echo "agentv-hotspot: setup isn't done and there's no network, so the setup hotspot opens"
   systemctl start --no-block agentv-hotspot.service
@@ -268,6 +298,7 @@ drop() {
   request=$(cat "$DROP")
   rm -f "$DROP"
   if [[ $(jq -r '.stop // false' <<<"$request" 2>/dev/null) == "true" ]]; then
+    rm -f "$HANDED"
     systemctl stop agentv-hotspot.service
     echo "agentv-hotspot: closed, as setup ended"
     return 0
