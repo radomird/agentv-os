@@ -1,0 +1,55 @@
+{
+  "dmi": {
+    "product": "System Product Name",
+    "board": "ROG STRIX B550-F GAMING",
+    "vendor": "ASUS"
+  },
+  "cpuinfo": "processor\t: 0\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 1\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 2\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 3\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 4\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 5\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 6\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 7\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 8\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 9\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 10\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 11\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 12\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 13\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 14\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor\nprocessor\t: 15\nmodel name\t: AMD Ryzen 7 5800X3D 8-Core Processor",
+  "meminfo": "MemTotal:       32787148 kB",
+  "memoryBlocks": {
+    "size": 134217728,
+    "online": 258
+  },
+  "gpus": [
+    {
+      "slot": "0000:07:00.0",
+      "class": "0x030000",
+      "vendor": "0x10de",
+      "device": "0x2504",
+      "vendorName": "NVIDIA Corporation",
+      "deviceName": "GA106 [GeForce RTX 3060 Lite Hash Rate]",
+      "bootVga": true,
+      "cards": [
+        "card0"
+      ],
+      "render": "renderD128",
+      "vainfo": "vainfo: Driver version: VA-API NVDEC driver [direct backend]\nvainfo: Supported profile and entrypoints\n      VAProfileMPEG2Simple            :\tVAEntrypointVLD\n      VAProfileH264Main               :\tVAEntrypointVLD\n      VAProfileH264High               :\tVAEntrypointVLD\n      VAProfileHEVCMain               :\tVAEntrypointVLD\n      VAProfileHEVCMain10             :\tVAEntrypointVLD\n      VAProfileVP9Profile0            :\tVAEntrypointVLD\n      VAProfileAV1Profile0            :\tVAEntrypointVLD\n"
+    }
+  ],
+  "vulkaninfo": "==========\nVULKANINFO\n==========\n\nVulkan Instance Version: 1.4.321\n\n\nInstance Extensions: count = 24\n-------------------------------\nVK_EXT_debug_report                    : extension revision 10\nVK_KHR_surface                         : extension revision 25\n\nInstance Layers:\n----------------\n\nDevices:\n========\nGPU0:\n\tapiVersion         = 1.4.318\n\tdriverVersion      = 25.2.3\n\tvendorID           = 0x10de\n\tdeviceID           = 0x2504\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU\n\tdeviceName         = NVIDIA GeForce RTX 3060\n\tdriverID           = DRIVER_ID_NVIDIA_PROPRIETARY\n\tdriverName         = Mesa\n\tdriverInfo         = Mesa 25.2.3-arch1.1\n\tconformanceVersion = 1.4.0.0\n\tdeviceUUID         = 00000000-0000-0000-0000-000000000000\n\tdriverUUID         = 00000000-0000-0000-0000-000000000000\nGPU1:\n\tapiVersion         = 1.4.318\n\tdriverVersion      = 25.2.3\n\tvendorID           = 0x10005\n\tdeviceID           = 0x0000\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU\n\tdeviceName         = llvmpipe (LLVM 20.1.8, 256 bits)\n\tdriverID           = DRIVER_ID_MESA_LLVMPIPE\n\tdriverName         = Mesa\n\tdriverInfo         = Mesa 25.2.3-arch1.1\n\tconformanceVersion = 1.4.0.0\n\tdeviceUUID         = 00000000-0000-0000-0000-000000000000\n\tdriverUUID         = 00000000-0000-0000-0000-000000000000\n",
+  "icds": [
+    "nvidia_icd.json"
+  ],
+  "connectors": [
+    {
+      "name": "card0-HDMI-A-1",
+      "status": "connected",
+      "edid": "AP///////wAE9gEAAAAAAAEhAQOAj1B4Cg3JoFdHmCcSSEwhCAABAQEBAQEBAQEBAQEBAQEBCOgAMPJwWoCwWIoAnylTAAAeAAAA/wAKICAgICAgICAgICAgAAAA/ABFeGFtcGxlLVRWCiAgAAAA/QAYeA//eAAKICAgICAgAdsCA0Dx4gDPTGEQBB8TIl1eX2B2dS8PfwcVB1BXBgA/BsBnfgGDXwAAawMMABAAuDwgACAE4wYPAeMOZWbjBcAAAjqAGHE4LUBYLEUAnylTAAAeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOg=="
+    }
+  ],
+  "storage": {
+    "total": 999653638144,
+    "free": 431644213248
+  },
+  "network": {
+    "kind": "ethernet",
+    "speed": "1000"
+  },
+  "bluetooth": [
+    "hci0"
+  ],
+  "gamepads": [
+    "Xbox Wireless Controller"
+  ],
+  "widevine": null
+}

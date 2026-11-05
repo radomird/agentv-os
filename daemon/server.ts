@@ -61,6 +61,11 @@ import { newItem } from "./executors/whatsNew.ts";
 import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
+import { Box, type BoxOptions } from "./box.ts";
+import { Features } from "./features.ts";
+import { boxRoute, phoneBoxRoute } from "./routes/box.ts";
+import { featuresRoute } from "./routes/features.ts";
+import type { RouteHost } from "./routes/host.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
@@ -147,6 +152,8 @@ export interface DaemonOptions {
   country?: { zone?: () => Promise<string>; waitMs?: number };
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
+  // The box check (ADR-061): stand-ins for the machine it reads, for tests.
+  box?: Omit<BoxOptions, "state">;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -247,6 +254,9 @@ export class Daemon {
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
+  // Each phase 2 track's feature switch, and what the box is (ADR-061).
+  readonly features: Features;
+  readonly box: Box;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -427,6 +437,8 @@ export class Daemon {
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
+    this.features = new Features({ state: options.state });
+    this.box = new Box({ state: options.state, ...options.box });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
@@ -1233,6 +1245,7 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
+    if (await phoneBoxRoute(this.host, this.box, method, path, response)) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -1700,6 +1713,11 @@ export class Daemon {
     this.json(response, 404, { ok: false, error: "not found" });
   }
 
+  // What the route files in daemon/routes/ get.
+  private get host(): RouteHost {
+    return { json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast: (event, data) => this.broadcast(event, data), log: this.log };
+  }
+
   private json(response: ServerResponse, status: number, data: unknown): void {
     const body = JSON.stringify(data);
     response.writeHead(status, {
@@ -1980,6 +1998,7 @@ export class Daemon {
     const url = new URL(request.url ?? "/", "http://localhost");
     const path = url.pathname;
     const method = request.method;
+    if ((await featuresRoute(this.host, this.features, method, path, response)) || (await boxRoute(this.host, this.box, method, path, request, response))) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
