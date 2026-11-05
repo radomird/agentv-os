@@ -101,6 +101,14 @@ export interface Offer {
   summary: Record<Path, string>;
 }
 
+// A plan's sign-in from the AI step (ADR-070): whether it's in, and how
+// the one running is going.
+export interface PlanSignIn {
+  provider: Provider;
+  signedIn: boolean;
+  now?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
+}
+
 export interface AiInfo {
   provider: Provider | null;
   path: Path | null;
@@ -162,6 +170,10 @@ export const setup = {
   wifi: (ssid: string, password: string) => call<{ joining: string }>("POST", "/api/setup/wifi", { ssid, password }),
   ai: () => call<AiInfo>("GET", "/api/ai"),
   choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
+  // The plan's sign-in, started from the AI step, and a code its page gave.
+  signIn: () => call<{ signIn: PlanSignIn | null }>("GET", "/api/ai/sign-in"),
+  startSignIn: (grant?: string) => call<{ signIn: PlanSignIn | null }>("POST", "/api/ai/sign-in", {}, grant),
+  signInCode: (code: string, grant?: string) => call<{ ok: true }>("POST", "/api/ai/sign-in/code", { code }, grant),
   key: (provider: Provider, key: string) => call<{ set: boolean }>("PUT", "/api/key", { provider, key }),
   music: async (muted: boolean) => (await call<{ setup: SetupState }>("POST", "/api/setup/music", { muted })).setup,
   apps: () => call<SetupApps>("GET", "/api/setup/apps"),

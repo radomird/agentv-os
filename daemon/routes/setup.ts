@@ -8,12 +8,19 @@
 // - The location step: where it starts, a country's time zones, and a
 //   country picked, which sets the zone or asks which one (Q167, Q199). The
 //   TV's page and the phone use the same answers.
+// - The AI step: each provider's own icon, fetched on the box (ADR-069), and
+//   a plan's sign-in started right there, its link as a QR code and a code
+//   the provider's page gives handed back (ADR-070). Settings → AI can use
+//   the same.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CountryPlace, CountryState } from "../country.ts";
 import { countries, countryOf } from "../country.ts";
 import { called, decide, phoneZone, startOn, zoneChoices } from "../location.ts";
 import type { Setup, SetupState } from "../setup.ts";
+import { type Ai, OFFERS, type Provider } from "../ai.ts";
+import type { AiIcons } from "../ai-icons.ts";
+import type { PlanSignIn } from "../plan-sign-in.ts";
 
 // What these routes may use of the daemon.
 export interface SetupHost {
@@ -26,6 +33,12 @@ export interface SetupHost {
   // Past the PIN, once there is one, and an adult's: false once it has
   // answered the refusal.
   adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean>;
+  ai(): Ai;
+  aiIcons(): AiIcons;
+  planSignIn(): PlanSignIn;
+  // A QR code for a link, as SVG, or null without qrencode.
+  qr(text: string): Promise<string | null>;
+  send(response: ServerResponse, type: string, body: string | Buffer, headers?: Record<string, string>): void;
 }
 
 export type Listener = "tv" | "phone" | "captive";
@@ -64,6 +77,64 @@ export class SetupRoutes {
     }
 
     if (on === "captive") return false;
+
+    // A provider's own icon, from its site, or 404 for its name alone.
+    const icon = /^\/api\/(?:phone\/)?ai\/icon\/([a-z]+)$/.exec(path);
+    if (method === "GET" && icon && path.startsWith(on === "phone" ? "/api/phone/" : "/api/ai/")) {
+      const provider = icon[1];
+      const found = Object.hasOwn(OFFERS, provider) ? await this.host.aiIcons().icon(provider as Provider) : null;
+      if (!found) {
+        this.host.json(response, 404, { ok: false, error: "no icon: show the name" });
+        return true;
+      }
+      this.host.send(response, found.type, found.body, { "Cache-Control": "max-age=86400", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" });
+      return true;
+    }
+
+    // The plan's sign-in: how it stands, started from the AI step, the code
+    // the provider's page gave, and its link as a QR code.
+    const signIn = on === "phone" ? "/api/phone/ai/sign-in" : "/api/ai/sign-in";
+    if (method === "GET" && path === signIn) {
+      this.host.json(response, 200, { ok: true, signIn: await this.signInState() });
+      return true;
+    }
+    if (method === "POST" && on === "tv" && path === signIn) {
+      if (!(await this.host.adult(request, response, "the plan's sign-in"))) return true;
+      const ai = await this.host.ai().read();
+      if (!ai.provider || ai.path !== "plan") {
+        this.host.json(response, 409, { ok: false, error: "pick a plan first" });
+        return true;
+      }
+      if (!ai.accepted) {
+        this.host.json(response, 409, { ok: false, error: "an adult accepts the terms on the phone first" });
+        return true;
+      }
+      await this.host.planSignIn().start(ai.provider);
+      this.host.log(`setup started ${OFFERS[ai.provider].plan.name}'s sign-in`);
+      this.host.json(response, 200, { ok: true, signIn: await this.signInState() });
+      return true;
+    }
+    if (method === "POST" && path === `${signIn}/code`) {
+      if (!(await this.host.adult(request, response, "the plan's sign-in"))) return true;
+      const result = await this.host.planSignIn().code(((await this.host.body(request)) as { code?: unknown } | undefined)?.code);
+      if (result.error) {
+        this.host.json(response, 400, { ok: false, error: result.error });
+        return true;
+      }
+      this.host.log(`the plan's sign-in got a code from the ${on === "phone" ? "phone" : "tv"}`);
+      this.host.json(response, 200, { ok: true });
+      return true;
+    }
+    if (method === "GET" && on === "tv" && path === `${signIn}/qr`) {
+      const url = (await this.signInState())?.now?.url;
+      const svg = url ? await this.host.qr(url) : null;
+      if (!svg) {
+        this.host.json(response, 404, { ok: false, error: url ? "there's no qr code without qrencode" : "nothing is signing in" });
+        return true;
+      }
+      this.host.send(response, "image/svg+xml", svg, { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" });
+      return true;
+    }
 
     // Where the location step starts, and every country to pick from.
     if (method === "GET" && path === `${prefix}/location`) {
@@ -117,6 +188,13 @@ export class SetupRoutes {
     }
 
     return false;
+  }
+
+  // The plan's sign-in, for the provider the household picked: null when
+  // none was started for it.
+  private async signInState() {
+    const [ai, now] = await Promise.all([this.host.ai().read(), this.host.planSignIn().state()]);
+    return now && now.provider === ai.provider && ai.path === "plan" ? now : null;
   }
 
   private state(): Promise<SetupState> {

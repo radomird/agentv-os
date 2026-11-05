@@ -55,6 +55,8 @@ import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, Setup, type SetupState } from "./setup.ts";
 import { Features } from "./features.ts";
 import { SetupRoutes } from "./routes/setup.ts";
+import { AiIcons, type PROVIDER_SITES } from "./ai-icons.ts";
+import { PlanSignIn } from "./plan-sign-in.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
@@ -137,6 +139,9 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // Where each AI provider's icon is fetched from: their own sites, unless a
+  // test stands them in.
+  aiSites?: Partial<typeof PROVIDER_SITES>;
   // TMDB, through the router's service, which holds the household's TMDB
   // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
   tmdb?: TmdbGet;
@@ -260,7 +265,16 @@ export class Daemon {
     broadcast: (event, data) => this.broadcast(event, data),
     log: (line) => this.log(line),
     adult: async (request, response, what) => this.guarded(request, response, what) && (await this.adult(request, response, what)),
+    ai: () => this.ai,
+    aiIcons: () => this.aiIcons,
+    planSignIn: () => this.planSignIn,
+    qr: (text) => this.qr(text),
+    send: (response, type, body, headers) => this.send(response, type, body, headers),
   });
+  // The AI providers' icons (ADR-069), and a plan's sign-in from setup
+  // (ADR-070).
+  readonly aiIcons: AiIcons;
+  readonly planSignIn: PlanSignIn;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -443,6 +457,8 @@ export class Daemon {
     this.features = new Features({ state: options.state });
     this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
+    this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
+    this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/agentv-build" });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });

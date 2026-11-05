@@ -4,6 +4,7 @@
 // page of a step here alone.
 
 import { aiStep, path } from "./ai.ts";
+import { aiStep2, ways } from "./ai2.ts";
 import type { Provider } from "./api.ts";
 import { addYourOwn, apps } from "./apps.ts";
 import { art, background, folder, photos } from "./background.ts";
@@ -31,8 +32,11 @@ export const SCREENS: Record<string, Screen> = {
   country: two(location, country),
   "country/pick": two(pickLocation, pickCountry),
   "country/zone": zoneQuestion,
-  ai: aiStep,
-  "ai/*": (ctx, page) => path(ctx, page as Provider),
+  ai: two(aiStep2, aiStep),
+  "ai/*": two(
+    (ctx, page) => ways(ctx, page as Provider),
+    (ctx, page) => path(ctx, page as Provider),
+  ),
   people: people,
   "people/*": person,
   goal: goal,
