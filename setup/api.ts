@@ -35,8 +35,12 @@ export interface SetupInfo {
   version: string;
   running: string;
   setup: SetupState;
+  // The steps shown, in order, and what the status bar says for each. With
+  // setup's own switch on, each one's number of the 12, for its blocks.
   steps: Step[];
-  parts: Record<Step, string>;
+  parts: Partial<Record<Step, string>>;
+  numbers: Partial<Record<Step, number>> | null;
+  of: number;
   network: { online: boolean; via: "ethernet" | "wi-fi" | null; name: string | null };
   hotspot: Hotspot;
   phones: string[];

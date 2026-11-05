@@ -38,7 +38,8 @@ export class Soundtrack {
 
   constructor() {
     this.bars = Array.from({ length: BARS }, (_, i) => h("span", { class: `eq-bar eq-${i < 2 ? "a" : i < 4 ? "b" : "c"}` }));
-    this.note = h("span", { class: "player-note" }, "original score · m to mute");
+    this.note = h("span", { class: "player-note" });
+    this.say(false);
     this.el = h(
       "div",
       { class: "player", "aria-label": "the setup soundtrack" },
@@ -105,8 +106,14 @@ export class Soundtrack {
   mute(muted: boolean): void {
     this.muted = muted;
     this.el.classList.toggle("muted", muted);
-    this.note.textContent = muted ? "muted · m to play" : "original score · m to mute";
+    this.say(muted);
     if (this.gain && this.context) this.gain.gain.setTargetAtTime(muted ? 0 : VOLUME, this.context.currentTime, 0.15);
+  }
+
+  // The note under its name. "original score" goes with setup's own switch
+  // on (design page D7), so the note fits at 23 px.
+  private say(muted: boolean): void {
+    this.note.replaceChildren(...(muted ? ["muted · m to play"] : [h("span", { class: "player-score" }, "original score · "), "m to mute"]));
   }
 
   isMuted(): boolean {
