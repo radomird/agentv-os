@@ -152,7 +152,12 @@ const ctx: Ctx = {
     }
   },
   async saveSettings(change, grant) {
-    ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
+    settingsSaves++;
+    try {
+      ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
+    } finally {
+      settingsSaves++;
+    }
     apply(ctx.state.settings);
   },
   held() {
@@ -182,6 +187,10 @@ let lockPad: Pad | null = null;
 // How many times the daemon has said the PIN changed, so an answer that left
 // before the last time doesn't undo it.
 let pinEvents = 0;
+// The same for the settings this page saves: up as a save starts and as it
+// ends, so an answer about home that was on its way meanwhile doesn't put the
+// old settings back.
+let settingsSaves = 0;
 
 const holding = () => Boolean(held && held.until - Date.now() > 15_000);
 const childWithPin = () => ctx.state.viewer.role === "child" && ctx.state.pin?.set === true;
@@ -633,8 +642,11 @@ document.addEventListener("click", (event) => {
 // way, the lock is as it said: the answer can be older than that.
 async function homeState(): Promise<HomeState> {
   const heard = pinEvents;
+  const saves = settingsSaves;
   const state = await daemon.home();
   if (pinEvents !== heard) state.pin = ctx.state.pin;
+  // The same for a setting this page saved while the answer was on its way.
+  if (settingsSaves !== saves) state.settings = ctx.state.settings;
   return state;
 }
 
