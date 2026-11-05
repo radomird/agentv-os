@@ -143,6 +143,8 @@ export interface DaemonOptions {
   // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
   tmdb?: TmdbGet;
   tmdbStatus?: string;
+  // The clock what's new goes by, for tests that pin the day.
+  newsNow?: () => Date;
   // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
   // provider's voice and Piper, for tests.
   voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
@@ -432,6 +434,7 @@ export class Daemon {
       region: () => this.region(),
       // Every app on the box but AgenTV's own.
       apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
+      now: options.newsNow,
       log: this.log,
     });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
