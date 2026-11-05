@@ -29,7 +29,7 @@ The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, the
 ## Before you commit
 
 - Run the fast gate from the `agentv-quality-gates` skill. A task isn't done until it's green.
-- Commit with this repo's own git identity (already set) and end the message with the Co-Authored-By trailer.
+- Commit with this repo's own git identity (already set). Leave out any AI attribution: no Co-Authored-By or session trailers in commit messages, and no "Generated with" line in pull requests.
 - Log progress with a date in `../agentic-tv-os/LOG.md`. Mark an acceptance check as passed in `PHASE-1-PLAN.md` only when the skill says it has passed.
 
 ## Which guide to read
