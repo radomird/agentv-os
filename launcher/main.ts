@@ -29,7 +29,7 @@ import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
-import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
@@ -395,6 +395,12 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   if (noticeOpen) {
     const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
     noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
+  // Under the "which one?" card too, which has the keys while it's up.
+  if (saidOpen()) {
+    const first = view.first;
+    saidPageDrawn((was) => (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? first);
     return;
   }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;

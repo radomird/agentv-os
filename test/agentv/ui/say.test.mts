@@ -142,6 +142,27 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   await hand.close();
 });
 
+// Home draws again whenever something changes elsewhere, such as a phone
+// pairing, a setting, or the catch-up as its events start. Drawn again under
+// the "which one?" card, it leaves the remote's keys with the card.
+test("home drawn again under the which one? card leaves the remote on the card", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await ask(hand, "play frozen");
+  await screen.waitForSelector("#said.on .said-choice");
+  await screen.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("home"));
+  asks.length = 0;
+  await screen.keyboard.press("ArrowDown");
+  await screen.keyboard.press("Enter");
+  await until(() => asks.some((a) => a.kind === "open"));
+  assert.equal((asks.find((a) => a.kind === "open") as { item: { kind: string } }).item.kind, "album");
+  await screen.waitForFunction(() => !document.querySelector("#said.on"));
+  await screen.waitForSelector(".grid .tile.focused");
+  await hand.waitForSelector('[data-said="opened"]');
+  await screen.close();
+  await hand.close();
+});
+
 // Q162: a pick's reply and its outcome's event come back on two
 // connections, in either order. Here the reply comes first, and the
 // outcome after it, as the phone's pick.
