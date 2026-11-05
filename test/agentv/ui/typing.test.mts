@@ -196,7 +196,8 @@ test("T8.1 typed on the phone, home's focused field holds each change within 300
 test("T8.1 a stand-in streaming site's search opens the phone's keyboard, and each change shows there within 300 ms, heard by the site as typing", async () => {
   const page = await streamingSite();
   await page.evaluate(`document.getElementById("search").focus()`);
-  await until(async () => (await phoneState()).tv.view === "keyboard");
+  await until(async () => (await phoneState()).tv.field?.app === "agentv.tube");
+  assert.equal((await phoneState()).tv.view, "keyboard");
   assert.ok(page.nudges() > 0, "the page said its focus moved");
   assert.deepEqual((await phoneState()).tv.field, { kind: "search", label: "search", value: "", app: "agentv.tube", name: "tube" });
   assert.equal(await page.evaluate(`typeof window.${FOCUS_BINDING}`), "undefined", "the site's own scripts can't reach the nudge");
