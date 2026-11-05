@@ -106,6 +106,24 @@ check >/dev/null
   fail "with nothing new, the check says so" "$(cat "$status")"
 pass "with nothing new, the check says so"
 
+# A check that couldn't look keeps what the last one found. A box's first
+# check, with nothing found before it, still writes every field the TV reads:
+# what's installed, and nothing new (2026-11-01, when Settings wouldn't open).
+cat >"$SCRATCH/bin/checkupdates" <<'SH'
+#!/bin/bash
+exit 1
+SH
+chmod +x "$SCRATCH/bin/checkupdates"
+before=$(jq -c 'del(.checked_at)' "$status")
+if "$ROOT/bin/agentv-update-check" >/dev/null 2>&1; then fail "a check that couldn't look says so"; fi
+[[ $(jq -Sc 'del(.checked_at) | .ok = true' "$status") == "$(jq -Sc '.ok = true' <<<"$before")" && $(jq -r .ok "$status") == "false" ]] ||
+  fail "a check that couldn't look keeps what the last one found" "$(cat "$status")"
+rm "$status"
+if "$ROOT/bin/agentv-update-check" >/dev/null 2>&1; then fail "a first check that couldn't look says so"; fi
+[[ $(jq -c '[.ok, .agentv, .omarchy, .packages, .waiting, .security, .notes]' "$status") == '[false,{"installed":"0.2.1-1","available":null},{"installed":"4.0.6-1","available":null},0,false,false,{"agentv":[],"agentv_date":null,"omarchy":[]}]' ]] ||
+  fail "a first check that couldn't look still has every field the TV reads" "$(cat "$status")"
+pass "a check that couldn't look keeps what it found before, and a first one still has every field the TV reads"
+
 # --- Installing from the TV ----------------------------------------------------
 
 sudoers="$SCRATCH/sudoers.d"
@@ -116,11 +134,14 @@ export AGENTV_SUDOERS_DIR="$sudoers" AGENTV_MODULES_DIR="$modules" AGENTV_OWNER=
 export AGENTV_AFTER_WAIT=0 AGENTV_DAEMON_URL=http://127.0.0.1:9 AGENTV_CHROMIUM_STATE="$SCRATCH/chromium" SNAPSHOT_TAKEN="$SCRATCH/snapshot-taken"
 # runuser runs the update as the owner, here a stand-in agentv update that
 # prints what Omarchy's and pacman's would, and checks the sudo rule is there.
+# Halfway through, Omarchy 4.5's update takes away every grant named like its
+# own (its omarchy-settings hook and its migration), and AgenTV's has to stay.
 cat >"$SCRATCH/bin/runuser" <<'SH'
 #!/bin/bash
 echo "runuser $*" >>"$CALLS"
-[[ -f $AGENTV_SUDOERS_DIR/99-omarchy-nopasswd-someone ]] && echo "rule in place" >>"$CALLS"
-cat "$AGENTV_SUDOERS_DIR/99-omarchy-nopasswd-someone" >>"$CALLS" 2>/dev/null
+rm -f "$AGENTV_SUDOERS_DIR"/99-omarchy-nopasswd-*
+[[ -f $AGENTV_SUDOERS_DIR/99-agentv-update-someone ]] && echo "rule in place" >>"$CALLS"
+cat "$AGENTV_SUDOERS_DIR/99-agentv-update-someone" >>"$CALLS" 2>/dev/null
 touch "$SNAPSHOT_TAKEN"
 echo "Create system snapshot"
 echo ":: Synchronizing package databases..."
@@ -163,7 +184,9 @@ out=$("$ROOT/bin/agentv-update-tv" 2>&1) || fail "an update from the TV goes thr
 progress="$AGENTV_UPDATE_STATE/progress.json"
 grep -q "^runuser -u someone -- env HOME=$SCRATCH/home .* OMARCHY_UPDATE_LOGGED=1 bash -lc agentv update -y$" "$CALLS" ||
   fail "it runs agentv update as the owner" "$(cat "$CALLS")"
-grep -qx "rule in place" "$CALLS" || fail "the owner may use sudo while it runs"
+grep -qx "rule in place" "$CALLS" || fail "the owner may use sudo while it runs, after Omarchy takes its own grants away"
+grep -qx 'r! /etc/sudoers.d/99-agentv-update-\*' "$ROOT/system/tmpfiles/agentv-sudo.conf" ||
+  fail "a rule left behind by a power cut goes at the next boot"
 grep -qx "Defaults:someone !authenticate" "$CALLS" || fail "including sudo -v, which Omarchy's update runs" "$(cat "$CALLS")"
 [[ -z $(ls -A "$sudoers") ]] || fail "and not after" "$(ls "$sudoers")"
 [[ $(jq -c '[.state, .step, .percent, .from.agentv, .to.agentv]' "$progress") == '["done","restart",100,"0.2.1-1","0.3.0-1"]' ]] ||

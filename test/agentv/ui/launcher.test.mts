@@ -555,10 +555,14 @@ test("S5.7 Look drawn again while it waits for the list, as for a build's news, 
 
 test("S5.8 home shows the theme's own background, as on Omarchy's desktop, credited to the theme, and follows the desktop to the next; Settings keeps the theme's colour", async () => {
   // As the screen daemon hands them over: two of Tokyo Night's, the second
-  // the one Omarchy shows.
-  const files = ["6-oma.jpg", "3-sunset-lake.png"].map((name) => {
-    const body = readFileSync(join(ROOT, "themes", "tokyo-night", "backgrounds", name));
-    return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type: name.endsWith(".png") ? "image/png" : "image/jpeg", body };
+  // the one Omarchy shows, whatever Omarchy ships them as (jpg and png in
+  // 4.0, webp in 4.5).
+  const dir = join(ROOT, "themes", "tokyo-night", "backgrounds");
+  const shipped = readdirSync(dir).filter((name) => /\.(jpe?g|png|webp)$/i.test(name)).sort();
+  const files = [shipped[0], shipped[1]].map((name) => {
+    const body = readFileSync(join(dir, name));
+    const type = name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type, body };
   });
   const offer = (current: string) =>
     fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current, files: files.map(({ id, type }) => ({ id, type })) }) });

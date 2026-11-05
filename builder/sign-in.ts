@@ -162,8 +162,9 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
   o.stop?.removeEventListener("abort", stopped);
   rmSync(inputPath, { force: true });
 
-  // The CLI's own word on it, not what its sign-in printed.
-  const ok = await signedIn(provider, o);
+  // The CLI's own word on it, not what its sign-in printed, unless AgenTV
+  // ended it first: a plan whose sign-in ran out can still say it's in.
+  const ok = !why && (await signedIn(provider, o));
   if (ok) {
     log(`${provider}'s plan is signed in`);
     return set({ state: "done", url: undefined, code: undefined });

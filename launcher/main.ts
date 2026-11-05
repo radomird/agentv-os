@@ -23,10 +23,15 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
-import { keyPage, termsHeard } from "./pages/key.ts";
+import { keyPage, planPage, termsHeard } from "./pages/key.ts";
+import { countryPage, loadCountry } from "./pages/country.ts";
+import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
+import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
+import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
 
@@ -219,16 +224,20 @@ function openPad(options: PadOptions, opened?: (pad: Pad | null) => void, skip?:
 // comes over a PIN pad, the ambient screen or an install.
 const noticeEl = document.getElementById("notice")!;
 let noticeOpen: { share: Share; before: HTMLElement | undefined } | null = null;
+// The shares answered here, so a look at them that left before the answer,
+// and comes back after it, doesn't ask again.
+const answered = new Set<string>();
 
 async function askShared(): Promise<void> {
   const found = await loadShared();
   // Apps → Shared follows too.
   if (history[history.length - 1] === "apps" && !noticeOpen && !pinOpen) redraw();
   const share = found?.ask ? found.shares.find((one) => one.id === found.ask) : undefined;
-  if (!share || noticeOpen || pinOpen || ambient || updatingShown) return;
+  if (!share || answered.has(share.id) || noticeOpen || pinOpen || saidOpen() || ambient || updatingShown) return;
   const before = focus.get();
   before?.classList.remove("focused");
   const answer = async (open: boolean) => {
+    answered.add(share.id);
     closeNotice();
     sounds.play(open ? "forward" : "back");
     await daemon.answerShare(share.id).catch(() => {});
@@ -338,6 +347,9 @@ function viewFor(route: string): View {
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
   if (name === "key") return keyPage(ctx);
+  if (name === "tmdb-key") return tmdbKeyPage(ctx);
+  if (name === "country") return countryPage(ctx);
+  if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
@@ -369,6 +381,13 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   page.replaceChildren(el);
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
+  // Under a share's notice too, which has the keys (ADR-050): the page gets
+  // the focus back on the same tile once the notice is answered.
+  if (noticeOpen) {
+    const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
+    noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }
@@ -541,6 +560,8 @@ function act(action: Action): void {
     } else pinOpen.act(action);
     return;
   }
+  // Up to three to choose from, for what was said, while they're up.
+  if (saidAct(action)) return;
   // A share's notice has the keys while it's up; Back is Not now.
   if (noticeOpen) {
     if (action === "up" || action === "down" || action === "left" || action === "right") focus.move(action);
@@ -550,6 +571,8 @@ function act(action: Action): void {
     } else if (action === "back") noticeEl.querySelector<HTMLElement>('[data-action="share-later"]')?.click();
     return;
   }
+  // The listening bar (ADR-054): Back takes it away first.
+  if (listeningAct(action)) return;
   if (view?.act?.(action)) return;
   if (action === "up" || action === "down" || action === "left" || action === "right") {
     focus.move(action);
@@ -656,7 +679,8 @@ async function switched(): Promise<void> {
 }
 
 // What changed while the page wasn't hearing the daemon's events: another
-// viewer, as a switch from the phone, or anything else on home.
+// viewer, as a switch from the phone, a share to ask about, or anything else
+// on home.
 async function catchUp(): Promise<void> {
   const was = ctx.state.viewer.id;
   const state = await homeState();
@@ -665,6 +689,7 @@ async function catchUp(): Promise<void> {
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void askShared();
 }
 
 // The page again, in place, with the focus where it was.
@@ -727,6 +752,11 @@ async function start(): Promise<void> {
     background: () => void loadBackgrounds(),
     // A phone shared something, or the TV may ask about one now (ADR-050).
     shared: () => void askShared(),
+    // A sentence said to the TV (ADR-023): what was heard, then what came
+    // of it, or up to three to choose from.
+    said: (data) => saidHeard(data as Said | null),
+    // The phone's box opened, its words came, or it closed (ADR-054).
+    listening: (data) => listeningHeard(data as Heard),
     ledger: () => {
       if (history[history.length - 1] === "home") redraw();
     },
@@ -735,6 +765,19 @@ async function start(): Promise<void> {
     // A page app set its tile (ADR-043): home's tiles ask again.
     tiles: () => {
       if (history[history.length - 1] === "home") redraw();
+    },
+    // The box's country changed (ADR-055): Settings shows it, and New this
+    // week asks again with the whats-new that comes with it.
+    country: () => {
+      const route = history[history.length - 1];
+      if (route.startsWith("settings")) void loadCountry().then(redraw);
+    },
+    // The TMDB key or the country changed (S8.1): New this week asks again,
+    // and Settings shows it.
+    "whats-new": () => {
+      const route = history[history.length - 1];
+      if (route === "home") redraw();
+      else if (route.startsWith("settings")) void loadNews().then(redraw);
     },
     // A page app's notice, declared in its manifest.
     notice: (data) => {
@@ -779,6 +822,9 @@ async function start(): Promise<void> {
     },
   }, () => void catchUp().catch(() => {}));
   void daemon.updates().then(setUpdates).catch(() => {});
+  setupSaid(ctx, () => {
+    if (view) focus.setRoot(view.el, view.first);
+  });
   void sounds.load();
   // The screen daemon calls these: Home when the home screen is already in
   // front, and the apps open behind it whenever that changes.

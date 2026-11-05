@@ -1,0 +1,32 @@
+{
+  "sentence": "put on the frozen soundtrack",
+  "route": {
+    "intent": "play",
+    "query": "Frozen",
+    "kind": "album",
+    "app": null,
+    "season": null,
+    "episode": null
+  },
+  "reply": {
+    "id": "chatcmpl-router",
+    "object": "chat.completion",
+    "created": 1793289600,
+    "model": "muse-spark-1.3",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null}"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 1521,
+      "completion_tokens": 63,
+      "total_tokens": 1584
+    }
+  }
+}

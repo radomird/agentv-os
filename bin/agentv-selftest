@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
-# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]... [--app <id>] [--item <json>]
-# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3
+# agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]
+# agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3 | agentv selftest S7.4 | agentv selftest S8.2 --show "<a show you watch>"
 # agentv:requires-sudo=true
 
 # The acceptance checks CI can't see, run on the box itself (ADR-019, layer
@@ -75,6 +75,27 @@
 #   S4.6  with a key set in Settings → AI, it's root's alone in
 #         /etc/agentv/env, and this account can't read it.
 #
+# Stage 7, the router (S7 runs all three), with the AI Settings → AI chose:
+#
+#   S7.3  a sentence that can't be routed comes back as "i didn't get that"
+#         on the TV and the phone, and nothing opens, and the TV says it
+#         aloud (stage 8). It asks the provider.
+#   S7.4  the router's 100 phrasings through this box's own router, one at a
+#         time: on a Claude plan with no key, 95% or better, with the time
+#         per sentence. It takes a few minutes and counts against the plan.
+#   S7.5  the listening bar (ADR-054), watched from the couch with a real
+#         phone's dictation: it says what to try.
+#
+# Stage 8, what's new and new episodes from TMDB (S8 runs both), with a TMDB
+# key kept in Settings → new this week:
+#
+#   S8.1  what's new for who's watching, asked of TMDB afresh: titles that
+#         appeared on the household's services in the last 7 days, in the
+#         region setup chose.
+#   S8.2  whether there's a new episode of a show, with --show, or the
+#         newest show in the ledger: yes or no, with the next air date, and
+#         TMDB's dates beside it to check by eye.
+#
 # Stage 0:
 #
 #   S0.2  the root disk isn't encrypted, so there's no password at boot; the
@@ -97,15 +118,18 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6]... [--app <id>] [--item <json>]"
+  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]"
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
 STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
 STAGE4=(S4.5 S4.6)
+STAGE7=(S7.3 S7.4 S7.5)
+STAGE8=(S8.1 S8.2)
 checks=()
 app_id=""
 app_item=""
+show=""
 while (( $# )); do
   arg=$1
   shift
@@ -120,6 +144,11 @@ while (( $# )); do
     [sS]3) checks+=("${STAGE3[@]}") ;;
     [sS]4.5 | [sS]4.6) checks+=("S${arg:1}") ;;
     [sS]4) checks+=("${STAGE4[@]}") ;;
+    [sS]7.3 | [sS]7.4 | [sS]7.5) checks+=("S${arg:1}") ;;
+    [sS]7) checks+=("${STAGE7[@]}") ;;
+    [sS]8.1 | [sS]8.2) checks+=("S${arg:1}") ;;
+    [sS]8) checks+=("${STAGE8[@]}") ;;
+    --show) show=${1:-}; shift || true; [[ -n $show && ${#show} -le 120 ]] || { usage >&2; exit 2; } ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -766,13 +795,19 @@ s218() {
   else
     result fail S2.18 "these may hold up a shut down for longer than 5 s: ${slow[*]}"
   fi
-  for command in omarchy-system-shutdown omarchy-system-reboot; do
-    omarchy-cmd-present "$command" || missing+=("$command")
-  done
-  if (( ${#missing[@]} == 0 )); then
-    result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
+  # Omarchy 4.5's omarchy-system, or the two commands 4.0.x had, which a box
+  # keeps until its Omarchy channel serves 4.5 (daemon/screen.ts).
+  if omarchy-cmd-present omarchy-system; then
+    result pass S2.18 "Omarchy's omarchy-system is there to restart and shut down"
   else
-    result fail S2.18 "Omarchy's ${missing[*]} isn't there"
+    for command in omarchy-system-shutdown omarchy-system-reboot; do
+      omarchy-cmd-present "$command" || missing+=("$command")
+    done
+    if (( ${#missing[@]} == 0 )); then
+      result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
+    else
+      result fail S2.18 "Omarchy has neither omarchy-system nor ${missing[*]}"
+    fi
   fi
   if [[ $(screen settings power | jq -r '.ok' 2>/dev/null) == "true" ]]; then
     result pass S2.18 "Settings opened at Power on the TV"
@@ -846,6 +881,94 @@ s46() {
       result fail S4.6 "$env is $owner's with mode $mode, not root's with 600"
     fi
   fi
+}
+
+# What Settings → AI chose, as the daemon says it.
+ai_now() {
+  curl -fsS --max-time 5 "$(home_url)api/ai" 2>/dev/null || true
+}
+
+# The TV's voice, as the daemon says it (stage 8).
+voice_now() {
+  curl -fsS --max-time 5 "$(home_url)api/voice" 2>/dev/null || echo '{}'
+}
+
+# Whether the TV said its answer aloud (stage 8, Q146), after the clip
+# numbered before.
+s73_spoken() {
+  local before=$1 voice started=$SECONDS
+  while true; do
+    voice=$(voice_now)
+    jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played != null' <<<"$voice" >/dev/null && break
+    jq -e '.spoken == false or .by == null' <<<"$voice" >/dev/null && break
+    (( SECONDS - started < 60 )) || break
+    sleep 1
+  done
+  if jq -e '.spoken == false' <<<"$voice" >/dev/null; then
+    result manual S7.3 "spoken answers are off in Settings → Sound: turn them on to hear i didn't get that"
+  elif jq -e '.by == null' <<<"$voice" >/dev/null; then
+    result fail S7.3 "the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)"
+  elif jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played == true' <<<"$voice" >/dev/null; then
+    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "piper" end' <<<"$voice")"
+  else
+    result fail S7.3 "the TV didn't say it aloud: $(jq -r '.last.error // "no clip played"' <<<"$voice")"
+  fi
+}
+
+s73() {
+  local said outcome before
+  before=$(voice_now | jq -r '.last.clip // 0')
+  said=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d '{"sentence": "the cat sat on the"}' "$(home_url)api/say" 2>/dev/null || true)
+  outcome=$(jq -c '.said.outcome // empty' <<<"$said" 2>/dev/null)
+  if [[ -z $outcome ]]; then
+    result fail S7.3 "the daemon didn't take the sentence: $(jq -r '.error // "no answer"' <<<"$said" 2>/dev/null)"
+  elif jq -e '.kind == "none" and (.why == "unroutable" or .why == "unreadable") and .say == "i didn'"'"'t get that"' <<<"$outcome" >/dev/null; then
+    result pass S7.3 "\"the cat sat on the\" came back as i didn't get that, and nothing opened"
+  elif jq -e '.why == "failed"' <<<"$outcome" >/dev/null; then
+    result fail S7.3 "your agent didn't answer: $(jq -r '.detail // .say' <<<"$outcome")"
+  else
+    result fail S7.3 "it wasn't i didn't get that: $(jq -r '.say' <<<"$outcome")"
+  fi
+  s73_spoken "$before"
+  result manual S7.3 "the TV showed i didn't get that, and a paired phone too, under ask your tv, and you heard it from the TV's speakers"
+}
+
+s74() {
+  local ai json flags=() routed percent median
+  ai=$(ai_now)
+  if [[ $(jq -r '.ai.provider // .provider // empty' <<<"$ai") != "claude" || $(jq -r '.ai.path // .path // empty' <<<"$ai") != "plan" ]]; then
+    result manual S7.4 "S7.4 is for a Claude plan: pick it in Settings → AI, past the PIN, then run agentv selftest S7.4 again"
+    return 0
+  fi
+  json=$(mktemp)
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$AGENTV_PATH/test/agentv/evals/router/run.mts" --via box --daemon "$(home_url)" --json "$json" >"$json.out" 2>&1 || true
+  routed=$(jq -r '"\(.score.routed.right) of \(.score.routed.of)"' "$json" 2>/dev/null)
+  percent=$(jq -r '.score.routed.percent // 0' "$json" 2>/dev/null)
+  median=$(jq -r '.score.ms.median // 0' "$json" 2>/dev/null)
+  if [[ -z $routed || $routed == "null of null" ]]; then
+    result fail S7.4 "the phrase set didn't run: $(tail -n 3 "$json.out" | tr '\n' ' ')"
+  elif jq -e '.score.failed > 0' "$json" >/dev/null; then
+    result fail S7.4 "your agent didn't answer $(jq -r '.score.failed' "$json") of them: $(jq -r '[.results[] | select(.routed.none == "failed") | .routed.error][0]' "$json")"
+  elif [[ $(jq -r '.via' "$json") != "cli" ]]; then
+    result fail S7.4 "the box routed through its key, not the plan's CLI"
+  elif jq -e '.score.routed.percent >= 95 and .score.unroutable.percent >= 100' "$json" >/dev/null; then
+    result pass S7.4 "$routed routed right ($percent%) through Claude Code on the plan, median $median ms a sentence, p90 $(jq -r '.score.ms.p90' "$json") ms"
+  else
+    result fail S7.4 "$routed routed right ($percent%), none for $(jq -r '"\(.score.unroutable.right) of \(.score.unroutable.of)"' "$json"), median $median ms; the misses are in $json.out"
+  fi
+  if (( median > 0 && median < 5000 )); then
+    result pass S7.4 "the time per sentence is under 5 s: median $median ms, longest $(jq -r '.score.ms.max' "$json") ms"
+  elif (( median > 0 )); then
+    result fail S7.4 "the time per sentence is over the 5 s target: median $median ms"
+  fi
+  result manual S7.4 "paste the table from $json.out into the log; it has each request's score and the misses"
+}
+
+# The bar is drawn from a real phone's dictation, so only someone at the
+# couch can see it right.
+s75() {
+  result manual S7.5 "on a paired phone, tap ask your tv and dictate play frozen: a bar along the bottom of the TV says listening, shows the words as they come, then thinking and what came of it. Do it over an app too. Closing the box, Back and 20 s with no words each take the bar away. Try an iPhone and an Android phone"
 }
 
 # ts_check <script> <id>: runs one of AgenTV's TypeScript checks, which
@@ -1184,6 +1307,55 @@ s39() {
   ts_check daemon/weather-check.ts S3.9
 }
 
+# Why what's new has nothing, as the TV says it.
+whats_new_why() {
+  case $1 in
+    no-key) echo "there's no TMDB key yet: add one in Settings → new this week, past the PIN" ;;
+    no-region) echo "there's no region yet: pick one in Settings → new this week" ;;
+    no-services) echo "TMDB lists none of this box's streaming apps for its region: Settings → new this week shows what each app matched" ;;
+    *) echo "TMDB didn't answer: ${2:-no answer}" ;;
+  esac
+}
+
+s81() {
+  local feed region count
+  feed=$(curl -sS --max-time 120 "$(home_url)api/whats-new?fresh=1" 2>/dev/null | jq -c '.feed // empty' 2>/dev/null || true)
+  if [[ -z $feed ]]; then
+    result fail S8.1 "the daemon didn't answer"
+    return 0
+  fi
+  region=$(jq -r '.region // "?"' <<<"$feed")
+  if ! jq -e '.ok' <<<"$feed" >/dev/null; then
+    result fail S8.1 "$(whats_new_why "$(jq -r '.why // ""' <<<"$feed")" "$(jq -r '.error // ""' <<<"$feed")")"
+    return 0
+  fi
+  count=$(jq '.titles | length' <<<"$feed")
+  if (( count == 0 )); then
+    result fail S8.1 "nothing appeared on $(jq -r '[.services[].name] | join(", ")' <<<"$feed") in $region from $(jq -r '.from' <<<"$feed") to $(jq -r '.to' <<<"$feed"), as TMDB has it"
+    return 0
+  fi
+  result pass S8.1 "$count titles new on $(jq -r '[.services[] | select(.providers | length > 0) | .name] | join(", ")' <<<"$feed") in $region since $(jq -r '.from' <<<"$feed"), such as $(jq -r '[.titles[:3][] | "\(.title)\(if .season then " (season \(.season))" else "" end)"] | join(", ")' <<<"$feed")"
+  result manual S8.1 "one of those is something you know came out this week on one of your services. Home's New this week shows them with their posters (pin it from Apps if it isn't there), and choosing one plays it in its app. On the phone, ask your tv \"what's new\": the TV says the top three and offers them"
+}
+
+s82() {
+  local body answer
+  body=$(jq -cn --arg show "$show" 'if $show == "" then {} else {query: $show} end')
+  answer=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d "$body" "$(home_url)api/whats-new/episode" 2>/dev/null | jq -c '.answer // empty' 2>/dev/null || true)
+  if [[ -z $answer ]]; then
+    result fail S8.2 "the daemon didn't answer"
+  elif ! jq -e '.ok' <<<"$answer" >/dev/null; then
+    case $(jq -r '.why // ""' <<<"$answer") in
+      no-key | no-region) result fail S8.2 "$(whats_new_why "$(jq -r '.why' <<<"$answer")")" ;;
+      which) result manual S8.2 "there's no show in this profile's ledger yet: watch an episode of one from the TV, or run agentv selftest S8.2 --show \"<its name>\"" ;;
+      *) result fail S8.2 "$(jq -r '.say' <<<"$answer")$(jq -r 'if .error then ": \(.error)" else "" end' <<<"$answer")" ;;
+    esac
+  else
+    result pass S8.2 "$(jq -r '.say' <<<"$answer")"
+    result manual S8.2 "TMDB has $(jq -r '.show' <<<"$answer")'s newest out as $(jq -r 'if .latest then "s\(.latest.season) e\(.latest.episode) on \(.latest.date)" else "none yet" end' <<<"$answer"), and the next as $(jq -r 'if .next then "s\(.next.season) e\(.next.episode) on \(.next.date)" elif .ended then "none: it has ended" else "not dated yet" end' <<<"$answer"). Check that against the show's own page, and that yes or no is right for what this profile has watched"
+  fi
+}
+
 echo "AgenTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 "$AGENTV_BIN_DIR/agentv-version" 2>/dev/null || true
 echo
@@ -1214,6 +1386,11 @@ for id in "${checks[@]}"; do
     S3.9) s39 ;;
     S4.5) s45 ;;
     S4.6) s46 ;;
+    S7.3) s73 ;;
+    S7.4) s74 ;;
+    S7.5) s75 ;;
+    S8.1) s81 ;;
+    S8.2) s82 ;;
   esac
 done
 

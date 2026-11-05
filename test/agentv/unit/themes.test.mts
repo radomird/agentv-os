@@ -188,24 +188,29 @@ test("the screen daemon keeps trying while the daemon isn't there yet, at the st
   assert.match(lines[0], /didn't take the list/);
 });
 
-// A person's home on Tokyo Night as omarchy-theme-set leaves it: the
+// A person's home on Tokyo Night as omarchy-theme-set leaves it: two of the
 // theme's backgrounds in the current theme, one of the person's own for
-// Tokyo Night beside them, and the one Omarchy shows linked.
-function themedHome(): { dir: string; state: string; mine: string; lake: string; oma: string } {
+// Tokyo Night beside them, and the one Omarchy shows linked. Whatever Omarchy
+// ships them as: 4.0 had jpg and png files, 4.5 has webp ones and one jpg.
+function themedHome(): { dir: string; state: string; mine: string; lake: string; oma: string; types: string[] } {
   const dir = home();
   const state = join(dir, ".local", "state", "omarchy", "current");
   const backgrounds = join(state, "theme", "backgrounds");
   mkdirSync(backgrounds, { recursive: true });
   const from = join(ROOT, "themes", "tokyo-night", "backgrounds");
-  cpSync(join(from, "3-sunset-lake.png"), join(backgrounds, "3-sunset-lake.png"));
-  cpSync(join(from, "6-oma.jpg"), join(backgrounds, "6-oma.jpg"));
-  writeFileSync(join(backgrounds, "7-moving.gif"), "GIF89a");
+  const shipped = readdirSync(from).filter((name) => /\.(jpe?g|png|webp)$/i.test(name)).sort();
+  const jpeg = shipped.find((name) => /\.jpe?g$/i.test(name))!;
+  const [lake, oma] = shipped.filter((name) => name !== jpeg);
+  cpSync(join(from, lake), join(backgrounds, lake));
+  cpSync(join(from, oma), join(backgrounds, oma));
+  writeFileSync(join(backgrounds, "9-moving.gif"), "GIF89a");
   const own = join(dir, ".config", "omarchy", "backgrounds", "tokyo-night");
   mkdirSync(own, { recursive: true });
-  cpSync(join(from, "5-oma-cityscape.jpg"), join(own, "mine.jpg"));
+  cpSync(join(from, jpeg), join(own, "mine.jpg"));
   writeFileSync(join(state, "theme.name"), "tokyo-night\n");
-  symlinkSync(join(backgrounds, "6-oma.jpg"), join(state, "background"));
-  return { dir, state, mine: join(own, "mine.jpg"), lake: join(backgrounds, "3-sunset-lake.png"), oma: join(backgrounds, "6-oma.jpg") };
+  symlinkSync(join(backgrounds, oma), join(state, "background"));
+  const type = (name: string) => (name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg");
+  return { dir, state, mine: join(own, "mine.jpg"), lake: join(backgrounds, lake), oma: join(backgrounds, oma), types: ["image/jpeg", type(lake), type(oma)] };
 }
 
 test("S5.8 the screen daemon finds the theme's backgrounds as Omarchy does, the person's own first, and the one Omarchy shows", async () => {
@@ -214,9 +219,9 @@ test("S5.8 the screen daemon finds the theme's backgrounds as Omarchy does, the 
   const id = (path: string) => pictureId(readFileSync(path));
   assert.equal(found?.theme, "tokyo-night");
   assert.deepEqual(found?.files.map((file) => [file.id, file.type]), [
-    [id(person.mine), "image/jpeg"],
-    [id(person.lake), "image/png"],
-    [id(person.oma), "image/jpeg"],
+    [id(person.mine), person.types[0]],
+    [id(person.lake), person.types[1]],
+    [id(person.oma), person.types[2]],
   ], "in Omarchy's order, and only what the TV can show");
   assert.equal(found?.current, id(person.oma));
   rmSync(join(person.state, "theme.name"));

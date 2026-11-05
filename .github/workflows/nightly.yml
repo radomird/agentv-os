@@ -19,11 +19,27 @@ name: Nightly
 # agentv, so that update is checked with agentv-iso's agentv branch, the
 # checks that go with what it updates to. Edge is checked with agentv-iso's
 # agentv branch.
+#
+# The release's own checks time S1.3 beside another VM, which since the
+# image layer went to two VMs at a time (2026-10-27) took the switch back to
+# the TV from 3 to 5 s to 6 to 10 s, against a 10 s bar. So the release's
+# run has one VM at a time, the whole runner, as when S1.3 was signed off.
+# Newer agentv-iso checks run S1.3 on its own themselves. The release's run
+# takes about 45 minutes instead of 33, about as long as edge's beside it.
+#
+# Started by hand, it can take another agentv-iso ref for edge's checks and
+# the update's (checks), so a fix to the checks can be seen in a full night
+# before it merges. The release keeps its own.
 
 on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
+    inputs:
+      checks:
+        description: "agentv-iso ref for edge's checks and the update's (empty: agentv)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -44,26 +60,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PKGS: ${{ github.repository_owner }}/agentv-pkgs
+          CHECKS: ${{ inputs.checks }}
         run: |
+          next=${CHECKS:-agentv}
           stable=$(gh release view stable -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null |
             sed -nE 's/^agentv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1)
           if [[ -n $stable ]]; then
-            checks=agentv
+            checks=$next
             if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" "refs/tags/v$stable" >/dev/null 2>&1; then
               checks="v$stable"
             fi
             update=""
-            [[ $checks == "agentv" ]] || update=agentv
-            runs=$(jq -cn --arg checks "$checks" --arg update "$update" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update},
-              {packages: "edge", tested: false, iso: true, checks: "agentv", update: ""}]')
-            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+            [[ $checks == "$next" ]] || update=$next
+            runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg next "$next" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 1},
+              {packages: "edge", tested: false, iso: true, checks: $next, update: "", lanes: 2}]')
+            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, one VM at a time, and making the edge ISO with agentv-iso $next" >>"$GITHUB_STEP_SUMMARY"
           else
-            runs='[{"packages":"edge","tested":true,"iso":true,"checks":"agentv","update":""}]'
-            echo "Testing AgenTV's edge release (there's no stable one yet), and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+            runs=$(jq -cn --arg next "$next" '[{packages: "edge", tested: true, iso: true, checks: $next, update: "", lanes: 2}]')
+            echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $next, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
 
   image:
+    name: Install and test ${{ matrix.packages }}
     needs: which
     strategy:
       fail-fast: false
@@ -79,20 +98,39 @@ jobs:
       nightly: ${{ matrix.tested }}
       keep-iso: ${{ matrix.iso }}
       keep-disk: ${{ matrix.iso }}
+      lanes: ${{ matrix.lanes }}
     secrets: inherit
 
+  # The issue names each failed leg's failed checks and the line that says
+  # why, from the legs' logs (.github/scripts/nightly-broke).
   issue:
     name: Say what broke
     needs: image
     if: failure()
     runs-on: ubuntu-26.04
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: image-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: legs
+
       - env:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create -R "$GITHUB_REPOSITORY" --title "Nightly run failed on $(date -u +%Y-%m-%d)" \
-            --body "An image run failed tonight, so tested.json, the edge ISO or both weren't updated. Boxes stay where they are. Screenshots and logs: $RUN"
+          {
+            echo "An image run failed tonight, so tested.json, the edge ISO or both weren't updated. Boxes stay where they are."
+            echo
+            .github/scripts/nightly-broke legs || echo "What broke couldn't be read from the logs."
+            echo "Screenshots and logs: $RUN"
+          } >body.md
+          gh issue create -R "$GITHUB_REPOSITORY" --title "Nightly run failed on $(date -u +%Y-%m-%d)" --body-file body.md
 
   # A night that passes closes the issues earlier failures opened, so the
   # list only ever shows what's still broken.

@@ -39,6 +39,12 @@ elif [[ $* == *api/tile/* ]]; then cat "$STATE/tile" 2>/dev/null || echo "{\"ok\
 elif [[ $* == *api/pin* ]]; then cat "$STATE/pin" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
 elif [[ $* == *api/updates/tonight* ]]; then cat "$STATE/tonight-code" 2>/dev/null || echo 403
 elif [[ $* == *api/key* ]]; then cat "$STATE/key" 2>/dev/null || echo "{\"ok\":true,\"set\":false}"
+elif [[ $* == *api/say* ]]; then cat "$STATE/say" 2>/dev/null || echo "{\"ok\":false,\"error\":\"no daemon\"}"
+elif [[ $* == *api/voice* && -f $STATE/voice-before ]]; then cat "$STATE/voice-before"; rm -f "$STATE/voice-before"
+elif [[ $* == *api/voice* ]]; then cat "$STATE/voice" 2>/dev/null || echo "{\"spoken\":false}"
+elif [[ $* == *api/whats-new/episode* ]]; then echo "$*" >"$STATE/episode-asked"; cat "$STATE/episode" 2>/dev/null || echo "{\"ok\":false}"
+elif [[ $* == *api/whats-new* ]]; then cat "$STATE/whats-new" 2>/dev/null || echo "{\"ok\":false}"
+elif [[ $* == *api/ai* ]]; then cat "$STATE/ai" 2>/dev/null || echo "{\"ok\":true,\"provider\":null,\"path\":null}"
 else cat "$STATE/health"; fi'
 fake ip 'cat "$STATE/ip" 2>/dev/null || true'
 fake iw '
@@ -220,8 +226,8 @@ case "$*" in
 esac'
 # polkit, with AgenTV's power rule there unless it isn't (S2.18).
 fake pkcheck '[[ ! -f $STATE/no-power-rule ]]'
-fake omarchy-system-shutdown 'exit 0'
-fake omarchy-system-reboot 'exit 0'
+# Omarchy 4.5's restart and shut down; 4.0.x had a command for each.
+fake omarchy-system 'exit 0'
 # A terminal opened in the session: the daemon keeps it out of sight.
 fake foot '
 jq ".windows += [{title: \"agentv selftest\", workspace: \"special:agentv-held\", front: false}]" "$STATE/screen.json" >"$STATE/screen.json.new" && mv "$STATE/screen.json.new" "$STATE/screen.json"
@@ -342,7 +348,7 @@ for line in \
   "manual S2.16 over a playing app" \
   "pass S2.18 polkit lets" \
   "pass S2.18 AgenTV's units stop within 5 s, so none holds up a restart or a shut down" \
-  "pass S2.18 Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there" \
+  "pass S2.18 Omarchy's omarchy-system is there to restart and shut down" \
   "pass S2.18 Settings opened at Power on the TV" \
   "manual S2.18 on the TV, Power is in Settings now" \
   "pass S2.19 LG TV (HDMI) plays at 100%" \
@@ -680,3 +686,121 @@ grep -qF "fail S4.6 agentv-key.path isn't running" "$SCRATCH/out" || fail "it sa
 rm -f "$state/no-key-path" "$etc/env"
 ! run4 S4.6 || fail "S4.6 fails with no env file"
 pass "S4.6 passes only with the key root's alone, mode 600, and the hand-over running"
+
+# --- Stage 7 ---------------------------------------------------------------
+
+echo '{"ok":true,"said":{"n":1,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
+run1 S7.3 || fail "S7.3 passes when the box says it didn't get it" "$(cat "$SCRATCH/out")"
+grep -qF 'pass S7.3 "the cat sat on the" came back as i didn'"'"'t get that, and nothing opened' "$SCRATCH/out" || fail "it says what came back" "$(cat "$SCRATCH/out")"
+grep -q 'api/say' "$state/curl.log" || fail "it asks the daemon"
+echo '{"ok":true,"said":{"n":2,"state":"done","outcome":{"kind":"none","why":"failed","say":"your agent didn'"'"'t answer","detail":"set up your agent in settings → ai first"}}}' >"$state/say"
+! run1 S7.3 || fail "S7.3 fails when the agent didn't answer"
+grep -qF "fail S7.3 your agent didn't answer: set up your agent in settings → ai first" "$SCRATCH/out" || fail "it says why" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"said":{"n":3,"state":"done","outcome":{"kind":"opened","app":"local.kino","say":"frozen, on kino"}}}' >"$state/say"
+! run1 S7.3 || fail "S7.3 fails on a guess"
+grep -qF "fail S7.3 it wasn't i didn't get that: frozen, on kino" "$SCRATCH/out" || fail "it says what it did instead" "$(cat "$SCRATCH/out")"
+pass "S7.3 passes only when a sentence that can't be routed comes back as i didn't get that"
+
+# Its spoken half (stage 8, Q146): the TV said it, with which voice.
+echo '{"ok":true,"said":{"n":4,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
+echo '{"ok":true,"spoken":true,"by":"piper","provider":null,"piper":"ready","last":{"clip":2,"by":"piper","ms":600,"played":true}}' >"$state/voice-before"
+echo '{"ok":true,"spoken":true,"by":"piper","provider":null,"piper":"ready","last":{"clip":3,"by":"piper","ms":640,"played":true}}' >"$state/voice"
+run1 S7.3 || fail "S7.3 passes when the TV said it" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.3 the TV said it aloud, with piper" "$SCRATCH/out" || fail "it says with which voice" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":null}' >"$state/voice-before"
+echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":{"clip":3,"by":"provider","ms":900,"played":false,"error":"there'"'"'s no player for sound on this box"}}' >"$state/voice"
+! run1 S7.3 || fail "S7.3 fails when the TV didn't say it"
+grep -qF "fail S7.3 the TV didn't say it aloud: there's no player for sound on this box" "$SCRATCH/out" || fail "it says why" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"spoken":true,"by":null,"provider":null,"piper":"missing","last":null}' >"$state/voice"
+! run1 S7.3 || fail "S7.3 fails with no voice on the box"
+grep -qF "fail S7.3 the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)" "$SCRATCH/out" || fail "it says Piper is missing" "$(cat "$SCRATCH/out")"
+echo '{"spoken":false}' >"$state/voice"
+pass "S7.3's spoken half passes when the TV said it, and says which voice"
+
+echo '{"ok":true,"provider":"claude","path":"key"}' >"$state/ai"
+run1 S7.4 || fail "S7.4 on a key says what to pick" "$(cat "$SCRATCH/out")"
+grep -qF "manual S7.4 S7.4 is for a Claude plan: pick it in Settings → AI" "$SCRATCH/out" || fail "it says to pick the plan" "$(cat "$SCRATCH/out")"
+
+# The phrase set, through a stand-in daemon that routes each as the set
+# expects, on Claude Code, and then wrongly.
+mkdir -p "$SCRATCH/agentv"
+for dir in daemon builder apps test; do
+  [[ -e $SCRATCH/agentv/$dir ]] || ln -s "$ROOT/$dir" "$SCRATCH/agentv/$dir"
+done
+echo '{"ok":true,"provider":"claude","path":"plan"}' >"$state/ai"
+router_port=$(node -e 'const s = require("net").createServer().listen(0, () => { console.log(s.address().port); s.close(); })')
+cat >"$SCRATCH/router.mjs" <<'ROUTER'
+import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+const set = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const first = (v) => (v === undefined ? null : Array.isArray(v) ? (v[0] ?? null) : v);
+let n = 0;
+createServer(async (request, response) => {
+  if (request.method !== "POST") return response.end("{}");
+  let body = "";
+  for await (const chunk of request) body += chunk;
+  const { sentence } = JSON.parse(body);
+  const c = set.cases.find((x) => x.say === sentence);
+  const e = c.expect;
+  const wrong = process.env.WRONG === "1" && n++ < 10;
+  const route = e.intent === "none" || wrong ? { intent: "none", query: null, kind: null, app: null, season: null, episode: null } : { intent: e.intent, query: first(e.query), kind: first(e.kind), app: first(e.app), season: e.season ?? null, episode: e.episode ?? null };
+  response.end(JSON.stringify({ ok: true, routed: { sentence, route, provider: "claude", via: process.env.VIA ?? "cli", model: "claude-haiku-5-5", ms: 1800 } }));
+}).listen(Number(process.argv[3]), "127.0.0.1");
+ROUTER
+VIA=cli node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
+router_pid=$!
+sleep 0.5
+AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 passes on the plan at 100%" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.4 80 of 80 routed right (100%) through Claude Code on the plan, median 1800 ms a sentence" "$SCRATCH/out" || fail "it says the score and the time" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.4 the time per sentence is under 5 s: median 1800 ms" "$SCRATCH/out" || fail "it says the time is under 5 s" "$(cat "$SCRATCH/out")"
+kill "$router_pid" 2>/dev/null || true
+wait "$router_pid" 2>/dev/null || true
+WRONG=1 VIA=cli node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
+router_pid=$!
+sleep 0.5
+! AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 fails below 95%"
+grep -qF "fail S7.4 70 of 80 routed right (87.5%)" "$SCRATCH/out" || fail "it says the score" "$(cat "$SCRATCH/out")"
+kill "$router_pid" 2>/dev/null || true
+wait "$router_pid" 2>/dev/null || true
+VIA=api node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
+router_pid=$!
+sleep 0.5
+! AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 fails through a key"
+grep -qF "fail S7.4 the box routed through its key, not the plan's CLI" "$SCRATCH/out" || fail "it says it went through the key" "$(cat "$SCRATCH/out")"
+kill "$router_pid" 2>/dev/null || true
+wait "$router_pid" 2>/dev/null || true
+pass "S7.4 runs the phrase set through the box's own router, and passes only at 95% on the plan's CLI, with the time per sentence"
+
+# S7.5 is watched from the couch: the selftest says what to try.
+run1 S7.5 || fail "S7.5 is a manual check" "$(cat "$SCRATCH/out")"
+grep -qF "manual S7.5 on a paired phone, tap ask your tv and dictate play frozen" "$SCRATCH/out" || fail "it says what to try" "$(cat "$SCRATCH/out")"
+grep -qF "Try an iPhone and an Android phone" "$SCRATCH/out" || fail "on both kinds of phone" "$(cat "$SCRATCH/out")"
+pass "S7.5 says what to watch for on the TV with a real phone's dictation"
+
+# --- Stage 8 ---------------------------------------------------------------
+
+echo '{"ok":true,"feed":{"ok":true,"region":"NL","from":"2026-10-25","to":"2026-11-01","services":[{"app":"local.kino","name":"Kino","providers":[{"id":901,"name":"Kino"}]},{"app":"local.lumen","name":"Lumen","providers":[]}],"titles":[{"kind":"film","id":1,"title":"Night Train","app":"local.kino","popularity":9},{"kind":"series","id":2,"title":"Copper Hill","season":3,"app":"local.kino","popularity":8}]}}' >"$state/whats-new"
+run1 S8.1 || fail "S8.1 passes with titles new this week" "$(cat "$SCRATCH/out")"
+grep -qF "pass S8.1 2 titles new on Kino in NL since 2026-10-25, such as Night Train, Copper Hill (season 3)" "$SCRATCH/out" || fail "it says which, where and since when" "$(cat "$SCRATCH/out")"
+grep -q 'api/whats-new?fresh=1' "$state/curl.log" || fail "it asks for a fresh one"
+grep -qF "manual S8.1 one of those is something you know came out this week" "$SCRATCH/out" || fail "and says what to check by eye" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"feed":{"ok":false,"why":"no-key","region":null,"titles":[],"services":[]}}' >"$state/whats-new"
+! run1 S8.1 || fail "S8.1 fails with no TMDB key"
+grep -qF "fail S8.1 there's no TMDB key yet: add one in Settings → new this week, past the PIN" "$SCRATCH/out" || fail "it says where to add one" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"feed":{"ok":true,"region":"NL","from":"2026-10-25","to":"2026-11-01","services":[{"app":"local.kino","name":"Kino","providers":[]}],"titles":[]}}' >"$state/whats-new"
+! run1 S8.1 || fail "S8.1 fails with nothing new"
+grep -qF "fail S8.1 nothing appeared on Kino in NL from 2026-10-25 to 2026-11-01" "$SCRATCH/out" || fail "it says where it looked" "$(cat "$SCRATCH/out")"
+pass "S8.1 passes with what's new from TMDB this week, and says why not when there's none"
+
+echo '{"ok":true,"answer":{"ok":true,"show":"Copper Hill","yes":true,"latest":{"season":3,"episode":1,"date":"2026-10-28"},"next":{"season":3,"episode":2,"date":"2026-11-04"},"ended":false,"say":"yes: copper hill s3 e1 came out on wed 28 oct. the next is s3 e2, on wed 4 nov"}}' >"$state/episode"
+run1 S8.2 --show "Copper Hill" || fail "S8.2 passes with a yes and the next date" "$(cat "$SCRATCH/out")"
+grep -qF "pass S8.2 yes: copper hill s3 e1 came out on wed 28 oct. the next is s3 e2, on wed 4 nov" "$SCRATCH/out" || fail "it says the answer" "$(cat "$SCRATCH/out")"
+grep -qF "manual S8.2 TMDB has Copper Hill's newest out as s3 e1 on 2026-10-28, and the next as s3 e2 on 2026-11-04" "$SCRATCH/out" || fail "and TMDB's dates beside it" "$(cat "$SCRATCH/out")"
+grep -qF '{"query":"Copper Hill"}' "$state/episode-asked" || fail "it asks about the show given" "$(cat "$state/episode-asked")"
+echo '{"ok":true,"answer":{"ok":false,"why":"which","say":"which show? say its name, and i'"'"'ll check"}}' >"$state/episode"
+run1 S8.2 || fail "S8.2 with no show anywhere says what to do" "$(cat "$SCRATCH/out")"
+grep -qF 'manual S8.2 there'"'"'s no show in this profile'"'"'s ledger yet' "$SCRATCH/out" || fail "it says to name one" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"answer":{"ok":false,"why":"not-found","say":"i couldn'"'"'t find a show called dune"}}' >"$state/episode"
+! run1 S8.2 --show dune || fail "S8.2 fails for a show TMDB doesn't have"
+grep -qF "fail S8.2 i couldn't find a show called dune" "$SCRATCH/out" || fail "it says so" "$(cat "$SCRATCH/out")"
+pass "S8.2 passes with yes or no and the next air date, with TMDB's dates to check by eye"

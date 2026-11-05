@@ -59,6 +59,17 @@ export interface Settings {
   ambient: "pictures" | "terminal";
   // Install tested updates between 02:00 and 05:00 without asking (Q79).
   updateOvernight: boolean;
+  // The TV says its answers aloud (stage 8).
+  spoken: boolean;
+}
+
+// Which voice says the TV's answers (stage 8): the provider's own, Piper on
+// the box, or none yet while Piper is fetched.
+export interface VoiceState {
+  spoken: boolean;
+  by: "provider" | "piper" | null;
+  provider: string | null;
+  piper: "ready" | "missing";
 }
 
 export interface HomeState {
@@ -155,9 +166,12 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
-  // The plans setup offers on this box's channel, and which of them only as
-  // best effort, on edge (ADR-053).
-  plans?: { provider: string; bestEffort: boolean }[];
+  // The plans setup and Settings → AI offer on this box's channel, and which
+  // of them only as best effort, on edge (ADR-053).
+  plans?: { provider: string; name?: string; bestEffort: boolean }[];
+  // What builds use now: the AI picked, by plan or key, and whether its terms
+  // are accepted (Q143).
+  ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
 }
 
 // The terms a key waits for, when nobody here has accepted that provider's
@@ -171,6 +185,34 @@ export interface KeyTerms {
 }
 
 // Settings → Weather: the forecast's city, and the cities it can be.
+// Settings → new this week (stage 8): whether there's a TMDB key, the
+// region, and each streaming app with the services TMDB lists by its name.
+export interface NewsService {
+  app: string;
+  name: string;
+  providers: { id: number; name: string }[];
+}
+
+export interface NewsState {
+  key: { set: boolean; at?: string; error?: string };
+  region: string | null; // the box's country (ADR-055)
+  services?: NewsService[];
+  error?: string;
+}
+
+// The box's country (ADR-055), and the countries to pick from.
+export interface Country {
+  code: string;
+  name: string;
+}
+
+export interface CountryState {
+  code: string | null;
+  name: string | null;
+  picked: boolean;
+  zone: string;
+}
+
 export interface WeatherPlace {
   zone: string;
   name: string;
@@ -314,8 +356,32 @@ export interface SharedState {
   allowed: string[];
 }
 
+// A sentence said to the TV (ADR-023), as the daemon tells it: the sentence
+// as heard, then what came of it, which the TV shows and, from stage 8,
+// speaks. With more than one match, up to three to choose from.
+export interface Candidate {
+  app: string;
+  name: string;
+  item: Item & { subtitle?: string };
+}
+
+export type Outcome = { kind: "opened"; say: string; app: string; item?: Item } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "told"; say: string } | { kind: "none"; say: string; why: string; detail?: string };
+
+export interface Said {
+  n: number;
+  sentence: string;
+  from: string;
+  state: "routing" | "done";
+  outcome?: Outcome;
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
+  pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
+  dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
+  // Back on the TV with the listening bar up (ADR-054).
+  closeListening: () => call<{ ok: boolean }>("POST", "/api/say/live/close"),
   shared: () => call<SharedState>("GET", "/api/shared"),
   answerShare: (id: string) => call<{ ok: boolean }>("POST", `/api/shared/${id}/answer`),
   shareBackground: (id: string, grant?: string) => call<{ background: Background }>("POST", `/api/shared/${id}/background`, undefined, grant),
@@ -362,7 +428,26 @@ export const daemon = {
   },
   // Settings → AI stopped waiting for a key's terms.
   stopKeyTerms: () => call<{ ok: boolean }>("DELETE", "/api/key/terms"),
+  // The household's plan for builds, from Settings → AI (Q143), or the terms
+  // it waits for.
+  usePlan: async (provider: string, grant?: string): Promise<{ provider: string; path: "plan" } | { terms: KeyTerms }> => {
+    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+    const data = await response.json();
+    if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "PUT /api/ai/plan failed");
+    return data as { provider: string; path: "plan" };
+  },
+  stopPlanTerms: () => call<{ ok: boolean }>("DELETE", "/api/ai/plan/terms"),
   removeKey: (grant?: string) => call<KeyState>("DELETE", "/api/key", undefined, grant),
+  // New this week (stage 8): the TMDB key, the region, TMDB's regions, and a
+  // title chosen on home, played in its app.
+  news: () => call<NewsState & { ok: boolean }>("GET", "/api/whats-new/settings"),
+  country: () => call<CountryState & { countries: Country[] }>("GET", "/api/country"),
+  setCountry: (code: string, grant?: string) => call<CountryState>("PUT", "/api/country", { code }, grant),
+  saveTmdbKey: (key: string, grant?: string) => call<NewsState>("PUT", "/api/tmdb-key", { key }, grant),
+  removeTmdbKey: (grant?: string) => call<NewsState>("DELETE", "/api/tmdb-key", undefined, grant),
+  openNew: (id: string) => call<{ said: Said }>("POST", "/api/whats-new/open", { id }),
+  voice: () => call<VoiceState>("GET", "/api/voice"),
   forChildren: (app: string, allowed: boolean, grant?: string) => call<{ ok: boolean }>("POST", `/api/apps/${app}/for-children`, { allowed }, grant),
   appSetup: (app: string) => call<{ setup: AppSetup }>("GET", `/api/apps/${app}/setup`).then((r) => r.setup),
   saveAppSetup: (app: string, values: Record<string, string>, grant?: string) => call<{ setup: AppSetup }>("POST", `/api/apps/${app}/setup`, { values }, grant).then((r) => r.setup),
@@ -418,8 +503,10 @@ export interface BuildView {
   };
   cost?: { low: number; high: number };
   minutes?: number;
-  // A plan's sign-in, the first time the builder runs on it (ADR-040).
+  // A plan's sign-in, the first time the builder runs on it (ADR-040), or
+  // again once it ran out.
   signIn?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
+  ranOut?: boolean;
   shot: boolean;
   at: string;
 }

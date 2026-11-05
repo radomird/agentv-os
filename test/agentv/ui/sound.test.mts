@@ -121,6 +121,17 @@ test("S2.19 presses quicker than the box's replies each go one step further, and
   await page.close();
 });
 
+test("S2.19 Settings drawn again before the box answers still shows the output", async () => {
+  const page = await tv();
+  await page.evaluate(() => ((window as unknown as { audioDelay: number }).audioDelay = 300));
+  // As when an update's news redraws Settings while the first ask waits.
+  await go(page, "settings/sound");
+  await go(page, "settings/sound");
+  await page.waitForSelector('.panel [data-action="output"]', { timeout: 5000 });
+  assert.match(await row(page, "output"), /output\s+‹ lg tv \(hdmi\) ›/);
+  await page.close();
+});
+
 test("S2.19 left and right on the output pick another one, which plays at its own level", async () => {
   const page = await tv();
   await go(page, "settings/sound");

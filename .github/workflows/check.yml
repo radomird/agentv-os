@@ -29,16 +29,16 @@ concurrency:
 
 jobs:
   policy:
-    name: "Layer 1: policy, lint and secrets"
+    name: "Lint, secrets and house rules"
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      # Full history, no file contents until needed: the gate compares trees
-      # with the base and reads only the files AgenTV added.
+      # Full history with every file, in one download. The secrets scan reads
+      # every AgenTV commit since the Omarchy base, and a blobless clone made
+      # it fetch each file on its own, which outgrew the time limit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          filter: blob:none
           persist-credentials: false
 
       - name: Install shellcheck and gitleaks
@@ -61,7 +61,7 @@ jobs:
         run: test/agentv/policy/check-test.sh --ci
 
   unit:
-    name: "Layer 2: unit tests"
+    name: "Unit tests"
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -77,7 +77,7 @@ jobs:
       - run: test/agentv/unit/run
 
   contract:
-    name: "Layer 3: every app against its fixtures"
+    name: "Each app against its recorded replies"
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -91,7 +91,7 @@ jobs:
         run: test/agentv/contract/run
 
   ui:
-    name: "Layer 4: the launcher in Chromium"
+    name: "TV and phone screens in Chromium"
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -102,7 +102,7 @@ jobs:
         run: test/agentv/ui/run
 
   omarchy-tests:
-    name: "Omarchy's own tests, no worse than at the base"
+    name: "Omarchy's own tests, no new failures"
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -149,7 +149,7 @@ jobs:
   # those when they're there, so the three are tested together before any
   # of them merges.
   changes:
-    name: Does this need the image layer
+    name: "Does this need a VM test?"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -237,6 +237,7 @@ jobs:
             echo "It builds the ISO and installs it, because $why." >>"$GITHUB_STEP_SUMMARY"
           fi
   image:
+    name: VM test
     needs: changes
     if: needs.changes.outputs.image == 'true'
     # image.yml asks for contents: write, for the nightly run's tested.json.
@@ -255,7 +256,7 @@ jobs:
     secrets: inherit
 
   report:
-    name: Acceptance ids
+    name: "Which acceptance checks passed"
     if: always()
     needs: [policy, unit, contract, ui, omarchy-tests]
     runs-on: ubuntu-26.04
@@ -312,6 +313,8 @@ jobs:
             s47="pass (layers 2 and 4: a tile moved on the phone's miniature grid moves on the TV within a second; the phone on the box's address is the image layer's)"
             s48="pass (layers 2 and 4: the phone's update notice with What's new, and Install tonight past the PIN; the night's install is the update check's, as from the TV)"
             s410="pass (layers 2 and 4: the TV's PIN pad on the phone within a second and its PIN doing what the TV asked; the keyboard, playback and the d-pad following the TV; each press shown and felt, quick taps unzoomed; real phones are the NUC's)"
+            s73="pass (layers 2 and 4: a route of none, an answer that doesn't fit the schema and a provider that doesn't answer each show i didn't get that or why on the TV and the phone, with nothing looked up or opened; Claude's own answers are layer 6's, and the spoken line comes with stage 8)"
+            s75="pass (layers 2 and 4: the bar on home in Chromium listening, with the words, thinking, each outcome and put away, the overlay's bar over an app, and none of the words in the daemon's files, log or answers; a real phone's dictation is the NUC's)"
           else
             s33="fail (layer 2: $UNIT, layer 4: $UI)"
             s36="fail (layer 2: $UNIT, layer 4: $UI)"
@@ -324,6 +327,8 @@ jobs:
             s47="fail (layer 2: $UNIT, layer 4: $UI)"
             s48="fail (layer 2: $UNIT, layer 4: $UI)"
             s410="fail (layer 2: $UNIT, layer 4: $UI)"
+            s73="fail (layer 2: $UNIT, layer 4: $UI)"
+            s75="fail (layer 2: $UNIT, layer 4: $UI)"
           fi
           # S3.1 here is every app in this repo; the official apps and the
           # private reference adapter run the same runner in their own repos.
@@ -334,4 +339,4 @@ jobs:
           fi
           test/agentv/report check "S0.4=$s04" "S0.6=$s06" "S0.7=$s07" "S2.1=$s21" "S2.2=$s22" "S2.3=$s23" "S2.4=$s24" "S2.5=$s25" "S2.6=$s26" "S2.7=$s27" \
             "S2.12=$s212" "S2.13=$s213" "S2.18=$s218" "S2.19=$s219" "S3.1=$s31" "S3.3=$s33" "S3.6=$s36" "S3.8=$s38" "S3.9=$s39" "S3.10=$s310" \
-            "S4.2=$s42" "S4.7=$s47" "S4.8=$s48" "S4.10=$s410" "S6.9=$s69" >>"$GITHUB_STEP_SUMMARY"
+            "S4.2=$s42" "S4.7=$s47" "S4.8=$s48" "S4.10=$s410" "S6.9=$s69" "S7.3=$s73" "S7.5=$s75" >>"$GITHUB_STEP_SUMMARY"

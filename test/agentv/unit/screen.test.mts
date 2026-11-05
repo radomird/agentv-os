@@ -10,6 +10,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
@@ -151,6 +152,11 @@ class FakeBrowser implements DevTools {
       return 1;
     }
     return 0;
+  }
+  // What runs in each page as it loads, in which world.
+  scripts: { targetId: string; source: string; world: string }[] = [];
+  async addScriptIn(targetId: string, source: string, world: string) {
+    this.scripts.push({ targetId, source, world });
   }
   target(url: string): string {
     const page = this.pageList.find((p) => p.url === url);
@@ -327,6 +333,10 @@ class FakeLauncher implements Launcher {
   }
   async toast(text: string) {
     this.toasts.push(text);
+  }
+  listened: string[] = [];
+  async listen(state: string, text: string) {
+    this.listened.push(text ? `${state} ${text}` : state);
   }
   async corner(on: boolean) {
     if (this.cornerFails > 0) {
@@ -645,6 +655,30 @@ test("only web pages open on the TV", async () => {
   const { screen } = await tv();
   const answer = (await screen.handle({ cmd: "open", url: "file:///etc/passwd" })) as { ok: boolean };
   assert.equal(answer.ok, false);
+});
+
+test("ADR-054 the listening bar goes to the overlay over an app in front, and not over home, which draws its own", async () => {
+  const { hypr, launcher, screen } = await tv();
+  assert.deepEqual(await screen.sayLive("words", "play fro"), { ok: true });
+  assert.deepEqual(launcher.listened.at(-1), "closed", "over home, the overlay's bar goes");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  assert.deepEqual(await screen.sayLive("words", "play frozen"), { ok: true });
+  assert.deepEqual(launcher.listened.at(-1), "words play frozen");
+  await screen.sayLive("closed", "");
+  assert.deepEqual(launcher.listened.at(-1), "closed");
+});
+
+test("a sentence's outcome is a toast over an app in front, and not over home", async () => {
+  const { hypr, launcher, screen } = await tv();
+  await screen.sayTell("i didn't get that");
+  assert.deepEqual(launcher.toasts, [], "home shows it itself");
+  await screen.handle({ cmd: "open", url: "https://example.org/" });
+  hypr.open("0xd", launcher.last("web").pid);
+  await screen.idle();
+  await screen.sayTell("i didn't get that");
+  assert.deepEqual(launcher.toasts, ["i didn't get that"]);
 });
 
 test("a toast goes to the overlay", async () => {
@@ -1024,6 +1058,17 @@ async function openApp(t: Awaited<ReturnType<typeof tv>>, id: string, address: s
   return t.launcher.browser.target(url);
 }
 
+test("the d-pad's ring and Back go into every web app's page, the first one and the ones after it (ADR-008)", async () => {
+  const t = await tv();
+  const first = await openApp(t, "agentv.tube", "0xb");
+  await sleep(20);
+  const second = await openApp(t, "agentv.player", "0xc");
+  await sleep(20);
+  const remote = t.launcher.browser.scripts.filter((s) => s.source === REMOTE_PAGE && s.world === REMOTE_WORLD).map((s) => s.targetId);
+  assert.deepEqual(remote, [first, second]);
+  assert.deepEqual(t.launcher.homeBrowser.scripts, [], "home moves its own focus");
+});
+
 async function open(screen: Screen): Promise<any[]> {
   return ((await screen.handle({ cmd: "status" })) as any).open;
 }
@@ -1320,6 +1365,11 @@ test("S5.10 a shared link with no app of its own opens in the share browser, on 
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: two }), { ok: true });
   assert.equal(t.launcher.started.filter((s) => s.role === "share").length, 1);
   assert.deepEqual(t.launcher.shareCdp.pageList.map((page) => page.url), ["https://example.net/read"]);
+  // Both pages get the d-pad's ring, without the apps' Back (Q164).
+  await sleep(20);
+  const shared = t.launcher.shareCdp.scripts.filter((s) => s.world === REMOTE_WORLD);
+  assert.equal(shared.length, 2, "the first page and the next one");
+  assert.ok(shared.every((s) => s.source === SHARED_PAGE));
   // Back closes it, and home's in front again.
   t.screen.back("down", Date.now());
   await t.screen.idle();

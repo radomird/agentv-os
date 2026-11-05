@@ -1,8 +1,8 @@
 // Settings (ADR-015, ADR-024, ADR-031): sections on the left, the focused one
-// on the right. Look, Sound, Weather, Adult PIN, Omarchy desktop and Power work
-// now; the sections later stages build say so.
+// on the right. Look, Sound, Weather, New this week, Adult PIN, Omarchy
+// desktop and Power work now; the sections later stages build say so.
 
-import { daemon, screen, type AudioState, type ThemePreview, type WeatherPlace } from "../api.ts";
+import { daemon, screen, type AudioState, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -14,6 +14,9 @@ import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
+import { countryPanel, countryValue, loadCountry } from "./country.ts";
+import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
+import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -29,6 +32,12 @@ function note(text: string): HTMLElement {
   return h("p", { class: "panel-note" }, text);
 }
 
+// Settings → Sound's last line, which voice says the TV's answers, marked
+// so it can change in place.
+function voiceNote(text: string): HTMLElement {
+  return h("p", { class: "panel-note", "data-note": "voice" }, text);
+}
+
 function soon(what: string): HTMLElement[] {
   return [h("div", { class: "panel-big" }, "coming soon"), note(what)];
 }
@@ -39,6 +48,17 @@ let weather: WeatherPlace | null = null;
 
 // The box's sound output and its volume (S2.19), the same way.
 let audio: AudioState | null = null;
+// Which voice says the TV's answers (stage 8), the same way.
+let voice: VoiceState | null = null;
+
+// The voice, as Settings → Sound says it.
+function voiceLine(state: VoiceState | null): string {
+  if (!state) return "";
+  if (!state.spoken) return "the tv shows its answers and doesn't say them.";
+  if (state.by === "provider") return `the tv says its answers in ${state.provider}'s own voice.`;
+  if (state.by === "piper") return "the tv says its answers with piper, on this box.";
+  return "piper isn't on this box, so the tv shows its answers without saying them. agentv update brings it back.";
+}
 // The looks Settings → Look offers (board 12), and which one the TV has.
 let looks: { themes: ThemePreview[]; current: string | null } | null = null;
 let settingLook: string | null = null;
@@ -314,6 +334,8 @@ export function settings(ctx: Ctx, open?: string): View {
       panel: () => [
         ...outputRows(),
         toggle("ui sounds", s.sound.on, "sound", () => save({ sound: { ...s.sound, on: !s.sound.on } }, "sound", "sound")),
+        // What the TV answers, said aloud (stage 8), and which voice says it.
+        toggle("spoken answers", s.spoken, "spoken", () => save({ spoken: !s.spoken }, "sound", "spoken")),
         h(
           "button",
           {
@@ -327,9 +349,14 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", { class: "button-value" }, `${Math.round(s.sound.volume * 100)}%`),
         ),
         note("left and right change how loud the ui sounds are."),
+        ...(voice ? [voiceNote(voiceLine({ ...voice, spoken: s.spoken }))] : []),
       ],
     },
+    // The box's country (ADR-055): the time zone and new this week follow it.
+    { key: "country", label: "country", value: countryValue, panel: () => countryPanel(ctx) },
     { key: "weather", label: "weather", value: () => weather?.name ?? "", panel: weatherPanel },
+    // What came out this week on the household's services, from TMDB (S8.1).
+    { key: "tmdb", label: "new this week", value: newsValue, panel: () => newsPanel(ctx) },
     { key: "profiles", label: "profiles", value: () => String(ctx.state.viewers.length), panel: () => profilesPanel(ctx) },
     { key: "phones", label: "phones", value: () => (phones ? String(phones.length) : ""), panel: () => phonesPanel(ctx) },
     { key: "pin", label: "adult pin", value: () => (pinSet() ? "on" : "off"), panel: pinPanel },
@@ -381,6 +408,11 @@ export function settings(ctx: Ctx, open?: string): View {
         note("the world's first open-source agentic tv os. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),
         note("weather data from met norway, under cc by 4.0."),
+        // TMDB's terms: its logo, less prominent than AgenTV's, and its
+        // notice; JustWatch's: credit for where to watch.
+        h("img", { class: "about-tmdb", src: TMDB_LOGO, alt: "tmdb" }),
+        note(TMDB_NOTICE),
+        note("where to watch is from justwatch, through tmdb."),
       ],
     },
   ];
@@ -429,6 +461,42 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  void daemon
+    .voice()
+    .then((found) => {
+      const changed = JSON.stringify(found) !== JSON.stringify(voice);
+      voice = found;
+      if (!changed || menu.querySelector(".open")?.getAttribute("data-key") !== "sound") return;
+      if (!panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "sound")!);
+        return;
+      }
+      // With the focus on a control in the panel, drawing it again would
+      // move the focus, so only the voice line changes, or comes last.
+      const line = voiceLine({ ...found, spoken: s.spoken });
+      const kept = panel.querySelector<HTMLElement>('[data-note="voice"]');
+      if (kept) kept.textContent = line;
+      else panel.append(voiceNote(line));
+    })
+    .catch(() => {});
+  void loadCountry()
+    .then(() => {
+      const item = menu.querySelector<HTMLElement>('[data-key="country"] .menu-value');
+      if (item) item.textContent = countryValue();
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "country" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "country")!);
+      }
+    })
+    .catch(() => {});
+  void loadNews()
+    .then(() => {
+      const item = menu.querySelector<HTMLElement>('[data-key="tmdb"] .menu-value');
+      if (item) item.textContent = newsValue();
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "tmdb" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "tmdb")!);
+      }
+    })
+    .catch(() => {});
   void loadPhones()
     .then(() => {
       const item = menu.querySelector<HTMLElement>('[data-key="phones"] .menu-value');
@@ -441,7 +509,7 @@ export function settings(ctx: Ctx, open?: string): View {
   void daemon
     .key()
     .then((found) => {
-      setKeyState({ set: found.set, provider: found.provider, plans: found.plans });
+      setKeyState({ set: found.set, provider: found.provider, plans: found.plans, ai: found.ai });
       const item = menu.querySelector<HTMLElement>('[data-key="ai"] .menu-value');
       if (item) item.textContent = aiValue(ctx);
       if (menu.querySelector(".open")?.getAttribute("data-key") === "ai" && !panel.contains(ctx.focus.get() ?? null)) {
@@ -519,13 +587,17 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // The sound, too, against what this page drew: a Settings drawn again
+  // while another one's ask waited has no output on it yet.
+  const heard = JSON.stringify(audio);
   void screen
     .audio()
     .then((found) => {
       // Away from the TV, it says so; a TV with no outputs says that.
       const next = found.ok ? { ...found, outputs: found.outputs ?? [] } : found;
-      const changed = JSON.stringify(next) !== JSON.stringify(audio);
+      const changed = JSON.stringify(next) !== heard;
       audio = next;
+      if (!menu.isConnected) return;
       const item = menu.querySelector<HTMLElement>('[data-key="sound"] .menu-value');
       if (item) item.textContent = sections.find((section) => section.key === "sound")!.value();
       if (changed && menu.querySelector(".open")?.getAttribute("data-key") === "sound" && !panel.contains(ctx.focus.get() ?? null)) {

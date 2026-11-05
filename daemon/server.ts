@@ -27,7 +27,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, Home } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
-import { Ai, OFFERS, TERMS_READ, type Provider } from "./ai.ts";
+import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
@@ -42,6 +42,11 @@ import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from 
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
+import { boxZone, cityOf } from "./place.ts";
+import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
+import { countries, CountryPlace } from "./country.ts";
+import { TmdbKey } from "./tmdb-key.ts";
+import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
@@ -51,7 +56,14 @@ import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
+import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
+import { newItem } from "./executors/whatsNew.ts";
+import { boxRouter } from "./router-client.ts";
+import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
+import { Listening } from "./listening.ts";
+import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
+import type { Viewer } from "./apps/loader.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -120,6 +132,21 @@ export interface DaemonOptions {
   buildRun?: string; // /run/agentv-build
   spend?: string; // /var/lib/agentv/spend/spend.json
   npmWarnings?: string; // /var/lib/agentv/npm-check/warnings.json
+  // The router (ADR-013, ADR-023): one sentence and the apps who's watching
+  // can open, into a route, through the provider's API or a plan's CLI.
+  router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // TMDB, through the router's service, which holds the household's TMDB
+  // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
+  tmdb?: TmdbGet;
+  tmdbStatus?: string;
+  // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
+  // provider's voice and Piper, for tests.
+  voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
+  // The box's country (ADR-055): a stand-in for its time zone, and how long
+  // a pick waits for root to set it, for tests.
+  country?: { zone?: () => Promise<string>; waitMs?: number };
+  // How long the listening bar waits for new words before it goes (20 s).
+  listenIdleMs?: number;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -207,6 +234,16 @@ export class Daemon {
   readonly pin: Pin;
   readonly profiles: Profiles;
   readonly key: ProviderKey;
+  // The TMDB key, and what's new and new episodes from TMDB (stage 8).
+  readonly tmdbKey: TmdbKey;
+  readonly country: CountryPlace;
+  readonly news: News;
+  // The TV's spoken answers (stage 8), and the last few clips, by number,
+  // for the TV session to fetch and play.
+  readonly voice: Voice;
+  private clips = new Map<number, Clip>();
+  private clipCount = 0;
+  private lastSpoken: { clip: number; by: Clip["by"]; ms: number; played?: boolean; error?: string; at: string } | null = null;
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
@@ -222,6 +259,14 @@ export class Daemon {
   readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: "the TV didn't answer in time: is its session running?" } });
   // A made theme's asks, for the screen daemon to hand it to Omarchy (S6.4).
   readonly themeAsks = new Asks<ThemeAsk, ThemeAnswer>({ clean: cleanTheme, late: { ok: false, error: "the TV didn't answer in time: is its session running?", late: true } });
+  // A sentence's asks of the TV session: looking X up in the apps, and
+  // opening what was chosen (daemon/say.ts).
+  readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?" } });
+  // What was said to the TV, routed and done (ADR-023).
+  readonly say: Say;
+  // The phone's box, open and its words, as the TV shows them (ADR-054).
+  readonly listening: Listening;
+  private routing?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
   // What it asked already, by theme, build and version, so a pass that read
   // the record before the last answer came doesn't ask again.
   private themesAsked = new Set<string>();
@@ -251,6 +296,9 @@ export class Daemon {
   // The provider whose terms a key from Settings → AI waits for (Q104), which
   // the phones show for an adult to accept.
   private keyTerms: Provider | null = null;
+  // The provider whose terms a plan picked in Settings → AI waits for (Q143),
+  // the same way.
+  private planTerms: Provider | null = null;
   // The last few page apps' notices, for the phones (ADR-043).
   private notices: { app: string; name: string; text: string; at: string }[] = [];
   // An app the TV offered for Export, for an adult's phone to save, or to
@@ -276,8 +324,50 @@ export class Daemon {
       goal: async () => (await this.setup()).goal,
       changed: (event) => this.broadcast(event, {}),
       pageTile: (id) => this.pageApps.tile(id),
+      newTile: (viewer, size) => this.newTile(viewer, size),
       log: this.log,
       dataDirs: options.dataDirs,
+    });
+    // A sentence said to the TV: routed for who's watching, with only the
+    // apps they can open, and done through the TV session.
+    // The listening bar: each change to the TV's pages and, for over an
+    // app, the TV session. Nothing of the words stays (ADR-054).
+    this.listening = new Listening({
+      idleMs: options.listenIdleMs,
+      changed: (heard) => {
+        this.toPages("listening", heard);
+        void this.sayAsks.ask({ kind: "live", state: heard.state, text: heard.text }, 3000);
+      },
+    });
+    this.say = new Say({
+      bar: { sent: () => this.listening.sent(), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
+      route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
+      viewer: () => this.profiles.active(),
+      apps: async (viewer) => {
+        const allowed = new Set((await this.home.apps(viewer)).map((app) => app.id));
+        return (await this.home.manifests())
+          .filter(({ manifest }) => allowed.has(manifest.id))
+          .map(({ manifest }) => ({
+            id: manifest.id,
+            name: manifest.name,
+            category: manifest.tv.category,
+            // Music looks in the library in the TV session rather than in a
+            // worker, so it can, though its manifest doesn't say so.
+            capabilities: manifest.id === MUSIC_APP ? [...manifest.tv.capabilities, "search"] : [...manifest.tv.capabilities],
+          }));
+      },
+      rows: (viewer) => this.ledger.recent(viewer, { limit: 50 }),
+      speak: (text) => void this.speak(text),
+      news: (viewer, apps) => {
+        const ids = apps.map((app) => app.id);
+        return {
+          whatsNew: (only) => this.news.forViewer(viewer.role, ids, only),
+          episode: (query) => this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, ids),
+        };
+      },
+      ask: (ask, ms) => this.sayAsks.ask(ask, ms),
+      changed: (said) => this.broadcast("said", said),
+      log: this.log,
     });
     // Page apps (ADR-043): each on an origin of its own, and the kit's calls
     // checked against its manifest.
@@ -316,6 +406,24 @@ export class Daemon {
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
+    this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
+    this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
+    this.voice = new Voice({
+      ...options.voice,
+      ai: () => this.ai.read(),
+      key: () => this.key.status(),
+      spoken: async () => (await this.home.settings()).spoken,
+      log: this.log,
+    });
+    this.news = new News({
+      get: options.tmdb ?? tmdbViaRouter(),
+      state: options.state,
+      keySet: () => this.tmdbKey.status().set,
+      region: () => this.region(),
+      // Every app on the box but AgenTV's own.
+      apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
+      log: this.log,
+    });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json") });
@@ -423,6 +531,7 @@ export class Daemon {
     this.setupApps.stop();
     this.openLedger?.close();
     this.pageAsks.close();
+    this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
@@ -438,6 +547,16 @@ export class Daemon {
       if (at > 0 && line.slice(0, at) in values) values[line.slice(0, at)] = line.slice(at + 1).trim();
     }
     return values;
+  }
+
+  // Settings → AI's state: which provider has a key (never the key), the
+  // plans this box's channel offers (ADR-053), and what builds use now, by
+  // plan or key, and whether its terms are accepted (Q143).
+  private async keyState(): Promise<object> {
+    const { set, provider } = this.key.status();
+    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name, bestEffort: offer.plan.bestEffort === true }));
+    const ai = await this.ai.read();
+    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
   }
 
   // The channel this box updates from, as `agentv channel` says it: the one
@@ -685,8 +804,14 @@ export class Daemon {
 
   // Tells every page that's listening what changed, and the phones too.
   private broadcast(event: string, data: unknown): void {
-    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    this.toPages(event, data);
     this.phonesChanged();
+  }
+
+  // To the TV's own pages only, for what the phones needn't hear, such as
+  // the listening bar's words, which come from a phone (ADR-054).
+  private toPages(event: string, data: unknown): void {
+    for (const stream of this.streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 
   // Wakes every phone waiting for the state to change.
@@ -797,7 +922,53 @@ export class Daemon {
       builds: viewer.role === "adult" ? await this.phoneBuilds() : [],
       // An app the TV offered for Export, for an adult to save here.
       export: viewer.role === "adult" && this.exportOffer && this.exportOffer.until > Date.now() ? { id: this.exportOffer.id, name: this.exportOffer.name, version: this.exportOffer.version, github: this.exportOffer.github } : null,
+      // What was last said to the TV, and what came of it, for ten minutes:
+      // the phone shows it under its box, and up to three to choose from.
+      said: this.saidNow(),
     };
+  }
+
+  // The router this box's setup chose (daemon/router-client.ts), through
+  // its services' sockets.
+  private boxRoute(sentence: string, apps: RouterApp[]): Promise<Routed> {
+    this.routing ??= boxRouter({ ai: () => this.ai.read(), key: () => this.key.status() });
+    return this.routing(sentence, apps);
+  }
+
+  private saidNow(): object | null {
+    const said = this.say.current;
+    if (!said || Date.now() - Date.parse(said.at) > 10 * 60_000) return null;
+    const { route: _route, ...shown } = said;
+    return shown;
+  }
+
+  // Why the TV won't take a sentence now, or null: setup isn't done, or
+  // the TV is locked behind the PIN (ADR-034).
+  private async sayRefusal(): Promise<string | null> {
+    if (!(await this.setup()).done) return "the tv takes requests once setup is done";
+    if (this.pin.status((await this.profiles.active()).locked).locked) return "the tv is locked: unlock it first";
+    return null;
+  }
+
+  // A sentence, from the TV or a phone, once it's done.
+  private async sayIt(request: IncomingMessage, response: ServerResponse, from: string): Promise<void> {
+    const refused = await this.sayRefusal();
+    if (refused) {
+      this.json(response, 409, { ok: false, error: refused });
+      return;
+    }
+    const body = (await this.body(request)) as { sentence?: unknown } | undefined;
+    if (typeof body?.sentence !== "string" || !body.sentence.trim()) {
+      this.json(response, 400, { ok: false, error: "say something" });
+      return;
+    }
+    this.json(response, 200, { ok: true, said: await this.say.hear(body.sentence, from) });
+  }
+
+  private async sayPick(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const body = (await this.body(request)) as { n?: unknown; choice?: unknown } | undefined;
+    const picked = await this.say.pick(body?.n, body?.choice);
+    this.json(response, picked.said ? 200 : 409, picked.said ? { ok: true, said: picked.said } : { ok: false, error: picked.error });
   }
 
   private async phoneBuilds(): Promise<object[]> {
@@ -812,6 +983,7 @@ export class Daemon {
         state: b.state,
         phase: b.phase,
         ...(b.signIn ? { signIn: b.signIn.state } : {}),
+        ...(b.ranOut ? { ranOut: true } : {}),
         done: b.steps.filter((step) => step.state === "done").length,
         steps: b.steps.length,
         ...(b.reason ? { reason: b.reason } : {}),
@@ -822,6 +994,10 @@ export class Daemon {
     if (this.keyTerms) {
       const offer = OFFERS[this.keyTerms];
       return { ask: "terms", provider: this.keyTerms, path: "key", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.key, summary: offer.summary.key, keyUrl: offer.keyUrl };
+    }
+    if (this.planTerms) {
+      const offer = OFFERS[this.planTerms];
+      return { ask: "terms", provider: this.planTerms, path: "plan", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.plan, summary: offer.summary.plan, keyUrl: offer.keyUrl };
     }
     if (setup.done || setup.step !== "ai") return null;
     const ai = await this.ai.read();
@@ -1099,6 +1275,33 @@ export class Daemon {
       return;
     }
 
+    // A sentence for the TV (ADR-023): the phone keyboard's dictation, or
+    // what was typed, and one of up to three to choose from.
+    if (method === "POST" && path === "/api/phone/say") {
+      await this.sayIt(request, response, phone.name);
+      return;
+    }
+    if (method === "POST" && path === "/api/phone/say/pick") {
+      await this.sayPick(request, response);
+      return;
+    }
+    // The box's words as the phone's dictation fills it in, or that it
+    // opened or closed (ADR-054). Kept nowhere: they go on to the TV.
+    if (method === "POST" && path === "/api/phone/say/live") {
+      const refused = await this.sayRefusal();
+      if (refused) {
+        this.json(response, 409, { ok: false, error: refused });
+        return;
+      }
+      const why = this.listening.change(phone.name, await this.body(request));
+      this.json(response, why ? 400 : 200, why ? { ok: false, error: why } : { ok: true });
+      return;
+    }
+    if (method === "POST" && path === "/api/phone/say/dismiss") {
+      this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
+      return;
+    }
+
     // Arrange home (S4.7): the viewer's grid and the apps that can go on it.
     if (method === "GET" && path === "/api/phone/home") {
       const viewer = await this.profiles.active();
@@ -1343,6 +1546,20 @@ export class Daemon {
         this.json(response, 200, { ok: true, accepted: recorded.acceptance });
         return;
       }
+      // Settings → AI's plan, waiting for its provider's terms (Q143).
+      if (this.planTerms && body?.provider === this.planTerms && body?.path === "plan") {
+        const provider = this.planTerms;
+        const recorded = await this.ai.record(provider, "plan", { phone: phone.name, viewer: viewer.name });
+        if (!recorded.acceptance) {
+          this.json(response, 400, { ok: false, error: recorded.error });
+          return;
+        }
+        this.planTerms = null;
+        this.log(`${viewer.name} accepted ${provider}'s terms for a plan, on ${phone.name}, for settings`);
+        this.broadcast("terms", { provider, path: "plan", accepted: recorded.acceptance });
+        this.json(response, 200, { ok: true, accepted: recorded.acceptance });
+        return;
+      }
       const result = await this.ai.accept(body?.provider, body?.path, { phone: phone.name, viewer: viewer.name });
       if (!result.state) {
         this.json(response, 400, { ok: false, error: result.error });
@@ -1537,10 +1754,82 @@ export class Daemon {
       this.log(status.locked ? "the tv is locked" : "the tv is unlocked");
       this.broadcast("pin", status);
     }
+    // A locked TV takes no words, so a listening bar goes (ADR-054).
+    if (status.locked) this.listening.close();
   }
 
   // On a child's profile, Settings and home's layout are an adult's, past the
   // PIN (ADR-009, ADR-015).
+  // --- Spoken answers (stage 8) ------------------------------------------------
+
+  // An answer, said aloud over HDMI: made into a clip here, and played by
+  // the TV session, which fetches it. The log says which voice and how long,
+  // never the words.
+  private async speak(text: string): Promise<void> {
+    const clip = await this.voice.make(text);
+    if (!clip) return;
+    const n = ++this.clipCount;
+    this.clips.set(n, clip);
+    for (const old of this.clips.keys()) if (old <= n - 3) this.clips.delete(old);
+    this.lastSpoken = { clip: n, by: clip.by, ms: clip.ms, at: new Date().toISOString() };
+    const played = await this.sayAsks.ask({ kind: "speak", clip: n }, 60_000);
+    if (this.lastSpoken.clip === n) Object.assign(this.lastSpoken, { played: played.ok, ...(played.error ? { error: played.error } : {}) });
+    this.log(`the tv said its answer with ${clip.by === "provider" ? `${clip.provider}'s voice` : "piper"}, made in ${clip.ms} ms${played.ok ? "" : `, but it didn't play: ${played.error ?? "no answer"}`}`);
+  }
+
+  // --- What's new (stage 8) ---------------------------------------------------
+
+  // TMDB's region is the box's country (ADR-055): the one setup confirmed,
+  // or Settings picked, or else its time zone's.
+  private async region(): Promise<string | null> {
+    return (await this.country.read()).code;
+  }
+
+  // What Settings → new this week shows: whether there's a key, the region and
+  // the household's services, as TMDB matches the apps on the box.
+  private async whatsNewState(): Promise<{ error?: string } & Record<string, unknown>> {
+    const { error, ...key } = this.tmdbKey.status();
+    const region = await this.region();
+    const found = key.set && region ? await this.news.services(region) : null;
+    return {
+      key: { ...key, ...(error ? { error } : {}) },
+      region,
+      ...(found ? { services: found.services, ...(found.ok ? {} : { error: found.error }) } : {}),
+    };
+  }
+
+  // New this week's tile (S8.1): this week's titles on the apps who's
+  // watching can open, each with its poster, its app and its new season, or
+  // what it needs first.
+  private async newTile(viewer: Viewer, size: Size): Promise<unknown> {
+    const apps = await this.home.apps(viewer);
+    const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
+    const name = (id: string) => (apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
+    if (!feed.ok) {
+      const adult = viewer.role === "adult";
+      const why: Record<string, string> = {
+        "no-key": adult ? "add a tmdb key in settings → new this week" : "an adult adds a tmdb key in settings",
+        "no-region": adult ? "pick a region in settings → new this week" : "an adult picks a region in settings",
+        "no-services": `tmdb doesn't list your apps' services in ${(feed.region ?? "your region").toLowerCase()}`,
+      };
+      return { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 };
+    }
+    // The region on the right of the tile's head, as Weather has its city.
+    const region = ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "").toLowerCase();
+    if (!feed.titles.length) return { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 };
+    if (size === "s") return { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 };
+    return {
+      headline: { label: region },
+      entries: feed.titles.slice(0, 8).map((title) => ({
+        label: title.title.toLowerCase(),
+        caption: `${name(title.app)}${title.season ? ` · season ${title.season}` : ""}`,
+        ...(title.poster ? { image: title.poster } : {}),
+        item: newItem(title),
+      })),
+      refreshMins: 180,
+    };
+  }
+
   private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
     if ((await this.profiles.active()).role !== "child") return true;
     return this.guarded(request, response, `${what} on a child's profile`);
@@ -2185,11 +2474,8 @@ export class Daemon {
 
     // Which provider has a key. The key itself never comes back.
     if (method === "GET" && path === "/api/key") {
-      const { set, provider, error } = this.key.status();
-      // And the plans setup offers on this box's channel, for Settings → AI
-      // to name (ADR-053).
-      const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, bestEffort: offer.plan.bestEffort === true }));
-      this.json(response, 200, { ok: true, set, provider, plans, ...(error ? { error } : {}) });
+      const { error } = this.key.status();
+      this.json(response, 200, { ok: true, ...(await this.keyState()), ...(error ? { error } : {}) });
       return;
     }
 
@@ -2218,8 +2504,14 @@ export class Daemon {
       }
       const { set } = this.key.status();
       this.log(set ? `a key for ${provider} is kept, root's alone` : "the provider key is off");
+      // A key kept from Settings → AI is what builds use from now on, its
+      // terms accepted first (Q104, Q143), in place of a plan picked before.
+      if (set && typeof provider === "string" && Object.hasOwn(OFFERS, provider)) {
+        const chosen = await this.ai.choose(provider, "key");
+        if (chosen.state) this.broadcast("ai", chosen.state);
+      }
       this.broadcast("key", { set, provider: this.key.status().provider });
-      this.json(response, 200, { ok: true, set, provider: this.key.status().provider });
+      this.json(response, 200, { ok: true, ...(await this.keyState()) });
       return;
     }
 
@@ -2234,6 +2526,53 @@ export class Daemon {
     }
 
     // --- The AI provider and its terms (ADR-022, ADR-023) --------------------
+
+    // Settings → AI: the household's plan for builds, in place of a key
+    // (Q143). An adult's, past the PIN. A plan whose terms nobody here has
+    // accepted waits for them, as a key does: the phones show them, an adult
+    // accepts, and the TV asks again. Only a plan this box's channel offers
+    // (ADR-053).
+    if (method === "PUT" && path === "/api/ai/plan") {
+      if (!this.guarded(request, response, "the ai plan") || !(await this.adult(request, response, "the ai plan"))) return;
+      const body = (await this.body(request)) as { provider?: unknown } | undefined;
+      const provider = body?.provider;
+      if (typeof provider !== "string" || !Object.hasOwn(OFFERS, provider)) {
+        this.json(response, 400, { ok: false, error: PROVIDER_LIST });
+        return;
+      }
+      const offer = (await this.ai.offers())[provider as Provider];
+      if (!offer.plan.offered) {
+        this.json(response, 400, { ok: false, error: `${offer.plan.name} is coming soon. use an api key for now` });
+        return;
+      }
+      if (!(await this.ai.acceptance(provider as Provider, "plan"))) {
+        if (this.planTerms !== provider) {
+          this.planTerms = provider as Provider;
+          this.phonesChanged();
+        }
+        this.json(response, 409, { ok: false, error: `${offer.name}'s terms come first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.plan, summary: offer.summary.plan } });
+        return;
+      }
+      const chosen = await this.ai.choose(provider, "plan");
+      if (!chosen.state) {
+        this.json(response, 400, { ok: false, error: chosen.error });
+        return;
+      }
+      this.log(`builds use the ${provider} plan now, from settings`);
+      this.broadcast("ai", chosen.state);
+      this.json(response, 200, { ok: true, ...chosen.state });
+      return;
+    }
+
+    // Settings → AI stopped waiting for a plan's terms: the phones stop asking.
+    if (method === "DELETE" && path === "/api/ai/plan/terms") {
+      if (this.planTerms) {
+        this.planTerms = null;
+        this.phonesChanged();
+      }
+      this.json(response, 200, { ok: true });
+      return;
+    }
 
     // Which provider, by plan or key, whether its terms are accepted, how the
     // first run of its CLI went, and what each provider offers.
@@ -2588,6 +2927,162 @@ export class Daemon {
         said = { ok: false, error: `the TV's answer couldn't be read: ${(error as Error).message}` };
       }
       const known = this.pageAsks.answer(Number(pageAnswer[1]), said);
+      this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
+      return;
+    }
+    // A sentence said to the TV (ADR-023), here from the box itself, such
+    // as agentv selftest; and the TV's own pick and Back.
+    if (method === "GET" && path === "/api/say") {
+      this.json(response, 200, { ok: true, said: this.say.current });
+      return;
+    }
+    if (method === "POST" && path === "/api/say") {
+      await this.sayIt(request, response, "the tv");
+      return;
+    }
+    if (method === "POST" && path === "/api/say/pick") {
+      await this.sayPick(request, response);
+      return;
+    }
+    // Back on the TV, with the listening bar up.
+    if (method === "POST" && path === "/api/say/live/close") {
+      this.listening.close();
+      this.json(response, 200, { ok: true });
+      return;
+    }
+    if (method === "POST" && path === "/api/say/dismiss") {
+      this.json(response, 200, { ok: this.say.dismiss(((await this.body(request)) as { n?: unknown } | undefined)?.n) });
+      return;
+    }
+    // The router alone, with apps it's told of and nothing done, as the box
+    // routes: agentv selftest S7.4 runs the eval set through it.
+    if (method === "POST" && path === "/api/router/route") {
+      const body = (await this.body(request)) as { sentence?: unknown; apps?: unknown } | undefined;
+      const apps = Array.isArray(body?.apps) ? (body.apps as RouterApp[]).slice(0, 100) : [];
+      if (typeof body?.sentence !== "string") {
+        this.json(response, 400, { ok: false, error: "which sentence" });
+        return;
+      }
+      const route = this.options.router ?? ((sentence: string, list: RouterApp[]) => this.boxRoute(sentence, list));
+      this.json(response, 200, { ok: true, routed: await route(body.sentence.slice(0, 300), apps) });
+      return;
+    }
+    // What's new on the household's services, for who's watching (S8.1):
+    // only titles on the apps they can open.
+    if (method === "GET" && path === "/api/whats-new") {
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const fresh = new URL(request.url ?? "/", "http://box").searchParams.get("fresh") === "1";
+      if (fresh) await this.news.feed(viewer.role, true);
+      this.json(response, 200, { ok: true, feed: await this.news.forViewer(viewer.role, apps) });
+      return;
+    }
+    // Whether there's a new episode of a show, for who's watching, as the
+    // router's new_episode does, with nothing routed (S8.2's selftest).
+    if (method === "POST" && path === "/api/whats-new/episode") {
+      const body = (await this.body(request)) as { query?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const query = typeof body?.query === "string" ? body.query.slice(0, 120) : null;
+      this.json(response, 200, { ok: true, answer: await this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, apps) });
+      return;
+    }
+    // A title on New this week, chosen on home: looked up in its app and
+    // played, as a sentence would, and the TV and the phones hear how it went.
+    if (method === "POST" && path === "/api/whats-new/open") {
+      const body = (await this.body(request)) as { id?: unknown } | undefined;
+      const viewer = await this.profiles.active();
+      const apps = (await this.home.apps(viewer)).map((app) => app.id);
+      const title = (await this.news.forViewer(viewer.role, apps)).titles.find((t) => `tmdb:${t.kind}:${t.id}` === body?.id);
+      if (!title) {
+        this.json(response, 404, { ok: false, error: "that isn't new this week any more" });
+        return;
+      }
+      const route: Route = { ...NONE, intent: "play", query: title.title, kind: title.kind, app: title.app, season: title.season ?? null };
+      this.json(response, 200, { ok: true, said: await this.say.act(route, "the tv", title.title) });
+      return;
+    }
+    // The TV's spoken answers (stage 8): which voice says them, whether
+    // Piper is here, and how the last one went.
+    if (method === "GET" && path === "/api/voice") {
+      this.json(response, 200, { ok: true, ...(await this.voice.state()), last: this.lastSpoken });
+      return;
+    }
+    // A clip, for the TV session to play: here only, on the TV's own port.
+    const voiceClip = /^\/api\/voice\/(\d+)$/.exec(path);
+    if (method === "GET" && voiceClip) {
+      const clip = this.clips.get(Number(voiceClip[1]));
+      if (!clip) {
+        this.json(response, 404, { ok: false, error: "that clip has gone" });
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": clip.wav.length, "Cache-Control": "no-store" });
+      response.end(clip.wav);
+      return;
+    }
+    if (method === "GET" && path === "/api/whats-new/settings") {
+      this.json(response, 200, { ok: true, ...(await this.whatsNewState()) });
+      return;
+    }
+    // The box's country (ADR-055): what it is, and the countries to pick
+    // from, for setup's country step and Settings → country.
+    if (method === "GET" && path === "/api/country") {
+      this.json(response, 200, { ok: true, ...(await this.country.read()), countries: await countries() });
+      return;
+    }
+    // Another country, or the same one confirmed: an adult's, past the PIN
+    // once there is one. TMDB's region follows, and the time zone moves
+    // when the box's isn't in that country.
+    if (method === "PUT" && path === "/api/country") {
+      if (!this.guarded(request, response, "the country") || !(await this.adult(request, response, "the country"))) return;
+      const body = (await this.body(request)) as { code?: unknown } | undefined;
+      const set = await this.country.set(body?.code);
+      if (set.error) {
+        this.json(response, 400, { ok: false, error: set.error });
+        return;
+      }
+      this.broadcast("country", set.state);
+      this.broadcast("whats-new", {});
+      this.json(response, 200, { ok: true, ...set.state });
+      return;
+    }
+    // The TMDB key, kept where only root can read it, or taken off. An
+    // adult's, past the PIN, as the provider key is.
+    if ((method === "PUT" || method === "DELETE") && path === "/api/tmdb-key") {
+      if (!this.guarded(request, response, "the tmdb key") || !(await this.adult(request, response, "the tmdb key"))) return;
+      const body = (method === "PUT" ? await this.body(request) : {}) as { key?: unknown } | undefined;
+      const why = await this.tmdbKey.store(method === "DELETE" ? null : (body?.key ?? ""));
+      if (why) {
+        this.log(`the tmdb key wasn't kept: ${why}`);
+        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        return;
+      }
+      const kept = this.tmdbKey.status().set;
+      this.log(kept ? "a tmdb key is kept, root's alone" : "the tmdb key is off");
+      // Root starts the router's service again with the key: Settings shows
+      // the services once it has it. The old one can answer that it's ready
+      // just before it stops, as it can with a key it had before, so a
+      // router gone by the time the services are asked for is waited for
+      // once more.
+      let state: { error?: string } = {};
+      if (kept) {
+        await this.news.ready();
+        state = await this.whatsNewState();
+        if (state.error === ROUTER_GONE && (await this.news.ready())) state = await this.whatsNewState();
+      } else state = await this.whatsNewState();
+      this.broadcast("whats-new", {});
+      this.json(response, 200, { ok: true, ...state });
+      return;
+    }
+    // A sentence's asks of the TV session: the screen daemon looks things up
+    // in the apps and opens them, as the person.
+    if (method === "GET" && path === "/api/say/ask") {
+      this.json(response, 200, { ok: true, ask: await this.sayAsks.take() });
+      return;
+    }
+    const sayAnswer = /^\/api\/say\/ask\/(\d+)$/.exec(path);
+    if (method === "POST" && sayAnswer) {
+      const known = this.sayAsks.answer(Number(sayAnswer[1]), await this.body(request));
       this.json(response, known ? 200 : 404, known ? { ok: true } : { ok: false, error: "that ask isn't waiting" });
       return;
     }

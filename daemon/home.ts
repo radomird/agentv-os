@@ -114,15 +114,36 @@ export function asAddress(typed: string): string | null {
 // Whose data a built-in app shows, as its terms ask.
 const CREDITS: Record<string, string> = {
   "agentv.weather": "weather data from met norway, under cc by 4.0",
+  "agentv.new": "this product uses the tmdb api but is not endorsed or certified by tmdb. where to watch is from justwatch",
 };
 
 const WEATHER = "agentv.weather";
 const CLOCK = "agentv.clock";
 // The built-ins on every home from the start (ADR-015). Music joins them
-// when it's the household's goal, which setup asks (ADR-017); otherwise it's
-// in Apps.
+// when it's the household's goal, which setup asks (ADR-017), and New this
+// week, large, when it's streaming (ADR-006, S8.1); otherwise they're in
+// Apps.
 const PINNED = [CLOCK, WEATHER];
 const MUSIC_APP = "agentv.music";
+export const NEW_APP = "agentv.new";
+const GOAL_PINS: Record<string, string[]> = { music: [MUSIC_APP], streaming: [NEW_APP] };
+// The size a built-in is pinned at, when it isn't small: the largest that
+// fits, from this one down.
+const PIN_SIZE: Record<string, Size> = { [NEW_APP]: "l" };
+
+// A tile pinned in the first place it fits: a built-in that's pinned large
+// at the largest of its sizes that fits, from that one down, and anything
+// else small.
+function pinBuiltin(layout: Placed[], id: string, sizes: Size[] = ["s"]): Placed[] | null {
+  const want = PIN_SIZE[id];
+  if (!want) return pin(layout, id);
+  for (const size of (["l", "m", "s"] as Size[]).slice((["l", "m", "s"] as Size[]).indexOf(want))) {
+    if (!sizes.includes(size)) continue;
+    const placed = pin(layout, id, size);
+    if (placed) return placed;
+  }
+  return null;
+}
 
 export interface TvSettings {
   sound: { on: boolean; volume: number };
@@ -134,9 +155,12 @@ export interface TvSettings {
   // Settings → Updates: install an update each night on its own, off by
   // default (ADR-025, Q79).
   updateOvernight: boolean;
+  // Settings → Sound: the TV says its answers aloud (stage 8), on by
+  // default.
+  spoken: boolean;
 }
 
-const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, ambient: "pictures", updateOvernight: false };
+const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, ambient: "pictures", updateOvernight: false, spoken: true };
 
 // The launcher's own tile, to all apps (board 19). Its id has no dot, so no
 // app can take it.
@@ -208,8 +232,10 @@ export interface HomeOptions {
   // What a page app's tile shows: what it last set (ADR-043).
   pageTile?: (id: string) => Promise<unknown>;
   // What the TV is for, from setup (ADR-006): Music is on home from the
-  // start when it's music.
+  // start when it's music, and New this week when it's streaming.
   goal?: () => Promise<string | null>;
+  // New this week's tile, which the daemon draws from TMDB (S8.1).
+  newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
@@ -266,6 +292,7 @@ export class Home {
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
   private goal?: () => Promise<string | null>;
   private pageTile?: (id: string) => Promise<unknown>;
+  private newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   private dataDirs: string[];
 
   constructor(options: HomeOptions) {
@@ -279,6 +306,7 @@ export class Home {
     this.viewerOf = options.viewer;
     this.goal = options.goal;
     this.pageTile = options.pageTile;
+    this.newTile = options.newTile;
     this.dataDirs = options.dataDirs ?? DATA_DIRS;
   }
 
@@ -772,7 +800,7 @@ export class Home {
     const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
     const goal = (await this.goal?.().catch(() => null)) ?? null;
-    const first = goal === "music" ? [...PINNED, MUSIC_APP] : PINNED;
+    const first = [...PINNED, ...(GOAL_PINS[goal ?? ""] ?? [])];
     const builtins = all.filter((id) => first.includes(id));
     const unpinned = all.filter((id) => !first.includes(id));
     const pinned = await readJson<Record<string, string[]>>(join(this.state, "builtins-pinned.json"), {});
@@ -781,14 +809,14 @@ export class Home {
       let kept = saved.filter((tile) => sizes.has(tile.id));
       if (!problem(kept, (id) => sizes.get(id))) {
         if (fresh.length === 0) return kept;
-        for (const id of fresh) kept = pin(kept, id) ?? kept;
+        for (const id of fresh) kept = pinBuiltin(kept, id, sizes.get(id)) ?? kept;
         await this.markPinned(viewer, fresh, kept);
         return kept;
       }
     }
     let layout: Placed[] = [];
     for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(APPS_TILE)) {
-      layout = pin(layout, id) ?? layout;
+      layout = pinBuiltin(layout, id, sizes.get(id)) ?? layout;
     }
     if (fresh.length) await this.markPinned(viewer, fresh, saved ? layout : undefined);
     return layout;
@@ -836,6 +864,7 @@ export class Home {
     if (typeof c.idleMinutes === "number" && [5, 10, 15, 30, 60].includes(c.idleMinutes)) next.idleMinutes = c.idleMinutes;
     if (c.ambient === "pictures" || c.ambient === "terminal") next.ambient = c.ambient;
     if (typeof c.updateOvernight === "boolean") next.updateOvernight = c.updateOvernight;
+    if (typeof c.spoken === "boolean") next.spoken = c.spoken;
     await mkdir(this.state, { recursive: true });
     await writeJson(join(this.state, "settings.json"), next);
     return null;
@@ -862,6 +891,8 @@ export class Home {
     const capabilities = found.manifest.tv.capabilities;
     // A page app sets its tile through the kit while it runs (ADR-043).
     if (found.manifest.tv.runtime === "page") return capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null;
+    // New this week is TMDB's, through the daemon, which keeps it itself.
+    if (id === NEW_APP && found.tier === "built-in") return (await this.newTile?.(viewer, size)) ?? null;
     if (!capabilities.includes("tile")) {
       // The free medium continue tile, drawn from the ledger each time.
       if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return null;

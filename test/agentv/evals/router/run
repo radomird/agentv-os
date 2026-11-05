@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Runs the router's phrase set on one provider (ADR-019, layer 6; S7.1 to
+# S7.4): 20 phrasings for each of the four requests, across kinds and with
+# collisions between kinds, and 20 sentences that can't be routed.
+#
+#   test/agentv/evals/router/run --provider claude
+#     its API, with ANTHROPIC_API_KEY (OPENAI_API_KEY, GEMINI_API_KEY,
+#     XAI_API_KEY or META_API_KEY for the others)
+#   test/agentv/evals/router/run --provider claude --via cli
+#     Claude Code on a plan, from the home that's signed in to it
+#
+# Options:
+#   --model <id>       a model other than the router's own
+#   --home <dir>       with --via cli: the home whose CLI and sign-in to use
+#   --only <id,...>    only these cases
+#   --json <file>      every answer and the scores
+#   --markdown <file>  the scores as a table, added to the file
+#   --strict           fail when S7.1's 95% or S7.3's every one isn't met
+#
+# It costs a little: about 100 short requests, a few cents on a key.
+
+set -euo pipefail
+
+DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+exec node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$DIR/run.mts" "$@"

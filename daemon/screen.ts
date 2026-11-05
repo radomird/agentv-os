@@ -61,7 +61,12 @@ import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
+import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput } from "./remote.ts";
+import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import type { SayAnswer, SayAsk } from "./say.ts";
+import { answerSay, sayHosts } from "./say-watch.ts";
+import { VoicePlayer } from "./voice-play.ts";
 import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
@@ -90,6 +95,15 @@ export const KEEP_OPEN = 2;
 // How each provider's agent CLI says its version, which its first run asks
 // for: xAI's grok has a version command, not a flag.
 const VERSION_ARGS: Record<Cli, string[]> = { claude: ["--version"], codex: ["--version"], gemini: ["--version"], grok: ["version"], muse: ["--version"] };
+// Each CLI's mise package, as Omarchy 4.0.x's own wrappers named them, for a
+// box whose Omarchy has neither a wrapper nor a shim for it.
+const MISE_PACKAGES: Record<Cli, string> = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  grok: "npm:@xai-official/grok",
+  muse: "http:muse[url=https://api.meta.ai/muse-launcher.sh,bin=muse,version_list_url=https://api.meta.ai/muse-code/channels/muse-stable,version_json_path=.version]",
+};
 // How far before its press a tap's release can read the clock (see back).
 const BACK_SLACK_MS = 50;
 
@@ -133,6 +147,9 @@ export interface Launcher {
   shareTarget(id: string): Promise<{ url: string; app?: string }>;
   steam(mode: MonitorMode): App;
   toast(text: string): Promise<void>;
+  // The listening bar over the app in front (ADR-054), in a state with its
+  // words, or gone with "closed".
+  listen(state: string, text: string): Promise<void>;
   // Tells the overlay whether an app is in front, so the mouse's Home
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
@@ -996,6 +1013,45 @@ export class Screen {
     return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
   }
 
+  // What a sentence said to the TV opens (daemon/say.ts): an app the way
+  // its tile opens it, at an item where there is one, or Music's own page
+  // once it plays.
+  sayOpen(app: string, item?: Item): Promise<{ ok?: boolean; error?: string }> {
+    if (app === MUSIC) return this.goHome("music", "a sentence") as Promise<{ ok?: boolean; error?: string }>;
+    return this.fromHome({ cmd: "open-app", app, ...(item ? { item } : {}) }, true) as Promise<{ ok?: boolean; error?: string }>;
+  }
+
+  // The listening bar over the app in front (ADR-054). With home in front,
+  // the launcher draws its own, so the overlay's goes.
+  async sayLive(state: string, text: string): Promise<{ ok?: boolean; error?: string }> {
+    try {
+      if (this.appInFront()) await this.launcher.listen(state, text);
+      else await this.launcher.listen("closed", "");
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  }
+
+  // A sentence's outcome over the app in front, as a toast. With home in
+  // front, the launcher shows it itself.
+  async sayTell(text: string): Promise<{ ok?: boolean; error?: string }> {
+    if (!this.appInFront()) return { ok: true };
+    return (await this.toast(text)) as { ok?: boolean; error?: string };
+  }
+
+  // An app's window in front, not home's, and not the ambient screen.
+  private appInFront(): boolean {
+    const front = this.front();
+    return Boolean(front && front.role !== "home") && !this.ambient;
+  }
+
+  // A web app's page while it's open behind home, so its search can use it.
+  pageFor(id: string): PageBroker | undefined {
+    const entry = this.opens.find((o) => o.id === id && o.target);
+    return entry ? this.pageOf(entry) : undefined;
+  }
+
   // A page app (ADR-043): home in front, then its frame there.
   async openPage(id: string): Promise<object> {
     await this.home("a page app");
@@ -1284,6 +1340,7 @@ export class Screen {
         const opened = await running.cdp.open(target.url).catch(() => undefined);
         if (opened) {
           for (const page of before) if (page.targetId !== opened) await running.cdp.close(page.targetId).catch(() => {});
+          await this.remotePage(running.cdp, opened, SHARED_PAGE);
           this.log("a shared link opens in the share browser");
           return;
         }
@@ -1294,6 +1351,17 @@ export class Screen {
       app.onExit(() => {
         if (this.apps.get("share") === app) this.apps.delete("share");
       });
+      // The d-pad's ring in the page it opened with.
+      if (app.cdp) {
+        const cdp = app.cdp;
+        void (async () => {
+          for (let tries = 0; tries < 50; tries++) {
+            const pages = await cdp.pages().catch(() => []);
+            if (pages.length > 0) return this.remotePage(cdp, pages[0].targetId, SHARED_PAGE);
+            await sleep(100);
+          }
+        })();
+      }
       this.log("a shared link opens in the share browser");
     }).then(() => ({ ok: true }));
   }
@@ -1428,6 +1496,7 @@ export class Screen {
       const running = this.apps.get("web");
       if (running?.cdp) {
         entry.target = await running.cdp.open(url).catch(() => undefined);
+        if (entry.target) void this.remotePage(running.cdp, entry.target);
       }
       if (!entry.target) {
         const app = this.launcher.web(url);
@@ -1648,10 +1717,18 @@ export class Screen {
       const pages = await cdp.pages().catch(() => []);
       if (pages.length > 0) {
         entry.target = pages[0].targetId;
+        await this.remotePage(cdp, entry.target);
         return;
       }
       await sleep(100);
     }
+  }
+
+  // The phone's d-pad in a web app's page, for a page made for a desktop:
+  // a ring on what the arrows focus, and Back (daemon/remote-page.ts). A
+  // shared link's page gets SHARED_PAGE, with no Back of its own.
+  private async remotePage(cdp: DevTools, target: string, source = REMOTE_PAGE): Promise<void> {
+    await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
   }
 
   openSteam(id = "steam"): Promise<object> {
@@ -1990,6 +2067,20 @@ function track(role: Role, child: ChildProcess, group = false, cdp?: CdpPipe): A
   };
 }
 
+// The listening bar's look, as home's: the theme's background, words and
+// accent from its CSS, and whether reduce motion is on, read again at most
+// every 10 s.
+let look: { at: number; args: string[] } | null = null;
+async function barLook(): Promise<string[]> {
+  if (look && Date.now() - look.at < 10_000) return look.args;
+  const css = await fetch(`${HOME_URL}api/theme.css`, { signal: AbortSignal.timeout(3000) }).then((r) => r.text(), () => "");
+  const home = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(3000) }).then((r) => r.json(), () => ({}));
+  const colour = (name: string, fallback: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{3,8})\\b`).exec(css)?.[1] ?? fallback;
+  const args = [colour("background", "#1a1b26"), colour("foreground", "#a9b1d6"), colour("accent", "#7aa2f7"), (home as { settings?: { reduceMotion?: boolean } }).settings?.reduceMotion ? "true" : "false"];
+  look = { at: Date.now(), args };
+  return args;
+}
+
 export const launcher: Launcher = {
   async homeReady() {
     for (let tries = 0; tries < 60; tries++) {
@@ -2023,7 +2114,8 @@ export const launcher: Launcher = {
     // translate or site notifications over the TV (ADR-032).
     const prefs = spawnSync("agentv-chromium-prefs", [SERVICES_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
     if (prefs.status !== 0) console.log(`couldn't turn off the services' Chromium's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    // Arrows the page doesn't take move its focus (daemon/remote-page.ts).
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
@@ -2034,7 +2126,8 @@ export const launcher: Launcher = {
     // Its own prompts off too, as in the services' profile.
     const prefs = spawnSync("agentv-chromium-prefs", [SHARE_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
     if (prefs.status !== 0) console.log(`couldn't turn off the share browser's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    // The d-pad moves through a shared page as through an app's.
+    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
@@ -2102,6 +2195,17 @@ export const launcher: Launcher = {
     });
   },
 
+  async listen(state, text) {
+    const args = state === "closed" ? ["listen", "hide"] : ["listen", "show", state, text, ...(await barLook())];
+    return new Promise((resolve, reject) => {
+      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
+    });
+  },
+
   toast(text) {
     return new Promise((resolve, reject) => {
       execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "toast", "show", text], { timeout: 5000 }, (error, stdout) => {
@@ -2155,11 +2259,16 @@ export const launcher: Launcher = {
   },
 
   firstRun(cli) {
-    // Omarchy's wrapper in the owner's ~/.local/bin, which mise fills in on
-    // its first run. Its download can take a while on a slow line.
-    const wrapper = join(process.env.HOME ?? "", ".local", "bin", cli);
+    // The provider's CLI as Omarchy has it for the owner, which mise fetches
+    // on its first run: 4.0.x put a wrapper in ~/.local/bin, and 4.5 has a
+    // lazy mise shim in ~/.local/share/mise/shims instead. 4.5 has no Gemini
+    // CLI of its own, so with neither, mise runs the CLI from its package
+    // itself. The download can take a while on a slow line.
+    const home = process.env.HOME ?? "";
+    const own = [join(home, ".local", "bin", cli), join(home, ".local", "share", "mise", "shims", cli)].find((path) => existsSync(path));
+    const [command, args] = own ? [own, VERSION_ARGS[cli]] : ["mise", ["x", MISE_PACKAGES[cli], "--", cli, ...VERSION_ARGS[cli]]];
     return new Promise((resolve) => {
-      execFile(wrapper, VERSION_ARGS[cli], { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
+      execFile(command, args, { timeout: 15 * 60_000, env: process.env }, (error, stdout, stderr) => {
         const first = (text: string) => text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
         if (error) resolve({ error: first(stderr) || error.message.split("\n")[0] });
         else resolve({ version: first(stdout) });
@@ -2236,20 +2345,26 @@ export const launcher: Launcher = {
   },
 
   power(what) {
-    // Omarchy's commands schedule the power-off in this session's systemd,
-    // and find themselves again through OMARCHY_PATH, which that systemd
+    // Omarchy's command schedules the power-off in this session's systemd,
+    // and finds itself again through OMARCHY_PATH, which that systemd
     // doesn't carry. polkit lets the owner do it from there (ADR-033).
-    const command = what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown";
-    return new Promise((resolve) => {
-      const child = spawn(command, [], {
-        stdio: "ignore",
-        detached: true,
-        env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" },
+    // Omarchy 4.5 has omarchy-system reboot|shutdown. 4.0.x had a command
+    // for each, which a box keeps until its Omarchy channel serves 4.5, so
+    // when omarchy-system isn't there, those run instead.
+    const run = (command: string, args: string[]) =>
+      new Promise<boolean | "missing">((resolve) => {
+        const child = spawn(command, args, {
+          stdio: "ignore",
+          detached: true,
+          env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" },
+        });
+        child.on("error", (error: NodeJS.ErrnoException) => resolve(error.code === "ENOENT" ? "missing" : false));
+        child.on("exit", (code) => resolve(code === 0));
+        child.unref();
       });
-      child.on("error", () => resolve(false));
-      child.on("exit", (code) => resolve(code === 0));
-      child.unref();
-    });
+    return run("omarchy-system", [what === "restart" ? "reboot" : "shutdown"]).then(async (done) =>
+      done === "missing" ? (await run(what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown", [])) === true : done,
+    );
   },
 
   async idleMinutes() {
@@ -2523,6 +2638,17 @@ async function main(): Promise<void> {
     path: "api/themes/ask",
     what: "made themes",
     handle: (ask) => answerTheme(ask, screen),
+    failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // A sentence said to the TV (ADR-023): X looked up in the apps who's
+  // watching can open, and what was chosen opened, as the person. And what
+  // came of it said aloud (stage 8), through the box's sound output.
+  const voice = new VoicePlayer({ home: HOME_URL });
+  new AskWatch<SayAsk, SayAnswer>({
+    url: HOME_URL,
+    path: "api/say/ask",
+    what: "a sentence",
+    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the

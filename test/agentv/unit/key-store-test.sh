@@ -64,8 +64,42 @@ store || fail "a drop with no provider takes the key off"
 jq -e '.set == false and .provider == null' "$AGENTV_ETC/key.json" >/dev/null || fail "key.json says there's none"
 pass "a drop with no provider takes the key off, and keeps the rest"
 
+# The TMDB key (stage 8): its own drop, its own line, and its own status,
+# with the provider's key left as it is, and the other way round.
+TMDB_DROP="$SCRATCH/drop/tmdb.json"
+TMDB="eyJhbGciOiJIUzI1NiJ9.$(printf 't%.0s' {1..60}).sig-_part"
+printf 'ANTHROPIC_API_KEY=%s\n' "$KEY" >"$AGENTV_ETC/env"
+printf '{"key":"%s"}' "$TMDB" >"$TMDB_DROP"
+store || fail "a TMDB key is kept" "$(cat "$SCRATCH/out")"
+[[ ! -e $TMDB_DROP ]] || fail "its drop is gone"
+[[ $(cat "$AGENTV_ETC/env") == "ANTHROPIC_API_KEY=$KEY"$'\n'"TMDB_API_KEY=$TMDB" ]] || fail "it's TMDB_API_KEY, beside the provider's key" "$(cat "$AGENTV_ETC/env")"
+[[ $(stat -c %a "$AGENTV_ETC/env") == 600 ]] || fail "the env file is still its owner's alone"
+jq -e '.set == true and (.at | length > 0)' "$AGENTV_ETC/tmdb.json" >/dev/null || fail "tmdb.json says there's one" "$(cat "$AGENTV_ETC/tmdb.json")"
+[[ $(stat -c %a "$AGENTV_ETC/tmdb.json") == 644 ]] || fail "and the TV can read it"
+if grep -q "$TMDB" "$AGENTV_ETC/tmdb.json" "$AGENTV_ETC/key.json" "$SCRATCH/out"; then fail "the TMDB key is in nothing but the env file"; fi
+drop "{\"provider\":\"claude\",\"key\":\"$KEY\"}"
+printf '{"key":"%s"}' "$TMDB" >"$TMDB_DROP"
+store || fail "both at once are kept" "$(cat "$SCRATCH/out")"
+if [[ $(grep -c . "$AGENTV_ETC/env") != 2 ]] || ! grep -qx "TMDB_API_KEY=$TMDB" "$AGENTV_ETC/env" || ! grep -qx "ANTHROPIC_API_KEY=$KEY" "$AGENTV_ETC/env"; then
+  fail "each once" "$(cat "$AGENTV_ETC/env")"
+fi
+printf '%s' '{"key":"not a key\nEVIL=1"}' >"$TMDB_DROP"
+if store; then fail "a TMDB key with a new line in it is refused"; fi
+grep -qx "TMDB_API_KEY=$TMDB" "$AGENTV_ETC/env" || fail "and the one before stays"
+if grep -q EVIL "$AGENTV_ETC/env"; then fail "and nothing of it gets in"; fi
+jq -e '.set == true and .error == "that doesn'"'"'t look like a tmdb key"' "$AGENTV_ETC/tmdb.json" >/dev/null || fail "tmdb.json says why" "$(cat "$AGENTV_ETC/tmdb.json")"
+printf 'not json' >"$TMDB_DROP"
+if store; then fail "a drop that isn't JSON is refused"; fi
+grep -qx "TMDB_API_KEY=$TMDB" "$AGENTV_ETC/env" || fail "and doesn't take the key off"
+printf '{"key":null}' >"$TMDB_DROP"
+store || fail "a drop with no TMDB key takes it off" "$(cat "$SCRATCH/out")"
+[[ $(cat "$AGENTV_ETC/env") == "ANTHROPIC_API_KEY=$KEY" ]] || fail "only the TMDB key goes" "$(cat "$AGENTV_ETC/env")"
+jq -e '.set == false' "$AGENTV_ETC/tmdb.json" >/dev/null || fail "tmdb.json says there's none"
+pass "the TMDB key has a drop of its own, goes into the env file beside the provider's key, and comes off alone"
+
 for word in ConfigurationDirectory=agentv ProtectSystem=strict NoNewPrivileges=yes; do
   grep -qx "$word" "$ROOT/system/agentv-key.service" || fail "agentv-key.service has $word"
 done
 grep -qx "PathExists=/var/lib/private/agentv/daemon/key-drop/key.json" "$ROOT/system/agentv-key.path" || fail "agentv-key.path watches the daemon's drop"
+grep -qx "PathExists=/var/lib/private/agentv/daemon/key-drop/tmdb.json" "$ROOT/system/agentv-key.path" || fail "and the TMDB key's"
 pass "agentv-key.path starts the move as root when the daemon leaves a key"

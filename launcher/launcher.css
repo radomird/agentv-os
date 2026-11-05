@@ -466,6 +466,60 @@ button {
   cursor: pointer;
 }
 
+/* New this week (S8.1, canvas board 14): posters in a row, each with its
+   title and the app it's on under it, then TMDB's and JustWatch's credit. */
+.new-tile .entries {
+  gap: 16px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.new-tile .entry img {
+  order: -1;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+}
+
+.new-tile.size-m .entry img {
+  width: auto;
+  height: 140px;
+}
+
+.new-tile .entry-label {
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--bright-foreground);
+}
+
+.new-tile.size-m .entry-item .entry-label {
+  font-size: 20px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.new-tile .entry-caption {
+  font-size: 18px;
+  color: var(--foreground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.new-credit {
+  font-size: 18px;
+  color: var(--foreground);
+}
+
+/* TMDB's logo in Settings → About: smaller than AgenTV's own name above it,
+   as TMDB's terms ask. */
+.about-tmdb {
+  display: block;
+  height: 28px;
+  width: auto;
+  margin-top: 8px;
+}
+
 /* Things to continue sit at the tile's foot, as on canvas board 26. */
 .tile-content > .entries:only-child:has(.entry-item) {
   margin-top: auto;
@@ -1875,6 +1929,108 @@ body.with-backdrop.on-home {
   overflow-wrap: anywhere;
 }
 
+/* What was said to the TV (ADR-023): up to three to choose from, in the
+   notice's place and the same card, over home. */
+#said {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  display: none;
+  z-index: 9;
+}
+
+#said.on {
+  display: block;
+}
+
+.said-heard {
+  font-size: 28px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.said-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.said-choice {
+  text-align: left;
+}
+
+/* The listening bar (ADR-054): along the bottom, in the TV's safe area,
+   while someone talks to the TV from their phone. Three squares brighten
+   in turn while it listens or thinks; what came of it stands still. */
+#listening {
+  position: fixed;
+  left: 96px;
+  right: 96px;
+  bottom: 54px;
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  height: 112px;
+  padding: 0 36px;
+  background: var(--dark-background);
+  border: 2px solid var(--accent);
+  z-index: 19;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--base) var(--ease);
+}
+
+#listening.on {
+  opacity: 1;
+}
+
+.listening-dots {
+  display: flex;
+  gap: 12px;
+  flex: none;
+}
+
+.listening-dots span {
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: listening-dot 1600ms ease-in-out infinite;
+}
+
+.listening-dots span:nth-child(2) { animation-delay: 320ms; }
+.listening-dots span:nth-child(3) { animation-delay: 640ms; }
+
+#listening[data-state="said"] .listening-dots {
+  display: none;
+}
+
+@keyframes listening-dot {
+  0%, 60%, 100% { opacity: 0.35; }
+  30% { opacity: 1; }
+}
+
+.listening-words {
+  flex: 1;
+  min-width: 0;
+  font-size: 36px;
+  color: var(--bright-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* "thinking", once the sentence is sent. */
+.listening-says {
+  flex: none;
+  font-size: 28px;
+  color: var(--accent);
+}
+
+:root.reduce-motion .listening-dots span {
+  animation: none;
+  opacity: 1;
+}
+
 .notice-buttons,
 .shared-buttons {
   display: flex;
@@ -1963,4 +2119,28 @@ body.with-backdrop.on-home {
   overflow-y: auto;
   scrollbar-width: none;
   padding-bottom: 64px;
+}
+
+/* The country picker (ADR-055): setup's country step and Settings → country.
+   A field the phone's keyboard types into, and eight countries, two by four. */
+.country-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+  margin-top: 32px;
+}
+
+.country-picker .music-search {
+  margin: 0;
+}
+
+.country-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.country-list .button-value {
+  white-space: nowrap;
 }

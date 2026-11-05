@@ -53,9 +53,11 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
   const stop = root();
   const { daemon, lines, send } = await box();
   try {
-    // With the plans setup offers on this box's channel, stable here.
-    const claude = [{ provider: "claude", bestEffort: false }];
-    assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null, plans: claude });
+    // With the plans this box's channel offers, stable here, and what builds
+    // use: nothing yet.
+    const claude = [{ provider: "claude", name: "claude pro or max", bestEffort: false }];
+    const none = { provider: null, path: null, accepted: false };
+    assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null, plans: claude, ai: none });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "claude, chatgpt, gemini, grok or muse" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: "short" })).data, { ok: false, error: "that doesn't look like a key" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: `${KEY}\nEVIL=1` })).data, { ok: false, error: "that doesn't look like a key" });
@@ -65,12 +67,14 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
     assert.equal((await send("PUT", "/api/key", { provider: "claude", key: KEY })).status, 409);
     await daemon.ai.record("claude", "key", { phone: "pixel", viewer: "radomir" });
     const stored = await send("PUT", "/api/key", { provider: "claude", key: ` ${KEY} ` });
-    assert.deepEqual(stored.data, { ok: true, set: true, provider: "claude" });
+    // A key kept from Settings → AI is what builds use (Q143).
+    const claudeKey = { provider: "claude", path: "key", accepted: true };
+    assert.deepEqual(stored.data, { ok: true, set: true, provider: "claude", plans: claude, ai: claudeKey });
     assert.equal(readFileSync(join(etc, "env"), "utf8"), `ANTHROPIC_API_KEY=${KEY}\n`);
     assert.equal(statSync(join(etc, "env")).mode & 0o777, 0o600);
     assert.equal(existsSync(join(state, "key-drop", "key.json")), false, "nothing of it stays in the daemon's state");
     const asked = await send("GET", "/api/key");
-    assert.deepEqual(asked.data, { ok: true, set: true, provider: "claude", plans: claude });
+    assert.deepEqual(asked.data, { ok: true, set: true, provider: "claude", plans: claude, ai: claudeKey });
     for (const text of [stored.text, asked.text, (await send("GET", "/api/home")).text, lines.join("\n")]) assert.ok(!text.includes(KEY));
     assert.ok(lines.includes("a key for claude is kept, root's alone"));
 
@@ -79,7 +83,7 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
     assert.equal((await send("PUT", "/api/key", { provider: "gemini", key: `AIza${"c".repeat(35)}` })).status, 403);
     assert.equal((await send("DELETE", "/api/key")).status, 403);
     const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
-    assert.deepEqual((await send("DELETE", "/api/key", undefined, grant)).data, { ok: true, set: false, provider: null });
+    assert.deepEqual((await send("DELETE", "/api/key", undefined, grant)).data, { ok: true, set: false, provider: null, plans: claude, ai: claudeKey });
     assert.equal(readFileSync(join(etc, "env"), "utf8"), "");
   } finally {
     stop();

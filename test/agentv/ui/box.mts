@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
+import type { TmdbGet } from "../../../daemon/tmdb.ts";
 
 export const ROOT = join(import.meta.dirname, "../../..");
 const SAMPLE = join(ROOT, "test/agentv/fixtures/apps/sample");
@@ -85,6 +86,12 @@ export interface BoxOptions {
   forecast?: string; // where Weather asks for its forecast instead of MET Norway
   // The museum archives' stand-in (archives.mts), for the art picker.
   art?: { endpoints: Record<"met" | "aic" | "commons", string>; imageHosts: string[] };
+  // A stand-in router, for what's said to the TV (ADR-023).
+  router?: ConstructorParameters<typeof Daemon>[0]["router"];
+  // How long the listening bar waits for new words (ADR-054).
+  listenIdleMs?: number;
+  // A stand-in for TMDB, through the router's service (stage 8).
+  tmdb?: TmdbGet;
 }
 
 // AgenTV's built-ins, with the weather pointed at the test's own server.
@@ -106,6 +113,7 @@ export function useZone(dir: string, zone: string): void {
   symlinkSync(`/usr/share/zoneinfo/${zone}`, link);
   process.env.AGENTV_LOCALTIME = link;
   process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
+  process.env.AGENTV_ISO3166_TAB = join(ROOT, "test/agentv/fixtures/met/iso3166.tab");
 }
 
 export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}): { apps: string; state: string; builtins?: string } {
@@ -151,6 +159,40 @@ function keyMover(state: string, status: string): void {
     }
     rmSync(drop, { force: true });
     writeFileSync(status, JSON.stringify({ set: request.provider !== null, provider: request.provider, at: new Date().toISOString() }));
+  }, 50).unref();
+}
+
+// What agentv-zone-set does as root (ADR-055), for a box with no root: the
+// zone the daemon hands over becomes the box's, through its localtime link.
+function zoneMover(state: string): void {
+  const drop = join(state, "zone-drop", "zone.json");
+  setInterval(() => {
+    let request: { zone?: unknown };
+    try {
+      request = JSON.parse(readFileSync(drop, "utf8"));
+    } catch {
+      return;
+    }
+    rmSync(drop, { force: true });
+    const link = process.env.AGENTV_LOCALTIME;
+    if (!link || typeof request.zone !== "string") return;
+    rmSync(link, { force: true });
+    symlinkSync(`/usr/share/zoneinfo/${request.zone}`, link);
+  }, 50).unref();
+}
+
+// The same for the TMDB key (stage 8): whether there's one, never the key.
+function tmdbKeyMover(state: string, status: string): void {
+  const drop = join(state, "key-drop", "tmdb.json");
+  setInterval(() => {
+    let request: { key: string | null };
+    try {
+      request = JSON.parse(readFileSync(drop, "utf8"));
+    } catch {
+      return;
+    }
+    rmSync(drop, { force: true });
+    writeFileSync(status, JSON.stringify({ set: request.key !== null, at: new Date().toISOString() }));
   }, 50).unref();
 }
 
@@ -212,6 +254,9 @@ export async function startBox(
   mkdirSync(hotspot, { recursive: true });
   const keyStatus = join(state, "..", "key.json");
   keyMover(state, keyStatus);
+  const tmdbStatus = join(state, "..", "tmdb.json");
+  tmdbKeyMover(state, tmdbStatus);
+  zoneMover(state);
   const setupAppsStatus = join(state, "..", "setup-apps.json");
   appsMover(state, apps, setupAppsStatus);
   // The phone companion and the setup hotspot's captive page too, on this
@@ -234,6 +279,11 @@ export async function startBox(
     hotspotRun: hotspot,
     interfaces: options.interfaces as never,
     keyStatus,
+    tmdbStatus,
+    // No TMDB unless a test stands one in: the box never asks the real one.
+    tmdb: options.tmdb ?? (async () => ({ ok: false, error: "tmdb couldn't be reached" })),
+    router: options.router,
+    listenIdleMs: options.listenIdleMs,
     // The channel, as agentv channel keeps it: none, so stable, until a test
     // puts the box on edge (ADR-053).
     channelFile: join(state, "..", "channel"),

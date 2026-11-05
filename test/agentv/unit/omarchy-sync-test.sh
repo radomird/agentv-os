@@ -4,7 +4,9 @@
 # upstream: a new stable tag gets a branch that merges it and moves the base,
 # a release candidate never counts, an up-to-date fork does nothing, and
 # auto-merge is off for a new major version and for any change that isn't
-# upstream's own. The agentv-iso way, merging quattro's head, too. Runs with
+# upstream's own. A tag cut as a sibling of the base's line gets the tag's
+# tree plus AgenTV's files, and never merges itself. The agentv-iso way,
+# merging omarchy-iso's release branch for the tag, too. Runs with
 # --dry-run, so nothing is pushed.
 
 set -euo pipefail
@@ -95,14 +97,73 @@ sync "$SCRATCH/major" || fail "a major release syncs" "$(cat "$SCRATCH/major.log
   fail "a new major version never merges itself" "$(cat "$SCRATCH/major.out")"
 pass "S0.6 a new major version gets a pull request that never merges itself"
 
-# agentv-iso: no tags of its own, so it follows quattro's head when Omarchy
-# tags a release, and keeps the release it followed beside the base commit.
+# A sibling line: 1.5 cut from 1.0.0 beside 1.0.x, as Omarchy cut 4.5 beside
+# 4.0.x. It drops b.txt, which only the old line has, and edits a.txt the
+# other way, so a merge with 1.0.1 would conflict.
+(
+  cd "$upstream"
+  git switch -q -c v1-5-0 v1.0.0
+  printf 'one\nTWO\nthree\n' >a.txt
+  git rm -q b.txt
+  printf 'new\n' >new.txt
+  git add -A && git commit -qm "Omarchy 1.5.0" && git tag v1.5.0
+  git switch -q quattro
+)
+fork "$SCRATCH/sibling" v1.0.1 ""
+mkdir -p "$SCRATCH/sibling/odd dir"
+(cd "$SCRATCH/sibling" && printf 'x\n' >"odd dir/ours too.txt" && git add -A && git commit -qm "More AgenTV" && git push -q origin agentv)
+sync "$SCRATCH/sibling" --tag v1.5.0 || fail "a sibling line syncs" "$(cat "$SCRATCH/sibling.log")"
+(
+  cd "$SCRATCH/sibling"
+  [[ $(cat .github/omarchy-base) == "v1.5.0" ]] || fail "it moves the base to the sibling tag"
+  git merge-base --is-ancestor v1.5.0 HEAD || fail "the sibling tag is an ancestor, so later tags merge"
+  [[ $(git log -1 --format=%P HEAD~1 | wc -w | tr -d ' ') == 2 ]] || fail "it's a merge commit"
+  [[ ! -e b.txt ]] || fail "files only the old line has go"
+  [[ $(cat a.txt) == $'one\nTWO\nthree' ]] || fail "upstream's files are the tag's own"
+  [[ -f new.txt && -f ours.txt && -f "odd dir/ours too.txt" ]] || fail "the tag's files and AgenTV's are there"
+  [[ -z $(git diff --diff-filter=MDT --name-only v1.5.0 HEAD) ]] || fail "nothing of the tag's is changed"
+  [[ -z $(git status --porcelain) ]] || fail "the working tree is the commit's"
+)
+[[ $(outcome "$SCRATCH/sibling" sibling) == "true" && $(outcome "$SCRATCH/sibling" automerge) == "false" ]] ||
+  fail "a sibling line never merges itself" "$(cat "$SCRATCH/sibling.out")"
+pass "a tag cut beside the base's line gets its tree plus AgenTV's files, and waits for Radomir"
+
+# A sibling line that has a file AgenTV added too stops, and says which.
+(cd "$upstream" && git switch -q v1-5-0 && printf 'theirs\n' >ours.txt && git add -A &&
+  git commit -qm "Omarchy 1.5.1" && git tag v1.5.1 && git switch -q quattro)
+fork "$SCRATCH/clash" v1.0.1 ""
+if sync "$SCRATCH/clash" --tag v1.5.1; then
+  fail "a sibling line with one of AgenTV's files stops"
+fi
+grep -q "ours.txt" "$SCRATCH/clash.log" || fail "it names the file both have" "$(cat "$SCRATCH/clash.log")"
+pass "a sibling line that has one of AgenTV's files stops and names it"
+
+# A merge that conflicts says which files and why, and leaves no merge behind.
+(cd "$upstream" && printf 'mine\n' >add.txt && git add -A && git commit -qm "Omarchy 1.0.2" && git tag v1.0.2)
+fork "$SCRATCH/addadd" v1.0.1 ""
+(cd "$SCRATCH/addadd" && printf 'agentv\n' >add.txt && git add -A && git commit -qm "AgenTV's add.txt" && git push -q origin agentv)
+if sync "$SCRATCH/addadd" --tag v1.0.2; then
+  fail "a merge that conflicts stops"
+fi
+grep -q "AA add.txt" "$SCRATCH/addadd.log" || fail "it names the file both added" "$(cat "$SCRATCH/addadd.log")"
+pass "a merge where upstream added one of AgenTV's files stops and names it"
+
+# agentv-iso: omarchy-iso has no tags, so it follows omarchy-iso's release
+# branch for the tag Omarchy cut, and keeps the release it followed beside the
+# base commit. No branch for the tag yet means nothing to do.
 first=$(git -C "$upstream" rev-parse v1.0.0)
+(cd "$upstream" && git branch v1-0-1 v1.0.1 && git commit -q --allow-empty -m "quattro moves on")
 fork "$SCRATCH/iso" "$first" v1.0.0 omacom/omarchy-iso
 sync "$SCRATCH/iso" --tag v1.0.1 || fail "the ISO fork syncs" "$(cat "$SCRATCH/iso.log")"
 (
   cd "$SCRATCH/iso"
-  [[ $(cat .github/omarchy-base) == "$(git -C "$upstream" rev-parse quattro)" ]] || fail "the ISO fork's base is quattro's head"
+  [[ $(cat .github/omarchy-base) == "$(git -C "$upstream" rev-parse v1-0-1)" ]] || fail "the ISO fork's base is the release branch's head, not quattro's"
   [[ $(cat .github/omarchy-release) == "v1.0.1" ]] || fail "the ISO fork records the release it followed"
 )
-pass "S0.6 the ISO fork merges quattro's head and records the release"
+pass "S0.6 the ISO fork merges the release branch for the tag and records the release"
+
+fork "$SCRATCH/iso-wait" "$first" v1.0.0 omacom/omarchy-iso
+sync "$SCRATCH/iso-wait" --tag v1.0.2 || fail "an ISO fork with no release branch to follow runs" "$(cat "$SCRATCH/iso-wait.log")"
+[[ $(outcome "$SCRATCH/iso-wait" opened) == "false" ]] || fail "no release branch means nothing to open"
+grep -q "no v1-0-2 branch" "$SCRATCH/iso-wait.log" || fail "it says it waits for the release branch" "$(cat "$SCRATCH/iso-wait.log")"
+pass "the ISO fork waits for omarchy-iso's release branch"

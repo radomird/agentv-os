@@ -61,8 +61,10 @@ export interface BuildView {
   cost?: { low: number; high: number };
   minutes?: number;
   approval?: BuildStatus["approval"];
-  // A plan's sign-in, while the build waits for it.
+  // A plan's sign-in, while the build waits for it, and whether it's one
+  // again because the plan's sign-in ran out.
   signIn?: SignInView;
+  ranOut?: boolean;
   shot: boolean;
   at: string;
 }
@@ -303,6 +305,7 @@ export class Builds {
         minutes: recipe?.minutes,
         approval: mine?.approval,
         ...(signIn && signIn.state !== "failed" ? { signIn } : {}),
+        ...(mine?.state === "plan-sign-in" && mine.ranOut === true && !refused ? { ranOut: true } : {}),
         shot: existsSync(join(this.o.builds, asked.id, asked.version, "shot.png")),
         at: mine?.at ?? asked.at,
       });
