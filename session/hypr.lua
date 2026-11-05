@@ -171,10 +171,10 @@ end
 hl.on("hyprland.start", function()
   -- AgenTV's splash first, before anything else starts, so it's up as soon
   -- as it can be (ADR-060). It draws only when the boot kept the splash.
-  -- Then Plymouth, which let go of the screen and kept its last frame up,
-  -- can quit, now that this session has the screen.
+  -- Plymouth, which let go of the screen and kept its last frame up, quits
+  -- once home has drawn (agentv-boot-splash done): this session's first
+  -- frame can come a second or more after it starts.
   hl.exec_cmd("agentv-boot-splash tv")
-  hl.exec_cmd("systemctl start --no-block agentv-boot-splash-release.service")
   -- The screen daemon, the virtual input device and the toast overlay run
   -- as user units under agentv-tv.target, and need this session's display.
   hl.exec_cmd(
