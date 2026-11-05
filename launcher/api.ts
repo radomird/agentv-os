@@ -375,8 +375,24 @@ export interface Said {
   outcome?: Outcome;
 }
 
+// The TV's size (ADR-062): what's picked, the mode and scale the TV runs at,
+// the canvas home lays out on, and the sizes this TV offers.
+export type DisplaySize = "larger" | "standard" | "more";
+export interface DisplayState {
+  size: DisplaySize;
+  output: "auto" | "1080p";
+  mode: string | null;
+  scale: number | null;
+  canvas: [number, number];
+  sizes: DisplaySize[];
+}
+
 export const daemon = {
   home: () => call<HomeState>("GET", "/api/home"),
+  // The feature switches, and the TV's size.
+  features: () => call<Record<string, boolean>>("GET", "/api/features"),
+  display: () => call<DisplayState>("GET", "/api/display"),
+  setDisplay: (change: { size?: DisplaySize; output?: DisplayState["output"] }) => call<DisplayState & { applied: boolean }>("PUT", "/api/display", change),
   said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
   pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
   dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),

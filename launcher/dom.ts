@@ -39,14 +39,28 @@ export function clock(date = new Date()): string {
   return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-// The launcher is drawn for 1920 × 1080 and zoomed to fit the screen, so a
-// 720p TV shows the same page, smaller. Rects from the page come zoomed;
-// styles go in unzoomed, so code that measures and then places divides by
-// this.
+// The page lays out on a canvas: 1920 × 1080, or with the TV's sizes on
+// (ADR-062), the size's own, 1600, 1920 or 2400 across. The TV's scale is
+// set so its window is that canvas, and the page fills it. A window of
+// another size (a 720p TV, or a laptop) gets the same page zoomed to fit.
+// Rects from the page come zoomed; styles go in unzoomed, so code that
+// measures and then places divides by this.
+let canvas: [number, number] = [1920, 1080];
+
 export function zoom(): number {
   return Number(document.documentElement.style.zoom) || 1;
 }
 
-export function fit(): void {
-  document.documentElement.style.zoom = String(Math.min(innerWidth / 1920, innerHeight / 1080));
+// The canvas the page lays out on now.
+export function canvasSize(): [number, number] {
+  return [canvas[0], canvas[1]];
+}
+
+// Fits the page to the window, on a new canvas or the one it has.
+export function fit(size: [number, number] = canvas): void {
+  canvas = [size[0], size[1]];
+  const root = document.documentElement;
+  root.style.setProperty("--canvas-width", `${canvas[0]}px`);
+  root.style.setProperty("--canvas-height", `${canvas[1]}px`);
+  root.style.zoom = String(Math.min(innerWidth / canvas[0], innerHeight / canvas[1]));
 }

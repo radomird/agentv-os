@@ -2,7 +2,8 @@
    blocks, headings written as shell prompts and a status bar along the bottom.
    Every colour comes from the active Omarchy theme: these are Tokyo Night's,
    and /api/theme.css puts the theme's own over them. Sizes are for a 1080p
-   screen; dom.ts zooms the page to the TV's. */
+   screen, or the canvas of the TV's size (ADR-062), which dom.ts sets; it
+   zooms the page to fit the window when that's another size. */
 
 :root {
   --background: #1a1b26;
@@ -37,8 +38,8 @@
 html,
 body {
   margin: 0;
-  width: 1920px;
-  height: 1080px;
+  width: var(--canvas-width, 1920px);
+  height: var(--canvas-height, 1080px);
   overflow: hidden;
   background: var(--background);
   color: var(--bright-foreground);
@@ -309,6 +310,20 @@ button {
   justify-content: flex-start;
   gap: 16px;
   padding: 24px 28px;
+}
+
+/* On home's grid, a content tile shorter than the standard canvas gives it
+   (the larger size, ADR-062) keeps each caption to one line, rather than cut
+   the tile off. */
+.grid .tile.has-content {
+  container-type: size;
+}
+
+@container (max-height: 230px) {
+  .grid .tile .headline-caption,
+  .grid .tile .entry-caption {
+    -webkit-line-clamp: 1;
+  }
 }
 
 .tile-head {
@@ -837,9 +852,11 @@ button {
   color: var(--foreground);
 }
 
+/* Six to a row on the standard canvas, and as many as fit on the others
+   (ADR-062): five at larger, eight at more on screen. */
 .row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 20px;
 }
 
@@ -941,13 +958,30 @@ button {
 .settings {
   display: grid;
   grid-template-columns: 500px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 64px;
+}
+
+/* The sections, down to the status bar. Longer than that, on a short canvas
+   (ADR-062), they scroll with the focus. */
+.settings > :first-child {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .menu {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
   margin-top: 24px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.menu > * {
+  flex-shrink: 0;
 }
 
 .menu-item {
@@ -989,7 +1023,7 @@ button {
    scrolls with the focus or a mouse's wheel. What's in it keeps its height
    rather than squeezing to fit. */
 .settings-panel {
-  max-height: calc(1080px - var(--bar) - 64px);
+  max-height: calc(var(--canvas-height, 1080px) - var(--bar) - 64px);
   overflow-y: auto;
   scrollbar-width: none;
 }

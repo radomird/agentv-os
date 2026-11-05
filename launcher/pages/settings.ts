@@ -17,6 +17,7 @@ import { buildsState, loadBuilds } from "./build.ts";
 import { countryPanel, countryValue, loadCountry } from "./country.ts";
 import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
+import { sizeAct, sizeRow } from "../size.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -295,6 +296,7 @@ export function settings(ctx: Ctx, open?: string): View {
         }),
         // Look's last: a theme your agent makes from a few words (S6.4).
         ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
+        ...sizeRow(ctx, (action) => ctx.render("settings/look", action)),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         // What the ambient screen shows (ADR-049).
         h(
@@ -427,7 +429,8 @@ export function settings(ctx: Ctx, open?: string): View {
   };
   const menu = h(
     "div",
-    { class: "menu" },
+    // Longer than a short canvas, it scrolls with the focus (ADR-062).
+    { class: "menu", "data-scroll": true },
     ...sections.map((section) =>
       h(
         "button",
@@ -624,6 +627,7 @@ export function settings(ctx: Ctx, open?: string): View {
     },
     act(action) {
       const current = ctx.focus.get();
+      if (sizeAct(ctx, action, current, (at) => ctx.render("settings/look", at))) return true;
       if (current?.dataset.adjust === "idle" && (action === "left" || action === "right")) {
         const at = Math.max(0, Math.min(IDLE.length - 1, IDLE.indexOf(s.idleMinutes) + (action === "right" ? 1 : -1)));
         void save({ idleMinutes: IDLE[at] }, "look", "idle");

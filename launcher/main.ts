@@ -4,10 +4,11 @@
 // details and settings. Forward slides in, back slides out, and each plays
 // its sound (ADR-024).
 
-import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
+import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type DisplayState, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
+import { loadDisplay, tookDisplay } from "./size.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { addApp, installMoved } from "./pages/add-app.ts";
@@ -711,6 +712,8 @@ async function start(): Promise<void> {
     fit();
     focus.refresh();
   });
+  // The canvas of the TV's size, before home is drawn on it (ADR-062).
+  await loadDisplay().catch(() => {});
   ctx.state = await daemon.home();
   shownViewer = ctx.state.viewer.id;
   apply(ctx.state.settings);
@@ -732,6 +735,12 @@ async function start(): Promise<void> {
   );
   listenInput(act);
   listen({
+    // A size picked, or another TV: home lays out on its canvas again.
+    display: (data) => {
+      tookDisplay(data as DisplayState);
+      focus.refresh();
+      if (history[history.length - 1].startsWith("settings")) redraw();
+    },
     layout: () => void refresh(),
     settings: () => void refresh(),
     theme: () => {
