@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# agentv:summary=Turn a feature switch off
+# agentv:args=<name>
+# agentv:examples=agentv feature off looks
+
+# Puts back what the box showed before the switch went on. agentv feature
+# list has the names.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec "$AGENTV_BIN_DIR/agentv-feature-set" "${1:-}" off "${@:2}"
