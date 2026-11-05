@@ -1,0 +1,53 @@
+{
+  "dmi": {
+    "product": "Standard PC (Q35 + ICH9, 2009)",
+    "board": "",
+    "vendor": "QEMU"
+  },
+  "cpuinfo": "processor\t: 0\nmodel name\t: AMD EPYC 7763 64-Core Processor\nprocessor\t: 1\nmodel name\t: AMD EPYC 7763 64-Core Processor\nprocessor\t: 2\nmodel name\t: AMD EPYC 7763 64-Core Processor\nprocessor\t: 3\nmodel name\t: AMD EPYC 7763 64-Core Processor",
+  "meminfo": "MemTotal:        8131540 kB",
+  "memoryBlocks": {
+    "size": 134217728,
+    "online": 64
+  },
+  "gpus": [
+    {
+      "slot": "0000:00:01.0",
+      "class": "0x030000",
+      "vendor": "0x1af4",
+      "device": "0x1050",
+      "vendorName": "Red Hat, Inc.",
+      "deviceName": "Virtio 1.0 GPU",
+      "bootVga": true,
+      "cards": [
+        "card0"
+      ],
+      "render": null,
+      "vainfo": null
+    }
+  ],
+  "vulkaninfo": "==========\nVULKANINFO\n==========\n\nVulkan Instance Version: 1.4.321\n\n\nInstance Extensions: count = 24\n-------------------------------\nVK_EXT_debug_report                    : extension revision 10\nVK_KHR_surface                         : extension revision 25\n\nInstance Layers:\n----------------\n\nDevices:\n========\nGPU0:\n\tapiVersion         = 1.4.318\n\tdriverVersion      = 25.2.3\n\tvendorID           = 0x10005\n\tdeviceID           = 0x0000\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU\n\tdeviceName         = llvmpipe (LLVM 20.1.8, 256 bits)\n\tdriverID           = DRIVER_ID_MESA_LLVMPIPE\n\tdriverName         = Mesa\n\tdriverInfo         = Mesa 25.2.3-arch1.1\n\tconformanceVersion = 1.4.0.0\n\tdeviceUUID         = 00000000-0000-0000-0000-000000000000\n\tdriverUUID         = 00000000-0000-0000-0000-000000000000\n",
+  "icds": [
+    "intel_icd.x86_64.json",
+    "lvp_icd.x86_64.json",
+    "radeon_icd.x86_64.json"
+  ],
+  "connectors": [
+    {
+      "name": "card0-Virtual-1",
+      "status": "connected",
+      "edid": ""
+    }
+  ],
+  "storage": {
+    "total": 40802189312,
+    "free": 22548578304
+  },
+  "network": {
+    "kind": "ethernet",
+    "speed": "-1"
+  },
+  "bluetooth": [],
+  "gamepads": [],
+  "widevine": null
+}
