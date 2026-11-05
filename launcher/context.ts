@@ -4,7 +4,7 @@
 // it changes, a few changes at a time. Never a digit of the PIN.
 
 type Pin = { title: string; for: string; digits: number; error: string | null } | null;
-type Field = { kind: string; label: string };
+type Field = { kind: string; label?: string };
 type Context = { pin: Pin; field: Field | null; screen: "home" | "menu" | "ambient" };
 
 const now: Context = { pin: null, field: null, screen: "home" };

@@ -117,6 +117,8 @@ class FakeBrowser implements DevTools {
     return targetId;
   }
   async bind() {}
+  // The focus nudge an app's page gets, for a test that stands one in.
+  bindIn?: DevTools["bindIn"];
   // What the page answers, for a test that needs more than an empty object.
   answer?: (expression: string) => object | undefined;
   async evaluate(_prefix: string, expression: string) {

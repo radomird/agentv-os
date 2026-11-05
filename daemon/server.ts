@@ -209,7 +209,7 @@ interface ExportOffer {
 // The desktop's relay says when Omarchy's desktop is on.
 export interface TvContext {
   pin: { title: string; for: string; digits: number; error: string | null } | null;
-  field: (Field & { app?: string }) | null;
+  field: (Omit<Field, "label"> & { label?: string; app?: string }) | null;
   screen: "home" | "menu" | "ambient";
   front: "home" | "app";
   playing: boolean;
@@ -1277,7 +1277,7 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
-    if (await this.phoneRemote.phone(method, path, request, response)) return;
+    if (await this.phoneRemote.phone(method ?? "", path, request, response)) return;
 
     // Routes in files of their own (daemon/routes/), one line each.
     if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
@@ -2507,7 +2507,7 @@ export class Daemon {
     // desktop's, which takes the trackpad and the keys while the desktop is
     // on. A page can't open it: it needs a header no browser sends to
     // another site.
-    if (await this.phoneRemote.local(method, path, request, response)) return;
+    if (await this.phoneRemote.local(method ?? "", path, request, response)) return;
     if (method === "GET" && path === "/api/remote") {
       const who = request.headers["x-agentv-screen"];
       if (who !== "1" && who !== "desktop") {

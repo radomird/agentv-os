@@ -252,14 +252,19 @@ test("T8.1 a password on home shows as dots on the typing bar, and never reaches
   front = { kind: "page", id: "home", overlay: false, evaluate: (expression) => screen.evaluate(expression) };
   const heard: string[] = [];
   await screen.exposeFunction("heardTyping", (text: string) => void heard.push(text));
-  await screen.evaluate(() => {
-    const source = new EventSource("/api/events");
-    source.addEventListener("typing", (message) => (window as unknown as { heardTyping(text: string): void }).heardTyping((message as MessageEvent).data));
-  });
+  // What home's page hears, from before the first change goes.
+  await screen.evaluate(
+    () =>
+      new Promise<void>((open) => {
+        const source = new EventSource("/api/events");
+        source.addEventListener("typing", (message) => (window as unknown as { heardTyping(text: string): void }).heardTyping((message as MessageEvent).data));
+        source.addEventListener("open", () => open());
+      }),
+  );
   await typeAll(["h", "hu", "hun", "hunt"], () => screen.evaluate(() => (document.querySelector('input[type="password"]') as HTMLInputElement).value));
   await screen.waitForSelector("#typing.on.password");
   assert.equal(await screen.locator(".typing-text").textContent(), "••••");
-  await until(() => heard.length >= 4);
+  await until(() => heard.some((data) => data.includes("••••")));
   assert.ok(heard.some((data) => data.includes('"text":"••••"')), "the dots reached the page");
   assert.ok(heard.every((data) => !/"text":"[^"•]/.test(data)), "only dots reached the page");
   await screen.close();

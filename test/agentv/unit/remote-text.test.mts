@@ -35,9 +35,9 @@ test("T8.1 a native app takes plain ASCII only, and the phone hears what couldn'
   assert.deepEqual(answer, { ok: false, by: "key", value: "Ren ", why: "this app takes plain letters, so é can't go" });
   assert.deepEqual(sent, [{ text: "Ren " }]);
   native.reset();
-  sent.length = 0;
-  await native.type("ж", "0xa", async (request) => void sent.push(request));
-  assert.deepEqual(sent, [], "nothing to type");
+  const none: Record<string, unknown>[] = [];
+  await native.type("ж", "0xa", async (request) => void none.push(request));
+  assert.deepEqual(none, [], "nothing to type");
 });
 
 test("T8.1 the typing bar shows the newest text, or a dot for each character of a password", () => {
