@@ -624,8 +624,11 @@ jobs:
       # The slow part of the root image, Omarchy's 900 or so packages
       # pacstrapped into btrfs, from an earlier build when nothing in it
       # changed (agentv-iso's bin/agentv-iso-root-cache). Only runs on agentv
-      # keep one others can read, and an ISO that's kept is made from
-      # scratch, though it still leaves its part for the next run.
+      # keep one, which in practice is the Nightly: those are the ones every
+      # pull request can read, and the cache holds only 10 GB, so a pull
+      # request's own copy for its reruns isn't worth what it pushes out. An
+      # ISO that's kept is made from scratch, though it still leaves its part
+      # for the next run.
       - name: The root image's slow part, from an earlier build
         id: root-cached
         if: steps.night.outputs.key == '' && !inputs.keep-iso
@@ -655,8 +658,10 @@ jobs:
           echo "key=$key" >>"$GITHUB_OUTPUT"
           if [[ $how == "hit" ]]; then
             echo "The root image's Omarchy part came from an earlier build ($key)." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [[ -n $key && $GITHUB_REF != "refs/heads/agentv" ]]; then
+            echo "The root image's Omarchy part was built in this run ($key). Only runs on agentv keep it, so the next Nightly will." | tee -a "$GITHUB_STEP_SUMMARY"
           elif [[ -n $key ]]; then
-            echo "The root image's Omarchy part was built in this run ($key)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "The root image's Omarchy part was built in this run ($key), and kept for the runs after it." | tee -a "$GITHUB_STEP_SUMMARY"
             [[ $HAD == "agentv-root-image-$key" ]] || echo "save=true" >>"$GITHUB_OUTPUT"
           fi
           echo "Build: $(cat iso/test-runs/build-seconds 2>/dev/null || echo ?) s." | tee -a "$GITHUB_STEP_SUMMARY"
