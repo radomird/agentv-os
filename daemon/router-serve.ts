@@ -36,7 +36,7 @@ import type { Provider } from "./ai.ts";
 import { NetFilter, type Policy } from "./net-filter.ts";
 import { cliBackend, CLI_PROVIDERS, isCliProvider } from "./providers/cli.ts";
 import { apiBackend } from "./providers/index.ts";
-import { Router, type Routed, type RouterApp } from "./router.ts";
+import { NONE, Router, type Routed, type RouterApp } from "./router.ts";
 import { forward } from "../builder/sandbox/forward.ts";
 import { PLAN_HOSTS } from "../builder/sandbox/net.ts";
 import { keyFrom } from "../builder/sandbox/relay.ts";
@@ -74,7 +74,8 @@ export function routeRequest(body: unknown): RouteRequest | string {
     apps: apps.flatMap((a) => {
       const app = (typeof a === "object" && a !== null ? a : {}) as Record<string, unknown>;
       const id = text(app.id, 80);
-      return /^[a-z0-9][a-z0-9.-]*$/.test(id) ? [{ id, name: text(app.name, 60) || id, category: text(app.category, 20) || "utility" }] : [];
+      if (!/^[a-z0-9][a-z0-9.-]*$/.test(id)) return [];
+      return [{ id, name: text(app.name, 60) || id, category: text(app.category, 20) || "utility", ...(app.made === true ? { made: true } : {}) }];
     }),
   };
 }
@@ -211,7 +212,7 @@ async function main(): Promise<void> {
         const base = process.env.AGENTV_ROUTER_UPSTREAM || undefined;
         const backend = apiBackend(provider, { key: found ?? "", ...(base ? { base } : {}) });
         if (!found) {
-          return { sentence, route: { intent: "none", query: null, kind: null, app: null, season: null, episode: null }, none: "failed", error: "there's no key for this provider on the box", provider, via: "api", model: backend.model, ms: 0 };
+          return { sentence, route: { ...NONE }, none: "failed", error: "there's no key for this provider on the box", provider, via: "api", model: backend.model, ms: 0 };
         }
         return new Router(backend).route(sentence, apps);
       },
@@ -229,7 +230,7 @@ async function main(): Promise<void> {
       log,
       route: async ({ provider, sentence, apps }) => {
         if (!isCliProvider(provider)) {
-          return { sentence, route: { intent: "none", query: null, kind: null, app: null, season: null, episode: null }, none: "failed", error: "that plan can't take requests yet", provider, via: "cli", model: null, ms: 0 };
+          return { sentence, route: { ...NONE }, none: "failed", error: "that plan can't take requests yet", provider, via: "cli", model: null, ms: 0 };
         }
         return new Router(cliBackend(provider, { home, proxy })).route(sentence, apps);
       },

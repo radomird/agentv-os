@@ -6,7 +6,8 @@
     "kind": "album",
     "app": null,
     "season": null,
-    "episode": null
+    "episode": null,
+    "what": null
   },
   "reply": {
     "id": "router",
@@ -18,7 +19,7 @@
         "index": 0,
         "message": {
           "role": "assistant",
-          "content": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null}",
+          "content": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null,\"what\":null}",
           "refusal": null
         },
         "finish_reason": "stop"

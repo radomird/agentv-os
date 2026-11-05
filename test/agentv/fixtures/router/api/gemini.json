@@ -6,7 +6,8 @@
     "kind": "album",
     "app": null,
     "season": null,
-    "episode": null
+    "episode": null,
+    "what": null
   },
   "reply": {
     "candidates": [
@@ -19,7 +20,7 @@
               "thought": true
             },
             {
-              "text": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null}"
+              "text": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null,\"what\":null}"
             }
           ]
         },

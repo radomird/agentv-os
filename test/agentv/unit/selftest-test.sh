@@ -743,7 +743,9 @@ createServer(async (request, response) => {
   const c = set.cases.find((x) => x.say === sentence);
   const e = c.expect;
   const wrong = process.env.WRONG === "1" && n++ < 10;
-  const route = e.intent === "none" || wrong ? { intent: "none", query: null, kind: null, app: null, season: null, episode: null } : { intent: e.intent, query: first(e.query), kind: first(e.kind), app: first(e.app), season: e.season ?? null, episode: e.episode ?? null };
+  const none = { intent: "none", query: null, kind: null, app: null, season: null, episode: null, what: null };
+  const build = e.intent === "make" || e.intent === "change";
+  const route = e.intent === "none" || wrong ? none : build ? { ...none, intent: e.intent, app: e.intent === "change" ? first(e.app) : null, what: e.what.join(" ") } : { intent: e.intent, query: first(e.query), kind: first(e.kind), app: first(e.app), season: e.season ?? null, episode: e.episode ?? null, what: null };
   response.end(JSON.stringify({ ok: true, routed: { sentence, route, provider: "claude", via: process.env.VIA ?? "cli", model: "claude-haiku-5-5", ms: 1800 } }));
 }).listen(Number(process.argv[3]), "127.0.0.1");
 ROUTER
@@ -751,7 +753,7 @@ VIA=cli node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json"
 router_pid=$!
 sleep 0.5
 AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 passes on the plan at 100%" "$(cat "$SCRATCH/out")"
-grep -qF "pass S7.4 80 of 80 routed right (100%) through Claude Code on the plan, median 1800 ms a sentence" "$SCRATCH/out" || fail "it says the score and the time" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.4 125 of 125 routed right (100%) through Claude Code on the plan, median 1800 ms a sentence" "$SCRATCH/out" || fail "it says the score and the time" "$(cat "$SCRATCH/out")"
 grep -qF "pass S7.4 the time per sentence is under 5 s: median 1800 ms" "$SCRATCH/out" || fail "it says the time is under 5 s" "$(cat "$SCRATCH/out")"
 kill "$router_pid" 2>/dev/null || true
 wait "$router_pid" 2>/dev/null || true
@@ -759,7 +761,7 @@ WRONG=1 VIA=cli node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phras
 router_pid=$!
 sleep 0.5
 ! AGENTV_HEALTH_URL="http://127.0.0.1:$router_port/health" run1 S7.4 || fail "S7.4 fails below 95%"
-grep -qF "fail S7.4 70 of 80 routed right (87.5%)" "$SCRATCH/out" || fail "it says the score" "$(cat "$SCRATCH/out")"
+grep -qF "fail S7.4 115 of 125 routed right (92%)" "$SCRATCH/out" || fail "it says the score" "$(cat "$SCRATCH/out")"
 kill "$router_pid" 2>/dev/null || true
 wait "$router_pid" 2>/dev/null || true
 VIA=api node "$SCRATCH/router.mjs" "$ROOT/test/agentv/evals/router/phrases.json" "$router_port" &
