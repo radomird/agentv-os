@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Feature, FeatureMap } from "../../../daemon/features.ts";
+import type { DiscoverOptions } from "../../../daemon/discover.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import type { TmdbGet } from "../../../daemon/tmdb.ts";
 
@@ -88,6 +89,9 @@ export interface BoxOptions {
   // Feature switches to set (daemon/features.ts). A box with one turned on
   // is on edge, since only edge turns them on.
   features?: Partial<FeatureMap>;
+  // Stand-ins for the servers on the network (daemon/discover.ts). Without
+  // them the box asks nothing on any network.
+  discover?: DiscoverOptions;
 }
 
 // A switched screen's check, run with its switch off and then on, each time
@@ -312,6 +316,7 @@ export async function startBox(
     buildRun: join(state, "..", "build-run"),
     spend: join(state, "..", "spend.json"),
     npmWarnings: join(state, "..", "npm-warnings.json"),
+    discover: options.discover ?? { targets: [], avahi: null, ports: { jellyfin: 0, emby: 0, plex: 0, wsd: 0 } },
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot, builds: join(state, "..", "build"), themes: join(state, "..", "themes") };

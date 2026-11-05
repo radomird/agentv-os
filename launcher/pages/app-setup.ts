@@ -2,11 +2,14 @@
 // package asks for, such as the address of a Jellyfin or Immich server,
 // typed here or on the phone's keyboard, then its sign-in (ADR-032). It's an
 // adult's, past the PIN once there is one. Which profile is for children
-// comes after, from the app's details.
+// comes after, from the app's details. With the discover switch on, the
+// servers the box found on the network come first, and typing an address
+// second (pages/network.ts).
 
 import { daemon, screen, type AppSetup } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
+import { discoverOn, foundList, kindsFor, shown } from "./network.ts";
 import { bar, heading } from "./parts.ts";
 
 export function appSetup(ctx: Ctx, id: string): View {
@@ -17,6 +20,42 @@ export function appSetup(ctx: Ctx, id: string): View {
   let setup: AppSetup | null = null;
   let fields: { key: string; label: string; el: HTMLInputElement }[] = [];
   let saving = false;
+  const [prompt, headline] = heading(`tv apps · ${name}`, `set up ${name}`);
+  const network = h("div", { class: "found" });
+  shown(network, false);
+
+  // The form, for an address typed on the phone or the app's other fields.
+  const showForm = (focusKey?: string) => {
+    shown(network, false);
+    shown(form, true);
+    shown(note, true);
+    headline.textContent = `set up ${name}`;
+    const field = fields.find((one) => one.key === focusKey) ?? fields.find((one) => !one.el.value) ?? fields[0];
+    if (field) ctx.focus.set(field.el, false);
+  };
+
+  // The servers on the network first, for an app that asks for an address.
+  const offerFound = (found: AppSetup) => {
+    const address = found.fields.find((field) => field.address);
+    if (!address) return;
+    const typed = h("button", { class: "button found-typed", "data-focus": true, "data-action": "type-address", onclick: () => showForm(address.key) }, "type an address on your phone");
+    const list = foundList({
+      kinds: kindsFor(id),
+      focus: ctx.focus,
+      typed,
+      pick: (server) => {
+        fields.find((field) => field.key === address.key)!.el.value = server.url;
+        if (fields.every((field) => field.el.value.trim())) void save();
+        else showForm();
+      },
+    });
+    network.replaceChildren(h("div", { class: "panel-note" }, "found on your network"), list.el, typed);
+    headline.textContent = `pick your ${name}.`;
+    shown(form, false);
+    shown(note, false);
+    shown(network, true);
+    ctx.focus.set((list.rows.firstElementChild as HTMLElement | null) ?? typed, false);
+  };
 
   const draw = (found: AppSetup) => {
     setup = found;
@@ -42,6 +81,7 @@ export function appSetup(ctx: Ctx, id: string): View {
       : "the phone's keyboard works here too.";
     const empty = fields.find((field) => !field.el.value) ?? fields[0];
     if (empty) ctx.focus.set(empty.el, false);
+    void discoverOn().then((on) => on && offerFound(found));
   };
 
   const save = async () => {
@@ -84,7 +124,7 @@ export function appSetup(ctx: Ctx, id: string): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile" }, ...heading(`tv apps · ${name}`, `set up ${name}`), form, note),
+    h("div", { class: "page profile" }, prompt, headline, network, form, note),
     bar(ctx, "apps", "↑↓ move · ↵ save · esc back"),
   );
   return {

@@ -535,6 +535,7 @@ export class Daemon {
 
   close(): Promise<void> {
     clearInterval(this.buildsTimer);
+    this.discover.close();
     for (const stream of this.streams) stream.end();
     for (const stream of this.remotes) stream.end();
     this.lan?.close();
@@ -548,7 +549,6 @@ export class Daemon {
     this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
-    this.discover.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 

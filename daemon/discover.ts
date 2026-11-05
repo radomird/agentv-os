@@ -495,7 +495,8 @@ export class Discover {
   }
 
   // The look is over: nothing listens, and what didn't answer in it goes.
-  private stop(): void {
+  // Closing the daemon stops it without a word.
+  private stop(say = true): void {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
     if (this.end) clearTimeout(this.end);
@@ -507,11 +508,11 @@ export class Discover {
     for (const [key, entry] of this.entries) if (entry.look !== this.looks) this.entries.delete(key);
     this.looking = false;
     this.wantImmich = false;
-    this.changed();
+    if (say) this.changed();
   }
 
   close(): void {
-    if (this.looking) this.stop();
+    if (this.looking) this.stop(false);
   }
 
   private changed(): void {
