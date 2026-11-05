@@ -29,7 +29,7 @@ import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
-import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
@@ -152,7 +152,12 @@ const ctx: Ctx = {
     }
   },
   async saveSettings(change, grant) {
-    ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
+    settingsSaves++;
+    try {
+      ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
+    } finally {
+      settingsSaves++;
+    }
     apply(ctx.state.settings);
   },
   held() {
@@ -182,6 +187,10 @@ let lockPad: Pad | null = null;
 // How many times the daemon has said the PIN changed, so an answer that left
 // before the last time doesn't undo it.
 let pinEvents = 0;
+// The same for the settings this page saves: up as a save starts and as it
+// ends, so an answer about home that was on its way meanwhile doesn't put the
+// old settings back.
+let settingsSaves = 0;
 
 const holding = () => Boolean(held && held.until - Date.now() > 15_000);
 const childWithPin = () => ctx.state.viewer.role === "child" && ctx.state.pin?.set === true;
@@ -388,6 +397,12 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
     return;
   }
+  // Under the "which one?" card too, which has the keys while it's up.
+  if (saidOpen()) {
+    const first = view.first;
+    saidPageDrawn((was) => (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? first);
+    return;
+  }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
   focus.setRoot(el, again ?? view.first);
 }
@@ -527,10 +542,16 @@ function checkAfterUpdate(): void {
 // One toast per release, on home, for an adult, never during setup or an
 // install (ADR-025). Setup has no launcher, and nothing plays while home is
 // in front.
+// The release this page toasted. Home asks for the updates as it starts and
+// again as its events start, and an answer from before the box heard the
+// toast still says it hasn't been shown.
+let toastedHere: string | null = null;
+
 function toastRelease(): void {
   const version = release(ctx.updates);
-  if (!version || ctx.updates.toasted === version || updatingShown || ambient) return;
+  if (!version || ctx.updates.toasted === version || toastedHere === version || updatingShown || ambient) return;
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
+  toastedHere = version;
   ctx.updates.toasted = version;
   ctx.toast(`agentv ${version} is ready · settings → updates`, "ok");
   void daemon.toasted(version).catch(() => {});
@@ -633,8 +654,11 @@ document.addEventListener("click", (event) => {
 // way, the lock is as it said: the answer can be older than that.
 async function homeState(): Promise<HomeState> {
   const heard = pinEvents;
+  const saves = settingsSaves;
   const state = await daemon.home();
   if (pinEvents !== heard) state.pin = ctx.state.pin;
+  // The same for a setting this page saved while the answer was on its way.
+  if (settingsSaves !== saves) state.settings = ctx.state.settings;
   return state;
 }
 

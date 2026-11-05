@@ -93,6 +93,35 @@ test("S2.13 a new release shows one toast on home, and the bar says so until it'
   await again.close();
 });
 
+// Home asks for the updates as it starts, and again as its events start.
+// Both answers can leave before the box hears the toast was shown, and
+// still say it hasn't been. The toast shows once anyway.
+test("S2.13 two answers from before the toast was shown still show it once", async () => {
+  write("status.json", { ...STATUS, agentv: { installed: "0.2.1-1", available: "0.3.1-1" } });
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  let first: string | null = null;
+  let asked = 0;
+  await page.route(`${url}/api/updates`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    asked++;
+    if (asked > 2) return route.continue();
+    const answer = await route.fetch();
+    first ??= await answer.text();
+    await route.fulfill({ response: answer, body: first });
+  });
+  try {
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".grid .tile.focused");
+    await page.waitForSelector(".toast");
+    for (let tries = 0; asked < 2 && tries < 250; tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(asked >= 2, "home asked for the updates twice");
+    await page.waitForTimeout(500);
+    assert.deepEqual(await page.locator(".toast").allInnerTexts(), ["agentv 0.3.1 is ready · settings → updates"]);
+  } finally {
+    await page.close();
+  }
+});
+
 test("S2.12 Settings → Updates shows both versions, the other packages, What's new, and installs", async () => {
   write("status.json", STATUS);
   const page = await tv();

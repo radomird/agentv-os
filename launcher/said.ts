@@ -38,6 +38,15 @@ export function saidOpen(): boolean {
   return open !== null;
 }
 
+// The page under the card was drawn again, as home is when something
+// changes elsewhere. The card keeps the keys, and the focus goes back to the
+// same tile in the new page once the card is put away.
+export function saidPageDrawn(find: (was: string | undefined) => HTMLElement | null | undefined): void {
+  if (!open) return;
+  const was = open.before?.dataset.action ?? open.before?.dataset.id;
+  open.before = find(was) ?? undefined;
+}
+
 // Puts the card away. A bar waiting on it goes too, unless a pick went
 // through: then the outcome takes the bar's place, whether its event comes
 // before the pick's reply or after it (Q162).

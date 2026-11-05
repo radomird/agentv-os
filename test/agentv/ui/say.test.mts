@@ -142,6 +142,27 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   await hand.close();
 });
 
+// Home draws again whenever something changes elsewhere, such as a phone
+// pairing, a setting, or the catch-up as its events start. Drawn again under
+// the "which one?" card, it leaves the remote's keys with the card.
+test("home drawn again under the which one? card leaves the remote on the card", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  await ask(hand, "play frozen");
+  await screen.waitForSelector("#said.on .said-choice");
+  await screen.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("home"));
+  asks.length = 0;
+  await screen.keyboard.press("ArrowDown");
+  await screen.keyboard.press("Enter");
+  await until(() => asks.some((a) => a.kind === "open"));
+  assert.equal((asks.find((a) => a.kind === "open") as { item: { kind: string } }).item.kind, "album");
+  await screen.waitForFunction(() => !document.querySelector("#said.on"));
+  await screen.waitForSelector(".grid .tile.focused");
+  await hand.waitForSelector('[data-said="opened"]');
+  await screen.close();
+  await hand.close();
+});
+
 // Q162: a pick's reply and its outcome's event come back on two
 // connections, in either order. Here the reply comes first, and the
 // outcome after it, as the phone's pick.
@@ -162,15 +183,52 @@ test("a pick whose reply comes before its outcome keeps the bar on 'which one?' 
   await hand.close();
 });
 
+// The phone sends its box's words a moment after each change, and the
+// sentence on a connection of its own, so on a slow phone or network the
+// last words land after the sentence. They don't bring the bar back over
+// what came of it. Here they're held until the TV shows the choice.
+test("words that land after their sentence leave the bar on 'which one?'", async () => {
+  const screen = await tv();
+  const hand = await phone();
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let words = 0;
+  await hand.route(/\/api\/phone\/say\/live$/, async (route) => {
+    if (JSON.parse(route.request().postData() ?? "{}").text !== undefined) {
+      words++;
+      await held;
+    }
+    await route.continue();
+  });
+  await hand.fill("#say-text", "play frozen");
+  await until(() => words === 1);
+  await hand.click('[data-action="say"]');
+  await screen.waitForSelector("#said.on .said-choice");
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
+  const landed = hand.waitForResponse((response) => response.url().endsWith("/api/phone/say/live") && (response.request().postData() ?? "").includes('"text"'));
+  release();
+  await landed;
+  // Long enough for an event the late words set off to reach the TV.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent({ timeout: 2000 }), "which one?");
+  assert.equal(await screen.locator("#said.on .said-choice").count(), 2, "and the choice is still up");
+  await screen.keyboard.press("Escape");
+  await screen.waitForFunction(() => !document.querySelector("#said.on") && !document.querySelector("#listening.on"));
+  await screen.close();
+  await hand.close();
+});
+
 test("a pick that fails puts the bar away and says why", async () => {
   const screen = await tv();
   const hand = await phone();
   await ask(hand, "play frozen");
   await screen.waitForSelector("#said.on .said-choice");
   await screen.route(/\/api\/say\/pick$/, (route) => route.fulfill({ status: 409, json: { ok: false, error: "that choice has gone" } }));
+  // The toast stays 5 s, so it's looked for from the moment the pick goes.
+  const toast = screen.locator(".toast.fail", { hasText: "that choice has gone" }).waitFor();
   await screen.keyboard.press("Enter");
+  await toast;
   await screen.waitForFunction(() => !document.querySelector("#said.on") && !document.querySelector("#listening.on"));
-  await screen.locator(".toast.fail", { hasText: "that choice has gone" }).waitFor();
   await hand.click('[data-action="said-none"]').catch(() => {});
   await screen.close();
   await hand.close();
