@@ -52,6 +52,7 @@ import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
+import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
 import type { ExecBuilds } from "./executors/make.ts";
@@ -2232,6 +2233,7 @@ export class Daemon {
     if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
     if (await boxRoute(this.boxKit(), method, path, request, response)) return;
     if (await this.displayRoutes.handle(method ?? "", path, request, response)) return;
+    if (await backgroundVideoRoutes({ backgrounds: this.backgrounds, body: (q) => this.body(q), json: (q, status, data) => this.json(q, status, data) }, request, response, path)) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
