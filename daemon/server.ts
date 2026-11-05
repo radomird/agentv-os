@@ -1248,7 +1248,7 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
-    if (await discoverRoute(this.discover, method, path, url, response, true)) return;
+    if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
 
     // Routes in files of their own (daemon/routes/), one line each.
     if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
@@ -2038,7 +2038,7 @@ export class Daemon {
       return;
     }
 
-    if (await discoverRoute(this.discover, method, path, url, response)) return;
+    if (await discoverRoute(this.discover, method, path, url, response, false, request)) return;
 
     if (method === "GET" && path === "/api/state") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
