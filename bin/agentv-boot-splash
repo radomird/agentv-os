@@ -15,15 +15,17 @@
 #            replaces it. Plymouth quitting outright would hand the screen
 #            back to the kernel's console, which is black. It's the way GDM
 #            hands over from Plymouth.
-#   release  Once the TV session has the screen, as root, through
-#            agentv-boot-splash-release.service, which the session starts:
-#            Plymouth quits, leaving the screen as it is. If nothing
-#            releases it, Plymouth quits by itself two minutes later.
+#   release  Once home has drawn, as root, through
+#            agentv-boot-splash-release.service, which done starts:
+#            Plymouth quits, leaving the screen as the TV session drew it.
+#            Any sooner, and it can quit before the session's first frame,
+#            which turns the screen black until that frame comes. If
+#            nothing releases it, Plymouth quits by itself two minutes later.
 #   tv       The TV session's Hyprland, as it starts (session/hypr.lua). The
 #            same logo on the same background, drawn over everything by
 #            Quickshell (session/splash/shell.qml) until home is drawn.
 #   done     The screen daemon, once home's page has drawn under it: the
-#            splash goes.
+#            splash goes, and Plymouth is released.
 #
 # It's behind the boot switch while that's off by default (ADR-057). quit
 # reads the switch as the daemon keeps it, before the daemon runs, and
@@ -94,6 +96,9 @@ case ${1:-} in
       say "home is drawn, so the TV session's splash goes"
     elif [[ -f $NOTE ]]; then
       say "the TV session's splash didn't answer: ${answer:-nothing}"
+    fi
+    if [[ -f $NOTE ]]; then
+      systemctl start --no-block agentv-boot-splash-release.service 2>/dev/null || true
     fi
     ;;
   *)
