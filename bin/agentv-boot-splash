@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# agentv:summary=Keep AgenTV's splash on the TV from the boot until home is drawn
+# agentv:args=<quit|tv|done>
+# agentv:hidden=true
+
+# Straight to the TV (ADR-060): AgenTV's splash stays from the boot loader
+# until home or setup is drawn, with no console text, black screen or
+# Omarchy screen between them. Three parts, each run from where it happens:
+#
+#   quit  Plymouth's own quit at boot, as root, through AgenTV's drop-in for
+#         plymouth-quit.service. Plymouth leaves its last frame on the screen
+#         instead of clearing it, so the splash stays up while the login
+#         manager starts the TV session, and only the TV session's first
+#         frame replaces it.
+#   tv    The TV session's Hyprland, as it starts (session/hypr.lua). The
+#         same logo on the same background, drawn over everything by
+#         Quickshell (session/splash/shell.qml) until home is drawn.
+#   done  The screen daemon, once home's page has drawn under it: the splash
+#         goes.
+#
+# It's behind the boot switch while that's off by default (ADR-057). quit
+# reads the switch as the daemon keeps it, before the daemon runs, and
+# leaves a note for the rest of this boot when it's on. tv draws only with
+# that note, and so does the TV session's first frame, which takes the
+# splash's colour (session/hypr.lua).
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+STATE=${AGENTV_DAEMON_STATE:-/var/lib/agentv/daemon}
+NOTE=${AGENTV_BOOT_SPLASH_NOTE:-/run/agentv-boot-splash}
+THEME=${AGENTV_SPLASH_THEME:-/usr/share/plymouth/themes/omarchy}
+
+# The boot switch, the way daemon/features.ts reads it: its default, unless
+# this box changed it, and a switch turned on counts only while the box is
+# on edge. Keep the default here the same as FEATURES.boot there.
+switch_on() {
+  local changed
+  changed=$(jq -r 'if (type == "object" and (.boot | type) == "boolean") then .boot else "default" end' "$STATE/features.json" 2>/dev/null || true)
+  case $changed in
+    true) [[ $(agentv-channel 2>/dev/null) == "edge" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# The splash's background as Plymouth draws it, from the colours omarchy
+# plymouth set wrote into the theme's script, as #rrggbb.
+background() {
+  sed -n 's/^Window\.SetBackgroundTopColor(\(.*\));.*/\1/p' "$THEME/omarchy.script" 2>/dev/null | head -n 1 |
+    awk -F', *' 'NF == 3 { printf "#%02x%02x%02x\n", $1 * 255 + 0.5, $2 * 255 + 0.5, $3 * 255 + 0.5 }'
+}
+
+case ${1:-} in
+  quit)
+    if switch_on; then
+      : >"$NOTE"
+      exec plymouth quit --retain-splash
+    fi
+    rm -f "$NOTE"
+    exec plymouth quit
+    ;;
+  tv)
+    [[ -f $NOTE ]] || exit 0
+    colour=$(background)
+    export AGENTV_SPLASH_BACKGROUND=${colour:-#1a1b26}
+    export AGENTV_SPLASH_LOGO="$THEME/logo.png"
+    exec quickshell -p "$AGENTV_PATH/session/splash"
+    ;;
+  done)
+    qs ipc -n -p "$AGENTV_PATH/session/splash" call splash "done" >/dev/null 2>&1 || true
+    ;;
+  *)
+    echo "Usage: agentv-boot-splash <quit|tv|done>" >&2
+    exit 2
+    ;;
+esac

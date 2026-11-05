@@ -1,0 +1,112 @@
+#!/bin/bash
+
+# Guards straight to the TV (ADR-060): bin/agentv-boot-splash keeps Plymouth's
+# last frame up as it quits when the boot switch is on, and only then; the TV
+# session draws the same splash, in the colour Plymouth drew, until the
+# screen daemon ends it; and Plymouth waits for first boot's work. The boot
+# switch reads the way daemon/features.ts reads it (ADR-057).
+
+# shellcheck disable=SC2016 # the fakes' bodies are run later, by the script under test
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
+
+bin="$SCRATCH/bin"
+calls="$SCRATCH/calls"
+state="$SCRATCH/state"
+theme="$SCRATCH/theme"
+note="$SCRATCH/run/agentv-boot-splash"
+mkdir -p "$bin" "$state" "$theme" "$SCRATCH/run"
+cp "$ROOT/default/plymouth/omarchy.script" "$theme/omarchy.script"
+
+fake() {
+  printf '#!/bin/bash\n%s\n' "$2" >"$bin/$1"
+  chmod +x "$bin/$1"
+}
+fake plymouth 'echo "plymouth $*" >>"$CALLS"'
+fake quickshell 'echo "quickshell $* background=$AGENTV_SPLASH_BACKGROUND logo=$AGENTV_SPLASH_LOGO" >>"$CALLS"'
+fake qs 'echo "qs $*" >>"$CALLS"; exit 1'
+fake agentv-channel 'echo "${CHANNEL:-edge}"'
+
+splash() {
+  rm -f "$calls"
+  env PATH="$bin:$PATH" CALLS="$calls" AGENTV_PATH=/usr/share/agentv AGENTV_DAEMON_STATE="$state" \
+    AGENTV_BOOT_SPLASH_NOTE="$note" AGENTV_SPLASH_THEME="$theme" \
+    "$BASH" "$ROOT/bin/agentv-boot-splash" "$@" >"$SCRATCH/out" 2>&1
+}
+
+# --- quit, at boot -----------------------------------------------------------
+
+rm -f "$state/features.json"
+splash quit || fail "quit runs" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "with the switch at its default, Plymouth quits as it always has" "$(cat "$calls")"
+pass "T2.1 with the boot switch off, Plymouth quits as before and leaves no note"
+
+# The default here is daemon/features.ts's.
+default=$(cd "$ROOT" && node_eval 'import { FEATURES } from "./daemon/features.ts"; console.log(FEATURES.boot)')
+[[ $default == false ]] || fail "the boot switch's default in daemon/features.ts is the one agentv-boot-splash keeps" "$default"
+pass "agentv-boot-splash's default for the boot switch is daemon/features.ts's"
+
+printf '{"boot": true}\n' >"$state/features.json"
+splash quit || fail "quit runs with the switch on" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "plymouth quit --retain-splash" && -f $note ]] ||
+  fail "with the switch on, Plymouth leaves its last frame up and the boot gets its note" "$(cat "$calls")"
+pass "T2.1 with the boot switch on, Plymouth leaves the splash on the screen as it quits"
+
+CHANNEL=stable splash quit || fail "quit runs on stable" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "a switch turned on while on edge is off on stable" "$(cat "$calls")"
+pass "a box back on stable boots as stable does, as daemon/features.ts reads the switch"
+
+for content in '{"boot": false}' '{"boot": "yes"}' '{"looks": true}' 'not json' '[]'; do
+  printf '%s\n' "$content" >"$state/features.json"
+  splash quit || fail "quit runs with $content" "$(cat "$SCRATCH/out")"
+  [[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "$content doesn't keep the splash" "$(cat "$calls")"
+done
+pass "only an explicit true keeps the splash, and a note from an earlier boot goes"
+
+# --- tv, as the TV session starts --------------------------------------------
+
+rm -f "$note"
+splash tv || fail "tv runs without the note"
+[[ ! -f $calls ]] || fail "without the boot's note, the TV session draws no splash" "$(cat "$calls")"
+: >"$note"
+splash tv || fail "tv runs" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "quickshell -p /usr/share/agentv/session/splash background=#1a1b26 logo=$theme/logo.png" ]] ||
+  fail "with the note, the TV session draws Plymouth's logo on Plymouth's background" "$(cat "$calls")"
+sed -i 's/^Window.SetBackgroundTopColor(.*);/Window.SetBackgroundTopColor(0.157, 0.157, 0.157);/' "$theme/omarchy.script"
+splash tv
+[[ $(cat "$calls") == *"background=#282828 "* ]] || fail "another theme's splash colour comes through" "$(cat "$calls")"
+pass "T2.1 the TV session draws the splash, in the colour Plymouth drew, only when the boot kept it"
+
+splash "done" || fail "done never fails, splash or not" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "qs ipc -n -p /usr/share/agentv/session/splash call splash done" ]] || fail "done ends the splash" "$(cat "$calls")"
+splash nope && fail "an unknown part is refused"
+pass "T2.1 done ends the splash, and doesn't fail when there's none"
+
+# --- where it hooks in ---------------------------------------------------------
+
+dropin="$ROOT/system/plymouth-quit.service.d/agentv.conf"
+grep -qx 'After=agentv-firstboot.service' "$dropin" || fail "Plymouth stays up through first boot's work"
+[[ $(grep '^ExecStart=' "$dropin") == $'ExecStart=\nExecStart=-/usr/bin/agentv-boot-splash quit' ]] ||
+  fail "Plymouth's quit is agentv-boot-splash's, and a failure doesn't hold the boot" "$(grep '^ExecStart=' "$dropin")"
+pass "T2.1 Plymouth waits for first boot's work, and quits through agentv-boot-splash"
+
+hypr="$ROOT/session/hypr.lua"
+start=$(sed -n '/^hl.on("hyprland.start", function()$/,/^end)$/p' "$hypr" | grep -m 1 'hl.exec_cmd(')
+[[ $start == '  hl.exec_cmd("agentv-boot-splash tv")' ]] || fail "the TV session starts the splash before anything else" "$start"
+grep -qF 'background_color = splash_background() or "rgb(1a1b26)",' "$hypr" || fail "the TV session's first frame takes the splash's colour"
+grep -qF 'io.open("/run/agentv-boot-splash", "r")' "$hypr" || fail "hypr.lua reads the boot's note"
+grep -qF 'NOTE=${AGENTV_BOOT_SPLASH_NOTE:-/run/agentv-boot-splash}' "$ROOT/bin/agentv-boot-splash" ||
+  fail "the note hypr.lua reads is the one agentv-boot-splash leaves"
+if type -P lua >/dev/null; then
+  lua -e 'hl = setmetatable({}, { __index = function() return function() return {} end end }); hl.dsp = setmetatable({}, { __index = function() return function() end end })' \
+    -e "dofile('$hypr')" >"$SCRATCH/lua.out" 2>&1 || fail "hypr.lua still runs" "$(cat "$SCRATCH/lua.out")"
+fi
+pass "T2.1 the TV session starts the splash first, with its first frame in the splash's colour"
+
+qml="$ROOT/session/splash/shell.qml"
+for line in 'WlrLayershell.layer: WlrLayer.Overlay' 'WlrLayershell.keyboardFocus: WlrKeyboardFocus.None' 'mask: Region {}' \
+  'target: "splash"' 'function done(): string'; do
+  grep -qF "$line" "$qml" || fail "the splash covers everything, never takes the keyboard or the mouse, and answers done" "$line"
+done
+grep -qF 'interval: 90000' "$qml" || fail "the splash ends by itself"
+pass "the TV session's splash is over everything, takes no input, ends on done or by itself"
