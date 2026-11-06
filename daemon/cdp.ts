@@ -136,6 +136,26 @@ export class CdpPipe {
     }
   }
 
+  // Runs an expression in one page's isolated world of that name, the one
+  // addScriptIn put a script in, like evaluateIn. Chromium gives back the
+  // world a page already has by that name, so what the script left in it is
+  // there.
+  async evaluateInWorld(targetId: string, worldName: string, expression: string): Promise<any> {
+    const session = await this.attachTarget(targetId);
+    try {
+      // A page's main frame has the page's target id.
+      const { executionContextId } = await this.send("Page.createIsolatedWorld", { frameId: targetId, worldName }, session);
+      const reply = await this.send("Runtime.evaluate", { expression, contextId: executionContextId, awaitPromise: true, returnByValue: true }, session);
+      if (reply.exceptionDetails) {
+        throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text);
+      }
+      return reply.result.value;
+    } catch (error) {
+      this.sessions.delete(`target:${targetId}`);
+      throw error;
+    }
+  }
+
   // Runs source in one page now and in each document it loads after, in an
   // isolated world of that name, which the page's own scripts can't reach.
   async addScriptIn(targetId: string, source: string, worldName: string): Promise<void> {
@@ -202,4 +222,4 @@ export class CdpPipe {
 
 // What the screen daemon uses of a browser's pipe, so the tests can stand in
 // for one.
-export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn"> & Partial<Pick<CdpPipe, "bindIn">>;
+export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn"> & Partial<Pick<CdpPipe, "bindIn" | "evaluateInWorld">>;

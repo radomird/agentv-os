@@ -63,7 +63,7 @@ import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import type { Item } from "../apps/contract/contract.ts";
 import { RemoteInput, sendInput } from "./remote.ts";
-import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
 import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
@@ -1221,10 +1221,15 @@ export class Screen {
       const first = !this.backPressed && at > this.backUp + BACK_SLACK_MS;
       this.backPressed = false;
       this.backUp = Math.max(this.backUp, at);
+      // A tap: its press is under way and short of the hold, or it hasn't
+      // arrived yet.
+      let tapped = first;
       if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
+        tapped = true;
       }
+      if (tapped) void this.backTapped();
       if (first && this.front()?.role === "share") void this.closeShare("back");
       return { ok: true };
     }
@@ -1249,6 +1254,20 @@ export class Screen {
       Math.max(0, at + this.backHoldMs - this.now()),
     );
     return { ok: true };
+  }
+
+  // A tap on Back with a web app in front: its page acts on the taps it
+  // sees, and this is its word for the ones it doesn't (BACK_TAP in
+  // daemon/remote-page.ts), such as the one Chromium keeps to leave full
+  // screen.
+  private async backTapped(): Promise<void> {
+    const front = this.front();
+    const web = this.apps.get("web")?.cdp;
+    const entry = front?.role === "web" && !this.ambient ? this.opens.find((o) => o.address === front.address && o.target) : undefined;
+    if (!entry?.target || !web?.evaluateInWorld) return;
+    const did = await web.evaluateInWorld(entry.target, REMOTE_WORLD, BACK_TAP).catch(() => null);
+    if (did === "held") this.log("Back was a tap the page took for a hold: it went back");
+    else if (did === "full screen") this.log("Back was the tap that left full screen: it left the player");
   }
 
   // An app open behind home comes back where it was, playing again if Home
