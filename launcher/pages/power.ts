@@ -6,12 +6,11 @@
 //
 // Restart to the boot menu (ADR-060) is a restart whose next boot waits on
 // the boot menu, where a snapshot can be picked, so nobody has to catch the
-// quiet second at power on. It's behind the boot switch, and only on a box
-// whose boot loader takes the request.
+// quiet second at power on. It's only on a box whose boot loader takes the
+// request.
 
 import { screen } from "../api.ts";
 import { h } from "../dom.ts";
-import { featureOn } from "../features.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { installing } from "./updates.ts";
@@ -20,15 +19,21 @@ export const COUNTDOWN_S = 10;
 
 export type Power = "restart" | "shutdown" | "bootmenu";
 
-// The Power section of Settings: the two choices, or why not now.
+// What the box said last about restarting to its boot menu. Settings is drawn
+// again in place whenever the daemon has news, and the row keeps its place,
+// and the focus on it, while the box is asked again.
+let bootMenuShown = false;
+
+// The Power section of Settings: the choices, or why not now.
 export function powerPanel(ctx: Ctx): HTMLElement[] {
   if (installing(ctx.updates)) {
     return [h("div", { class: "panel-big" }, "updating"), h("p", { class: "panel-note" }, "not while an update runs. it restarts the box itself when it needs to.")];
   }
-  // It shows once the switch and the box both say yes.
-  const bootMenu = h("button", { class: "button hidden", "data-focus": true, "data-action": "bootmenu", onclick: () => ctx.go("power/bootmenu") }, "restart to the boot menu →");
-  void Promise.all([featureOn("boot"), screen.bootMenu()]).then(([on, can]) => {
-    if (on && can) bootMenu.classList.remove("hidden");
+  // It shows once the box says it can.
+  const bootMenu = h("button", { class: bootMenuShown ? "button" : "button hidden", "data-focus": true, "data-action": "bootmenu", onclick: () => ctx.go("power/bootmenu") }, "restart to the boot menu →");
+  void screen.bootMenu().then((can) => {
+    bootMenuShown = can;
+    bootMenu.classList.toggle("hidden", !can);
   });
   return [
     h("div", { class: "panel-title" }, "the box"),
