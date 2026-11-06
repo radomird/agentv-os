@@ -77,6 +77,15 @@ splash "done" || fail "done runs without the note" "$(cat "$SCRATCH/out")"
 splash nope && fail "an unknown part is refused"
 pass "T2.1 done ends the splash and releases Plymouth, and doesn't fail when there's none"
 
+: >"$note"
+splash desktop || fail "desktop runs" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "systemctl start --no-block agentv-boot-splash-release.service" ]] ||
+  fail "leaving for Omarchy's desktop before home has drawn lets Plymouth go" "$(cat "$calls")"
+rm -f "$note"
+splash desktop || fail "desktop runs without the note" "$(cat "$SCRATCH/out")"
+[[ ! -f $calls ]] || fail "once home has drawn, Omarchy's desktop has no Plymouth to release" "$(cat "$calls")"
+pass "T2.1 Omarchy's desktop started during the splash releases Plymouth, so the TV after it has no splash"
+
 # --- where it hooks in ---------------------------------------------------------
 
 dropin="$ROOT/system/plymouth-quit.service.d/agentv.conf"

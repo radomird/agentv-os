@@ -87,6 +87,10 @@ export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" 
 // Resolves once the page has drawn two frames.
 export const TWO_FRAMES = "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))";
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
+// What Settings → Power does: restart, shut down, or restart to the boot
+// menu, which then waits for a choice (ADR-060).
+export type Power = "restart" | "shutdown" | "bootmenu";
+const POWER: Power[] = ["restart", "shutdown", "bootmenu"];
 // The daemon's filter for home's Chromium (daemon/net-filter.ts).
 export const HOME_PROXY = "http://127.0.0.1:3005";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
@@ -183,8 +187,12 @@ export interface Launcher {
   // until home has drawn, when the boot kept it (ADR-060).
   splashDone?(): void;
   // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
-  // close the windows first. False when it couldn't start.
-  power(what: "restart" | "shutdown"): Promise<boolean>;
+  // close the windows first, or a restart to the boot menu (ADR-060). False
+  // when it couldn't start.
+  power(what: Power): Promise<boolean>;
+  // Whether the boot loader takes a restart to its menu, as Limine does on
+  // a UEFI box, and logind lets the owner ask for one.
+  canBootMenu?(): Promise<boolean>;
   // What there is to install at night, or null when the daemon doesn't
   // answer, and the install asked for tonight is done with.
   nightUpdates(): Promise<NightUpdates | null>;
@@ -1011,6 +1019,9 @@ export class Screen {
       // countdown (ADR-033).
       case "power":
         return this.power(request.what);
+      // Whether Power offers a restart to the boot menu (ADR-060).
+      case "boot-menu":
+        return { ok: true, can: (await this.launcher.canBootMenu?.().catch(() => false)) ?? false };
       // Setup's AI step, once an adult accepted the provider's terms.
       case "cli-install":
         return this.installCli();
@@ -1025,11 +1036,13 @@ export class Screen {
   // Restarts the box or shuts it down, through Omarchy's own commands. Never
   // while an update runs (ADR-025). From home it's past the PIN already.
   async power(what: unknown): Promise<object> {
-    if (what !== "restart" && what !== "shutdown") return { ok: false, error: "power restart or shutdown" };
+    if (!POWER.includes(what as Power)) return { ok: false, error: "power restart, shutdown or bootmenu" };
+    const power = what as Power;
     if (await this.launcher.updating()) return { ok: false, error: "not while an update runs" };
-    this.log(what === "restart" ? "restarting the box from settings → power" : "shutting the box down from settings → power");
-    if (await this.launcher.power(what)) return { ok: true };
-    return { ok: false, error: what === "restart" ? "the box couldn't restart" : "the box couldn't shut down" };
+    const said = { restart: "restarting the box", shutdown: "shutting the box down", bootmenu: "restarting the box to its boot menu" }[power];
+    this.log(`${said} from settings → power`);
+    if (await this.launcher.power(power)) return { ok: true };
+    return { ok: false, error: power === "shutdown" ? "the box couldn't shut down" : "the box couldn't restart" };
   }
 
   // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
@@ -2189,6 +2202,9 @@ async function barLook(): Promise<string[]> {
   return args;
 }
 
+// logind's manager on the system bus, for busctl call.
+const LOGIND = ["org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager"];
+
 export const launcher: Launcher = {
   async homeReady() {
     for (let tries = 0; tries < 60; tries++) {
@@ -2471,7 +2487,16 @@ export const launcher: Launcher = {
     });
   },
 
-  power(what) {
+  async canBootMenu() {
+    // logind answers yes when the boot loader says it takes the request (on
+    // UEFI, Limine sets LoaderFeatures) and polkit lets the owner ask.
+    const answer = await new Promise<string>((resolve) => {
+      execFile("busctl", ["call", ...LOGIND, "CanRebootToBootLoaderMenu"], { timeout: 5000 }, (error, stdout) => resolve(error ? "" : stdout.trim()));
+    });
+    return answer === 's "yes"' || answer === 's "challenge"';
+  },
+
+  async power(what) {
     // Omarchy's command schedules the power-off in this session's systemd,
     // and finds itself again through OMARCHY_PATH, which that systemd
     // doesn't carry. polkit lets the owner do it from there (ADR-033).
@@ -2489,9 +2514,18 @@ export const launcher: Launcher = {
         child.on("exit", (code) => resolve(code === 0));
         child.unref();
       });
-    return run("omarchy-system", [what === "restart" ? "reboot" : "shutdown"]).then(async (done) =>
-      done === "missing" ? (await run(what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown", [])) === true : done,
+    // To the boot menu (ADR-060): logind asks the boot loader for its menu
+    // on the next boot only, with no timeout, so it waits there, then the
+    // box restarts as Restart does. polkit lets the owner ask for it too.
+    // A restart that doesn't happen takes the request back, so the next
+    // ordinary boot doesn't stop on the menu.
+    if (what === "bootmenu" && (await run("busctl", ["call", ...LOGIND, "SetRebootToBootLoaderMenu", "t", "0"])) !== true) return false;
+    const restart = what !== "shutdown";
+    const done = await run("omarchy-system", [restart ? "reboot" : "shutdown"]).then(async (done) =>
+      done === "missing" ? (await run(restart ? "omarchy-system-reboot" : "omarchy-system-shutdown", [])) === true : done,
     );
+    if (!done && what === "bootmenu") await run("busctl", ["call", ...LOGIND, "SetRebootToBootLoaderMenu", "t", "18446744073709551615"]);
+    return done;
   },
 
   async idleMinutes() {

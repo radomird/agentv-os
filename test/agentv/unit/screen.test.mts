@@ -299,7 +299,11 @@ class FakeLauncher implements Launcher {
   async cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }) {
     this.cliStates.push(change);
   }
-  async power(what: "restart" | "shutdown") {
+  bootMenu = true;
+  async canBootMenu() {
+    return this.bootMenu;
+  }
+  async power(what: "restart" | "shutdown" | "bootmenu") {
     this.powered.push(what);
     return this.powerWorks;
   }
@@ -979,6 +983,22 @@ test("S2.19 Settings → Sound and agentv screen audio reach the box's sound out
   assert.deepEqual(await none.fromHome({ cmd: "audio" }), { ok: false, error: "sound isn't here" });
 });
 
+test("T2.2 Settings → Power restarts to the boot menu past the PIN, never during an update, and says whether the box can", async () => {
+  const { launcher, screen, lines } = await tv();
+  assert.deepEqual(await screen.fromHome({ cmd: "boot-menu" }), { ok: true, can: true });
+  launcher.bootMenu = false;
+  assert.deepEqual(await screen.fromHome({ cmd: "boot-menu" }), { ok: true, can: false });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: true });
+  assert.deepEqual(launcher.powered, ["bootmenu"]);
+  assert.deepEqual(launcher.pins, ["power"], "it asks whether the pin lets it, as Restart does");
+  assert.ok(lines.includes("restarting the box to its boot menu from settings → power"), lines.join("\n"));
+  launcher.updateRunning = true;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "not while an update runs" });
+  launcher.updateRunning = false;
+  launcher.powerWorks = false;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "the box couldn't restart" });
+});
+
 test("S2.18 Settings → Power restarts and shuts down through Omarchy's commands, past the PIN, never during an update", async () => {
   const { launcher, screen } = await tv();
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: true });
@@ -987,7 +1007,7 @@ test("S2.18 Settings → Power restarts and shuts down through Omarchy's command
   assert.deepEqual(launcher.pins, ["power", "power"], "each asks whether the pin lets it");
   // agentv screen power does the same, over SSH too.
   assert.deepEqual(await screen.handle({ cmd: "power", what: "restart" }), { ok: true });
-  assert.deepEqual(await screen.handle({ cmd: "power", what: "off" }), { ok: false, error: "power restart or shutdown" });
+  assert.deepEqual(await screen.handle({ cmd: "power", what: "off" }), { ok: false, error: "power restart, shutdown or bootmenu" });
   // Not while an update runs (ADR-025), and not past a PIN that says no.
   launcher.powered = [];
   launcher.updateRunning = true;

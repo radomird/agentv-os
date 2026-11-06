@@ -365,8 +365,8 @@ function viewFor(route: string): View {
   if (name === "country") return countryPage(ctx);
   if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
-  // Settings → Power's questions, for an adult only (ADR-033).
-  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
+  // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
+  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
   // A page app, full screen in its frame (ADR-043).
   if (name === "app" && arg) return pageView(ctx, arg);
