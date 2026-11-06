@@ -240,7 +240,8 @@ jobs:
       # change, or their default branches, each pinned to the commit it's at
       # now. Every job of the VM test then builds the same commits, even if a
       # branch moves while it runs, and the summary says which they were.
-      - id: pair
+      - name: This change's branches in agentv-iso and agentv-pkgs
+        id: pair
         env:
           HEAD_REF: ${{ github.head_ref }}
           OWNER: ${{ github.repository_owner }}
@@ -262,7 +263,8 @@ jobs:
             echo "$repo-ref=${sha:-$branch}" >>"$GITHUB_OUTPUT"
           done
           echo "paired=$paired" >>"$GITHUB_OUTPUT"
-      - id: paths
+      - name: Decide, and say why
+        id: paths
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           HEAD_REF: ${{ github.head_ref }}
