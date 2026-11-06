@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
@@ -119,6 +119,8 @@ class FakeBrowser implements DevTools {
   async bind() {}
   // The focus nudge an app's page gets, for a test that stands one in.
   bindIn?: DevTools["bindIn"];
+  // What runs in a page's own world, for a test that stands one in.
+  evaluateInWorld?: DevTools["evaluateInWorld"];
   // What the page answers, for a test that needs more than an empty object.
   answer?: (expression: string) => object | undefined;
   async evaluate(_prefix: string, expression: string) {
@@ -1280,6 +1282,29 @@ test("S2.16 holding Back for a second goes home; a tap stays with the app", asyn
   await sleep(150);
   await t.screen.idle();
   assert.equal(t.screen.front()?.role, "home");
+});
+
+test("T8.4 a tap on Back tells the web app's page it was a tap, for one it didn't see; a hold doesn't", async () => {
+  const t = await tv({ backHoldMs: 80 });
+  const target = await openApp(t, "agentv.tube", "0xb");
+  const asked: string[][] = [];
+  t.launcher.browser.evaluateInWorld = async (targetId, world, expression) => {
+    asked.push([targetId, world, expression]);
+    return "full screen";
+  };
+  const now = Date.now();
+  t.screen.back("down", now);
+  t.screen.back("up", now + 30);
+  await sleep(150);
+  assert.deepEqual(asked, [[target, REMOTE_WORLD, BACK_TAP]], "the page in front hears the tap, in its own world");
+  assert.ok(t.lines.some((line) => line.includes("left the player")), t.lines.join("\n"));
+  t.screen.back("down", Date.now());
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.back("up", Date.now());
+  await sleep(50);
+  assert.equal(asked.length, 1, "a hold went home, and the page heard nothing");
 });
 
 test("S2.16 a tap whose release read the clock a moment before its press is still a tap", async () => {

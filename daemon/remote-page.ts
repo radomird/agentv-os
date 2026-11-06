@@ -20,6 +20,19 @@
 //   something full screen, and not when there's no page to go back to.
 //   Holding Back for a second still goes home (ADR-031), so a hold never
 //   goes back a page first.
+// - Back in a player leaves it, even when the player takes Escape for
+//   itself, as many do and then do nothing with it. A player is a video
+//   that covers the screen on a page with nothing else to scroll to, or one
+//   full screen. A dialog open over it still closes first, its own settings
+//   included. Back never goes back into a player either: past one, it goes
+//   on back from the page before it, even when the player's own back arrow
+//   put that page on the history again rather than going back.
+//
+// Hyprland reports each press and release of Back to the screen daemon,
+// which tells a tap from a hold (daemon/screen.ts), and on a tap it runs
+// BACK_TAP here. The page acts on a tap as it sees it, so this is for the
+// taps it doesn't: one whose release it saw a second late on a busy box,
+// and one Chromium kept to leave full screen, which never reaches the page.
 //
 // A link shared from a phone opens in the share browser (ADR-050), which
 // gets the same spatial navigation and SHARED_PAGE: the ring without Back,
@@ -40,6 +53,9 @@ export const REMOTE_WORLD = "agentv-remote";
 // The function each frame calls in that world as its focus moves.
 export const FOCUS_BINDING = "agentvFocus";
 
+// What the screen daemon runs in that world when Back was a tap.
+export const BACK_TAP = "window.__agentvBackTap?.() ?? null";
+
 // The ring's width and the gap it leaves around what has focus, in pixels.
 const RING = 4;
 const GAP = 3;
@@ -47,6 +63,13 @@ const GAP = 3;
 // How near an edge of the screen, as a share of it, what has focus scrolls
 // to the middle.
 const EDGE = 0.15;
+
+// How much of the screen a player's video covers, at least.
+const PLAYER_SHARE = 0.8;
+
+// How long after a press the screen daemon's word on it still counts, in
+// milliseconds.
+const TAP_WAIT_MS = 4000;
 
 // holdMs: the screen daemon's hold on Back that goes home. back: whether a
 // tap on Back goes back a page.
@@ -133,20 +156,185 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     frame = requestAnimationFrame(step);
   };
 
-  let backDown = null;
-  const busy = () =>
-    !!document.fullscreenElement ||
-    [...document.querySelectorAll("dialog[open], [aria-modal='true']")].some((el) => el.getClientRects().length > 0);
+  // What matches under a root, through open shadow roots and same-origin
+  // frames.
+  const deep = (root, selector, found = []) => {
+    found.push(...root.querySelectorAll(selector));
+    for (const el of root.querySelectorAll("*")) {
+      if (el.shadowRoot) deep(el.shadowRoot, selector, found);
+      if (el.tagName === "IFRAME") {
+        try {
+          if (el.contentDocument) deep(el.contentDocument, selector, found);
+        } catch {}
+      }
+    }
+    return found;
+  };
+  // Where an element is on the screen, from inside a frame too.
+  const onScreen = (el) => {
+    const r = el.getBoundingClientRect();
+    let { left, top, right, bottom } = r;
+    for (let view = el.ownerDocument.defaultView; view && view !== window && view.frameElement; view = view.parent) {
+      const f = view.frameElement.getBoundingClientRect();
+      left += f.left;
+      right += f.left;
+      top += f.top;
+      bottom += f.top;
+    }
+    return { left, top, right, bottom };
+  };
+  const covers = (el) => {
+    const b = onScreen(el);
+    const w = Math.max(0, Math.min(b.right, innerWidth) - Math.max(b.left, 0));
+    const h = Math.max(0, Math.min(b.bottom, innerHeight) - Math.max(b.top, 0));
+    return w * h >= innerWidth * innerHeight * ${PLAYER_SHARE};
+  };
+  // A video that has started, paused or not, and covers the screen.
+  const playerVideo = () => {
+    const ok = (v) => (!v.paused || v.currentTime > 0 || v.readyState > 0) && covers(v);
+    return [...document.querySelectorAll("video")].find(ok) ?? deep(document, "video").find(ok) ?? null;
+  };
+  const scrolls = () => {
+    const root = document.scrollingElement || document.documentElement;
+    const kept = (el) => !!el && /hidden|clip/.test(getComputedStyle(el).overflowY);
+    return root.scrollHeight > innerHeight + 2 && !kept(document.documentElement) && !kept(document.body);
+  };
+  // A player: a video over the whole screen, on a page with nothing else to
+  // scroll to, or full screen. A title's page with a trailer playing behind
+  // it scrolls to its episodes and extras.
+  const inPlayer = () => !!playerVideo() && (!!document.fullscreenElement || !scrolls());
+
+  // A dialog open, which Escape closes: one on the page, or one of a
+  // player's own in its shadow roots. Not one the player itself is in.
+  const holds = (outer, inner) => {
+    for (let node = inner; node; node = node.parentNode || node.host) if (node === outer) return true;
+    return false;
+  };
+  const busy = () => {
+    const video = playerVideo();
+    return [...document.querySelectorAll("dialog[open], [aria-modal='true']"), ...deep(document, "dialog[open]")].some(
+      (el) => el.getClientRects().length > 0 && !(video && holds(el, video)),
+    );
+  };
   const canGoBack = () => (window.navigation ? window.navigation.canGoBack : history.length > 1);
+
+  // The history entries a player had, by their keys, so Back never goes
+  // back into one. Each is noted as the page leaves it.
+  const players = new Set();
+  const notePlayer = () => {
+    const key = window.navigation?.currentEntry?.key;
+    if (key) players.add(key);
+  };
+  try {
+    window.navigation?.addEventListener("navigate", () => inPlayer() && notePlayer());
+  } catch {}
+
+  // Back a page. Past a player, it goes on past the page before it when
+  // that's the page Back started on, which a player's own back arrow can
+  // put on the history again.
+  const goBack = (fromPlayer) => {
+    const nav = window.navigation;
+    if (!nav?.currentEntry) {
+      if (history.length > 1) history.back();
+      return;
+    }
+    const here = nav.currentEntry;
+    const page = (url) => {
+      try {
+        const u = new URL(url);
+        return u.origin + u.pathname;
+      } catch {
+        return url;
+      }
+    };
+    const entries = nav.entries();
+    let past = false;
+    for (let i = here.index - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (!entry) continue;
+      if (players.has(entry.key)) {
+        past = true;
+        continue;
+      }
+      if (past && !fromPlayer && page(entry.url) === page(here.url)) continue;
+      const going = nav.traverseTo(entry.key);
+      going.committed?.catch(() => {});
+      going.finished?.catch(() => {});
+      return;
+    }
+  };
+  const leavePlayer = () => {
+    notePlayer();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    goBack(true);
+  };
+
+  // A tap on Back, once every listener of the page has had it.
+  let settledAt = -Infinity;
+  const act = (down, up) => {
+    settledAt = performance.now();
+    if (down.busy || busy()) return;
+    if (down.player) return leavePlayer();
+    if (down.event.defaultPrevented || up?.defaultPrevented || document.fullscreenElement || !canGoBack()) return;
+    goBack(false);
+  };
+
+  // Full screen that ends without a key reaching the page: Chromium keeps
+  // the Escape that leaves it.
+  let fullPlayer = false;
+  let leftFull = null;
+  document.addEventListener(
+    "fullscreenchange",
+    () => {
+      if (document.fullscreenElement) {
+        fullPlayer = inPlayer();
+        if (fullPlayer) notePlayer();
+      } else {
+        leftFull = { at: performance.now(), player: fullPlayer };
+        fullPlayer = false;
+      }
+    },
+    true,
+  );
+
+  // The press on Back under way, and one the page timed as a hold, which may
+  // still be a tap by the screen daemon's clock.
+  let backDown = null;
+  let held = null;
+  if (${back}) {
+    // The screen daemon's word that Back was a tap (BACK_TAP).
+    window.__agentvBackTap = () => {
+      const now = performance.now();
+      if (backDown) {
+        backDown.tap = true;
+        return "early";
+      }
+      if (held && now - held.upAt < ${TAP_WAIT_MS}) {
+        const down = held;
+        held = null;
+        act(down, null);
+        return "held";
+      }
+      if (leftFull?.player && leftFull.at > settledAt && now - leftFull.at < ${TAP_WAIT_MS}) {
+        leftFull = null;
+        settledAt = now;
+        leavePlayer();
+        return "full screen";
+      }
+      return null;
+    };
+  }
 
   addEventListener(
     "keydown",
     (event) => {
       if (event.key === "Escape") {
-        if (!${back}) return;
-        // Whether a dialog or full screen is up is read now, since the
-        // press itself can close it.
-        if (!event.repeat) backDown = { event, busy: busy(), at: performance.now() };
+        if (!${back} || event.repeat) return;
+        // What's up is read now, since the press itself can close it.
+        const player = inPlayer();
+        if (player) notePlayer();
+        backDown = { event, busy: busy(), player, at: performance.now(), tap: false };
+        held = null;
         return;
       }
       if (ARROWS.has(event.key)) {
@@ -169,11 +357,11 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
       if (!${back} || event.key !== "Escape" || !backDown) return;
       const down = backDown;
       backDown = null;
-      if (down.busy || performance.now() - down.at >= ${holdMs}) return;
-      setTimeout(() => {
-        if (down.event.defaultPrevented || event.defaultPrevented || busy() || !canGoBack()) return;
-        history.back();
-      }, 0);
+      if (!down.tap && performance.now() - down.at >= ${holdMs}) {
+        held = { ...down, upAt: performance.now() };
+        return;
+      }
+      setTimeout(() => act(down, event), 0);
     },
     true,
   );
