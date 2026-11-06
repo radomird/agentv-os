@@ -18,7 +18,7 @@ Run `bin/agentv-check` (layer 1) and `test/agentv/unit/run` (layer 2). In agentv
 3. **No em dashes** in anything you added or changed: `git diff --cached | grep -n $'\u2014'` prints nothing. (The pattern is written as an escape so this file doesn't contain the character either.)
 4. **No secrets:** gitleaks, on the files and on every AgenTV commit since the base.
 5. **Shell style:** `shellcheck` on every shell file you added. Follow Omarchy's `AGENTS.md` style too: two spaces, `[[ ]]` and `(( ))`, `#!/bin/bash`.
-6. **No service automation in public:** nothing that names selectors or automates Disney+, Prime Video, Netflix or Spotify.
+6. **No service automation here:** nothing that names selectors or automates a streaming service (Disney+, Netflix, Prime Video, HBO Max, YouTube, YouTube Kids, SkyShowtime or Spotify). Only `agentv-apps` may, and only in the service's own app folder (ADR-066). `test/agentv/policy/service-hosts` and `service-names` say how each is spotted.
 7. **Every manifest validates:** `agentv app validate <dir>` once it exists.
 
 Layers 2 to 4 (unit, contract, UI) join the gate as their code lands. They should run in seconds on the Mac against the fake platform, with no VM.

@@ -14,7 +14,7 @@ The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, the
 
 ## Public repo rules
 
-- No adapter code, service selectors or anything that automates Disney+, Prime Video, Netflix or Spotify. The hand-written Disney+ adapter lives in the private `agentv-adapters` repo.
+- No adapter code, service selectors or anything that automates a streaming service (Disney+, Netflix, Prime Video, HBO Max, YouTube, YouTube Kids, SkyShowtime or Spotify). The official streaming apps live in `agentv-apps`, each in its own folder, and the pages they're written against stay in the private `agentv-adapters` repo (ADR-066). Spotify is never in a repo.
 - No secrets. Keys live on the box in `/etc/agentv/env`, and sign-ins in `/var/lib/agentv/chromium/`. Fixtures never hold sign-in material.
 - Agent-built apps stay on the box that built them.
 
