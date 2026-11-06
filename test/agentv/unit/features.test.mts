@@ -25,7 +25,7 @@ function box(channel = "edge", defaults?: Record<string, boolean>): { features: 
 }
 
 test("T12.1 every track's switch is there, in the plan's names, and off by default", async () => {
-  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "boot"]);
+  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds"]);
   assert.ok(Object.values(FEATURES).every((on) => on === false));
   assert.deepEqual(await box().features.read(), Object.fromEntries(FEATURE_NAMES.map((name) => [name, false])));
   assert.equal(isFeature("looks"), true);

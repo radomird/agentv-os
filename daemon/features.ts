@@ -26,7 +26,6 @@ export const FEATURES = {
   starter: false, // the streaming starter pack (track 9)
   discover: false, // servers on your network (track 10)
   askbuilds: false, // the Ask box builds (track 11)
-  boot: false, // straight to the TV (track 2); bin/agentv-boot-splash reads it at boot
 } as const satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof FEATURES;

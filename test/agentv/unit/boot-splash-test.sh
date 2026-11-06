@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Guards straight to the TV (ADR-060): bin/agentv-boot-splash keeps Plymouth's
-# last frame up as it quits when the boot switch is on, and only then; the TV
-# session draws the same splash, in the colour Plymouth drew, until the
-# screen daemon ends it; and Plymouth waits for first boot's work. The boot
-# switch reads the way daemon/features.ts reads it (ADR-057).
+# last frame up as it lets go of the screen at boot, and quits it once home
+# has drawn; the TV session draws the same splash, in the colour Plymouth
+# drew, until the screen daemon ends it, and only in the boot that kept it;
+# and Plymouth waits for first boot's work.
 
 # shellcheck disable=SC2016 # the fakes' bodies are run later, by the script under test
 set -euo pipefail
@@ -12,10 +12,9 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
 bin="$SCRATCH/bin"
 calls="$SCRATCH/calls"
-state="$SCRATCH/state"
 theme="$SCRATCH/theme"
 note="$SCRATCH/run/agentv-boot-splash"
-mkdir -p "$bin" "$state" "$theme" "$SCRATCH/run"
+mkdir -p "$bin" "$theme" "$SCRATCH/run"
 cp "$ROOT/default/plymouth/omarchy.script" "$theme/omarchy.script"
 
 fake() {
@@ -28,51 +27,30 @@ fake systemctl 'echo "systemctl $*" >>"$CALLS"'
 fake logger ':'
 fake quickshell 'echo "quickshell $* background=$AGENTV_SPLASH_BACKGROUND logo=$AGENTV_SPLASH_LOGO" >>"$CALLS"'
 fake qs 'echo "qs $*" >>"$CALLS"; exit 1'
-fake agentv-channel 'echo "${CHANNEL:-edge}"'
 
 splash() {
   rm -f "$calls"
-  env PATH="$bin:$PATH" CALLS="$calls" AGENTV_PATH=/usr/share/agentv AGENTV_DAEMON_STATE="$state" \
+  env PATH="$bin:$PATH" CALLS="$calls" AGENTV_PATH=/usr/share/agentv \
     AGENTV_BOOT_SPLASH_NOTE="$note" AGENTV_SPLASH_THEME="$theme" \
     "$BASH" "$ROOT/bin/agentv-boot-splash" "$@" >"$SCRATCH/out" 2>&1
 }
 
-# --- quit, at boot -----------------------------------------------------------
+# --- quit at boot, and release once home has drawn ---------------------------
 
-rm -f "$state/features.json"
+rm -f "$note"
 splash quit || fail "quit runs" "$(cat "$SCRATCH/out")"
-[[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "with the switch at its default, Plymouth quits as it always has" "$(cat "$calls")"
-pass "T2.1 with the boot switch off, Plymouth quits as before and leaves no note"
-
-# The default here is daemon/features.ts's.
-default=$(cd "$ROOT" && node_eval 'import { FEATURES } from "./daemon/features.ts"; console.log(FEATURES.boot)')
-[[ $default == false ]] || fail "the boot switch's default in daemon/features.ts is the one agentv-boot-splash keeps" "$default"
-pass "agentv-boot-splash's default for the boot switch is daemon/features.ts's"
-
-printf '{"boot": true}\n' >"$state/features.json"
-splash quit || fail "quit runs with the switch on" "$(cat "$SCRATCH/out")"
 [[ $(tail -n 1 "$calls") == "plymouth deactivate" && -f $note ]] ||
-  fail "with the switch on, Plymouth lets go of the screen but keeps its last frame up, and the boot gets its note" "$(cat "$calls")"
+  fail "Plymouth lets go of the screen but keeps its last frame up, and the boot gets its note" "$(cat "$calls")"
 grep -qx "systemd-run --no-block --quiet --collect --on-active=120 --unit=agentv-boot-splash-fallback /usr/bin/plymouth quit" "$calls" ||
   fail "and quits by itself two minutes later if nothing releases it" "$(cat "$calls")"
-pass "T2.1 with the boot switch on, Plymouth keeps the splash up for the TV session, with a way out if it never comes"
+pass "T2.1 Plymouth keeps the splash up for the TV session, with a way out if it never comes"
 
-splash release || fail "release runs with nothing to release" "$(cat "$SCRATCH/out")"
-[[ $(cat "$calls") == "plymouth --ping" ]] || fail "with Plymouth gone, release does nothing" "$(cat "$calls")"
 PLYMOUTH_UP=1 splash release || fail "release runs" "$(cat "$SCRATCH/out")"
 [[ $(tail -n 1 "$calls") == "plymouth quit --retain-splash" ]] || fail "release quits Plymouth, leaving the screen as the TV session drew it" "$(cat "$calls")"
-pass "T2.1 once home has drawn, Plymouth quits and leaves the screen as it is"
-
-CHANNEL=stable splash quit || fail "quit runs on stable" "$(cat "$SCRATCH/out")"
-[[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "a switch turned on while on edge is off on stable" "$(cat "$calls")"
-pass "a box back on stable boots as stable does, as daemon/features.ts reads the switch"
-
-for content in '{"boot": false}' '{"boot": "yes"}' '{"looks": true}' 'not json' '[]'; do
-  printf '%s\n' "$content" >"$state/features.json"
-  splash quit || fail "quit runs with $content" "$(cat "$SCRATCH/out")"
-  [[ $(cat "$calls") == "plymouth quit" && ! -e $note ]] || fail "$content doesn't keep the splash" "$(cat "$calls")"
-done
-pass "only an explicit true keeps the splash, and a note from an earlier boot goes"
+[[ ! -e $note ]] || fail "and the boot's note goes, so a TV session started again later has no splash"
+splash release || fail "release runs with nothing to release" "$(cat "$SCRATCH/out")"
+[[ $(cat "$calls") == "plymouth --ping" ]] || fail "with Plymouth gone, release does nothing" "$(cat "$calls")"
+pass "T2.1 once home has drawn, Plymouth quits and leaves the screen as it is, and the splash is the boot's alone"
 
 # --- tv, as the TV session starts --------------------------------------------
 

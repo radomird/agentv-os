@@ -27,30 +27,17 @@
 #   done     The screen daemon, once home's page has drawn under it: the
 #            splash goes, and Plymouth is released.
 #
-# It's behind the boot switch while that's off by default (ADR-057). quit
-# reads the switch as the daemon keeps it, before the daemon runs, and
-# leaves a note for the rest of this boot when it's on. tv draws only with
-# that note, and so does the TV session's first frame, which takes the
-# splash's colour (session/hypr.lua).
+# quit leaves a note while the boot's splash is up, and release takes it
+# away. tv draws only with that note, and so does the TV session's first
+# frame, which takes the splash's colour (session/hypr.lua). So a TV session
+# started again later in the same boot, after Omarchy's desktop say, starts
+# without a splash.
 
 set -euo pipefail
 
 AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
-STATE=${AGENTV_DAEMON_STATE:-/var/lib/agentv/daemon}
 NOTE=${AGENTV_BOOT_SPLASH_NOTE:-/run/agentv-boot-splash}
 THEME=${AGENTV_SPLASH_THEME:-/usr/share/plymouth/themes/omarchy}
-
-# The boot switch, the way daemon/features.ts reads it: its default, unless
-# this box changed it, and a switch turned on counts only while the box is
-# on edge. Keep the default here the same as FEATURES.boot there.
-switch_on() {
-  local changed
-  changed=$(jq -r 'if (type == "object" and (.boot | type) == "boolean") then .boot else "default" end' "$STATE/features.json" 2>/dev/null || true)
-  case $changed in
-    true) [[ $(agentv-channel 2>/dev/null) == "edge" ]] ;;
-    *) return 1 ;;
-  esac
-}
 
 # The splash's background as Plymouth draws it, from the colours omarchy
 # plymouth set wrote into the theme's script, as #rrggbb.
@@ -66,19 +53,16 @@ say() {
 
 case ${1:-} in
   quit)
-    if switch_on; then
-      : >"$NOTE"
-      say "plymouth lets go of the screen, keeping the splash up for the TV session"
-      # Quits by itself if the TV session never takes over, such as when
-      # the login manager doesn't start.
-      systemd-run --no-block --quiet --collect --on-active=120 --unit=agentv-boot-splash-fallback \
-        /usr/bin/plymouth quit >/dev/null 2>&1 || true
-      exec plymouth deactivate
-    fi
-    rm -f "$NOTE"
-    exec plymouth quit
+    : >"$NOTE"
+    say "plymouth lets go of the screen, keeping the splash up for the TV session"
+    # Quits by itself if the TV session never takes over, such as when the
+    # login manager doesn't start.
+    systemd-run --no-block --quiet --collect --on-active=120 --unit=agentv-boot-splash-fallback \
+      /usr/bin/plymouth quit >/dev/null 2>&1 || true
+    exec plymouth deactivate
     ;;
   release)
+    rm -f "$NOTE"
     if plymouth --ping 2>/dev/null; then
       say "the TV session has the screen, so plymouth quits"
       exec plymouth quit --retain-splash
@@ -86,6 +70,7 @@ case ${1:-} in
     ;;
   tv)
     [[ -f $NOTE ]] || exit 0
+    say "the TV session starts, with the splash over it"
     colour=$(background)
     export AGENTV_SPLASH_BACKGROUND=${colour:-#1a1b26}
     export AGENTV_SPLASH_LOGO="$THEME/logo.png"
