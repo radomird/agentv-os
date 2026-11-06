@@ -38,7 +38,7 @@ channel() {
 channel stable
 start
 out=$("$ROOT/bin/agentv" feature list) || fail "agentv feature list works" "$out"
-expected=$(printf '%-12s off\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds boot)
+expected=$(printf '%-12s off\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
 [[ $out == "$expected" ]] || fail "T12.1 agentv feature list shows every track's switch, off" "$out"
 pass "T12.1 agentv feature list shows every track's switch, each off until it's turned on"
 
@@ -68,7 +68,7 @@ pass "a switch stays on after a restart, goes off back on stable, and agentv fea
 
 status=0
 out=$("$ROOT/bin/agentv" feature on nope 2>&1) || status=$?
-(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, boot." ]] ||
+(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds." ]] ||
   fail "a name that isn't a switch is refused, with the names" "$out"
 for wrong in "" "Looks" "looks extra" '../x'; do
   status=0

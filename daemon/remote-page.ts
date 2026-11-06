@@ -24,12 +24,21 @@
 // A link shared from a phone opens in the share browser (ADR-050), which
 // gets the same spatial navigation and SHARED_PAGE: the ring without Back,
 // since Back there closes the page.
+//
+// Every frame of the page also says when its focus moves, through
+// FOCUS_BINDING, which the screen daemon gives this world alone. The screen
+// daemon then reads the focused field itself, so the phone's keyboard comes
+// up for a service's search or sign-in (ADR-065). The nudge carries nothing,
+// so a page can't tell the phone anything with it.
 
 // For the services' Chromium's command line.
 export const SPATIAL_NAVIGATION = "--enable-spatial-navigation";
 
 // The isolated world REMOTE_PAGE runs in.
 export const REMOTE_WORLD = "agentv-remote";
+
+// The function each frame calls in that world as its focus moves.
+export const FOCUS_BINDING = "agentvFocus";
 
 // The ring's width and the gap it leaves around what has focus, in pixels.
 const RING = 4;
@@ -44,6 +53,24 @@ const EDGE = 0.15;
 export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
   const back = o.back ?? true;
   return `(() => {
+  if (!window.__agentvFocus) {
+    window.__agentvFocus = true;
+    // Focus moving inside one shadow root never reaches the window, so each
+    // root the focus has gone into gets the same ear.
+    const roots = new WeakSet();
+    const nudge = (event) => {
+      for (const node of event.composedPath()) {
+        if (node instanceof ShadowRoot && !roots.has(node)) {
+          roots.add(node);
+          node.addEventListener("focusin", nudge, true);
+          node.addEventListener("focusout", nudge, true);
+        }
+      }
+      try { window.${FOCUS_BINDING}?.(""); } catch {}
+    };
+    addEventListener("focusin", nudge, true);
+    addEventListener("focusout", nudge, true);
+  }
   if (window.top !== window || window.__agentvRemote) return;
   window.__agentvRemote = true;
   const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
