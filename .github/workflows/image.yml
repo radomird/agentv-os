@@ -28,9 +28,9 @@ name: Image
 # instead of edge, so a pull request's run tests the pull request, updates
 # included (Q137). Nightly and release runs keep their channels. With lanes,
 # the image checks run that many VMs at a time (agentv-iso's
-# test/agentv/image/run): two, unless a calling workflow asks for one, as the
-# nightly run does for a release, whose own checks time S1.3 beside another
-# VM. A run by hand has two. With omarchy-channel, the update checks also
+# test/agentv/image/run): two, unless a calling workflow asks otherwise. The
+# checks that time the box against a bar, like S1.3, run alone after the
+# lanes. A run by hand has two. With omarchy-channel, the update checks also
 # move the box to the Omarchy on that channel, from the TV, and try Restart
 # and Shut down on it (agentv-iso's omarchy-update check): rc tries the next
 # Omarchy release before its stable channel serves it. Nightly runs leave it
