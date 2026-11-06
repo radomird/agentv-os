@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import type { Browser, Page } from "playwright-core";
+import type { Browser, Page, Response } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { ROOT, startBox } from "./box.mts";
 
@@ -63,8 +63,25 @@ async function share(kind: "link" | "photo" | "video", body: unknown, query = ""
   return { status: response.status, data: await response.json() };
 }
 
+// The page's own looks at the shares as it starts: one once home is drawn,
+// and one more once it hears the daemon's events. Either can pick up a share
+// sent before it's back, with no event, so a test sends one only after them.
+function looks(page: Page, count: number): Promise<void> {
+  let seen = 0;
+  return new Promise((resolve) => {
+    const heard = (response: Response) => {
+      if (response.request().method() !== "GET" || new URL(response.url()).pathname !== "/api/shared") return;
+      if (++seen < count) return;
+      page.off("response", heard);
+      resolve();
+    };
+    page.on("response", heard);
+  });
+}
+
 async function tv(): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  const settled = looks(page, 2);
   await page.addInitScript(() => {
     const w = window as unknown as { screenRequests: unknown[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
     w.screenRequests = [];
@@ -76,6 +93,7 @@ async function tv(): Promise<Page> {
   });
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
+  await settled;
   return page;
 }
 
@@ -119,9 +137,11 @@ test("S5.10 a share that came before the TV heard the daemon's events is asked a
     await heard;
     await route.continue();
   });
+  const looked = looks(page, 1);
   try {
     await page.goto(`${url}/`);
     await page.waitForSelector(".grid .tile.focused");
+    await looked;
     await share("photo", JPEG, "?credit=photo%20by%20ana");
     await page.waitForTimeout(500);
     assert.equal(await page.locator("#notice.on").count(), 0, "nothing heard yet");
@@ -183,7 +203,7 @@ test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Share
     // Back is Not now: it's answered, and home has the focus again.
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.getElementById("notice")?.classList.contains("on"));
-    assert.ok(await page.locator(".grid .tile.focused").isVisible());
+    await page.waitForSelector(".grid .tile.focused", { timeout: 2000 });
     assert.equal((await (await fetch(`${url}/api/shared`)).json()).shares[0].answered, true);
     // Apps → Shared has it, the photo itself on its tile.
     await go(page, "apps");
