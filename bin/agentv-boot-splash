@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Keep AgenTV's splash on the TV from the boot until home is drawn
-# agentv:args=<quit|release|tv|done>
+# agentv:args=<quit|release|tv|done|desktop>
 # agentv:hidden=true
 
 # Straight to the TV (ADR-060): AgenTV's splash stays from the boot loader
@@ -26,6 +26,10 @@
 #            Quickshell (session/splash/shell.qml) until home is drawn.
 #   done     The screen daemon, once home's page has drawn under it: the
 #            splash goes, and Plymouth is released.
+#   desktop  agentv-session, as it starts Omarchy's desktop instead of the
+#            TV. When that's before home was drawn, say someone left for the
+#            desktop during the splash, Plymouth is released then, since
+#            nothing on Omarchy's desktop would.
 #
 # quit leaves a note while the boot's splash is up, and release takes it
 # away. tv draws only with that note, and so does the TV session's first
@@ -86,8 +90,14 @@ case ${1:-} in
       systemctl start --no-block agentv-boot-splash-release.service 2>/dev/null || true
     fi
     ;;
+  desktop)
+    if [[ -f $NOTE ]]; then
+      say "Omarchy's desktop starts before home was drawn, so plymouth quits"
+      systemctl start --no-block agentv-boot-splash-release.service 2>/dev/null || true
+    fi
+    ;;
   *)
-    echo "Usage: agentv-boot-splash <quit|release|tv|done>" >&2
+    echo "Usage: agentv-boot-splash <quit|release|tv|done|desktop>" >&2
     exit 2
     ;;
 esac
