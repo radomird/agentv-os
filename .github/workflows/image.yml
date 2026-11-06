@@ -211,6 +211,26 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # The commits this run builds, so whoever merges a change that comes
+      # with an agentv-iso or agentv-pkgs branch can see they're still those
+      # branches' heads.
+      - name: The commits it builds
+        id: commits
+        env:
+          OS_REF: ${{ inputs.ref }}
+          ISO_REF: ${{ inputs.iso-ref }}
+          PKGS_REF: ${{ inputs.pkgs-ref }}
+        run: |
+          commit() {
+            local sha
+            sha=$(git -C "$2" rev-parse HEAD)
+            printf "%s [\`%s\`](https://github.com/%s/%s/commit/%s)" "$1" "${sha::7}" "$OWNER" "$1" "$sha"
+            [[ $3 == "$sha" ]] || printf ' (%s)' "$3"
+          }
+          echo "Built from $(commit agentv-os os "$OS_REF"), $(commit agentv-iso iso "$ISO_REF") and $(commit agentv-pkgs pkgs "$PKGS_REF")." |
+            tee -a "$GITHUB_STEP_SUMMARY"
+          echo "iso=$(git -C iso rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+
       - name: Make room on the disk
         run: |
           avail() { df -BG --output=avail / | tail -1 | tr -dc 0-9; }
@@ -472,6 +492,7 @@ jobs:
       OWNER: ${{ github.repository_owner }}
       AGENTV_TEST_LANES: ${{ inputs.lanes || 2 }}
     outputs:
+      iso: ${{ steps.commits.outputs.iso }}
       night: ${{ steps.night.outputs.key }}
       plan: ${{ steps.plan.outputs.parts }}
       ready: ${{ steps.ready.outputs.ready }}
@@ -497,6 +518,26 @@ jobs:
           path: iso
           submodules: recursive
           persist-credentials: false
+
+      # The commits this run builds, so whoever merges a change that comes
+      # with an agentv-iso or agentv-pkgs branch can see they're still those
+      # branches' heads.
+      - name: The commits it builds
+        id: commits
+        env:
+          OS_REF: ${{ inputs.ref }}
+          ISO_REF: ${{ inputs.iso-ref }}
+          PKGS_REF: ${{ inputs.pkgs-ref }}
+        run: |
+          commit() {
+            local sha
+            sha=$(git -C "$2" rev-parse HEAD)
+            printf "%s [\`%s\`](https://github.com/%s/%s/commit/%s)" "$1" "${sha::7}" "$OWNER" "$1" "$sha"
+            [[ $3 == "$sha" ]] || printf ' (%s)' "$3"
+          }
+          echo "Built from $(commit agentv-os os "$OS_REF"), $(commit agentv-iso iso "$ISO_REF") and $(commit agentv-pkgs pkgs "$PKGS_REF")." |
+            tee -a "$GITHUB_STEP_SUMMARY"
+          echo "iso=$(git -C iso rev-parse HEAD)" >>"$GITHUB_OUTPUT"
 
       # These three are the same as the one job's above. Keep them in step.
       - name: Make room on the disk
@@ -778,7 +819,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/agentv-iso
-          ref: ${{ inputs.iso-ref }}
+          # The commit the box job checked out, even if the branch moved since.
+          ref: ${{ needs.box.outputs.iso || inputs.iso-ref }}
           path: iso
           persist-credentials: false
 
