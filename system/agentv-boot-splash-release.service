@@ -1,0 +1,13 @@
+# Straight to the TV (ADR-060): once home has drawn, Plymouth quits and
+# leaves the screen as the TV session drew it. Before that, Plymouth only let
+# go of the screen, so the boot splash stayed up until the session's first
+# frame replaced it. The screen daemon starts this through
+# agentv-boot-splash done, and polkit lets the owner start this one unit
+# (50-agentv-splash.rules).
+
+[Unit]
+Description=AgenTV: Plymouth hands the screen to the TV session
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/agentv-boot-splash release

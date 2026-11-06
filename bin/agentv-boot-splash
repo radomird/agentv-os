@@ -1,0 +1,93 @@
+#!/bin/bash
+
+# agentv:summary=Keep AgenTV's splash on the TV from the boot until home is drawn
+# agentv:args=<quit|release|tv|done>
+# agentv:hidden=true
+
+# Straight to the TV (ADR-060): AgenTV's splash stays from the boot loader
+# until home or setup is drawn, with no console text, black screen or
+# Omarchy screen between them. Each part runs from where it happens:
+#
+#   quit     Plymouth's own quit at boot, as root, through AgenTV's drop-in
+#            for plymouth-quit.service. Plymouth lets go of the screen but
+#            keeps running, so its last frame stays up while the login
+#            manager starts the TV session, and the session's first frame
+#            replaces it. Plymouth quitting outright would hand the screen
+#            back to the kernel's console, which is black. It's the way GDM
+#            hands over from Plymouth.
+#   release  Once home has drawn, as root, through
+#            agentv-boot-splash-release.service, which done starts:
+#            Plymouth quits, leaving the screen as the TV session drew it.
+#            Any sooner, and it can quit before the session's first frame,
+#            which turns the screen black until that frame comes. If
+#            nothing releases it, Plymouth quits by itself two minutes later.
+#   tv       The TV session's Hyprland, as it starts (session/hypr.lua). The
+#            same logo on the same background, drawn over everything by
+#            Quickshell (session/splash/shell.qml) until home is drawn.
+#   done     The screen daemon, once home's page has drawn under it: the
+#            splash goes, and Plymouth is released.
+#
+# quit leaves a note while the boot's splash is up, and release takes it
+# away. tv draws only with that note, and so does the TV session's first
+# frame, which takes the splash's colour (session/hypr.lua). So a TV session
+# started again later in the same boot, after Omarchy's desktop say, starts
+# without a splash.
+
+set -euo pipefail
+
+AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
+NOTE=${AGENTV_BOOT_SPLASH_NOTE:-/run/agentv-boot-splash}
+THEME=${AGENTV_SPLASH_THEME:-/usr/share/plymouth/themes/omarchy}
+
+# The splash's background as Plymouth draws it, from the colours omarchy
+# plymouth set wrote into the theme's script, as #rrggbb.
+background() {
+  sed -n 's/^Window\.SetBackgroundTopColor(\(.*\));.*/\1/p' "$THEME/omarchy.script" 2>/dev/null | head -n 1 |
+    awk -F', *' 'NF == 3 { printf "#%02x%02x%02x\n", $1 * 255 + 0.5, $2 * 255 + 0.5, $3 * 255 + 0.5 }'
+}
+
+# A line in the journal, for the image check and for anyone asking why.
+say() {
+  logger -t agentv-boot-splash -- "$*" 2>/dev/null || true
+}
+
+case ${1:-} in
+  quit)
+    : >"$NOTE"
+    say "plymouth lets go of the screen, keeping the splash up for the TV session"
+    # Quits by itself if the TV session never takes over, such as when the
+    # login manager doesn't start.
+    systemd-run --no-block --quiet --collect --on-active=120 --unit=agentv-boot-splash-fallback \
+      /usr/bin/plymouth quit >/dev/null 2>&1 || true
+    exec plymouth deactivate
+    ;;
+  release)
+    rm -f "$NOTE"
+    if plymouth --ping 2>/dev/null; then
+      say "the TV session has the screen, so plymouth quits"
+      exec plymouth quit --retain-splash
+    fi
+    ;;
+  tv)
+    [[ -f $NOTE ]] || exit 0
+    say "the TV session starts, with the splash over it"
+    colour=$(background)
+    export AGENTV_SPLASH_BACKGROUND=${colour:-#1a1b26}
+    export AGENTV_SPLASH_LOGO="$THEME/logo.png"
+    exec quickshell -p "$AGENTV_PATH/session/splash"
+    ;;
+  done)
+    if answer=$(qs ipc -n -p "$AGENTV_PATH/session/splash" call splash "done" 2>&1); then
+      say "home is drawn, so the TV session's splash goes"
+    elif [[ -f $NOTE ]]; then
+      say "the TV session's splash didn't answer: ${answer:-nothing}"
+    fi
+    if [[ -f $NOTE ]]; then
+      systemctl start --no-block agentv-boot-splash-release.service 2>/dev/null || true
+    fi
+    ;;
+  *)
+    echo "Usage: agentv-boot-splash <quit|release|tv|done>" >&2
+    exit 2
+    ;;
+esac

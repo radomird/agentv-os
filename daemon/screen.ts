@@ -84,6 +84,8 @@ export const HOME_URL = "http://127.0.0.1:3000/";
 // True once home's page has loaded and its own script has run: the
 // launcher's start, or the welcome page's.
 export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" in window || "agentvWelcome" in window)`;
+// Resolves once the page has drawn two frames.
+export const TWO_FRAMES = "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))";
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
 // The daemon's filter for home's Chromium (daemon/net-filter.ts).
 export const HOME_PROXY = "http://127.0.0.1:3005";
@@ -177,6 +179,9 @@ export interface Launcher {
   pinCheck(action: string, grant?: string): Promise<boolean>;
   // Locks the TV until the PIN is entered, once it has been off for a while.
   lock(): Promise<void>;
+  // Ends AgenTV's splash, which covers the TV from the session's start
+  // until home has drawn, when the boot kept it (ADR-060).
+  splashDone?(): void;
   // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
   // close the windows first. False when it couldn't start.
   power(what: "restart" | "shutdown"): Promise<boolean>;
@@ -888,12 +893,26 @@ export class Screen {
     while (Date.now() - started < this.homeCheckMs) {
       if (this.ending || this.apps.get("home") !== app) return;
       const up = await Promise.race([app.cdp.evaluate(HOME_URL, HOME_UP).catch(() => false), sleep(every).then(() => false)]);
-      if (up === true) return;
+      if (up === true) {
+        void this.homeDrawn(app);
+        return;
+      }
       await sleep(every);
     }
     if (this.ending || this.apps.get("home") !== app) return;
     this.log(`the home screen's page didn't come up in ${Math.round(this.homeCheckMs / 1000)} s; starting it again`);
     app.stop();
+  }
+
+  // Home's page is up: once it has drawn a frame or two, under AgenTV's
+  // splash when the boot kept it (ADR-060), the splash goes and home shows,
+  // whole. A page that draws no frame lets it go after two seconds anyway.
+  private async homeDrawn(app: App): Promise<void> {
+    if (!app.cdp) return;
+    await Promise.race([app.cdp.evaluate(HOME_URL, TWO_FRAMES).catch(() => null), sleep(2000)]);
+    if (this.ending || this.apps.get("home") !== app) return;
+    this.log("home's page has drawn, so the splash goes");
+    this.launcher.splashDone?.();
   }
 
   // Gives the home screen window.agentvScreen, over its DevTools pipe, once
@@ -2242,6 +2261,12 @@ export const launcher: Launcher = {
       { stdio: ["ignore", "ignore", "inherit"], detached: true },
     );
     return track("steam", child, true);
+  },
+
+  splashDone() {
+    spawn("agentv-boot-splash", ["done"], { stdio: "ignore", detached: true })
+      .on("error", () => {})
+      .unref();
   },
 
   corner(appInFront) {

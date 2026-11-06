@@ -14,7 +14,7 @@ import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -201,8 +201,12 @@ class FakeLauncher implements Launcher {
   steamInstalled = true;
   browser = new FakeBrowser();
   homeBrowser = new FakeBrowser();
+  splashes = 0;
 
   async homeReady() {}
+  splashDone() {
+    this.splashes++;
+  }
   private launch(role: Role, url?: string) {
     const app = new FakeApp(role, this.pid++);
     this.started.push({ role, app, url });
@@ -415,6 +419,16 @@ test("S1.1 home that comes up stays as it is", async () => {
   await sleep(120);
   assert.equal(launcher.last("home").stopped, false);
   assert.ok(!lines.some((line) => /didn't come up/.test(line)), lines.join("\n"));
+});
+
+test("T2.1 AgenTV's splash goes once home's page is up and has drawn, and not before", async () => {
+  const { launcher } = await tv({ homeCheckMs: 500, homeUp: false });
+  await sleep(150);
+  assert.equal(launcher.splashes, 0, "the splash stays while home's page isn't up");
+  launcher.homeBrowser.up = true;
+  await sleep(250);
+  assert.ok(launcher.homeBrowser.evaluated.includes(TWO_FRAMES), "it waits for home to draw");
+  assert.equal(launcher.splashes, 1);
 });
 
 test("S1.1 home whose page doesn't come up starts again, so the TV isn't left blank", async () => {

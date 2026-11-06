@@ -34,6 +34,15 @@ test("S2.18 the owner (wheel) may restart and power off from the TV session, wit
   assert.equal(power("org.freedesktop.systemd1.manage-units", ["wheel"], { verb: "start", unit: "poweroff.target" }), null);
 });
 
+test("T2.1 the owner may start the boot splash's release from the TV session, and nothing else with it", () => {
+  const splash = rules("50-agentv-splash.rules");
+  const unit = (verb: string, name: string, groups = ["wheel"]) => splash("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
+  assert.equal(unit("start", "agentv-boot-splash-release.service"), YES);
+  assert.equal(unit("start", "agentv-boot-splash-release.service", ["users"]), null);
+  assert.equal(unit("stop", "agentv-boot-splash-release.service"), null);
+  assert.equal(unit("start", "plymouth-quit.service"), null);
+});
+
 test("the update rule still allows only starting the three update units", () => {
   const update = rules("50-agentv-update.rules");
   const unit = (verb: string, name: string, groups = ["wheel"]) => update("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
