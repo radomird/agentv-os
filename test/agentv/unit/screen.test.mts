@@ -10,7 +10,8 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
+import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
+import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
@@ -116,6 +117,8 @@ class FakeBrowser implements DevTools {
     return targetId;
   }
   async bind() {}
+  // The focus nudge an app's page gets, for a test that stands one in.
+  bindIn?: DevTools["bindIn"];
   // What the page answers, for a test that needs more than an empty object.
   answer?: (expression: string) => object | undefined;
   async evaluate(_prefix: string, expression: string) {
@@ -1103,6 +1106,66 @@ test("ADR-037 the daemon hears what's in front and whether something plays when 
     { front: "app", playing: true },
     { front: "home", playing: false },
   ]);
+});
+
+test("T8.1 an app's page says when its focus moves, and the daemon hears the field in front with the app, so the phone's keyboard comes up", async () => {
+  const t = await tv();
+  const nudges = new Map<string, () => void>();
+  t.launcher.browser.bindIn = async (target, name, world, handler) => {
+    assert.equal(name, FOCUS_BINDING);
+    assert.equal(world, REMOTE_WORLD);
+    nudges.set(target, () => handler(""));
+  };
+  const page = await openApp(t, "agentv.tube", "0xb");
+  await sleep(20);
+  assert.ok(nudges.has(page), "the page got the nudge with its ring and Back");
+  let field: object | null = null;
+  const evaluateIn = t.launcher.browser.evaluateIn.bind(t.launcher.browser);
+  t.launcher.browser.evaluateIn = async (target: string, expression: string) => (expression === FIELD ? field : evaluateIn(target, expression));
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "app", playing: false });
+  // Its search gets the focus: the page says so, and the daemon hears at once.
+  field = { kind: "search", label: "search", value: "" };
+  const told = t.launcher.contexts.length;
+  nudges.get(page)!();
+  for (let i = 0; i < 100 && t.launcher.contexts.length === told; i++) await sleep(5);
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "app", playing: false, appField: { kind: "search", label: "search", value: "", app: "agentv.tube" } });
+  assert.equal(t.screen.typingFront()?.id, "agentv.tube");
+  // Home in front: its field is its own to say.
+  await t.screen.handle({ cmd: "home" });
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "home", playing: false });
+  assert.deepEqual([t.screen.typingFront()?.kind, t.screen.typingFront()?.id], ["page", "home"]);
+  t.screen.stop();
+});
+
+test("T8.2 the phone's play and pause reaches the app in front, with its own playback calls, or home with Music", async () => {
+  const calls: string[] = [];
+  const playback: Playback = { opened() {}, closed() {}, call: async (id, path) => void calls.push(`${id} ${path}`) };
+  const music = { handle: async (request: Record<string, unknown>) => ({ ok: true, op: request.op }), scan: async () => {} };
+  const t = await tv({ playback, music });
+  const home = t.screen.playbackFront();
+  assert.equal(home?.kind, "home");
+  assert.deepEqual(await (home as { music: (r: object) => Promise<object> }).music({ op: "now" }), { ok: true, op: "now" });
+  await openApp(t, "agentv.tube", "0xb");
+  const front = t.screen.playbackFront();
+  assert.deepEqual([front?.kind, (front as { id: string }).id], ["page", "agentv.tube"]);
+  await (front as { app: (path: string) => Promise<unknown> }).app("playback.pause");
+  assert.deepEqual(calls, ["agentv.tube playback.pause"]);
+  t.screen.stop();
+});
+
+test("T8.3 Settings and Apps from the phone's menu bring home in front of the app first", async () => {
+  const t = await tv();
+  await openApp(t, "agentv.tube", "0xb");
+  assert.deepEqual(await t.screen.phonePage("settings"), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes('go("settings")')));
+  await openApp(t, "agentv.player", "0xc");
+  assert.deepEqual(await t.screen.phonePage("apps"), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes('go("apps")')));
+  t.screen.stop();
 });
 
 test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it again plays it where it was", async () => {

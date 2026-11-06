@@ -461,12 +461,16 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // Which voice says the answers, against what this page drew: a Settings
+  // drawn again while another one's ask waited has no voice line on it yet,
+  // though the other ask already knew the voice.
+  const voiceDrawn = JSON.stringify(voice);
   void daemon
     .voice()
     .then((found) => {
-      const changed = JSON.stringify(found) !== JSON.stringify(voice);
+      const changed = JSON.stringify(found) !== voiceDrawn;
       voice = found;
-      if (!changed || menu.querySelector(".open")?.getAttribute("data-key") !== "sound") return;
+      if (!changed || !menu.isConnected || menu.querySelector(".open")?.getAttribute("data-key") !== "sound") return;
       if (!panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "sound")!);
         return;

@@ -62,8 +62,10 @@ import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import type { Item } from "../apps/contract/contract.ts";
-import { RemoteInput } from "./remote.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { RemoteInput, sendInput } from "./remote.ts";
+import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
+import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
 import { answerSay, sayHosts } from "./say-watch.ts";
 import { VoicePlayer } from "./voice-play.ts";
@@ -196,8 +198,12 @@ export interface Launcher {
   // The terminal screensaver, Omarchy's effect in a foot of its own.
   screensaver(): App;
   // Tells AgenTV's daemon what's in front and whether something plays, for
-  // the phone's remote to follow (ADR-037).
-  tvContext(change: { front: "home" | "app"; playing: boolean }): Promise<void>;
+  // the phone's remote to follow (ADR-037), and the field with the focus in
+  // the app in front, when there is one (ADR-065).
+  tvContext(change: { front: "home" | "app"; playing: boolean; appField?: object }): Promise<void>;
+  // The typing bar over the app in front, with what the phone is typing, or
+  // gone with null (ADR-065). Home draws its own.
+  typingBar?(bar: Bar | null): Promise<void>;
   // Stops Omarchy's shell, its bar and everything else it draws, and
   // nothing of AgenTV's: the shell from $OMARCHY_PATH/shell, by its config.
   stopOmarchyShell(): Promise<void>;
@@ -251,6 +257,8 @@ export interface Playback {
   opened(id: string, page?: PageBroker): void;
   closed(id: string): void;
   play?(id: string, item: unknown): void;
+  // One of the app's playback calls, for the phone's play and pause.
+  call?(id: string, path: string): Promise<unknown>;
 }
 
 // What asks an app with signIn whether it's signed in (signin.ts).
@@ -382,7 +390,7 @@ export class Screen {
   private tvWatch: ReturnType<typeof setInterval> | null = null;
   private contextWatch: ReturnType<typeof setInterval> | null = null;
   private contextMs: number;
-  private context = { said: "", at: 0, busy: false };
+  private context = { said: "", at: 0, busy: false, again: false };
   private ending = false;
   private stoppingShell = false;
   private chain: Promise<void> = Promise.resolve();
@@ -468,9 +476,26 @@ export class Screen {
   // What's in front, an app or home, and whether something plays: an app's
   // page or Music. The daemon hears when it changes, and every 30 s besides,
   // so a daemon that restarted hears it too (ADR-037).
+  //
+  // An app's page says when its focus moves (remote-page.ts), and this looks
+  // again then: a look asked for while one is going runs once it's done.
   async tellContext(): Promise<void> {
-    if (this.context.busy) return;
+    if (this.context.busy) {
+      this.context.again = true;
+      return;
+    }
     this.context.busy = true;
+    try {
+      do {
+        this.context.again = false;
+        await this.tellContextOnce();
+      } while (this.context.again);
+    } finally {
+      this.context.busy = false;
+    }
+  }
+
+  private async tellContextOnce(): Promise<void> {
     try {
       const front = this.front();
       const app = Boolean(front && front.role !== "home") && !this.ambient;
@@ -481,7 +506,8 @@ export class Screen {
         const now = (await this.music.handle({ op: "now" }).catch(() => null)) as { now?: { playing?: boolean } | null } | null;
         playing = now?.now?.playing === true;
       }
-      const change = { front: app ? ("app" as const) : ("home" as const), playing };
+      const appField = app ? await this.appField() : null;
+      const change = { front: app ? ("app" as const) : ("home" as const), playing, ...(appField ? { appField } : {}) };
       const said = JSON.stringify(change);
       if (said === this.context.said && this.now() - this.context.at < 30_000) return;
       await this.launcher.tvContext(change);
@@ -489,9 +515,65 @@ export class Screen {
       this.context.at = this.now();
     } catch {
       // The daemon isn't there right now; it hears at the next look.
-    } finally {
-      this.context.busy = false;
     }
+  }
+
+  // The field with the focus in the page of the app in front, with the app,
+  // or null: a native app's can't be seen.
+  private async appField(): Promise<object | null> {
+    const front = this.typingFront();
+    if (front?.kind !== "page" || !front.overlay) return null;
+    const field = await Promise.race([front.evaluate(FIELD).catch(() => null), sleep(500).then(() => null)]);
+    return field && typeof field === "object" ? { ...field, app: front.id } : null;
+  }
+
+  // What's in front for the phone's typing (daemon/remote-text.ts): home's
+  // page, an app's page or the share browser's, to type in through
+  // Chromium, or a native window, for keystrokes. Nothing while the ambient
+  // screen is up.
+  typingFront(): TypingFront {
+    if (this.ambient) return null;
+    const front = this.front();
+    if (!front || front.role === "home") {
+      const home = this.apps.get("home")?.cdp;
+      return home ? { kind: "page", id: "home", overlay: false, evaluate: (expression) => home.evaluate(HOME_URL, expression) } : null;
+    }
+    if (front.role === "screensaver") return null;
+    const web = this.apps.get("web")?.cdp;
+    const entry = this.opens.find((o) => o.address === front.address && o.target);
+    if (front.role === "web" && web && entry?.target) {
+      const target = entry.target;
+      return { kind: "page", id: entry.id, overlay: true, evaluate: (expression) => web.evaluateIn(target, expression) };
+    }
+    const share = this.apps.get("share")?.cdp;
+    if (front.role === "share" && share) {
+      return {
+        kind: "page",
+        id: "share",
+        overlay: true,
+        evaluate: async (expression) => {
+          const page = (await share.pages()).at(-1);
+          if (!page) throw new Error("the share browser has no page");
+          return share.evaluateIn(page.targetId, expression);
+        },
+      };
+    }
+    return { kind: "native", id: front.address, overlay: true };
+  }
+
+  // What's in front for the phone's play and pause (daemon/remote-play.ts):
+  // an app's page, with the app's own playback calls, home with its player
+  // and Music, or a native window, for the media key.
+  playbackFront(): PlaybackFront {
+    const front = this.typingFront();
+    if (!front || front.kind === "native") return front && { kind: "native", id: front.id };
+    if (front.id === "home") {
+      const music = this.music;
+      return { kind: "home", evaluate: front.evaluate, music: music ? (request) => music.handle(request) : undefined };
+    }
+    const playback = this.playback;
+    const id = front.id;
+    return { kind: "page", id, evaluate: front.evaluate, app: playback?.call ? (path) => playback.call!(id, path) : undefined };
   }
 
   // Stops the timers, for the tests.
@@ -1015,6 +1097,12 @@ export class Screen {
   async settings(section: string): Promise<object> {
     if (!/^[a-z-]*$/.test(section)) return { ok: false, error: "which section of settings" };
     return this.goHome(section ? `settings/${section}` : "settings", "agentv screen settings");
+  }
+
+  // Apps or Settings from the phone's menu: home comes in front of an app
+  // first, so the page isn't drawn out of sight (ADR-065).
+  phonePage(route: "apps" | "settings"): Promise<object> {
+    return this.goHome(route, "the phone");
   }
 
   // Apps on the TV, or its add an app (agentv screen apps [add]), as from
@@ -1748,6 +1836,8 @@ export class Screen {
   // shared link's page gets SHARED_PAGE, with no Back of its own.
   private async remotePage(cdp: DevTools, target: string, source = REMOTE_PAGE): Promise<void> {
     await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
+    // Its focus moving: the phone's keyboard may come up for it (ADR-065).
+    await cdp.bindIn?.(target, FOCUS_BINDING, REMOTE_WORLD, () => void this.tellContext()).catch((error: Error) => this.log(`that page can't say where its focus is: ${error.message}`));
   }
 
   openSteam(id = "steam"): Promise<object> {
@@ -2046,7 +2136,6 @@ function chromium(): string {
 }
 
 // Whether an audio or video element in a page plays.
-const MEDIA_PLAYING = `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`;
 
 const CHROMIUM_FLAGS = [
   "--ozone-platform=wayland",
@@ -2225,6 +2314,19 @@ export const launcher: Launcher = {
     return new Promise((resolve, reject) => {
       execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
+    });
+  },
+
+  // The phone's typing bar over the app in front (ADR-065), in the theme's
+  // colours. A password comes as dots already, from the daemon.
+  async typingBar(bar) {
+    const args = bar === null ? ["typing", "hide"] : ["typing", "show", bar.from, bar.text, String(bar.password), ...(await barLook()).slice(0, 3)];
+    return new Promise((resolve, reject) => {
+      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error("the overlay didn't answer"));
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
         else resolve();
       });
@@ -2638,11 +2740,24 @@ async function main(): Promise<void> {
   sound.start();
   const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
-  // Install now from a phone, which the daemon let past the PIN.
+  // Install now from a phone, which the daemon let past the PIN. What the
+  // new remote types goes into the field in front as it's typed (ADR-065).
+  const typing = new PhoneTyping({ front: () => screen.typingFront(), keys: (request) => sendInput(request), bar: (bar) => launcher.typingBar!(bar) });
+  const playing = new PhonePlayback({ front: () => screen.playbackFront(), keys: (request) => sendInput(request) });
   new RemoteInput({
     url: `${HOME_URL}api/remote`,
     command: async (cmd) => {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
+      // The phone's menu (ADR-065): home in front, then the page.
+      if (cmd === "apps" || cmd === "settings") await screen.phonePage(cmd);
+    },
+    ask: async (ask) => {
+      if (ask.kind === "text") return typing.text(ask.value, ask.caret, ask.bar);
+      if (ask.kind === "done") return typing.done();
+      // Play and pause, then the phone's remote hears at once what plays.
+      const answer = ask.action === "next" ? await playing.next() : await playing.toggle();
+      void screen.tellContext();
+      return answer;
     },
   }).start();
   // Stage B's asks to see a service's signed-in pages, from the builder.
