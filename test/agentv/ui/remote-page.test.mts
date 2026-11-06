@@ -258,6 +258,21 @@ test("T8.4 a title's page with a trailer over the screen is no player: Back come
   await cdp.close(page.target);
 });
 
+test("T8.4 a full-screen player left after the screen daemon's word on the tap arrived still leaves", async () => {
+  // On the box the screen daemon can hear the tap before Chromium has ended
+  // full screen in the page.
+  const page = await playing("?full");
+  const full = () => cdp.evaluateIn(page.target, "!!document.fullscreenElement");
+  for (let tries = 0; tries < 30 && !(await full()); tries++) await sleep(100);
+  assert.equal(await full(), true, "the player went full screen");
+  await page.tapped();
+  await page.press("Escape");
+  await page.until((s) => s.page === "title.html?full", "the player leaves once full screen ends");
+  await page.press("Escape");
+  await page.until((s) => s.page === "desktop.html", "and Back goes on back from there");
+  await cdp.close(page.target);
+});
+
 test("a tap the page took for a hold still goes back once the screen daemon says it was a tap", async () => {
   // On a busy box the page can see a second between the key's press and
   // its release while Hyprland saw a tap. The screen daemon's word counts.

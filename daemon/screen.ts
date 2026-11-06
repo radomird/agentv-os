@@ -1208,11 +1208,15 @@ export class Screen {
       const first = !this.backPressed && at > this.backUp + BACK_SLACK_MS;
       this.backPressed = false;
       this.backUp = Math.max(this.backUp, at);
+      // A tap: its press is under way and short of the hold, or it hasn't
+      // arrived yet.
+      let tapped = first;
       if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
-        void this.backTapped();
+        tapped = true;
       }
+      if (tapped) void this.backTapped();
       if (first && this.front()?.role === "share") void this.closeShare("back");
       return { ok: true };
     }

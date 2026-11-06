@@ -1298,13 +1298,20 @@ test("T8.4 a tap on Back tells the web app's page it was a tap, for one it didn'
   await sleep(150);
   assert.deepEqual(asked, [[target, REMOTE_WORLD, BACK_TAP]], "the page in front hears the tap, in its own world");
   assert.ok(t.lines.some((line) => line.includes("left the player")), t.lines.join("\n"));
+  // Hyprland reports the press and the release from two processes, so the
+  // release can arrive first. That's a tap too.
+  const later = Date.now();
+  t.screen.back("up", later + 7);
+  t.screen.back("down", later + 10);
+  await sleep(150);
+  assert.equal(asked.length, 2, "a tap whose release arrived first tells the page too");
   t.screen.back("down", Date.now());
   await sleep(150);
   await t.screen.idle();
   assert.equal(t.screen.front()?.role, "home");
   t.screen.back("up", Date.now());
   await sleep(50);
-  assert.equal(asked.length, 1, "a hold went home, and the page heard nothing");
+  assert.equal(asked.length, 2, "a hold went home, and the page heard nothing");
 });
 
 test("S2.16 a tap whose release read the clock a moment before its press is still a tap", async () => {

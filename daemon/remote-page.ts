@@ -33,6 +33,8 @@
 // BACK_TAP here. The page acts on a tap as it sees it, so this is for the
 // taps it doesn't: one whose release it saw a second late on a busy box,
 // and one Chromium kept to leave full screen, which never reaches the page.
+// The word can come before the key, or before full screen ends, so it waits
+// a moment for them.
 //
 // A link shared from a phone opens in the share browser (ADR-050), which
 // gets the same spatial navigation and SHARED_PAGE: the ring without Back,
@@ -70,6 +72,10 @@ const PLAYER_SHARE = 0.8;
 // How long after a press the screen daemon's word on it still counts, in
 // milliseconds.
 const TAP_WAIT_MS = 4000;
+
+// How long the screen daemon's word waits for the key or full screen ending
+// that it came before, in milliseconds.
+const TAP_LATE_MS = 1500;
 
 // holdMs: the screen daemon's hold on Back that goes home. back: whether a
 // tap on Back goes back a page.
@@ -279,6 +285,10 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     goBack(false);
   };
 
+  // The screen daemon's word on a tap that nothing here has explained yet:
+  // its key, or full screen ending, can come a moment after it.
+  let tapAt = -Infinity;
+
   // Full screen that ends without a key reaching the page: Chromium keeps
   // the Escape that leaves it.
   let fullPlayer = false;
@@ -289,10 +299,18 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
       if (document.fullscreenElement) {
         fullPlayer = inPlayer();
         if (fullPlayer) notePlayer();
-      } else {
-        leftFull = { at: performance.now(), player: fullPlayer };
-        fullPlayer = false;
+        return;
       }
+      const now = performance.now();
+      const player = fullPlayer;
+      fullPlayer = false;
+      if (player && now - tapAt < ${TAP_LATE_MS}) {
+        tapAt = -Infinity;
+        settledAt = now;
+        leavePlayer();
+        return;
+      }
+      leftFull = { at: now, player };
     },
     true,
   );
@@ -321,6 +339,8 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
         leavePlayer();
         return "full screen";
       }
+      // A press the page has just settled was this tap.
+      if (now - settledAt >= ${TAP_LATE_MS}) tapAt = now;
       return null;
     };
   }
@@ -333,7 +353,10 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
         // What's up is read now, since the press itself can close it.
         const player = inPlayer();
         if (player) notePlayer();
-        backDown = { event, busy: busy(), player, at: performance.now(), tap: false };
+        // The screen daemon may have had its word on this tap already.
+        const tap = performance.now() - tapAt < ${TAP_LATE_MS};
+        tapAt = -Infinity;
+        backDown = { event, busy: busy(), player, at: performance.now(), tap };
         held = null;
         return;
       }
