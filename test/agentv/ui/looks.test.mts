@@ -5,7 +5,9 @@
 // - T5.1: home, Apps, Settings, the built-in apps and the ambient screen in
 //   each look, in a dark and a light theme, at each size, with nothing cut
 //   off or off the screen and every piece of text readable;
-// - T5.2: there's no all apps tile, and Apps is one press from home.
+// - T5.2: there's no all apps tile, and Apps is one press from home;
+// - T5.3: setup's look step frames each look's preview, and the preview is
+//   home itself in the same look, theme and size, to the pixel.
 
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -85,6 +87,13 @@ function go(page: Page, route: string): Promise<void> {
   return page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
 }
 
+// Waits until nothing on the page is still moving, other than what moves for
+// good. A page slides in as it opens, and on a busy machine the slide can
+// start late, as when Themes and backgrounds loads its three previews.
+async function settled(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
+}
+
 // What's cut off or off the screen: an element outside the canvas, or one
 // that clips what's in it, other than text that ends in an ellipsis and
 // rows that scroll (data-scroll).
@@ -145,6 +154,15 @@ const SCREENS: [string, (page: Page) => Promise<void>][] = [
   ["music", (page) => go(page, "music")],
   // An app's setup, with the servers on your network (track 10's list).
   ["an app's setup", (page) => go(page, "app-setup/someone.radio")],
+  // Its three previews are home itself, which T5.3 checks to the pixel. Here
+  // they're blank, since the checks skip what's in them, and loading three
+  // more launchers each time slows every other test running beside this one.
+  ["settings → themes and backgrounds", async (page) => {
+    await page.route(/\/\?preview/, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html>" }));
+    await go(page, "settings/look");
+  }],
+  ["weather", (page) => go(page, "weather")],
+  ["new this week", (page) => go(page, "new")],
   ["the ambient screen", (page) => page.evaluate(() => (window as unknown as { agentvAmbient(on: boolean): void }).agentvAmbient(true))],
   // Last, since it changes home: the built-ins at their other sizes.
   ["home with small and large tiles", async (page) => {
@@ -234,6 +252,7 @@ for (const look of LOOKS) {
           try {
             await open(page);
             await page.waitForTimeout(400);
+            await settled(page);
             for (const one of await overflows(page)) problems.push(`${theme}, ${where}: ${one}`);
             for (const one of await shortfalls(page)) problems.push(`${theme}, ${where}: "${one.text}" reads at ${one.ratio} of ${one.needs} (${one.color} on ${one.behind})`);
           } finally {
@@ -270,4 +289,95 @@ test("Terminal at more on screen has a 5 × 4 grid with a layout of its own", as
   assert.deepEqual((await (await fetch(`${url}/api/home`)).json()).layout, four, "the 4 × 3 layout stays as it was");
   const refused = await fetch(`${url}/api/layout`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: wide }) });
   assert.equal(refused.status, 400, "the fifth column isn't on the 4 × 3 grid");
+});
+
+// How much of two screenshots differs, from 0 to 1, drawn in the browser.
+async function difference(a: Buffer, b: Buffer): Promise<number> {
+  const page = await browser.newPage();
+  try {
+    return await page.evaluate(async ([one, two]) => {
+      const load = (data: string) =>
+        new Promise<HTMLImageElement>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.src = `data:image/png;base64,${data}`;
+        });
+      const [x, y] = await Promise.all([load(one), load(two)]);
+      if (x.width !== y.width || x.height !== y.height) return 1;
+      const pixels = (img: HTMLImageElement) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const draw = canvas.getContext("2d")!;
+        draw.drawImage(img, 0, 0);
+        return draw.getImageData(0, 0, img.width, img.height).data;
+      };
+      const [p, q] = [pixels(x), pixels(y)];
+      let off = 0;
+      for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 24) off++;
+      return off / (p.length / 4);
+    }, [a.toString("base64"), b.toString("base64")]);
+  } finally {
+    await page.close();
+  }
+}
+
+// A page at a size's canvas, with the clock held still, as home or as its
+// preview, once it's had time to draw.
+async function shot(address: string, size: Size): Promise<Buffer> {
+  const width = SIZES[size];
+  const page = await browser.newPage({ viewport: { width, height: Math.round((width * 9) / 16) } });
+  try {
+    await page.clock.setFixedTime(new Date("2026-11-08T20:47:00"));
+    await page.goto(`${url}${address}`);
+    await page.waitForSelector("html[data-look] #page .focused");
+    await page.waitForTimeout(1500);
+    return await page.screenshot();
+  } finally {
+    await page.close();
+  }
+}
+
+test("T5.3 setup's look step shows each look's preview, and the preview is home in that look, theme and size", async () => {
+  await builtinsOnHome();
+  await useTheme("tokyo-night");
+  // Setup, at the look step: everything before it finished.
+  const at = new Date().toISOString();
+  const finished = Object.fromEntries(["welcome", "ready", "country", "ai", "people", "goal", "apps"].map((step) => [step, at]));
+  writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false, step: "theme", finished, goal: "streaming" }));
+  try {
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+    try {
+      await page.goto(`${url}/`);
+      await page.waitForSelector(".setup-look .look-card.focused");
+      const frames = await page.$$eval(".setup-look .look-frame-page", (els) => els.map((el) => new URL((el as HTMLIFrameElement).src).search));
+      assert.deepEqual(frames, LOOKS.map((look) => `?preview&look=${look}&size=standard`));
+      // Picking one sets the look and goes on to the theme.
+      await page.locator('.setup-look [data-look="cinema"]').click();
+      await page.waitForSelector(".looks-all");
+      assert.equal((await (await fetch(`${url}/api/look`)).json()).look, "cinema");
+      assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme", "the theme is still to pick, in the same step");
+    } finally {
+      await page.close();
+    }
+  } finally {
+    writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true }));
+  }
+  // The preview is home itself, in each look and size, dark and light.
+  const off: string[] = [];
+  for (const theme of THEMES) {
+    await useTheme(theme);
+    for (const look of LOOKS) {
+      await useLook(look);
+      for (const size of Object.keys(SIZES) as Size[]) {
+        if (theme !== THEMES[0] && size !== "standard") continue;
+        const home = await shot(`/?size=${size}`, size);
+        const preview = await shot(`/?preview&look=${look}&size=${size}&theme=${theme}`, size);
+        const differs = await difference(home, preview);
+        if (differs > 0.002) off.push(`${look} at ${size} in ${theme}: ${(differs * 100).toFixed(2)}% of the screen differs`);
+      }
+    }
+  }
+  await useTheme("tokyo-night");
+  assert.deepEqual(off, []);
 });

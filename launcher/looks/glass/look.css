@@ -724,3 +724,23 @@ body.with-backdrop {
 :root[data-size="larger"] .forecast-week {
   gap: 20px;
 }
+
+/* The looks' previews, in Settings and setup: rounded, and the one in use
+   ringed in the words' colour. */
+.look-card {
+  border-radius: 24px;
+}
+
+.look-frame {
+  border: none;
+  border-radius: 20px;
+}
+
+.look-card.picked .look-frame {
+  outline: 3px solid var(--bright-foreground);
+  outline-offset: 4px;
+}
+
+.look-card-line {
+  color: var(--foreground);
+}

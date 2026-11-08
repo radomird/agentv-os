@@ -30,6 +30,8 @@ import { Soundtrack } from "./music.ts";
 import { ready } from "./ready.ts";
 import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
+import { look } from "./look.ts";
+import { featureOn } from "../launcher/features.ts";
 import { welcome, wifi } from "./welcome.ts";
 
 export interface View {
@@ -258,7 +260,8 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "apps/network") return serverPage(ctx);
   if (to === "theme/own") return addYourOwn(ctx, "theme");
   if (to === "apps") return apps(ctx);
-  if (to === "theme") return theme(ctx);
+  if (to === "theme/colours") return theme(ctx);
+  if (to === "theme") return featureOn("looks").then((on) => (on ? look(ctx) : theme(ctx)));
   if (to === "background/photos") return photos(ctx);
   if (to === "background/art") return art(ctx);
   if (to === "background/folder") return folder(ctx);

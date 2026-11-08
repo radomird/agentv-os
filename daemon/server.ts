@@ -3564,7 +3564,10 @@ export class Daemon {
       const setup = await this.setup();
       const home = join("launcher", "index.html");
       const hasHome = await stat(join(this.options.root, home)).then((info) => info.isFile(), () => false);
-      await this.file(response, setup.done && hasHome ? home : join("setup", "index.html"));
+      // A look's preview is home itself, read-only, even while setup runs,
+      // since setup's look step shows it (ADR-063).
+      const preview = url.searchParams.has("preview");
+      await this.file(response, (setup.done || preview) && hasHome ? home : join("setup", "index.html"));
       return;
     }
 
