@@ -169,6 +169,9 @@ export interface DisplayState {
   scale: number | null;
   canvas: [number, number];
   sizes: Size[];
+  // The TV's full resolution, when it's more than 1080p, for picking it
+  // over 1080p output: "3840x2160@60". Null otherwise.
+  full: string | null;
 }
 
 export interface DisplayOptions {
@@ -249,15 +252,17 @@ export class Display {
     const saved = await this.read();
     const live = saved.tv?.live ?? null;
     if (!(await this.o.on())) {
-      return { size: "standard", output: "auto", mode: live?.mode ?? null, scale: live?.scale ?? null, canvas: [DESIGN[0], DESIGN[1]], sizes: [] };
+      return { size: "standard", output: "auto", mode: live?.mode ?? null, scale: live?.scale ?? null, canvas: [DESIGN[0], DESIGN[1]], sizes: [], full: null };
     }
     const output = await this.output(saved);
     const planned = await this.plan(saved);
     if (!planned) {
       const size = fitSize(saved.size ?? "standard", offered(null));
-      return { size, output, mode: null, scale: null, canvas: [CANVAS[size], Math.round((CANVAS[size] * 9) / 16)], sizes: offered(null) };
+      return { size, output, mode: null, scale: null, canvas: [CANVAS[size], Math.round((CANVAS[size] * 9) / 16)], sizes: offered(null), full: null };
     }
-    return { size: planned.size, output, mode: planned.target.mode, scale: planned.target.scale, canvas: planned.canvas, sizes: planned.sizes };
+    const best = pickMode((saved.tv?.modes ?? []).map(parseMode).filter((m): m is Mode => m !== null), "auto");
+    const full = best && best.width > 1920 ? modeText(best) : null;
+    return { size: planned.size, output, mode: planned.target.mode, scale: planned.target.scale, canvas: planned.canvas, sizes: planned.sizes, full };
   }
 
   // What the TV should run at, for the screen daemon, or null while the

@@ -77,14 +77,14 @@ test("the display keeps what's picked and the TV it saw, and nothing changes wit
   let on = false;
   let smooth: boolean | null = null;
   const display = new Display({ state, on: async () => on, fourKSmooth: async () => smooth });
-  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: null, scale: null, canvas: [1920, 1080], sizes: [] });
+  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: null, scale: null, canvas: [1920, 1080], sizes: [], full: null });
   assert.deepEqual(await display.choose({ size: "larger" }), { ok: false, status: 409, error: "sizes are switched off on this box" });
   assert.deepEqual(await display.reported(PANASONIC_TV), { ok: true, changed: true });
   assert.equal(await display.target(), null, "the switch off leaves Hyprland's own mode and scale");
   assert.deepEqual((await display.state()).scale, 1, "and says what the TV runs at");
 
   on = true;
-  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: "3840x2160@60", scale: 2, canvas: [1920, 1080], sizes: ["larger", "standard", "more"] });
+  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: "3840x2160@60", scale: 2, canvas: [1920, 1080], sizes: ["larger", "standard", "more"], full: "3840x2160@60" });
   assert.deepEqual(await display.target(), { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 });
   assert.deepEqual(await display.choose({ size: "more" }), { ok: true });
   assert.deepEqual((await display.state()).canvas, [2400, 1350]);
@@ -97,7 +97,7 @@ test("the display keeps what's picked and the TV it saw, and nothing changes wit
 
   // A box that can't keep 4K smooth starts at 1080p, and can still pick 4K.
   smooth = false;
-  assert.deepEqual(await display.state(), { size: "standard", output: "1080p", mode: "1920x1080@60", scale: 1, canvas: [1920, 1080], sizes: ["larger", "standard"] });
+  assert.deepEqual(await display.state(), { size: "standard", output: "1080p", mode: "1920x1080@60", scale: 1, canvas: [1920, 1080], sizes: ["larger", "standard"], full: "3840x2160@60" }, "4K can still be picked");
   assert.deepEqual(await display.choose({ output: "auto" }), { ok: true });
   assert.deepEqual((await display.state()).mode, "3840x2160@60");
   assert.deepEqual((await display.state()).size, "more", "the pick comes back with the 4K output");
@@ -105,6 +105,7 @@ test("the display keeps what's picked and the TV it saw, and nothing changes wit
   // The same box on a 1080p TV: more on screen isn't offered there.
   await display.reported({ output: "HDMI-A-2", modes: HD, live: null });
   assert.deepEqual((await display.state()).size, "standard");
+  assert.equal((await display.state()).full, null, "a 1080p TV has nothing above 1080p to pick");
   assert.deepEqual(await display.choose({ size: "more" }), { ok: false, status: 400, error: "this tv offers larger and standard" });
 });
 
@@ -150,7 +151,7 @@ test("/api/display picks a size, the screen daemon sets it, and the TV hears it"
     })();
     const started = Date.now();
     const put = await send("PUT", "/api/display", { size: "larger" });
-    assert.deepEqual(put.data, { ok: true, size: "larger", output: "auto", mode: "3840x2160@60", scale: 2.4, canvas: [1600, 900], sizes: ["larger", "standard", "more"], applied: true });
+    assert.deepEqual(put.data, { ok: true, size: "larger", output: "auto", mode: "3840x2160@60", scale: 2.4, canvas: [1600, 900], sizes: ["larger", "standard", "more"], full: "3840x2160@60", applied: true });
     assert.ok(Date.now() - started < 1000, "a size change applies within a second");
     assert.deepEqual(await screen, { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2.4 });
     await listening;
