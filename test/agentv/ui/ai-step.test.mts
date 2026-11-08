@@ -205,3 +205,45 @@ test("ADR-070 a sign-in that fails says why and tries again, and later leaves it
     rmSync(join(state, "features.json"), { force: true });
   }
 });
+
+test("ADR-070 a plan left for later in setup signs in from Settings → AI, and with setup's own switch off there's no new row", async () => {
+  // Setup done, with Claude's plan picked and its terms accepted.
+  writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true }));
+  writeFileSync(join(state, "ai.json"), JSON.stringify({ provider: "claude", path: "plan" }));
+  rmSync(join(state, "plan-sign-in.json"), { force: true });
+  rmSync(join(state, "build-drop"), { recursive: true, force: true });
+  rmSync(run, { recursive: true, force: true });
+  await acceptOnPhone("claude", "plan");
+  const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
+  for (const on of [false, true]) {
+    writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: on }));
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
+    page.on("pageerror", (error) => errors.push(error.message));
+    try {
+      await page.goto(`${url}/`);
+      await page.waitForFunction((want) => (document.documentElement.dataset.features ?? "").split(" ").includes("setup2") === want, on);
+      await page.waitForFunction(() => Boolean((window as unknown as { agentvLauncher?: unknown }).agentvLauncher));
+      await go(page, "settings/ai");
+      await page.waitForSelector('[data-action="use-plan"]');
+      if (!on) {
+        assert.equal(await page.locator('[data-action="plan-sign-in"]').count(), 0);
+        continue;
+      }
+      await page.locator('[data-action="plan-sign-in"]').click();
+      for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
+      assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in.json"), "utf8")), { build: null, provider: "claude" });
+      signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
+      await page.waitForSelector(".build-qr:not(.hidden) img[src]");
+      await page.fill('[data-action="sign-in-code"]', "good-code#s7Q");
+      await page.locator('[data-action="send-code"]').click();
+      for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
+      assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
+      signInSays({ state: "done" });
+      await page.locator('.toast:has-text("you\'re signed in to your plan")').waitFor();
+      await page.waitForSelector('[data-action="plan-sign-in"]');
+      assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn.signedIn, true);
+    } finally {
+      await page.close();
+    }
+  }
+});

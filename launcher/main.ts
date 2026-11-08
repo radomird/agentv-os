@@ -23,7 +23,7 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
-import { keyPage, planPage, termsHeard } from "./pages/key.ts";
+import { keyPage, planPage, planSignInPage, termsHeard } from "./pages/key.ts";
 import { countryPage, loadCountry } from "./pages/country.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
@@ -387,6 +387,7 @@ function viewFor(route: string): View {
   if (name === "tmdb-key") return tmdbKeyPage(ctx);
   if (name === "country") return countryPage(ctx);
   if (name === "plan") return planPage(ctx);
+  if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");

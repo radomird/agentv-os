@@ -132,3 +132,41 @@ test("with setup's own switch off, the bar is phase 1's, with no blocks", async 
     rmSync(join(state, "features.json"), { force: true });
   }
 });
+
+test("the goal says the pick only sets up the first home, and OK on a card picks it and moves on", async () => {
+  switches(true);
+  at("goal");
+  const page = await tv();
+  try {
+    await page.waitForSelector(".goal-cards");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "what's it for, mostly?");
+    assert.equal(await page.locator(".setup-line").textContent(), "this only sets up your first home. you can still use everything.");
+    assert.deepEqual(await page.locator(".goal-card-name").allTextContents(), ["streaming", "music", "media", "gaming"]);
+    assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue after one pick");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    assert.equal(await page.locator(".focused").getAttribute("data-goal"), "media");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "9 of 12 · apps");
+    assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.goal, "media");
+  } finally {
+    await page.close();
+  }
+});
+
+test("with the box check on, gaming says what to expect on this box", async () => {
+  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: true, looks: true, boxcheck: true }));
+  at("goal");
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
+  page.on("pageerror", (error) => errors.push(error.message));
+  // The box check's answer, as its route will give it.
+  await page.route("**/api/box", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ verdicts: { fourK: true, fourKSmooth: true, games: "light", spaceLow: false } }) }));
+  try {
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".goal-cards");
+    assert.equal(await page.locator('[data-goal="gaming"] .goal-card-note').textContent(), "light games on this box");
+  } finally {
+    await page.close();
+    switches(true);
+  }
+});
