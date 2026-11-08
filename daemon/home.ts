@@ -234,6 +234,9 @@ export interface HomeOptions {
   // What the TV is for, from setup (ADR-006): Music is on home from the
   // start when it's music, and New this week when it's streaming.
   goal?: () => Promise<string | null>;
+  // Whether the three looks are switched on (ADR-063). With them, home has
+  // no all apps tile, and Clock isn't pinned until someone pins it.
+  looks?: () => Promise<boolean>;
   // New this week's tile, which the daemon draws from TMDB (S8.1).
   newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   // Something home shows changed by itself: a site's icon came, say.
@@ -291,6 +294,7 @@ export class Home {
   private log: (line: string) => void;
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
   private goal?: () => Promise<string | null>;
+  private looksOn?: () => Promise<boolean>;
   private pageTile?: (id: string) => Promise<unknown>;
   private newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   private dataDirs: string[];
@@ -305,6 +309,7 @@ export class Home {
     this.log = options.log ?? (() => {});
     this.viewerOf = options.viewer;
     this.goal = options.goal;
+    this.looksOn = options.looks;
     this.pageTile = options.pageTile;
     this.newTile = options.newTile;
     this.dataDirs = options.dataDirs ?? DATA_DIRS;
@@ -795,18 +800,25 @@ export class Home {
   // that have gone are dropped. A built-in is pinned for each viewer once,
   // when there's room (ADR-015), so a box from before it gets it too; one the
   // viewer unpins stays off. A child's has only the apps children can open.
+  //
+  // With the three looks on (ADR-063), the all apps tile goes from every
+  // layout, saved ones included, since Apps is one press from home in every
+  // look. And Clock leaves the layout of anyone who never changed theirs: the
+  // time is in each look's bar now. Someone who arranged home keeps Clock
+  // where they put it.
   async layout(viewer: string, role: Viewer["role"] = "adult"): Promise<Placed[]> {
     const saved = (await readJson<Record<string, Placed[]>>(join(this.state, "layouts.json"), {}))[viewer];
     const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
     const goal = (await this.goal?.().catch(() => null)) ?? null;
-    const first = [...PINNED, ...(GOAL_PINS[goal ?? ""] ?? [])];
+    const looks = (await this.looksOn?.().catch(() => false)) ?? false;
+    const first = [...(looks ? PINNED.filter((id) => id !== CLOCK) : PINNED), ...(GOAL_PINS[goal ?? ""] ?? [])];
     const builtins = all.filter((id) => first.includes(id));
     const unpinned = all.filter((id) => !first.includes(id));
     const pinned = await readJson<Record<string, string[]>>(join(this.state, "builtins-pinned.json"), {});
     const fresh = builtins.filter((id) => !(pinned[viewer] ?? []).includes(id));
     if (saved) {
-      let kept = saved.filter((tile) => sizes.has(tile.id));
+      let kept = saved.filter((tile) => sizes.has(tile.id) && !(looks && tile.id === APPS_TILE));
       if (!problem(kept, (id) => sizes.get(id))) {
         if (fresh.length === 0) return kept;
         for (const id of fresh) kept = pinBuiltin(kept, id, sizes.get(id)) ?? kept;
@@ -815,7 +827,7 @@ export class Home {
       }
     }
     let layout: Placed[] = [];
-    for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(APPS_TILE)) {
+    for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(looks ? [] : [APPS_TILE])) {
       layout = pinBuiltin(layout, id, sizes.get(id)) ?? layout;
     }
     if (fresh.length) await this.markPinned(viewer, fresh, saved ? layout : undefined);
