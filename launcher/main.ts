@@ -31,6 +31,7 @@ import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
+import { askBuilds, askChangePage, askPage, followAskBuilds } from "./pages/ask.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
 import { typingField, typingHeard } from "./typing.ts";
 import type { Said } from "./api.ts";
@@ -367,8 +368,11 @@ const ACTIONS: Record<string, string> = {
 function viewFor(route: string): View {
   const [name, arg] = route.split("/");
   if (name === "apps") return apps(ctx);
-  // The bar's Ask: for now, asking your agent to make something (D5 makes
-  // it the Ask box, track 11).
+  // The bar's Ask: with the askbuilds switch on, the Ask box for everyone,
+  // and a change waiting for an adult's ok (ADR-068, D5). With it off, an
+  // adult asks their agent to make something, as before.
+  if (name === "ask" && askBuilds()) return askPage(ctx);
+  if (name === "ask-change" && askBuilds() && ctx.state.viewer.role === "adult") return askChangePage(ctx);
   if (name === "ask" && ctx.state.viewer.role === "adult") return buildAsk(ctx);
   // Adding an app is an adult's, and a child's profile doesn't see it (ADR-042).
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
@@ -913,6 +917,8 @@ async function start(): Promise<void> {
   onFeatures((all) => {
     if (Boolean(all.looks) !== (lookId() !== null)) void lookAgain().then(redraw);
   });
+  // The Ask box building (ADR-068): the bar's Ask and Apps follow it.
+  followAskBuilds(() => redraw());
   setupSaid(ctx, () => {
     if (view) focus.setRoot(view.el, view.first);
   });

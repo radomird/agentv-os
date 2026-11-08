@@ -13,6 +13,10 @@ import { setup, type Goal, type Installs, type SetupApp, type SetupApps } from "
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 import { onNetwork } from "./servers.ts";
+import { featureOn } from "../launcher/features.ts";
+
+// What to make, as the examples under "+ add your own" say it.
+const EXAMPLES = ["a game like tetris", "a slideshow of the photos on my nas", "a better weather app"];
 
 // A short line for each app and the colour behind its first letter, as on
 // the canvas. An app it doesn't know takes its description and the next
@@ -189,12 +193,41 @@ export function addYourOwn(ctx: Ctx, kind?: "theme"): View {
   });
   const go = h("button", { class: "button primary", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, "↵ keep it");
   const not = h("button", { class: "button", "data-focus": true, "data-action": "not", onclick: () => ctx.back() }, "esc not this");
+  // Examples of what to make, with the Ask box building (ADR-068): each
+  // fills the box, and OK keeps it.
+  const examples = h("div", { class: "wish-actions wish-examples" });
+  if (!theme) {
+    void featureOn("askbuilds")
+      .catch(() => false)
+      .then((on) => {
+        if (!on || !examples.isConnected) return;
+        examples.append(
+          ...EXAMPLES.map((example) =>
+            h(
+              "button",
+              {
+                class: "button",
+                "data-focus": true,
+                "data-example": example,
+                onclick: () => {
+                  field.value = example;
+                  ctx.sounds.play("select");
+                  field.focus();
+                },
+              },
+              example,
+            ),
+          ),
+        );
+      });
+  }
   const el = h(
     "div",
     { class: "setup-page" },
     h("div", {}, ...heading(theme ? "what should it look like?" : "what should I add?", theme ? "describe your own." : "add your own.", ctx.reduced())),
     h("div", { class: "wish-row" }, h("span", { class: "wish-caret" }, ">"), field),
     h("span", { class: "setup-note" }, "type here, or on your phone."),
+    examples,
     h("div", { class: "wish-actions" }, go, not),
     h(
       "p",

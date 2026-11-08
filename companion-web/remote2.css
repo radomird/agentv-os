@@ -769,3 +769,42 @@ body[data-look="glass"] .r2-who > span::first-letter,
 body[data-look="cinema"] .r2-who > span::first-letter {
   text-transform: uppercase;
 }
+
+/* The Ask sheet (ADR-068, D5): the box with no send button, suggestions
+   under it, and what your agent is on. */
+.ask-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.ask-waiting {
+  border-top: 2px solid var(--selection);
+  padding-top: 12px;
+}
+
+.ask-bar {
+  height: 12px;
+  margin: 8px 0;
+  background: var(--selection);
+}
+
+.ask-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+body[data-look="glass"] .ask-waiting h1::first-letter,
+body[data-look="cinema"] .ask-waiting h1::first-letter,
+body[data-look="glass"] .ask-chips .chip::first-letter,
+body[data-look="cinema"] .ask-chips .chip::first-letter {
+  text-transform: uppercase;
+}

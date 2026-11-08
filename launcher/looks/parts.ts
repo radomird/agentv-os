@@ -3,6 +3,7 @@
 
 import type { Ctx } from "../main.ts";
 import { said } from "./looks.ts";
+import { askBuilds } from "../pages/ask.ts";
 
 export interface Section {
   key: "home" | "apps" | "ask" | "settings";
@@ -10,9 +11,9 @@ export interface Section {
   open: () => void;
 }
 
-// The bar's sections, in order. Ask is an adult's for now: the TV's Ask for
-// everyone comes with the Ask box (track 11). Settings says when an update
-// is ready.
+// The bar's sections, in order. Ask is everyone's with the Ask box on
+// (ADR-068), and an adult's "make an app" with it off. Settings says when
+// an update is ready.
 export function sections(ctx: Ctx): Section[] {
   const update = ctx.updates.status?.agentv.available && !ctx.updates.status.waiting;
   const all: Section[] = [
@@ -21,7 +22,7 @@ export function sections(ctx: Ctx): Section[] {
     { key: "ask", label: said("ask"), open: () => ctx.top("ask") },
     { key: "settings", label: said(update ? "settings ●" : "settings"), open: () => ctx.top("settings") },
   ];
-  return all.filter((section) => section.key !== "ask" || ctx.state.viewer.role === "adult");
+  return all.filter((section) => section.key !== "ask" || ctx.state.viewer.role === "adult" || askBuilds());
 }
 
 // A bar note that only says which keys do what. With the looks, the bar

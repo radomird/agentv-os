@@ -23,6 +23,7 @@ import { listKey, networkLine, type TvList } from "./network.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { sayAnswer, sayBox, type Said } from "./say.ts";
+import { askSheet, refreshAsk, type AskView } from "./ask.ts";
 import { sharePage } from "./share.ts";
 
 // The field with the focus on the TV, as the daemon says it.
@@ -51,6 +52,9 @@ export interface Phone {
   look?: string;
   // What's on the network, while the TV shows it (companion-web/network.ts).
   discover?: TvList | null;
+  // The Ask box building (ADR-068): its switch, and what it waits on.
+  features?: { askbuilds?: boolean };
+  ask?: AskView | null;
 }
 
 // What the remote needs from the page around it (main.ts).
@@ -278,6 +282,7 @@ export class Remote2 {
       }
     }
     if (this.sheet === "ask") sayAnswer(state.said, this.kit.failed, () => void this.kit.refresh());
+    if (this.sheet === "ask" && state.features?.askbuilds) refreshAsk(state.ask, state.viewer.role === "adult", this.kit.failed, () => void this.kit.refresh());
     if (this.sheet === "menu") this.drawSheet(state);
   }
 
@@ -754,6 +759,8 @@ export class Remote2 {
   }
 
   private ask(state: Phone): HTMLElement[] {
+    // With the Ask box building, D5's sheet (companion-web/ask.ts).
+    if (state.features?.askbuilds) return askSheet(state.said, state.ask, state.viewer.role === "adult", this.kit.failed, () => void this.kit.refresh());
     const box = sayBox(state.said, this.kit.failed, () => void this.kit.refresh());
     requestAnimationFrame(() => box.querySelector("input")?.focus());
     return [box];

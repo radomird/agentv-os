@@ -375,6 +375,11 @@ export type Outcome =
   | { kind: "change"; say: string; app: string; name: string; what: string; recipe: string | null }
   | { kind: "none"; say: string; why: string; detail?: string };
 
+// What the Ask box waits on (daemon/routes/ask.ts).
+export type AskView =
+  | { kind: "build"; n: number; build: string; app: string | null; what: string; state: string; phase: string; name: string | null; recipe: string | null; says: string | null; done: number; steps: number }
+  | { kind: "change"; n: number; app: string; name: string; what: string; recipe: string | null };
+
 export interface Said {
   n: number;
   sentence: string;
@@ -388,6 +393,12 @@ export const daemon = {
   home: () => call<HomeState>("GET", gridName() ? `/api/home?grid=${gridName()}` : "/api/home"),
   said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
   pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
+  // A sentence typed in the TV's Ask (ADR-068), and what the Ask box waits
+  // on: a build it started, or a change waiting for an adult's ok.
+  say: async (sentence: string) => (await call<{ said: Said }>("POST", "/api/say", { sentence })).said,
+  askWaiting: async () => (await call<{ ask: AskView | null }>("GET", "/api/ask")).ask,
+  askConfirm: (n: number) => call<{ ask: AskView | null }>("POST", "/api/ask/confirm", { n }),
+  askCancel: (n: number) => call<{ ask: AskView | null }>("POST", "/api/ask/cancel", { n }),
   dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
   // Back on the TV with the listening bar up (ADR-054).
   closeListening: () => call<{ ok: boolean }>("POST", "/api/say/live/close"),

@@ -52,7 +52,7 @@ interface State {
   version: number;
   phone: { id: string; name: string };
   // The feature switches: remote2 is the new remote (ADR-065).
-  features?: { remote2?: boolean };
+  features?: { remote2?: boolean; askbuilds?: boolean };
   // What's playing, for the new remote's card.
   nowPlaying?: { title: string; app: string; left?: number } | null;
   viewer: Viewer;

@@ -50,7 +50,7 @@ import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
 import { Features } from "./features.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
-import { askRoutes, type AskRoutes } from "./routes/ask.ts";
+import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
 import type { ExecBuilds } from "./executors/make.ts";
 import { Pin, type PinStatus } from "./pin.ts";
@@ -987,6 +987,7 @@ export class Daemon {
     const pin = this.pin.status(viewer.locked);
     const setup = await this.setup();
     const remote2 = await this.features.on("remote2");
+    const askbuilds = await this.features.on("askbuilds");
     // The new remote's keyboard follows the field in front, an app's page
     // included, with the app's name; the old one only home's.
     const tv = { ...this.tv, field: remote2 ? await this.named(this.tv.field) : this.homeField && { kind: this.homeField.kind } };
@@ -995,7 +996,9 @@ export class Daemon {
       version,
       phone,
       // The feature switches the phone draws by.
-      features: { remote2 },
+      features: { remote2, askbuilds },
+      // What the Ask box waits on, for an adult's ok on the phone (ADR-068).
+      ...(askbuilds ? { ask: viewer.role === "adult" ? await askView(this.askKit()) : null } : {}),
       // The look the TV is in, for the remote to match it (ADR-063, D4).
       look: (await this.features.on("looks")) ? await currentLook({ root: this.options.root, state: this.options.state }) : null,
       viewer,
