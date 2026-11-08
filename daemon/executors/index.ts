@@ -101,6 +101,10 @@ export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
     if (!app) return { kind: "none", why: "missing", say: `there's no ${lower(said)} on this tv` };
   }
 
+  // Make and change, for the box's agent to build (ADR-068): nothing does
+  // them here yet, so they're what they were before the router knew them.
+  if (route.intent === "make" || route.intent === "change") return { kind: "none", why: "unroutable", say: DIDNT_GET };
+
   if (route.intent === "whats_new") return whatsNew(route, ctx, app);
   if (route.intent === "new_episode") return newEpisode(route, ctx);
 
