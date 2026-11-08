@@ -87,6 +87,13 @@ function go(page: Page, route: string): Promise<void> {
   return page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
 }
 
+// Waits until nothing on the page is still moving, other than what moves for
+// good. A page slides in as it opens, and on a busy machine the slide can
+// start late, as when Themes and backgrounds loads its three previews.
+async function settled(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
+}
+
 // What's cut off or off the screen: an element outside the canvas, or one
 // that clips what's in it, other than text that ends in an ellipsis and
 // rows that scroll (data-scroll).
@@ -239,6 +246,7 @@ for (const look of LOOKS) {
           try {
             await open(page);
             await page.waitForTimeout(400);
+            await settled(page);
             for (const one of await overflows(page)) problems.push(`${theme}, ${where}: ${one}`);
             for (const one of await shortfalls(page)) problems.push(`${theme}, ${where}: "${one.text}" reads at ${one.ratio} of ${one.needs} (${one.color} on ${one.behind})`);
           } finally {
