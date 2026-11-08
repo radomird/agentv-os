@@ -25,6 +25,7 @@ import { checkView, drawUpdating, installing, off, release, shown, whatsNew } fr
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { keyPage, planPage, planSignInPage, termsHeard } from "./pages/key.ts";
 import { countryPage, loadCountry } from "./pages/country.ts";
+import { desktopPasswordPage } from "./pages/desktop-password.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
@@ -389,6 +390,7 @@ function viewFor(route: string): View {
   if (name === "country") return countryPage(ctx);
   if (name === "plan") return planPage(ctx);
   if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
+  if (name === "desktop-password" && ctx.state.viewer.role === "adult") return desktopPasswordPage(ctx);
   if (name === "pair") return pairPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
