@@ -10,13 +10,14 @@
 
 import { daemon, screen, type App, type TileData, type TileEntry } from "../api.ts";
 import { clock, h, monogram, tint } from "../dom.ts";
-import { span, type Placed } from "../layout.ts";
+import { GRID_MORE, span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
 import { buildNotice, homeBuildTile } from "./build.ts";
 import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
+import { currentGrid, lookId } from "../looks/looks.ts";
 
 export const CLOCK = "agentv.clock";
 export const WEATHER = "agentv.weather";
@@ -338,14 +339,16 @@ export function placeTile(el: HTMLElement, placed: Placed): void {
 // open anything. Null for an app that isn't on the box any more.
 export function tileFor(ctx: Ctx, placed: Placed, editing = false): HTMLElement | null {
   const app = ctx.state.apps.find((a) => a.id === placed.id);
+  // With the looks on, there's no all apps tile: Apps is in every look's
+  // bar (ADR-063).
   const el =
-    placed.id === ctx.state.appsTile ? appsTile(ctx, ctx.state.apps.length, editing) : app ? appTile(ctx, app, placed, editing) : null;
+    placed.id === ctx.state.appsTile ? (lookId() ? null : appsTile(ctx, ctx.state.apps.length, editing)) : app ? appTile(ctx, app, placed, editing) : null;
   if (el) placeTile(el, placed);
   return el;
 }
 
 export function home(ctx: Ctx): View {
-  const grid = h("div", { class: "grid" });
+  const grid = h("div", { class: currentGrid() === GRID_MORE ? "grid grid-5x4" : "grid" });
   const byId = new Map(ctx.state.apps.map((app) => [app.id, app]));
   const ordered = [...ctx.state.layout].sort((a, b) => a.y - b.y || a.x - b.x);
   for (const placed of ordered) {

@@ -1,0 +1,233 @@
+/* Terminal (ADR-014, D1, D2): phase 1's look, with the TV design principles.
+   launcher.css is Terminal's own, so this only moves what phase 2 changed:
+   the bar sits inside the safe area, 60 px up from the bottom, with the
+   time at its right end; the grid and the pages keep to the safe area;
+   body text is 29 px; and focus lifts as well as rings. */
+
+:root {
+  --safe-x: 80px;
+  --safe-y: 60px;
+  --bar: 60px;
+  --bar-gap: 24px;
+}
+
+html,
+body {
+  font-size: 29px;
+}
+
+/* --- The bar, inside the safe area --------------------------------------- */
+
+.bar {
+  left: var(--safe-x);
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  font-size: 29px;
+}
+
+.bar-link {
+  padding: 0 22px;
+}
+
+.bar-clock {
+  font-weight: 800;
+}
+
+/* --- Home's grid --------------------------------------------------------- */
+
+.grid {
+  left: var(--safe-x);
+  right: var(--safe-x);
+  top: var(--safe-y);
+  bottom: calc(var(--safe-y) + var(--bar) + var(--bar-gap));
+  padding: 0;
+  gap: 20px;
+}
+
+/* At more on screen, Terminal has a 5 × 4 grid with a layout of its own. */
+:root[data-size="more"] .grid.grid-5x4 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
+.tile-top {
+  font-size: 29px;
+}
+
+/* Focus grows and lifts: the scale is motion.css's, and the shadow lifts it
+   off the page. */
+.tile.focused {
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  z-index: 1;
+}
+
+/* --- Pages --------------------------------------------------------------- */
+
+.page {
+  inset: 0 0 calc(var(--safe-y) + var(--bar) + var(--bar-gap)) 0;
+  padding: var(--safe-y) var(--safe-x) 0;
+}
+
+.owner {
+  left: var(--safe-x);
+  right: var(--safe-x);
+  bottom: calc(var(--safe-y) + var(--bar) + var(--bar-gap));
+}
+
+.settings-panel {
+  max-height: calc(var(--canvas-height, 1080px) - 2 * var(--safe-y) - var(--bar) - var(--bar-gap) - 260px);
+}
+
+/* Captions no smaller than 23 px (principle 5): phase 1 had 18 to 22 px on
+   New this week's tile and in edit mode. */
+.new-tile .entry-label,
+.new-tile.size-m .entry-item .entry-label,
+.new-tile .entry-caption,
+.new-credit,
+.badge,
+.empty-cell,
+.drop,
+.sizebar,
+.chip {
+  font-size: 23px;
+}
+
+/* --- Larger (1600 wide) -------------------------------------------------- */
+
+/* The same 4 × 3 grid with less room in each cell, so what's in a tile is
+   smaller: on the TV it's all bigger than at standard. A medium tile's
+   entries keep their label, value and the caption's first line. */
+:root[data-size="larger"] .tile {
+  padding: 22px;
+}
+
+:root[data-size="larger"] .tile-name {
+  font-size: 52px;
+}
+
+:root[data-size="larger"] .tile-content {
+  gap: 8px;
+}
+
+:root[data-size="larger"] .size-m .entry-icon {
+  grid-template-rows: auto;
+  column-gap: 16px;
+}
+
+:root[data-size="larger"] .size-m .entry-icon .entry-label {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:root[data-size="larger"] .size-m .entry-icon .pixel {
+  grid-row: 1 / span 2;
+  width: 96px;
+  height: auto;
+}
+
+:root[data-size="larger"] .size-m .entry-icon .entry-text {
+  grid-column: 2;
+}
+
+:root[data-size="larger"] .size-m .entry-icon .entry-value {
+  font-size: 52px;
+}
+
+:root[data-size="larger"] .size-m .entry-caption {
+  -webkit-line-clamp: 1;
+}
+
+:root[data-size="larger"] .headline-value {
+  font-size: 68px;
+}
+
+:root[data-size="larger"] .clock-time {
+  font-size: 80px;
+}
+
+/* --- Settings ------------------------------------------------------------ */
+
+/* The sections are a list that scrolls with the focus, down to the bar, and
+   each says only its name (D2): its panel says the rest. */
+.settings .menu {
+  max-height: calc(var(--canvas-height, 1080px) - var(--safe-y) - var(--bar) - var(--bar-gap) - 236px - 24px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings .menu-value {
+  display: none;
+}
+
+.settings .menu-item {
+  flex: none;
+}
+
+/* Words that say there's nothing here yet read clearly in every theme. */
+.empty {
+  color: var(--foreground);
+}
+
+/* --- Apps ---------------------------------------------------------------- */
+
+/* A name that doesn't fit ends in an ellipsis (D2), and adding an app or
+   making one takes two cells. */
+.row .tile-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row .tile-apps {
+  grid-column: span 2;
+}
+
+:root[data-size="larger"] .row .tile {
+  height: 180px;
+  padding: 20px;
+}
+
+:root[data-size="larger"] .row .tile-name {
+  font-size: 32px;
+}
+
+/* Weather's scenes and numbers at larger, small and large. */
+:root[data-size="larger"] .tile-now .pixel {
+  width: 120px;
+  height: auto;
+}
+
+:root[data-size="larger"] .size-l .tile-now .pixel {
+  width: 170px;
+}
+
+:root[data-size="larger"] .size-l .headline-value {
+  font-size: 92px;
+}
+
+:root[data-size="larger"] .size-l .entry-icon .pixel {
+  width: 64px;
+  height: auto;
+}
+
+:root[data-size="larger"] .size-l .entries {
+  padding-top: 14px;
+}
+
+:root[data-size="larger"] .size-s .tile-now .pixel {
+  width: 96px;
+}
+
+:root[data-size="larger"] .size-s .headline-value {
+  font-size: 60px;
+}
+
+:root[data-size="larger"] .size-s .headline-caption {
+  -webkit-line-clamp: 1;
+}
+
+/* A small tile at larger is its headline alone, as D6 draws Weather: the
+   temperature and the condition, without the day's high and low. */
+:root[data-size="larger"] .size-s .tile-content > .entries {
+  display: none;
+}

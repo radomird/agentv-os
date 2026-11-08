@@ -4,6 +4,7 @@
 
 import { daemon, screen, type AudioState, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
+import { lookId } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { powerPanel } from "./power.ts";
@@ -427,7 +428,8 @@ export function settings(ctx: Ctx, open?: string): View {
   };
   const menu = h(
     "div",
-    { class: "menu" },
+    // With the looks, the list scrolls with the focus (ADR-063).
+    { class: "menu", "data-scroll": lookId() ? true : undefined },
     ...sections.map((section) =>
       h(
         "button",
