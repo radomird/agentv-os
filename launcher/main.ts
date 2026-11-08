@@ -40,6 +40,7 @@ import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
 import { forecast } from "./pages/forecast.ts";
 import { newWeek } from "./pages/new-week.ts";
+import { checkWhileAmbient } from "./box.ts";
 
 export interface View {
   el: HTMLElement;
@@ -519,6 +520,8 @@ function setAmbient(on: boolean): void {
     ambientEl.replaceChildren(pictures, h("div", { class: "ambient-drift" }, time, h("div", { class: "ambient-day" }, day)), credit);
   }
   ambientEl.classList.toggle("on", on);
+  // After a new GPU, the 4K test runs again while nobody's watching (ADR-061).
+  if (on) void checkWhileAmbient(ambientEl, () => ambient);
 }
 
 // Ends the ambient screen from this side, and asks the screen daemon to put

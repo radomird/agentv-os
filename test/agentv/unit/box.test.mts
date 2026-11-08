@@ -30,7 +30,8 @@ import {
 } from "../../../daemon/box.ts";
 import { HOTSPOT_ADDRESS } from "../../../daemon/hotspot.ts";
 import { Daemon } from "../../../daemon/server.ts";
-import { boxLines, summary } from "../../../launcher/box-lines.ts";
+import { Setup } from "../../../daemon/setup.ts";
+import { boxLines, properUnits, summary } from "../../../launcher/box-lines.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const FIXTURES = join(ROOT, "test/agentv/fixtures/box");
@@ -177,6 +178,26 @@ test("T3.1 4K stays smooth only on a 4K test that held 57 fps on this GPU", () =
   const qemu = report(readings("qemu"));
   assert.deepEqual(qemu.tv, { name: "", modes: [], hdr: false, audio: [] }, "no EDID to read");
   assert.equal(boxLines(qemu, "unchecked")[0].value, "couldn't read the tv");
+});
+
+test("T3.2 setup shows your box as step 4 of 12, after getting ready, only with its switch on", async () => {
+  const path = join(scratch, "setup-box", "setup.json");
+  const off = new Setup({ path, on: async (feature) => feature === "setup2" });
+  assert.ok(!(await off.steps()).includes("box"));
+  await off.finish("welcome");
+  assert.equal((await off.finish("ready")).state?.step, "country", "with the switch off, getting ready goes on to the location");
+  const on = new Setup({ path: join(scratch, "setup-box-on", "setup.json"), on: async (feature) => feature === "setup2" || feature === "boxcheck" });
+  assert.equal((await on.progress()).parts.box, "4 of 12 · your box");
+  await on.finish("welcome");
+  assert.equal((await on.finish("ready")).state?.step, "box");
+  assert.equal((await on.finish("box")).state?.step, "country");
+});
+
+test("outside Terminal's lower case, the units are written as they should be", () => {
+  assert.equal(properUnits("4k tv · panasonic · 60 hz"), "4K tv · panasonic · 60 Hz");
+  assert.equal(properUnits("only 20 gb free · 1.6 tb free"), "only 20 GB free · 1.6 TB free");
+  assert.equal(properUnits("wi-fi · 433 mbps · 1 gbps"), "wi-fi · 433 Mbps · 1 Gbps");
+  assert.equal(properUnits("1080p tv"), "1080p tv", "1080p is written so everywhere");
 });
 
 // --- The readers, on a made-up machine --------------------------------------

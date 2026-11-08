@@ -9,6 +9,7 @@ import { lookCards } from "../looks/preview.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { powerPanel } from "./power.ts";
+import { aboutBox } from "./box.ts";
 import { glyph } from "../glyphs.ts";
 import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
@@ -492,6 +493,7 @@ export function settings(ctx: Ctx, open?: string): View {
       label: "about",
       value: () => "credits",
       panel: () => [
+        aboutBox(ctx),
         h("div", { class: "panel-big" }, `agentv ${ctx.state.version}`),
         note("the world's first open-source agentic tv os. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),

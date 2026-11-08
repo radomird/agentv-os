@@ -409,6 +409,7 @@ async function start(): Promise<void> {
         view?.heard?.("updates", data);
       },
       phones: (data) => view?.heard?.("phones", data),
+      box: (data) => view?.heard?.("box", data),
       pin: (data) => {
         const status = data as { set: boolean };
         ctx.info.pin = status.set;

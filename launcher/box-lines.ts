@@ -22,6 +22,11 @@ export interface BoxReport {
 // on this GPU yet.
 export type SmoothState = "checking" | "passed" | "failed" | "unchecked";
 
+// How a name is written: in lower case, as Terminal and setup write
+// everything, unless a look keeps names' own capitals.
+export type Named = (name: string) => string;
+const lower: Named = (name) => name.toLowerCase();
+
 export interface BoxLine {
   key: "tv" | "box" | "games" | "space" | "network";
   label: string;
@@ -46,15 +51,15 @@ export function tvKind(box: BoxReport): string {
 // The TV's maker, from the name it gives: TVs start it with their brand
 // ("Panasonic-TV" is "panasonic", "LG TV SSCR2" is "lg").
 function tvMaker(name: string): string {
-  const first = name.trim().split(/[-_ ]+/)[0].toLowerCase();
-  return first === "tv" ? name.trim().toLowerCase() : first;
+  const first = name.trim().split(/[-_ ]+/)[0];
+  return first.toLowerCase() === "tv" ? name.trim() : first;
 }
 
-export function tvLine(box: BoxReport): string {
+export function tvLine(box: BoxReport, named: Named = lower): string {
   const kind = tvKind(box);
   if (!kind) return "couldn't read the tv";
   const best = mode(box.tv.modes[0])!;
-  return [kind, tvMaker(box.tv.name), `${best.refresh} hz`].filter(Boolean).join(" · ");
+  return [kind, named(tvMaker(box.tv.name)), `${best.refresh} hz`].filter(Boolean).join(" · ");
 }
 
 function gb(n: number): string {
@@ -67,27 +72,27 @@ export function spaceLine(box: BoxReport): string {
   return box.verdicts.spaceLow ? `only ${gb(box.storage.freeGb)} free` : `${gb(box.storage.freeGb)} free`;
 }
 
-function gpu(box: BoxReport): string {
-  const name = box.gpu.name.toLowerCase();
-  const vendor = box.gpu.vendor === "other" ? "" : box.gpu.vendor;
-  return [vendor, name].filter(Boolean).join(" ");
+const MAKERS: Record<string, string> = { intel: "Intel", amd: "AMD", nvidia: "NVIDIA" };
+
+function gpu(box: BoxReport, named: Named): string {
+  return named([MAKERS[box.gpu.vendor] ?? "", box.gpu.name].filter(Boolean).join(" "));
 }
 
-export function gamesLine(box: BoxReport): string {
+export function gamesLine(box: BoxReport, named: Named = lower): string {
   const what = box.verdicts.games === "good" ? "good for games" : box.verdicts.games === "light" ? "light games" : "not for games";
-  return [what, gpu(box)].filter(Boolean).join(" · ");
+  return [what, gpu(box, named)].filter(Boolean).join(" · ");
 }
 
 // What the box itself does with the TV: on a 4K TV, whether 4K stays
 // smooth; on any other, its CPU and memory.
-export function boxLine(box: BoxReport, smooth: SmoothState): string {
+export function boxLine(box: BoxReport, smooth: SmoothState, named: Named = lower): string {
   if (box.verdicts.fourK) {
     if (smooth === "checking") return "checking 4k…";
     if (box.verdicts.fourKSmooth || smooth === "passed") return "keeps 4k smooth";
     if (smooth === "failed") return "smoother at 1080p";
     return "4k not checked yet";
   }
-  return [box.cpu.name.toLowerCase(), box.memoryGb ? `${box.memoryGb} gb` : ""].filter(Boolean).join(" · ");
+  return [named(box.cpu.name), box.memoryGb ? `${box.memoryGb} gb` : ""].filter(Boolean).join(" · ");
 }
 
 function speed(mbps: number): string {
@@ -101,14 +106,24 @@ export function networkLine(box: BoxReport): string {
   return [box.network.kind === "wifi" ? "wi-fi" : "ethernet", speed(box.network.mbps)].filter(Boolean).join(" · ");
 }
 
-export function boxLines(box: BoxReport, smooth: SmoothState): BoxLine[] {
+export function boxLines(box: BoxReport, smooth: SmoothState, named: Named = lower): BoxLine[] {
   return [
-    { key: "tv", label: "tv", value: tvLine(box) },
-    { key: "box", label: "box", value: boxLine(box, smooth) },
-    { key: "games", label: "games", value: gamesLine(box) },
+    { key: "tv", label: "tv", value: tvLine(box, named) },
+    { key: "box", label: "box", value: boxLine(box, smooth, named) },
+    { key: "games", label: "games", value: gamesLine(box, named) },
     { key: "space", label: "space", value: spaceLine(box) },
     { key: "network", label: "network", value: networkLine(box) },
   ];
+}
+
+// The units as they're written outside Terminal's lower case: 4K, Hz, GB,
+// TB, Mbps and Gbps.
+export function properUnits(text: string): string {
+  return text
+    .replace(/\b4k\b/g, "4K")
+    .replace(/(\d) hz\b/g, "$1 Hz")
+    .replace(/(\d) (g|t)b\b/g, (_, n: string, unit: string) => `${n} ${unit.toUpperCase()}B`)
+    .replace(/(\d) (m|g)bps\b/g, (_, n: string, unit: string) => `${n} ${unit.toUpperCase()}bps`);
 }
 
 // The box in one line, for the phone's menu: "4k tv · light games · 1.6 tb

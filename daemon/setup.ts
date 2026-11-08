@@ -35,7 +35,7 @@ export interface StepEntry {
 export const ORDER = [
   { step: "welcome", n: 3, name: "getting ready" },
   { step: "ready", n: 3, name: "getting ready" },
-  // 4, your box (track 3): { step: "box", n: 4, name: "your box", feature: "boxcheck" },
+  { step: "box", n: 4, name: "your box", feature: "boxcheck" },
   { step: "country", n: 5, name: "location" },
   { step: "ai", n: 6, name: "ai" },
   { step: "people", n: 7, name: "who watches" },
