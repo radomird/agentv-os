@@ -29,6 +29,11 @@ const IDLE_MS = 20_000;
 export class Listening {
   private o: ListeningOptions;
   private open: { from: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  // Phones whose sentence went. Their box's words count again once it opens
+  // again, so words that were still on their way when the sentence went,
+  // on a connection of their own, don't bring the bar back over what came
+  // of the sentence.
+  private sentFrom = new Set<string>();
 
   constructor(options: ListeningOptions) {
     this.o = options;
@@ -51,24 +56,28 @@ export class Listening {
   change(from: string, body: unknown): string | null {
     const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
     if (b.open === false) {
-      this.close();
+      // Only the phone whose box it is closes the bar.
+      if (this.open?.from === from) this.close();
       return null;
     }
     if (b.open === true && b.text === undefined) {
+      this.sentFrom.delete(from);
       this.wait(from);
       this.o.changed({ state: "open", text: "", from });
       return null;
     }
     if (typeof b.text !== "string") return "open, or the words so far";
+    if (this.sentFrom.has(from)) return null;
     const text = cleanSentence(b.text);
     this.wait(from);
     this.o.changed(text ? { state: "words", text, from } : { state: "open", text: "", from });
     return null;
   }
 
-  // The sentence was sent: what came of it takes the bar over, so it stays
-  // up without a timer. True when there was a bar to take over.
-  sent(): boolean {
+  // A phone's sentence was sent: what came of it takes the bar over, so it
+  // stays up without a timer. True when there was a bar to take over.
+  sent(from: string): boolean {
+    this.sentFrom.add(from);
     if (!this.open) return false;
     clearTimeout(this.open.timer);
     this.open = null;

@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { choices, firstFree, move, pin, problem, resize, unpin, type Placed, type Size } from "../../../launcher/layout.ts";
+import { choices, firstFree, GRID_MORE, move, pin, problem, resize, unpin, type Placed, type Size } from "../../../launcher/layout.ts";
 
 const all: Size[] = ["s", "m", "l"];
 const sizes = (id: string): Size[] | undefined => (id.startsWith("small.") ? ["s"] : id === "nowhere" ? undefined : all);
@@ -92,4 +92,23 @@ test("S2.4 a moved tile lands where it was dropped, and swaps with the tile it l
   assert.equal(where(move(home(), "app.continue", 3, 2))["app.continue"], "l@2,1");
   assert.equal(problem(move(home(), "app.continue", 3, 2), sizes), null);
   assert.deepEqual(move(home(), "app.music", 3, 1), home());
+});
+
+test("Terminal's 5 × 4 grid at more on screen takes a fifth column and a fourth row, and only it does", () => {
+  const four = home();
+  // Everything that fits 4 × 3 fits 5 × 4, in the same places.
+  assert.equal(problem(four, sizes, GRID_MORE), null);
+  const wide: Placed[] = [...four, { id: "app.fifth", x: 4, y: 3, size: "s" }];
+  assert.equal(problem(wide, sizes, GRID_MORE), null);
+  assert.match(problem(wide, sizes) ?? "", /doesn't fit/);
+  // A full 4 × 3 grid still has room on the 5 × 4 one.
+  const full = [{ id: "a", x: 0, y: 0, size: "l" }, { id: "b", x: 2, y: 0, size: "l" }, { id: "c", x: 0, y: 2, size: "m" }, { id: "d", x: 2, y: 2, size: "m" }] as Placed[];
+  assert.equal(firstFree(full, "s"), null);
+  assert.deepEqual(firstFree(full, "s", "", GRID_MORE), { x: 4, y: 0 });
+  assert.deepEqual(pin(full, "e", "s", GRID_MORE)?.at(-1), { id: "e", x: 4, y: 0, size: "s" });
+  // A tile grows and moves within the bigger grid.
+  assert.deepEqual(resize([{ id: "a", x: 4, y: 3, size: "s" }], "a", "l", GRID_MORE), [{ id: "a", x: 3, y: 2, size: "l" }]);
+  assert.deepEqual(move([{ id: "a", x: 0, y: 0, size: "s" }], "a", 4, 3, GRID_MORE), [{ id: "a", x: 4, y: 3, size: "s" }]);
+  assert.deepEqual(choices([{ id: "a", x: 4, y: 3, size: "s" }], "a", all, GRID_MORE).map((c) => c.room), [true, true, true]);
+  assert.equal(unpin(wide, "app.fifth").length, four.length);
 });

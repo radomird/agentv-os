@@ -134,6 +134,8 @@ function joining(ssid: string): void {
 }
 
 async function start(): Promise<void> {
+  // The phone's own time zone, for setup's location step to start from.
+  void call("POST", "/api/setup/zone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
   try {
     const [found, state] = await Promise.all([
       call<{ networks: Network[] }>("GET", "/api/setup/networks"),

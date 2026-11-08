@@ -2,11 +2,14 @@
 // on the right. Look, Sound, Weather, New this week, Adult PIN, Omarchy
 // desktop and Power work now; the sections later stages build say so.
 
-import { daemon, screen, type AudioState, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
+import { creditLine, daemon, screen, shownCurrent, type AudioState, type Backgrounds, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
+import { lookId, looksList, sizeId } from "../looks/looks.ts";
+import { lookCards } from "../looks/preview.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { powerPanel } from "./power.ts";
+import { aboutBox } from "./box.ts";
 import { glyph } from "../glyphs.ts";
 import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
@@ -15,9 +18,10 @@ import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryPanel, countryValue, loadCountry } from "./country.ts";
+import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
-import { sizeAct, sizeRow } from "../size.ts";
+import { loadSizes, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -60,6 +64,13 @@ function voiceLine(state: VoiceState | null): string {
   if (state.by === "piper") return "the tv says its answers with piper, on this box.";
   return "piper isn't on this box, so the tv shows its answers without saying them. agentv update brings it back.";
 }
+// The backgrounds, for Settings → Themes and backgrounds, asked for again
+// each time Settings opens.
+let pictures: Backgrounds | null = null;
+
+// What each background source is called on its row.
+const SOURCE_WORDS: Record<Backgrounds["source"], string> = { theme: "the theme's", photos: "your photos", art: "art", folder: "a folder", field: "none" };
+
 // The looks Settings → Look offers (board 12), and which one the TV has.
 let looks: { themes: ThemePreview[]; current: string | null } | null = null;
 let settingLook: string | null = null;
@@ -261,6 +272,116 @@ export function settings(ctx: Ctx, open?: string): View {
           h("button", { class: "button primary", "data-focus": true, "data-action": "set-pin", onclick: () => void choosePin() }, "set a pin →"),
         ];
 
+  // Settings → Themes and backgrounds (ADR-063, D2), with the looks on:
+  // the look, with a preview of each, the theme, the size, the background
+  // and the ambient screen. It keeps Look's key, so a page that opens
+  // settings/look lands here.
+  const themesAndBackgrounds = (): Section => ({
+    key: "look",
+    label: "themes and backgrounds",
+    value: () => looksList().find((look) => look.id === lookId())?.name ?? "",
+    panel: () => {
+      const shown = shownCurrent(pictures);
+      const source = pictures?.source ?? "theme";
+      return [
+        h("div", { class: "panel-title" }, "look"),
+        h("div", { class: "look-cards" }, ...lookCards(looksList(), lookId(), sizeId(), 300, (look) => void pickLook(look.id), looks?.current)),
+        h("div", { class: "panel-title" }, "theme"),
+        lookList(),
+        ...(looks?.themes ?? []).flatMap((look) => {
+          const made = look.app ? buildsState()?.builds.find((b) => b.id === look.app && b.state === "installed") : undefined;
+          return made ? [h("button", { class: "button wide", "data-focus": true, "data-action": `theme-made-${look.id}`, onclick: () => ctx.go(`build/${made.build}`) }, h("span", {}, `${look.name}, made by your agent`), h("span", { class: "button-value" }, "→"))] : [];
+        }),
+        ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
+        // The TV's size (ADR-062), stepped with left and right, or OK for
+        // the next one. With the sizes off, or a TV that offers one, it just
+        // says which.
+        sizeRow(),
+        h(
+          "button",
+          { class: "button", "data-focus": true, "data-action": "background", onclick: () => void nextBackground() },
+          h("span", {}, "background"),
+          h("span", { class: "button-value" }, source === "theme" ? (shown ? creditLine(shown) : "the theme's") : SOURCE_WORDS[source]),
+        ),
+        h(
+          "button",
+          { class: "button", "data-focus": true, "data-action": "ambient-style", "data-adjust": "ambient-style", onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style") },
+          h("span", {}, "ambient screen"),
+          h("span", { class: "button-value" }, s.ambient === "terminal" ? "terminal" : "backgrounds"),
+        ),
+        h(
+          "button",
+          { class: "button", "data-focus": true, "data-action": "idle", "data-adjust": "idle", onclick: () => save({ idleMinutes: IDLE[(IDLE.indexOf(s.idleMinutes) + 1) % IDLE.length] }, "look", "idle") },
+          h("span", {}, "ambient screen after"),
+          h("span", { class: "button-value" }, `${s.idleMinutes} min`),
+        ),
+        toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
+      ];
+    },
+  });
+
+  // The size row: a button that steps through the sizes this TV offers.
+  let sizing = false;
+  const sizeRow = (): HTMLElement => {
+    const display = sizes();
+    if (!display || display.sizes.length < 2) return h("div", { class: "panel-row", "data-row": "size" }, h("span", {}, "size"), h("span", { class: "button-value" }, SIZE_NAMES[display?.size ?? sizeId()]));
+    return h(
+      "button",
+      { class: "button", "data-focus": true, "data-action": "size", "data-adjust": "size", onclick: () => void stepSize(1, true) },
+      h("span", {}, "size"),
+      h("span", { class: "button-value" }, sizing ? "…" : SIZE_NAMES[display.size]),
+    );
+  };
+  // One size over. OK goes round from the last to the first; left and
+  // right stop at the ends. Home follows on the display event.
+  const stepSize = async (by: number, round = false) => {
+    const display = sizes();
+    if (!display || sizing) return;
+    const next = round && !stepped(display, by) ? display.sizes[0] : stepped(display, by);
+    if (!next) return;
+    sizing = true;
+    ctx.render("settings/look", "size");
+    const set = await setSize(next, ctx.held());
+    sizing = false;
+    if (set.error) {
+      ctx.sounds.play("failure");
+      ctx.toast(set.error, "fail");
+    } else ctx.sounds.play("confirm");
+    if (menu.isConnected) ctx.render("settings/look", "size");
+  };
+
+  // Picks a look: the TV hears it and draws itself again in it.
+  const pickLook = async (id: string) => {
+    if (id === lookId()) {
+      ctx.sounds.play("confirm");
+      return;
+    }
+    const grant = ctx.held();
+    const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ look: id }) }).catch(() => null);
+    if (!response?.ok) {
+      ctx.sounds.play("failure");
+      ctx.toast("that look didn't set", "fail");
+      return;
+    }
+    ctx.sounds.play("confirm");
+  };
+
+  // The background, from the sources that have pictures, then none.
+  const nextBackground = async () => {
+    const order: Backgrounds["source"][] = ["theme", "photos", "art", "folder", "field"];
+    const has = (source: Backgrounds["source"]) => source === "field" || (source === "theme" ? (pictures?.theme?.items.length ?? 0) > 0 : (pictures?.items ?? []).some((item) => item.kind === (source === "photos" ? "photo" : source)));
+    const at = order.indexOf(pictures?.source ?? "theme");
+    const next = [...order.slice(at + 1), ...order.slice(0, at + 1)].find(has) ?? "field";
+    try {
+      pictures = await daemon.chooseBackground(next);
+      ctx.sounds.play("confirm");
+    } catch (error) {
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+    }
+    ctx.render("settings/look", "background");
+  };
+
   const sections: Section[] = [
     {
       key: "home",
@@ -282,7 +403,7 @@ export function settings(ctx: Ctx, open?: string): View {
         h("button", { class: "button", "data-focus": true, "data-action": "apps", onclick: () => ctx.go("apps") }, "all apps →"),
       ],
     },
-    {
+    lookId() ? themesAndBackgrounds() : {
       key: "look",
       label: "look",
       value: () => looks?.themes.find((look) => look.id === looks?.current)?.name ?? "omarchy theme",
@@ -296,7 +417,6 @@ export function settings(ctx: Ctx, open?: string): View {
         }),
         // Look's last: a theme your agent makes from a few words (S6.4).
         ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
-        ...sizeRow(ctx, (action) => ctx.render("settings/look", action)),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         // What the ambient screen shows (ADR-049).
         h(
@@ -385,6 +505,12 @@ export function settings(ctx: Ctx, open?: string): View {
             "data-focus": true,
             "data-action": "desktop",
             onclick: async () => {
+              // The first time, a password before it goes (with setup's
+              // own switch on).
+              if (needsPassword()) {
+                ctx.go("desktop-password");
+                return;
+              }
               const grant = await ctx.grant("omarchy's desktop");
               if (grant === null) return;
               const reply = await screen.desktop(grant);
@@ -394,6 +520,7 @@ export function settings(ctx: Ctx, open?: string): View {
           },
           "switch to omarchy's desktop",
         ),
+        ...desktopPasswordNote(),
       ],
     },
     // Restart and Shut down (ADR-033): an adult's, so a child's profile doesn't
@@ -406,6 +533,7 @@ export function settings(ctx: Ctx, open?: string): View {
       label: "about",
       value: () => "credits",
       panel: () => [
+        aboutBox(ctx),
         h("div", { class: "panel-big" }, `agentv ${ctx.state.version}`),
         note("the world's first open-source agentic tv os. powered by omarchy."),
         note("omarchy is made by david heinemeier hansson and its contributors, under the mit licence."),
@@ -429,8 +557,8 @@ export function settings(ctx: Ctx, open?: string): View {
   };
   const menu = h(
     "div",
-    // Longer than a short canvas, it scrolls with the focus (ADR-062).
-    { class: "menu", "data-scroll": true },
+    // With the looks, the list scrolls with the focus (ADR-063).
+    { class: "menu", "data-scroll": lookId() ? true : undefined },
     ...sections.map((section) =>
       h(
         "button",
@@ -464,12 +592,16 @@ export function settings(ctx: Ctx, open?: string): View {
       }
     })
     .catch(() => {});
+  // Which voice says the answers, against what this page drew: a Settings
+  // drawn again while another one's ask waited has no voice line on it yet,
+  // though the other ask already knew the voice.
+  const voiceDrawn = JSON.stringify(voice);
   void daemon
     .voice()
     .then((found) => {
-      const changed = JSON.stringify(found) !== JSON.stringify(voice);
+      const changed = JSON.stringify(found) !== voiceDrawn;
       voice = found;
-      if (!changed || menu.querySelector(".open")?.getAttribute("data-key") !== "sound") return;
+      if (!changed || !menu.isConnected || menu.querySelector(".open")?.getAttribute("data-key") !== "sound") return;
       if (!panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "sound")!);
         return;
@@ -482,6 +614,19 @@ export function settings(ctx: Ctx, open?: string): View {
       else panel.append(voiceNote(line));
     })
     .catch(() => {});
+  // The backgrounds, for Themes and backgrounds' row, with the looks on.
+  if (lookId()) {
+    const drew = JSON.stringify(pictures);
+    void daemon
+      .backgrounds()
+      .then((found) => {
+        pictures = found;
+        if (JSON.stringify(found) !== drew && menu.querySelector(".open")?.getAttribute("data-key") === "look" && !panel.contains(ctx.focus.get() ?? null)) {
+          show(sections.find((section) => section.key === "look")!);
+        }
+      })
+      .catch(() => {});
+  }
   void loadCountry()
     .then(() => {
       const item = menu.querySelector<HTMLElement>('[data-key="country"] .menu-value');
@@ -497,6 +642,13 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = newsValue();
       if (menu.querySelector(".open")?.getAttribute("data-key") === "tmdb" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "tmdb")!);
+      }
+    })
+    .catch(() => {});
+  void loadDesktopPassword()
+    .then(() => {
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "desktop" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "desktop")!);
       }
     })
     .catch(() => {});
@@ -569,6 +721,14 @@ export function settings(ctx: Ctx, open?: string): View {
     // Still on Settings, after the few seconds Omarchy takes.
     if (menu.isConnected) ctx.render("settings/look", `theme-${look.id}`);
   };
+  // The sizes this TV offers, against what this page drew.
+  const sized = JSON.stringify(sizes());
+  void loadSizes().then((found) => {
+    if (JSON.stringify(found) === sized || !menu.isConnected || menu.querySelector(".open")?.getAttribute("data-key") !== "look") return;
+    const at = ctx.focus.get() ?? null;
+    if (!panel.contains(at)) show(sections.find((section) => section.key === "look")!);
+    else ctx.render("settings/look", at?.getAttribute("data-action") ?? undefined);
+  });
   // Against what this page drew, not what another Settings drawn since has
   // seen: a redraw while this one waited, such as for a build's news, mustn't
   // keep the list it started with.
@@ -627,7 +787,10 @@ export function settings(ctx: Ctx, open?: string): View {
     },
     act(action) {
       const current = ctx.focus.get();
-      if (sizeAct(ctx, action, current, (at) => ctx.render("settings/look", at))) return true;
+      if (current?.dataset.adjust === "size" && (action === "left" || action === "right")) {
+        void stepSize(action === "right" ? 1 : -1);
+        return true;
+      }
       if (current?.dataset.adjust === "idle" && (action === "left" || action === "right")) {
         const at = Math.max(0, Math.min(IDLE.length - 1, IDLE.indexOf(s.idleMinutes) + (action === "right" ? 1 : -1)));
         void save({ idleMinutes: IDLE[at] }, "look", "idle");

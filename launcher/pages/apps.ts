@@ -7,8 +7,10 @@
 
 import { screen, type App } from "../api.ts";
 import { h } from "../dom.ts";
+import { lookId, named } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { buildTile, underway } from "./build.ts";
+import { askBuilds, askWith, EXAMPLES } from "./ask.ts";
 import { logo } from "./home.ts";
 import { bar, heading, togglePin } from "./parts.ts";
 import { removeShare, shares, sharedTile } from "./shared.ts";
@@ -32,7 +34,7 @@ function appTile(ctx: Ctx, app: App): HTMLElement {
       },
     },
     h("div", { class: "tile-top" }, logo(app)),
-    h("span", { class: "tile-name" }, app.name.toLowerCase()),
+    h("span", { class: "tile-name" }, named(app.name)),
   );
 }
 
@@ -57,13 +59,20 @@ export function apps(ctx: Ctx): View {
     ctx.state.viewer.role === "adult"
       ? h(
           "button",
-          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "build", onclick: () => ctx.go("build") },
+          // With the Ask box on, it's the Ask box, ready for "make ..." (ADR-068).
+          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "build", onclick: () => (askBuilds() ? askWith(ctx, "make ") : ctx.go("build")) },
           h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, "make one")),
           h("span", { class: "tile-name" }, "+ add your own"),
         )
       : null;
   const building = underway();
   const shared = shares();
+  // What to make, while your agent hasn't made anything (ADR-068): each
+  // opens the Ask box with it, for one press of OK.
+  const examples =
+    askBuilds() && ctx.state.viewer.role === "adult" && !ctx.state.apps.some((app) => app.tier === "local") && !building.length
+      ? [h("div", { class: "section" }, "# ask your agent to make one"), h("div", { class: "check-actions ask-examples" }, ...EXAMPLES.map((example) => h("button", { class: "button", "data-focus": true, "data-example": example, onclick: () => askWith(ctx, example) }, example)))]
+      : [];
 
   const el = h(
     "div",
@@ -76,14 +85,16 @@ export function apps(ctx: Ctx): View {
         "div",
         { class: "page-head" },
         h("div", {}, ...heading("tv apps", "apps.")),
-        h("button", { class: "button", "data-focus": true, onclick: () => ctx.go("settings") }, "settings →"),
+        // With the looks, Settings is in every look's bar (D7).
+        lookId() ? null : h("button", { class: "button", "data-focus": true, onclick: () => ctx.go("settings") }, "settings →"),
       ),
       h("div", { class: "section" }, "# on your home"),
       on.length ? h("div", { class: "row" }, ...on.map((app) => appTile(ctx, app))) : h("div", { class: "empty" }, "nothing yet"),
       ...(building.length ? [h("div", { class: "section" }, "# your agent's builds"), h("div", { class: "row" }, ...building.map((b) => buildTile(ctx, b)))] : []),
-      h("div", { class: "section" }, "# not on your home"),
+      h("div", { class: "section" }, lookId() ? "# more on this tv" : "# not on your home"),
       h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(official ? [official] : []), ...(add ? [add] : [])),
       ...(shared.length ? [h("div", { class: "section" }, "# shared"), h("div", { class: "row" }, ...shared.map((share) => sharedTile(ctx, share)))] : []),
+      ...examples,
     ),
     bar(ctx, "apps", shared.length ? "↵ open · i details · p pin to home · e edit home · del takes a share off" : "↵ open · i details · p pin to home · e edit home"),
   );

@@ -3,6 +3,7 @@
 // music, puts Music on home from the start. OK on one picks it and moves on.
 
 import { h } from "../launcher/dom.ts";
+import { featureOn } from "../launcher/features.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { setup, type Goal } from "./api.ts";
 import { heading } from "./frame.ts";
@@ -43,4 +44,64 @@ export function goal(ctx: Ctx): View {
     h("div", { class: "goals" }, ...cards),
   );
   return { el, first: cards.find((card) => card.dataset.goal === chosen()), info: "←↑↓→ move · ↵ pick" };
+}
+
+// The goal with setup's own switch on (design page D3, step 8 of 12): one
+// line says the pick only sets up the first home, so picking media doesn't
+// stop anyone playing a game. Four cards in a row, and OK on one picks it
+// and moves on, with no continue. With the box check on, gaming says what
+// to expect on this box.
+const CARDS: { goal: Goal; name: string; note: string; icon: Glyph }[] = [
+  { goal: "streaming", name: "streaming", note: "films and shows", icon: "film" },
+  { goal: "music", name: "music", note: "albums and playlists", icon: "music" },
+  { goal: "media", name: "media", note: "your own server and photos", icon: "photo" },
+  { goal: "gaming", name: "gaming", note: "steam and more", icon: "gamepad" },
+];
+
+// What the box check says about games, as gaming's line.
+const GAMES: Record<string, string> = {
+  good: "games run well on this box",
+  light: "light games on this box",
+  none: "not much for games on this box",
+};
+
+async function games(): Promise<string | null> {
+  if (!(await featureOn("boxcheck").catch(() => false))) return null;
+  const box = await fetch("/api/box")
+    .then((response) => (response.ok ? (response.json() as Promise<{ verdicts?: { games?: string } }>) : null))
+    .catch(() => null);
+  return GAMES[box?.verdicts?.games ?? ""] ?? null;
+}
+
+export async function goal2(ctx: Ctx): Promise<View> {
+  const gaming = await games();
+  const chosen = ctx.info.setup.goal ?? "streaming";
+  const pick = async (goal: Goal) => {
+    try {
+      ctx.info.setup = await setup.goal(goal);
+    } catch (error) {
+      ctx.toast((error as Error).message, "fail");
+      ctx.sounds.play("failure");
+      return;
+    }
+    await ctx.finish("goal");
+  };
+  const cards = CARDS.map((card) =>
+    h(
+      "button",
+      { class: "goal-card", "data-focus": true, "data-goal": card.goal, onclick: () => void pick(card.goal) },
+      glyph(card.icon, 64),
+      h("span", { class: "goal-card-text" }, h("span", { class: "goal-card-name" }, card.name), h("span", { class: "goal-card-note" }, card.goal === "gaming" && gaming ? gaming : card.note)),
+    ),
+  );
+  const [prompt, headline] = heading("agentv goal", "what's it for, mostly?", ctx.reduced());
+  const el = h(
+    "div",
+    { class: "setup-page d3" },
+    prompt,
+    headline,
+    h("p", { class: "setup-line" }, "this only sets up your first home. you can still use everything."),
+    h("div", { class: "goal-cards" }, ...cards),
+  );
+  return { el, first: cards.find((card) => card.dataset.goal === chosen), info: ctx.info.phones.length ? "phone paired" : "" };
 }

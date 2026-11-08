@@ -9,12 +9,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { cleanScale, Display, DisplayWatch, displayFile, offered, parseMode, pickMode, targetFor, type DisplayHyprland, type Mode } from "../../../daemon/display.ts";
-import { Features } from "../../../daemon/features.ts";
 import type { Monitor } from "../../../daemon/hyprland.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { DisplayRoutes } from "../../../daemon/routes/display.ts";
 
 const base = mkdtempSync(join(tmpdir(), "agentv-display-"));
 after(() => rmSync(base, { recursive: true, force: true }));
+// The switches turn on on edge only, so these boxes are on edge.
+const EDGE = join(base, "channel");
+writeFileSync(EDGE, "edge\n");
 
 const modes = (...list: string[]): Mode[] => list.map((text) => parseMode(text)!);
 // The Panasonic's modes, as Hyprland lists them on the NUC, more or less.
@@ -73,7 +76,7 @@ test("the display keeps what's picked and the TV it saw, and nothing changes wit
   const state = join(base, "model");
   let on = false;
   let smooth: boolean | null = null;
-  const display = new Display({ state, on: () => on, fourKSmooth: async () => smooth });
+  const display = new Display({ state, on: async () => on, fourKSmooth: async () => smooth });
   assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: null, scale: null, canvas: [1920, 1080], sizes: [] });
   assert.deepEqual(await display.choose({ size: "larger" }), { ok: false, status: 409, error: "sizes are switched off on this box" });
   assert.deepEqual(await display.reported(PANASONIC_TV), { ok: true, changed: true });
@@ -110,7 +113,7 @@ test("the display keeps what's picked and the TV it saw, and nothing changes wit
 test("/api/display picks a size, the screen daemon sets it, and the TV hears it", async () => {
   const state = join(base, "daemon");
   mkdirSync(state, { recursive: true });
-  const daemon = new Daemon({ root: join(base, "root"), state, apps: join(base, "apps"), builtins: null, port: 0, log: () => {} });
+  const daemon = new Daemon({ root: join(base, "root"), state, apps: join(base, "apps"), builtins: null, port: 0, log: () => {}, channelFile: EDGE });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const send = async (method: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}${path}`, { method, headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -164,7 +167,7 @@ test("a size picked with no TV session running is kept for the next one", async 
   const state = join(base, "no-session");
   mkdirSync(state, { recursive: true });
   writeFileSync(join(state, "features.json"), JSON.stringify({ sizes: true }));
-  const daemon = new Daemon({ root: join(base, "root"), state, apps: join(base, "apps"), builtins: null, port: 0, log: () => {} });
+  const daemon = new Daemon({ root: join(base, "root"), state, apps: join(base, "apps"), builtins: null, port: 0, log: () => {}, channelFile: EDGE });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   try {
     // No TV seen yet: what every 1080p TV can do.
@@ -178,17 +181,42 @@ test("a size picked with no TV session running is kept for the next one", async 
   }
 });
 
-test("the features file changes only the switches it names", () => {
-  const state = join(base, "features");
-  mkdirSync(state, { recursive: true });
-  const features = new Features({ state });
-  assert.equal(features.on("sizes"), false);
-  writeFileSync(join(state, "features.json"), JSON.stringify({ sizes: true, nonsense: true, looks: "yes" }));
-  assert.equal(features.on("sizes"), true);
-  assert.equal(features.on("looks"), false);
-  assert.equal("nonsense" in features.all(), false);
-  writeFileSync(join(state, "features.json"), "{");
-  assert.equal(features.on("sizes"), false);
+test("when the box check finds 4K isn't smooth, the TV moves to 1080p output at once", async () => {
+  const state = join(base, "follow");
+  let smooth: boolean | null = null;
+  const sent: Record<string, unknown>[] = [];
+  const events: string[] = [];
+  // The kit's body hands back what's passed as the request, so the test can
+  // say it directly.
+  const routes = new DisplayRoutes({
+    state,
+    sizes: async () => true,
+    fourKSmooth: async () => smooth,
+    json: (_response, _status, data) => void sent.push(data as Record<string, unknown>),
+    body: async (request) => request,
+    broadcast: (event) => void events.push(event),
+    log: () => {},
+    adult: async () => true,
+  });
+  const call = (method: string, path: string, body: unknown = {}) => routes.handle(method, path, body as never, {} as never);
+  await call("POST", "/api/display/tv", { ...PANASONIC_TV, live: { mode: "3840x2160@60", scale: 2 } });
+  assert.deepEqual(sent.at(-1), { ok: true, target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 } }, "before the test has run, the TV's full resolution");
+
+  // Nothing to do while the TV already runs at what it should.
+  await routes.follow();
+  assert.deepEqual(events, []);
+
+  smooth = false;
+  const following = routes.follow();
+  await call("GET", "/api/display/ask");
+  const ask = (sent.at(-1) as { ask: { n: number; target: unknown } }).ask;
+  assert.deepEqual(ask.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1 });
+  await call("POST", `/api/display/ask/${ask.n}`, { ok: true, live: { mode: "1920x1080@60", scale: 1 } });
+  await following;
+  assert.deepEqual(events, ["display"]);
+  await call("GET", "/api/display");
+  assert.deepEqual([sent.at(-1)?.output, sent.at(-1)?.mode], ["1080p", "1920x1080@60"]);
+  routes.close();
 });
 
 // --- The screen daemon's side --------------------------------------------
@@ -261,7 +289,7 @@ test("the screen daemon tells the daemon its TV at the start, and again when one
   mkdirSync(state, { recursive: true });
   writeFileSync(join(state, "features.json"), JSON.stringify({ sizes: true }));
   writeFileSync(join(state, "display.json"), JSON.stringify({ size: "more" }));
-  const daemon = new Daemon({ root: join(base, "root"), state, apps: join(base, "apps"), builtins: null, port: 0, log: () => {} });
+  const daemon = new Daemon({ root: join(base, "root"), state, apps: join(base, "apps"), builtins: null, port: 0, log: () => {}, channelFile: EDGE });
   const url = `http://127.0.0.1:${await daemon.listen()}/`;
   const hypr = new FakeHyprland();
   const watch = new DisplayWatch({ hyprland: hypr, url, file: join(base, "watch-home", "display"), log: () => {} });

@@ -1,72 +1,69 @@
-// The TV's size (ADR-062): the canvas home lays out on, from /api/display,
-// and the size picker. Larger, standard and more on screen are canvases
-// 1600, 1920 and 2400 pixels across, and a TV offers the ones that stay
-// sharp on it. The picker is behind the sizes switch; with it off, home lays
-// out on 1920 × 1080 as before.
+// The TV's size (ADR-062): larger, standard or more on screen, canvases
+// 1600, 1920 and 2400 pixels across, which the TV's scale makes of its own
+// resolution. A TV offers the sizes that stay sharp on it: all three on a 4K
+// TV, larger and standard on a 1080p one. Settings → Themes and backgrounds
+// and setup's look step pick one with this; home lays out on it through
+// looks/looks.ts. Behind the sizes switch.
 
-import { daemon, type DisplaySize, type DisplayState } from "./api.ts";
-import { fit, h } from "./dom.ts";
-import type { Ctx } from "./main.ts";
+import { featureOn } from "./features.ts";
+import type { SizeId } from "./looks/looks.ts";
 
-export const SIZE_NAMES: Record<DisplaySize, string> = { larger: "larger", standard: "standard", more: "more on screen" };
+export const SIZE_NAMES: Record<SizeId, string> = { larger: "larger", standard: "standard", more: "more on screen" };
+
+// What GET /api/display answers (daemon/display.ts).
+export interface DisplayState {
+  size: SizeId;
+  output: "auto" | "1080p";
+  mode: string | null;
+  scale: number | null;
+  canvas: [number, number];
+  sizes: SizeId[];
+}
 
 let shown: DisplayState | null = null;
-let on = false;
-let changing = false;
 
-export function displayState(): DisplayState | null {
+// The TV's size and the sizes it offers, or null with the switch off.
+export async function loadSizes(): Promise<DisplayState | null> {
+  if (!(await featureOn("sizes"))) {
+    shown = null;
+    return null;
+  }
+  try {
+    const response = await fetch("/api/display", { cache: "no-store" });
+    shown = response.ok ? ((await response.json()) as DisplayState) : null;
+  } catch {
+    shown = null;
+  }
   return shown;
 }
 
-// What the daemon says, and the page on that canvas.
-export function tookDisplay(state: DisplayState): void {
-  shown = state;
-  if (Array.isArray(state.canvas) && state.canvas[0] > 0 && state.canvas[1] > 0) fit(state.canvas);
+// The last answer, for a page drawn again in place.
+export function sizes(): DisplayState | null {
+  return shown;
 }
 
-export async function loadDisplay(): Promise<void> {
-  const [features, state] = await Promise.all([daemon.features().catch(() => ({}) as Record<string, boolean>), daemon.display()]);
-  on = features.sizes === true;
-  tookDisplay(state);
-}
-
-// The size row, for Settings and setup: what the TV shows, stepped with
-// left and right, or OK for the next one. None while the switch is off or
-// this TV offers one size.
-export function sizeRow(ctx: Ctx, rerender: (action: string) => void): HTMLElement[] {
-  if (!on || !shown || shown.sizes.length < 2) return [];
-  return [h(
-    "button",
-    { class: "button", "data-focus": true, "data-action": "size", "data-adjust": "size", onclick: () => void stepSize(ctx, 1, rerender, true) },
-    h("span", {}, "size"),
-    h("span", { class: "button-value" }, changing ? "…" : SIZE_NAMES[shown.size]),
-  )];
-}
-
-// One size over: larger to the left, more on screen to the right. OK goes
-// round from the last to the first.
-export async function stepSize(ctx: Ctx, by: number, rerender: (action: string) => void, wrap = false): Promise<void> {
-  if (!shown || changing) return;
-  const sizes = shown.sizes;
-  const at = sizes.indexOf(shown.size);
-  const next = wrap ? sizes[(at + by + sizes.length) % sizes.length] : sizes[Math.max(0, Math.min(sizes.length - 1, at + by))];
-  if (!next || next === shown.size) return;
-  changing = true;
-  rerender("size");
+// Picks a size: the TV takes it within a second, and home follows on the
+// display event. The new state, or why not.
+export async function setSize(size: SizeId, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
   try {
-    tookDisplay(await daemon.setDisplay({ size: next }));
-    ctx.sounds.play("confirm");
-  } catch (error) {
-    ctx.toast((error as Error).message, "fail");
-    ctx.sounds.play("failure");
+    const response = await fetch("/api/display", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+      body: JSON.stringify({ size }),
+    });
+    const data = (await response.json()) as DisplayState & { ok?: boolean; error?: string };
+    if (!response.ok || data.ok === false) return { error: data.error ?? "the size didn't change" };
+    shown = data;
+    return { state: data };
+  } catch {
+    return { error: "the size didn't change" };
   }
-  changing = false;
-  rerender("size");
 }
 
-// Left and right on the size row, for a page's act().
-export function sizeAct(ctx: Ctx, action: string, current: HTMLElement | null | undefined, rerender: (action: string) => void): boolean {
-  if (current?.dataset.adjust !== "size" || (action !== "left" && action !== "right")) return false;
-  void stepSize(ctx, action === "right" ? 1 : -1, rerender);
-  return true;
+// The size one step over: larger to the left, more on screen to the right,
+// staying at the ends. Null when there's nowhere to go.
+export function stepped(state: DisplayState, by: number): SizeId | null {
+  const at = state.sizes.indexOf(state.size);
+  const next = state.sizes[Math.max(0, Math.min(state.sizes.length - 1, at + by))];
+  return next && next !== state.size ? next : null;
 }
