@@ -1,5 +1,4 @@
-# The desktop's password from Settings: boxes installed before get its
-# hand-over to root started now, and the daemon again with the group that
-# reaches it. New boxes get both from the package.
+# The desktop's first password: boxes installed before get its hand-over to
+# root started now. The daemon takes its new group when the update restarts
+# AgenTV's services. New boxes get both from the package.
 sudo systemctl start agentv-password.socket || true
-sudo systemctl try-restart agentv-daemon.service || true
