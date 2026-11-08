@@ -2323,3 +2323,10 @@ body.with-backdrop.on-home {
   color: var(--bright-foreground);
   font-size: 32px;
 }
+
+/* The Ask box (ADR-068, D5): why nothing happened stands out, such as a
+   child's "ask a grown-up to make apps", or where to set up an AI. */
+.ask-said.ask-no {
+  color: var(--yellow);
+  font-weight: 700;
+}

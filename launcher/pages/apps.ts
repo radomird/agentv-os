@@ -10,6 +10,7 @@ import { h } from "../dom.ts";
 import { lookId, named } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { buildTile, underway } from "./build.ts";
+import { askBuilds, askWith, EXAMPLES } from "./ask.ts";
 import { logo } from "./home.ts";
 import { bar, heading, togglePin } from "./parts.ts";
 import { removeShare, shares, sharedTile } from "./shared.ts";
@@ -58,13 +59,20 @@ export function apps(ctx: Ctx): View {
     ctx.state.viewer.role === "adult"
       ? h(
           "button",
-          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "build", onclick: () => ctx.go("build") },
+          // With the Ask box on, it's the Ask box, ready for "make ..." (ADR-068).
+          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "build", onclick: () => (askBuilds() ? askWith(ctx, "make ") : ctx.go("build")) },
           h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, "make one")),
           h("span", { class: "tile-name" }, "+ add your own"),
         )
       : null;
   const building = underway();
   const shared = shares();
+  // What to make, while your agent hasn't made anything (ADR-068): each
+  // opens the Ask box with it, for one press of OK.
+  const examples =
+    askBuilds() && ctx.state.viewer.role === "adult" && !ctx.state.apps.some((app) => app.tier === "local") && !building.length
+      ? [h("div", { class: "section" }, "# ask your agent to make one"), h("div", { class: "check-actions ask-examples" }, ...EXAMPLES.map((example) => h("button", { class: "button", "data-focus": true, "data-example": example, onclick: () => askWith(ctx, example) }, example)))]
+      : [];
 
   const el = h(
     "div",
@@ -86,6 +94,7 @@ export function apps(ctx: Ctx): View {
       h("div", { class: "section" }, lookId() ? "# more on this tv" : "# not on your home"),
       h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(official ? [official] : []), ...(add ? [add] : [])),
       ...(shared.length ? [h("div", { class: "section" }, "# shared"), h("div", { class: "row" }, ...shared.map((share) => sharedTile(ctx, share)))] : []),
+      ...examples,
     ),
     bar(ctx, "apps", shared.length ? "↵ open · i details · p pin to home · e edit home · del takes a share off" : "↵ open · i details · p pin to home · e edit home"),
   );

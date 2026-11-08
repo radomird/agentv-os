@@ -7,6 +7,7 @@ import { pin, unpin } from "../layout.ts";
 import type { Ctx } from "../main.ts";
 import { lookBar } from "../looks/bars.ts";
 import { currentGrid, lookId } from "../looks/looks.ts";
+import { askBuilds } from "./ask.ts";
 
 // The bar: the mode, then links to apps and settings, or what this mode's
 // keys do; on the right, info and the clock.
@@ -19,6 +20,8 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
     else time.textContent = clock();
   }, 10_000);
   const links = step ?? [
+    // The Ask box, with its switch on (ADR-068).
+    ...(askBuilds() && mode !== "ask" ? [h("button", { class: "bar-link", "data-focus": true, "data-action": "bar-ask", onclick: () => ctx.go("ask") }, "ask"), h("span", {}, "·")] : []),
     h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("apps") }, "apps"),
     h("span", {}, "·"),
     h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("settings") }, ctx.updates.status?.agentv.available && !ctx.updates.status.waiting ? "settings ●" : "settings"),
