@@ -13,8 +13,8 @@ import { NONE, type Routed, type RouterApp } from "./router.ts";
 export const ROUTER_SOCKETS = { api: "/run/agentv-router/router.sock", cli: "/run/agentv-router-cli/route.sock" };
 
 // A route of none, and why, for a sentence the router never got.
-export function unrouted(sentence: string, provider: Provider, via: "api" | "cli", error: string): Routed {
-  return { sentence, route: { ...NONE }, none: "failed", error, provider, via, model: null, ms: 0 };
+export function unrouted(sentence: string, provider: Provider, via: "api" | "cli", error: string, setup?: Routed["setup"]): Routed {
+  return { sentence, route: { ...NONE }, none: "failed", error, provider, via, model: null, ms: 0, ...(setup ? { setup } : {}) };
 }
 
 // One sentence to a route service, over its socket.
@@ -58,15 +58,15 @@ export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterA
     const ai = await o.ai();
     const provider = ai.provider ?? "claude";
     const via = ai.path === "plan" ? "cli" : "api";
-    if (!ai.provider || !ai.path) return unrouted(sentence, provider, via, "set up your agent in settings → ai first");
+    if (!ai.provider || !ai.path) return unrouted(sentence, provider, via, "set up your agent in settings → ai first", "ai");
     const offer = OFFERS[ai.provider];
-    if (!ai.accepted) return unrouted(sentence, provider, via, `an adult accepts ${offer.name}'s terms on a phone first`);
+    if (!ai.accepted) return unrouted(sentence, provider, via, `an adult accepts ${offer.name}'s terms on a phone first`, "terms");
     if (ai.path === "key") {
       const key = o.key();
-      if (!key.set || key.provider !== ai.provider) return unrouted(sentence, provider, via, `add ${offer.name}'s key in settings → ai first`);
+      if (!key.set || key.provider !== ai.provider) return unrouted(sentence, provider, via, `add ${offer.name}'s key in settings → ai first`, "key");
       return viaSocket(sockets.api, { provider, sentence, apps });
     }
-    if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't take requests yet`);
+    if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't take requests yet`, "plan");
     return viaSocket(sockets.cli, { provider, sentence, apps });
   };
 }

@@ -7,13 +7,15 @@
 // choose from, and a new episode is an answer, told.
 //
 // What needs the TV session, searching apps and opening them, goes to the
-// screen daemon as an ask (daemon/say.ts).
+// screen daemon as an ask (daemon/say.ts). Make and change ask the builder
+// (make.ts, ADR-068).
 
 import type { Item } from "../../apps/contract/contract.ts";
 import type { WatchRow } from "../ledger.ts";
 import type { Route, Routed } from "../router.ts";
 import type { EpisodeAnswer, Feed } from "../tmdb.ts";
 import { continueItem, toContinue } from "./continue.ts";
+import { change, make, type ExecBuilds } from "./make.ts";
 import { newEpisode } from "./newEpisode.ts";
 import { pick, rank, toOpen, words, type Found } from "./play.ts";
 import { whatsNew } from "./whatsNew.ts";
@@ -25,19 +27,28 @@ export interface Candidate {
   item: Item;
 }
 
+// A build is one the agent started: a make, reading what was asked, or a
+// change an adult said ok to. A change waits for that ok, on the TV or the
+// phone (make.ts).
 export type Outcome =
   | { kind: "opened"; say: string; app: string; item?: Item }
   | { kind: "choose"; say: string; candidates: Candidate[] }
   | { kind: "told"; say: string; episode?: EpisodeAnswer }
+  | { kind: "build"; say: string; build: string; what: string; app?: string }
+  | { kind: "change"; say: string; app: string; name: string; what: string; recipe: string | null }
   | { kind: "none"; say: string; why: NoneWhy; detail?: string };
 
 // Why nothing happened: the router couldn't route it, its answer didn't
 // fit, the provider didn't answer, an app it named isn't here, nothing
 // matched, that request comes later, the app didn't open, or what's new
-// needs a TMDB key or a region first.
-export type NoneWhy = "unroutable" | "unreadable" | "failed" | "missing" | "not-found" | "soon" | "not-opened" | "no-tmdb";
+// needs a TMDB key or a region first. For make and change: a child asked,
+// there's no AI to build with, the builder didn't start, the app isn't one
+// the agent made, or it isn't clear which one.
+export type NoneWhy = "unroutable" | "unreadable" | "failed" | "missing" | "not-found" | "soon" | "not-opened" | "no-tmdb" | "child" | "no-ai" | "not-built" | "not-made" | "which";
 
 export const DIDNT_GET = "i didn't get that";
+// With no AI set up yet, where to set one up (D5).
+export const NO_AI = "set up an ai first: settings → ai";
 
 // An app who's watching can open, as the executors know it.
 export interface ExecApp {
@@ -45,6 +56,7 @@ export interface ExecApp {
   name: string;
   category: string;
   capabilities: string[];
+  made?: boolean; // the box's agent made it
 }
 
 export type Opened = { ok: true } | { ok: false; error?: string };
@@ -62,6 +74,8 @@ export interface ExecContext {
   search: (query: string, apps: string[]) => Promise<Found[]>;
   open: (app: string, item?: Item) => Promise<Opened>;
   news?: ExecNews;
+  // The builder, for make and change, when the askbuilds switch is on.
+  builds?: ExecBuilds;
 }
 
 const lower = (text: string) => text.toLowerCase();
@@ -84,6 +98,9 @@ export async function opening(ctx: ExecContext, app: ExecApp, item?: Item): Prom
 export async function execute(routed: Routed, ctx: ExecContext): Promise<Outcome> {
   const route = routed.route;
   if (route.intent === "none") {
+    // With the Ask box building, an AI that isn't set up says where to set
+    // it up, as D5's "set up an ai first: settings → ai".
+    if (routed.none === "failed" && routed.setup && ctx.builds) return { kind: "none", why: "no-ai", say: routed.setup === "ai" ? NO_AI : (routed.error ?? NO_AI) };
     if (routed.none === "failed") return { kind: "none", why: "failed", say: "your agent didn't answer", ...(routed.error ? { detail: routed.error } : {}) };
     return { kind: "none", why: routed.none === "unreadable" ? "unreadable" : "unroutable", say: DIDNT_GET };
   }
@@ -101,9 +118,9 @@ export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
     if (!app) return { kind: "none", why: "missing", say: `there's no ${lower(said)} on this tv` };
   }
 
-  // Make and change, for the box's agent to build (ADR-068): nothing does
-  // them here yet, so they're what they were before the router knew them.
-  if (route.intent === "make" || route.intent === "change") return { kind: "none", why: "unroutable", say: DIDNT_GET };
+  // Make and change, for the box's agent to build (ADR-068).
+  if (route.intent === "make") return make(route, ctx);
+  if (route.intent === "change") return change(route, ctx, app);
 
   if (route.intent === "whats_new") return whatsNew(route, ctx, app);
   if (route.intent === "new_episode") return newEpisode(route, ctx);
