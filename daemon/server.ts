@@ -48,7 +48,7 @@ import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
-import { Features } from "./features.ts";
+import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
@@ -1935,7 +1935,12 @@ export class Daemon {
 
   // What the switches' routes need of the daemon.
   private featureKit(): FeatureRoutes {
-    return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed: (all) => this.broadcast("features", all), log: this.log };
+    // The TV's size follows the sizes switch at once (ADR-062).
+    const changed = (all: FeatureMap) => {
+      this.broadcast("features", all);
+      void this.displayRoutes.switched(all.sizes);
+    };
+    return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed, log: this.log };
   }
 
   private json(response: ServerResponse, status: number, data: unknown): void {

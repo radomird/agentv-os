@@ -12,6 +12,7 @@
 //
 // When the box check finds the box can't keep 4K smooth (ADR-061), follow()
 // moves the TV to 1080p output at once, unless someone picked the output.
+// It also follows the sizes switch, on or off, without a restart.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Asks } from "../asks.ts";
@@ -65,15 +66,29 @@ export class DisplayRoutes {
     return answer.ok;
   }
 
-  // The box check has news: its verdict is read again, and the TV follows
-  // it if it changes what the TV should run at.
+  // The switches changed: the TV follows when the sizes switch did.
+  private sizesWere: boolean | null = null;
+  async switched(sizes: boolean): Promise<void> {
+    const was = this.sizesWere;
+    this.sizesWere = sizes;
+    if (was !== sizes) await this.follow();
+  }
+
+  // The box check or the switches have news: the verdict is read again, and
+  // the TV follows if that changes what it should run at. With the sizes
+  // switched off, the screen daemon puts back Hyprland's own mode and scale,
+  // if it had set them.
   async follow(): Promise<void> {
     this.verdict = null;
     const target = await this.model.target();
-    if (!target || (await this.model.runs(target))) return;
-    await this.apply();
+    if (target && (await this.model.runs(target))) return;
+    if (target) await this.apply();
+    else {
+      const answer = await this.asks.ask({ target: null }, APPLY_MS);
+      if (answer.live) await this.model.live(answer.live);
+    }
     const state = await this.model.state();
-    this.kit.log(`display: the box check moved the tv to ${state.mode}, scale ${state.scale}`);
+    this.kit.log(`display: the tv follows, at ${state.mode ?? "its own mode"}, scale ${state.scale ?? "auto"}`);
     this.kit.broadcast("display", state);
   }
 
