@@ -279,3 +279,23 @@ test("T8.3 the menu: who's watching, Apps on the TV, and Settings brings home in
   await hand.waitForSelector(".r2-surface");
   await hand.close();
 });
+
+test("T8.3 the remote follows the TV's look: Glass and Cinema with the looks on, Terminal with them off", async () => {
+  const b = await box(true);
+  const state = join(String((b.daemon as unknown as { options: { state: string } }).options.state));
+  const hand = await phone(b);
+  const look = () => hand.evaluate(() => document.body.dataset.look);
+  assert.equal(await look(), "terminal", "with the looks off, the phone is Terminal");
+  writeFileSync(join(state, "features.json"), JSON.stringify({ remote2: true, looks: true }));
+  for (const [id, font] of [["glass", "Manrope"], ["cinema", "Instrument Sans"]] as const) {
+    await fetch(`${b.url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look: id }) });
+    await context(b, { screen: "home" });
+    await until(async () => (await look()) === id, 5000);
+    assert.match(await hand.evaluate(() => getComputedStyle(document.querySelector(".r2")!).fontFamily), new RegExp(font));
+    assert.notEqual(await hand.evaluate(() => getComputedStyle(document.querySelector(".r2-surface")!).borderRadius), "0px", "its surface is rounded");
+  }
+  // The looks' fonts come from the box over the phone's port.
+  assert.equal((await fetch(`${b.phoneUrl}/launcher/fonts/manrope-latin-wght-normal.woff2`)).status, 200);
+  assert.notEqual((await fetch(`${b.phoneUrl}/launcher/looks/looks.ts`)).status, 200, "and nothing else of the launcher's");
+  await hand.close();
+});
