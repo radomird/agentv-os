@@ -99,7 +99,7 @@ test("a change names the app or finds the only one the agent made, and says why 
   const { ctx } = context();
   assert.equal(((await execute(routed(change("make the jump higher")), ctx)) as Outcome & { app: string }).app, "local.blocks", "the only one the agent made");
   assert.deepEqual(await execute(routed(change("make it faster", "agentv.jellyfin")), ctx), { kind: "none", why: "not-made", say: "your agent didn't make jellyfin, so it can't change it" });
-  assert.deepEqual(await execute(routed(change("make it faster", "Netflix")), ctx), { kind: "none", why: "missing", say: "there's no netflix on this tv" });
+  assert.deepEqual(await execute(routed(change("make it faster", "Snake")), ctx), { kind: "none", why: "missing", say: "there's no snake on this tv" });
   const none = context({ apps: [APPS[0]] });
   assert.deepEqual(await execute(routed(change("make the jump higher")), none.ctx), { kind: "none", why: "not-made", say: "your agent hasn't made any apps yet" });
   const two = context({ apps: [...APPS, { id: "local.quiz", name: "Quiz", category: "games", capabilities: [], made: true }] });
