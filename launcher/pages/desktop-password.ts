@@ -37,8 +37,18 @@ async function call(method: string, body?: unknown, grant?: string): Promise<{ p
   return data;
 }
 
-// Asks again, for Settings to draw. Nothing with the switch off.
+// Whether setup's own switch is on, as the launcher marks it on the page.
+function switchOn(): boolean {
+  return (document.documentElement.dataset.features ?? "").split(" ").includes("setup2");
+}
+
+// Asks again, for Settings to draw. With the switch off it doesn't ask,
+// since the daemon has nothing to say.
 export async function loadDesktopPassword(): Promise<void> {
+  if (!switchOn()) {
+    password = null;
+    return;
+  }
   password = (await call("GET").catch(() => ({}) as { password?: PasswordState })).password ?? null;
 }
 
