@@ -1113,6 +1113,66 @@
   margin-top: auto;
 }
 
+/* --- The counted status bar (ADR-071, design page D3) ---------------------------- */
+
+/* With setup's own switch on, the bar sits in the TV's safe area, 60 px up
+   from the bottom and 80 px in from the sides, and counts setup's steps as
+   blocks before "5 of 12 · location". The player moves up over it. */
+.bar.counted {
+  left: 80px;
+  right: 80px;
+  bottom: 60px;
+  font-size: 26px;
+}
+
+.bar.counted .bar-mode {
+  padding: 0 24px;
+}
+
+.bar-blocks {
+  display: flex;
+  gap: 6px;
+  margin-left: 24px;
+}
+
+.bar-block {
+  display: block;
+  width: 22px;
+  height: 14px;
+  background: var(--lighter-background);
+}
+
+.bar-block.done {
+  background: var(--accent);
+}
+
+.bar.counted .bar-step {
+  padding: 0 24px;
+}
+
+.bar.counted .bar-clock {
+  font-size: 30px;
+  font-weight: 700;
+}
+
+body.counted .player {
+  left: 80px;
+  bottom: 144px;
+  width: 520px;
+}
+
+body.counted .player-name {
+  font-size: 24px;
+}
+
+body.counted .player-note {
+  font-size: 23px;
+}
+
+body.counted .player-score {
+  display: none;
+}
+
 /* The look step (ADR-063): home in each look, side by side, picked with OK.
    The size picker joins it below once the TV's sizes come. */
 .setup-look-cards {

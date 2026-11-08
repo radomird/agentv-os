@@ -1,7 +1,8 @@
 // Setup's look step (ADR-063, D3), with the looks switch on: home in each
 // look, Terminal, Glass and Cinema, drawn by the launcher itself in a frame,
-// and OK on one picks it and goes on to the theme. The size picker joins it
-// here when the TV's sizes come (track 4); until then home is at standard.
+// and OK on one picks it and goes on to the theme, step 11 of 12. The size
+// picker joins it here when the TV's sizes come (track 4); until then home
+// is at standard.
 // Settings → Themes and backgrounds changes the look any time.
 
 import { h } from "../launcher/dom.ts";
@@ -27,8 +28,8 @@ export async function look(ctx: Ctx): Promise<View> {
     }
     current = one.id;
     ctx.sounds.play("confirm");
-    // On to the theme, within the same step.
-    ctx.open("theme/colours");
+    // On to the theme and background, setup's next step.
+    await ctx.finish("look");
   };
   const cards = lookCards(looks, current, "standard", 480, (one) => void pick(one));
   const el = h(

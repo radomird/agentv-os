@@ -344,7 +344,7 @@ test("T5.3 setup's look step shows each look's preview, and the preview is home 
   // Setup, at the look step: everything before it finished.
   const at = new Date().toISOString();
   const finished = Object.fromEntries(["welcome", "ready", "country", "ai", "people", "goal", "apps"].map((step) => [step, at]));
-  writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false, step: "theme", finished, goal: "streaming" }));
+  writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false, step: "look", finished, goal: "streaming" }));
   try {
     const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     try {
@@ -356,7 +356,7 @@ test("T5.3 setup's look step shows each look's preview, and the preview is home 
       await page.locator('.setup-look [data-look="cinema"]').click();
       await page.waitForSelector(".looks-all");
       assert.equal((await (await fetch(`${url}/api/look`)).json()).look, "cinema");
-      assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme", "the theme is still to pick, in the same step");
+      assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme", "on to the theme, the next step");
     } finally {
       await page.close();
     }
