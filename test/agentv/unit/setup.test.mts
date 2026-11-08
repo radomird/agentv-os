@@ -261,6 +261,7 @@ test("T7.1 setup's order is ADR-071's: the TV starts at getting ready, 3 of 12, 
     [
       ["welcome", 3, "getting ready"],
       ["ready", 3, "getting ready"],
+      ["box", 4, "your box"],
       ["country", 5, "location"],
       ["ai", 6, "ai"],
       ["people", 7, "who watches"],
@@ -283,7 +284,7 @@ test("T7.1 with setup's own switch on, the bar says \"5 of 12 · location\", and
   assert.equal(before.parts.country, "1/6 country");
   const on = new Setup({ path: join(scratch, "progress.json"), on: async (feature) => feature === "setup2" });
   const after = await on.progress();
-  assert.deepEqual(after.steps, STEPS.filter((step) => step !== "look"), "the look waits for its own switch");
+  assert.deepEqual(after.steps, STEPS.filter((step) => step !== "look" && step !== "box"), "the look and your box wait for their own switches");
   assert.deepEqual([after.parts.welcome, after.parts.country, after.parts.people, after.parts.background], ["3 of 12 · getting ready", "5 of 12 · location", "7 of 12 · who watches", "11 of 12 · theme and background"]);
   assert.deepEqual([after.numbers?.ready, after.numbers?.ai, after.of], [3, 6, 12]);
 });
