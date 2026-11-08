@@ -38,7 +38,7 @@ let state = "";
 
 before(async () => {
   met = await startMet();
-  ({ daemon, url, state } = await startBox(0, FIXTURES, { builtins: true, zone: "Europe/Amsterdam", forecast: met.url, features: { looks: true } }));
+  ({ daemon, url, state } = await startBox(0, FIXTURES, { builtins: true, zone: "Europe/Amsterdam", forecast: met.url, features: { looks: true, discover: true } }));
   // The theme's own colour behind home, as with no background picked.
   await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "field" }) });
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
@@ -61,9 +61,13 @@ async function useTheme(theme: string): Promise<void> {
 
 // A TV at a size, as the box's display gives it: the size's canvas, at a
 // scale of 1. The screen daemon's binding is stood in for.
+// What went wrong on the pages, for the checks that look at every screen.
+const errors: string[] = [];
+
 async function tv(size: Size = "standard"): Promise<Page> {
   const width = SIZES[size];
   const page = await browser.newPage({ viewport: { width, height: Math.round((width * 9) / 16) } });
+  page.on("pageerror", (error) => errors.push(`${page.url()}: ${error.message}`));
   await page.addInitScript(() => {
     const w = window as unknown as { screenRequests: unknown[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
     w.screenRequests = [];
@@ -141,6 +145,8 @@ const SCREENS: [string, (page: Page) => Promise<void>][] = [
   ["settings", (page) => go(page, "settings")],
   ["an app's details", (page) => go(page, "details/agentv.sample")],
   ["music", (page) => go(page, "music")],
+  // An app's setup, with the servers on your network (track 10's list).
+  ["an app's setup", (page) => go(page, "app-setup/someone.radio")],
   ["settings → themes and backgrounds", (page) => go(page, "settings/look")],
   ["weather", (page) => go(page, "weather")],
   ["new this week", (page) => go(page, "new")],
@@ -241,6 +247,7 @@ for (const look of LOOKS) {
         }
       }
       assert.deepEqual(problems, [], `${look} at ${size}:\n${problems.join("\n")}`);
+      assert.deepEqual(errors.splice(0), [], "no screen had an error");
     });
   }
 }
