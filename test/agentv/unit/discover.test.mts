@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import {
+  Discover,
   avahiLabel,
   avahiLine,
   gdmAnswer,
@@ -31,7 +32,8 @@ import {
   wsdResolve,
   type Run,
 } from "../../../daemon/discover.ts";
-import { kindsOf, loginOf } from "../../../daemon/routes/discover.ts";
+import { kindsOf, listOf, loginOf } from "../../../daemon/routes/discover.ts";
+import { ServerPicks, type PickHome } from "../../../daemon/server-picks.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/discover");
@@ -137,6 +139,78 @@ test("the kinds a list asks for", () => {
   assert.deepEqual(kindsOf("jellyfin,emby"), ["jellyfin", "emby"]);
   assert.equal(kindsOf("jellyfin,printers"), null);
   assert.equal(kindsOf(","), null);
+});
+
+test("the list on the TV, as its page says it", () => {
+  assert.deepEqual(listOf({ kinds: "jellyfin", machines: false }), { kinds: ["jellyfin"], machines: false });
+  assert.deepEqual(listOf({ kinds: "smb,nfs", machines: true }), { kinds: ["smb", "nfs"], machines: true });
+  assert.deepEqual(listOf({ host: "nas.local" }), { host: "nas.local" });
+  assert.equal(listOf({}), null);
+  for (const no of [null, [], "jellyfin", { kinds: "printers" }, { kinds: "jellyfin", machines: "yes" }, { host: "" }, { host: "nas.local", kinds: "smb" }, { host: 5 }]) {
+    assert.equal(listOf(no), undefined, JSON.stringify(no));
+  }
+});
+
+test("the phones hear when the TV's list changes, and a pick goes to the TV's page only while it shows one", () => {
+  let told = 0;
+  const picked: string[] = [];
+  const box = new Discover({ screen: () => told++, picked: (key) => picked.push(key) });
+  assert.equal(box.onScreen(), null);
+  assert.equal(box.pick("nas nas.local"), false);
+  box.showing({ kinds: ["smb", "nfs"], machines: true });
+  box.showing({ kinds: ["smb", "nfs"], machines: true });
+  assert.equal(told, 1, "the same list again says nothing new");
+  assert.equal(box.pick("nas nas.local"), true);
+  box.showing({ host: "nas.local" });
+  assert.deepEqual(box.onScreen(), { host: "nas.local" });
+  box.showing(null);
+  assert.equal(told, 3);
+  assert.equal(box.pick("smb://nas.local/music"), false);
+  assert.deepEqual(picked, ["nas nas.local"]);
+});
+
+test("a server picked in setup waits for its app to install, then fills in its address", async () => {
+  const state = mkdtempSync(join(tmpdir(), "agentv-picks-"));
+  const installed = new Set<string>();
+  const saved: Record<string, Record<string, unknown>> = {};
+  const home: PickHome = {
+    appSetup: async (id) => (installed.has(id) ? { fields: id === "agentv.steam" ? [] : [{ key: "serverUrl", address: true }] } : null),
+    saveAppSetup: async (id, change) => {
+      if (!/^https?:\/\/\S+$/.test(String((change as Record<string, unknown>).serverUrl))) return "server address is an address like http://192.168.1.20:8096";
+      saved[id] = change as Record<string, unknown>;
+      return null;
+    },
+  };
+  const landed: string[] = [];
+  const picks = new ServerPicks({ state, home, saved: (app) => landed.push(app), log: () => {} });
+  try {
+    // Jellyfin is still installing: the pick waits.
+    assert.deepEqual(await picks.pick("agentv.jellyfin", "http://192.168.50.10:8096"), { ok: true, saved: false });
+    assert.deepEqual(await picks.waiting(), ["agentv.jellyfin"]);
+    await picks.settle();
+    assert.deepEqual(saved, {}, "nothing to fill in before it lands");
+    // It lands, and its address goes in.
+    installed.add("agentv.jellyfin");
+    await picks.settle();
+    assert.deepEqual(saved["agentv.jellyfin"], { serverUrl: "http://192.168.50.10:8096" });
+    assert.deepEqual(landed, ["agentv.jellyfin"]);
+    assert.deepEqual(await picks.waiting(), []);
+    // An app that's here already takes it at once.
+    assert.deepEqual(await picks.pick("agentv.jellyfin", "http://192.168.50.11:8096"), { ok: true, saved: true });
+    // Immich never lands: its pick goes, and its tile says "set up".
+    await picks.pick("agentv.immich", "http://192.168.50.10:2283");
+    await picks.settle(["agentv.immich"]);
+    assert.deepEqual(await picks.waiting(), []);
+    assert.equal(saved["agentv.immich"], undefined);
+    // What isn't a pick is refused.
+    installed.add("agentv.steam");
+    assert.deepEqual(await picks.pick("agentv.steam", "http://192.168.50.10:1"), { ok: false, status: 400, error: "that app doesn't ask for a server" });
+    for (const [app, url] of [["", "http://a"], ["Jellyfin!", "http://a"], ["agentv.jellyfin", "ftp://nas"], ["agentv.jellyfin", 5], ["agentv.jellyfin", `http://${"a".repeat(500)}`]]) {
+      assert.equal((await picks.pick(app, url)).ok, false, JSON.stringify([app, url]));
+    }
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+  }
 });
 
 // --- A look, through the daemon, against stand-ins on this machine ---
@@ -365,6 +439,19 @@ test("a NAS's shares: smbclient's list and its NFS exports, only for a machine t
   }
   assert.deepEqual(smbAsked, []);
   assert.equal((await fetch(`${url}/api/discover/shares`)).status, 400);
+});
+
+test("the TV's page says which list it shows, and a phone's pick needs pairing", async () => {
+  const say = (body: unknown) => fetch(`${url}/api/discover/screen`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await say({ kinds: "jellyfin", machines: false })).status, 200);
+  assert.deepEqual(daemon.discover.onScreen(), { kinds: ["jellyfin"], machines: false });
+  assert.equal((await say({ kinds: "printers" })).status, 400);
+  assert.equal((await say({})).status, 200);
+  assert.equal(daemon.discover.onScreen(), null);
+  // Only the TV's page says it, and only a paired phone picks.
+  assert.equal((await fetch(`${lan}/api/phone/discover/screen`, { method: "POST", body: "{}" })).status, 401);
+  assert.equal((await fetch(`${lan}/api/phone/discover/pick`, { method: "POST", body: JSON.stringify({ key: "typed" }) })).status, 401);
+  assert.equal((await fetch(`${url}/api/discover/pick`, { method: "POST", body: JSON.stringify({ app: "agentv.jellyfin", url: "http://127.0.0.1:8096" }) })).status, 200);
 });
 
 test("a paired phone asks the same, and kinds that aren't one are refused", async () => {

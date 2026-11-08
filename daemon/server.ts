@@ -69,7 +69,8 @@ import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
 import { Discover, type DiscoverOptions } from "./discover.ts";
-import { discoverRoute } from "./routes/discover.ts";
+import { discoverRoute, serverPickRoute } from "./routes/discover.ts";
+import { ServerPicks } from "./server-picks.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -291,6 +292,7 @@ export class Daemon {
   private immich: ImmichAlbum;
   private immichBusy = false;
   readonly discover: Discover;
+  readonly serverPicks: ServerPicks;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
   // The new remote's typing and playback (ADR-065).
@@ -462,7 +464,8 @@ export class Daemon {
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
-    this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), ...options.discover });
+    this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), screen: () => this.phonesChanged(), picked: (key) => this.toPages("discover-pick", { key }), ...options.discover });
+    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -474,6 +477,7 @@ export class Daemon {
       onChange: (apps) => {
         this.broadcast("setup-apps", apps);
         this.broadcast("apps", {});
+        void this.serverPicks.settle(Object.keys(apps).filter((id) => apps[id].state === "failed"));
       },
     });
     if (options.lanPort !== undefined) {
@@ -960,6 +964,8 @@ export class Daemon {
       // What setup's AI step asks of the phone (ADR-023): the provider's
       // terms for an adult to accept, then the key.
       ai: await this.aiAsk(setup),
+      // The list of what's on the network the TV shows, for the phone's line.
+      discover: (await this.features.on("discover")) ? this.discover.onScreen() : null,
       // Page apps' notices, as the TV shows them (ADR-043).
       notices: this.notices,
       // The builds an adult follows here too: how each is going, and the
@@ -2093,6 +2099,7 @@ export class Daemon {
     }
 
     if (await discoverRoute(this.discover, method, path, url, response, false, request)) return;
+    if (await serverPickRoute({ picks: this.serverPicks, allowed: async (asked, answer) => this.guarded(asked, answer, "setting up an app") && (await this.adult(asked, answer, "setting up an app")) }, method, path, request, response)) return;
 
     if (method === "GET" && path === "/api/state") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

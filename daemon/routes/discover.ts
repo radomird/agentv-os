@@ -9,10 +9,18 @@
 //   them only for a user, with what was typed on the phone.
 //
 // A paired phone asks the same at /api/phone/discover and
-// /api/phone/discover/shares.
+// /api/phone/discover/shares. And for the phone's line "on your network":
+//
+// - POST /api/discover/screen { kinds, machines } or { host }, from the
+//   TV's page, says which list it shows, and {} that it shows none.
+// - POST /api/phone/discover/pick { key } picks a row of that list, as the
+//   TV would: the TV's page hears it as "discover-pick".
+// - POST /api/discover/pick { app, url }, from setup's server page, fills
+//   in an app's server now, or once the app has installed.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { KINDS, type Discover, type Kind } from "../discover.ts";
+import { KINDS, type Discover, type Kind, type TvList } from "../discover.ts";
+import type { ServerPicks } from "../server-picks.ts";
 
 function json(response: ServerResponse, status: number, data: unknown): void {
   const body = JSON.stringify(data);
@@ -42,6 +50,17 @@ export function loginOf(body: unknown): { host: string; user: string; password: 
   return { host, user, password };
 }
 
+// The list on the TV, as its page says it: undefined when it doesn't make
+// sense, null for none.
+export function listOf(sent: unknown): TvList | null | undefined {
+  if (typeof sent !== "object" || sent === null || Array.isArray(sent)) return undefined;
+  const { kinds, machines, host } = sent as Record<string, unknown>;
+  if (kinds === undefined && host === undefined) return null;
+  if (typeof host === "string") return host && host.length <= 255 && kinds === undefined ? { host } : undefined;
+  const list = typeof kinds === "string" ? kindsOf(kinds) : null;
+  return list && (machines === undefined || typeof machines === "boolean") ? { kinds: list, machines: machines === true } : undefined;
+}
+
 async function body(request: IncomingMessage): Promise<unknown> {
   let text = "";
   for await (const chunk of request) {
@@ -55,6 +74,35 @@ async function body(request: IncomingMessage): Promise<unknown> {
 export async function discoverRoute(discover: Discover, method: string | undefined, path: string, url: URL, response: ServerResponse, phone = false, request?: IncomingMessage): Promise<boolean> {
   const route = phone ? path.replace(/^\/api\/phone\//, "/api/") : path;
   if (phone && !path.startsWith("/api/phone/")) return false;
+  if (method === "POST" && request && ((route === "/api/discover/screen" && !phone) || (route === "/api/discover/pick" && phone))) {
+    let sent: unknown;
+    try {
+      sent = await body(request);
+    } catch {
+      sent = undefined;
+    }
+    if (route === "/api/discover/screen") {
+      const list = listOf(sent);
+      if (list === undefined) {
+        json(response, 400, { ok: false, error: "the list on the tv: { kinds, machines }, { host } or {}" });
+        return true;
+      }
+      discover.showing(list);
+      json(response, 200, { ok: true });
+      return true;
+    }
+    const key = (sent as { key?: unknown } | undefined)?.key;
+    if (typeof key !== "string" || !key || key.length > 600) {
+      json(response, 400, { ok: false, error: "say which one, by its key" });
+      return true;
+    }
+    if (!discover.pick(key)) {
+      json(response, 409, { ok: false, error: "the tv isn't showing what's on your network" });
+      return true;
+    }
+    json(response, 200, { ok: true });
+    return true;
+  }
   if (method === "POST" && route === "/api/discover/shares" && request) {
     let login: ReturnType<typeof loginOf>;
     try {
@@ -87,5 +135,29 @@ export async function discoverRoute(discover: Discover, method: string | undefin
   }
   const shares = await discover.shares(host);
   json(response, shares.ok ? 200 : 404, shares);
+  return true;
+}
+
+// What setup's server page needs of the daemon: the picks, and the PIN's
+// say, as an app's own setup page has it.
+export interface PickKit {
+  picks: ServerPicks;
+  allowed(request: IncomingMessage, response: ServerResponse): Promise<boolean>;
+}
+
+// POST /api/discover/pick { app, url }: a server picked for an app in setup.
+// It answers { ok, saved }, where saved is false while the app installs.
+export async function serverPickRoute(kit: PickKit, method: string | undefined, path: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  if (method !== "POST" || path !== "/api/discover/pick") return false;
+  if (!(await kit.allowed(request, response))) return true;
+  let sent: { app?: unknown; url?: unknown } | undefined;
+  try {
+    sent = (await body(request)) as typeof sent;
+  } catch {
+    sent = undefined;
+  }
+  const answer = await kit.picks.pick(sent?.app, sent?.url);
+  if (answer.ok) json(response, 200, answer);
+  else json(response, answer.status, { ok: false, error: answer.error });
   return true;
 }

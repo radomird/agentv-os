@@ -423,8 +423,21 @@ export interface DiscoverOptions {
   rounds?: number[];
   // Something was found, or the look is over.
   changed?: (state: { found: Found[]; looking: boolean }) => void;
+  // The list on the TV changed, for the phones to follow.
+  screen?: () => void;
+  // A phone picked from the TV's list: the key of the row it picked, for
+  // the TV's page to pick as if it was picked there.
+  picked?: (key: string) => void;
   log?: (line: string) => void;
 }
+
+// The list on the TV, for the phones: the kinds of server it shows (one row
+// a machine for the NASes), or a NAS's folders.
+export type TvList = { kinds: Kind[]; machines: boolean } | { host: string };
+
+// How long the TV's word about its list lasts. Its page says it again every
+// 20 s while the list is on screen, and says when it's gone.
+const SCREEN_MS = 45_000;
 
 const ORDER: Kind[] = [...KINDS];
 
@@ -444,6 +457,7 @@ export class Discover {
   private end?: ReturnType<typeof setTimeout>;
   private asked = new Set<string>(); // WS-Discovery's endpoints asked for their name in this look
   private avahiMissing = false;
+  private tv: { list: TvList; until: number } | null = null;
 
   constructor(options: DiscoverOptions = {}) {
     this.options = options;
@@ -513,6 +527,27 @@ export class Discover {
 
   close(): void {
     if (this.looking) this.stop(false);
+  }
+
+  // The TV's page shows a list, or none any more. The phones hear only a
+  // change.
+  showing(list: TvList | null): void {
+    const before = JSON.stringify(this.onScreen());
+    this.tv = list ? { list, until: Date.now() + SCREEN_MS } : null;
+    if (JSON.stringify(list) !== before) this.options.screen?.();
+  }
+
+  // The list on the TV, while its page keeps saying so.
+  onScreen(): TvList | null {
+    if (this.tv && this.tv.until <= Date.now()) this.tv = null;
+    return this.tv?.list ?? null;
+  }
+
+  // A phone's pick, for the list on the TV. False with no list there.
+  pick(key: string): boolean {
+    if (!this.onScreen()) return false;
+    this.options.picked?.(key);
+    return true;
   }
 
   private changed(): void {
