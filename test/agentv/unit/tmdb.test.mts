@@ -447,7 +447,7 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
   // tables here, on a box in Amsterdam's time zone.
   process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
   process.env.AGENTV_ISO3166_TAB = join(ROOT, "test/agentv/fixtures/met/iso3166.tab");
-  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: (line) => lines.push(line), keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: tmdb.get, country: { zone: async () => "Europe/Amsterdam" } });
+  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps, builtins: null, port: 0, log: (line) => lines.push(line), keyStatus: join(etc, "key.json"), tmdbStatus: join(etc, "tmdb.json"), keyWaitMs: 3000, tmdb: tmdb.get, newsNow: () => NOW, country: { zone: async () => "Europe/Amsterdam" } });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const send = async (method: string, path: string, body?: unknown) => {
     const response = await fetch(`${url}${path}`, { method, headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });

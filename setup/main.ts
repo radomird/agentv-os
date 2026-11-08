@@ -28,6 +28,7 @@ import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
 import { Soundtrack } from "./music.ts";
 import { ready } from "./ready.ts";
+import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
 import { welcome, wifi } from "./welcome.ts";
 
@@ -254,6 +255,7 @@ function viewFor(to: string): View | Promise<View> {
   if (to === "people") return people(ctx);
   if (to === "goal") return goal(ctx);
   if (to === "apps/add") return addYourOwn(ctx);
+  if (to === "apps/network") return serverPage(ctx);
   if (to === "theme/own") return addYourOwn(ctx, "theme");
   if (to === "apps") return apps(ctx);
   if (to === "theme") return theme(ctx);
