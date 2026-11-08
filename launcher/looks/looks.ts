@@ -15,6 +15,7 @@
 
 import { h } from "../dom.ts";
 import { features } from "../features.ts";
+import { writeInSentenceCase } from "./words.ts";
 import { GRID, GRID_MORE, type Grid } from "../layout.ts";
 
 export const LOOKS = ["terminal", "glass", "cinema"] as const;
@@ -107,6 +108,8 @@ export function applyLook(look: LookId | null = state.look, size: SizeId = state
   state.look = look;
   state.size = size;
   const root = document.documentElement;
+  // Glass and Cinema write the launcher's words in sentence case.
+  writeInSentenceCase(look === "glass" || look === "cinema");
   if (look) {
     root.dataset.look = look;
     root.dataset.size = size;

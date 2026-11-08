@@ -1,0 +1,726 @@
+/* Glass (ADR-063, D1, D2): frosted tiles and bars over the picture, rounded
+   corners, Manrope, and words in sentence case. The glass is the theme's own
+   background, frosted, and the words are its foreground, so a light theme
+   gets light glass and dark words. Nothing here is Apple's: the layout,
+   the icons and the font are AgenTV's own. */
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/launcher/fonts/manrope-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/launcher/fonts/manrope-latin-ext-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  --font: "Manrope", system-ui, sans-serif;
+  --safe-x: 80px;
+  --safe-y: 60px;
+  --bar: 72px;
+  --round: 28px;
+  --glass: color-mix(in srgb, var(--background) 52%, transparent);
+  --glass-strong: color-mix(in srgb, var(--background) 72%, transparent);
+  --glass-edge: color-mix(in srgb, var(--bright-foreground) 16%, transparent);
+  --glass-lit: color-mix(in srgb, var(--bright-foreground) 14%, var(--background));
+  --scrim: color-mix(in srgb, var(--background) 70%, transparent);
+}
+
+html,
+body {
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+/* The ring follows rounded corners (focus.ts) and is the words' colour. */
+#ring {
+  border-color: var(--bright-foreground);
+  border-width: 4px;
+}
+
+/* --- The background, behind every page ------------------------------------ */
+
+body:not(.on-home) #backdrop {
+  display: block;
+}
+
+/* Away from home, the picture is a soft wash of its colours. */
+body:not(.on-home) .backdrop-picture {
+  filter: blur(60px) saturate(1.3);
+  transform: scale(1.15);
+}
+
+#backdrop:not(:empty)::after {
+  background: color-mix(in srgb, var(--background) 30%, transparent);
+}
+
+body:not(.on-home) #backdrop:not(:empty)::after {
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+}
+
+body.with-backdrop {
+  background: var(--darker-background);
+}
+
+/* --- The glass bar, top right --------------------------------------------- */
+
+.bar.glass-bar {
+  left: auto;
+  right: var(--safe-x);
+  top: 56px;
+  bottom: auto;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  background: none;
+  font-size: 32px;
+  z-index: 2;
+}
+
+.bar-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--bar);
+  padding: 0 8px;
+  border-radius: 36px;
+  background: var(--glass);
+  border: 1.5px solid var(--glass-edge);
+  backdrop-filter: blur(36px) saturate(160%);
+  color: var(--bright-foreground);
+}
+
+.glass-bar .bar-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border-radius: 28px;
+  color: var(--bright-foreground);
+}
+
+.glass-bar .bar-icon.on,
+.glass-bar .bar-icon.focused {
+  background: var(--bright-foreground);
+  color: var(--background);
+}
+
+.bar-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--accent);
+}
+
+.glass-bar .bar-clock {
+  padding: 0 14px 0 18px;
+  font-weight: 800;
+  color: var(--bright-foreground);
+}
+
+.bar-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  font-size: 28px;
+}
+
+.bar-note,
+.bar-step-row {
+  padding: 10px 22px;
+  border-radius: 24px;
+  background: var(--glass);
+  border: 1.5px solid var(--glass-edge);
+  backdrop-filter: blur(36px);
+  color: var(--bright-foreground);
+  font-size: 24px;
+}
+
+.bar-step-row {
+  position: fixed;
+  left: 50%;
+  bottom: var(--safe-y);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 18px;
+}
+
+/* --- Home ----------------------------------------------------------------- */
+
+.glass-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.glass-still {
+  position: absolute;
+  inset: -40px;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  object-fit: cover;
+  opacity: 0;
+  filter: blur(24px) saturate(1.2);
+  transition: opacity 600ms var(--ease);
+}
+
+.glass-still.on {
+  opacity: 1;
+}
+
+/* The scrims that keep the title and the tiles readable over any picture. */
+.glass-stage::before,
+.glass-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.glass-stage::before {
+  background: linear-gradient(160deg, var(--scrim) 0%, transparent 42%);
+}
+
+.glass-stage::after {
+  background: linear-gradient(180deg, transparent 46%, var(--scrim) 100%);
+}
+
+.glass-title {
+  position: absolute;
+  left: var(--safe-x);
+  top: var(--safe-y);
+  max-width: calc(var(--canvas-width, 1920px) - 2 * var(--safe-x) - 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--bright-foreground);
+}
+
+.glass-name {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1.05;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.glass-line {
+  font-weight: 700;
+}
+
+.glass-rows {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--canvas-height, 1080px) * 0.62);
+  bottom: 0;
+  padding: 18px var(--safe-x) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 120px;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.glass-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 32px;
+  flex: none;
+}
+
+.tile.glass-tile,
+.glass-row .tile {
+  --lift: 0.12;
+  position: relative;
+  height: 160px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  border: 1.5px solid var(--glass-edge);
+  border-radius: var(--round);
+  background: var(--glass);
+  backdrop-filter: blur(24px) saturate(150%);
+  color: var(--bright-foreground);
+}
+
+.glass-row .tile::after {
+  display: none;
+}
+
+.glass-row .tile.focused {
+  transform: scale(1.12);
+  background: var(--glass-strong);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  z-index: 1;
+}
+
+.glass-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 18px);
+  text-align: center;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+
+.glass-row .tile.focused .glass-label {
+  opacity: 1;
+}
+
+/* A build's tile in the row: its logo and the ring of its progress. */
+.glass-row .build-tile .tile-top {
+  justify-content: center;
+}
+
+.glass-row .build-tile .tile-name,
+.glass-row .build-tile .tile-line,
+.glass-row .build-tile .tile-label {
+  display: none;
+}
+
+/* --- Logos and what tiles show -------------------------------------------- */
+
+.logo {
+  border-radius: 22%;
+  overflow: hidden;
+}
+
+.glass-tile .logo {
+  width: 84px;
+  height: 84px;
+  font-size: 40px;
+}
+
+.card-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.card-time {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -2px;
+}
+
+.card-weather {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.card-temp {
+  font-size: 56px;
+  font-weight: 800;
+  letter-spacing: -2px;
+}
+
+.card-weather .line-icon,
+.card-content > .line-icon {
+  color: var(--bright-foreground);
+}
+
+.card-cover,
+.card-cover img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--selection);
+}
+
+.card-posters {
+  display: flex;
+}
+
+.card-posters img {
+  width: 64px;
+  height: 96px;
+  border-radius: 8px;
+  object-fit: cover;
+  margin-left: -18px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.card-posters img:first-child {
+  margin-left: 0;
+}
+
+/* --- Pages ---------------------------------------------------------------- */
+
+.page {
+  inset: 0;
+  padding: var(--safe-y) var(--safe-x) 0;
+}
+
+.headline {
+  margin: 0;
+  font-size: 80px;
+  font-weight: 800;
+  letter-spacing: -2.5px;
+  line-height: 1.1;
+}
+
+.page-line {
+  margin-top: 8px;
+  color: var(--bright-foreground);
+  font-weight: 700;
+}
+
+.section {
+  color: var(--bright-foreground);
+  font-weight: 700;
+}
+
+.empty {
+  color: var(--foreground);
+}
+
+.button {
+  min-height: 76px;
+  padding: 0 36px;
+  border: none;
+  border-radius: 38px;
+  background: var(--glass-strong);
+  font-weight: 700;
+  --lift: 0;
+}
+
+.button.primary {
+  background: var(--bright-foreground);
+  color: var(--background);
+}
+
+.button.focused {
+  background: var(--bright-foreground);
+  color: var(--background);
+}
+
+.button.focused .button-value {
+  color: var(--background);
+}
+
+.button-value {
+  color: var(--foreground);
+}
+
+.panel {
+  border: 1.5px solid var(--glass-edge);
+  border-radius: 40px;
+  background: var(--glass);
+  backdrop-filter: blur(36px) saturate(150%);
+}
+
+/* Apps: frosted tiles with the name under each, no section headings. */
+.apps-page .page-head {
+  margin-bottom: 40px;
+}
+
+.apps-page .section {
+  display: none;
+}
+
+.row {
+  gap: 52px 32px;
+  margin-bottom: 72px;
+}
+
+.row .tile {
+  --lift: 0.1;
+  height: 148px;
+  padding: 0;
+  overflow: visible;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--glass-edge);
+  border-radius: var(--round);
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+}
+
+.row .tile::after {
+  display: none;
+}
+
+.row .tile.focused {
+  transform: scale(1.1);
+  background: var(--glass-strong);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+.row .tile-top {
+  justify-content: center;
+}
+
+.row .tile .logo {
+  width: 76px;
+  height: 76px;
+}
+
+.row .tile-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 14px);
+  text-align: center;
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row .tile-apps {
+  border-style: dashed;
+}
+
+.row .tile-apps .tile-top {
+  display: none;
+}
+
+.row .tile-apps .tile-name {
+  position: static;
+}
+
+/* An app's details: its logo, its name big, one line, and its actions in a
+   row of pills (D2). */
+.details {
+  display: block;
+  margin-top: 40px;
+}
+
+.details-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.details-head .headline {
+  font-size: 104px;
+}
+
+.logo-big {
+  width: 120px;
+  height: 120px;
+  font-size: 56px;
+}
+
+.maker {
+  margin-top: 12px;
+  color: var(--bright-foreground);
+  font-weight: 600;
+}
+
+.facts {
+  display: none;
+}
+
+.actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 40px;
+}
+
+.owner {
+  left: var(--safe-x);
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  color: var(--bright-foreground);
+}
+
+/* Settings: the sections in one glass card, the open one's panel in another. */
+.settings {
+  grid-template-columns: 470px minmax(0, 1fr);
+  gap: 40px;
+}
+
+.settings .menu {
+  margin-top: 60px;
+  padding: 24px 16px;
+  border: 1.5px solid var(--glass-edge);
+  border-radius: 40px;
+  background: var(--glass);
+  backdrop-filter: blur(36px);
+  max-height: calc(var(--canvas-height, 1080px) - 2 * var(--safe-y) - 140px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.menu-item {
+  flex: none;
+  padding: 8px 24px;
+  border-radius: 28px;
+  font-weight: 700;
+}
+
+.menu-item.focused,
+.menu-item.open {
+  background: var(--bright-foreground);
+  color: var(--background);
+}
+
+.settings .menu-value {
+  display: none;
+}
+
+.settings-panel {
+  margin-top: 140px;
+  max-height: calc(var(--canvas-height, 1080px) - 2 * var(--safe-y) - 140px);
+}
+
+.prompt {
+  display: none;
+}
+
+/* Weather: the condition as the headline, and the week in frosted cards. */
+.forecast-week {
+  margin-top: auto;
+  position: absolute;
+  left: var(--safe-x);
+  right: var(--safe-x);
+  bottom: 140px;
+  gap: 32px;
+  overflow: visible;
+}
+
+.forecast > .section {
+  display: none;
+}
+
+.forecast-day {
+  --lift: 0.08;
+  align-items: center;
+  min-height: 300px;
+  border: 1.5px solid var(--glass-edge);
+  border-radius: var(--round);
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+}
+
+.forecast-day.focused {
+  transform: scale(1.08);
+  background: var(--glass-strong);
+}
+
+.forecast-day .line-icon {
+  color: var(--bright-foreground);
+}
+
+.forecast-name {
+  color: var(--bright-foreground);
+  font-weight: 700;
+}
+
+/* New this week: posters with rounded corners and the app under each. */
+.poster-row {
+  gap: 28px;
+  overflow: visible;
+}
+
+.poster-card {
+  --lift: 0.06;
+  padding: 0;
+  border: none;
+  background: none;
+  width: 232px;
+}
+
+.poster-image {
+  border-radius: 20px;
+}
+
+.poster-card.focused {
+  transform: scale(1.06);
+}
+
+.poster-caption {
+  color: var(--bright-foreground);
+  font-weight: 600;
+}
+
+/* --- Overlays ------------------------------------------------------------- */
+
+.toast,
+.notice-card,
+.pin-pad {
+  border-radius: 32px;
+  border: 1.5px solid var(--glass-edge);
+  background: var(--glass-strong);
+  backdrop-filter: blur(36px);
+}
+
+/* --- The ambient screen ---------------------------------------------------- */
+
+.ambient-drift {
+  align-items: center;
+  text-align: center;
+}
+
+.ambient-time {
+  font-weight: 800;
+  letter-spacing: -6px;
+}
+
+.ambient-day {
+  padding: 10px 28px;
+  border-radius: 32px;
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+  font-weight: 700;
+}
+
+.ambient-day::first-letter {
+  text-transform: uppercase;
+}
+
+/* --- Larger --------------------------------------------------------------- */
+
+:root[data-size="larger"] .glass-row {
+  gap: 24px;
+}
+
+:root[data-size="larger"] .glass-tile {
+  height: 132px;
+}
+
+:root[data-size="larger"] .glass-name {
+  font-size: 60px;
+}
+
+:root[data-size="larger"] .card-time,
+:root[data-size="larger"] .card-temp {
+  font-size: 48px;
+}
+
+:root[data-size="larger"] .forecast-week {
+  gap: 20px;
+}

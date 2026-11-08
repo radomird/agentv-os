@@ -8,7 +8,7 @@
 // ambient screen and Weather its settings. Clock's time ticks here too, since
 // a tile only refreshes every few minutes.
 
-import { daemon, screen, type App, type TileData, type TileEntry } from "../api.ts";
+import { daemon, screen, type App, type Item, type TileData, type TileEntry } from "../api.ts";
 import { clock, h, monogram, tint } from "../dom.ts";
 import { GRID_MORE, span, type Placed } from "../layout.ts";
 import type { Ctx, View } from "../main.ts";
@@ -17,7 +17,7 @@ import { buildNotice, homeBuildTile } from "./build.ts";
 import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
-import { currentGrid, lookId } from "../looks/looks.ts";
+import { currentGrid, lookId, named } from "../looks/looks.ts";
 
 export const CLOCK = "agentv.clock";
 export const WEATHER = "agentv.weather";
@@ -98,7 +98,7 @@ function head(app: App, right: string): HTMLElement {
   return h(
     "div",
     { class: "tile-head" },
-    h("span", { class: `tile-head-name ink-${app.tier === "built-in" ? 4 : tint(app.id)}` }, app.name.toLowerCase()),
+    h("span", { class: `tile-head-name ink-${app.tier === "built-in" ? 4 : tint(app.id)}` }, named(app.name)),
     right ? h("span", { class: "tile-head-label" }, right) : null,
   );
 }
@@ -246,10 +246,57 @@ async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
 // What choosing a built-in does (ADR-015): they open here, not in a window.
 export function openBuiltin(ctx: Ctx, app: App): void {
   if (app.id === CLOCK) ctx.ambient();
-  else if (app.id === WEATHER) ctx.go("settings/weather");
+  // With the looks, Weather and New this week have pages of their own (D2).
+  else if (app.id === WEATHER) ctx.go(lookId() ? "weather" : "settings/weather");
   else if (app.id === MUSIC) ctx.go("music");
-  else if (app.id === NEW) ctx.go("settings/tmdb");
+  else if (app.id === NEW) ctx.go(lookId() ? "new" : "settings/tmdb");
   else ctx.go(`details/${app.id}`);
+}
+
+// Opens what an app's tile entry carries (ADR-016): a title on New this week
+// in its own app, looked up there by its name (S8.1), or an app's own item
+// through its playback.open. The TV says how it went.
+export async function openEntry(ctx: Ctx, app: App, item: Item): Promise<void> {
+  if (app.id === NEW && app.tier === "built-in") {
+    try {
+      await daemon.openNew(item.id);
+    } catch (error) {
+      ctx.toast((error as Error).message, "fail");
+    }
+    return;
+  }
+  if (app.tier === "built-in") {
+    openBuiltin(ctx, app);
+    return;
+  }
+  const reply = await screen.openItem(app.id, item);
+  if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open ${item.title}`, "fail");
+}
+
+// Opens an app from its tile, in every look: a built-in here, a page app in
+// its frame (ADR-043), its setup first when a field it needs is empty, the
+// sign-in screen when its service wants one (ADR-032), and the app itself
+// through the TV session otherwise.
+export async function openApp(ctx: Ctx, app: App): Promise<void> {
+  if (app.tier === "built-in") {
+    openBuiltin(ctx, app);
+    return;
+  }
+  if (app.runtime === "page") {
+    openPage(ctx, app.id);
+    return;
+  }
+  if (app.needsSetup) {
+    ctx.go(`app-setup/${app.id}`);
+    return;
+  }
+  if (app.signIn === "needed") {
+    const reply = await screen.signIn(app.id);
+    if (!reply.ok) ctx.toast(reply.error ?? `${app.name} can't sign in from here`, "fail");
+    return;
+  }
+  const reply = await screen.open(app.id);
+  if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
 }
 
 function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElement {
@@ -271,49 +318,15 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
             // A click on an entry that carries an item opens it there.
             const chosen = (event.target as Element).closest<HTMLElement>("[data-entry]");
             const item = chosen ? (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems?.[Number(chosen.dataset.entry)]?.item : undefined;
-            // A title on New this week plays in its own app, looked up
-            // there by its name (S8.1), and the TV says how it went.
-            if (item && app.id === NEW && app.tier === "built-in") {
-              try {
-                await daemon.openNew(item.id);
-              } catch (error) {
-                ctx.toast((error as Error).message, "fail");
-              }
+            if (item) {
+              await openEntry(ctx, app, item);
               return;
             }
-            if (item && app.tier !== "built-in") {
-              const reply = await screen.openItem(app.id, item);
-              if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open ${item.title}`, "fail");
-              return;
-            }
-            if (app.tier === "built-in") {
-              openBuiltin(ctx, app);
-              return;
-            }
-            // A page app opens here, in its frame (ADR-043).
-            if (app.runtime === "page") {
-              openPage(ctx, app.id);
-              return;
-            }
-            // A field it needs isn't filled in, such as its server's
-            // address: its setup page first, and the sign-in after.
-            if (app.needsSetup) {
-              ctx.go(`app-setup/${app.id}`);
-              return;
-            }
-            // Its service wants a sign-in: AgenTV's sign-in screen, over the
-            // service's own page (ADR-032, board 15).
-            if (app.signIn === "needed") {
-              const reply = await screen.signIn(app.id);
-              if (!reply.ok) ctx.toast(reply.error ?? `${app.name} can't sign in from here`, "fail");
-              return;
-            }
-            const reply = await screen.open(app.id);
-            if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
+            await openApp(ctx, app);
           },
     },
     h("div", { class: "tile-top" }, logo(app), editing ? state({ ...ctx, running: new Map() }, app) : state(ctx, app)),
-    h("div", { class: "tile-body" }, h("span", { class: "tile-name" }, app.name.toLowerCase())),
+    h("div", { class: "tile-body" }, h("span", { class: "tile-name" }, named(app.name))),
   );
   void fill(el, app, placed);
   return el;

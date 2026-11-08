@@ -6,7 +6,7 @@ import { clock, h } from "../dom.ts";
 import { pin, unpin } from "../layout.ts";
 import type { Ctx } from "../main.ts";
 import { lookBar } from "../looks/bars.ts";
-import { currentGrid, lookId } from "../looks/looks.ts";
+import { currentGrid, lookId, said } from "../looks/looks.ts";
 
 // The bar: the mode, then links to apps and settings, or what this mode's
 // keys do; on the right, info and the clock.
@@ -32,6 +32,10 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
 }
 
 export function heading(command: string, title: string): HTMLElement[] {
+  // Glass and Cinema have no prompt, and a headline without its full stop,
+  // starting with a capital (ADR-063, D2).
+  const look = lookId();
+  if (look && look !== "terminal") return [h("h1", { class: "headline" }, said(title.replace(/\.$/, "")))];
   return [h("div", { class: "prompt" }, h("b", {}, "~"), ` $ ${command}`), h("h1", { class: "headline" }, title)];
 }
 

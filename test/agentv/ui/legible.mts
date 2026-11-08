@@ -76,6 +76,9 @@ export function shortfalls(page: Page): Promise<Short[]> {
       if (!box.width || !box.height || style.visibility !== "visible" || box.bottom < 0 || box.top > innerHeight) continue;
       const fg = parse(style.color);
       if (!fg) continue;
+      // Text that isn't showing, as a name that appears only with the focus,
+      // isn't read.
+      if (opacity(el) < 0.05) continue;
       const bg = behind(el);
       const text = over([fg[0], fg[1], fg[2], fg[3] * opacity(el)], bg);
       const [a, b] = [luminance(text), luminance(bg)].sort((x, y) => y - x);

@@ -156,8 +156,13 @@ export class Focus {
   // only its transform moves, so the move stays smooth (ADR-024).
   private place(el: HTMLElement, glide: boolean, from?: Box): void {
     const target = box(el);
-    // A tile lifts by 3% when it has focus, so the ring sits on the lifted tile.
-    const lift = el.classList.contains("tile") ? 0.03 : 0;
+    // A tile lifts by 3% when it has focus, so the ring sits on the lifted
+    // tile. A look can say how far its own lift (--lift), and the ring takes
+    // the element's rounded corners, as Glass's and Cinema's are.
+    const style = getComputedStyle(el);
+    const own = parseFloat(style.getPropertyValue("--lift"));
+    const lift = Number.isFinite(own) ? own : el.classList.contains("tile") ? 0.03 : 0;
+    this.ring.style.borderRadius = style.borderRadius === "0px" ? "" : `calc(${style.borderRadius} * ${1 + lift})`;
     const left = target.left - (target.width * lift) / 2;
     const top = target.top - (target.height * lift) / 2;
     const width = target.width * (1 + lift);

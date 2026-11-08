@@ -38,6 +38,8 @@ import { field } from "../setup/frame.ts";
 import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
 import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
+import { forecast } from "./pages/forecast.ts";
+import { newWeek } from "./pages/new-week.ts";
 
 export interface View {
   el: HTMLElement;
@@ -389,6 +391,9 @@ function viewFor(route: string): View {
   // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
+  // Weather's and New this week's own pages, with the looks (D2).
+  if (name === "weather" && lookId()) return forecast(ctx);
+  if (name === "new" && lookId()) return newWeek(ctx);
   // A page app, full screen in its frame (ADR-043).
   if (name === "app" && arg) return pageView(ctx, arg);
   // A photo or a video a phone shared (ADR-050).

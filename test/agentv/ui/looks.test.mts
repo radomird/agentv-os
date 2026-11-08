@@ -21,7 +21,7 @@ import { startMet, type Met } from "./met.mts";
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
 
-export const LOOKS = ["terminal"] as const;
+export const LOOKS = ["terminal", "glass", "cinema"] as const;
 type Look = (typeof LOOKS)[number];
 const SIZES = { larger: 1600, standard: 1920, more: 2400 } as const;
 type Size = keyof typeof SIZES;
@@ -91,7 +91,9 @@ function overflows(page: Page): Promise<string[]> {
     // The ambient screen covers the page, so it's all there is to see.
     const shown = document.querySelector("#ambient.on") ? "#ambient.on *" : "#page *";
     for (const el of document.querySelectorAll<HTMLElement>(shown)) {
-      if (el.closest("svg") || el.matches("svg")) continue;
+      // Pictures and what's drawn only to look at, such as Glass's backdrop
+      // bleeding past the edges for its blur, aren't cut off.
+      if (el.closest("svg, [aria-hidden='true']") || el.matches("svg")) continue;
       const style = getComputedStyle(el);
       const box = el.getBoundingClientRect();
       if (!box.width || !box.height || style.visibility !== "visible" || Number(style.opacity) === 0) continue;

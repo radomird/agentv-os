@@ -231,3 +231,19 @@ body {
 :root[data-size="larger"] .size-s .tile-content > .entries {
   display: none;
 }
+
+/* --- Every page's background ---------------------------------------------- */
+
+/* The background shows behind every page, as D2 draws it, dimmed more away
+   from home so the text reads. Track 6's layer draws what's in it. */
+body:not(.on-home) #backdrop {
+  display: block;
+}
+
+body.with-backdrop:not(.on-home) #backdrop:not(:empty)::after {
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+}
+
+body.with-backdrop {
+  background: var(--darker-background);
+}
