@@ -6,8 +6,8 @@
 // - each sentence starts with a capital, and so does a line that's a label;
 // - a few words are always in capitals: AI, PIN, TV and the like, and days
 //   and months start with one;
-// - "[x]" is a tick, "[ ]" nothing, and a leading "↵ " goes, since the
-//   remote's OK always does the same.
+// - "[x]" is a tick, "[ ]" nothing, a leading "↵ " goes, since the
+//   remote's OK always does the same, and a headline has no full stop.
 //
 // Names keep their own capitals, so nothing is ever made lower case here.
 // Terminal's words are never touched. Addresses, codes and anything typed in
@@ -44,6 +44,8 @@ function fix(node: Text): void {
     return;
   }
   let next = text.replace(/^\s*↵\s+/, "");
+  // A headline has no full stop in these looks (D2).
+  if (parent.closest(".headline")) next = next.replace(/\.\s*$/, "");
   next = sentenceCase(next);
   if (next !== text) node.data = next;
 }
