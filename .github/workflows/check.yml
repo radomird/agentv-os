@@ -133,6 +133,10 @@ jobs:
       # Music reads tags and covers with ffprobe and ffmpeg, as the box does.
       - name: ffmpeg, for the Music tests
         uses: ./.github/actions/ffmpeg
+      # Lua runs the TV session's monitor lines (session/hypr.lua) against a
+      # stand-in Hyprland.
+      - name: Lua, for the TV session's config
+        run: type -P lua5.4 >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq lua5.4; }
       - name: The daemon's TypeScript type-checks
         run: test/agentv/types
       - run: test/agentv/unit/run

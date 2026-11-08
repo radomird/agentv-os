@@ -48,7 +48,7 @@ import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
-import { Features } from "./features.ts";
+import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
@@ -82,6 +82,7 @@ import type { Viewer } from "./apps/loader.ts";
 import { Discover, type DiscoverOptions } from "./discover.ts";
 import { discoverRoute, serverPickRoute } from "./routes/discover.ts";
 import { ServerPicks } from "./server-picks.ts";
+import { DisplayRoutes } from "./routes/display.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -273,6 +274,8 @@ export class Daemon {
   readonly features: Features;
   // What the box is (ADR-061).
   readonly box: Box;
+  // The TV's size (ADR-062): /api/display and the screen daemon's asks.
+  readonly displayRoutes: DisplayRoutes;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -487,6 +490,19 @@ export class Daemon {
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.features = new Features({ state: options.state, channel: () => this.channel() });
     this.box = new Box({ state: options.state, ...options.box });
+    this.displayRoutes = new DisplayRoutes({
+      state: options.state,
+      sizes: () => this.features.on("sizes"),
+      fourKSmooth: async () => {
+        const smooth = await this.box.smooth();
+        return smooth.result ? smooth.passed : null;
+      },
+      json: (response, status, data) => this.json(response, status, data),
+      body: (request) => this.body(request),
+      broadcast: (event, data) => this.broadcast(event, data),
+      log: this.log,
+      adult: (request, response, what) => this.adult(request, response, what),
+    });
     this.desktopPassword = new DesktopPassword({ marker: options.accountMarker, socket: options.passwordSocket });
     this.voice = new Voice({
       ...options.voice,
@@ -622,6 +638,7 @@ export class Daemon {
     this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
+    this.displayRoutes.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -1907,12 +1924,23 @@ export class Daemon {
 
   // What the box check's routes need of the daemon.
   private boxKit(): BoxRoutes {
-    return { box: this.box, json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast: (event, data) => this.broadcast(event, data), log: this.log };
+    // Its news moves the TV to 1080p output when the box can't keep 4K
+    // smooth (ADR-062).
+    const broadcast = (event: string, data: unknown) => {
+      this.broadcast(event, data);
+      if (event === "box") void this.displayRoutes.follow();
+    };
+    return { box: this.box, json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast, log: this.log };
   }
 
   // What the switches' routes need of the daemon.
   private featureKit(): FeatureRoutes {
-    return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed: (all) => this.broadcast("features", all), log: this.log };
+    // The TV's size follows the sizes switch at once (ADR-062).
+    const changed = (all: FeatureMap) => {
+      this.broadcast("features", all);
+      void this.displayRoutes.switched(all.sizes);
+    };
+    return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed, log: this.log };
   }
 
   private json(response: ServerResponse, status: number, data: unknown): void {
@@ -2203,6 +2231,7 @@ export class Daemon {
     if (await this.setupRoutes.handle("tv", request, response, url)) return;
     if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
     if (await boxRoute(this.boxKit(), method, path, request, response)) return;
+    if (await this.displayRoutes.handle(method ?? "", path, request, response)) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
