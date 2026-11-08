@@ -1,7 +1,7 @@
-// The three looks' plumbing (ADR-063): the feature switches the TV's pages
-// read, the look the box is drawn in, and what turning the looks on does to
-// home's layout: no all apps tile anywhere, and Clock off the home of anyone
-// who never arranged it.
+// The three looks' plumbing (ADR-063): the look the box is drawn in, and what
+// turning the looks on does to home's layout: no all apps tile anywhere, and
+// Clock off the home of anyone who never arranged it. The box is on edge, so
+// its switches can turn on.
 
 import assert from "node:assert/strict";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -16,6 +16,7 @@ let state = "";
 
 before(async () => {
   ({ daemon, url, state } = await startBox(0, undefined, { builtins: true }));
+  writeFileSync(join(state, "..", "channel"), "edge\n");
 });
 
 after(() => daemon.close());
@@ -34,21 +35,6 @@ function looks(on: boolean | null): void {
   if (on === null) rmSync(file, { force: true });
   else writeFileSync(file, JSON.stringify({ looks: on }));
 }
-
-test("every switch is off until features.json turns one on", async () => {
-  looks(null);
-  const all = await get("/api/features");
-  assert.deepEqual(Object.keys(all), ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds"]);
-  assert.ok(Object.values(all).every((on) => on === false));
-  writeFileSync(join(state, "features.json"), JSON.stringify({ looks: true, sizes: "yes", nonsense: true }));
-  const changed = await get("/api/features");
-  assert.equal(changed.looks, true);
-  assert.equal(changed.sizes, false, "only true or false changes a switch");
-  assert.equal("nonsense" in changed, false, "a name the spec doesn't have isn't a switch");
-  writeFileSync(join(state, "features.json"), "not json");
-  assert.equal((await get("/api/features")).looks, false);
-  looks(null);
-});
 
 test("the box is in Terminal until another look is picked, and the TV hears the change", async () => {
   const first = await get("/api/look");

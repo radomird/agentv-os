@@ -1,0 +1,8 @@
+HTTP/1.0 200 OK
+Content-Type: plex/media-server
+Resource-Identifier: 7c3f0b2d6f1e4c8a9b0d1e2f3a4b5c6d7e8f9a0b
+Name: den
+Port: 32400
+Updated-At: 1793800000
+Version: 1.41.2.9200-c6bbc1b53
+

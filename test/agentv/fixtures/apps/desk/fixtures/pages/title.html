@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Title</title>
+<!-- A stand-in for a streaming service's title page and its player, made by
+     hand. Play puts the player on the page's own history, as one page app,
+     and the player covers the window. It takes every key it uses itself,
+     Escape included, and does nothing with Escape but close its own
+     settings. Its own Back arrow puts the title's page on the history again
+     rather than going back. At ?full, Play also puts the player full screen.
+     At ?trailer, a trailer plays behind the title's page, over the whole
+     screen, and the page scrolls past it, so it's no player.
+     The page's address says what shows: title.html, or title.html?play. -->
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; }
+  main { padding: 48px; }
+  main[hidden] { display: none; }
+  main p { max-width: 40em; }
+  main .more { height: 1600px; }
+  button { font: inherit; background: #2a2a3a; color: #eee; border: 0; border-radius: 6px; padding: 12px 20px; }
+  #trailer { position: absolute; left: 0; top: 0; width: 100%; height: 100vh; z-index: -1; }
+  #player { position: fixed; inset: 0; background: #000; display: none; }
+  #player.on { display: block; }
+  #player video { width: 100%; height: 100%; }
+  #controls { position: absolute; inset: 24px 24px auto 24px; display: block; }
+</style>
+</head>
+<body>
+<main id="title">
+  <video id="trailer" muted playsinline hidden></video>
+  <h1>Paper Boats</h1>
+  <p>A stand-in title. Its page scrolls, the way a title's page with episodes and extras under it does.</p>
+  <button id="play" type="button">Play</button>
+  <div class="more"></div>
+</main>
+<div id="player">
+  <video muted playsinline aria-label="Paper Boats"></video>
+  <player-controls id="controls"></player-controls>
+</div>
+<script>
+  const full = location.search.includes("full");
+  const player = document.getElementById("player");
+  const video = player.querySelector("video");
+
+  // The player's own controls, in a shadow root: its Back arrow, and its
+  // settings in a dialog.
+  const controls = document.getElementById("controls").attachShadow({ mode: "open" });
+  controls.innerHTML = `
+    <style>button { font: inherit; background: #eee; color: #000; border: 0; border-radius: 6px; padding: 12px 20px; margin-right: 12px; }</style>
+    <button id="back" type="button" aria-label="Back">&larr;</button>
+    <button id="settings" type="button">Settings</button>
+    <dialog id="dialog"><p>Audio and subtitles</p></dialog>`;
+  const dialog = controls.getElementById("dialog");
+  controls.getElementById("settings").addEventListener("click", () => dialog.showModal());
+  controls.getElementById("back").addEventListener("click", () => {
+    history.pushState(null, "", `title.html${full ? "?full" : ""}`);
+    show();
+  });
+
+  // What the address says.
+  const show = () => {
+    const playing = new URLSearchParams(location.search).has("play");
+    player.classList.toggle("on", playing);
+    // The player's page has nothing else on it, so it doesn't scroll.
+    document.getElementById("title").hidden = playing;
+    document.title = playing ? "Playing" : "Title";
+    if (playing) video.play().catch(() => {});
+    else {
+      video.pause();
+      if (dialog.open) dialog.close();
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+  };
+  addEventListener("popstate", show);
+  if (location.search.includes("trailer")) {
+    const trailer = document.getElementById("trailer");
+    trailer.hidden = false;
+    trailer.play().catch(() => {});
+  }
+  document.getElementById("play").addEventListener("click", () => {
+    history.pushState(null, "", `title.html?play${full ? "&full" : ""}`);
+    show();
+    if (full) player.requestFullscreen().catch(() => {});
+  });
+
+  // The player's keys: it takes them all, Escape included.
+  addEventListener("keydown", (event) => {
+    if (!player.classList.contains("on")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (dialog.open) dialog.close();
+    } else if (event.key === " ") {
+      event.preventDefault();
+      video.paused ? video.play().catch(() => {}) : video.pause();
+    }
+  });
+  show();
+</script>
+</body>
+</html>

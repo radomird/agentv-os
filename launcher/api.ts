@@ -614,8 +614,12 @@ export const screen = {
   // Settings → Omarchy desktop: a log-out to it.
   desktop: (grant: string) => ask({ cmd: "desktop", grant }),
   // Settings → Power, after its question, and Shut down after its countdown
-  // (ADR-033): Omarchy's own restart or shut down.
-  power: (what: "restart" | "shutdown", grant: string) => ask({ cmd: "power", what, grant }),
+  // (ADR-033): Omarchy's own restart or shut down, or a restart to the boot
+  // menu (ADR-060).
+  power: (what: "restart" | "shutdown" | "bootmenu", grant: string) => ask({ cmd: "power", what, grant }),
+  // Whether this box restarts to its boot menu: it does when the boot
+  // loader takes the request, as on a UEFI box.
+  bootMenu: async () => (await ask({ cmd: "boot-menu" })).can === true,
   // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // Someone else is watching: the apps open take the service's profile for
