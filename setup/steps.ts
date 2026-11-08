@@ -9,6 +9,7 @@ import { addYourOwn, apps } from "./apps.ts";
 import { art, background, folder, photos } from "./background.ts";
 import { country, pick as pickCountry } from "./country.ts";
 import { goal } from "./goal.ts";
+import { location, pickLocation, zoneQuestion } from "./location.ts";
 import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
 import { people, person } from "./people.ts";
@@ -19,14 +20,19 @@ import { welcome, wifi } from "./welcome.ts";
 
 export type Screen = (ctx: Ctx, page: string) => View | Promise<View>;
 
+// With setup's own switch on, a step's phase 2 screen, and phase 1's with it
+// off.
+const two = (now: Screen, before: Screen): Screen => (ctx, page) => (ctx.info.numbers ? now(ctx, page) : before(ctx, page));
+
 // "step/*" is any page of that step, with the page's own part of the route.
 export const SCREENS: Record<string, Screen> = {
   welcome: welcome,
   "welcome/wifi": wifi,
   ready: ready,
   // track 3: box: box,
-  country: country,
-  "country/pick": pickCountry,
+  country: two(location, country),
+  "country/pick": two(pickLocation, pickCountry),
+  "country/zone": zoneQuestion,
   ai: aiStep,
   "ai/*": (ctx, page) => path(ctx, page as Provider),
   people: people,

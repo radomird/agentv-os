@@ -161,13 +161,17 @@ export class CountryPlace {
   }
 
   // The country picked, in setup or Settings: kept, and the time zone moved
-  // to it when the box's isn't in it. Waits a moment for root to set it.
-  async set(code: unknown): Promise<{ state?: CountryState; error?: string }> {
+  // to it when the box's isn't in it. Setup's location step can say which
+  // of the country's zones (daemon/location.ts). Waits a moment for root to
+  // set it.
+  async set(code: unknown, wanted?: string): Promise<{ state?: CountryState; error?: string }> {
     const country = typeof code === "string" ? await countryOf(code) : null;
     if (!country) return { error: "a country is two capital letters the tz database knows, such as NO" };
     const before = await this.zone();
     this.follow(before);
-    const zone = await zoneFor(country.code, before);
+    const theirs = wanted ? [...(await cities()).values()].some((city) => city.zone === wanted && city.country === country.code) : false;
+    if (wanted && !theirs) return { error: `${wanted} isn't one of ${country.name}'s time zones` };
+    const zone = theirs ? wanted! : await zoneFor(country.code, before);
     await mkdir(dirname(this.path), { recursive: true });
     const next = join(dirname(this.path), ".country.json.next");
     await writeFile(next, `${JSON.stringify({ code: country.code, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") })}\n`);

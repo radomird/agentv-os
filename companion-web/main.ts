@@ -141,6 +141,9 @@ const failed = (error: unknown) => {
 async function pair(code: string): Promise<boolean> {
   try {
     keep((await api<{ token: string }>("POST", "/api/phone/pair", { code, name: phoneName() })).token);
+    // The phone's own time zone, for setup's location step to start from,
+    // while setup is on.
+    void api("POST", "/api/phone/zone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
     return true;
   } catch (error) {
     toast(`${(error as Error).message}.`);

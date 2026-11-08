@@ -55,6 +55,7 @@ import { Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, Setup, type SetupState } from "./setup.ts";
+import { SetupRoutes } from "./routes/setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { currentLook, lookRoute } from "./routes/look.ts";
@@ -262,6 +263,16 @@ export class Daemon {
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
+  // Setup's own routes (daemon/routes/setup.ts), and what they may use.
+  private setupRoutes = new SetupRoutes({
+    setup: () => this.setupState,
+    country: () => this.country,
+    json: (response, status, data) => this.json(response, status, data),
+    body: (request) => this.body(request),
+    broadcast: (event, data) => this.broadcast(event, data),
+    log: (line) => this.log(line),
+    adult: async (request, response, what) => this.guarded(request, response, what) && (await this.adult(request, response, what)),
+  });
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -1208,6 +1219,7 @@ export class Daemon {
       await this.file(response, join("companion-web", "setup.html"));
       return;
     }
+    if (await this.setupRoutes.handle("captive", request, response, url)) return;
     if (method === "GET" && CAPTIVE_FILES.includes(path.slice(1))) {
       await this.file(response, path.slice(1));
       return;
@@ -1319,6 +1331,8 @@ export class Daemon {
     // Routes in files of their own (daemon/routes/), one line each.
     if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
     if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
+
+    if (await this.setupRoutes.handle("phone", request, response, url)) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -2077,6 +2091,7 @@ export class Daemon {
     // Routes in files of their own (daemon/routes/), one line each.
     if (await featureRoutes(this.featureKit(), request, response, path)) return;
     if (await lookRoute({ root: this.options.root, state: this.options.state, broadcast: (event, data) => this.broadcast(event, data), adult: (q, s, what) => this.adult(q, s, what) }, request, response)) return;
+    if (await this.setupRoutes.handle("tv", request, response, url)) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

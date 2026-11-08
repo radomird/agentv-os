@@ -117,6 +117,9 @@ export interface SetupState {
   wishes: string[];
   // The setup soundtrack muted, from the TV's M or the phone (S5.4).
   muted: boolean;
+  // The time zone of the phone setting it up, as the captive page or the
+  // companion sent it, which the location step starts from (ADR-059).
+  phoneZone: string | null;
 }
 
 // How many wishes setup keeps, and how long each may be.
@@ -131,6 +134,7 @@ export interface NetworkState {
   name: string | null;
 }
 
+const ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
 const AT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/;
 // A package version, or "dev" for a checkout.
 const VERSION = /^[0-9A-Za-z][0-9A-Za-z.+_~-]{0,63}$/;
@@ -140,7 +144,7 @@ function now(): string {
 }
 
 function fresh(): SetupState {
-  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [], muted: false };
+  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [], muted: false, phoneZone: null };
 }
 
 // The box's network, from its interfaces: a wired or Wi-Fi address that
@@ -225,6 +229,7 @@ export class Setup {
       to: typeof ready.to === "string" && VERSION.test(ready.to) ? ready.to : null,
     };
     state.muted = data.muted === true;
+    if (typeof data.phoneZone === "string" && ZONE.test(data.phoneZone)) state.phoneZone = data.phoneZone;
     if (Array.isArray(data.wishes)) state.wishes = data.wishes.filter((w): w is string => typeof w === "string" && WISH.test(w)).slice(0, WISHES);
     return state;
   }
@@ -317,6 +322,14 @@ export class Setup {
     if (left.length === state.wishes.length) return;
     state.wishes = left;
     await this.save(state);
+  }
+
+  // The phone's time zone, once daemon/location.ts has checked it. The
+  // latest phone's counts.
+  async setPhoneZone(zone: string): Promise<SetupState> {
+    const state = await this.read();
+    state.phoneZone = ZONE.test(zone) ? zone : null;
+    return this.save(state);
   }
 
   // The soundtrack muted or playing again.

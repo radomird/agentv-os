@@ -22,6 +22,37 @@ export interface SetupState {
   wishes: string[];
   // The soundtrack muted (S5.4).
   muted: boolean;
+  // The time zone of the phone setting it up.
+  phoneZone: string | null;
+}
+
+// The location step (design page D3): where it starts, from the phone's
+// time zone or the box's, and a country's time zones when they differ.
+export interface Start {
+  code: string;
+  name: string;
+  called: string; // "the netherlands"
+  zone: string;
+  from: "phone" | "box";
+}
+
+export interface ZoneChoice {
+  zone: string;
+  name: string; // "eastern"
+  city: string; // "new york"
+}
+
+export interface ZoneAsk {
+  code: string;
+  name: string;
+  called: string;
+  zones: ZoneChoice[];
+}
+
+export interface LocationInfo {
+  start: Start | null;
+  phoneZone: string | null;
+  countries: Country[];
 }
 
 export interface Hotspot {
@@ -141,5 +172,9 @@ export const setup = {
   // The box's country (ADR-055): the time zone and new this week follow it.
   country: () => call<CountryState & { countries: Country[] }>("GET", "/api/country"),
   setCountry: (code: string, grant?: string) => call<CountryState>("PUT", "/api/country", { code }, grant),
+  // The location step, with setup's own switch on: a country, and the zone
+  // when the question asked it. The answer sets them, or asks which zone.
+  location: () => call<LocationInfo>("GET", "/api/setup/location"),
+  setLocation: (code: string, zone?: string, grant?: string) => call<{ location?: CountryState; ask?: ZoneAsk }>("PUT", "/api/setup/location", { code, zone }, grant),
   pair: async () => (await call<{ pairing: { code: string; until: string; url: string | null } | null }>("POST", "/api/phones/pair")).pairing,
 };
