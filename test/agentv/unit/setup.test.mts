@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Daemon } from "../../../daemon/server.ts";
-import { network, Setup, STEPS } from "../../../daemon/setup.ts";
+import { network, OF, ORDER, Setup, STEPS, type StepEntry } from "../../../daemon/setup.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-setup-"));
 const state = join(scratch, "state");
@@ -37,7 +37,10 @@ before(async () => {
     address: () => "127.0.0.1",
     interfaces: () => (online ? wired : {}) as never,
     hotspotRun: join(scratch, "hotspot"),
+    // Edge, where a switch can be turned on.
+    channelFile: join(scratch, "channel"),
   });
+  writeFileSync(join(scratch, "channel"), "edge\n");
   url = `http://127.0.0.1:${await daemon.listen()}`;
   lanUrl = `http://127.0.0.1:${daemon.lanPort}`;
 });
@@ -94,7 +97,7 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   assert.equal((await store.read()).step, "background");
   await store.finish("background");
   assert.equal((await store.read()).step, "background", "the last step finished stays on it, for the page to mark setup done");
-  assert.deepEqual(STEPS, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
+  assert.deepEqual(await store.steps(), ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"], "with no switch on");
 });
 
 test("getting ready keeps how bringing the box up to date goes, and when the check was asked for", async () => {
@@ -247,4 +250,106 @@ test("S5.4 the soundtrack muted is kept, and only as yes or no", async () => {
   assert.equal((await store.setMuted(true)).state?.muted, true);
   assert.equal((await new Setup({ path: join(scratch, "muted.json") }).read()).muted, true, "after a restart too");
   assert.equal((await store.mark(false)).muted, false, "setup started again plays it again");
+});
+
+// --- Phase 2: setup's 12 steps (ADR-071) and the switches -------------------
+
+test("T7.1 setup's order is ADR-071's: the TV starts at getting ready, 3 of 12, and each step keeps its number", () => {
+  assert.equal(OF, 12);
+  assert.deepEqual(
+    ORDER.map((entry) => [entry.step, entry.n, entry.name]),
+    [
+      ["welcome", 3, "getting ready"],
+      ["ready", 3, "getting ready"],
+      ["country", 5, "location"],
+      ["ai", 6, "ai"],
+      ["people", 7, "who watches"],
+      ["goal", 8, "goal"],
+      ["apps", 9, "apps"],
+      ["look", 10, "look and size"],
+      ["theme", 11, "theme and background"],
+      ["background", 11, "theme and background"],
+    ],
+  );
+  const numbers = ORDER.map((entry) => entry.n);
+  assert.deepEqual(numbers, [...numbers].sort((a, b) => a - b), "the numbers only go up");
+  assert.ok(numbers.every((n) => n >= 3 && n < OF), "1 and 2 are the USB stick's, and 12 is home");
+});
+
+test("T7.1 with setup's own switch on, the bar says \"5 of 12 · location\", and with it off, phase 1's parts", async () => {
+  const off = new Setup({ path: join(scratch, "progress.json") });
+  const before = await off.progress();
+  assert.equal(before.numbers, null);
+  assert.equal(before.parts.country, "1/6 country");
+  const on = new Setup({ path: join(scratch, "progress.json"), on: async (feature) => feature === "setup2" });
+  const after = await on.progress();
+  assert.deepEqual(after.steps, STEPS.filter((step) => step !== "look"), "the look waits for its own switch");
+  assert.deepEqual([after.parts.welcome, after.parts.country, after.parts.people, after.parts.background], ["3 of 12 · getting ready", "5 of 12 · location", "7 of 12 · who watches", "11 of 12 · theme and background"]);
+  assert.deepEqual([after.numbers?.ready, after.numbers?.ai, after.of], [3, 6, 12]);
+});
+
+// An order with a step behind a switch, as track 3's box step will be.
+const SWITCHED: StepEntry[] = [
+  { step: "welcome", n: 3, name: "getting ready" },
+  { step: "ready", n: 3, name: "getting ready" },
+  { step: "box", n: 4, name: "your box", feature: "boxcheck" },
+  { step: "country", n: 5, name: "location" },
+  { step: "ai", n: 6, name: "ai" },
+];
+
+test("a step behind a switch shows only with it on, and setup goes past it with it off", async () => {
+  let boxcheck = false;
+  const store = new Setup({ path: join(scratch, "switched.json"), order: SWITCHED, on: async (feature) => feature === "setup2" || (feature === "boxcheck" && boxcheck) });
+  assert.deepEqual(await store.steps(), ["welcome", "ready", "country", "ai"]);
+  assert.match((await store.go("box")).error ?? "", /a step: welcome, ready, country, ai/);
+  await store.finish("welcome");
+  assert.equal((await store.finish("ready")).state?.step, "country", "past the box, with its switch off");
+
+  boxcheck = true;
+  await store.mark(false);
+  assert.deepEqual(await store.steps(), ["welcome", "ready", "box", "country", "ai"]);
+  assert.equal(((await store.progress()).parts as Record<string, string>).box, "4 of 12 · your box");
+  await store.finish("welcome");
+  assert.equal((await store.finish("ready")).state?.step, "box");
+  assert.match((await store.finish("country")).error ?? "", /box isn't finished yet/);
+  assert.equal((await store.finish("box")).state?.step, "country");
+});
+
+test("a box already past a step's slot when its switch turns on carries on, and one on a step whose switch turns off moves on", async () => {
+  let boxcheck = false;
+  const path = join(scratch, "late.json");
+  const store = new Setup({ path, order: SWITCHED, on: async (feature) => feature === "boxcheck" && boxcheck });
+  await store.finish("welcome");
+  await store.finish("ready");
+  await store.finish("country");
+  boxcheck = true;
+  const later = await store.read();
+  assert.equal(later.step, "ai");
+  assert.equal((later.finished as Record<string, string>).box, later.finished.ready, "the box step counts as finished, when getting ready was");
+  assert.equal((await store.finish("ai")).error, undefined);
+
+  // On the box step itself, with its switch turned off again: on to location.
+  writeFileSync(path, JSON.stringify({ done: false, step: "box", finished: { welcome: "2026-11-05T10:00:00+00:00", ready: "2026-11-05T10:01:00+00:00" } }));
+  boxcheck = false;
+  assert.equal((await store.read()).step, "country");
+  // A step this version doesn't know, as after going back a release: from
+  // the first one that isn't finished.
+  writeFileSync(path, JSON.stringify({ done: false, step: "somewhere", finished: { welcome: "2026-11-05T10:00:00+00:00" } }));
+  assert.equal((await store.read()).step, "welcome");
+});
+
+test("T7.1 with setup's own switch on, the setup screens and a paired phone hear each step's number of the 12", async () => {
+  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: true }));
+  try {
+    const info = await (await fetch(`${url}/api/setup`)).json();
+    assert.equal(info.parts.country, "5 of 12 · location");
+    assert.equal(info.numbers.goal, 8);
+    assert.equal(info.of, 12);
+    const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
+    const paired = await (await fetch(`${lanUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json();
+    const phone = await (await fetch(`${lanUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${paired.token}` } })).json();
+    assert.deepEqual(phone.setup, { step: "welcome", part: "3 of 12 · getting ready", n: 3, of: 12, muted: false });
+  } finally {
+    rmSync(join(state, "features.json"), { force: true });
+  }
 });

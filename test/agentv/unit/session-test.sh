@@ -37,7 +37,7 @@ run() {
   rm -f "$calls"
   env PATH="$bin:$ROOT/bin:$PATH" HOME="$SCRATCH/home" XDG_STATE_HOME="$SCRATCH/home/.local/state" \
     CALLS="$calls" AGENTV_PATH="$ROOT" OMARCHY_PATH="$SCRATCH/omarchy" AGENTV_SESSION_DIRS="$SCRATCH/none" \
-    AGENTV_BOOT_ID_FILE="$SCRATCH/boot_id" "$BASH" "$@"
+    AGENTV_BOOT_ID_FILE="$SCRATCH/boot_id" AGENTV_BOOT_SPLASH_NOTE="$SCRATCH/splash-note" "$BASH" "$@"
 }
 
 state="$SCRATCH/home/.local/state/agentv"
@@ -58,6 +58,14 @@ run "$ROOT/bin/agentv-session" 2>/dev/null || true
   fail "a note from this boot starts Omarchy's own session, as its entry says" "$(cat "$calls")"
 [[ ! -f $state/next-session ]] || fail "the note counts once"
 pass "S1.3 a note from agentv desktop starts Omarchy's own session, once"
+
+: >"$SCRATCH/splash-note"
+echo "desktop boot-one" >"$state/next-session"
+run "$ROOT/bin/agentv-session" 2>/dev/null || true
+[[ $(cat "$calls") == $'systemctl start --no-block agentv-boot-splash-release.service\nuwsm start -g -1 -e -D Hyprland hyprland.desktop tv=' ]] ||
+  fail "leaving for the desktop during the boot's splash lets Plymouth go first" "$(cat "$calls")"
+rm -f "$SCRATCH/splash-note"
+pass "T2.1 Omarchy's desktop started before home has drawn releases Plymouth first"
 
 echo "desktop boot-zero" >"$state/next-session"
 run "$ROOT/bin/agentv-session" 2>/dev/null || true

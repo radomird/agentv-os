@@ -358,18 +358,6 @@ test("the screen daemon tells the daemon about Widevine, and the readings can be
   assert.equal(parseEdid(Buffer.from(readings.connectors[2].edid, "base64"))?.name, "Panasonic-TV");
 });
 
-test("GET /api/features: every switch, off by default, and features.json turns one on", async () => {
-  const off = await get("/api/features");
-  assert.equal(off.boxcheck, false);
-  assert.ok(Object.values(off).every((on) => on === false));
-  writeFileSync(join(state, "features.json"), JSON.stringify({ boxcheck: true, sizes: "yes", nonsense: true }));
-  const on = await get("/api/features");
-  assert.equal(on.boxcheck, true);
-  assert.equal(on.sizes, false, "only true or false counts");
-  assert.ok(!("nonsense" in on), "and only the switches there are");
-  rmSync(join(state, "features.json"));
-});
-
 test("a paired phone gets the box in one line, for its menu", async () => {
   assert.equal((await fetch(`${lan}/api/phone/box`)).status, 401);
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;

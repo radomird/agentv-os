@@ -14,57 +14,67 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { summary } from "../../launcher/box-lines.ts";
 import type { Box } from "../box.ts";
-import type { RouteHost } from "./host.ts";
 
-export async function boxRoute(host: RouteHost, box: Box, method: string | undefined, path: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-  if (!path.startsWith("/api/box")) return false;
+// What these routes need of the daemon.
+export interface BoxRoutes {
+  box: Box;
+  json: (response: ServerResponse, status: number, data: unknown) => void;
+  body: (request: IncomingMessage) => Promise<unknown>;
+  // Tells the TV's pages, and the phones, what changed.
+  broadcast: (event: string, data: unknown) => void;
+  log: (line: string) => void;
+}
+
+export async function boxRoute(kit: BoxRoutes, method: string | undefined, path: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  if (path !== "/api/box" && !path.startsWith("/api/box/")) return false;
+  const { box } = kit;
   if (method === "GET" && path === "/api/box") {
-    host.json(response, 200, await box.report());
+    kit.json(response, 200, await box.report());
     return true;
   }
   if (method === "GET" && path === "/api/box/readings") {
-    host.json(response, 200, await box.readings());
+    kit.json(response, 200, await box.readings());
     return true;
   }
   if (method === "GET" && path === "/api/box/smooth") {
-    host.json(response, 200, { ok: true, ...(await box.smooth()) });
+    kit.json(response, 200, { ok: true, ...(await box.smooth()) });
     return true;
   }
   if (method === "POST" && path === "/api/box/smooth") {
-    const saved = await box.saveSmooth(await host.body(request));
+    const saved = await box.saveSmooth(await kit.body(request));
     if (!saved.result) {
-      host.json(response, 400, { ok: false, error: saved.error });
+      kit.json(response, 400, { ok: false, error: saved.error });
       return true;
     }
     const { result } = saved;
-    host.log(`the 4k test drew ${result.width} × ${result.height} at ${result.fps} fps with ${Math.round(result.slow * 100)}% late frames, on gpu ${result.gpu}`);
+    kit.log(`the 4k test drew ${result.width} × ${result.height} at ${result.fps} fps with ${Math.round(result.slow * 100)}% late frames, on gpu ${result.gpu}`);
     const smooth = await box.smooth();
-    host.broadcast("box", { smooth });
-    host.json(response, 200, { ok: true, ...smooth });
+    kit.broadcast("box", { smooth });
+    kit.json(response, 200, { ok: true, ...smooth });
     return true;
   }
   if (method === "POST" && path === "/api/box/widevine") {
-    const version = ((await host.body(request)) as { version?: unknown } | undefined)?.version;
+    const version = ((await kit.body(request)) as { version?: unknown } | undefined)?.version;
     const saved = await box.saveWidevine(version === undefined ? null : version);
     if (saved.error) {
-      host.json(response, 400, { ok: false, error: saved.error });
+      kit.json(response, 400, { ok: false, error: saved.error });
       return true;
     }
     if (saved.changed) {
-      host.log(version ? `the services' chromium has widevine ${String(version)}` : "the services' chromium has no widevine");
-      host.broadcast("box", {});
+      kit.log(version ? `the services' chromium has widevine ${String(version)}` : "the services' chromium has no widevine");
+      kit.broadcast("box", {});
     }
-    host.json(response, 200, { ok: true });
+    kit.json(response, 200, { ok: true });
     return true;
   }
-  host.json(response, 404, { ok: false, error: "not found" });
+  kit.json(response, 404, { ok: false, error: "not found" });
   return true;
 }
 
 // The phone's, past pairing.
-export async function phoneBoxRoute(host: RouteHost, box: Box, method: string | undefined, path: string, response: ServerResponse): Promise<boolean> {
+export async function phoneBoxRoute(kit: BoxRoutes, method: string | undefined, path: string, response: ServerResponse): Promise<boolean> {
   if (method !== "GET" || path !== "/api/phone/box") return false;
-  const report = await box.report();
-  host.json(response, 200, { ok: true, line: summary(report), box: report });
+  const report = await kit.box.report();
+  kit.json(response, 200, { ok: true, line: summary(report), box: report });
   return true;
 }

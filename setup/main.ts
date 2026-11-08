@@ -18,18 +18,12 @@ import { Focus } from "../launcher/focus.ts";
 import { listen as listenInput, type Action } from "../launcher/input.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "../launcher/pages/pin.ts";
 import { Sounds } from "../launcher/sounds.ts";
-import { aiStep, cliLine, path } from "./ai.ts";
-import { setup, type AiInfo, type Installs, type Provider, type SetupInfo, type Step } from "./api.ts";
-import { addYourOwn, apps, installLine } from "./apps.ts";
-import { art, background, folder, photos } from "./background.ts";
+import { cliLine } from "./ai.ts";
+import { setup, type AiInfo, type Installs, type SetupInfo, type Step } from "./api.ts";
+import { installLine } from "./apps.ts";
 import { bar, field } from "./frame.ts";
-import { country, pick as pickCountry } from "./country.ts";
-import { goal } from "./goal.ts";
-import { people, person } from "./people.ts";
 import { Soundtrack } from "./music.ts";
-import { ready } from "./ready.ts";
-import { theme } from "./theme.ts";
-import { welcome, wifi } from "./welcome.ts";
+import { screenFor } from "./steps.ts";
 
 export interface View {
   el: HTMLElement;
@@ -242,26 +236,10 @@ const ctx: Ctx = {
   },
 };
 
+// The screen for a route, from setup/steps.ts.
 function viewFor(to: string): View | Promise<View> {
-  const [step, sub] = to.split("/");
-  if (to === "welcome/wifi") return wifi(ctx);
-  if (to === "ready") return ready(ctx);
-  if (to === "country/pick") return pickCountry(ctx);
-  if (to === "country") return country(ctx);
-  if (step === "ai" && sub) return path(ctx, sub as Provider);
-  if (to === "ai") return aiStep(ctx);
-  if (step === "people" && sub) return person(ctx, sub);
-  if (to === "people") return people(ctx);
-  if (to === "goal") return goal(ctx);
-  if (to === "apps/add") return addYourOwn(ctx);
-  if (to === "theme/own") return addYourOwn(ctx, "theme");
-  if (to === "apps") return apps(ctx);
-  if (to === "theme") return theme(ctx);
-  if (to === "background/photos") return photos(ctx);
-  if (to === "background/art") return art(ctx);
-  if (to === "background/folder") return folder(ctx);
-  if (to === "background") return background(ctx);
-  return welcome(ctx);
+  const { screen, page } = screenFor(to);
+  return screen(ctx, page);
 }
 
 // Draws a page. With a direction it slides in, and setup's steps take the
@@ -295,7 +273,9 @@ function barInfo(step: string, info: string): string {
 function put(to: string, next: View, direction?: "forward" | "back"): void {
   view = next;
   const step = to.split("/")[0] as Step;
-  barEl = bar(ctx.info.parts[step] ?? "", barInfo(step, view.info ?? ""));
+  const n = ctx.info.numbers?.[step];
+  barEl = bar(ctx.info.parts[step] ?? "", barInfo(step, view.info ?? ""), n ? { n, of: ctx.info.of } : undefined);
+  document.body.classList.toggle("counted", Boolean(n));
   const el = h("div", { class: "screen setup-screen" }, view.el, barEl);
   fieldEl.classList.toggle("dim", !view.bright);
   tell({ screen: "menu" });
@@ -446,6 +426,8 @@ async function start(): Promise<void> {
         view?.heard?.("key", data);
       },
       background: (data) => view?.heard?.("background", data),
+      // The phone's time zone, for the location step.
+      location: (data) => view?.heard?.("location", data),
       "setup-apps": (data) => {
         ctx.installs = data as Installs;
         view?.heard?.("setup-apps", data);

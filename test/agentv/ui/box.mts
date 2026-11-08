@@ -7,11 +7,23 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { test } from "node:test";
+import type { Feature, FeatureMap } from "../../../daemon/features.ts";
+import type { DiscoverOptions } from "../../../daemon/discover.ts";
+import type { Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
 import type { TmdbGet } from "../../../daemon/tmdb.ts";
 
 export const ROOT = join(import.meta.dirname, "../../..");
 const SAMPLE = join(ROOT, "test/agentv/fixtures/apps/sample");
+
+// Rests the mouse in the top left corner, where nothing can take the focus,
+// right after a page loads. On the box, Chromium tells a page that loads
+// where the mouse is, and the launcher takes that first move as only saying
+// so. After this, a test's first hover is a real move.
+export async function rest(page: Page): Promise<void> {
+  await page.mouse.move(1, 1);
+}
 
 export interface Fixture {
   id: string;
@@ -83,6 +95,23 @@ export interface BoxOptions {
   listenIdleMs?: number;
   // A stand-in for TMDB, through the router's service (stage 8).
   tmdb?: TmdbGet;
+  // Feature switches to set (daemon/features.ts). A box with one turned on
+  // is on edge, since only edge turns them on.
+  features?: Partial<FeatureMap>;
+  // Stand-ins for the servers on the network (daemon/discover.ts). Without
+  // them the box asks nothing on any network.
+  discover?: DiscoverOptions;
+  // Stand-ins for the AI providers' sites, whose icons setup shows.
+  aiSites?: ConstructorParameters<typeof Daemon>[0]["aiSites"];
+}
+
+// A switched screen's check, run with its switch off and then on, each time
+// on a box of its own (PHASE-2-PLAN.md, "Feature switches"). The check gets
+// whether the switch is on and the options that set it, for startBox.
+export function bothWays(feature: Feature, title: string, check: (on: boolean, options: Pick<BoxOptions, "features">) => Promise<void>): void {
+  for (const on of [false, true]) {
+    test(`${title}, with ${feature} ${on ? "on" : "off"}`, () => check(on, { features: { [feature]: on } }));
+  }
 }
 
 // AgenTV's built-ins, with the weather pointed at the test's own server.
@@ -134,6 +163,10 @@ export function makeBox(fixtures: Fixture[] = FIXTURES, options: BoxOptions = {}
   if (options.forecast) settings["agentv.weather"] = { forecastUrl: options.forecast };
   writeFileSync(join(state, "app-settings.json"), JSON.stringify(settings));
   if (options.zone) useZone(dir, options.zone);
+  if (options.features) {
+    writeFileSync(join(state, "features.json"), JSON.stringify(options.features));
+    if (Object.values(options.features).some(Boolean)) writeFileSync(join(dir, "channel"), "edge\n");
+  }
   return { apps, state, builtins: options.builtins ? builtins(dir, options.forecast) : undefined };
 }
 
@@ -273,6 +306,9 @@ export async function startBox(
     tmdbStatus,
     // No TMDB unless a test stands one in: the box never asks the real one.
     tmdb: options.tmdb ?? (async () => ({ ok: false, error: "tmdb couldn't be reached" })),
+    // No provider's real site either: an address that refuses, unless a
+    // test stands the sites in.
+    aiSites: options.aiSites ?? { claude: "http://127.0.0.1:1/", chatgpt: "http://127.0.0.1:1/", gemini: "http://127.0.0.1:1/", grok: "http://127.0.0.1:1/", muse: "http://127.0.0.1:1/" },
     router: options.router,
     listenIdleMs: options.listenIdleMs,
     // The channel, as agentv channel keeps it: none, so stable, until a test
@@ -294,6 +330,7 @@ export async function startBox(
     buildRun: join(state, "..", "build-run"),
     spend: join(state, "..", "spend.json"),
     npmWarnings: join(state, "..", "npm-warnings.json"),
+    discover: options.discover ?? { targets: [], avahi: null, ports: { jellyfin: 0, emby: 0, plex: 0, wsd: 0 } },
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot, builds: join(state, "..", "build"), themes: join(state, "..", "themes") };

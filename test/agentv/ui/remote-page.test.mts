@@ -18,7 +18,7 @@ import { validatePackage, type Manifest } from "../../../apps/contract/manifest.
 import { cdpCheckPage, checkApp } from "../../../builder/contract-run.ts";
 import { type Contract, Fixtures } from "../../../builder/fixtures.ts";
 import { CdpPipe } from "../../../daemon/cdp.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
 
 const DESK = resolve(import.meta.dirname, "../fixtures/apps/desk");
 const PAGES = join(DESK, "fixtures/pages");
@@ -114,8 +114,30 @@ async function app(name: string, source = REMOTE_PAGE) {
     await sleep(150);
   };
   const point = (x: number, y: number) => cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, sessionId);
+  // The screen daemon's word that Back was a tap, as it gives it on the box
+  // once Hyprland has seen the press and the release.
+  const tapped = async () => {
+    await cdp.evaluateInWorld(target, REMOTE_WORLD, BACK_TAP);
+    await sleep(150);
+  };
   await until((s) => s.title !== "", `${name} loaded`);
-  return { target, state, until, press, point };
+  return { target, state, until, press, point, tapped };
+}
+
+// The title stand-in, reached from the first page, so there's a page to go
+// back to from it, and Play pressed with OK.
+async function playing(query = "") {
+  const page = await app("desktop.html");
+  await cdp.evaluateIn(page.target, `location.href = "title.html${query}"`);
+  await page.until((s) => s.page === `title.html${query}`, "the title's page");
+  // The address changes as soon as the new page starts, before Play is
+  // drawn, so wait for Play, then for it to have the focus.
+  for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(page.target, `!!document.getElementById("play")`).catch(() => false)); tries++) await sleep(100);
+  await cdp.evaluateIn(page.target, `document.getElementById("play").focus()`);
+  await page.until((s) => s.focused === "play", "Play has the focus");
+  await page.press("Enter");
+  await page.until((s) => s.title === "Playing" && s.page.startsWith("title.html?play"), "Play puts the player on the page's own history");
+  return page;
 }
 
 // The ring is drawn around what has focus, a little outside it.
@@ -181,6 +203,91 @@ test("Back stays when there's nowhere to go back to, when it's held for a second
   const after = await page.state();
   assert.equal(after.dialog, false, "Back closes the page's dialog");
   assert.equal(after.page, "desktop.html", "and stays on the page");
+  await cdp.close(page.target);
+});
+
+test("T8.4 Back leaves a player that takes Escape itself, then goes on back from the title's page", async () => {
+  const page = await playing();
+  await page.press("Escape");
+  await page.until((s) => s.page === "title.html", "Back leaves the player for the title's page");
+  await page.press("Escape");
+  await page.until((s) => s.page === "desktop.html", "and Back goes on back from there, not into the player");
+  await cdp.close(page.target);
+});
+
+test("T8.4 after the player's own Back arrow, Back goes on back past the player, not into it", async () => {
+  const page = await playing();
+  await cdp.evaluateIn(page.target, `document.getElementById("controls").shadowRoot.getElementById("back").click()`);
+  await page.until((s) => s.page === "title.html", "the player's own Back arrow puts the title's page on the history again");
+  await page.press("Escape");
+  await page.until((s) => s.page === "desktop.html", "Back goes back from the title's page, past the player");
+  await cdp.close(page.target);
+});
+
+test("T8.4 in the player, Back closes the player's own settings and stays", async () => {
+  const page = await playing();
+  const settings = `document.getElementById("controls").shadowRoot.getElementById("dialog").open`;
+  await cdp.evaluateIn(page.target, `document.getElementById("controls").shadowRoot.getElementById("settings").click()`);
+  assert.equal(await cdp.evaluateIn(page.target, settings), true, "the settings opened");
+  await page.press("Escape");
+  await page.tapped();
+  await sleep(300);
+  assert.equal(await cdp.evaluateIn(page.target, settings), false, "Back closes them");
+  assert.equal((await page.state()).page, "title.html?play", "and the player stays");
+  await cdp.close(page.target);
+});
+
+test("T8.4 a full-screen player: Chromium takes Escape to leave full screen, and the screen daemon's tap leaves the player", async () => {
+  const page = await playing("?full");
+  const full = () => cdp.evaluateIn(page.target, "!!document.fullscreenElement");
+  for (let tries = 0; tries < 30 && !(await full()); tries++) await sleep(100);
+  assert.equal(await full(), true, "the player went full screen");
+  await page.press("Escape");
+  for (let tries = 0; tries < 30 && (await full()); tries++) await sleep(100);
+  assert.equal(await full(), false, "Chromium left full screen on Escape");
+  assert.equal((await page.state()).page, "title.html?play&full", "and the page never saw the key");
+  await page.tapped();
+  await page.until((s) => s.page === "title.html?full", "the tap the screen daemon heard leaves the player");
+  await cdp.close(page.target);
+});
+
+test("T8.4 a title's page with a trailer over the screen is no player: Back comes back to it", async () => {
+  const page = await app("desktop.html");
+  await cdp.evaluateIn(page.target, `location.href = "title.html?trailer"`);
+  await page.until((s) => s.page === "title.html?trailer", "the title's page, its trailer playing");
+  // Another part of the same page app, such as its extras.
+  await cdp.evaluateIn(page.target, `history.pushState(null, "", "title.html?trailer&extras")`);
+  await page.press("Escape");
+  await page.until((s) => s.page === "title.html?trailer", "Back comes back to the title's page, not past it");
+  await cdp.close(page.target);
+});
+
+test("T8.4 a full-screen player left after the screen daemon's word on the tap arrived still leaves", async () => {
+  // On the box the screen daemon can hear the tap before Chromium has ended
+  // full screen in the page.
+  const page = await playing("?full");
+  const full = () => cdp.evaluateIn(page.target, "!!document.fullscreenElement");
+  for (let tries = 0; tries < 30 && !(await full()); tries++) await sleep(100);
+  assert.equal(await full(), true, "the player went full screen");
+  await page.tapped();
+  await page.press("Escape");
+  await page.until((s) => s.page === "title.html?full", "the player leaves once full screen ends");
+  await page.press("Escape");
+  await page.until((s) => s.page === "desktop.html", "and Back goes on back from there");
+  await cdp.close(page.target);
+});
+
+test("a tap the page took for a hold still goes back once the screen daemon says it was a tap", async () => {
+  // On a busy box the page can see a second between the key's press and
+  // its release while Hyprland saw a tap. The screen daemon's word counts.
+  const page = await app("desktop.html");
+  await cdp.evaluateIn(page.target, `location.href = "next.html?films"`);
+  await page.until((s) => s.page === "next.html?films", "the next page");
+  await page.press("Escape", 1100);
+  await sleep(200);
+  assert.equal((await page.state()).page, "next.html?films", "by itself, the page takes it for a hold");
+  await page.tapped();
+  await page.until((s) => s.page === "desktop.html", "the screen daemon's tap goes back a page");
   await cdp.close(page.target);
 });
 

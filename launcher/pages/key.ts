@@ -93,10 +93,14 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
   const removeKey = keyState.set ? [button("remove-key", "take the key off", () => void remove())] : [];
   const plan = planInUse(keyState);
   if (plan) {
+    // With setup's own switch on, the plan's sign-in is here too, for a
+    // household that left it for later in setup (ADR-070).
+    const signIn = signInHere() ? [button("plan-sign-in", "sign in to your plan →", () => ctx.go("plan-sign-in"))] : [];
     return [
       h("div", { class: "panel-title" }, "builds and voice use"),
       h("div", { class: "panel-big" }, `${plan.provider} plan`),
-      note(planLine(plan)),
+      note(signIn.length ? `${plan.name ?? `${plan.provider}'s plan`}. sign in to it here, so voice works, or the first time your agent builds an app.` : planLine(plan)),
+      ...signIn,
       button("use-plan", "change the plan →", () => ctx.go("plan")),
       button("add-key", "use a key instead →", () => ctx.go("key")),
       ...removeKey,
@@ -347,4 +351,136 @@ export function planPage(ctx: Ctx): View {
       return false;
     },
   };
+}
+
+// Whether setup's own switch is on, as the launcher marks it on the page.
+function signInHere(): boolean {
+  return (document.documentElement.dataset.features ?? "").split(" ").includes("setup2");
+}
+
+interface PlanSignIn {
+  provider: string;
+  signedIn: boolean;
+  now?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
+}
+
+async function signInCall(method: string, path: string, body?: unknown, grant?: string): Promise<{ signIn?: PlanSignIn | null }> {
+  const response = await fetch(path, {
+    method,
+    cache: "no-store",
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) throw new Error(data.error ?? "that didn't work");
+  return data;
+}
+
+// Settings → AI's sign-in to the household's plan (ADR-070): the same
+// sign-in a first build runs, started from here. Its link shows as a QR
+// code, and the code its page gives is typed on the phone's keyboard into
+// the field. Once it's in, back to Settings.
+export function planSignInPage(ctx: Ctx): View {
+  const line = h("p", { class: "panel-note", "data-line": "sign-in" }, "getting the sign-in ready");
+  const qr = h("img", { alt: "the sign-in's code to scan" }) as HTMLImageElement;
+  const qrBox = h("div", { class: "pair-qr build-qr hidden" }, qr);
+  const field = h("input", { class: "music-search", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "the code the sign-in gave you", placeholder: "paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "send it");
+  const paste = h("div", { class: "profile-form hidden" }, field, h("div", { class: "check-actions" }, send));
+  const again = h("button", { class: "button", "data-focus": true, "data-action": "again", onclick: () => void start() }, "start it again");
+  let grant: string | undefined;
+  let shown = "";
+  let timer = 0;
+  let moved = false;
+
+  const draw = (now: PlanSignIn | null) => {
+    const state = now?.now?.state;
+    line.textContent = now?.signedIn
+      ? "you're signed in. builds and voice use your plan."
+      : state === "waiting" && now?.now?.code
+        ? `scan to sign in, then enter ${now.now.code}`
+        : state === "waiting" && now?.now?.pastes
+          ? "scan to sign in, then paste the code it gives you"
+          : state === "waiting"
+            ? "scan to sign in with your plan"
+            : state === "failed"
+              ? `that didn't work: ${now?.now?.reason ?? "it stopped"}`
+              : "getting the sign-in ready";
+    const url = state === "waiting" ? now?.now?.url : undefined;
+    qrBox.classList.toggle("hidden", !url);
+    if (url && url !== shown) {
+      shown = url;
+      qr.src = `/api/ai/sign-in/qr?at=${Date.now()}`;
+    }
+    paste.classList.toggle("hidden", !(state === "waiting" && now?.now?.pastes && !now.now.code));
+  };
+
+  const look = async () => {
+    let now: PlanSignIn | null = null;
+    try {
+      now = (await signInCall("GET", "/api/ai/sign-in")).signIn ?? null;
+    } catch {
+      return;
+    }
+    draw(now);
+    if (now?.signedIn && !moved && shown) {
+      moved = true;
+      clearInterval(timer);
+      ctx.sounds.play("confirm");
+      ctx.toast("you're signed in to your plan", "ok");
+      ctx.back();
+    }
+  };
+
+  const start = async () => {
+    const asked = await ctx.grant("the ai plan");
+    if (asked === null) return;
+    grant = asked || undefined;
+    try {
+      draw((await signInCall("POST", "/api/ai/sign-in", {}, grant)).signIn ?? null);
+    } catch (error) {
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+    }
+  };
+
+  const sendCode = async () => {
+    const code = field.value.trim();
+    if (!code) return;
+    field.value = "";
+    try {
+      await signInCall("POST", "/api/ai/sign-in/code", { code }, grant);
+      ctx.toast("signing in…", "ok");
+    } catch (error) {
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+    }
+  };
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void sendCode();
+    }
+  });
+
+  void signInCall("GET", "/api/ai/sign-in").then(
+    (answer) => {
+      const now = answer.signIn ?? null;
+      draw(now);
+      if (!now?.signedIn && (!now || now.now?.state === "failed")) void start();
+    },
+    () => {},
+  );
+  timer = setInterval(() => {
+    if (!line.isConnected) clearInterval(timer);
+    else void look();
+  }, 1000);
+
+  const el = h(
+    "div",
+    { class: "screen" },
+    h("div", { class: "page profile plan-sign-in" }, ...heading("tv settings · ai", "sign in to your plan"), line, paste, again, qrBox),
+    bar(ctx, "settings", ""),
+  );
+  return { el, first: again };
 }

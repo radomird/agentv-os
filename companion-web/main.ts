@@ -24,6 +24,7 @@ import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
+import { Remote2 } from "./remote2.ts";
 import { sayAnswer, sayBox, type Said } from "./say.ts";
 import { sharePage } from "./share.ts";
 
@@ -43,12 +44,17 @@ interface Update {
 interface Tv {
   view: "trackpad" | "pin" | "keyboard" | "playback" | "remote";
   pin: { title: string; for: string; digits: number; error: string | null } | null;
-  field: { kind: string } | null;
+  field: { kind: string; label?: string; app?: string; name?: string; value?: string } | null;
+  playing: boolean;
 }
 
 interface State {
   version: number;
   phone: { id: string; name: string };
+  // The feature switches: remote2 is the new remote (ADR-065).
+  features?: { remote2?: boolean };
+  // What's playing, for the new remote's card.
+  nowPlaying?: { title: string; app: string; left?: number } | null;
   viewer: Viewer;
   viewers: Viewer[];
   pin: { set: boolean; locked: boolean };
@@ -112,6 +118,14 @@ function phoneName(): string {
   return "phone";
 }
 
+// The new remote (remote2.ts), drawn when its switch is on.
+const remote2 = new Remote2(app, {
+  state: () => state,
+  failed: (error) => failed(error),
+  refresh: (force) => refresh(force),
+  updatePage: () => (state?.update ? updatePage(state.update) : null),
+});
+
 const failed = (error: unknown) => {
   if (error instanceof Unpaired) {
     keep(null);
@@ -127,6 +141,9 @@ const failed = (error: unknown) => {
 async function pair(code: string): Promise<boolean> {
   try {
     keep((await api<{ token: string }>("POST", "/api/phone/pair", { code, name: phoneName() })).token);
+    // The phone's own time zone, for setup's location step to start from,
+    // while setup is on.
+    void api("POST", "/api/phone/zone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
     return true;
   } catch (error) {
     toast(`${(error as Error).message}.`);
@@ -566,6 +583,13 @@ function updatePage(update: Update): HTMLElement {
 
 function draw(): void {
   if (!state) return;
+  if (state.features?.remote2) {
+    remote2.draw(true);
+    drawAsk();
+    drawPad();
+    return;
+  }
+  document.getElementById("r2-sheet")?.remove();
   const tabs = h(
     "div",
     { class: "tabs" },
@@ -832,6 +856,19 @@ async function refresh(force = false, wait = false): Promise<void> {
   // A page app's new notice shows here as it does on the TV.
   const notice = next.notices?.[0];
   if (before && notice && notice.at !== before.notices?.[0]?.at) toast(`${notice.name.toLowerCase()}: ${notice.text}`, true);
+  // The new remote follows the TV from the first state on, and draws again
+  // only what changed under a field being typed in.
+  if (next.features?.remote2) {
+    if (!before?.features?.remote2) remote2.draw(true);
+    else remote2.draw(force);
+    if (JSON.stringify(next.ai) !== JSON.stringify(before?.ai)) drawAsk();
+    if (JSON.stringify(next.tv.pin) !== JSON.stringify(before?.tv.pin)) drawPad();
+    return;
+  }
+  if (before?.features?.remote2) {
+    draw();
+    return;
+  }
   const moved = before !== null && next.tv.view !== before.tv.view;
   const follow = FOLLOW[next.tv.view];
   if (moved && follow && (mode === "remote" || mode === "type" || mode === "play" || mode === "mouse")) {
