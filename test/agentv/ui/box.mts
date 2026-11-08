@@ -331,6 +331,10 @@ export async function startBox(
     spend: join(state, "..", "spend.json"),
     npmWarnings: join(state, "..", "npm-warnings.json"),
     discover: options.discover ?? { targets: [], avahi: null, ports: { jellyfin: 0, emby: 0, plex: 0, wsd: 0 } },
+    // The first screen's account note and root's side of the desktop's
+    // password: neither there until a test puts them there.
+    accountMarker: join(state, "..", "account.json"),
+    passwordSocket: join(state, "..", "password.sock"),
   });
   const listening = await daemon.listen();
   return { daemon, url: `http://127.0.0.1:${listening}`, apps, state, updates, hotspot, builds: join(state, "..", "build"), themes: join(state, "..", "themes") };

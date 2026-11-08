@@ -61,6 +61,8 @@ import { PlanSignIn } from "./plan-sign-in.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { currentLook, lookRoute } from "./routes/look.ts";
+import { desktopPasswordRoute } from "./routes/desktop-password.ts";
+import { DesktopPassword } from "./desktop-password.ts";
 import { Updates } from "./updates.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 import { newItem } from "./executors/whatsNew.ts";
@@ -93,6 +95,10 @@ export interface DaemonOptions {
   // Which provider has a key: /etc/agentv/key.json, which agentv-key-store
   // writes, and how long that may take.
   keyStatus?: string;
+  // The first screen's account note, and root's side of the desktop
+  // password's hand-over, for tests.
+  accountMarker?: string;
+  passwordSocket?: string;
   keyWaitMs?: number;
   // The channel `agentv channel` sets: /etc/agentv/channel (ADR-053).
   channelFile?: string;
@@ -268,6 +274,8 @@ export class Daemon {
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
+  // Settings → Omarchy desktop's password (daemon/desktop-password.ts).
+  readonly desktopPassword: DesktopPassword;
   // Setup's own routes (daemon/routes/setup.ts), and what they may use.
   private setupRoutes = new SetupRoutes({
     setup: () => this.setupState,
@@ -465,6 +473,7 @@ export class Daemon {
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.features = new Features({ state: options.state, channel: () => this.channel() });
+    this.desktopPassword = new DesktopPassword({ marker: options.accountMarker, socket: options.passwordSocket });
     this.voice = new Voice({
       ...options.voice,
       ai: () => this.ai.read(),
@@ -2107,6 +2116,7 @@ export class Daemon {
     // Routes in files of their own (daemon/routes/), one line each.
     if (await featureRoutes(this.featureKit(), request, response, path)) return;
     if (await lookRoute({ root: this.options.root, state: this.options.state, broadcast: (event, data) => this.broadcast(event, data), adult: (q, s, what) => this.adult(q, s, what) }, request, response)) return;
+    if (await desktopPasswordRoute({ setup2: () => this.features.on("setup2"), password: this.desktopPassword, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: (text) => this.log(text), grant: (q) => this.grant(q), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) }, request, response, path)) return;
     if (await this.setupRoutes.handle("tv", request, response, url)) return;
 
     if (method === "GET" && path === "/health") {

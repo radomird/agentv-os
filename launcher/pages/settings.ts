@@ -17,6 +17,7 @@ import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryPanel, countryValue, loadCountry } from "./country.ts";
+import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 
@@ -471,6 +472,12 @@ export function settings(ctx: Ctx, open?: string): View {
             "data-focus": true,
             "data-action": "desktop",
             onclick: async () => {
+              // The first time, a password before it goes (with setup's
+              // own switch on).
+              if (needsPassword()) {
+                ctx.go("desktop-password");
+                return;
+              }
               const grant = await ctx.grant("omarchy's desktop");
               if (grant === null) return;
               const reply = await screen.desktop(grant);
@@ -480,6 +487,7 @@ export function settings(ctx: Ctx, open?: string): View {
           },
           "switch to omarchy's desktop",
         ),
+        ...desktopPasswordNote(),
       ],
     },
     // Restart and Shut down (ADR-033): an adult's, so a child's profile doesn't
@@ -600,6 +608,13 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = newsValue();
       if (menu.querySelector(".open")?.getAttribute("data-key") === "tmdb" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "tmdb")!);
+      }
+    })
+    .catch(() => {});
+  void loadDesktopPassword()
+    .then(() => {
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "desktop" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "desktop")!);
       }
     })
     .catch(() => {});

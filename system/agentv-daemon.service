@@ -6,7 +6,8 @@
 # /var/lib/agentv/backgrounds, and what phones shared to the TV in
 # /var/lib/agentv/shared. What's said to the TV goes to the router
 # (agentv-router.service, agentv-router-cli.service), which only the
-# agentv-router group reaches.
+# agentv-router group reaches. Only the agentv-account group reaches
+# agentv-password.socket, which sets the desktop account's password.
 
 [Unit]
 Description=AgenTV daemon
@@ -23,7 +24,7 @@ Restart=on-failure
 # (ADR-033).
 TimeoutStopSec=5s
 DynamicUser=yes
-SupplementaryGroups=agentv-router
+SupplementaryGroups=agentv-router agentv-account
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
