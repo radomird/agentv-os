@@ -1,0 +1,53 @@
+{
+  "dmi": {
+    "product": "To Be Filled By O.E.M.",
+    "board": "Default string",
+    "vendor": "AZW"
+  },
+  "cpuinfo": "processor\t: 0\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 1\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 2\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 3\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 4\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 5\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 6\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 7\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 8\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 9\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 10\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 11\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 12\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 13\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 14\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics\nprocessor\t: 15\nmodel name\t: AMD Ryzen 7 5700U with Radeon Graphics",
+  "meminfo": "MemTotal:       15671444 kB",
+  "memoryBlocks": null,
+  "gpus": [
+    {
+      "slot": "0000:04:00.0",
+      "class": "0x030000",
+      "vendor": "0x1002",
+      "device": "0x164c",
+      "vendorName": "Advanced Micro Devices, Inc. [AMD/ATI]",
+      "deviceName": "Lucienne",
+      "bootVga": true,
+      "cards": [
+        "card0"
+      ],
+      "render": "renderD128",
+      "vainfo": "vainfo: Driver version: Mesa Gallium driver 25.2.3-arch1.1 for AMD Radeon Graphics (radeonsi, renoir, ACO, DRM 3.61)\nvainfo: Supported profile and entrypoints\n      VAProfileH264ConstrainedBaseline:\tVAEntrypointVLD\n      VAProfileH264Main               :\tVAEntrypointVLD\n      VAProfileH264High               :\tVAEntrypointVLD\n      VAProfileHEVCMain               :\tVAEntrypointVLD\n      VAProfileHEVCMain10             :\tVAEntrypointVLD\n      VAProfileVP9Profile0            :\tVAEntrypointVLD\n      VAProfileVP9Profile2            :\tVAEntrypointVLD\n      VAProfileNone                   :\tVAEntrypointVideoProc\n"
+    }
+  ],
+  "vulkaninfo": "==========\nVULKANINFO\n==========\n\nVulkan Instance Version: 1.4.321\n\n\nInstance Extensions: count = 24\n-------------------------------\nVK_EXT_debug_report                    : extension revision 10\nVK_KHR_surface                         : extension revision 25\n\nInstance Layers:\n----------------\n\nDevices:\n========\nGPU0:\n\tapiVersion         = 1.4.318\n\tdriverVersion      = 25.2.3\n\tvendorID           = 0x1002\n\tdeviceID           = 0x164c\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU\n\tdeviceName         = AMD Radeon Graphics (RADV RENOIR)\n\tdriverID           = DRIVER_ID_MESA_RADV\n\tdriverName         = Mesa\n\tdriverInfo         = Mesa 25.2.3-arch1.1\n\tconformanceVersion = 1.4.0.0\n\tdeviceUUID         = 00000000-0000-0000-0000-000000000000\n\tdriverUUID         = 00000000-0000-0000-0000-000000000000\nGPU1:\n\tapiVersion         = 1.4.318\n\tdriverVersion      = 25.2.3\n\tvendorID           = 0x10005\n\tdeviceID           = 0x0000\n\tdeviceType         = PHYSICAL_DEVICE_TYPE_CPU\n\tdeviceName         = llvmpipe (LLVM 20.1.8, 256 bits)\n\tdriverID           = DRIVER_ID_MESA_LLVMPIPE\n\tdriverName         = Mesa\n\tdriverInfo         = Mesa 25.2.3-arch1.1\n\tconformanceVersion = 1.4.0.0\n\tdeviceUUID         = 00000000-0000-0000-0000-000000000000\n\tdriverUUID         = 00000000-0000-0000-0000-000000000000\n",
+  "icds": [
+    "radeon_icd.x86_64.json"
+  ],
+  "connectors": [
+    {
+      "name": "card0-HDMI-A-1",
+      "status": "connected",
+      "edid": "AP///////wAE9gIAAAAAAAEZAQOAj1B4Cg3JoFdHmCcSSEwhCACBwNHAAQEBAQEBAQEBAQEBAjqAGHE4LUBYLEUAnylTAAAeAR0AclHQHiBuKFUAnylTAAAeAAAA/ABTYW1wbGUtVFYKICAgAAAA/QAwPg9EDwAKICAgICAgAVUCAxLBRhAEnxMDEiMJBwfiAM8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHA=="
+    },
+    {
+      "name": "card0-DP-1",
+      "status": "disconnected",
+      "edid": ""
+    }
+  ],
+  "storage": {
+    "total": 255550554112,
+    "free": 21474836480
+  },
+  "network": {
+    "kind": "wifi",
+    "speed": "unknown"
+  },
+  "bluetooth": [],
+  "gamepads": [],
+  "widevine": "4.10.2891.0"
+}

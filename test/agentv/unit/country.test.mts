@@ -181,7 +181,8 @@ test("a zone moved some other way, as from Omarchy's desktop, is followed the ne
 });
 
 test("ADR-055 setup confirms the country after getting ready, and a box already past it carries on", async () => {
-  assert.deepEqual(STEPS.slice(0, 4), ["welcome", "ready", "country", "ai"]);
+  // Your box comes between them when its switch is on, and is off here.
+  assert.deepEqual(STEPS.slice(0, 5), ["welcome", "ready", "box", "country", "ai"]);
   const fresh = new Setup({ path: join(scratch, "fresh", "setup.json") });
   await fresh.finish("welcome");
   await fresh.finish("ready");
