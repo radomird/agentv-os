@@ -9,6 +9,7 @@
 import { daemon, screen, shownCurrent, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
+import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "../launcher/pages/network.ts";
 import { setup } from "./api.ts";
 import { field, heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
@@ -430,5 +431,54 @@ export function folder(ctx: Ctx): View {
       ),
     ),
   );
-  return { el, first: address, info: "↵ pick · esc back" };
+
+  // With the discover switch on, the NASes on the network come first. One
+  // picked lists its folders, and the folder picked becomes a source, as
+  // one typed in does, with its pictures the background.
+  const onNetwork = h("div", { class: "found" });
+  shown(onNetwork, false);
+  list.before(onNetwork);
+  let nasList: HTMLElement[] = [];
+  let showingShares = false;
+  const addFound = async (share: ShareFound, password?: string, folders?: ReturnType<typeof shareList>) => {
+    if (copying) return;
+    line.textContent = "mounting the share…";
+    const reply = await screen.music("add-share", { uri: share.uri, ...(password ? { password } : {}) });
+    const source = reply.source as FolderInfo | undefined;
+    if (!reply.ok || !source) {
+      ctx.sounds.play("failure");
+      ctx.toast(reply.error ?? "that share didn't mount", "fail");
+      line.textContent = "";
+      if (/user name and password/.test(reply.error ?? "") && !password) folders?.signIn();
+      return;
+    }
+    await copy(source);
+  };
+  const showShares = (host: string) => {
+    showingShares = true;
+    const folders = shareList({ host, focus: ctx.focus, pick: (share, password) => void addFound(share, password, folders) });
+    onNetwork.replaceChildren(h("span", { class: "field-label" }, `${host} · pick the folder with your photos`), folders.el);
+  };
+  void discoverOn().then((on) => {
+    if (!on) return;
+    const found = foundList({ kinds: NAS, machines: true, focus: ctx.focus, typed: address, pick: (one) => showShares(one.host) });
+    nasList = [h("span", { class: "field-label" }, "on your network"), found.el];
+    onNetwork.replaceChildren(...nasList);
+    shown(onNetwork, true);
+  });
+  return {
+    el,
+    first: address,
+    info: "↵ pick · esc back",
+    // Back from a NAS's folders goes back to the NASes.
+    back() {
+      if (!showingShares) return false;
+      showingShares = false;
+      onNetwork.replaceChildren(...nasList);
+      const first = onNetwork.querySelector<HTMLElement>("[data-found]");
+      if (first) ctx.focus.set(first, false);
+      ctx.sounds.play("back");
+      return true;
+    },
+  };
 }

@@ -1,0 +1,2 @@
++;stand0;IPv4;living\032room\032NAS;_smb._tcp;local
+=;stand0;IPv4;living\032room\032NAS;_smb._tcp;local;nas.local;192.168.77.10;445;

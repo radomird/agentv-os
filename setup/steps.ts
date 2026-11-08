@@ -11,9 +11,11 @@ import { art, background, folder, photos } from "./background.ts";
 import { country, pick as pickCountry } from "./country.ts";
 import { goal } from "./goal.ts";
 import { location, pickLocation, zoneQuestion } from "./location.ts";
+import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
 import { people, person } from "./people.ts";
 import { ready } from "./ready.ts";
+import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
 import { welcome, wifi } from "./welcome.ts";
 
@@ -42,9 +44,11 @@ export const SCREENS: Record<string, Screen> = {
   goal: goal,
   apps: apps,
   "apps/add": (ctx) => addYourOwn(ctx),
-  // track 9 and track 10: their pages of apps, as "apps/<page>": <screen>,
-  // tracks 5 and 4: look: look,
+  "apps/network": serverPage,
+  // track 9: its page of apps, as "apps/<page>": <screen>,
+  look: look,
   theme: theme,
+  "theme/colours": theme,
   "theme/own": (ctx) => addYourOwn(ctx, "theme"),
   background: background,
   "background/photos": photos,

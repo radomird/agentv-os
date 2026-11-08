@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# agentv:summary=Turn a feature switch on (edge only)
+# agentv:args=<name>
+# agentv:examples=agentv feature on looks
+
+# Shows something that's still switched off for everyone else. It works on
+# edge only, so run agentv channel edge first. agentv feature list has the
+# names.
+
+set -euo pipefail
+
+AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec "$AGENTV_BIN_DIR/agentv-feature-set" "${1:-}" on "${@:2}"

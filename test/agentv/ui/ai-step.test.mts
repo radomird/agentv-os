@@ -61,6 +61,7 @@ before(async () => {
   let builds = "";
   ({ daemon, url, state, builds } = await startBox(0, undefined, {
     aiSites: { claude: `${at}/claude/`, chatgpt: `${at}/chatgpt/`, gemini: `${at}/gemini/`, grok: `${at}/grok/`, muse: `${at}/muse/` },
+    features: { setup2: true },
   }));
   run = join(builds, "..", "build-run");
   lan = `http://127.0.0.1:${daemon.lanPort}`;

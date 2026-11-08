@@ -25,7 +25,7 @@ let state = "";
 const errors: string[] = [];
 
 before(async () => {
-  ({ daemon, url, state } = await startBox(0, undefined, { zone: "UTC" }));
+  ({ daemon, url, state } = await startBox(0, undefined, { zone: "UTC", features: { setup2: true } }));
   captive = `http://127.0.0.1:${daemon.setupPort}`;
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
@@ -77,7 +77,7 @@ test("T7.1 the location step starts on the country of a stand-in phone's time zo
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "continue");
     assert.equal(await page.locator(".focused").textContent(), "↵ yes");
     await page.keyboard.press("Enter");
-    await page.waitForSelector(".providers");
+    await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["NL", "Europe/Amsterdam"]);
   } finally {
     await page.close();
@@ -106,7 +106,7 @@ test("T7.1 a country with several time zones asks which one, each with its city 
     assert.equal(await page.locator(".bar .bar-step").textContent(), "5 of 12 · location");
     assert.equal(zone(), "UTC", "nothing moves before a zone is picked");
     await page.locator('.zone[data-zone="America/Phoenix"]').click();
-    await page.waitForSelector(".providers");
+    await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["US", "America/Phoenix"]);
   } finally {
     await page.close();
@@ -121,7 +121,7 @@ test("T7.1 no question when the phone's zone is in the country, or the country k
     await page.waitForSelector('[data-action="country-other"]');
     assert.equal(await headline(page), "the united states?");
     await page.keyboard.press("Enter");
-    await page.waitForSelector(".providers");
+    await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["US", "America/Chicago"]);
   } finally {
     await page.close();
@@ -136,7 +136,7 @@ test("T7.1 no question when the phone's zone is in the country, or the country k
     await page.fill('[data-action="country-field"]', "germ");
     await page.waitForFunction(() => document.querySelectorAll(".country-list .country").length === 1);
     await page.click('.country-list [data-code="DE"]');
-    await page.waitForSelector(".providers");
+    await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["DE", "Europe/Berlin"], "Germany's zones keep one clock");
     assert.equal(await page.locator(".zones").count(), 0);
   } finally {
@@ -167,7 +167,7 @@ test("T7.1 with no phone and a box in UTC, the step starts on a pick, and a phon
     await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "the netherlands?");
     assert.match((await page.locator(".setup-line").textContent()) ?? "", /in amsterdam$/);
     await page.keyboard.press("Enter");
-    await page.waitForSelector(".providers");
+    await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["NL", "Europe/Amsterdam"]);
   } finally {
     await page.close();

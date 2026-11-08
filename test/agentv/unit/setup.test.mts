@@ -9,7 +9,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Daemon } from "../../../daemon/server.ts";
-import { Features } from "../../../daemon/features.ts";
 import { network, OF, ORDER, Setup, STEPS, type StepEntry } from "../../../daemon/setup.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-setup-"));
@@ -38,7 +37,10 @@ before(async () => {
     address: () => "127.0.0.1",
     interfaces: () => (online ? wired : {}) as never,
     hotspotRun: join(scratch, "hotspot"),
+    // Edge, where a switch can be turned on.
+    channelFile: join(scratch, "channel"),
   });
+  writeFileSync(join(scratch, "channel"), "edge\n");
   url = `http://127.0.0.1:${await daemon.listen()}`;
   lanUrl = `http://127.0.0.1:${daemon.lanPort}`;
 });
@@ -95,7 +97,7 @@ test("no step is skipped: forward only as far as the first one that isn't finish
   assert.equal((await store.read()).step, "background");
   await store.finish("background");
   assert.equal((await store.read()).step, "background", "the last step finished stays on it, for the page to mark setup done");
-  assert.deepEqual(STEPS, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
+  assert.deepEqual(await store.steps(), ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"], "with no switch on");
 });
 
 test("getting ready keeps how bringing the box up to date goes, and when the check was asked for", async () => {
@@ -264,6 +266,7 @@ test("T7.1 setup's order is ADR-071's: the TV starts at getting ready, 3 of 12, 
       ["people", 7, "who watches"],
       ["goal", 8, "goal"],
       ["apps", 9, "apps"],
+      ["look", 10, "look and size"],
       ["theme", 11, "theme and background"],
       ["background", 11, "theme and background"],
     ],
@@ -280,7 +283,7 @@ test("T7.1 with setup's own switch on, the bar says \"5 of 12 · location\", and
   assert.equal(before.parts.country, "1/6 country");
   const on = new Setup({ path: join(scratch, "progress.json"), on: async (feature) => feature === "setup2" });
   const after = await on.progress();
-  assert.deepEqual(after.steps, [...STEPS]);
+  assert.deepEqual(after.steps, STEPS.filter((step) => step !== "look"), "the look waits for its own switch");
   assert.deepEqual([after.parts.welcome, after.parts.country, after.parts.people, after.parts.background], ["3 of 12 · getting ready", "5 of 12 · location", "7 of 12 · who watches", "11 of 12 · theme and background"]);
   assert.deepEqual([after.numbers?.ready, after.numbers?.ai, after.of], [3, 6, 12]);
 });
@@ -333,19 +336,6 @@ test("a box already past a step's slot when its switch turns on carries on, and 
   // the first one that isn't finished.
   writeFileSync(path, JSON.stringify({ done: false, step: "somewhere", finished: { welcome: "2026-11-05T10:00:00+00:00" } }));
   assert.equal((await store.read()).step, "welcome");
-});
-
-test("the switches: each one's default, a change kept in features.json, and anything else there ignored", async () => {
-  const dir = join(scratch, "features");
-  mkdirSync(dir, { recursive: true });
-  const features = new Features({ state: dir });
-  assert.deepEqual(Object.keys(await features.read()), ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds"]);
-  assert.equal(await features.on("setup2"), false, "off by default");
-  writeFileSync(join(dir, "features.json"), JSON.stringify({ setup2: true, looks: "yes", nonsense: true }));
-  const read = await features.read();
-  assert.deepEqual([read.setup2, read.looks, "nonsense" in read], [true, false, false]);
-  writeFileSync(join(dir, "features.json"), "{ not json");
-  assert.equal(await features.on("setup2"), false);
 });
 
 test("T7.1 with setup's own switch on, the setup screens and a paired phone hear each step's number of the 12", async () => {

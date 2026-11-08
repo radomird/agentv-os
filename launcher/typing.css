@@ -1,0 +1,71 @@
+/* The typing bar on home (ADR-065, D4): whose phone, then what's arriving,
+   in the theme's colours. Each look can restyle #typing. */
+
+#typing {
+  position: fixed;
+  left: 50%;
+  bottom: 60px;
+  display: flex;
+  align-items: center;
+  width: 1100px;
+  height: 76px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  background: var(--dark-background);
+  border: 3px solid var(--accent);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  color: var(--bright-foreground);
+  font-family: var(--font);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 19;
+}
+
+#typing.on {
+  opacity: 1;
+}
+
+.typing-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 0 24px;
+  flex: none;
+  background: var(--accent);
+  color: var(--darker-background);
+  font-size: 26px;
+  font-weight: 800;
+}
+
+#typing.password .typing-who::before {
+  content: "\f023";
+}
+
+.typing-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 24px;
+  overflow: hidden;
+  font-size: 36px;
+  font-weight: 700;
+  white-space: pre;
+}
+
+#typing.password .typing-text {
+  letter-spacing: 8px;
+}
+
+.typing-caret {
+  width: 20px;
+  height: 40px;
+  flex: none;
+  background: var(--bright-foreground);
+}
+
+:root.reduce-motion #typing {
+  transition: none;
+}
