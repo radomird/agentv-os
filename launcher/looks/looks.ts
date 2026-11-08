@@ -14,6 +14,7 @@
 // /?preview&look=<id>&size=<size>&theme=<name>.
 
 import { h } from "../dom.ts";
+import { features } from "../features.ts";
 import { GRID, GRID_MORE, type Grid } from "../layout.ts";
 
 export const LOOKS = ["terminal", "glass", "cinema"] as const;
@@ -62,16 +63,16 @@ async function json<T>(path: string): Promise<T | null> {
 export async function loadLook(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const preview = params.has("preview");
-  const features = await json<{ looks?: boolean; sizes?: boolean }>("/api/features");
+  const switches = await features();
   // The display's size is track 4's, behind its own switch, so it's asked
   // for only once that's on.
   const [look, display] = await Promise.all([
-    features?.looks || preview ? json<{ look?: string; looks?: LookInfo[] }>("/api/look") : null,
-    features?.sizes ? json<{ size?: string }>("/api/display") : null,
+    switches.looks || preview ? json<{ look?: string; looks?: LookInfo[] }>("/api/look") : null,
+    switches.sizes ? json<{ size?: string }>("/api/display") : null,
   ]);
   state.all = (look?.looks ?? []).filter((info) => isLook(info.id));
   const asked = params.get("look");
-  state.look = preview && isLook(asked) ? asked : features?.looks ? (isLook(look?.look) ? look.look : "terminal") : null;
+  state.look = preview && isLook(asked) ? asked : switches.looks ? (isLook(look?.look) ? look.look : "terminal") : null;
   const size = params.get("size");
   state.size = isSize(size) ? size : isSize(display?.size) ? display.size : "standard";
   state.preview = preview ? { theme: params.get("theme") } : null;

@@ -36,8 +36,7 @@ let state = "";
 
 before(async () => {
   met = await startMet();
-  ({ daemon, url, state } = await startBox(0, FIXTURES, { builtins: true, zone: "Europe/Amsterdam", forecast: met.url }));
-  writeFileSync(join(state, "features.json"), JSON.stringify({ looks: true }));
+  ({ daemon, url, state } = await startBox(0, FIXTURES, { builtins: true, zone: "Europe/Amsterdam", forecast: met.url, features: { looks: true } }));
   // The theme's own colour behind home, as with no background picked.
   await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "field" }) });
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });

@@ -36,6 +36,7 @@ import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
 import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
+import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
 
 export interface View {
@@ -896,6 +897,11 @@ async function start(): Promise<void> {
     },
   }, () => void catchUp().catch(() => {}));
   void daemon.updates().then(setUpdates).catch(() => {});
+  // The looks switch turned on or off on an edge box: home in its look, or
+  // phase 1's again, without a reload.
+  onFeatures((all) => {
+    if (Boolean(all.looks) !== (lookId() !== null)) void lookAgain().then(redraw);
+  });
   setupSaid(ctx, () => {
     if (view) focus.setRoot(view.el, view.first);
   });
