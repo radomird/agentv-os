@@ -83,7 +83,7 @@ test("T7.1 each screen's status bar says its step of setup's 12, as blocks and \
   }
   // The numbers only go up as setup goes on.
   const numbers = seen.map((text) => Number(text.split(" ")[0]));
-  assert.deepEqual(numbers, [3, 3, 5, 6, 7, 8, 9, 10, 11, 11]);
+  assert.deepEqual(numbers, [3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11]);
 });
 
 test("T7.1 the counted bar sits in the TV's safe area, 60 px up and 80 px in, with its text at 23 px or more", async () => {
