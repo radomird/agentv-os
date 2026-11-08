@@ -1364,3 +1364,50 @@ body.counted .player-score {
   width: 456px;
   height: 456px;
 }
+
+/* The goal (design page D3): four cards in a row, its icon at the top and
+   its name and one line at the bottom. The focused one grows and lifts. */
+.goal-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 40px;
+  margin-top: 120px;
+}
+
+.goal-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 400px;
+  padding: 40px 36px 36px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  color: var(--bright-foreground);
+  transition: transform var(--fast, 120ms) ease-out;
+}
+
+.goal-card .glyph {
+  color: var(--accent);
+}
+
+.goal-card.focused {
+  transform: scale(1.04);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--darker-background) 70%, transparent);
+}
+
+.goal-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goal-card-name {
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.goal-card-note {
+  font-size: 29px;
+  color: var(--foreground);
+}

@@ -9,7 +9,7 @@ import type { Provider } from "./api.ts";
 import { addYourOwn, apps } from "./apps.ts";
 import { art, background, folder, photos } from "./background.ts";
 import { country, pick as pickCountry } from "./country.ts";
-import { goal } from "./goal.ts";
+import { goal, goal2 } from "./goal.ts";
 import { location, pickLocation, zoneQuestion } from "./location.ts";
 import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
@@ -41,7 +41,7 @@ export const SCREENS: Record<string, Screen> = {
   ),
   people: people,
   "people/*": person,
-  goal: goal,
+  goal: two(goal2, goal),
   apps: apps,
   "apps/add": (ctx) => addYourOwn(ctx),
   "apps/network": serverPage,
