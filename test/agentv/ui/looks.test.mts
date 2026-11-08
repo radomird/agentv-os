@@ -154,7 +154,13 @@ const SCREENS: [string, (page: Page) => Promise<void>][] = [
   ["music", (page) => go(page, "music")],
   // An app's setup, with the servers on your network (track 10's list).
   ["an app's setup", (page) => go(page, "app-setup/someone.radio")],
-  ["settings → themes and backgrounds", (page) => go(page, "settings/look")],
+  // Its three previews are home itself, which T5.3 checks to the pixel. Here
+  // they're blank, since the checks skip what's in them, and loading three
+  // more launchers each time slows every other test running beside this one.
+  ["settings → themes and backgrounds", async (page) => {
+    await page.route(/\/\?preview/, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html>" }));
+    await go(page, "settings/look");
+  }],
   ["weather", (page) => go(page, "weather")],
   ["new this week", (page) => go(page, "new")],
   ["the ambient screen", (page) => page.evaluate(() => (window as unknown as { agentvAmbient(on: boolean): void }).agentvAmbient(true))],
