@@ -21,7 +21,8 @@ import { countryPanel, countryValue, loadCountry } from "./country.ts";
 import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
-import { loadSizes, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
+import { loadSizes, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
+import { properUnits } from "../box-lines.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -297,6 +298,7 @@ export function settings(ctx: Ctx, open?: string): View {
         // the next one. With the sizes off, or a TV that offers one, it just
         // says which.
         sizeRow(),
+        ...resolutionRow(),
         h(
           "button",
           { class: "button", "data-focus": true, "data-action": "background", onclick: () => void nextBackground() },
@@ -348,6 +350,35 @@ export function settings(ctx: Ctx, open?: string): View {
       ctx.toast(set.error, "fail");
     } else ctx.sounds.play("confirm");
     if (menu.isConnected) ctx.render("settings/look", "size");
+  };
+
+  // The resolution row, on a TV with more than 1080p: its full resolution,
+  // or 1080p output, which the TV scales up. OK and left and right switch.
+  const resolutionRow = (): HTMLElement[] => {
+    const display = sizes();
+    if (!display?.full) return [];
+    const units = lookId() === "glass" || lookId() === "cinema" ? properUnits : (text: string) => text;
+    return [
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "resolution", "data-adjust": "resolution", onclick: () => void switchOutput() },
+        h("span", {}, "resolution"),
+        h("span", { class: "button-value" }, sizing ? "…" : units(resolutionName(display))),
+      ),
+    ];
+  };
+  const switchOutput = async () => {
+    const display = sizes();
+    if (!display?.full || sizing) return;
+    sizing = true;
+    ctx.render("settings/look", "resolution");
+    const set = await setOutput(display.output === "1080p" ? "auto" : "1080p", ctx.held());
+    sizing = false;
+    if (set.error) {
+      ctx.sounds.play("failure");
+      ctx.toast(set.error, "fail");
+    } else ctx.sounds.play("confirm");
+    if (menu.isConnected) ctx.render("settings/look", "resolution");
   };
 
   // Picks a look: the TV hears it and draws itself again in it.
@@ -789,6 +820,10 @@ export function settings(ctx: Ctx, open?: string): View {
       const current = ctx.focus.get();
       if (current?.dataset.adjust === "size" && (action === "left" || action === "right")) {
         void stepSize(action === "right" ? 1 : -1);
+        return true;
+      }
+      if (current?.dataset.adjust === "resolution" && (action === "left" || action === "right")) {
+        void switchOutput();
         return true;
       }
       if (current?.dataset.adjust === "idle" && (action === "left" || action === "right")) {

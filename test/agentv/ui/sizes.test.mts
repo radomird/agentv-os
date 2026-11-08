@@ -277,6 +277,34 @@ test("T4.1 the size row in Settings steps through the sizes this TV offers, and 
   }
 });
 
+test("T4.1 on a 4K TV, Settings puts it on 1080p output and back, and the sizes follow", async () => {
+  await put("/api/display", { size: "more" });
+  const page = await tv([2400, 1350]);
+  const value = (action: string) => page.locator(`[data-action="${action}"] .button-value`).textContent().then((text) => text?.trim());
+  const display = async () => (await (await fetch(`${url}/api/display`)).json()) as { output: string; mode: string; scale: number; size: string; sizes: string[] };
+  try {
+    await go(page, "settings/look");
+    await rest(page);
+    assert.equal(await value("resolution"), "4k");
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-action="resolution"]')!;
+      (window as unknown as { agentvLauncher: { focus: { set(el: HTMLElement): void } } }).agentvLauncher.focus.set(el);
+    });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector('[data-action="resolution"] .button-value')?.textContent?.trim() === "1080p");
+    const hd = await display();
+    assert.deepEqual([hd.output, hd.mode, hd.scale, hd.size, hd.sizes], ["1080p", "1920x1080@60", 1, "standard", ["larger", "standard"]], "1080p output, where more on screen isn't offered");
+    assert.equal(await value("size"), "standard");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector('[data-action="resolution"] .button-value')?.textContent?.trim() === "4k");
+    const uhd = await display();
+    assert.deepEqual([uhd.output, uhd.mode, uhd.scale, uhd.size], ["auto", "3840x2160@60", 1.6, "more"], "back at 4K, more on screen comes back too");
+  } finally {
+    await page.close();
+    await put("/api/display", { output: "auto", size: "standard" });
+  }
+});
+
 test("T4.1 setup's look step offers the TV's sizes under the looks, and each look's preview follows the size", async () => {
   await put("/api/display", { size: "standard" });
   const at = new Date().toISOString();

@@ -18,6 +18,8 @@ export interface DisplayState {
   scale: number | null;
   canvas: [number, number];
   sizes: SizeId[];
+  // The TV's full resolution, when it's more than 1080p: "3840x2160@60".
+  full: string | null;
 }
 
 let shown: DisplayState | null = null;
@@ -42,22 +44,40 @@ export function sizes(): DisplayState | null {
   return shown;
 }
 
-// Picks a size: the TV takes it within a second, and home follows on the
-// display event. The new state, or why not.
-export async function setSize(size: SizeId, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
+// Picks a size or the output: the TV takes it within a second, and home
+// follows on the display event. The new state, or why not.
+async function put(change: { size?: SizeId; output?: DisplayState["output"] }, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
   try {
     const response = await fetch("/api/display", {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
-      body: JSON.stringify({ size }),
+      body: JSON.stringify(change),
     });
     const data = (await response.json()) as DisplayState & { ok?: boolean; error?: string };
-    if (!response.ok || data.ok === false) return { error: data.error ?? "the size didn't change" };
+    if (!response.ok || data.ok === false) return { error: data.error ?? "the tv didn't take it" };
     shown = data;
     return { state: data };
   } catch {
-    return { error: "the size didn't change" };
+    return { error: "the tv didn't take it" };
   }
+}
+
+export function setSize(size: SizeId, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
+  return put({ size }, grant);
+}
+
+// The TV's full resolution, or 1080p output, which the TV scales up: what a
+// box that can't keep 4K smooth starts at (ADR-062).
+export function setOutput(output: DisplayState["output"], grant?: string): Promise<{ state?: DisplayState; error?: string }> {
+  return put({ output }, grant);
+}
+
+// What the resolution row says: "4k" for 3840 x 2160, "1440p" and so on,
+// and "1080p" for 1080p output.
+export function resolutionName(state: DisplayState): string {
+  if (state.output === "1080p" || !state.full) return "1080p";
+  const height = Number(/x(\d+)@/.exec(state.full)?.[1] ?? 0);
+  return height >= 2160 ? "4k" : `${height}p`;
 }
 
 // The size one step over: larger to the left, more on screen to the right,
