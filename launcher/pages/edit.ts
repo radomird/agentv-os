@@ -7,7 +7,8 @@
 
 import type { SizeChoice } from "../api.ts";
 import { h, zoom } from "../dom.ts";
-import { at, choices, COLUMNS, move, resize, ROWS, span, unpin, type Placed, type Size } from "../layout.ts";
+import { at, choices, GRID_MORE, move, resize, span, unpin, type Placed, type Size } from "../layout.ts";
+import { currentGrid } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { placeTile, tileFor } from "./home.ts";
 import { bar } from "./parts.ts";
@@ -37,12 +38,16 @@ function reduced(): boolean {
 }
 
 export function edit(ctx: Ctx, focusOn?: string): View {
+  // The grid being arranged: Terminal's 5 × 4 at more on screen (D6), or 4 × 3.
+  const g = currentGrid();
+  const COLUMNS = g.columns;
+  const ROWS = g.rows;
   let layout = ctx.state.layout.map((tile) => ({ ...tile }));
   let held: { id: string; before: Placed[] } | null = null;
   let drag: Drag | null = null;
   let picking = false;
   const tiles = new Map<string, HTMLElement>();
-  const grid = h("div", { class: "grid editing" });
+  const grid = h("div", { class: g === GRID_MORE ? "grid grid-5x4 editing" : "grid editing" });
   const marker = h("div", { class: "drop" });
   const sizebar = h("div", { class: "sizebar" });
 
@@ -138,7 +143,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
       return;
     }
     const labels = new Map(sizesOf(id).map((choice) => [choice.size, choice.label]));
-    const chips = choices(layout, id, [...labels.keys()]).map(({ size, room }) =>
+    const chips = choices(layout, id, [...labels.keys()], g).map(({ size, room }) =>
       h(
         "button",
         {
@@ -189,7 +194,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
   }
 
   async function setSize(id: string, size: Size): Promise<void> {
-    const next = resize(layout, id, size);
+    const next = resize(layout, id, size, g);
     if (!next) {
       ctx.sounds.play("failure");
       return;
@@ -205,7 +210,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     picking = true;
     const order = sizesOf(id).map((choice) => choice.size);
     for (let i = order.indexOf(placed.size) + direction; i >= 0 && i < order.length; i += direction) {
-      const next = resize(layout, id, order[i]);
+      const next = resize(layout, id, order[i], g);
       if (next) {
         await commit(next);
         return;
@@ -248,7 +253,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     const x = tile.x + dx;
     const y = tile.y + dy;
     if (x < 0 || y < 0 || x + w > COLUMNS || y + rows > ROWS) return;
-    const next = move(layout, tile.id, x, y);
+    const next = move(layout, tile.id, x, y, g);
     if (!next || same(next, layout)) {
       ctx.sounds.play("failure");
       return;
@@ -326,7 +331,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
       const order: Size[] = ["s", "m", "l"];
       const allowed = sizesOf(placed.id).map((choice) => choice.size);
       const size = order.slice(0, order.indexOf(wanted) + 1).reverse().find((s) => allowed.includes(s)) ?? placed.size;
-      drag.next = resize(layout, placed.id, size);
+      drag.next = resize(layout, placed.id, size, g);
       const shown = { ...placed, size, x: Math.min(placed.x, COLUMNS - span(size).w), y: Math.min(placed.y, ROWS - span(size).h) };
       mark(size === placed.size ? null : shown, drag.next !== null);
     } else {
@@ -336,7 +341,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
       const { w, h: rows } = span(placed.size);
       const x = Math.max(0, Math.min(COLUMNS - w, cell.x - drag.grabX));
       const y = Math.max(0, Math.min(ROWS - rows, cell.y - drag.grabY));
-      drag.next = move(layout, placed.id, x, y);
+      drag.next = move(layout, placed.id, x, y, g);
       mark(x === placed.x && y === placed.y ? null : { ...placed, x, y }, drag.next !== null);
     }
   });

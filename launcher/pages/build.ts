@@ -12,9 +12,11 @@
 import { daemon, type App, type BuildsState, type BuildView } from "../api.ts";
 import { h } from "../dom.ts";
 import { firstFree } from "../layout.ts";
+import { currentGrid } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, placeTile } from "./home.ts";
 import { bar, heading } from "./parts.ts";
+import { askBuilds, askWith, recipeLine } from "./ask.ts";
 
 // Kept between visits so the pages draw at once, and asked for again as a
 // build moves on.
@@ -52,7 +54,8 @@ export async function loadBuilds(ctx: Ctx): Promise<void> {
     const name = nameOf(b);
     if (b.state === "approve") ctx.toast(`${name} is ready: approve it on your phone`, "ok");
     else if (b.state === "plan") ctx.toast(`your agent has a plan for ${name}: approve it on your phone`, "ok");
-    else if (b.state === "confirm") ctx.toast(`your agent read what you asked: check it in apps`, "ok");
+    // With the Ask box, the build's page opens by itself (said.ts).
+    else if (b.state === "confirm" && !askBuilds()) ctx.toast(`your agent read what you asked: check it in apps`, "ok");
     else if (b.state === "plan-sign-in") ctx.toast(b.ranOut ? `your ${b.provider} plan's sign-in ran out: sign in again to build ${name}` : `sign in to your ${b.provider} plan to build ${name}`, "ok");
     else if (b.state === "installed" && was === "approve") ctx.toast(madeTheme(b) ? `${name} is your theme now` : `${name} is on your home`, "ok");
     else if (b.state === "failed") ctx.toast(`couldn't build ${name}`, "fail");
@@ -82,8 +85,11 @@ function tileWords(b: BuildView): { label: string; line: string; bad?: boolean }
       if (b.phase === "understand") return { label: "building", line: "reading what you asked" };
       if (b.phase === "plan") return { label: "building", line: "making a plan" };
       if (b.phase === "stage-b") return { label: "building", line: b.steps.length ? `learning it · ${done} of ${b.steps.length}` : "learning it" };
+      // With the Ask box (D5): how far it got, and the step it's on.
+      if (askBuilds() && b.steps.length) return { label: `building ${done}/${b.steps.length}`, line: (b.steps.find((s) => s.state === "running") ?? b.steps[done] ?? b.steps[0]).id.replace(/-/g, " ") };
       return { label: "building", line: b.steps.length ? `${done} of ${b.steps.length} steps` : "starting" };
     case "confirm":
+      if (askBuilds()) return { label: "check it", line: `make ${nameOf(b)}?` };
       return { label: "check it", line: "is this what you meant?" };
     case "plan":
       return { label: "plan", line: "approve the plan on your phone" };
@@ -122,7 +128,7 @@ export function buildTile(ctx: Ctx, b: BuildView): HTMLElement {
 export function homeBuildTile(ctx: Ctx): HTMLElement | null {
   const b = underway()[0];
   if (!b) return null;
-  const place = firstFree(ctx.state.layout, "s");
+  const place = firstFree(ctx.state.layout, "s", "", currentGrid());
   if (!place) return null;
   const el = buildTile(ctx, b);
   placeTile(el, { id: b.build, size: "s", ...place });
@@ -309,6 +315,10 @@ export function buildPage(ctx: Ctx, which: string): View {
           note(`you're signed in, so your agent is learning how ${name} searches, starts a title and shows what's playing. you can keep using the tv. when it's done, approve it on your phone.`),
           b.path === "key" && b.spent !== undefined ? note(`${money(b.spent)} so far.`) : null,
         ];
+      } else if (askBuilds()) {
+        // D5: the steps, and one line.
+        title = `building ${name}.`;
+        body = [progress(b), steps(b), note("you can keep using the tv.")];
       } else {
         title = `building ${name}.`;
         const minutes = b.minutes ? ` it takes about ${b.minutes} minutes.` : "";
@@ -323,6 +333,16 @@ export function buildPage(ctx: Ctx, which: string): View {
       break;
     case "confirm": {
       const u = b.understood!;
+      if (askBuilds()) {
+        // D5: what it'll make, and its recipe or a plan for your ok
+        // (ADR-046), in one line.
+        title = `make ${u.name.toLowerCase()}?`;
+        const cost = b.path === "key" && b.cost ? ` · about ${money(b.cost.low)} to ${money(b.cost.high)}` : "";
+        body = [note(`${recipeLine(u.recipe)} · it stays on this tv${cost}`), u.address ? h("div", { class: "check-rows" }, row(true, "site", u.address)) : null, b.steps.length ? steps(b) : null];
+        buttons = [button("↵ build it", "confirm", () => void act(() => daemon.confirm(b.build)).then((ok) => ok && ctx.render(`build/${b.build}`)), true), button("not this", "forget", () => void forget())];
+        keys = "↵ build it · esc back";
+        break;
+      }
       title = "is this what you meant?";
       body = [
         h("div", { class: "prompt build-said" }, `"${b.sentence}"`),
@@ -401,6 +421,19 @@ export function buildPage(ctx: Ctx, which: string): View {
       buttons = [button("stop", "stop", () => void act(() => daemon.stopBuild(), `stopped ${name}`))];
       break;
     case "failed":
+      if (askBuilds() && b.phase !== "stage-b") {
+        // D5: why, and that nothing changed on the tv. Changing what was
+        // asked starts the Ask box with it.
+        title = `${name} didn't build.`;
+        body = [note(`${b.reason ?? "it stopped"} · nothing was installed`)];
+        buttons = [
+          button("↵ try again", "retry", () => void act(() => daemon.retry(b.build)).then((ok) => ok && ctx.render(`build/${b.build}`)), true),
+          button("change what i asked", "ask-again", () => askWith(ctx, `make ${b.sentence}`)),
+          button("remove", "forget", () => void forget()),
+        ];
+        keys = "↵ try again · del remove · esc back";
+        break;
+      }
       title = `couldn't build ${name}.`;
       body = [h("div", { class: "check-rows" }, row(false, "", b.reason ?? "it stopped")), b.steps.length ? steps(b) : null];
       buttons = [
@@ -426,7 +459,7 @@ export function buildPage(ctx: Ctx, which: string): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile build-page", "data-state": b.state }, ...heading(`tv app build ${b.id.replace(/^local\./, "")}`, title), ...body.filter((x): x is HTMLElement => x !== null), buttons.length ? h("div", { class: "check-actions" }, ...buttons) : null),
+    h("div", { class: "page profile build-page", "data-state": b.state }, ...heading(askBuilds() && b.state === "confirm" ? `agentv make "${b.sentence.toLowerCase()}"` : `tv app build ${b.id.replace(/^local\./, "")}`, title), ...body.filter((x): x is HTMLElement => x !== null), buttons.length ? h("div", { class: "check-actions" }, ...buttons) : null),
     bar(ctx, "apps", keys),
   );
   return {
@@ -494,7 +527,8 @@ export function builtActions(ctx: Ctx, id: string): HTMLElement[] {
   const web = ctx.state.apps.find((app) => app.id === id)?.runtime === "web";
   const button = (label: string, action: string, onclick: () => void) => h("button", { class: "button", "data-focus": true, "data-action": action, onclick }, label);
   return [
-    button("change it →", "change", () => ctx.go(`change/${id}`)),
+    // With the Ask box, the change is said in it (D5): "change blocks: ...".
+    askBuilds() ? button("change it", "change", () => askWith(ctx, `change ${name}: `)) : button("change it →", "change", () => ctx.go(`change/${id}`)),
     button("build it again", "rebuild", () => void again()),
     ...(kept ? [button(`go back to ${kept.version}`, "rollback", () => void back())] : []),
     ...(web ? [] : [button("export", "export", () => void exported())]),

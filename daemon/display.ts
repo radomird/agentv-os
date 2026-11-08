@@ -175,7 +175,7 @@ export interface DisplayOptions {
   // The daemon's state folder, which holds display.json.
   state: string;
   // The sizes switch.
-  on: () => boolean;
+  on: () => Promise<boolean>;
   // The box check's verdict on 4K (GET /api/box's verdicts.fourKSmooth), or
   // null while there's none.
   fourKSmooth?: () => Promise<boolean | null>;
@@ -248,7 +248,7 @@ export class Display {
   async state(): Promise<DisplayState> {
     const saved = await this.read();
     const live = saved.tv?.live ?? null;
-    if (!this.o.on()) {
+    if (!(await this.o.on())) {
       return { size: "standard", output: "auto", mode: live?.mode ?? null, scale: live?.scale ?? null, canvas: [DESIGN[0], DESIGN[1]], sizes: [] };
     }
     const output = await this.output(saved);
@@ -263,13 +263,13 @@ export class Display {
   // What the TV should run at, for the screen daemon, or null while the
   // switch is off or no TV has been seen.
   async target(): Promise<Target | null> {
-    if (!this.o.on()) return null;
+    if (!(await this.o.on())) return null;
     return (await this.plan(await this.read()))?.target ?? null;
   }
 
   // A size or an output picked, from Settings or setup's look step.
   async choose(change: unknown): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
-    if (!this.o.on()) return { ok: false, status: 409, error: "sizes are switched off on this box" };
+    if (!(await this.o.on())) return { ok: false, status: 409, error: "sizes are switched off on this box" };
     if (!change || typeof change !== "object" || Array.isArray(change)) return { ok: false, status: 400, error: 'send {"size": "larger" | "standard" | "more"} or {"output": "auto" | "1080p"}' };
     const { size, output } = change as { size?: unknown; output?: unknown };
     if (size === undefined && output === undefined) return { ok: false, status: 400, error: "send a size or an output" };
@@ -284,6 +284,12 @@ export class Display {
     }
     await this.change((saved) => ({ ...saved, ...(size !== undefined ? { size: size as Size } : {}), ...(output !== undefined ? { output: output as Output } : {}) }));
     return { ok: true };
+  }
+
+  // Whether the TV, as the screen daemon last said, runs at a target.
+  async runs(target: Target): Promise<boolean> {
+    const tv = (await this.read()).tv;
+    return Boolean(tv && tv.output === target.output && tv.live && tv.live.mode === target.mode && Math.abs(tv.live.scale - target.scale) < 0.005);
   }
 
   // What the TV runs at, after the screen daemon set it.

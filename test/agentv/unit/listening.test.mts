@@ -52,10 +52,35 @@ test("ADR-054 a while with no new words takes the bar away, and a sent sentence 
   assert.equal(heard.at(-1)!.state, "closed");
   assert.equal(listening.up, false);
   listening.change("iphone", { text: "play frozen" });
-  assert.equal(listening.sent(), true, "the bar was up, so what comes of it takes it over");
+  assert.equal(listening.sent("iphone"), true, "the bar was up, so what comes of it takes it over");
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(heard.at(-1)!.state, "words", "no timer takes it away while the sentence is thought about");
-  assert.equal(listening.sent(), false, "and a second sentence with no box open has no bar");
+  assert.equal(listening.sent("iphone"), false, "and a second sentence with no box open has no bar");
+});
+
+// The phone sends its words a moment after each change, and the sentence on
+// a connection of its own, so the last words can come after the sentence.
+test("words that come after their sentence went don't bring the bar back, until the box opens again", () => {
+  const heard: Heard[] = [];
+  const listening = new Listening({ changed: (h) => heard.push(h), idleMs: 60_000 });
+  listening.change("iphone", { open: true });
+  assert.equal(listening.sent("iphone"), true);
+  const before = heard.length;
+  assert.equal(listening.change("iphone", { text: "play frozen" }), null, "late words aren't an error");
+  assert.equal(heard.length, before, "and the TV doesn't hear them");
+  assert.equal(listening.up, false);
+  // A box closed late after its sentence doesn't hide another phone's bar.
+  listening.change("pixel", { open: true });
+  listening.change("iphone", { open: false });
+  assert.equal(listening.up, true, "the pixel's bar stays");
+  assert.equal(heard.at(-1)!.from, "pixel");
+  listening.change("pixel", { open: false });
+  assert.equal(listening.up, false, "and goes when the pixel closes its own box");
+  // The iphone's box opened again: its words count again.
+  listening.change("iphone", { open: true });
+  listening.change("iphone", { text: "play moana" });
+  assert.deepEqual(heard.at(-1), { state: "words", text: "play moana", from: "iphone" });
+  listening.close();
 });
 
 // --- Through the daemon --------------------------------------------------------
@@ -198,6 +223,7 @@ test("ADR-054 the box's words go to the TV's pages and the TV session as they ch
 });
 
 test("ADR-054 Back on the TV and a while with no new words each take the bar away", async () => {
+  await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "play" });
   await until(() => heardOnTv().at(-1)?.state === "words");
   await fetch(`${url}/api/say/live/close`, { method: "POST" });
@@ -208,6 +234,7 @@ test("ADR-054 Back on the TV and a while with no new words each take the bar awa
 });
 
 test("ADR-054 a sentence sent from the box: the bar over an app says it's thinking, then what came of it, in place of a toast", async () => {
+  await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "play frozen" });
   await until(() => heardOnTv().at(-1)?.state === "words");
   asks.length = 0;
@@ -228,17 +255,21 @@ test("ADR-054 a sentence sent from the box: the bar over an app says it's thinki
 });
 
 test("ADR-054 a box opened again while a sentence is thought about keeps the bar for its words, and what came of the sentence is a toast", async () => {
+  await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "dim the lights" });
   await until(() => live().some((a) => a.text === "dim the lights"));
   asks.length = 0;
   const said = phone("/api/phone/say", { sentence: "dim the lights" });
   await until(() => live().some((a) => a.state === "thinking"));
+  // The box opens again on the phone, as it does when it takes the focus.
+  await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "continue my show" });
   assert.equal((await (await said).json()).said.outcome.say, "i didn't get that");
   await until(() => asks.some((a) => a.kind === "tell"));
   assert.deepEqual(asks.filter((a) => a.kind === "tell").map((a) => a.text), ["i didn't get that"]);
   assert.deepEqual(live().map(({ state, text }) => ({ state, text })), [
     { state: "thinking", text: "dim the lights" },
+    { state: "open", text: "" },
     { state: "words", text: "continue my show" },
   ]);
 });
@@ -263,6 +294,7 @@ test("ADR-054 on a child's profile the bar is the same, and the sentence is rout
   const grant = (await (await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
   const child = (await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()).profile;
   await fetch(`${url}/api/viewer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: child.id }) });
+  await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "play frozen" });
   await until(() => live().some((a) => a.state === "words" && a.text === "play frozen"));
   asks.length = 0;

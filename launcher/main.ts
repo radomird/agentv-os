@@ -5,7 +5,7 @@
 // its sound (ADR-024).
 
 import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
-import { fieldKind, tell } from "./context.ts";
+import { fieldOf, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
@@ -23,17 +23,26 @@ import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
-import { keyPage, planPage, termsHeard } from "./pages/key.ts";
+import { keyPage, planPage, planSignInPage, termsHeard } from "./pages/key.ts";
 import { countryPage, loadCountry } from "./pages/country.ts";
+import { desktopPasswordPage } from "./pages/desktop-password.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
-import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
+import { askBuilds, askChangePage, askPage, followAskBuilds } from "./pages/ask.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
+import { typingField, typingHeard } from "./typing.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
+import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
+import { onFeatures } from "./features.ts";
+import { lookHome } from "./looks/homes.ts";
+import { forecast } from "./pages/forecast.ts";
+import { newWeek } from "./pages/new-week.ts";
+import { checkWhileAmbient } from "./box.ts";
 
 export interface View {
   el: HTMLElement;
@@ -53,6 +62,9 @@ export interface Ctx {
   sounds: Sounds;
   focus: Focus;
   go(route: string): void;
+  // A section of the bar (home, apps, ask, settings): Back from it goes
+  // home, its parent, whichever page the bar was on (principle 2).
+  top(route: string): void;
   back(): void;
   edit(): void;
   render(route: string, action?: string): void;
@@ -81,7 +93,11 @@ const page = document.getElementById("page")!;
 const sounds = new Sounds();
 const focus = new Focus(document.getElementById("ring")!);
 // A text field with the focus opens the phone's keyboard (ADR-037).
-focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
+focus.onSet = (el) => {
+  const field = el instanceof HTMLInputElement ? fieldOf(el) : null;
+  tell({ field });
+  typingField(field);
+};
 let history: string[] = ["home"];
 let view: View | undefined;
 
@@ -100,6 +116,18 @@ const ctx: Ctx = {
     history.push(route);
     show(route, "forward");
     sounds.play("forward");
+  },
+  top(route) {
+    if (route === "home") {
+      act("home");
+      return;
+    }
+    if (history[history.length - 1] === route) return;
+    const before = history;
+    history = ["home"];
+    ctx.go(route);
+    // Settings on a child's profile waits for the PIN, and stays put without it.
+    if (history.length === 1) history = before;
   },
   back() {
     if (history.length <= 1) return;
@@ -152,7 +180,12 @@ const ctx: Ctx = {
     }
   },
   async saveSettings(change, grant) {
-    ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
+    settingsSaves++;
+    try {
+      ctx.state.settings = (await daemon.saveSettings(change, grant ?? ctx.held())).settings;
+    } finally {
+      settingsSaves++;
+    }
     apply(ctx.state.settings);
   },
   held() {
@@ -182,6 +215,10 @@ let lockPad: Pad | null = null;
 // How many times the daemon has said the PIN changed, so an answer that left
 // before the last time doesn't undo it.
 let pinEvents = 0;
+// The same for the settings this page saves: up as a save starts and as it
+// ends, so an answer about home that was on its way meanwhile doesn't put the
+// old settings back.
+let settingsSaves = 0;
 
 const holding = () => Boolean(held && held.until - Date.now() > 15_000);
 const childWithPin = () => ctx.state.viewer.role === "child" && ctx.state.pin?.set === true;
@@ -332,6 +369,12 @@ const ACTIONS: Record<string, string> = {
 function viewFor(route: string): View {
   const [name, arg] = route.split("/");
   if (name === "apps") return apps(ctx);
+  // The bar's Ask: with the askbuilds switch on, the Ask box for everyone,
+  // and a change waiting for an adult's ok (ADR-068, D5). With it off, an
+  // adult asks their agent to make something, as before.
+  if (name === "ask" && askBuilds()) return askPage(ctx);
+  if (name === "ask-change" && askBuilds() && ctx.state.viewer.role === "adult") return askChangePage(ctx);
+  if (name === "ask" && ctx.state.viewer.role === "adult") return buildAsk(ctx);
   // Adding an app is an adult's, and a child's profile doesn't see it (ADR-042).
   if (name === "add-app" && ctx.state.viewer.role === "adult") return addApp(ctx);
   // Your agent's builds are an adult's too (ADR-043 to ADR-046).
@@ -350,15 +393,21 @@ function viewFor(route: string): View {
   if (name === "tmdb-key") return tmdbKeyPage(ctx);
   if (name === "country") return countryPage(ctx);
   if (name === "plan") return planPage(ctx);
+  if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
+  if (name === "desktop-password" && ctx.state.viewer.role === "adult") return desktopPasswordPage(ctx);
   if (name === "pair") return pairPage(ctx);
-  // Settings → Power's questions, for an adult only (ADR-033).
-  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
+  // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
+  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
+  // Weather's and New this week's own pages, with the looks (D2).
+  if (name === "weather" && lookId()) return forecast(ctx);
+  if (name === "new" && lookId()) return newWeek(ctx);
   // A page app, full screen in its frame (ADR-043).
   if (name === "app" && arg) return pageView(ctx, arg);
   // A photo or a video a phone shared (ADR-050).
   if (name === "shared" && arg) return sharedView(ctx, arg);
-  return home(ctx);
+  // Home in the look the box has (ADR-063), or phase 1's with the looks off.
+  return lookId() ? lookHome(ctx) : home(ctx);
 }
 
 // Draws a page. With a direction it slides in; an action names the element
@@ -368,7 +417,7 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   if (route === "home") held = null;
   // Any page but a page app's puts the one in front behind home, paused.
   if (!route.startsWith("app/")) hidePages(ctx);
-  tell({ screen: route === "home" ? "home" : "menu" });
+  if (!preview()) tell({ screen: route === "home" ? "home" : "menu" });
   view = viewFor(route);
   document.body.classList.toggle("on-home", route === "home");
   const el = view.el;
@@ -386,6 +435,12 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   if (noticeOpen) {
     const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
     noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
+  // Under the "which one?" card too, which has the keys while it's up.
+  if (saidOpen()) {
+    const first = view.first;
+    saidPageDrawn((was) => (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? first);
     return;
   }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
@@ -471,6 +526,8 @@ function setAmbient(on: boolean): void {
     ambientEl.replaceChildren(pictures, h("div", { class: "ambient-drift" }, time, h("div", { class: "ambient-day" }, day)), credit);
   }
   ambientEl.classList.toggle("on", on);
+  // After a new GPU, the 4K test runs again while nobody's watching (ADR-061).
+  if (on) void checkWhileAmbient(ambientEl, () => ambient);
 }
 
 // Ends the ambient screen from this side, and asks the screen daemon to put
@@ -527,16 +584,24 @@ function checkAfterUpdate(): void {
 // One toast per release, on home, for an adult, never during setup or an
 // install (ADR-025). Setup has no launcher, and nothing plays while home is
 // in front.
+// The release this page toasted. Home asks for the updates as it starts and
+// again as its events start, and an answer from before the box heard the
+// toast still says it hasn't been shown.
+let toastedHere: string | null = null;
+
 function toastRelease(): void {
   const version = release(ctx.updates);
-  if (!version || ctx.updates.toasted === version || updatingShown || ambient) return;
+  if (!version || ctx.updates.toasted === version || toastedHere === version || updatingShown || ambient) return;
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
+  toastedHere = version;
   ctx.updates.toasted = version;
   ctx.toast(`agentv ${version} is ready · settings → updates`, "ok");
   void daemon.toasted(version).catch(() => {});
 }
 
 function act(action: Action): void {
+  // A preview, as setup frames one, only shows home.
+  if (preview()) return;
   // An install is running: keys wait. One that failed goes away on a key.
   if (updatingShown) {
     if (updatingFailed) {
@@ -601,8 +666,10 @@ focus.onMove = (el) => {
 
 // A mouse moves the focus by hovering, and a click is OK (ADR-015). The
 // pointer shows when the mouse moves and hides after 3 s. Only a real move
-// counts: Chromium also sends one when the page changes under a still mouse.
-let pointer = { x: -1, y: -1 };
+// counts: Chromium also sends one when the page changes under a still mouse,
+// and as the page loads, which only says where the mouse is. On the box, the
+// mouse rests in the middle of the screen, over a tile.
+let pointer: { x: number; y: number } | null = null;
 let hide = 0;
 document.body.classList.add("pointer-hidden");
 document.addEventListener("pointermove", (event) => {
@@ -615,8 +682,9 @@ document.addEventListener("pointermove", (event) => {
     if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
     wake();
   }
-  if (event.clientX === pointer.x && event.clientY === pointer.y) return;
+  const last = pointer;
   pointer = { x: event.clientX, y: event.clientY };
+  if (!last || (event.clientX === last.x && event.clientY === last.y)) return;
   document.body.classList.remove("pointer-hidden");
   clearTimeout(hide);
   hide = setTimeout(() => document.body.classList.add("pointer-hidden"), 3000);
@@ -633,8 +701,11 @@ document.addEventListener("click", (event) => {
 // way, the lock is as it said: the answer can be older than that.
 async function homeState(): Promise<HomeState> {
   const heard = pinEvents;
+  const saves = settingsSaves;
   const state = await daemon.home();
   if (pinEvents !== heard) state.pin = ctx.state.pin;
+  // The same for a setting this page saved while the answer was on its way.
+  if (settingsSaves !== saves) state.settings = ctx.state.settings;
   return state;
 }
 
@@ -705,10 +776,20 @@ function setRunning(apps: Running[]): void {
   if (history[history.length - 1] === "home") redraw();
 }
 
+// The look and the size (ADR-063, ADR-062): what the box has, or what a
+// preview's address says, and the page laid out on that size's canvas.
+async function lookAgain(): Promise<void> {
+  await loadLook();
+  applyLook();
+  await previewColours();
+  fit(canvas());
+  focus.refresh();
+}
+
 async function start(): Promise<void> {
-  fit();
+  await lookAgain();
   window.addEventListener("resize", () => {
-    fit();
+    fit(canvas());
     focus.refresh();
   });
   ctx.state = await daemon.home();
@@ -717,6 +798,12 @@ async function start(): Promise<void> {
   await loadBackgrounds();
   await loadBuilds(ctx);
   show("home");
+  // A preview is home and nothing else: no sounds, no keys and no word to
+  // the TV session.
+  if (preview()) {
+    sounds.on = false;
+    return;
+  }
   void askShared();
   setLock(ctx.state.pin?.locked === true);
   window.addEventListener(
@@ -733,6 +820,10 @@ async function start(): Promise<void> {
   listenInput(act);
   listen({
     layout: () => void refresh(),
+    // Another look was picked, in Settings or on the phone: the page again,
+    // drawn in it. The display's size changes the same way.
+    look: () => void lookAgain().then(redraw),
+    display: () => void lookAgain().then(redraw),
     settings: () => void refresh(),
     theme: () => {
       const link = document.getElementById("theme") as HTMLLinkElement;
@@ -791,13 +882,18 @@ async function start(): Promise<void> {
     // The phone's Settings button (ADR-037), for an adult's profile. (Not
     // "open", which EventSource sends itself.)
     page: (data) => {
-      if ((data as { route?: string }).route === "settings" && ctx.state.viewer.role === "adult") ctx.go("settings");
+      const route = (data as { route?: string }).route;
+      if (route === "settings" && ctx.state.viewer.role === "adult") ctx.go("settings");
+      // The phone's Apps, beside Settings, in every look (ADR-063).
+      else if (route === "apps" && lookId()) ctx.top("apps");
     },
     viewers: () => void refresh(),
     // A phone was paired or forgotten: pairing is done, and Settings says so.
     // A provider's terms accepted on a phone, for a key Settings → AI waits
     // to keep (Q104).
     terms: (data) => termsHeard(data),
+    // What a phone is typing, as it's typed (ADR-065).
+    typing: (data) => typingHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {
@@ -819,6 +915,13 @@ async function start(): Promise<void> {
     },
   }, () => void catchUp().catch(() => {}));
   void daemon.updates().then(setUpdates).catch(() => {});
+  // The looks switch turned on or off on an edge box: home in its look, or
+  // phase 1's again, without a reload.
+  onFeatures((all) => {
+    if (Boolean(all.looks) !== (lookId() !== null)) void lookAgain().then(redraw);
+  });
+  // The Ask box building (ADR-068): the bar's Ask and Apps follow it.
+  followAskBuilds(() => redraw());
   setupSaid(ctx, () => {
     if (view) focus.setRoot(view.el, view.first);
   });

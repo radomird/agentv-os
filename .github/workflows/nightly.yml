@@ -20,12 +20,17 @@ name: Nightly
 # checks that go with what it updates to. Edge is checked with agentv-iso's
 # agentv branch.
 #
-# The release's own checks time S1.3 beside another VM, which since the
-# image layer went to two VMs at a time (2026-10-27) took the switch back to
-# the TV from 3 to 5 s to 6 to 10 s, against a 10 s bar. So the release's
-# run has one VM at a time, the whole runner, as when S1.3 was signed off.
-# Newer agentv-iso checks run S1.3 on its own themselves. The release's run
-# takes about 45 minutes instead of 33, about as long as edge's beside it.
+# The release's checks run two VMs at a time, as edge's do. S1.3 times the
+# switch back to the TV against a 10 s bar, and beside another VM (from
+# 2026-10-27) that took 6 to 10 s instead of 3 to 5 s, so for a while the
+# release's run had one VM at a time. agentv-iso fixed that in its own
+# checks: with two VMs, its test/agentv/image/run holds S1.3 back and runs
+# it on its own, with every CPU, once the rest are done. Every release from
+# 0.2.0 on has that, so two VMs are safe for the release again.
+#
+# Edge's checks are shared out across four jobs, two VMs each, the way a
+# pull request's are (image.yml). The release's run signs tested.json and
+# checks its update with tonight's agentv-iso, so it stays in one job.
 #
 # Started by hand, it can take another agentv-iso ref for edge's checks and
 # the update's (checks), so a fix to the checks can be seen in a full night
@@ -44,6 +49,10 @@ on:
 permissions:
   contents: write
   issues: write
+  # The edge leg's checks are shared out across jobs (image.yml), and its
+  # last job deletes the run's box from the cache, or the ISO when a check
+  # failed.
+  actions: write
 
 concurrency:
   group: nightly
@@ -72,9 +81,9 @@ jobs:
             fi
             update=""
             [[ $checks == "$next" ]] || update=$next
-            runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg next "$next" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 1},
+            runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg next "$next" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 2},
               {packages: "edge", tested: false, iso: true, checks: $next, update: "", lanes: 2}]')
-            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, one VM at a time, and making the edge ISO with agentv-iso $next" >>"$GITHUB_STEP_SUMMARY"
+            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, two VMs at a time with S1.3 on its own, and making the edge ISO with agentv-iso $next" >>"$GITHUB_STEP_SUMMARY"
           else
             runs=$(jq -cn --arg next "$next" '[{packages: "edge", tested: true, iso: true, checks: $next, update: "", lanes: 2}]')
             echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $next, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"

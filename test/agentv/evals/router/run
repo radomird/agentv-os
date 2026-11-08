@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # Runs the router's phrase set on one provider (ADR-019, layer 6; S7.1 to
-# S7.4): 20 phrasings for each of the four requests, across kinds and with
-# collisions between kinds, and 20 sentences that can't be routed.
+# S7.4, T11.1): 20 phrasings for each of the six requests, across kinds and
+# with collisions between kinds, 10 that use make's and change's words but
+# aren't a build, and 20 sentences that can't be routed.
 #
 #   test/agentv/evals/router/run --provider claude
 #     its API, with ANTHROPIC_API_KEY (OPENAI_API_KEY, GEMINI_API_KEY,
@@ -16,9 +17,12 @@
 #   --only <id,...>    only these cases
 #   --json <file>      every answer and the scores
 #   --markdown <file>  the scores as a table, added to the file
-#   --strict           fail when S7.1's 95% or S7.3's every one isn't met
+#   --baseline <file>  an earlier run's --json, to say what got worse since
+#   --strict           fail when S7.1's 95%, make's or change's own 95%, or
+#                      S7.3's every one isn't met, or a set scores lower
+#                      than in the --baseline run
 #
-# It costs a little: about 100 short requests, a few cents on a key.
+# It costs a little: about 150 short requests, a few cents on a key.
 
 set -euo pipefail
 

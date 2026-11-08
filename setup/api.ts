@@ -5,7 +5,9 @@
 import type { Country, CountryState } from "../launcher/api.ts";
 
 export type { Country, CountryState };
-export type Step = "welcome" | "ready" | "country" | "ai" | "people" | "goal" | "apps" | "theme" | "background";
+// Every step's id, as daemon/setup.ts orders them, the ones behind a switch
+// included.
+export type Step = "welcome" | "ready" | "box" | "country" | "ai" | "people" | "goal" | "apps" | "look" | "theme" | "background";
 export type Goal = "streaming" | "music" | "media" | "gaming";
 export type UpdateFirst = "checking" | "installing" | "done" | "none" | "failed" | "skipped";
 
@@ -20,6 +22,37 @@ export interface SetupState {
   wishes: string[];
   // The soundtrack muted (S5.4).
   muted: boolean;
+  // The time zone of the phone setting it up.
+  phoneZone: string | null;
+}
+
+// The location step (design page D3): where it starts, from the phone's
+// time zone or the box's, and a country's time zones when they differ.
+export interface Start {
+  code: string;
+  name: string;
+  called: string; // "the netherlands"
+  zone: string;
+  from: "phone" | "box";
+}
+
+export interface ZoneChoice {
+  zone: string;
+  name: string; // "eastern"
+  city: string; // "new york"
+}
+
+export interface ZoneAsk {
+  code: string;
+  name: string;
+  called: string;
+  zones: ZoneChoice[];
+}
+
+export interface LocationInfo {
+  start: Start | null;
+  phoneZone: string | null;
+  countries: Country[];
 }
 
 export interface Hotspot {
@@ -35,8 +68,12 @@ export interface SetupInfo {
   version: string;
   running: string;
   setup: SetupState;
+  // The steps shown, in order, and what the status bar says for each. With
+  // setup's own switch on, each one's number of the 12, for its blocks.
   steps: Step[];
-  parts: Record<Step, string>;
+  parts: Partial<Record<Step, string>>;
+  numbers: Partial<Record<Step, number>> | null;
+  of: number;
   network: { online: boolean; via: "ethernet" | "wi-fi" | null; name: string | null };
   hotspot: Hotspot;
   phones: string[];
@@ -64,6 +101,14 @@ export interface Offer {
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   summary: Record<Path, string>;
+}
+
+// A plan's sign-in from the AI step (ADR-070): whether it's in, and how
+// the one running is going.
+export interface PlanSignIn {
+  provider: Provider;
+  signedIn: boolean;
+  now?: { state: "starting" | "waiting" | "done" | "failed"; url?: string; code?: string; pastes?: boolean; reason?: string };
 }
 
 export interface AiInfo {
@@ -127,6 +172,10 @@ export const setup = {
   wifi: (ssid: string, password: string) => call<{ joining: string }>("POST", "/api/setup/wifi", { ssid, password }),
   ai: () => call<AiInfo>("GET", "/api/ai"),
   choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
+  // The plan's sign-in, started from the AI step, and a code its page gave.
+  signIn: () => call<{ signIn: PlanSignIn | null }>("GET", "/api/ai/sign-in"),
+  startSignIn: (grant?: string) => call<{ signIn: PlanSignIn | null }>("POST", "/api/ai/sign-in", {}, grant),
+  signInCode: (code: string, grant?: string) => call<{ ok: true }>("POST", "/api/ai/sign-in/code", { code }, grant),
   key: (provider: Provider, key: string) => call<{ set: boolean }>("PUT", "/api/key", { provider, key }),
   music: async (muted: boolean) => (await call<{ setup: SetupState }>("POST", "/api/setup/music", { muted })).setup,
   apps: () => call<SetupApps>("GET", "/api/setup/apps"),
@@ -135,5 +184,9 @@ export const setup = {
   // The box's country (ADR-055): the time zone and new this week follow it.
   country: () => call<CountryState & { countries: Country[] }>("GET", "/api/country"),
   setCountry: (code: string, grant?: string) => call<CountryState>("PUT", "/api/country", { code }, grant),
+  // The location step, with setup's own switch on: a country, and the zone
+  // when the question asked it. The answer sets them, or asks which zone.
+  location: () => call<LocationInfo>("GET", "/api/setup/location"),
+  setLocation: (code: string, zone?: string, grant?: string) => call<{ location?: CountryState; ask?: ZoneAsk }>("PUT", "/api/setup/location", { code, zone }, grant),
   pair: async () => (await call<{ pairing: { code: string; until: string; url: string | null } | null }>("POST", "/api/phones/pair")).pairing,
 };

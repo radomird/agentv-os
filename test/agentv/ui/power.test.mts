@@ -35,19 +35,22 @@ after(async () => {
 type Request = { cmd: string; what?: string; at: number };
 
 // A TV whose screen daemon answers every request with ok and remembers it,
-// with when, and the viewer as the daemon says, or a child.
-async function tv(role: "adult" | "child" = "adult"): Promise<Page> {
+// with when, and the viewer as the daemon says, or a child. It says the box
+// restarts to its boot menu unless told it can't, and takes as long to
+// answer as window.screenDelay says, in ms.
+async function tv(role: "adult" | "child" = "adult", at = url, bootMenu = true): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.addInitScript(() => {
-    const w = window as unknown as { screenRequests: Request[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
+  await page.addInitScript((can) => {
+    const w = window as unknown as { screenRequests: Request[]; screenDelay?: number; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
     w.screenRequests = [];
     w.agentvScreen = (json: string) => {
       const request = JSON.parse(json);
       w.screenRequests.push({ ...request, at: Date.now() });
-      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true })), 0);
+      const reply = request.cmd === "boot-menu" ? { ok: true, can } : { ok: true };
+      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify(reply)), w.screenDelay ?? 0);
     };
-  });
+  }, bootMenu);
   if (role === "child") {
     await page.route(`${url}/api/home`, async (route) => {
       const reply = await route.fetch();
@@ -55,7 +58,7 @@ async function tv(role: "adult" | "child" = "adult"): Promise<Page> {
       await route.fulfill({ response: reply, json: { ...state, viewer: { ...state.viewer, role: "child" } } });
     });
   }
-  await page.goto(`${url}/`);
+  await page.goto(`${at}/`);
   await page.waitForSelector(".grid .tile.focused");
   return page;
 }
@@ -179,6 +182,58 @@ test("S2.18 Power isn't on a child's profile or offered while an update runs, an
   assert.deepEqual(await powered(page), []);
   await page.close();
   assert.deepEqual(errors, []);
+});
+
+test("T2.2 Settings → Power has restart to the boot menu, which asks first, then restarts to it", async () => {
+  const page = await tv();
+  await go(page, "settings/power");
+  await page.waitForSelector('.menu-item.open[data-key="power"]');
+  // The row shows once the box says it can.
+  await page.waitForSelector('.panel [data-action="bootmenu"]:not(.hidden)');
+  assert.match(await page.locator(".panel").innerText(), /restart →\s+shut down →\s+restart to the boot menu →/);
+  // OK on the section goes into it, and down twice is the boot menu's row.
+  for (const [key, then] of [["Enter", "restart"], ["ArrowDown", "shutdown"], ["ArrowDown", "bootmenu"]]) {
+    await page.keyboard.press(key);
+    await page.waitForFunction((action) => document.querySelector(".focused")?.getAttribute("data-action") === action, then);
+  }
+  // Settings is drawn again in place when the daemon has news, here an
+  // update. The row and the focus on it stay, while the box is asked again.
+  await page.evaluate(() => ((window as unknown as { screenDelay: number }).screenDelay = 3000));
+  const drawn = await page.$(".panel");
+  write("status.json", { checked_at: new Date().toISOString(), ok: true, channel: "stable", agentv: { installed: "0.2.1-1", available: "0.3.0-1" }, omarchy: { installed: "4.5.0-3", available: "4.5.0-3" }, packages: 1, security: false });
+  await page.waitForFunction((panel) => !panel?.isConnected, drawn);
+  assert.equal(await page.locator('.panel [data-action="bootmenu"]').isVisible(), true, "the row is still there");
+  assert.equal(await focused(page), "bootmenu");
+  await page.evaluate(() => ((window as unknown as { screenDelay: number }).screenDelay = 0));
+  rmSync(join(updates, "status.json"));
+  // OK on it asks.
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".page.power");
+  assert.equal(await headline(page), "restart to the boot menu?");
+  assert.match(await page.locator(".check-summary").innerText(), /^it waits on the menu, where you can pick a snapshot\.$/);
+  assert.match(await page.locator(".check-actions").innerText(), /↵ restart\s+cancel/);
+  // Back is Cancel, and nothing restarts.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.menu-item.open[data-key="power"]');
+  assert.deepEqual(await powered(page), []);
+  // Its question answered, it goes at once.
+  await go(page, "power/bootmenu");
+  await page.waitForSelector(".page.power");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector(".check-summary")?.textContent === "restarting to the boot menu now.");
+  assert.deepEqual((await powered(page)).map((r) => r.what), ["bootmenu"]);
+  await page.close();
+  assert.deepEqual(errors, []);
+});
+
+test("T2.2 a box whose boot loader can't restart to its menu doesn't offer it", async () => {
+  const page = await tv("adult", url, false);
+  await go(page, "settings/power");
+  await page.waitForSelector('.menu-item.open[data-key="power"]');
+  await page.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "boot-menu"));
+  await page.waitForTimeout(200);
+  assert.doesNotMatch(await page.locator(".panel").innerText(), /boot menu/);
+  await page.close();
 });
 
 test("About says what AgenTV is, as its public line does", async () => {

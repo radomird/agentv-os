@@ -17,7 +17,13 @@ const ROOT = join(import.meta.dirname, "../../..");
 process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
 process.env.AGENTV_ISO3166_TAB = join(ROOT, "test/agentv/fixtures/met/iso3166.tab");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-country-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+// A daemon here follows the zones these tests move it to, through TZ.
+const startTZ = process.env.TZ;
+after(() => {
+  rmSync(scratch, { recursive: true, force: true });
+  if (startTZ === undefined) delete process.env.TZ;
+  else process.env.TZ = startTZ;
+});
 
 test("the countries are the tz database's, each with a zone of its own, by name", async () => {
   assert.deepEqual([...parseIso3166("# a comment\nNO\tNorway\nnope\tNowhere\n")], [["NO", "Norway"]]);
@@ -115,8 +121,68 @@ test("ADR-055 the daemon's country is TMDB's region, and picking another is an a
   }
 });
 
+// Kiritimati is 14 hours ahead of UTC and Pago Pago 11 hours behind, so
+// their dates are never the same: today has to move.
+test("T12.3 after the country moves the zone, the daemon's today follows without a restart", async () => {
+  const tabs = mkdtempSync(join(scratch, "tabs-"));
+  writeFileSync(join(tabs, "zone.tab"), "KI\t+0152-15720\tPacific/Kiritimati\tLine Islands\nAS\t-1416-17042\tPacific/Pago_Pago\n");
+  writeFileSync(join(tabs, "iso3166.tab"), "AS\tSamoa (American)\nKI\tKiribati\n");
+  const was = { zones: process.env.AGENTV_ZONE_TAB, iso: process.env.AGENTV_ISO3166_TAB };
+  process.env.AGENTV_ZONE_TAB = join(tabs, "zone.tab");
+  process.env.AGENTV_ISO3166_TAB = join(tabs, "iso3166.tab");
+  // The daemon starts in Kiritimati, as Node takes the box's zone.
+  process.env.TZ = "Pacific/Kiritimati";
+  const base = mkdtempSync(join(scratch, "daemon-"));
+  mkdirSync(join(base, "root"), { recursive: true });
+  let zone = "Pacific/Kiritimati";
+  const lines: string[] = [];
+  const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps: join(base, "apps"), builtins: null, port: 0, log: (line) => lines.push(line), country: { zone: async () => zone, waitMs: 2000 } });
+  const url = `http://127.0.0.1:${await daemon.listen()}`;
+  const drop = join(base, "state", "zone-drop", "zone.json");
+  const root = setInterval(() => {
+    if (!existsSync(drop)) return;
+    zone = (JSON.parse(readFileSync(drop, "utf8")) as { zone: string }).zone;
+    rmSync(drop);
+  }, 20);
+  const dayIn = (timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const health = async () => (await (await fetch(`${url}/health`)).json()) as { zone: string };
+  try {
+    assert.equal((await health()).zone, "Pacific/Kiritimati");
+    assert.equal(daemon.news.today(), dayIn("Pacific/Kiritimati"));
+    assert.equal((await (await fetch(`${url}/api/country`)).json()).code, "KI");
+    const set = await fetch(`${url}/api/country`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: "AS" }) });
+    assert.equal((await set.json()).zone, "Pacific/Pago_Pago");
+    assert.equal((await health()).zone, "Pacific/Pago_Pago", "the daemon's clock follows, with no restart");
+    assert.equal(daemon.news.today(), dayIn("Pacific/Pago_Pago"));
+    assert.notEqual(daemon.news.today(), dayIn("Pacific/Kiritimati"), "and today moved");
+    assert.ok(lines.includes("the daemon's clock follows the time zone to Pacific/Pago_Pago"), lines.join("\n"));
+  } finally {
+    clearInterval(root);
+    await daemon.close();
+    process.env.AGENTV_ZONE_TAB = was.zones;
+    process.env.AGENTV_ISO3166_TAB = was.iso;
+  }
+});
+
+test("a zone moved some other way, as from Omarchy's desktop, is followed the next time the daemon reads the country", async () => {
+  process.env.TZ = "Europe/Oslo";
+  const b = box("Europe/Oslo");
+  try {
+    await b.place.read();
+    assert.equal(process.env.TZ, "Europe/Oslo", "the zone the daemon started in needs nothing");
+    mkdirSync(join(b.state, "zone-drop"), { recursive: true });
+    writeFileSync(b.place.drop, JSON.stringify({ zone: "America/New_York" }));
+    for (let tries = 0; b.zone() !== "America/New_York" && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal((await b.place.read()).zone, "America/New_York");
+    assert.equal(process.env.TZ, "America/New_York");
+  } finally {
+    b.stop();
+  }
+});
+
 test("ADR-055 setup confirms the country after getting ready, and a box already past it carries on", async () => {
-  assert.deepEqual(STEPS.slice(0, 4), ["welcome", "ready", "country", "ai"]);
+  // Your box comes between them when its switch is on, and is off here.
+  assert.deepEqual(STEPS.slice(0, 5), ["welcome", "ready", "box", "country", "ai"]);
   const fresh = new Setup({ path: join(scratch, "fresh", "setup.json") });
   await fresh.finish("welcome");
   await fresh.finish("ready");
