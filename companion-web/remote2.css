@@ -646,3 +646,126 @@
   height: var(--r2-height, 100dvh);
   min-height: 0;
 }
+
+/* --- Glass and Cinema (ADR-063, D4) ----------------------------------------
+   The same remote in the TV's other two looks: rounded keys and surface,
+   the look's own font, and words that start with a capital. Glass's parts
+   are frosted, Cinema's are flat cards. Every colour is still the theme's. */
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/launcher/fonts/manrope-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+}
+
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/launcher/fonts/instrument-sans-latin-wght-normal.woff2") format("woff2");
+  font-weight: 400 700;
+}
+
+body[data-look="glass"] {
+  --font: "Manrope", system-ui, sans-serif;
+}
+
+body[data-look="cinema"] {
+  --font: "Instrument Sans", system-ui, sans-serif;
+}
+
+body[data-look="glass"] .r2,
+body[data-look="cinema"] .r2 {
+  --r2-line: transparent;
+}
+
+body[data-look="glass"] .r2 {
+  --r2-surface: color-mix(in srgb, var(--bright-foreground) 8%, var(--background));
+  --r2-line: color-mix(in srgb, var(--bright-foreground) 14%, transparent);
+}
+
+body[data-look="cinema"] .r2 {
+  --r2-surface: var(--lighter-background, #24283b);
+}
+
+body[data-look="glass"] .r2-who .avatar,
+body[data-look="cinema"] .r2-who .avatar {
+  border-radius: 50%;
+}
+
+body[data-look="glass"] .r2-icon,
+body[data-look="cinema"] .r2-icon {
+  border-radius: 50%;
+}
+
+body[data-look="glass"] .r2-back,
+body[data-look="cinema"] .r2-back,
+body[data-look="glass"] .r2-chip,
+body[data-look="cinema"] .r2-chip,
+body[data-look="glass"] .r2-done,
+body[data-look="cinema"] .r2-done {
+  border-radius: 24px;
+}
+
+body[data-look="glass"] .r2-surface,
+body[data-look="cinema"] .r2-surface {
+  border-radius: 28px;
+}
+
+body[data-look="glass"] .r2-key,
+body[data-look="cinema"] .r2-key,
+body[data-look="glass"] .r2-card,
+body[data-look="cinema"] .r2-card,
+body[data-look="glass"] .r2-network,
+body[data-look="cinema"] .r2-network,
+body[data-look="glass"] .r2-field-box,
+body[data-look="cinema"] .r2-field-box,
+body[data-look="glass"] .r2-row,
+body[data-look="cinema"] .r2-row {
+  border-radius: 20px;
+}
+
+body[data-look="glass"] .r2-ask,
+body[data-look="cinema"] .r2-ask {
+  border-radius: 20px;
+}
+
+body[data-look="glass"] .r2-ask-small,
+body[data-look="cinema"] .r2-ask-small {
+  border-radius: 50%;
+}
+
+body[data-look="glass"] .r2-notice,
+body[data-look="cinema"] .r2-notice {
+  border-radius: 22px;
+  background: var(--r2-surface);
+}
+
+body[data-look="glass"] .r2-sheet,
+body[data-look="cinema"] .r2-sheet {
+  border-top: 0;
+  border-radius: 28px 28px 0 0;
+}
+
+body[data-look="glass"] .r2-handle,
+body[data-look="cinema"] .r2-handle {
+  border-radius: 2px;
+}
+
+/* Words start with a capital in these two looks, as on the TV. */
+body[data-look="glass"] .r2-hint > span::first-letter,
+body[data-look="cinema"] .r2-hint > span::first-letter,
+body[data-look="glass"] .r2-key > span::first-letter,
+body[data-look="cinema"] .r2-key > span::first-letter,
+body[data-look="glass"] .r2-ask::first-letter,
+body[data-look="cinema"] .r2-ask::first-letter,
+body[data-look="glass"] .r2-ask > span::first-letter,
+body[data-look="cinema"] .r2-ask > span::first-letter,
+body[data-look="glass"] .r2-notice-text::first-letter,
+body[data-look="cinema"] .r2-notice-text::first-letter,
+body[data-look="glass"] .r2-label::first-letter,
+body[data-look="cinema"] .r2-label::first-letter,
+body[data-look="glass"] .r2-row > span::first-letter,
+body[data-look="cinema"] .r2-row > span::first-letter,
+body[data-look="glass"] .r2-who > span::first-letter,
+body[data-look="cinema"] .r2-who > span::first-letter {
+  text-transform: uppercase;
+}

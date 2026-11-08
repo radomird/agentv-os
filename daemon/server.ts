@@ -57,7 +57,7 @@ import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
-import { lookRoute } from "./routes/look.ts";
+import { currentLook, lookRoute } from "./routes/look.ts";
 import { Updates } from "./updates.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 import { newItem } from "./executors/whatsNew.ts";
@@ -953,6 +953,8 @@ export class Daemon {
       phone,
       // The feature switches the phone draws by.
       features: { remote2 },
+      // The look the TV is in, for the remote to match it (ADR-063, D4).
+      look: (await this.features.on("looks")) ? await currentLook({ root: this.options.root, state: this.options.state }) : null,
       viewer,
       viewers: await this.profiles.list(),
       pin: { set: pin.set, locked: pin.locked },
@@ -1260,7 +1262,8 @@ export class Daemon {
     }
     // The home screen's grid, which arrange home shares with the TV, and
     // the icons both draw.
-    if (method === "GET" && (path === "/launcher/layout.ts" || path === "/launcher/glyphs.ts")) {
+    // The looks' fonts too, for the phone's remote in Glass and Cinema.
+    if (method === "GET" && (path === "/launcher/layout.ts" || path === "/launcher/glyphs.ts" || /^\/launcher\/fonts\/[a-z-]+\.woff2$/.test(path))) {
       await this.file(response, join("launcher", path.slice("/launcher/".length)));
       return;
     }
