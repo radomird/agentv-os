@@ -103,6 +103,13 @@ export interface BoxOptions {
   discover?: DiscoverOptions;
   // Stand-ins for the AI providers' sites, whose icons setup shows.
   aiSites?: ConstructorParameters<typeof Daemon>[0]["aiSites"];
+  // The machine the box check reads (daemon/box.ts): the NUC8i5BEH's
+  // recorded readings unless a test gives others.
+  box?: ConstructorParameters<typeof Daemon>[0]["box"];
+}
+
+export function machine(name: string): NonNullable<NonNullable<BoxOptions["box"]>["machine"]> {
+  return JSON.parse(readFileSync(join(ROOT, "test/agentv/fixtures/box", `${name}.json`), "utf8"));
 }
 
 // A switched screen's check, run with its switch off and then on, each time
@@ -311,6 +318,7 @@ export async function startBox(
     aiSites: options.aiSites ?? { claude: "http://127.0.0.1:1/", chatgpt: "http://127.0.0.1:1/", gemini: "http://127.0.0.1:1/", grok: "http://127.0.0.1:1/", muse: "http://127.0.0.1:1/" },
     router: options.router,
     listenIdleMs: options.listenIdleMs,
+    box: options.box ?? { machine: machine("nuc8i5beh") },
     // The channel, as agentv channel keeps it: none, so stable, until a test
     // puts the box on edge (ADR-053).
     channelFile: join(state, "..", "channel"),

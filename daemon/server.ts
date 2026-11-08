@@ -49,6 +49,8 @@ import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
 import { Features } from "./features.ts";
+import { Box, type BoxOptions } from "./box.ts";
+import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
@@ -174,6 +176,8 @@ export interface DaemonOptions {
   listenIdleMs?: number;
   // Servers and shares on the home network: stand-ins' ports, for tests.
   discover?: DiscoverOptions;
+  // The box check (ADR-061): stand-ins for the machine it reads, for tests.
+  box?: Omit<BoxOptions, "state">;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -267,6 +271,8 @@ export class Daemon {
   readonly country: CountryPlace;
   // The feature switches every phase 2 track's screens hide behind.
   readonly features: Features;
+  // What the box is (ADR-061).
+  readonly box: Box;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -480,6 +486,7 @@ export class Daemon {
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.features = new Features({ state: options.state, channel: () => this.channel() });
+    this.box = new Box({ state: options.state, ...options.box });
     this.desktopPassword = new DesktopPassword({ marker: options.accountMarker, socket: options.passwordSocket });
     this.voice = new Voice({
       ...options.voice,
@@ -1366,6 +1373,7 @@ export class Daemon {
     // Routes in files of their own (daemon/routes/), one line each.
     if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
     if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
+    if (await phoneBoxRoute(this.boxKit(), method, path, response)) return;
 
     if (await this.setupRoutes.handle("phone", request, response, url)) return;
     if (path.startsWith("/api/phone/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
@@ -1897,6 +1905,11 @@ export class Daemon {
     };
   }
 
+  // What the box check's routes need of the daemon.
+  private boxKit(): BoxRoutes {
+    return { box: this.box, json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast: (event, data) => this.broadcast(event, data), log: this.log };
+  }
+
   // What the switches' routes need of the daemon.
   private featureKit(): FeatureRoutes {
     return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed: (all) => this.broadcast("features", all), log: this.log };
@@ -2189,6 +2202,7 @@ export class Daemon {
     if (await desktopPasswordRoute({ setup2: () => this.features.on("setup2"), password: this.desktopPassword, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: (text) => this.log(text), grant: (q) => this.grant(q), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) }, request, response, path)) return;
     if (await this.setupRoutes.handle("tv", request, response, url)) return;
     if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
+    if (await boxRoute(this.boxKit(), method, path, request, response)) return;
 
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);

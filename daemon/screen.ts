@@ -56,6 +56,7 @@ import { installedPackage, userAgent } from "./identity.ts";
 import { PAUSE, RESUME } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { OmarchyThemes } from "./omarchy-themes.ts";
+import { WidevineWatch } from "./box.ts";
 import { cdpPage } from "./page.ts";
 import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
@@ -2849,6 +2850,8 @@ async function main(): Promise<void> {
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
   // Every theme Omarchy has, the person's own included, for Look (ADR-048).
   void new OmarchyThemes({ omarchy: process.env.OMARCHY_PATH || "/usr/share/omarchy", home: homedir(), daemon: HOME_URL, log: (line) => console.log(line) }).start();
+  // Which Widevine the services' Chromium has, for the box check (ADR-061).
+  new WidevineWatch({ home: HOME_URL, profile: SERVICES_PROFILE, log: (line) => console.log(line) }).start();
   // When Hyprland goes, so does the TV session, and this with it.
   await screen.start(() => {
     console.log("Hyprland went away; stopping");

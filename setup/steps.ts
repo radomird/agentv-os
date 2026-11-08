@@ -8,6 +8,7 @@ import { aiStep2, ways } from "./ai2.ts";
 import type { Provider } from "./api.ts";
 import { addYourOwn, apps } from "./apps.ts";
 import { art, background, folder, photos } from "./background.ts";
+import { yourBox } from "./box.ts";
 import { country, pick as pickCountry } from "./country.ts";
 import { goal, goal2 } from "./goal.ts";
 import { location, pickLocation, zoneQuestion } from "./location.ts";
@@ -30,7 +31,7 @@ export const SCREENS: Record<string, Screen> = {
   welcome: welcome,
   "welcome/wifi": wifi,
   ready: ready,
-  // track 3: box: box,
+  box: yourBox,
   country: two(location, country),
   "country/pick": two(pickLocation, pickCountry),
   "country/zone": zoneQuestion,

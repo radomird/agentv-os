@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# agentv:summary=Show what this box is: the TV, the GPU, the space and the network
+# agentv:args=[readings]
+# agentv:examples=agentv box | agentv box readings
+
+# Asks AgenTV's daemon what the box check found, which setup and Settings
+# show. `agentv box readings` prints everything it read instead, with the
+# TV's serial numbers zeroed, so the readings can be shared or kept as a test
+# fixture.
+
+set -euo pipefail
+
+DAEMON=${AGENTV_DAEMON_URL:-http://127.0.0.1:3000}
+
+case "${1:-}" in
+  "") path=/api/box ;;
+  readings) path=/api/box/readings ;;
+  *)
+    echo "Usage: agentv box [readings]" >&2
+    exit 1
+    ;;
+esac
+
+if ! answer=$(curl -fsS --max-time 30 "$DAEMON$path"); then
+  echo "agentv box: the daemon didn't answer; is agentv-daemon running?" >&2
+  exit 1
+fi
+jq . <<<"$answer"
