@@ -44,6 +44,35 @@ local function vconsole()
 end
 local keyboard = vconsole()
 
+-- The splash's background, for the TV session's first frame, while
+-- AgenTV's splash is kept from the boot to home (ADR-060,
+-- bin/agentv-boot-splash leaves the note). It's the colour Plymouth drew,
+-- from its theme's script, so the hand-over shows no other colour.
+local function splash_background()
+  local note = io.open("/run/agentv-boot-splash", "r")
+  if not note then
+    return nil
+  end
+  note:close()
+  local file = io.open("/usr/share/plymouth/themes/omarchy/omarchy.script", "r")
+  if not file then
+    return nil
+  end
+  local colour = nil
+  for line in file:lines() do
+    local r, g, b = line:match("^Window%.SetBackgroundTopColor%(%s*([%d.]+)%s*,%s*([%d.]+)%s*,%s*([%d.]+)%s*%)")
+    if r then
+      local function byte(value)
+        return math.max(0, math.min(255, math.floor(tonumber(value) * 255 + 0.5)))
+      end
+      colour = string.format("rgb(%02x%02x%02x)", byte(r), byte(g), byte(b))
+      break
+    end
+  end
+  file:close()
+  return colour
+end
+
 hl.config({
   input = {
     kb_layout = keyboard.XKBLAYOUT or "us",
@@ -81,8 +110,10 @@ hl.config({
     -- Hyprland would say so in a notice over the TV.
     disable_xdg_env_checks = true,
     force_default_wallpaper = 0,
-    -- Tokyo Night's background, for the moment before the home screen draws.
-    background_color = "rgb(1a1b26)",
+    -- The splash's background while AgenTV's splash is kept from the boot
+    -- (above), and Tokyo Night's otherwise, for the moment before the home
+    -- screen draws.
+    background_color = splash_background() or "rgb(1a1b26)",
     -- Nothing comes to the front by asking for it.
     focus_on_activate = false,
     on_focus_under_fullscreen = 0,
@@ -138,6 +169,12 @@ for _, key in ipairs({ "Escape", "XF86Back" }) do
 end
 
 hl.on("hyprland.start", function()
+  -- AgenTV's splash first, before anything else starts, so it's up as soon
+  -- as it can be (ADR-060). It draws only when the boot kept the splash.
+  -- Plymouth, which let go of the screen and kept its last frame up, quits
+  -- once home has drawn (agentv-boot-splash done): this session's first
+  -- frame can come a second or more after it starts.
+  hl.exec_cmd("agentv-boot-splash tv")
   -- The screen daemon, the virtual input device and the toast overlay run
   -- as user units under agentv-tv.target, and need this session's display.
   hl.exec_cmd(

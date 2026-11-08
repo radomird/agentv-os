@@ -1,0 +1,66 @@
+// New this week's own page (D2), with the looks on: every new title across
+// your apps, as posters, each with the app it's on. Choosing one plays it in
+// its own app, the same as on the tile (S8.1). It's drawn from what the
+// daemon's New this week tile sends, so each look draws the same data.
+
+import { daemon, type TileData, type TileEntry } from "../api.ts";
+import { h } from "../dom.ts";
+import { lookId, named, said } from "../looks/looks.ts";
+import type { Ctx, View } from "../main.ts";
+import { NEW, openEntry } from "./home.ts";
+import { bar, heading } from "./parts.ts";
+
+let last: TileData | null = null;
+
+const COUNT = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight"];
+
+function card(ctx: Ctx, entry: TileEntry, at: number): HTMLElement {
+  const app = ctx.state.apps.find((one) => one.id === NEW);
+  // The item keeps the title's own capitals; Terminal writes it in lower case.
+  const title = named(entry.item?.title ?? entry.label ?? "");
+  return h(
+    "button",
+    {
+      class: "poster-card",
+      "data-focus": true,
+      "data-action": `new-${at}`,
+      onclick: () => app && entry.item && void openEntry(ctx, app, entry.item),
+    },
+    entry.image && app ? h("img", { class: "poster-image", src: daemon.image(app.id, entry.image), alt: "" }) : h("span", { class: "poster-image poster-none" }),
+    h("span", { class: "poster-title" }, title),
+    entry.caption ? h("span", { class: "poster-caption" }, said(entry.caption)) : null,
+  );
+}
+
+export function newWeek(ctx: Ctx): View {
+  const terminal = lookId() === "terminal";
+  const head = h("div", { class: "page-head" });
+  const row = h("div", { class: "poster-row", "data-scroll": true });
+  const draw = (data: TileData | null) => {
+    const entries = (data?.entries ?? []).filter((entry) => entry.item);
+    const n = entries.length;
+    const line = n ? `${terminal ? String(n) : COUNT[n] ?? String(n)} new across your apps` : (data?.headline?.caption ?? "looking for what's new");
+    head.replaceChildren(h("div", {}, ...heading("tv new", "new this week."), h("p", { class: "page-line" }, said(line))));
+    row.replaceChildren(...entries.map((entry, at) => card(ctx, entry, at)));
+    // With no key or no region yet, an adult goes to its settings from here.
+    if (!n && ctx.state.viewer.role === "adult" && data?.headline?.caption) {
+      row.append(h("button", { class: "button", "data-focus": true, "data-action": "new-settings", onclick: () => ctx.go("settings/tmdb") }, said("set it up in settings →")));
+    }
+  };
+  draw(last);
+  const el = h("div", { class: "screen" }, h("div", { class: "page new-week" }, head, row), bar(ctx, "new this week"));
+  void daemon
+    .tile(NEW, "l")
+    .then((data) => {
+      const had = row.childElementCount > 0;
+      last = data;
+      if (!el.isConnected) return;
+      const at = ctx.focus.get()?.dataset.action;
+      draw(data);
+      const again = at ? el.querySelector<HTMLElement>(`[data-action="${at}"]`) : null;
+      const first = row.querySelector<HTMLElement>("[data-focus]") ?? undefined;
+      ctx.focus.setRoot(el, had ? (again ?? first) : first);
+    })
+    .catch(() => {});
+  return { el, first: row.querySelector<HTMLElement>("[data-focus]") ?? undefined };
+}

@@ -10,7 +10,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
 import { pagePermissions } from "../apps/contract/page.ts";
-import { pin, problem, type Placed, type Size } from "../launcher/layout.ts";
+import { GRID, GRID_MORE, pin, problem, type Grid, type Placed, type Size } from "../launcher/layout.ts";
 import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
 import type { Ledger, WatchRow } from "./ledger.ts";
@@ -134,15 +134,27 @@ const PIN_SIZE: Record<string, Size> = { [NEW_APP]: "l" };
 // A tile pinned in the first place it fits: a built-in that's pinned large
 // at the largest of its sizes that fits, from that one down, and anything
 // else small.
-function pinBuiltin(layout: Placed[], id: string, sizes: Size[] = ["s"]): Placed[] | null {
+function pinBuiltin(layout: Placed[], id: string, sizes: Size[] = ["s"], grid: Grid = GRID): Placed[] | null {
   const want = PIN_SIZE[id];
-  if (!want) return pin(layout, id);
+  if (!want) return pin(layout, id, "s", grid);
   for (const size of (["l", "m", "s"] as Size[]).slice((["l", "m", "s"] as Size[]).indexOf(want))) {
     if (!sizes.includes(size)) continue;
-    const placed = pin(layout, id, size);
+    const placed = pin(layout, id, size, grid);
     if (placed) return placed;
   }
   return null;
+}
+
+// Where each grid's layouts are kept: the 4 × 3 one where they always were,
+// and Terminal's 5 × 4 one beside it.
+function layoutFile(grid: Grid): string {
+  return grid.columns === GRID.columns && grid.rows === GRID.rows ? "layouts.json" : `layouts-${grid.columns}x${grid.rows}.json`;
+}
+
+// The grid a request asks for by name: "5x4" for Terminal at more on screen,
+// and 4 × 3 for anything else.
+export function gridNamed(name: unknown): Grid {
+  return name === "5x4" ? GRID_MORE : GRID;
 }
 
 export interface TvSettings {
@@ -234,6 +246,9 @@ export interface HomeOptions {
   // What the TV is for, from setup (ADR-006): Music is on home from the
   // start when it's music, and New this week when it's streaming.
   goal?: () => Promise<string | null>;
+  // Whether the three looks are switched on (ADR-063). With them, home has
+  // no all apps tile, and Clock isn't pinned until someone pins it.
+  looks?: () => Promise<boolean>;
   // New this week's tile, which the daemon draws from TMDB (S8.1).
   newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   // Something home shows changed by itself: a site's icon came, say.
@@ -291,6 +306,7 @@ export class Home {
   private log: (line: string) => void;
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
   private goal?: () => Promise<string | null>;
+  private looksOn?: () => Promise<boolean>;
   private pageTile?: (id: string) => Promise<unknown>;
   private newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
   private dataDirs: string[];
@@ -305,6 +321,7 @@ export class Home {
     this.log = options.log ?? (() => {});
     this.viewerOf = options.viewer;
     this.goal = options.goal;
+    this.looksOn = options.looks;
     this.pageTile = options.pageTile;
     this.newTile = options.newTile;
     this.dataDirs = options.dataDirs ?? DATA_DIRS;
@@ -795,28 +812,43 @@ export class Home {
   // that have gone are dropped. A built-in is pinned for each viewer once,
   // when there's room (ADR-015), so a box from before it gets it too; one the
   // viewer unpins stays off. A child's has only the apps children can open.
-  async layout(viewer: string, role: Viewer["role"] = "adult"): Promise<Placed[]> {
-    const saved = (await readJson<Record<string, Placed[]>>(join(this.state, "layouts.json"), {}))[viewer];
+  //
+  // With the three looks on (ADR-063), the all apps tile goes from every
+  // layout, saved ones included, since Apps is one press from home in every
+  // look. And Clock leaves the layout of anyone who never changed theirs: the
+  // time is in each look's bar now. Someone who arranged home keeps Clock
+  // where they put it.
+  //
+  // Terminal at more on screen has a 5 × 4 grid with a layout of its own
+  // (D6, Q200). Until the viewer arranges that one, it's the 4 × 3 one they
+  // arranged, in the same places, or every app in order if they never did.
+  // Built-ins are pinned for a viewer once, on the 4 × 3 grid.
+  async layout(viewer: string, role: Viewer["role"] = "adult", grid: Grid = GRID): Promise<Placed[]> {
+    const more = grid.columns === GRID_MORE.columns && grid.rows === GRID_MORE.rows;
+    const saved =
+      (await readJson<Record<string, Placed[]>>(join(this.state, layoutFile(grid)), {}))[viewer] ??
+      (more ? (await readJson<Record<string, Placed[]>>(join(this.state, layoutFile(GRID)), {}))[viewer] : undefined);
     const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
     const goal = (await this.goal?.().catch(() => null)) ?? null;
-    const first = [...PINNED, ...(GOAL_PINS[goal ?? ""] ?? [])];
+    const looks = (await this.looksOn?.().catch(() => false)) ?? false;
+    const first = [...(looks ? PINNED.filter((id) => id !== CLOCK) : PINNED), ...(GOAL_PINS[goal ?? ""] ?? [])];
     const builtins = all.filter((id) => first.includes(id));
     const unpinned = all.filter((id) => !first.includes(id));
     const pinned = await readJson<Record<string, string[]>>(join(this.state, "builtins-pinned.json"), {});
-    const fresh = builtins.filter((id) => !(pinned[viewer] ?? []).includes(id));
+    const fresh = more ? [] : builtins.filter((id) => !(pinned[viewer] ?? []).includes(id));
     if (saved) {
-      let kept = saved.filter((tile) => sizes.has(tile.id));
-      if (!problem(kept, (id) => sizes.get(id))) {
+      let kept = saved.filter((tile) => sizes.has(tile.id) && !(looks && tile.id === APPS_TILE));
+      if (!problem(kept, (id) => sizes.get(id), grid)) {
         if (fresh.length === 0) return kept;
-        for (const id of fresh) kept = pinBuiltin(kept, id, sizes.get(id)) ?? kept;
+        for (const id of fresh) kept = pinBuiltin(kept, id, sizes.get(id), grid) ?? kept;
         await this.markPinned(viewer, fresh, kept);
         return kept;
       }
     }
     let layout: Placed[] = [];
-    for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(APPS_TILE)) {
-      layout = pinBuiltin(layout, id, sizes.get(id)) ?? layout;
+    for (const id of [...sizes.keys()].filter((id) => id !== APPS_TILE && !unpinned.includes(id)).concat(looks ? [] : [APPS_TILE])) {
+      layout = pinBuiltin(layout, id, sizes.get(id), grid) ?? layout;
     }
     if (fresh.length) await this.markPinned(viewer, fresh, saved ? layout : undefined);
     return layout;
@@ -836,14 +868,15 @@ export class Home {
     await writeJson(join(this.state, "builtins-pinned.json"), pinned);
   }
 
-  async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult"): Promise<string | null> {
+  async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult", grid: Grid = GRID): Promise<string | null> {
     const sizes = await this.sizesById({ id: viewer, role });
-    const why = problem(layout, (id) => sizes.get(id));
+    const why = problem(layout, (id) => sizes.get(id), grid);
     if (why) return why;
     await mkdir(this.state, { recursive: true });
-    const all = await readJson<Record<string, Placed[]>>(join(this.state, "layouts.json"), {});
+    const file = join(this.state, layoutFile(grid));
+    const all = await readJson<Record<string, Placed[]>>(file, {});
     all[viewer] = (layout as Placed[]).map(({ id, x, y, size }) => ({ id, x, y, size }));
-    await writeJson(join(this.state, "layouts.json"), all);
+    await writeJson(file, all);
     return null;
   }
 

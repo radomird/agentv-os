@@ -24,7 +24,8 @@ function rules(file: string) {
 
 test("S2.18 the owner (wheel) may restart and power off from the TV session, with other sessions open, never past a block", () => {
   const power = rules("50-agentv-power.rules");
-  for (const id of ["power-off", "power-off-multiple-sessions", "reboot", "reboot-multiple-sessions"]) {
+  // T2.2: and ask for the boot menu on the next boot, before restarting.
+  for (const id of ["power-off", "power-off-multiple-sessions", "reboot", "reboot-multiple-sessions", "set-reboot-to-boot-loader-menu"]) {
     assert.equal(power(`org.freedesktop.login1.${id}`, ["wheel"]), YES, id);
     assert.equal(power(`org.freedesktop.login1.${id}`, ["users"]), null, `${id} isn't for someone outside wheel`);
   }
@@ -32,6 +33,15 @@ test("S2.18 the owner (wheel) may restart and power off from the TV session, wit
     assert.equal(power(`org.freedesktop.login1.${id}`, ["wheel"]), null, `${id} is polkit's own call`);
   }
   assert.equal(power("org.freedesktop.systemd1.manage-units", ["wheel"], { verb: "start", unit: "poweroff.target" }), null);
+});
+
+test("T2.1 the owner may start the boot splash's release from the TV session, and nothing else with it", () => {
+  const splash = rules("50-agentv-splash.rules");
+  const unit = (verb: string, name: string, groups = ["wheel"]) => splash("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
+  assert.equal(unit("start", "agentv-boot-splash-release.service"), YES);
+  assert.equal(unit("start", "agentv-boot-splash-release.service", ["users"]), null);
+  assert.equal(unit("stop", "agentv-boot-splash-release.service"), null);
+  assert.equal(unit("start", "plymouth-quit.service"), null);
 });
 
 test("the update rule still allows only starting the three update units", () => {

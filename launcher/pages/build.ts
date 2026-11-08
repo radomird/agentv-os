@@ -12,6 +12,7 @@
 import { daemon, type App, type BuildsState, type BuildView } from "../api.ts";
 import { h } from "../dom.ts";
 import { firstFree } from "../layout.ts";
+import { currentGrid } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, placeTile } from "./home.ts";
 import { bar, heading } from "./parts.ts";
@@ -122,7 +123,7 @@ export function buildTile(ctx: Ctx, b: BuildView): HTMLElement {
 export function homeBuildTile(ctx: Ctx): HTMLElement | null {
   const b = underway()[0];
   if (!b) return null;
-  const place = firstFree(ctx.state.layout, "s");
+  const place = firstFree(ctx.state.layout, "s", "", currentGrid());
   if (!place) return null;
   const el = buildTile(ctx, b);
   placeTile(el, { id: b.build, size: "s", ...place });
