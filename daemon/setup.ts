@@ -1,48 +1,86 @@
-// TV setup (stage 5, PHASE-1-PLAN.md "Setup flow"): which step the TV is on
-// and what the household chose, kept in setup.json in the daemon's own state,
-// so setup picks up at the same step after a restart, an update or a reboot
-// (ADR-025, S5.6). The TV's setup page moves it on, a step at a time;
-// `agentv setup skip` marks it done, and `agentv setup reset` starts it again
-// from the welcome screen.
+// TV setup (stage 5, PHASE-1-PLAN.md "Setup flow"; reworked in phase 2):
+// which step the TV is on and what the household chose, kept in setup.json
+// in the daemon's own state, so setup picks up at the same step after a
+// restart, an update or a reboot (ADR-025, S5.6). The TV's setup page moves
+// it on, a step at a time; `agentv setup skip` marks it done, and `agentv
+// setup reset` starts it again from the welcome screen.
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
-import type { Feature, Features } from "./features.ts";
+import type { Feature } from "./features.ts";
 import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 
-// The steps, in order. The welcome screen covers the Wi-Fi and pairing,
-// getting ready brings the box up to date first (board 35), the country
-// confirms the installer's time zone's or picks another (ADR-055), the AI
-// provider comes with its terms (ADR-023), then who watches (ADR-009), what
-// the TV is for, its apps (board 09), its look (board 12) and its
-// background (board 13). Your box (ADR-061) comes right after getting ready.
-export const STEPS = ["welcome", "ready", "box", "country", "ai", "people", "goal", "apps", "theme", "background"] as const;
-export type Step = (typeof STEPS)[number];
+// One screen of setup's order: its id, its place among setup's 12 steps
+// (ADR-071), what the status bar calls that step, and the switch it waits
+// for, when it has one. A step whose switch is off isn't shown, and setup
+// goes past it.
+export interface StepEntry {
+  step: string;
+  n: number;
+  name: string;
+  feature?: Feature;
+}
 
-// How the status bar counts the steps: six parts, as on the canvas, with the
-// welcome screen and getting ready both the first.
-export const PARTS: Record<Step, string> = {
+// Setup's order. Steps 1 and 2, the disk and the install, are on the USB
+// stick, so the TV starts at 3, and 12 is home. Each screen is one line here,
+// and one in setup/steps.ts: another track adds its step in its slot below,
+// in both places.
+//
+// The welcome screen is getting ready's code for a phone, until one joins.
+// Getting ready brings the box up to date first (board 35), location
+// confirms where the TV is (ADR-055), the AI provider comes with its terms
+// (ADR-023), then who watches (ADR-009), what the TV is for, its apps, and
+// its theme and background.
+export const ORDER = [
+  { step: "welcome", n: 3, name: "getting ready" },
+  { step: "ready", n: 3, name: "getting ready" },
+  { step: "box", n: 4, name: "your box", feature: "boxcheck" },
+  { step: "country", n: 5, name: "location" },
+  { step: "ai", n: 6, name: "ai" },
+  { step: "people", n: 7, name: "who watches" },
+  { step: "goal", n: 8, name: "goal" },
+  // 9, apps: the starter pack (track 9) and the servers found (track 10)
+  // are pages of it, in setup/steps.ts.
+  { step: "apps", n: 9, name: "apps" },
+  // 10, look and size: track 5's look, and track 4's sizes join its page.
+  { step: "look", n: 10, name: "look and size", feature: "looks" },
+  { step: "theme", n: 11, name: "theme and background" },
+  { step: "background", n: 11, name: "theme and background" },
+] as const satisfies readonly StepEntry[];
+export const OF = 12;
+
+export type Step = (typeof ORDER)[number]["step"];
+export const STEPS: readonly Step[] = ORDER.map((entry) => entry.step);
+
+// How phase 1's status bar counts the steps, while setup's own switch is
+// off: six parts, as on that canvas, with the welcome screen and getting
+// ready both the first. A step phase 1 didn't have shows its name.
+export const PARTS: Partial<Record<Step, string>> = {
   welcome: "1/6 connect",
   ready: "1/6 getting ready",
-  box: "1/6 your box",
   country: "1/6 country",
   ai: "2/6 ai",
   people: "3/6 people",
   goal: "4/6 goal",
   apps: "5/6 apps",
+  look: "6/6 look",
   theme: "6/6 look",
   background: "6/6 look",
 };
 
+// What the status bar says for each step that's shown: "5 of 12 ·
+// location" with setup's own switch on, and phase 1's parts with it off.
+// With the switch on, each step's number, for its row of blocks.
+export interface Progress {
+  steps: Step[];
+  parts: Partial<Record<Step, string>>;
+  numbers: Partial<Record<Step, number>> | null;
+  of: number;
+}
+
 // What the TV is for (ADR-006): it orders the apps setup suggests and picks
 // home's top rail.
-// A step that shows only while its feature switch is on (daemon/features.ts).
-// The others always show.
-export const STEP_FEATURES: Partial<Record<Step, Feature>> = {
-  box: "boxcheck",
-};
-
 export const GOALS = ["streaming", "music", "media", "gaming"] as const;
 export type Goal = (typeof GOALS)[number];
 
@@ -79,6 +117,9 @@ export interface SetupState {
   wishes: string[];
   // The setup soundtrack muted, from the TV's M or the phone (S5.4).
   muted: boolean;
+  // The time zone of the phone setting it up, as the captive page or the
+  // companion sent it, which the location step starts from (ADR-059).
+  phoneZone: string | null;
 }
 
 // How many wishes setup keeps, and how long each may be.
@@ -93,6 +134,7 @@ export interface NetworkState {
   name: string | null;
 }
 
+const ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
 const AT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/;
 // A package version, or "dev" for a checkout.
 const VERSION = /^[0-9A-Za-z][0-9A-Za-z.+_~-]{0,63}$/;
@@ -102,7 +144,7 @@ function now(): string {
 }
 
 function fresh(): SetupState {
-  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [], muted: false };
+  return { done: false, step: "welcome", finished: {}, keyboard: false, goal: null, ready: { asked: null, update: null, from: null, to: null }, wishes: [], muted: false, phoneZone: null };
 }
 
 // The box's network, from its interfaces: a wired or Wi-Fi address that
@@ -119,20 +161,36 @@ export function network(hotspot: HotspotState, interfaces: ReturnType<typeof net
 
 export class Setup {
   private path: string;
-  private features?: Features;
+  private on: (feature: Feature) => Promise<boolean>;
+  private order: readonly StepEntry[];
 
-  constructor(options: { path: string; features?: Features }) {
+  // The switches come from daemon/features.ts. Tests can give an order of
+  // their own, as with a step behind a switch.
+  constructor(options: { path: string; on?: (feature: Feature) => Promise<boolean>; order?: readonly StepEntry[] }) {
     this.path = options.path;
-    this.features = options.features;
+    this.on = options.on ?? (async () => false);
+    this.order = options.order ?? ORDER;
   }
 
-  // The steps this box shows: every step, less those whose feature is off.
+  // The steps shown, in order: every step whose switch, if it has one, is on.
   async steps(): Promise<Step[]> {
-    const on = this.features ? await this.features.all() : null;
-    return STEPS.filter((step) => {
-      const feature = STEP_FEATURES[step];
-      return !feature || Boolean(on?.[feature]);
-    });
+    const shown: Step[] = [];
+    for (const entry of this.order) if (!entry.feature || (await this.on(entry.feature))) shown.push(entry.step as Step);
+    return shown;
+  }
+
+  async progress(): Promise<Progress> {
+    const steps = await this.steps();
+    const counted = await this.on("setup2");
+    const parts: Partial<Record<Step, string>> = {};
+    const numbers: Partial<Record<Step, number>> = {};
+    for (const entry of this.order) {
+      const step = entry.step as Step;
+      if (!steps.includes(step)) continue;
+      parts[step] = counted ? `${entry.n} of ${OF} · ${entry.name}` : (PARTS[step] ?? entry.name);
+      numbers[step] = entry.n;
+    }
+    return { steps, parts, numbers: counted ? numbers : null, of: OF };
   }
 
   // What setup.json holds. One from before stage 5 had only done and at.
@@ -143,20 +201,24 @@ export class Setup {
     } catch {
       return fresh();
     }
+    const steps = await this.steps();
     const state = fresh();
     state.done = data.done === true;
     if (typeof data.at === "string" && AT.test(data.at)) state.at = data.at;
-    if (STEPS.includes(data.step as Step)) state.step = data.step as Step;
+    const known = this.order.map((entry) => entry.step as Step);
+    if (known.includes(data.step as Step)) state.step = data.step as Step;
     const finished = (data.finished ?? {}) as Record<string, unknown>;
-    for (const step of STEPS) if (typeof finished[step] === "string" && AT.test(finished[step] as string)) state.finished[step] = finished[step] as string;
-    // A box that was past getting ready when an update brought the country
-    // step, or the box step, keeps going: the country stays its time zone's,
-    // which Settings → country can change, and Settings → About has the box.
-    for (const added of ["country", "box"] as const) {
-      if (!state.finished[added] && STEPS.slice(STEPS.indexOf(added) + 1).some((step) => state.finished[step] || state.step === step)) {
-        state.finished[added] = state.finished.ready ?? now();
-      }
-    }
+    for (const step of known) if (typeof finished[step] === "string" && AT.test(finished[step] as string)) state.finished[step] = finished[step] as string;
+    // A step the box was already past when it came (an update brought it, as
+    // with the country step, or its switch turned on) counts as finished:
+    // Settings has the same choice.
+    steps.forEach((step, i) => {
+      if (state.finished[step] || !steps.slice(i + 1).some((later) => state.finished[later] || state.step === later)) return;
+      state.finished[step] = (i > 0 ? state.finished[steps[i - 1]] : undefined) ?? now();
+    });
+    // A step that isn't shown any more, as when its switch turned off: on to
+    // the first one shown that isn't finished.
+    if (!steps.includes(state.step)) state.step = steps.find((step) => !state.finished[step]) ?? steps[steps.length - 1];
     state.keyboard = data.keyboard === true;
     if (GOALS.includes(data.goal as Goal)) state.goal = data.goal as Goal;
     const ready = (data.ready ?? {}) as Record<string, unknown>;
@@ -167,6 +229,7 @@ export class Setup {
       to: typeof ready.to === "string" && VERSION.test(ready.to) ? ready.to : null,
     };
     state.muted = data.muted === true;
+    if (typeof data.phoneZone === "string" && ZONE.test(data.phoneZone)) state.phoneZone = data.phoneZone;
     if (Array.isArray(data.wishes)) state.wishes = data.wishes.filter((w): w is string => typeof w === "string" && WISH.test(w)).slice(0, WISHES);
     return state;
   }
@@ -199,8 +262,8 @@ export class Setup {
     return { state: await this.save(state) };
   }
 
-  // A step finished: setup moves on to the next. The last one finished
-  // leaves setup on it, for the page to mark setup done.
+  // A step finished: setup moves on to the next one shown. The last one
+  // finished leaves setup on it, for the page to mark setup done.
   async finish(step: unknown, change: { keyboard?: unknown } = {}): Promise<{ state?: SetupState; error?: string }> {
     const steps = await this.steps();
     if (!steps.includes(step as Step)) return { error: `a step: ${steps.join(", ")}` };
@@ -259,6 +322,14 @@ export class Setup {
     if (left.length === state.wishes.length) return;
     state.wishes = left;
     await this.save(state);
+  }
+
+  // The phone's time zone, once daemon/location.ts has checked it. The
+  // latest phone's counts.
+  async setPhoneZone(zone: string): Promise<SetupState> {
+    const state = await this.read();
+    state.phoneZone = ZONE.test(zone) ? zone : null;
+    return this.save(state);
   }
 
   // The soundtrack muted or playing again.

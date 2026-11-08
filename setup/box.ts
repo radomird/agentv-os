@@ -27,7 +27,7 @@ export async function yourBox(ctx: Ctx): Promise<View> {
   let stopped = false;
 
   const list = h("div", { class: "box-list" });
-  const draw = () => list.replaceChildren(report ? rows(report, smooth) : h("span", { class: "setup-note" }, "couldn't read the box. setup carries on without it."));
+  const draw = () => list.replaceChildren(report ? rows(report, smooth) : h("p", { class: "setup-line" }, "couldn't read the box. setup carries on without it."));
   const ok = h(
     "button",
     {
@@ -42,12 +42,15 @@ export async function yourBox(ctx: Ctx): Promise<View> {
     "↵ ok",
   );
   const model = report?.model.toLowerCase();
+  const [prompt, headline] = heading("agentv box", "here's your box.", ctx.reduced());
   const el = h(
     "div",
-    { class: "setup-page box-step" },
-    h("div", {}, ...heading("agentv box", "here's your box.", ctx.reduced()), h("div", { class: "setup-note" }, [model, "setup uses this from here on"].filter(Boolean).join(" · "))),
+    { class: "setup-page d3 box-step" },
+    prompt,
+    headline,
+    h("p", { class: "setup-line" }, [model, "setup uses this from here on"].filter(Boolean).join(" · ")),
     list,
-    h("div", {}, ok),
+    h("div", { class: "setup-actions" }, ok),
   );
   draw();
 
@@ -56,7 +59,7 @@ export async function yourBox(ctx: Ctx): Promise<View> {
     running = true;
     smooth = "checking";
     draw();
-    void checkSmooth({ host: el, opacity: 0.12, keepGoing: () => !stopped && el.isConnected }).then(async (state) => {
+    void checkSmooth({ host: el, opacity: 0.12, keepGoing: () => !stopped }).then(async (state) => {
       running = false;
       if (!state || stopped) return;
       smooth = state.passed ? "passed" : "failed";
@@ -68,7 +71,7 @@ export async function yourBox(ctx: Ctx): Promise<View> {
   return {
     el,
     first: ok,
-    info: "↵ ok",
+    info: ctx.info.phones.length ? "phone paired" : "",
     heard(event) {
       // Something about the box changed, such as Widevine arriving: the
       // lines again, unless the test is still running.

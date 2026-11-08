@@ -4,6 +4,7 @@
 // (ADR-009).
 
 import { daemon, screen } from "../api.ts";
+import { named } from "../looks/looks.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, openBuiltin } from "./home.ts";
@@ -93,8 +94,8 @@ export function details(ctx: Ctx, id: string): View {
         h(
           "div",
           {},
-          h("div", { class: "prompt" }, h("b", {}, "~"), ` $ tv app ${app.name.toLowerCase()}`),
-          h("h1", { class: "headline" }, app.name.toLowerCase()),
+          h("div", { class: "prompt" }, h("b", {}, "~"), ` $ tv app ${named(app.name)}`),
+          h("h1", { class: "headline" }, named(app.name)),
           h("div", { class: "maker" }, app.maker),
         ),
       ),

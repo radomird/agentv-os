@@ -63,8 +63,10 @@ import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import type { Item } from "../apps/contract/contract.ts";
-import { RemoteInput } from "./remote.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { RemoteInput, sendInput } from "./remote.ts";
+import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
+import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
 import { answerSay, sayHosts } from "./say-watch.ts";
 import { VoicePlayer } from "./voice-play.ts";
@@ -83,7 +85,13 @@ export const HOME_URL = "http://127.0.0.1:3000/";
 // True once home's page has loaded and its own script has run: the
 // launcher's start, or the welcome page's.
 export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" in window || "agentvWelcome" in window)`;
+// Resolves once the page has drawn two frames.
+export const TWO_FRAMES = "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))";
 export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
+// What Settings → Power does: restart, shut down, or restart to the boot
+// menu, which then waits for a choice (ADR-060).
+export type Power = "restart" | "shutdown" | "bootmenu";
+const POWER: Power[] = ["restart", "shutdown", "bootmenu"];
 // The daemon's filter for home's Chromium (daemon/net-filter.ts).
 export const HOME_PROXY = "http://127.0.0.1:3005";
 export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
@@ -176,9 +184,16 @@ export interface Launcher {
   pinCheck(action: string, grant?: string): Promise<boolean>;
   // Locks the TV until the PIN is entered, once it has been off for a while.
   lock(): Promise<void>;
+  // Ends AgenTV's splash, which covers the TV from the session's start
+  // until home has drawn, when the boot kept it (ADR-060).
+  splashDone?(): void;
   // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
-  // close the windows first. False when it couldn't start.
-  power(what: "restart" | "shutdown"): Promise<boolean>;
+  // close the windows first, or a restart to the boot menu (ADR-060). False
+  // when it couldn't start.
+  power(what: Power): Promise<boolean>;
+  // Whether the boot loader takes a restart to its menu, as Limine does on
+  // a UEFI box, and logind lets the owner ask for one.
+  canBootMenu?(): Promise<boolean>;
   // What there is to install at night, or null when the daemon doesn't
   // answer, and the install asked for tonight is done with.
   nightUpdates(): Promise<NightUpdates | null>;
@@ -192,8 +207,12 @@ export interface Launcher {
   // The terminal screensaver, Omarchy's effect in a foot of its own.
   screensaver(): App;
   // Tells AgenTV's daemon what's in front and whether something plays, for
-  // the phone's remote to follow (ADR-037).
-  tvContext(change: { front: "home" | "app"; playing: boolean }): Promise<void>;
+  // the phone's remote to follow (ADR-037), and the field with the focus in
+  // the app in front, when there is one (ADR-065).
+  tvContext(change: { front: "home" | "app"; playing: boolean; appField?: object }): Promise<void>;
+  // The typing bar over the app in front, with what the phone is typing, or
+  // gone with null (ADR-065). Home draws its own.
+  typingBar?(bar: Bar | null): Promise<void>;
   // Stops Omarchy's shell, its bar and everything else it draws, and
   // nothing of AgenTV's: the shell from $OMARCHY_PATH/shell, by its config.
   stopOmarchyShell(): Promise<void>;
@@ -247,6 +266,8 @@ export interface Playback {
   opened(id: string, page?: PageBroker): void;
   closed(id: string): void;
   play?(id: string, item: unknown): void;
+  // One of the app's playback calls, for the phone's play and pause.
+  call?(id: string, path: string): Promise<unknown>;
 }
 
 // What asks an app with signIn whether it's signed in (signin.ts).
@@ -378,7 +399,7 @@ export class Screen {
   private tvWatch: ReturnType<typeof setInterval> | null = null;
   private contextWatch: ReturnType<typeof setInterval> | null = null;
   private contextMs: number;
-  private context = { said: "", at: 0, busy: false };
+  private context = { said: "", at: 0, busy: false, again: false };
   private ending = false;
   private stoppingShell = false;
   private chain: Promise<void> = Promise.resolve();
@@ -464,9 +485,26 @@ export class Screen {
   // What's in front, an app or home, and whether something plays: an app's
   // page or Music. The daemon hears when it changes, and every 30 s besides,
   // so a daemon that restarted hears it too (ADR-037).
+  //
+  // An app's page says when its focus moves (remote-page.ts), and this looks
+  // again then: a look asked for while one is going runs once it's done.
   async tellContext(): Promise<void> {
-    if (this.context.busy) return;
+    if (this.context.busy) {
+      this.context.again = true;
+      return;
+    }
     this.context.busy = true;
+    try {
+      do {
+        this.context.again = false;
+        await this.tellContextOnce();
+      } while (this.context.again);
+    } finally {
+      this.context.busy = false;
+    }
+  }
+
+  private async tellContextOnce(): Promise<void> {
     try {
       const front = this.front();
       const app = Boolean(front && front.role !== "home") && !this.ambient;
@@ -477,7 +515,8 @@ export class Screen {
         const now = (await this.music.handle({ op: "now" }).catch(() => null)) as { now?: { playing?: boolean } | null } | null;
         playing = now?.now?.playing === true;
       }
-      const change = { front: app ? ("app" as const) : ("home" as const), playing };
+      const appField = app ? await this.appField() : null;
+      const change = { front: app ? ("app" as const) : ("home" as const), playing, ...(appField ? { appField } : {}) };
       const said = JSON.stringify(change);
       if (said === this.context.said && this.now() - this.context.at < 30_000) return;
       await this.launcher.tvContext(change);
@@ -485,9 +524,65 @@ export class Screen {
       this.context.at = this.now();
     } catch {
       // The daemon isn't there right now; it hears at the next look.
-    } finally {
-      this.context.busy = false;
     }
+  }
+
+  // The field with the focus in the page of the app in front, with the app,
+  // or null: a native app's can't be seen.
+  private async appField(): Promise<object | null> {
+    const front = this.typingFront();
+    if (front?.kind !== "page" || !front.overlay) return null;
+    const field = await Promise.race([front.evaluate(FIELD).catch(() => null), sleep(500).then(() => null)]);
+    return field && typeof field === "object" ? { ...field, app: front.id } : null;
+  }
+
+  // What's in front for the phone's typing (daemon/remote-text.ts): home's
+  // page, an app's page or the share browser's, to type in through
+  // Chromium, or a native window, for keystrokes. Nothing while the ambient
+  // screen is up.
+  typingFront(): TypingFront {
+    if (this.ambient) return null;
+    const front = this.front();
+    if (!front || front.role === "home") {
+      const home = this.apps.get("home")?.cdp;
+      return home ? { kind: "page", id: "home", overlay: false, evaluate: (expression) => home.evaluate(HOME_URL, expression) } : null;
+    }
+    if (front.role === "screensaver") return null;
+    const web = this.apps.get("web")?.cdp;
+    const entry = this.opens.find((o) => o.address === front.address && o.target);
+    if (front.role === "web" && web && entry?.target) {
+      const target = entry.target;
+      return { kind: "page", id: entry.id, overlay: true, evaluate: (expression) => web.evaluateIn(target, expression) };
+    }
+    const share = this.apps.get("share")?.cdp;
+    if (front.role === "share" && share) {
+      return {
+        kind: "page",
+        id: "share",
+        overlay: true,
+        evaluate: async (expression) => {
+          const page = (await share.pages()).at(-1);
+          if (!page) throw new Error("the share browser has no page");
+          return share.evaluateIn(page.targetId, expression);
+        },
+      };
+    }
+    return { kind: "native", id: front.address, overlay: true };
+  }
+
+  // What's in front for the phone's play and pause (daemon/remote-play.ts):
+  // an app's page, with the app's own playback calls, home with its player
+  // and Music, or a native window, for the media key.
+  playbackFront(): PlaybackFront {
+    const front = this.typingFront();
+    if (!front || front.kind === "native") return front && { kind: "native", id: front.id };
+    if (front.id === "home") {
+      const music = this.music;
+      return { kind: "home", evaluate: front.evaluate, music: music ? (request) => music.handle(request) : undefined };
+    }
+    const playback = this.playback;
+    const id = front.id;
+    return { kind: "page", id, evaluate: front.evaluate, app: playback?.call ? (path) => playback.call!(id, path) : undefined };
   }
 
   // Stops the timers, for the tests.
@@ -807,12 +902,26 @@ export class Screen {
     while (Date.now() - started < this.homeCheckMs) {
       if (this.ending || this.apps.get("home") !== app) return;
       const up = await Promise.race([app.cdp.evaluate(HOME_URL, HOME_UP).catch(() => false), sleep(every).then(() => false)]);
-      if (up === true) return;
+      if (up === true) {
+        void this.homeDrawn(app);
+        return;
+      }
       await sleep(every);
     }
     if (this.ending || this.apps.get("home") !== app) return;
     this.log(`the home screen's page didn't come up in ${Math.round(this.homeCheckMs / 1000)} s; starting it again`);
     app.stop();
+  }
+
+  // Home's page is up: once it has drawn a frame or two, under AgenTV's
+  // splash when the boot kept it (ADR-060), the splash goes and home shows,
+  // whole. A page that draws no frame lets it go after two seconds anyway.
+  private async homeDrawn(app: App): Promise<void> {
+    if (!app.cdp) return;
+    await Promise.race([app.cdp.evaluate(HOME_URL, TWO_FRAMES).catch(() => null), sleep(2000)]);
+    if (this.ending || this.apps.get("home") !== app) return;
+    this.log("home's page has drawn, so the splash goes");
+    this.launcher.splashDone?.();
   }
 
   // Gives the home screen window.agentvScreen, over its DevTools pipe, once
@@ -911,6 +1020,9 @@ export class Screen {
       // countdown (ADR-033).
       case "power":
         return this.power(request.what);
+      // Whether Power offers a restart to the boot menu (ADR-060).
+      case "boot-menu":
+        return { ok: true, can: (await this.launcher.canBootMenu?.().catch(() => false)) ?? false };
       // Setup's AI step, once an adult accepted the provider's terms.
       case "cli-install":
         return this.installCli();
@@ -925,11 +1037,13 @@ export class Screen {
   // Restarts the box or shuts it down, through Omarchy's own commands. Never
   // while an update runs (ADR-025). From home it's past the PIN already.
   async power(what: unknown): Promise<object> {
-    if (what !== "restart" && what !== "shutdown") return { ok: false, error: "power restart or shutdown" };
+    if (!POWER.includes(what as Power)) return { ok: false, error: "power restart, shutdown or bootmenu" };
+    const power = what as Power;
     if (await this.launcher.updating()) return { ok: false, error: "not while an update runs" };
-    this.log(what === "restart" ? "restarting the box from settings → power" : "shutting the box down from settings → power");
-    if (await this.launcher.power(what)) return { ok: true };
-    return { ok: false, error: what === "restart" ? "the box couldn't restart" : "the box couldn't shut down" };
+    const said = { restart: "restarting the box", shutdown: "shutting the box down", bootmenu: "restarting the box to its boot menu" }[power];
+    this.log(`${said} from settings → power`);
+    if (await this.launcher.power(power)) return { ok: true };
+    return { ok: false, error: power === "shutdown" ? "the box couldn't shut down" : "the box couldn't restart" };
   }
 
   // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
@@ -997,6 +1111,12 @@ export class Screen {
   async settings(section: string): Promise<object> {
     if (!/^[a-z-]*$/.test(section)) return { ok: false, error: "which section of settings" };
     return this.goHome(section ? `settings/${section}` : "settings", "agentv screen settings");
+  }
+
+  // Apps or Settings from the phone's menu: home comes in front of an app
+  // first, so the page isn't drawn out of sight (ADR-065).
+  phonePage(route: "apps" | "settings"): Promise<object> {
+    return this.goHome(route, "the phone");
   }
 
   // Apps on the TV, or its add an app (agentv screen apps [add]), as from
@@ -1102,10 +1222,15 @@ export class Screen {
       const first = !this.backPressed && at > this.backUp + BACK_SLACK_MS;
       this.backPressed = false;
       this.backUp = Math.max(this.backUp, at);
+      // A tap: its press is under way and short of the hold, or it hasn't
+      // arrived yet.
+      let tapped = first;
       if (at >= this.backDown - BACK_SLACK_MS && this.backTimer) {
         clearTimeout(this.backTimer);
         this.backTimer = null;
+        tapped = true;
       }
+      if (tapped) void this.backTapped();
       if (first && this.front()?.role === "share") void this.closeShare("back");
       return { ok: true };
     }
@@ -1130,6 +1255,20 @@ export class Screen {
       Math.max(0, at + this.backHoldMs - this.now()),
     );
     return { ok: true };
+  }
+
+  // A tap on Back with a web app in front: its page acts on the taps it
+  // sees, and this is its word for the ones it doesn't (BACK_TAP in
+  // daemon/remote-page.ts), such as the one Chromium keeps to leave full
+  // screen.
+  private async backTapped(): Promise<void> {
+    const front = this.front();
+    const web = this.apps.get("web")?.cdp;
+    const entry = front?.role === "web" && !this.ambient ? this.opens.find((o) => o.address === front.address && o.target) : undefined;
+    if (!entry?.target || !web?.evaluateInWorld) return;
+    const did = await web.evaluateInWorld(entry.target, REMOTE_WORLD, BACK_TAP).catch(() => null);
+    if (did === "held") this.log("Back was a tap the page took for a hold: it went back");
+    else if (did === "full screen") this.log("Back was the tap that left full screen: it left the player");
   }
 
   // An app open behind home comes back where it was, playing again if Home
@@ -1730,6 +1869,8 @@ export class Screen {
   // shared link's page gets SHARED_PAGE, with no Back of its own.
   private async remotePage(cdp: DevTools, target: string, source = REMOTE_PAGE): Promise<void> {
     await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
+    // Its focus moving: the phone's keyboard may come up for it (ADR-065).
+    await cdp.bindIn?.(target, FOCUS_BINDING, REMOTE_WORLD, () => void this.tellContext()).catch((error: Error) => this.log(`that page can't say where its focus is: ${error.message}`));
   }
 
   openSteam(id = "steam"): Promise<object> {
@@ -2028,7 +2169,6 @@ function chromium(): string {
 }
 
 // Whether an audio or video element in a page plays.
-const MEDIA_PLAYING = `[...document.querySelectorAll("audio, video")].some((m) => !m.paused && !m.ended)`;
 
 const CHROMIUM_FLAGS = [
   "--ozone-platform=wayland",
@@ -2081,6 +2221,9 @@ async function barLook(): Promise<string[]> {
   look = { at: Date.now(), args };
   return args;
 }
+
+// logind's manager on the system bus, for busctl call.
+const LOGIND = ["org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager"];
 
 export const launcher: Launcher = {
   async homeReady() {
@@ -2156,6 +2299,12 @@ export const launcher: Launcher = {
     return track("steam", child, true);
   },
 
+  splashDone() {
+    spawn("agentv-boot-splash", ["done"], { stdio: "ignore", detached: true })
+      .on("error", () => {})
+      .unref();
+  },
+
   corner(appInFront) {
     return new Promise((resolve, reject) => {
       const args = ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "corner", "front", String(appInFront)];
@@ -2201,6 +2350,19 @@ export const launcher: Launcher = {
     return new Promise((resolve, reject) => {
       execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
+        else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
+        else resolve();
+      });
+    });
+  },
+
+  // The phone's typing bar over the app in front (ADR-065), in the theme's
+  // colours. A password comes as dots already, from the daemon.
+  async typingBar(bar) {
+    const args = bar === null ? ["typing", "hide"] : ["typing", "show", bar.from, bar.text, String(bar.password), ...(await barLook()).slice(0, 3)];
+    return new Promise((resolve, reject) => {
+      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+        if (error) reject(new Error("the overlay didn't answer"));
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
         else resolve();
       });
@@ -2345,7 +2507,16 @@ export const launcher: Launcher = {
     });
   },
 
-  power(what) {
+  async canBootMenu() {
+    // logind answers yes when the boot loader says it takes the request (on
+    // UEFI, Limine sets LoaderFeatures) and polkit lets the owner ask.
+    const answer = await new Promise<string>((resolve) => {
+      execFile("busctl", ["call", ...LOGIND, "CanRebootToBootLoaderMenu"], { timeout: 5000 }, (error, stdout) => resolve(error ? "" : stdout.trim()));
+    });
+    return answer === 's "yes"' || answer === 's "challenge"';
+  },
+
+  async power(what) {
     // Omarchy's command schedules the power-off in this session's systemd,
     // and finds itself again through OMARCHY_PATH, which that systemd
     // doesn't carry. polkit lets the owner do it from there (ADR-033).
@@ -2363,9 +2534,18 @@ export const launcher: Launcher = {
         child.on("exit", (code) => resolve(code === 0));
         child.unref();
       });
-    return run("omarchy-system", [what === "restart" ? "reboot" : "shutdown"]).then(async (done) =>
-      done === "missing" ? (await run(what === "restart" ? "omarchy-system-reboot" : "omarchy-system-shutdown", [])) === true : done,
+    // To the boot menu (ADR-060): logind asks the boot loader for its menu
+    // on the next boot only, with no timeout, so it waits there, then the
+    // box restarts as Restart does. polkit lets the owner ask for it too.
+    // A restart that doesn't happen takes the request back, so the next
+    // ordinary boot doesn't stop on the menu.
+    if (what === "bootmenu" && (await run("busctl", ["call", ...LOGIND, "SetRebootToBootLoaderMenu", "t", "0"])) !== true) return false;
+    const restart = what !== "shutdown";
+    const done = await run("omarchy-system", [restart ? "reboot" : "shutdown"]).then(async (done) =>
+      done === "missing" ? (await run(restart ? "omarchy-system-reboot" : "omarchy-system-shutdown", [])) === true : done,
     );
+    if (!done && what === "bootmenu") await run("busctl", ["call", ...LOGIND, "SetRebootToBootLoaderMenu", "t", "18446744073709551615"]);
+    return done;
   },
 
   async idleMinutes() {
@@ -2614,11 +2794,24 @@ async function main(): Promise<void> {
   sound.start();
   const screen = new Screen({ hyprland: connect(), launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
-  // Install now from a phone, which the daemon let past the PIN.
+  // Install now from a phone, which the daemon let past the PIN. What the
+  // new remote types goes into the field in front as it's typed (ADR-065).
+  const typing = new PhoneTyping({ front: () => screen.typingFront(), keys: (request) => sendInput(request), bar: (bar) => launcher.typingBar!(bar) });
+  const playing = new PhonePlayback({ front: () => screen.playbackFront(), keys: (request) => sendInput(request) });
   new RemoteInput({
     url: `${HOME_URL}api/remote`,
     command: async (cmd) => {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
+      // The phone's menu (ADR-065): home in front, then the page.
+      if (cmd === "apps" || cmd === "settings") await screen.phonePage(cmd);
+    },
+    ask: async (ask) => {
+      if (ask.kind === "text") return typing.text(ask.value, ask.caret, ask.bar);
+      if (ask.kind === "done") return typing.done();
+      // Play and pause, then the phone's remote hears at once what plays.
+      const answer = ask.action === "next" ? await playing.next() : await playing.toggle();
+      void screen.tellContext();
+      return answer;
     },
   }).start();
   // Stage B's asks to see a service's signed-in pages, from the builder.

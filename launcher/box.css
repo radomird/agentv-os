@@ -29,8 +29,14 @@
   color: var(--bright-foreground);
 }
 
-.box-step .setup-note {
-  font-size: 29px;
+/* Setup's box step, as D3 draws it: the lines under the headline, and OK
+   under them. */
+.box-step .box-list {
+  margin-top: 96px;
+}
+
+.box-step .setup-actions {
+  margin-top: 36px;
 }
 
 /* The step's text over the test's scene. */
