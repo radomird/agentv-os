@@ -60,7 +60,7 @@ The same voice, kept short. Write them dev to dev.
 - **The subject says what changed, in plain words,** as a short sentence in the imperative. Keep it to about 60 characters, and leave off the full stop.
 - **The body says why,** in a sentence or two, plus anything a reviewer should know. Leave out a blow-by-blow of the diff.
 - **No inside references in a public repo's subject or title:** no ADR or grilling numbers, and no acceptance ids. Put them in the body if a reviewer needs them. agentv-planning is private, so its commits may use them.
-- **No em dashes,** and end with the trailer the session gives you.
+- **No em dashes,** and no AI attribution: no Co-Authored-By or session trailers, and no "Generated with" line in a pull request.
 
 | Don't write | Write |
 | --- | --- |
