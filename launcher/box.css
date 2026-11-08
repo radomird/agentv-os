@@ -32,11 +32,11 @@
 /* Setup's box step, as D3 draws it: the lines under the headline, and OK
    under them. */
 .box-step .box-list {
-  margin-top: 96px;
+  margin-top: 84px;
 }
 
 .box-step .setup-actions {
-  margin-top: 36px;
+  margin-top: 20px;
 }
 
 /* The step's text over the test's scene. */

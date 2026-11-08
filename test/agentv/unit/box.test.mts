@@ -31,7 +31,7 @@ import {
 import { HOTSPOT_ADDRESS } from "../../../daemon/hotspot.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { Setup } from "../../../daemon/setup.ts";
-import { boxLines, summary } from "../../../launcher/box-lines.ts";
+import { boxLines, properUnits, summary } from "../../../launcher/box-lines.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const FIXTURES = join(ROOT, "test/agentv/fixtures/box");
@@ -191,6 +191,13 @@ test("T3.2 setup shows your box as step 4 of 12, after getting ready, only with 
   await on.finish("welcome");
   assert.equal((await on.finish("ready")).state?.step, "box");
   assert.equal((await on.finish("box")).state?.step, "country");
+});
+
+test("outside Terminal's lower case, the units are written as they should be", () => {
+  assert.equal(properUnits("4k tv · panasonic · 60 hz"), "4K tv · panasonic · 60 Hz");
+  assert.equal(properUnits("only 20 gb free · 1.6 tb free"), "only 20 GB free · 1.6 TB free");
+  assert.equal(properUnits("wi-fi · 433 mbps · 1 gbps"), "wi-fi · 433 Mbps · 1 Gbps");
+  assert.equal(properUnits("1080p tv"), "1080p tv", "1080p is written so everywhere");
 });
 
 // --- The readers, on a made-up machine --------------------------------------

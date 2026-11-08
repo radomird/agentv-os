@@ -547,6 +547,9 @@ export interface ReadOptions {
   // The folder whose free space counts: where AgenTV keeps its things.
   disk?: string;
   widevine?: string | null;
+  // A stand-in machine for the screen tests: recorded readings, read in
+  // place of this one's.
+  machine?: Omit<Readings, "widevine">;
 }
 
 async function text(path: string): Promise<string> {
@@ -789,6 +792,7 @@ export class Box {
 
   // Everything the box check reads, as `agentv box readings` prints it.
   async readings(): Promise<Readings> {
+    if (this.options.machine) return { ...structuredClone(this.options.machine), widevine: (await this.saved()).widevine };
     const root = this.root;
     this.fixed ??= readFixed(root);
     const run = this.options.exec ?? exec;

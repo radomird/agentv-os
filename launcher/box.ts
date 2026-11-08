@@ -52,6 +52,12 @@ export const box = {
   },
 };
 
+// Whether this page is drawn at 4K now. The test means something only then:
+// on a 4K TV the box shows at 1080p, it waits.
+export function drawsFourK(): boolean {
+  return Math.round(innerWidth * devicePixelRatio) >= 3840;
+}
+
 // How long the test counts, and how long it draws first so the GPU warms up.
 export const SMOOTH_MS = 5000;
 const WARM_MS = 500;
@@ -167,7 +173,7 @@ export async function checkWhileAmbient(host: HTMLElement, ambient: () => boolea
   if (ambientRun) return;
   ambientRun = true;
   try {
-    if (!(await box.on()) || !(await box.smooth()).needed || !ambient()) return;
+    if (!drawsFourK() || !(await box.on()) || !(await box.smooth()).needed || !ambient()) return;
     await checkSmooth({ host, opacity: 0.25, keepGoing: ambient });
   } catch {
     // The daemon will ask again after the next start.

@@ -30,9 +30,9 @@ before(async () => {
   chmodSync(join(tools, "qrencode"), 0o755);
   process.env.PATH = `${tools}:${path}`;
   const wired = { eth0: [{ address: "192.168.1.20", netmask: "255.255.255.0", family: "IPv4", mac: "00:00:00:00:00:01", internal: false, cidr: "192.168.1.20/24" }] };
-  // Setup's own switch on, and the looks', so every step shows. That puts
-  // the box on edge.
-  ({ daemon, url, state } = await startBox(0, undefined, { interfaces: () => wired, zone: "Europe/Amsterdam", features: { setup2: true, looks: true } }));
+  // Setup's own switch on, and the looks' and the box check's, so every step
+  // shows. That puts the box on edge.
+  ({ daemon, url, state } = await startBox(0, undefined, { interfaces: () => wired, zone: "Europe/Amsterdam", features: { setup2: true, looks: true, boxcheck: true } }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 
@@ -45,7 +45,7 @@ after(async () => {
 });
 
 function switches(on: boolean): void {
-  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: on, looks: on }));
+  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: on, looks: on, boxcheck: on }));
 }
 
 // Setup on a step, with every step before it finished.

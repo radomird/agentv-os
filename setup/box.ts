@@ -4,7 +4,7 @@
 // drawn faintly behind the lines, and the box line says how it went. OK
 // before it's done stops it, and the box counts as not checked yet.
 
-import { box, boxStyles, checkSmooth, type BoxReport } from "../launcher/box.ts";
+import { box, boxStyles, checkSmooth, drawsFourK, type BoxReport } from "../launcher/box.ts";
 import { boxLines, type SmoothState } from "../launcher/box-lines.ts";
 import { h } from "../launcher/dom.ts";
 import { heading } from "./frame.ts";
@@ -54,8 +54,8 @@ export async function yourBox(ctx: Ctx): Promise<View> {
   );
   draw();
 
-  // The 4K test, on a 4K TV with no result for this GPU yet.
-  if (report && check?.needed) {
+  // The 4K test, on a 4K TV drawn at 4K, with no result for this GPU yet.
+  if (report && check?.needed && drawsFourK()) {
     running = true;
     smooth = "checking";
     draw();
