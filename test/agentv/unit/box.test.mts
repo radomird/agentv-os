@@ -30,6 +30,7 @@ import {
 } from "../../../daemon/box.ts";
 import { HOTSPOT_ADDRESS } from "../../../daemon/hotspot.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { Setup } from "../../../daemon/setup.ts";
 import { boxLines, summary } from "../../../launcher/box-lines.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -177,6 +178,19 @@ test("T3.1 4K stays smooth only on a 4K test that held 57 fps on this GPU", () =
   const qemu = report(readings("qemu"));
   assert.deepEqual(qemu.tv, { name: "", modes: [], hdr: false, audio: [] }, "no EDID to read");
   assert.equal(boxLines(qemu, "unchecked")[0].value, "couldn't read the tv");
+});
+
+test("T3.2 setup shows your box as step 4 of 12, after getting ready, only with its switch on", async () => {
+  const path = join(scratch, "setup-box", "setup.json");
+  const off = new Setup({ path, on: async (feature) => feature === "setup2" });
+  assert.ok(!(await off.steps()).includes("box"));
+  await off.finish("welcome");
+  assert.equal((await off.finish("ready")).state?.step, "country", "with the switch off, getting ready goes on to the location");
+  const on = new Setup({ path: join(scratch, "setup-box-on", "setup.json"), on: async (feature) => feature === "setup2" || feature === "boxcheck" });
+  assert.equal((await on.progress()).parts.box, "4 of 12 · your box");
+  await on.finish("welcome");
+  assert.equal((await on.finish("ready")).state?.step, "box");
+  assert.equal((await on.finish("box")).state?.step, "country");
 });
 
 // --- The readers, on a made-up machine --------------------------------------
