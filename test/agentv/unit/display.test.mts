@@ -181,16 +181,17 @@ test("a size picked with no TV session running is kept for the next one", async 
   }
 });
 
-test("when the box check finds 4K isn't smooth, the TV moves to 1080p output at once", async () => {
+test("the TV follows the box check and the sizes switch at once: 1080p output when 4K isn't smooth, Hyprland's own with the sizes off", async () => {
   const state = join(base, "follow");
   let smooth: boolean | null = null;
+  let on = true;
   const sent: Record<string, unknown>[] = [];
   const events: string[] = [];
   // The kit's body hands back what's passed as the request, so the test can
   // say it directly.
   const routes = new DisplayRoutes({
     state,
-    sizes: async () => true,
+    sizes: async () => on,
     fourKSmooth: async () => smooth,
     json: (_response, _status, data) => void sent.push(data as Record<string, unknown>),
     body: async (request) => request,
@@ -202,7 +203,9 @@ test("when the box check finds 4K isn't smooth, the TV moves to 1080p output at 
   await call("POST", "/api/display/tv", { ...PANASONIC_TV, live: { mode: "3840x2160@60", scale: 2 } });
   assert.deepEqual(sent.at(-1), { ok: true, target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 } }, "before the test has run, the TV's full resolution");
 
-  // Nothing to do while the TV already runs at what it should.
+  // A new TV is news for the pages. After that, nothing to do while the TV
+  // already runs at what it should.
+  assert.deepEqual(events.splice(0), ["display"]);
   await routes.follow();
   assert.deepEqual(events, []);
 
@@ -213,9 +216,22 @@ test("when the box check finds 4K isn't smooth, the TV moves to 1080p output at 
   assert.deepEqual(ask.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1 });
   await call("POST", `/api/display/ask/${ask.n}`, { ok: true, live: { mode: "1920x1080@60", scale: 1 } });
   await following;
-  assert.deepEqual(events, ["display"]);
+  assert.deepEqual(events.splice(0), ["display"]);
   await call("GET", "/api/display");
   assert.deepEqual([sent.at(-1)?.output, sent.at(-1)?.mode], ["1080p", "1920x1080@60"]);
+
+  // The sizes switched off with agentv feature off sizes: the screen
+  // daemon is asked to put back Hyprland's own mode and scale, at once.
+  await routes.switched(true);
+  assert.deepEqual(events.splice(0), [], "a switch that didn't change asks nothing");
+  on = false;
+  const switching = routes.switched(false);
+  await call("GET", "/api/display/ask");
+  const off = (sent.at(-1) as { ask: { n: number; target: unknown } }).ask;
+  assert.equal(off.target, null);
+  await call("POST", `/api/display/ask/${off.n}`, { ok: true, live: { mode: "3840x2160@60", scale: 1 } });
+  await switching;
+  assert.deepEqual(events, ["display"]);
   routes.close();
 });
 
