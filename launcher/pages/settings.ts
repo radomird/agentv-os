@@ -17,6 +17,7 @@ import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryPanel, countryValue, loadCountry } from "./country.ts";
+import { desktopPasswordRows, loadDesktopPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 
@@ -480,6 +481,7 @@ export function settings(ctx: Ctx, open?: string): View {
           },
           "switch to omarchy's desktop",
         ),
+        ...desktopPasswordRows(ctx),
       ],
     },
     // Restart and Shut down (ADR-033): an adult's, so a child's profile doesn't
@@ -600,6 +602,13 @@ export function settings(ctx: Ctx, open?: string): View {
       if (item) item.textContent = newsValue();
       if (menu.querySelector(".open")?.getAttribute("data-key") === "tmdb" && !panel.contains(ctx.focus.get() ?? null)) {
         show(sections.find((section) => section.key === "tmdb")!);
+      }
+    })
+    .catch(() => {});
+  void loadDesktopPassword()
+    .then(() => {
+      if (menu.querySelector(".open")?.getAttribute("data-key") === "desktop" && !panel.contains(ctx.focus.get() ?? null)) {
+        show(sections.find((section) => section.key === "desktop")!);
       }
     })
     .catch(() => {});
