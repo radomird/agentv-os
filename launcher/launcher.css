@@ -2144,3 +2144,119 @@ body.with-backdrop.on-home {
 .country-list .button-value {
   white-space: nowrap;
 }
+
+/* --- Pages the looks add (ADR-063, D2) ------------------------------------
+   Weather's and New this week's own pages, drawn here in Terminal's style.
+   Each look's look.css restyles them like the rest. */
+
+.page-line {
+  margin: 12px 0 0;
+  color: var(--foreground);
+  font-size: 29px;
+}
+
+.forecast-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 120px;
+  overflow: hidden;
+}
+
+.forecast-day {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  min-width: 0;
+  min-height: 300px;
+  padding: 28px;
+  border: 2px solid var(--selection);
+  background: var(--background);
+}
+
+.forecast-name {
+  color: var(--foreground);
+}
+
+.forecast-temps {
+  display: flex;
+  gap: 16px;
+  font-size: 44px;
+  font-weight: 800;
+}
+
+.forecast-low {
+  color: var(--foreground);
+}
+
+.line-icon {
+  display: block;
+  flex: none;
+}
+
+.line-cloudy,
+.line-fog,
+.line-wind {
+  color: var(--cyan-ink, var(--cyan));
+}
+
+.line-clear,
+.line-partly-cloudy {
+  color: var(--yellow-ink, var(--yellow));
+}
+
+.line-rain,
+.line-heavy-rain,
+.line-snow,
+.line-thunderstorm {
+  color: var(--blue-ink, var(--blue));
+}
+
+.line-clear-night {
+  color: var(--bright-foreground);
+}
+
+.poster-row {
+  display: flex;
+  gap: 24px;
+  margin-top: 96px;
+  overflow: hidden;
+}
+
+.poster-card {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 10px;
+  width: 224px;
+  padding: 14px;
+  border: 2px solid var(--selection);
+  background: var(--background);
+}
+
+.poster-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: var(--selection);
+}
+
+.poster-title {
+  font-weight: 800;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.poster-caption {
+  color: var(--foreground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.poster-row > .button {
+  align-self: flex-start;
+}

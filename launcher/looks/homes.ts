@@ -4,10 +4,16 @@
 
 import type { Ctx, View } from "../main.ts";
 import { lookId } from "./looks.ts";
+import { home as cinema } from "./cinema/home.ts";
+import { home as glass } from "./glass/home.ts";
 import { home as terminal } from "./terminal/home.ts";
 
 export function lookHome(ctx: Ctx): View {
   switch (lookId()) {
+    case "glass":
+      return glass(ctx);
+    case "cinema":
+      return cinema(ctx);
     default:
       return terminal(ctx);
   }

@@ -5,6 +5,7 @@
 // page asks it for each.
 
 import { screen } from "../api.ts";
+import { named } from "../looks/looks.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "./network.ts";
@@ -120,7 +121,7 @@ function nowPlaying(): HTMLElement {
     const now = reply.now as Now | null | undefined;
     el.classList.toggle("hidden", !now);
     if (!now) return;
-    text.textContent = `${now.title.toLowerCase()} · ${now.artist.toLowerCase()} · ${minutes(now.position)} / ${minutes(now.duration)}`;
+    text.textContent = `${named(now.title)} · ${named(now.artist)} · ${minutes(now.position)} / ${minutes(now.duration)}`;
     pause.textContent = now.playing ? "pause" : "play";
   }
   const timer = setInterval(() => {
@@ -137,8 +138,8 @@ function albumTile(ctx: Ctx, album: AlbumInfo): HTMLElement {
     "button",
     { class: `tile size-s album-tile${album.away ? " away" : ""}`, "data-focus": true, "data-album": album.id, "aria-label": album.title, onclick: () => ctx.go(`music/${album.id}`) },
     cover(album.id, album.title, Boolean(album.cover)),
-    h("span", { class: "album-title" }, album.title.toLowerCase()),
-    h("span", { class: "album-artist" }, album.away ? `away · ${album.artist.toLowerCase()}` : album.artist.toLowerCase()),
+    h("span", { class: "album-title" }, named(album.title)),
+    h("span", { class: "album-artist" }, album.away ? `away · ${named(album.artist)}` : named(album.artist)),
   );
 }
 
@@ -181,8 +182,8 @@ export function music(ctx: Ctx, album?: string): View {
             h(
               "button",
               { class: "button music-result", "data-focus": true, onclick: () => void play(ctx, { kind: result.kind, key: result.id }) },
-              h("span", {}, `${result.kind} · ${result.title.toLowerCase()}`),
-              h("span", { class: "button-value" }, result.subtitle.toLowerCase()),
+              h("span", {}, `${result.kind} · ${named(result.title)}`),
+              h("span", { class: "button-value" }, named(result.subtitle)),
             ),
           )
         : [h("div", { class: "empty" }, `nothing matches ${q}`)]),
@@ -226,7 +227,7 @@ export function music(ctx: Ctx, album?: string): View {
         h(
           "button",
           { class: "button", "data-focus": true, onclick: () => void play(ctx, { kind: "playlist", key: list.id }) },
-          h("span", {}, list.name.toLowerCase()),
+          h("span", {}, named(list.name)),
           h("span", { class: "button-value" }, `${list.tracks.length} tracks`),
         ),
       ),
@@ -257,8 +258,8 @@ function albumPage(ctx: Ctx, id: string): View {
           "div",
           {},
           h("div", { class: "prompt" }, h("b", {}, "~"), " $ music album"),
-          h("h1", { class: "headline" }, album.title.toLowerCase()),
-          h("div", { class: "maker" }, [album.artist.toLowerCase(), album.year, `${tracks.length} tracks`].filter(Boolean).join(" · ")),
+          h("h1", { class: "headline" }, named(album.title)),
+          h("div", { class: "maker" }, [named(album.artist), album.year, `${tracks.length} tracks`].filter(Boolean).join(" · ")),
         ),
       ),
       playAll,
@@ -269,7 +270,7 @@ function albumPage(ctx: Ctx, id: string): View {
           h(
             "button",
             { class: "button track", "data-focus": true, onclick: () => void play(ctx, { kind: "album", key: id, from: at }) },
-            h("span", {}, `${String(track.number || at + 1).padStart(2, "0")}  ${track.title.toLowerCase()}`),
+            h("span", {}, `${String(track.number || at + 1).padStart(2, "0")}  ${named(track.title)}`),
             h("span", { class: "button-value" }, minutes(track.duration)),
           ),
         ),

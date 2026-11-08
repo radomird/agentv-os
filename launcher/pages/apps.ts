@@ -7,7 +7,7 @@
 
 import { screen, type App } from "../api.ts";
 import { h } from "../dom.ts";
-import { lookId } from "../looks/looks.ts";
+import { lookId, named } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { buildTile, underway } from "./build.ts";
 import { logo } from "./home.ts";
@@ -33,7 +33,7 @@ function appTile(ctx: Ctx, app: App): HTMLElement {
       },
     },
     h("div", { class: "tile-top" }, logo(app)),
-    h("span", { class: "tile-name" }, app.name.toLowerCase()),
+    h("span", { class: "tile-name" }, named(app.name)),
   );
 }
 

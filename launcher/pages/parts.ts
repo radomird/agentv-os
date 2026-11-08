@@ -32,6 +32,9 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
 }
 
 export function heading(command: string, title: string): HTMLElement[] {
+  // Always the prompt and the headline, which pages change in place. Glass
+  // and Cinema hide the prompt in their look.css, and write the headline
+  // without its full stop (looks/words.ts).
   return [h("div", { class: "prompt" }, h("b", {}, "~"), ` $ ${command}`), h("h1", { class: "headline" }, title)];
 }
 
