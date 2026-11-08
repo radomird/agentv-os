@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { passwordProblem } from "../../../daemon/desktop-password.ts";
+import { KNOWN } from "../../../daemon/routes/desktop-password.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -117,7 +118,7 @@ test("a box installed through Omarchy's own installer keeps the password typed t
   assert.equal(existsSync(typed), false);
 });
 
-test("Q225 the desktop's password, set from Settings past the PIN, reaches chpasswd on stdin, and SSH takes passwords again", async () => {
+test("Q225 the desktop's first password, past the PIN, reaches chpasswd on stdin, SSH takes passwords again, and the TV sets no other", async () => {
   switchOn(true);
   unknown();
   keysOnly();
@@ -144,11 +145,14 @@ test("Q225 the desktop's password, set from Settings past the PIN, reaches chpas
   assert.equal(existsSync(dropIn), false, "SSH's keys-only drop-in is gone");
   assert.equal(readFileSync(reloads, "utf8"), "try-reload-or-restart sshd.service\n");
 
-  // Changing it later takes the same way, and SSH needs nothing more.
-  rmSync(reloads);
-  assert.equal((await call("PUT", { password: `${PASSWORD} again` }, grant)).status, 200);
-  assert.equal(readFileSync(typed, "utf8"), `agentv:${PASSWORD} again\n`);
-  assert.equal(existsSync(reloads), false);
+  // Only the first one comes from the TV. After that it changes on the
+  // desktop, where passwd asks for the one before, so the daemon and root
+  // both refuse another, even past the PIN.
+  rmSync(typed);
+  const again = await call("PUT", { password: `${PASSWORD} again` }, grant);
+  assert.deepEqual([again.status, again.data.error], [409, KNOWN]);
+  assert.deepEqual(await straight(JSON.stringify({ password: `${PASSWORD} again`, grant })), { ok: false, error: KNOWN }, "root refuses it itself");
+  assert.equal(existsSync(typed), false, "nothing reached chpasswd");
 
   assert.ok(logged.includes("the desktop's password was set"));
   for (const where of [logged.join("\n"), rootLog]) assert.ok(!where.includes(PASSWORD), "the password is in no log");

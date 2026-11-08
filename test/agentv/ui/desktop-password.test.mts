@@ -1,9 +1,10 @@
-// Settings → Omarchy desktop's password on the TV, in a real Chromium, with
-// setup's own switch on. A box set up from the USB stick has no password
-// anyone knows, so the desktop's panel offers to set one, typed twice on the
-// phone's keyboard into password fields, past the PIN. The test plays root's
-// part on the password's socket, as the box plays it for keys: it takes the
-// line, marks the account note and says it's set.
+// The desktop's first password on the TV, in a real Chromium, with setup's
+// own switch on. A box set up from the USB stick has no password anyone
+// knows, so the first switch to Omarchy's desktop from Settings asks for
+// one, typed twice on the phone's keyboard into password fields, past the
+// PIN, and then switches. After that, it changes on the desktop. The test
+// plays root's part on the password's socket, as the box plays it for keys:
+// it takes the line, marks the account note and says it's set.
 
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -28,6 +29,8 @@ const handed: { password: string; grant: string }[] = [];
 const PIN = "4826";
 // A throwaway password, made up here.
 const PASSWORD = `tv test ${process.pid}`;
+
+type Request = { cmd: string; grant?: string };
 
 const marker = () => join(state, "..", "account.json");
 const note = (known: boolean) => writeFileSync(marker(), JSON.stringify({ name: "agentv", passwordKnown: known }) + "\n");
@@ -59,13 +62,16 @@ after(async () => {
   assert.deepEqual(errors, []);
 });
 
+// A TV whose screen daemon answers every request with ok and remembers it.
 async function tv(): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
-    const w = window as unknown as { agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
+    const w = window as unknown as { screenRequests: Request[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
+    w.screenRequests = [];
     w.agentvScreen = (json: string) => {
       const request = JSON.parse(json);
+      w.screenRequests.push(request);
       setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true, apps: [] })), 0);
     };
   });
@@ -76,20 +82,34 @@ async function tv(): Promise<Page> {
 }
 
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
-const toast = (page: Page) => page.locator(".toast").last().innerText();
+const sent = (page: Page) => page.evaluate(() => (window as unknown as { screenRequests: Request[] }).screenRequests.filter((r) => r.cmd === "desktop"));
+const lastToast = (text: RegExp) => (page: Page) => page.waitForFunction((source) => new RegExp(source).test(document.querySelector(".toast:last-of-type")?.textContent ?? ""), text.source);
 
-test("Q225 a box nobody knows the password of offers to set it in Settings → Omarchy desktop, typed twice, and says it's set", async () => {
+// Settings → Omarchy desktop, once the panel knows about the password.
+async function desktopPanel(page: Page, line: RegExp | null): Promise<void> {
+  await go(page, "settings/desktop");
+  await page.waitForSelector('.menu-item.open[data-key="desktop"]');
+  await page.waitForSelector('[data-action="desktop"]');
+  if (line) {
+    await page.waitForSelector('[data-note="desktop-password"]');
+    assert.match(await page.locator('[data-note="desktop-password"]').innerText(), line);
+  } else {
+    // Long enough for the ask to have come back.
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-note="desktop-password"]').count(), 0);
+  }
+}
+
+test("Q225 the first switch to Omarchy's desktop asks for a password, typed twice, sets it, then switches", async () => {
   switchOn(true);
   note(false);
   handed.length = 0;
   const page = await tv();
   try {
-    await go(page, "settings/desktop");
-    await page.waitForSelector('[data-action="desktop-password"]');
-    assert.match(await page.locator('[data-note="desktop-password"]').innerText(), /no password you know yet, so ssh takes keys only/);
-    assert.equal(await page.locator('[data-action="desktop-password"]').innerText(), "set its password →");
-    await page.locator('[data-action="desktop-password"]').click();
+    await desktopPanel(page, /the first time, it asks for a password, typed on your phone/);
+    await page.locator('[data-action="desktop"]').click();
     await page.waitForSelector(".desktop-password");
+    assert.deepEqual(await sent(page), [], "nothing switches before the password");
     assert.equal(await page.locator('.desktop-password input[type="password"]').count(), 2, "two password fields, which the phone keeps to itself");
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "password");
 
@@ -97,35 +117,48 @@ test("Q225 a box nobody knows the password of offers to set it in Settings → O
     await page.fill('[data-action="password"]', PASSWORD);
     await page.fill('[data-action="password-again"]', `${PASSWORD}!`);
     await page.locator('[data-action="set-password"]').click();
-    await page.waitForFunction(() => /the two don't match/.test(document.querySelector(".toast:last-of-type")?.textContent ?? ""));
+    await lastToast(/the two don't match/)(page);
     await page.fill('[data-action="password"]', "short");
     await page.fill('[data-action="password-again"]', "short");
     await page.locator('[data-action="set-password"]').click();
-    await page.waitForFunction(() => /8 characters or more/.test(document.querySelector(".toast:last-of-type")?.textContent ?? ""));
-    assert.deepEqual(handed, []);
+    await lastToast(/8 characters or more/)(page);
+    assert.equal(handed.length, 0);
 
-    // The same twice: with no PIN, it goes to root as it is.
+    // The same twice: with no PIN, it goes to root as it is, then the TV
+    // switches.
     await page.fill('[data-action="password"]', PASSWORD);
     await page.fill('[data-action="password-again"]', PASSWORD);
     await page.keyboard.press("Enter");
-    await page.waitForSelector('.menu-item.open[data-key="desktop"]');
-    assert.match(await toast(page), /the desktop's password is set/);
+    await page.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "desktop"));
     assert.deepEqual(handed, [{ password: PASSWORD, grant: "" }]);
-    await page.waitForFunction(() => document.querySelector('[data-action="desktop-password"]')?.textContent === "change its password →");
-    assert.match(await page.locator('[data-note="desktop-password"]').innerText(), /its password is set/);
+    assert.equal((await sent(page)).length, 1);
   } finally {
     await page.close();
   }
+
+  // The next switch goes straight there, and the panel says where the
+  // password changes.
+  const again = await tv();
+  try {
+    await desktopPanel(again, /to change its password there: update › password › user/);
+    await again.locator('[data-action="desktop"]').click();
+    await again.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "desktop"));
+    assert.equal(await again.locator(".desktop-password").count(), 0);
+    assert.equal(handed.length, 1, "nothing more for root");
+  } finally {
+    await again.close();
+  }
 });
 
-test("Q225 with the adult PIN on, setting it asks for the PIN on its pad, and root gets the grant", async () => {
+test("Q225 with the adult PIN on, setting it asks for the PIN, and root and the switch get the grant", async () => {
   switchOn(true);
-  note(true);
+  note(false);
   handed.length = 0;
   assert.equal(daemon.pin.set(PIN, undefined), null);
   const page = await tv();
   try {
-    await go(page, "desktop-password");
+    await desktopPanel(page, /the first time/);
+    await page.locator('[data-action="desktop"]').click();
     await page.waitForSelector(".desktop-password");
     await page.fill('[data-action="password"]', PASSWORD);
     await page.fill('[data-action="password-again"]', PASSWORD);
@@ -133,9 +166,10 @@ test("Q225 with the adult PIN on, setting it asks for the PIN on its pad, and ro
     await page.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
     assert.equal(handed.length, 0, "nothing goes before the PIN");
     for (const digit of PIN) await page.keyboard.press(digit);
-    await page.waitForFunction(() => /the desktop's password is set/.test(document.querySelector(".toast:last-of-type")?.textContent ?? ""));
+    await page.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "desktop"));
     assert.equal(handed.length, 1);
     assert.ok(daemon.pin.allows(handed[0].grant), "root gets a grant the daemon allows");
+    assert.equal((await sent(page))[0].grant, handed[0].grant, "and the switch goes with the same one");
   } finally {
     await page.close();
     const checked = daemon.pin.check(PIN);
@@ -144,7 +178,7 @@ test("Q225 with the adult PIN on, setting it asks for the PIN on its pad, and ro
   }
 });
 
-test("with setup's own switch off, or on a box installed through Omarchy's installer, the panel is as it was", async () => {
+test("with setup's own switch off, or on a box installed through Omarchy's installer, the switch goes straight there", async () => {
   for (const [on, noted] of [
     [false, true],
     [true, false],
@@ -152,14 +186,14 @@ test("with setup's own switch off, or on a box installed through Omarchy's insta
     switchOn(on);
     if (noted) note(false);
     else rmSync(marker(), { force: true });
+    handed.length = 0;
     const page = await tv();
     try {
-      await go(page, "settings/desktop");
-      await page.waitForSelector('.menu-item.open[data-key="desktop"]');
-      await page.waitForSelector('[data-action="desktop"]');
-      // Long enough for the ask to have come back.
-      await page.waitForTimeout(300);
-      assert.equal(await page.locator('[data-action="desktop-password"]').count(), 0, `switch ${on ? "on" : "off"}, note ${noted ? "there" : "not there"}`);
+      await desktopPanel(page, null);
+      await page.locator('[data-action="desktop"]').click();
+      await page.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "desktop"));
+      assert.equal(await page.locator(".desktop-password").count(), 0, `switch ${on ? "on" : "off"}, note ${noted ? "there" : "not there"}`);
+      assert.equal(handed.length, 0);
     } finally {
       await page.close();
     }

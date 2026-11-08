@@ -2,9 +2,11 @@
 // (daemon/desktop-password.ts).
 //
 // GET /api/desktop/password → { ok, password: { managed, name, known } }
-// PUT /api/desktop/password with { password } sets it, for an adult and past
-// the PIN, and answers with the same as GET. Both are not found while the
-// switch is off.
+// PUT /api/desktop/password with { password } sets the first one, for an
+// adult and past the PIN, and answers with the same as GET. Once there is
+// one, it changes on the desktop, with Omarchy's own Update › Password ›
+// User, which asks for the one before, so this refuses another. Both are not
+// found while the switch is off.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type DesktopPassword, passwordProblem } from "../desktop-password.ts";
@@ -22,6 +24,7 @@ export interface PasswordKit {
 }
 
 const PATH = "/api/desktop/password";
+export const KNOWN = "the desktop has its password. change it there: update › password › user.";
 
 export async function desktopPasswordRoute(kit: PasswordKit, request: IncomingMessage, response: ServerResponse, path: string): Promise<boolean> {
   if (path !== PATH) return false;
@@ -41,6 +44,10 @@ export async function desktopPasswordRoute(kit: PasswordKit, request: IncomingMe
   const state = await kit.password.state();
   if (!state.managed) {
     kit.json(response, 409, { ok: false, error: "this box's password is the one typed when it was installed" });
+    return true;
+  }
+  if (state.known) {
+    kit.json(response, 409, { ok: false, error: KNOWN });
     return true;
   }
   const password = ((await kit.body(request)) as { password?: unknown } | undefined)?.password;
