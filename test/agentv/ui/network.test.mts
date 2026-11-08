@@ -260,6 +260,145 @@ bothWays("discover", "setup's shared folder lists the NASes on your network, and
   }
 });
 
+// Setup at its apps step, with what the TV is for.
+function atApps(state: string, goal: string): void {
+  const at = "2026-11-08T08:00:00Z";
+  const finished = Object.fromEntries(["welcome", "ready", "country", "ai", "people", "goal"].map((step) => [step, at]));
+  writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false, step: "apps", finished, keyboard: true, goal }));
+}
+
+const headline = (page: Page, text: string) => page.waitForFunction((text) => document.querySelector(".setup-headline")?.getAttribute("aria-label") === text, text);
+
+bothWays("discover", "setup's apps step opens the servers on your network for each app it installs that asks for one, and a pick sets it up once it's in", async (on, options) => {
+  const { daemon, url, state } = await box(options);
+  atApps(state, "media");
+  try {
+    const page = await tv(url);
+    await page.waitForSelector(".apps-page .app-pick.focused");
+    // Jellyfin and Immich ticked, then continue.
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[data-app="agentv.immich"].on');
+    await page.locator('[data-action="continue"]').click();
+    if (!on) {
+      // As before: on to the look, and nothing on the network asked.
+      await page.waitForSelector(".looks", { timeout: 10_000 });
+      assert.equal(await page.locator("[data-found]").count(), 0);
+      assert.equal(daemon.discover.isLooking, false);
+      await page.close();
+      return;
+    }
+    await headline(page, "pick your jellyfin.");
+    assert.match(await page.locator(".setup-page .prompt").innerText(), /agentv app setup jellyfin/);
+    await page.waitForSelector('.focused[data-found="jellyfin http://127.0.0.1:8096"]');
+    assert.deepEqual(await rows(page, "[data-found]"), [["living room", "nas.local"]]);
+    assert.deepEqual(await page.locator(".found > .button").allInnerTexts(), ["type an address on your phone", "set it up later"]);
+    assert.match(await page.locator(".bar").innerText(), /apps[\s\S]*↑↓ move · ↵ pick/);
+    // OK on it: Jellyfin will use it, and Immich's page is next.
+    await page.keyboard.press("Enter");
+    await page.locator('.toast:has-text("jellyfin will use living room")').waitFor();
+    await headline(page, "pick your immich.");
+    // Nothing answers as Immich here. Later goes on to the look.
+    await page.locator('[data-action="later"]').click();
+    await page.waitForSelector(".looks", { timeout: 10_000 });
+    assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme");
+    // Jellyfin landed with its address in, and Immich still says "set up".
+    const setupOf = async (id: string) => (await (await fetch(`${url}/api/apps/${id}/setup`)).json()).setup?.fields?.[0]?.value;
+    for (let i = 0; i < 100 && (await setupOf("agentv.jellyfin")) !== "http://127.0.0.1:8096"; i++) await new Promise((done) => setTimeout(done, 50));
+    assert.equal(await setupOf("agentv.jellyfin"), "http://127.0.0.1:8096");
+    assert.equal(await setupOf("agentv.immich"), "");
+    assert.deepEqual(await daemon.serverPicks.waiting(), []);
+    await page.close();
+  } finally {
+    await daemon.close();
+  }
+});
+
+test("setup's apps step on music lists the NASes on your network, and a NAS's folder becomes a music source", async () => {
+  const { daemon, url, state } = await box({ features: { discover: true } });
+  smbAsked = [];
+  smbWantsLogin = false;
+  atApps(state, "music");
+  try {
+    const page = await tv(url);
+    await page.waitForSelector(".apps-page .app-pick");
+    await page.locator('[data-action="continue"]').click();
+    await headline(page, "pick your nas.");
+    await page.waitForSelector('.focused[data-found="nas nas.local"]');
+    assert.deepEqual(await rows(page, "[data-found]"), [["living room nas", "nas.local"]]);
+    await page.keyboard.press("Enter");
+    await headline(page, "nas.local.");
+    assert.match(await page.locator(".setup-page .prompt").innerText(), /agentv music sources nas\.local/);
+    await page.waitForSelector("[data-share]");
+    // Back goes back to the NASes, and in again.
+    await page.keyboard.press("Escape");
+    await headline(page, "pick your nas.");
+    await page.waitForSelector('.focused[data-found="nas nas.local"]');
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('.focused[data-share="smb://nas.local/music"]');
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".looks", { timeout: 10_000 });
+    const [added] = await screenRequests(page, "music", "add-share");
+    assert.deepEqual([added.uri, added.password], ["smb://nas.local/music", undefined]);
+    await page.locator('.toast:has-text("music is a music source now")').waitFor();
+    await page.close();
+  } finally {
+    await daemon.close();
+  }
+});
+
+// A phone paired with the box, on its remote.
+async function phoneOn(url: string, phoneUrl: string): Promise<Page> {
+  const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
+  const page = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`${phoneUrl}/?code=${pairing.code}`);
+  await page.waitForSelector(".r2");
+  return page;
+}
+
+bothWays("discover", "the phone shows what's on your network while the TV does, and a tap there picks it on the TV", async (on, options) => {
+  const { daemon, url } = await box({ features: { ...options.features, remote2: true } });
+  try {
+    const page = await tv(url);
+    const phone = await phoneOn(url, `http://127.0.0.1:${daemon.lanPort}`);
+    await page.locator('.tile[data-id="someone.radio"]').click();
+    await page.locator('input[data-field="serverUrl"]').waitFor({ state: "attached" });
+    if (!on) {
+      await page.waitForTimeout(1500);
+      assert.equal(await phone.locator(".r2-network").count(), 0);
+      await phone.close();
+      await page.close();
+      return;
+    }
+    // One line a find, and typing under them, with the remote on one screen.
+    await phone.waitForSelector('.r2-network [data-found="jellyfin http://127.0.0.1:8096"]');
+    assert.equal(await phone.locator(".r2-network-head span").first().innerText(), "on your network");
+    assert.deepEqual(await phone.locator(".r2-network-row").allInnerTexts(), ["living room · nas.local", "type an address"]);
+    assert.ok(await phone.evaluate(() => document.documentElement.scrollHeight <= innerHeight), "nothing scrolls");
+    // "Type an address" opens the TV's field, and the phone's keyboard comes.
+    await phone.locator('.r2-network [data-found="typed"]').tap();
+    await page.waitForFunction(() => (document.activeElement as HTMLInputElement | null)?.dataset.field === "serverUrl");
+    await phone.waitForSelector(".r2-field");
+    // Back on the TV, and in again: a tap on the find picks it there.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".grid .tile.focused");
+    await phone.waitForSelector(".r2-network", { state: "detached" });
+    await page.locator('.tile[data-id="someone.radio"]').click();
+    await phone.locator('.r2-network [data-found="jellyfin http://127.0.0.1:8096"]').tap();
+    await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.some((r) => r.cmd === "sign-in" && r.app === "someone.radio"));
+    const saved = await (await fetch(`${url}/api/apps/someone.radio/setup`)).json();
+    assert.equal(saved.setup.fields[0].value, "http://127.0.0.1:8096");
+    // Gone from the TV, gone from the phone, and a pick then has nowhere to go.
+    await phone.waitForSelector(".r2-network", { state: "detached" });
+    await phone.close();
+    await page.close();
+  } finally {
+    await daemon.close();
+  }
+});
+
 test("the network pages keep to the content policy, with nothing in the console", () => {
   assert.deepEqual(errors, []);
 });

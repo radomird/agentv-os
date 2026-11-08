@@ -12,6 +12,7 @@ import { glyph } from "../launcher/glyphs.ts";
 import { setup, type Goal, type Installs, type SetupApp, type SetupApps } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
+import { onNetwork } from "./servers.ts";
 
 // A short line for each app and the colour behind its first letter, as on
 // the canvas. An app it doesn't know takes its description and the next
@@ -117,6 +118,7 @@ export async function apps(ctx: Ctx): Promise<View> {
       for (const app of [...(list?.for ?? []), ...(list?.more ?? [])]) ctx.names[app.id] = app.name;
       ctx.picked = [];
     }
+    if (await onNetwork(ctx, wanted)) return;
     await ctx.finish("apps");
   };
 

@@ -3,6 +3,9 @@
 // answer, and typing an address on the phone second. A NAS lists its
 // folders when it's picked, after a sign-in typed on the phone if it wants
 // one. The TV's pages show this only with the discover switch on.
+//
+// The phone shows the same list as a line "on your network" while it's on
+// the TV, and a pick there picks the TV's row, as OK would.
 
 import { h } from "../dom.ts";
 import { featureOn } from "../features.ts";
@@ -61,11 +64,100 @@ export function discoverOn(): Promise<boolean> {
   return featureOn("discover");
 }
 
+// AgenTV's own apps that ask for a server, and the kind each one uses.
+const OWN: Record<string, Kind[]> = { "agentv.jellyfin": ["jellyfin"], "agentv.plex": ["plex"], "agentv.immich": ["immich"] };
+
 // The servers an app can use: its own kind for AgenTV's own apps, and any
 // media server for one your agent made.
 export function kindsFor(app: string): Kind[] {
-  const own: Record<string, Kind[]> = { "agentv.jellyfin": ["jellyfin"], "agentv.plex": ["plex"], "agentv.immich": ["immich"] };
-  return own[app] ?? SERVERS;
+  return OWN[app] ?? SERVERS;
+}
+
+// The kind of server one of AgenTV's own apps asks for, before it's
+// installed: setup's server page opens for these.
+export function serverKinds(app: string): Kind[] | null {
+  return OWN[app] ?? null;
+}
+
+// One stream of the box's events for every list on the page. A browser
+// keeps only six connections to the box open at once, and a list holding a
+// stream of its own used them up, so the page's own requests had to wait.
+type Heard = "discover" | "discover-pick";
+const hearers: Record<Heard, Set<(data: unknown) => void>> = { discover: new Set(), "discover-pick": new Set() };
+let stream: EventSource | null = null;
+
+function hear(event: Heard, heard: (data: unknown) => void): () => void {
+  if (!stream) {
+    stream = new EventSource("/api/events");
+    for (const name of Object.keys(hearers) as Heard[]) {
+      stream.addEventListener(name, (message) => {
+        const data = JSON.parse((message as MessageEvent).data) as unknown;
+        for (const one of [...hearers[name]]) one(data);
+      });
+    }
+  }
+  hearers[event].add(heard);
+  return () => {
+    hearers[event].delete(heard);
+    if (stream && !hearers.discover.size && !hearers["discover-pick"].size) {
+      stream.close();
+      stream = null;
+    }
+  };
+}
+
+// The list the TV shows, for the phone's line (daemon/discover.ts). It's
+// said when the list is on the page, again every 20 s while it stays, and
+// taken back once it's gone. Only the newest list on the page speaks, and
+// only it hears the phone's picks.
+let speaking: object | null = null;
+
+function say(list: object): void {
+  void fetch("/api/discover/screen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(list) }).catch(() => {});
+}
+
+function onTv(el: HTMLElement, list: object, picked: (key: string) => void): void {
+  const me = {};
+  const unhear = hear("discover-pick", (data) => {
+    if (speaking === me && el.isConnected) picked((data as { key: string }).key);
+  });
+  let on = false;
+  let off = 0;
+  let beat = 0;
+  const check = () => {
+    if (el.isConnected) {
+      off = 0;
+      // On the page, or back on it, or the list that spoke is gone: this is
+      // the one the TV shows. Two on one page don't take turns.
+      if (!on || speaking === null || (speaking === me && ++beat % 20 === 0)) {
+        on = true;
+        speaking = me;
+        say(list);
+      }
+      return;
+    }
+    if (on && speaking === me) {
+      speaking = null;
+      say({});
+    }
+    on = false;
+    // Gone from the page for a minute, or never on it: it stops listening.
+    if (++off > 60) {
+      clearInterval(timer);
+      unhear();
+    }
+  };
+  const timer = setInterval(check, 1000);
+  requestAnimationFrame(check);
+}
+
+// A row picked from the phone: the TV picks it, focus on it first, as OK
+// on it would.
+function pickRow(rows: HTMLElement, attribute: string, key: string, focus: Pick<Focus, "set">): void {
+  const row = rows.querySelector<HTMLElement>(`[${attribute}="${CSS.escape(key)}"]`);
+  if (!row) return;
+  focus.set(row, false);
+  row.click();
 }
 
 async function ask<T>(path: string, body?: unknown): Promise<Answer<T>> {
@@ -99,7 +191,10 @@ export function foundList(options: ListOptions): { el: HTMLElement; rows: HTMLEl
   const rows = h("div", { class: "found-rows profile-form" });
   const looking = h("div", { class: "panel-note found-looking" }, "● still looking");
   const el = h("div", { class: "found-list" }, rows, looking);
-  let source: EventSource | null = null;
+  let unhear: (() => void) | null = null;
+  // How many times the stream spoke: an answer asked for before the last
+  // time is older than what it said, and is left out.
+  let spoke = 0;
   let shown = "";
   let count = 0;
   let placed = false;
@@ -138,21 +233,30 @@ export function foundList(options: ListOptions): { el: HTMLElement; rows: HTMLEl
   };
   const again = () => {
     if (gone()) return stop();
-    void ask<never>(`/api/discover?kinds=${kinds}`).then(draw, (error: Error) => (looking.textContent = error.message));
+    const at = spoke;
+    void ask<never>(`/api/discover?kinds=${kinds}`).then(
+      (answer) => spoke === at && draw(answer),
+      (error: Error) => (looking.textContent = error.message),
+    );
   };
   const stop = () => {
-    source?.close();
-    source = null;
+    unhear?.();
+    unhear = null;
     clearInterval(timer);
   };
-  source = new EventSource("/api/events");
-  source.addEventListener("discover", (message) => {
+  unhear = hear("discover", (data) => {
     if (gone()) return stop();
-    draw(JSON.parse((message as MessageEvent).data) as { found: Found[]; looking: boolean });
+    spoke++;
+    draw(data as { found: Found[]; looking: boolean });
   });
   const timer = setInterval(again, AGAIN_MS);
   for (const at of [400, 900, SETTLE_MS]) setTimeout(settle, at);
   again();
+  onTv(el, { kinds, machines: Boolean(options.machines) }, (key) => {
+    if (key !== "typed") return pickRow(rows, "data-found", key, options.focus);
+    options.focus.set(options.typed, false);
+    options.typed.click();
+  });
   return { el, rows };
 }
 
@@ -215,5 +319,6 @@ export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): 
   };
 
   void list();
+  onTv(el, { host: options.host }, (key) => pickRow(rows, "data-share", key, options.focus));
   return { el, signIn, first: () => (rows.firstElementChild as HTMLElement | null) ?? undefined };
 }
