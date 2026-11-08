@@ -174,3 +174,28 @@ test("T7.1 with no phone and a box in UTC, the step starts on a pick, and a phon
     rmSync(join(state, "features.json"), { force: true });
   }
 });
+
+test("T7.1 the captive page and the companion send the phone's own time zone, and the step starts on its country", async () => {
+  atLocation();
+  // A phone in Chicago joins the setup hotspot: its captive page sends it.
+  const captivePhone = await browser.newPage({ viewport: { width: 390, height: 844 }, timezoneId: "America/Chicago", hasTouch: true });
+  captivePhone.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await captivePhone.goto(`${captive}/`);
+    for (let i = 0; i < 50 && (await (await fetch(`${url}/api/setup/location`)).json()).phoneZone !== "America/Chicago"; i++) await captivePhone.waitForTimeout(100);
+    assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the united states");
+  } finally {
+    await captivePhone.close();
+  }
+  // A phone in Amsterdam pairs with the companion: it sends its own.
+  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, timezoneId: "Europe/Amsterdam", hasTouch: true });
+  phone.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+    for (let i = 0; i < 50 && (await (await fetch(`${url}/api/setup/location`)).json()).phoneZone !== "Europe/Amsterdam"; i++) await phone.waitForTimeout(100);
+    assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the netherlands");
+  } finally {
+    await phone.close();
+  }
+});
