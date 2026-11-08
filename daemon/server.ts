@@ -52,7 +52,7 @@ import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
-import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
+import { network, PARTS, Setup, type SetupState } from "./setup.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { Updates } from "./updates.ts";
@@ -436,8 +436,8 @@ export class Daemon {
     });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
-    this.setupState = new Setup({ path: join(options.state, "setup.json") });
     this.features = new Features({ state: options.state });
+    this.setupState = new Setup({ path: join(options.state, "setup.json"), features: this.features });
     this.box = new Box({ state: options.state, ...options.box });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
@@ -2065,7 +2065,7 @@ export class Daemon {
         version: (await this.settings()).AGENTV_VERSION,
         running: this.running,
         setup: await this.setup(),
-        steps: STEPS,
+        steps: await this.setupState.steps(),
         parts: PARTS,
         network: network(hotspot, this.options.interfaces?.()),
         hotspot,

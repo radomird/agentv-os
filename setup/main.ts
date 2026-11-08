@@ -23,6 +23,7 @@ import { setup, type AiInfo, type Installs, type Provider, type SetupInfo, type 
 import { addYourOwn, apps, installLine } from "./apps.ts";
 import { art, background, folder, photos } from "./background.ts";
 import { bar, field } from "./frame.ts";
+import { yourBox } from "./box.ts";
 import { country, pick as pickCountry } from "./country.ts";
 import { goal } from "./goal.ts";
 import { people, person } from "./people.ts";
@@ -246,6 +247,7 @@ function viewFor(to: string): View | Promise<View> {
   const [step, sub] = to.split("/");
   if (to === "welcome/wifi") return wifi(ctx);
   if (to === "ready") return ready(ctx);
+  if (to === "box") return yourBox(ctx);
   if (to === "country/pick") return pickCountry(ctx);
   if (to === "country") return country(ctx);
   if (step === "ai" && sub) return path(ctx, sub as Provider);
@@ -429,6 +431,7 @@ async function start(): Promise<void> {
         view?.heard?.("updates", data);
       },
       phones: (data) => view?.heard?.("phones", data),
+      box: (data) => view?.heard?.("box", data),
       pin: (data) => {
         const status = data as { set: boolean };
         ctx.info.pin = status.set;

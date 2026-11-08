@@ -8,6 +8,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
+import type { Feature, Features } from "./features.ts";
 import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 
 // The steps, in order. The welcome screen covers the Wi-Fi and pairing,
@@ -15,8 +16,8 @@ import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 // confirms the installer's time zone's or picks another (ADR-055), the AI
 // provider comes with its terms (ADR-023), then who watches (ADR-009), what
 // the TV is for, its apps (board 09), its look (board 12) and its
-// background (board 13).
-export const STEPS = ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"] as const;
+// background (board 13). Your box (ADR-061) comes right after getting ready.
+export const STEPS = ["welcome", "ready", "box", "country", "ai", "people", "goal", "apps", "theme", "background"] as const;
 export type Step = (typeof STEPS)[number];
 
 // How the status bar counts the steps: six parts, as on the canvas, with the
@@ -24,6 +25,7 @@ export type Step = (typeof STEPS)[number];
 export const PARTS: Record<Step, string> = {
   welcome: "1/6 connect",
   ready: "1/6 getting ready",
+  box: "1/6 your box",
   country: "1/6 country",
   ai: "2/6 ai",
   people: "3/6 people",
@@ -35,6 +37,12 @@ export const PARTS: Record<Step, string> = {
 
 // What the TV is for (ADR-006): it orders the apps setup suggests and picks
 // home's top rail.
+// A step that shows only while its feature switch is on (daemon/features.ts).
+// The others always show.
+export const STEP_FEATURES: Partial<Record<Step, Feature>> = {
+  box: "boxcheck",
+};
+
 export const GOALS = ["streaming", "music", "media", "gaming"] as const;
 export type Goal = (typeof GOALS)[number];
 
@@ -111,9 +119,20 @@ export function network(hotspot: HotspotState, interfaces: ReturnType<typeof net
 
 export class Setup {
   private path: string;
+  private features?: Features;
 
-  constructor(options: { path: string }) {
+  constructor(options: { path: string; features?: Features }) {
     this.path = options.path;
+    this.features = options.features;
+  }
+
+  // The steps this box shows: every step, less those whose feature is off.
+  async steps(): Promise<Step[]> {
+    const on = this.features ? await this.features.all() : null;
+    return STEPS.filter((step) => {
+      const feature = STEP_FEATURES[step];
+      return !feature || Boolean(on?.[feature]);
+    });
   }
 
   // What setup.json holds. One from before stage 5 had only done and at.
@@ -131,10 +150,12 @@ export class Setup {
     const finished = (data.finished ?? {}) as Record<string, unknown>;
     for (const step of STEPS) if (typeof finished[step] === "string" && AT.test(finished[step] as string)) state.finished[step] = finished[step] as string;
     // A box that was past getting ready when an update brought the country
-    // step keeps going: the country stays its time zone's, which Settings →
-    // country can change.
-    if (!state.finished.country && STEPS.slice(STEPS.indexOf("country") + 1).some((step) => state.finished[step] || state.step === step)) {
-      state.finished.country = state.finished.ready ?? now();
+    // step, or the box step, keeps going: the country stays its time zone's,
+    // which Settings → country can change, and Settings → About has the box.
+    for (const added of ["country", "box"] as const) {
+      if (!state.finished[added] && STEPS.slice(STEPS.indexOf(added) + 1).some((step) => state.finished[step] || state.step === step)) {
+        state.finished[added] = state.finished.ready ?? now();
+      }
     }
     state.keyboard = data.keyboard === true;
     if (GOALS.includes(data.goal as Goal)) state.goal = data.goal as Goal;
@@ -168,11 +189,12 @@ export class Setup {
   // To a step. Back is always fine; forward only as far as the first step
   // that isn't finished yet, so no step is skipped.
   async go(step: unknown): Promise<{ state?: SetupState; error?: string }> {
-    if (!STEPS.includes(step as Step)) return { error: `a step: ${STEPS.join(", ")}` };
+    const steps = await this.steps();
+    if (!steps.includes(step as Step)) return { error: `a step: ${steps.join(", ")}` };
     const state = await this.read();
-    const open = STEPS.findIndex((s) => !state.finished[s]);
-    const to = STEPS.indexOf(step as Step);
-    if (open >= 0 && to > open) return { error: `${STEPS[open]} isn't finished yet` };
+    const open = steps.findIndex((s) => !state.finished[s]);
+    const to = steps.indexOf(step as Step);
+    if (open >= 0 && to > open) return { error: `${steps[open]} isn't finished yet` };
     state.step = step as Step;
     return { state: await this.save(state) };
   }
@@ -180,15 +202,16 @@ export class Setup {
   // A step finished: setup moves on to the next. The last one finished
   // leaves setup on it, for the page to mark setup done.
   async finish(step: unknown, change: { keyboard?: unknown } = {}): Promise<{ state?: SetupState; error?: string }> {
-    if (!STEPS.includes(step as Step)) return { error: `a step: ${STEPS.join(", ")}` };
+    const steps = await this.steps();
+    if (!steps.includes(step as Step)) return { error: `a step: ${steps.join(", ")}` };
     const state = await this.read();
-    const at = STEPS.indexOf(step as Step);
-    const open = STEPS.findIndex((s) => !state.finished[s]);
-    if (open >= 0 && at > open) return { error: `${STEPS[open]} isn't finished yet` };
+    const at = steps.indexOf(step as Step);
+    const open = steps.findIndex((s) => !state.finished[s]);
+    if (open >= 0 && at > open) return { error: `${steps[open]} isn't finished yet` };
     if (step === "goal" && !state.goal) return { error: "pick what the tv is for first" };
     state.finished[step as Step] = now();
     if (step === "welcome" && typeof change.keyboard === "boolean") state.keyboard = change.keyboard;
-    state.step = STEPS[Math.min(at + 1, STEPS.length - 1)];
+    state.step = steps[Math.min(at + 1, steps.length - 1)];
     return { state: await this.save(state) };
   }
 
