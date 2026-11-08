@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { FIXTURES, startBox } from "./box.mts";
+import { FIXTURES, rest, startBox } from "./box.mts";
 import { rendered, shortfalls } from "./legible.mts";
 import { startMet, type Met } from "./met.mts";
 
@@ -73,6 +73,7 @@ async function tv(size: Size = "standard"): Promise<Page> {
   });
   await page.goto(`${url}/?size=${size}`);
   await page.waitForSelector("html[data-look] #page .focused");
+  await rest(page);
   return page;
 }
 
