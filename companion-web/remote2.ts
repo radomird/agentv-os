@@ -19,6 +19,7 @@ import { buildBanner, buildPage, exportBanner, type Offer, type PhoneBuild, push
 import { feelOn, setFeel } from "./feel.ts";
 import { icon, type Icon } from "./icons.ts";
 import { api, avatar, h, token, Unpaired, type Viewer } from "./lib.ts";
+import { listKey, networkLine, type TvList } from "./network.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { sayAnswer, sayBox, type Said } from "./say.ts";
@@ -48,6 +49,8 @@ export interface Phone {
   said?: Said | null;
   nowPlaying?: { title: string; app: string; left?: number } | null;
   look?: string;
+  // What's on the network, while the TV shows it (companion-web/network.ts).
+  discover?: TvList | null;
 }
 
 // What the remote needs from the page around it (main.ts).
@@ -235,7 +238,7 @@ export class Remote2 {
     if (this.page === "build") return `build ${this.building} ${JSON.stringify(state.builds)}`;
     if (this.page !== "remote") return this.page;
     const screen = this.keyboardFor(state) ? `keyboard ${fieldKey(state)}` : state.tv.view === "trackpad" ? "desktop" : this.pointer ? "pointer" : dpadOn() ? "dpad" : "surface";
-    return `${screen} ${this.sheet} ${state.viewer.id} ${state.viewer.name} ${state.viewer.role} ${Boolean(state.nowPlaying && state.tv.playing)}`;
+    return `${screen} ${this.sheet} ${state.viewer.id} ${state.viewer.name} ${state.viewer.role} ${Boolean(state.nowPlaying && state.tv.playing)} ${listKey(state.discover)}`;
   }
 
   // --- The screen -----------------------------------------------------------
@@ -250,7 +253,8 @@ export class Remote2 {
     else {
       this.card = this.playing(state);
       this.notice = this.noticeLine(state);
-      children = [this.top(state), this.card, this.surface(state), this.keys(state), this.askButton(), this.notice];
+      const network = state.discover ? networkLine(state.discover, this.kit.failed) : null;
+      children = [this.top(state), this.card, network, this.surface(state), this.keys(state), this.askButton(), this.notice];
     }
     if (this.page === "remote") this.kept = null;
     this.root.replaceChildren(h("div", { class: "r2", "data-screen": this.shape.split(" ")[0] }, ...children));

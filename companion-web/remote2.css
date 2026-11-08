@@ -116,6 +116,65 @@
   white-space: nowrap;
 }
 
+/* What's on the network, while the TV shows it: one row a find, and
+   "type an address" under them. A long list scrolls inside, so the remote
+   keeps its one screen. */
+.r2-network {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 216px;
+  padding: 10px 12px;
+  background: var(--r2-surface);
+  border: 2px solid var(--r2-line);
+}
+
+.r2-network-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.r2-network-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.r2-network-row {
+  min-height: 44px;
+  padding: 0 12px;
+  background: none;
+  border: 2px solid var(--r2-line);
+  color: var(--bright-foreground);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.r2-network-row:active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--r2-on-accent);
+}
+
+.r2-network-typed {
+  color: var(--foreground);
+  font-weight: 400;
+}
+
+/* The surface gives the line its room. */
+.r2-network ~ .r2-surface {
+  min-height: 200px;
+}
+
 /* The surface, and the d-pad and pointer in its place. */
 .r2-surface {
   position: relative;

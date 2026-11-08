@@ -394,11 +394,11 @@ interface Entry extends Found {
   look: number; // the last look it answered in
 }
 
-export type Run = (command: string, args: string[], timeoutMs: number) => Promise<{ stdout: string; stderr: string; code: number }>;
+export type Run = (command: string, args: string[], timeoutMs: number, env?: Record<string, string>) => Promise<{ stdout: string; stderr: string; code: number }>;
 
-const run: Run = (command, args, timeoutMs) =>
+const run: Run = (command, args, timeoutMs, env = {}) =>
   new Promise((resolve) => {
-    execFile(command, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024, env: { ...process.env, LC_ALL: "C" } }, (error, stdout, stderr) => {
+    execFile(command, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024, env: { ...process.env, LC_ALL: "C", ...env } }, (error, stdout, stderr) => {
       const code = error ? (typeof (error as { code?: unknown }).code === "number" ? ((error as { code: number }).code) : 1) : 0;
       resolve({ stdout: String(stdout), stderr: String(stderr) || (error && !stdout ? error.message : ""), code });
     });
@@ -423,8 +423,21 @@ export interface DiscoverOptions {
   rounds?: number[];
   // Something was found, or the look is over.
   changed?: (state: { found: Found[]; looking: boolean }) => void;
+  // The list on the TV changed, for the phones to follow.
+  screen?: () => void;
+  // A phone picked from the TV's list: the key of the row it picked, for
+  // the TV's page to pick as if it was picked there.
+  picked?: (key: string) => void;
   log?: (line: string) => void;
 }
+
+// The list on the TV, for the phones: the kinds of server it shows (one row
+// a machine for the NASes), or a NAS's folders.
+export type TvList = { kinds: Kind[]; machines: boolean } | { host: string };
+
+// How long the TV's word about its list lasts. Its page says it again every
+// 20 s while the list is on screen, and says when it's gone.
+const SCREEN_MS = 45_000;
 
 const ORDER: Kind[] = [...KINDS];
 
@@ -444,6 +457,7 @@ export class Discover {
   private end?: ReturnType<typeof setTimeout>;
   private asked = new Set<string>(); // WS-Discovery's endpoints asked for their name in this look
   private avahiMissing = false;
+  private tv: { list: TvList; until: number } | null = null;
 
   constructor(options: DiscoverOptions = {}) {
     this.options = options;
@@ -495,7 +509,8 @@ export class Discover {
   }
 
   // The look is over: nothing listens, and what didn't answer in it goes.
-  private stop(): void {
+  // Closing the daemon stops it without a word.
+  private stop(say = true): void {
     for (const timer of this.timers) clearTimeout(timer);
     this.timers = [];
     if (this.end) clearTimeout(this.end);
@@ -507,11 +522,32 @@ export class Discover {
     for (const [key, entry] of this.entries) if (entry.look !== this.looks) this.entries.delete(key);
     this.looking = false;
     this.wantImmich = false;
-    this.changed();
+    if (say) this.changed();
   }
 
   close(): void {
-    if (this.looking) this.stop();
+    if (this.looking) this.stop(false);
+  }
+
+  // The TV's page shows a list, or none any more. The phones hear only a
+  // change.
+  showing(list: TvList | null): void {
+    const before = JSON.stringify(this.onScreen());
+    this.tv = list ? { list, until: Date.now() + SCREEN_MS } : null;
+    if (JSON.stringify(list) !== before) this.options.screen?.();
+  }
+
+  // The list on the TV, while its page keeps saying so.
+  onScreen(): TvList | null {
+    if (this.tv && this.tv.until <= Date.now()) this.tv = null;
+    return this.tv?.list ?? null;
+  }
+
+  // A phone's pick, for the list on the TV. False with no list there.
+  pick(key: string): boolean {
+    if (!this.onScreen()) return false;
+    this.options.picked?.(key);
+    return true;
   }
 
   private changed(): void {
@@ -708,21 +744,23 @@ export class Discover {
   // --- A NAS's shares ---
 
   // The folders a NAS shares, for a machine the box found and no other:
-  // SMB's own list, read without a user name, and NFS's exports. A NAS that
-  // lists its shares only for a user says so (login), and its address can
-  // be typed with the user name.
-  async shares(host: string): Promise<SharesAnswer> {
+  // SMB's own list and NFS's exports. A NAS that lists its shares only for
+  // a user says so (login), and then they're asked for again with the user
+  // name and password typed on the phone. smbclient gets the password in
+  // its environment, never on its command line, and nothing keeps it: the
+  // share picked keeps it as Music's sources do.
+  async shares(host: string, login?: { user: string; password: string }): Promise<SharesAnswer> {
     const machine = [...this.entries.values()].filter((entry) => (entry.kind === "smb" || entry.kind === "nfs") && (entry.address === host || this.names.get(entry.address) === host));
     if (!machine.length) return { ok: false, error: `${host.slice(0, 60)} isn't a nas the tv found` };
     const address = machine[0].address;
     const name = this.names.get(address) ?? address;
     const shares: ShareFound[] = [];
-    let login = false;
+    let wantsLogin = false;
     const errors: string[] = [];
     if (machine.some((entry) => entry.kind === "smb")) {
-      const listed = await this.smbList(address, name);
+      const listed = await this.smbList(address, name, login);
       if ("shares" in listed) shares.push(...listed.shares);
-      else if (listed.login) login = true;
+      else if (listed.login) wantsLogin = true;
       else errors.push(listed.error);
     }
     const exports = machine.filter((entry) => entry.kind === "nfs");
@@ -735,15 +773,17 @@ export class Discover {
       }
       for (const path of paths) shares.push({ kind: "nfs", name: path.split("/").filter(Boolean).pop() ?? path, uri: `nfs://${name}${encodeURI(path)}` });
     }
-    if (!shares.length && !login && errors.length) return { ok: false, error: errors[0] };
-    return login ? { ok: true, host: name, shares, login: true } : { ok: true, host: name, shares };
+    if (!shares.length && !wantsLogin && errors.length) return { ok: false, error: errors[0] };
+    return wantsLogin ? { ok: true, host: name, shares, login: true } : { ok: true, host: name, shares };
   }
 
-  private async smbList(address: string, name: string): Promise<{ shares: ShareFound[] } | { login: true } | { login?: false; error: string }> {
+  private async smbList(address: string, name: string, login?: { user: string; password: string }): Promise<{ shares: ShareFound[] } | { login: true } | { login?: false; error: string }> {
     const command = this.options.smbclient ?? "smbclient";
-    const result = await (this.options.run ?? run)(command, ["-L", `//${name}`, "-I", address, "-N", "-g"], SMB_MS);
+    const who = login ? ["-U", login.user] : ["-N"];
+    const result = await (this.options.run ?? run)(command, ["-L", `//${name}`, "-I", address, ...who, "-g"], SMB_MS, login ? { PASSWD: login.password } : {});
     const listed = smbShares(result.stdout);
-    if (listed.length) return { shares: listed.map((one) => ({ kind: "smb" as const, name: one.name, uri: `smb://${name}/${encodeURIComponent(one.name)}`, ...(one.note ? { note: one.note } : {}) })) };
+    const user = login ? `${encodeURIComponent(login.user)}@` : "";
+    if (listed.length) return { shares: listed.map((one) => ({ kind: "smb" as const, name: one.name, uri: `smb://${user}${name}/${encodeURIComponent(one.name)}`, ...(one.note ? { note: one.note } : {}) })) };
     const said = `${result.stdout}\n${result.stderr}`;
     if (/NT_STATUS_(ACCESS_DENIED|LOGON_FAILURE|ACCOUNT_RESTRICTION|WRONG_PASSWORD)/.test(said)) return { login: true };
     if (/ENOENT|not found/.test(result.stderr) && result.code !== 0 && !result.stdout) return { error: "the tv can't list a nas's shares without smbclient" };
