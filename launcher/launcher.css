@@ -2260,3 +2260,66 @@ body.with-backdrop.on-home {
 .poster-row > .button {
   align-self: flex-start;
 }
+
+/* A look's preview (ADR-063): home itself in a frame, scaled to a card, for
+   Settings → Themes and backgrounds and setup's look step. */
+.look-cards {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.look-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  width: var(--card-width, auto);
+}
+
+.look-frame {
+  position: relative;
+  display: block;
+  box-sizing: content-box;
+  width: var(--preview-width, 300px);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 3px solid var(--selection);
+  background: var(--background);
+}
+
+.look-card.picked .look-frame {
+  border-color: var(--accent);
+}
+
+.look-frame-page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 0;
+  transform-origin: 0 0;
+  transform: scale(var(--preview-scale, 0.15625));
+  pointer-events: none;
+}
+
+.look-card-name {
+  font-weight: 800;
+}
+
+.look-card-line {
+  color: var(--foreground);
+  font-size: 23px;
+  max-width: var(--preview-width, 300px);
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 80px;
+  padding: 0 32px;
+  color: var(--bright-foreground);
+  font-size: 32px;
+}
