@@ -347,25 +347,23 @@ export function command(provider: Provider, run: StepRun): Command {
   };
 }
 
-// Each CLI's own words, when a run fails, for a plan that needs signing in
-// again: its sign-in ran out and couldn't be refreshed, was revoked, or is
-// gone. Its status can still say it's signed in: Claude Code 2.1.302's did on
-// 2026-10-30. Not the words for a refresh that failed only this once, such
-// as another process holding Claude Code's refresh lock or a full disk,
-// which signing in again wouldn't help.
-const SIGN_IN_AGAIN = new RegExp(
+// Each CLI's own words, when a run fails, for a plan whose sign-in ran out:
+// it couldn't be refreshed, was revoked, or expired. Its status can still
+// say it's signed in: Claude Code 2.1.302's did on 2026-10-30. Not the
+// words for a refresh that failed only this once, such as another process
+// holding Claude Code's refresh lock or a full disk, which signing in again
+// wouldn't help. The voice router reads these too (daemon/providers/cli.ts).
+export const SIGN_IN_RAN_OUT = new RegExp(
   [
     // Claude Code: "Failed to authenticate: OAuth session expired and could
     // not be refreshed" on a plan, "OAuth token revoked · Please run
     // /login", the API's "OAuth token has expired", "OAuth refresh token is
-    // no longer valid", "Login expired · Please run /login" and "Not logged
-    // in · Please run /login".
+    // no longer valid" and "Login expired · Please run /login".
     "OAuth session expired",
     "OAuth token revoked",
     "OAuth (access )?token has (expired|been revoked)",
     "refresh token is no longer valid",
     "login expired",
-    "not logged in\\W+please run /login",
     // Codex: "Your access token could not be refreshed because your refresh
     // token has expired. Please log out and sign in again.", or was already
     // used, or was revoked, and "Your authentication session could not be
@@ -374,16 +372,24 @@ const SIGN_IN_AGAIN = new RegExp(
     "authentication session could not be refreshed",
     // Grok Build: "Your session has expired. Run `grok login` to sign in
     // again.", "Authentication could not be refreshed", "Token expired. Run
-    // `grok login` to re-authenticate.", "Authentication rejected by server"
-    // and, headless, "Not signed in. To authenticate without a browser".
+    // `grok login` to re-authenticate." and "Authentication rejected by
+    // server".
     "your session (has )?expired",
     "authentication could not be refreshed",
     "token expired\\. run `grok login`",
     "authentication rejected by server",
-    "not signed in\\. to authenticate",
   ].join("|"),
   "i",
 );
+
+// The words for a CLI with no sign-in at all: Claude Code's "Not logged in ·
+// Please run /login" and Grok Build's headless "Not signed in. To
+// authenticate without a browser". The builder checks the plan's status
+// first, so for a build they mean the sign-in is gone, and it asks again.
+const SIGN_IN_GONE = /not logged in\W+please run \/login|not signed in\. to authenticate/i;
+
+// Either asks the builder for the plan's sign-in again.
+const SIGN_IN_AGAIN = new RegExp(`${SIGN_IN_RAN_OUT.source}|${SIGN_IN_GONE.source}`, "i");
 
 // The words that ask for a sign-in again, in a failed run's own errors or in
 // what the CLI said on its way out.

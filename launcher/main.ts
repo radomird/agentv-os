@@ -5,7 +5,7 @@
 // its sound (ADR-024).
 
 import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
-import { fieldKind, tell } from "./context.ts";
+import { fieldOf, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
@@ -29,8 +29,9 @@ import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
-import { saidAct, saidHeard, saidOpen, setupSaid } from "./said.ts";
+import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
+import { typingField, typingHeard } from "./typing.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
@@ -81,7 +82,11 @@ const page = document.getElementById("page")!;
 const sounds = new Sounds();
 const focus = new Focus(document.getElementById("ring")!);
 // A text field with the focus opens the phone's keyboard (ADR-037).
-focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
+focus.onSet = (el) => {
+  const field = el instanceof HTMLInputElement ? fieldOf(el) : null;
+  tell({ field });
+  typingField(field);
+};
 let history: string[] = ["home"];
 let view: View | undefined;
 
@@ -360,8 +365,8 @@ function viewFor(route: string): View {
   if (name === "country") return countryPage(ctx);
   if (name === "plan") return planPage(ctx);
   if (name === "pair") return pairPage(ctx);
-  // Settings → Power's questions, for an adult only (ADR-033).
-  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" ? "restart" : "shutdown");
+  // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
+  if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
   // A page app, full screen in its frame (ADR-043).
   if (name === "app" && arg) return pageView(ctx, arg);
@@ -395,6 +400,12 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
   if (noticeOpen) {
     const was = noticeOpen.before?.dataset.action ?? noticeOpen.before?.dataset.id;
     noticeOpen.before = (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? view.first;
+    return;
+  }
+  // Under the "which one?" card too, which has the keys while it's up.
+  if (saidOpen()) {
+    const first = view.first;
+    saidPageDrawn((was) => (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? first);
     return;
   }
   const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
@@ -816,6 +827,8 @@ async function start(): Promise<void> {
     // A provider's terms accepted on a phone, for a key Settings → AI waits
     // to keep (Q104).
     terms: (data) => termsHeard(data),
+    // What a phone is typing, as it's typed (ADR-065).
+    typing: (data) => typingHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {

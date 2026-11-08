@@ -42,7 +42,7 @@ import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from 
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
-import { boxZone, cityOf } from "./place.ts";
+import { boxZone, cityOf, clockZone } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
@@ -63,6 +63,8 @@ import { newItem } from "./executors/whatsNew.ts";
 import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
+import { cleanField, type Field } from "./remote-text.ts";
+import { nowPlaying, PhoneRemote } from "./routes/remote.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
@@ -191,7 +193,6 @@ const CAPTIVE_FILES = ["companion-web/setup.ts", "companion-web/lib.ts", "compan
 const MAX_BODY = 64 * 1024;
 // How long a phone's ask for the state waits for something to change.
 const PHONE_WAIT_MS = 25_000;
-const FIELD_KINDS = ["text", "search", "email", "password", "number", "url"];
 
 // An app the TV offered for Export (ADR-045), for ten minutes, with the
 // person's GitHub sign-in when they have one.
@@ -207,10 +208,12 @@ interface ExportOffer {
 // says what it shows: the PIN pad, what asks for it and how many digits are
 // in, a text field with the focus and its kind, and home, a menu or the
 // ambient screen. The screen daemon says what's in front and whether
-// something plays. The desktop's relay says when Omarchy's desktop is on.
+// something plays, and the field with the focus in an app's page, with the
+// app (ADR-065). The field is home's or the app's, whichever is in front.
+// The desktop's relay says when Omarchy's desktop is on.
 export interface TvContext {
   pin: { title: string; for: string; digits: number; error: string | null } | null;
-  field: { kind: string } | null;
+  field: (Omit<Field, "label"> & { label?: string; app?: string }) | null;
   screen: "home" | "menu" | "ambient";
   front: "home" | "app";
   playing: boolean;
@@ -290,6 +293,11 @@ export class Daemon {
   readonly discover: Discover;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
+  // The new remote's typing and playback (ADR-065).
+  readonly phoneRemote: PhoneRemote;
+  // The field with the focus on home, and in the app in front.
+  private homeField: Field | null = null;
+  private appField: (Field & { app: string }) | null = null;
   // The setup hotspot's captive page.
   readonly captive?: Server;
   // The screen daemon, taking the phone's keys and text for the virtual
@@ -343,6 +351,14 @@ export class Daemon {
     // apps they can open, and done through the TV session.
     // The listening bar: each change to the TV's pages and, for over an
     // app, the TV session. Nothing of the words stays (ADR-054).
+    this.phoneRemote = new PhoneRemote({
+      send: (event) => this.remote(event as Record<string, unknown>),
+      tv: () => this.tv,
+      viewer: () => this.profiles.active(),
+      toPages: (event, data) => this.toPages(event, data),
+      json: (response, status, data) => this.json(response, status, data),
+      body: (request) => this.body(request),
+    });
     this.listening = new Listening({
       idleMs: options.listenIdleMs,
       changed: (heard) => {
@@ -546,6 +562,7 @@ export class Daemon {
     this.setupApps.stop();
     this.openLedger?.close();
     this.pageAsks.close();
+    this.phoneRemote.close();
     this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
@@ -852,13 +869,18 @@ export class Daemon {
         };
       }
     }
-    if (change.field === null) next.field = null;
-    else if (change.field && typeof change.field === "object") {
-      const kind = (change.field as Record<string, unknown>).kind;
-      next.field = { kind: typeof kind === "string" && FIELD_KINDS.includes(kind) ? kind : "text" };
-    }
+    // Home's page says its own field; the screen daemon, with what's in
+    // front, the field in the app's page, which it leaves out when there's
+    // none.
+    if (change.field !== undefined) this.homeField = cleanField(change.field);
     if (change.screen === "home" || change.screen === "menu" || change.screen === "ambient") next.screen = change.screen;
-    if (change.front === "home" || change.front === "app") next.front = change.front;
+    if (change.front === "home" || change.front === "app") {
+      next.front = change.front;
+      const field = cleanField(change.appField);
+      const app = (change.appField as { app?: unknown } | undefined)?.app;
+      this.appField = field && typeof app === "string" ? { ...field, app: app.slice(0, 120) } : null;
+    }
+    next.field = next.front === "app" ? this.appField : this.homeField;
     if (typeof change.playing === "boolean") next.playing = change.playing;
     if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
     const idle = this.idleHome();
@@ -915,16 +937,24 @@ export class Daemon {
     const viewer = await this.profiles.active();
     const pin = this.pin.status(viewer.locked);
     const setup = await this.setup();
+    const remote2 = await this.features.on("remote2");
+    // The new remote's keyboard follows the field in front, an app's page
+    // included, with the app's name; the old one only home's.
+    const tv = { ...this.tv, field: remote2 ? await this.named(this.tv.field) : this.homeField && { kind: this.homeField.kind } };
     return {
       ok: true,
       version,
       phone,
+      // The feature switches the phone draws by.
+      features: { remote2 },
       viewer,
       viewers: await this.profiles.list(),
       pin: { set: pin.set, locked: pin.locked },
       signIn: this.signingIn ? { name: this.signingIn.name } : null,
       update: await this.phoneUpdate(),
-      tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
+      tv: { ...tv, view: remoteView(tv, this.signingIn !== null) },
+      // What's playing, for the new remote's card.
+      nowPlaying: remote2 && tv.playing ? await this.nowPlaying(viewer.id) : null,
       // TV setup's step, while it's on (stage 5): the phone says where it is.
       setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step], muted: setup.muted },
       // What setup's AI step asks of the phone (ADR-023): the provider's
@@ -941,6 +971,24 @@ export class Daemon {
       // the phone shows it under its box, and up to three to choose from.
       said: this.saidNow(),
     };
+  }
+
+  // The newest row of the ledger, while it's fresh, with its app's name.
+  private async nowPlaying(viewer: string): Promise<object | null> {
+    const names = new Map((await this.home.manifests().catch(() => [])).map(({ manifest }) => [manifest.id, manifest.name]));
+    try {
+      return nowPlaying(this.ledger.recent(viewer, { limit: 1 }), (app) => names.get(app) ?? app);
+    } catch {
+      return null;
+    }
+  }
+
+  // A field in an app's page, with the app's name for the phone's keyboard
+  // ("<app> · search").
+  private async named(field: TvContext["field"]): Promise<(TvContext["field"] & { name?: string }) | null> {
+    if (!field?.app) return field;
+    const found = (await this.home.manifests().catch(() => [])).find(({ manifest }) => manifest.id === field.app);
+    return { ...field, name: (found?.manifest.name ?? field.app).toLowerCase() };
   }
 
   // The router this box's setup chose (daemon/router-client.ts), through
@@ -1248,10 +1296,11 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
-    if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
+    if (await this.phoneRemote.phone(method ?? "", path, request, response)) return;
 
     // Routes in files of their own (daemon/routes/), one line each.
     if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
+    if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -1290,6 +1339,8 @@ export class Daemon {
         return;
       }
       this.broadcast("page", { route: "settings" });
+      // Over an app, home comes in front first (ADR-065).
+      this.remote({ cmd: "settings" });
       this.json(response, 200, { ok: true });
       return;
     }
@@ -2018,6 +2069,9 @@ export class Daemon {
         // What this process runs, which after an update and before AgenTV's
         // services restart is still the package from before (agentv-restart).
         running: this.running,
+        // The time zone the daemon's clock goes by, which follows the box's
+        // when the country moves it.
+        zone: clockZone(),
         screen: setup.done ? "home" : "welcome",
         // The setup step on the TV, while setup isn't done.
         setup_step: setup.done ? null : setup.step,
@@ -2477,6 +2531,7 @@ export class Daemon {
     // desktop's, which takes the trackpad and the keys while the desktop is
     // on. A page can't open it: it needs a header no browser sends to
     // another site.
+    if (await this.phoneRemote.local(method ?? "", path, request, response)) return;
     if (method === "GET" && path === "/api/remote") {
       const who = request.headers["x-agentv-screen"];
       if (who !== "1" && who !== "desktop") {
