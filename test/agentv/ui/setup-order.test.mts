@@ -30,7 +30,9 @@ before(async () => {
   chmodSync(join(tools, "qrencode"), 0o755);
   process.env.PATH = `${tools}:${path}`;
   const wired = { eth0: [{ address: "192.168.1.20", netmask: "255.255.255.0", family: "IPv4", mac: "00:00:00:00:00:01", internal: false, cidr: "192.168.1.20/24" }] };
-  ({ daemon, url, state } = await startBox(0, undefined, { interfaces: () => wired, zone: "Europe/Amsterdam" }));
+  // Setup's own switch on, and the looks', so every step shows. That puts
+  // the box on edge.
+  ({ daemon, url, state } = await startBox(0, undefined, { interfaces: () => wired, zone: "Europe/Amsterdam", features: { setup2: true, looks: true } }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 
@@ -43,7 +45,7 @@ after(async () => {
 });
 
 function switches(on: boolean): void {
-  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: on }));
+  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: on, looks: on }));
 }
 
 // Setup on a step, with every step before it finished.
@@ -81,7 +83,7 @@ test("T7.1 each screen's status bar says its step of setup's 12, as blocks and \
   }
   // The numbers only go up as setup goes on.
   const numbers = seen.map((text) => Number(text.split(" ")[0]));
-  assert.deepEqual(numbers, [3, 3, 5, 6, 7, 8, 9, 11, 11]);
+  assert.deepEqual(numbers, [3, 3, 5, 6, 7, 8, 9, 10, 11, 11]);
 });
 
 test("T7.1 the counted bar sits in the TV's safe area, 60 px up and 80 px in, with its text at 23 px or more", async () => {

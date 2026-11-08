@@ -5,7 +5,9 @@
 import type { Country, CountryState } from "../launcher/api.ts";
 
 export type { Country, CountryState };
-export type Step = "welcome" | "ready" | "country" | "ai" | "people" | "goal" | "apps" | "theme" | "background";
+// Every step's id, as daemon/setup.ts orders them, the ones behind a switch
+// included.
+export type Step = "welcome" | "ready" | "box" | "country" | "ai" | "people" | "goal" | "apps" | "look" | "theme" | "background";
 export type Goal = "streaming" | "music" | "media" | "gaming";
 export type UpdateFirst = "checking" | "installing" | "done" | "none" | "failed" | "skipped";
 

@@ -1250,3 +1250,18 @@ body.counted .player-score {
   font-size: 29px;
   color: var(--foreground);
 }
+
+/* The look step (ADR-063): home in each look, side by side, picked with OK.
+   The size picker joins it below once the TV's sizes come. */
+.setup-look-cards {
+  margin-top: 80px;
+  gap: 48px;
+}
+
+.setup-look .look-card-name {
+  font-size: 36px;
+}
+
+.setup-look .look-card-line {
+  font-size: 29px;
+}

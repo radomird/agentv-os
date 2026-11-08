@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>The player's frame</title><script src="tone.js"></script></head>
+<body style="margin: 0; background: #000">
+<script>
+  window.start = () => {
+    const video = Object.assign(document.createElement("video"), { id: "video", src: tone(), loop: true, width: 640, height: 360 });
+    document.body.append(video);
+    return video.play().then(() => "playing");
+  };
+</script>
+</body>
+</html>

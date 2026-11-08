@@ -43,7 +43,8 @@ export const ORDER = [
   // 9, apps: the starter pack (track 9) and the servers found (track 10)
   // are pages of it, in setup/steps.ts.
   { step: "apps", n: 9, name: "apps" },
-  // 10, look and size (tracks 5 and 4): { step: "look", n: 10, name: "look and size", feature: "looks" },
+  // 10, look and size: track 5's look, and track 4's sizes join its page.
+  { step: "look", n: 10, name: "look and size", feature: "looks" },
   { step: "theme", n: 11, name: "theme and background" },
   { step: "background", n: 11, name: "theme and background" },
 ] as const satisfies readonly StepEntry[];
@@ -63,6 +64,7 @@ export const PARTS: Partial<Record<Step, string>> = {
   people: "3/6 people",
   goal: "4/6 goal",
   apps: "5/6 apps",
+  look: "6/6 look",
   theme: "6/6 look",
   background: "6/6 look",
 };

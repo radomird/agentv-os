@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A streaming site</title>
+<style>
+  body { margin: 40px; background: #111; color: #eee; font: 24px sans-serif; }
+  input { font: inherit; width: 600px; }
+</style>
+</head>
+<body>
+  <form role="search"><input id="search" type="search" aria-label="Search"></form>
+  <p id="results"></p>
+  <div id="signin"></div>
+  <iframe id="frame" src="frame.html" width="700" height="120"></iframe>
+<script>
+  // Like a framework's field: what it shows comes from its own state, which
+  // only typing it hears about changes. A value set behind its back is put
+  // back at the next draw.
+  const search = document.getElementById("search");
+  const state = { query: "", heard: 0 };
+  search.addEventListener("input", () => {
+    state.query = search.value;
+    state.heard++;
+    draw();
+  });
+  function draw() {
+    if (search.value !== state.query) search.value = state.query;
+    document.getElementById("results").textContent = state.query ? "results for " + state.query : "";
+  }
+  setInterval(draw, 100);
+  window.site = state;
+
+  const root = document.getElementById("signin").attachShadow({ mode: "open" });
+  root.innerHTML = '<label>Email <input id="email" type="email" autocomplete="username"></label> <label>Password <input id="password" type="password"></label>';
+</script>
+</body>
+</html>

@@ -25,7 +25,7 @@ let state = "";
 const errors: string[] = [];
 
 before(async () => {
-  ({ daemon, url, state } = await startBox(0, undefined, { zone: "UTC" }));
+  ({ daemon, url, state } = await startBox(0, undefined, { zone: "UTC", features: { setup2: true } }));
   captive = `http://127.0.0.1:${daemon.setupPort}`;
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
