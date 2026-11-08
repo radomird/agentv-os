@@ -83,3 +83,5 @@ S8.2  image     "is there a new episode of" a running show answers yes or no cor
 
 # Phase 2's checks, from PHASE-2-PLAN.md.
 T7.1  check     setup's 12 steps in order, each screen's "n of 12", and the location step starting on the phone's time zone, asking for a zone only for a country with several (layer 4)
+T7.2  check     setup's AI step shows each provider's own icon, fetched from its site, and its name alone when there's none (layer 4)
+T7.3  image     setup on a plan signs in at the AI step, and voice answers before any build (the image layer with a stand-in CLI; a real plan on the NUC)

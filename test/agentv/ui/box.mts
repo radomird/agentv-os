@@ -101,6 +101,8 @@ export interface BoxOptions {
   // Stand-ins for the servers on the network (daemon/discover.ts). Without
   // them the box asks nothing on any network.
   discover?: DiscoverOptions;
+  // Stand-ins for the AI providers' sites, whose icons setup shows.
+  aiSites?: ConstructorParameters<typeof Daemon>[0]["aiSites"];
 }
 
 // A switched screen's check, run with its switch off and then on, each time
@@ -304,6 +306,9 @@ export async function startBox(
     tmdbStatus,
     // No TMDB unless a test stands one in: the box never asks the real one.
     tmdb: options.tmdb ?? (async () => ({ ok: false, error: "tmdb couldn't be reached" })),
+    // No provider's real site either: an address that refuses, unless a
+    // test stands the sites in.
+    aiSites: options.aiSites ?? { claude: "http://127.0.0.1:1/", chatgpt: "http://127.0.0.1:1/", gemini: "http://127.0.0.1:1/", grok: "http://127.0.0.1:1/", muse: "http://127.0.0.1:1/" },
     router: options.router,
     listenIdleMs: options.listenIdleMs,
     // The channel, as agentv channel keeps it: none, so stable, until a test
