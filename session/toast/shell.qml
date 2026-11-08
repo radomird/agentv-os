@@ -33,6 +33,13 @@
 // still with reduce motion. It never takes the keyboard or the mouse.
 //   qs ipc -n -p /usr/share/agentv/session/toast call -- listen show <state> <words> <background> <foreground> <accent> <still>
 //   qs ipc -n -p /usr/share/agentv/session/toast call -- listen hide
+//
+// And the typing bar (ADR-065), low over the app in front, while someone
+// types on their phone: whose phone it is, and what's arriving, with a dot
+// for each character of a password. The daemon sends the dots, never the
+// password. It goes after a few seconds with no typing, and on Enter.
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- typing show <from> <text> <password> <background> <foreground> <accent>
+//   qs ipc -n -p /usr/share/agentv/session/toast call -- typing hide
 
 import QtQuick
 import Quickshell
@@ -54,6 +61,13 @@ ShellRoot {
   property string listenForeground: "#a9b1d6"
   property string listenAccent: "#7aa2f7"
   property bool listenStill: false
+  property bool typingUp: false
+  property string typingFrom: ""
+  property string typingText: ""
+  property bool typingPassword: false
+  property string typingBackground: "#1a1b26"
+  property string typingForeground: "#c0caf5"
+  property string typingAccent: "#7aa2f7"
 
   Timer {
     id: hideTimer
@@ -134,6 +148,34 @@ ShellRoot {
       root.listenUp = false
       return "ok"
     }
+  }
+
+  IpcHandler {
+    target: "typing"
+
+    function show(from: string, text: string, password: string, background: string, foreground: string, accent: string): string {
+      root.typingFrom = from
+      root.typingText = text
+      root.typingPassword = password === "true"
+      root.typingBackground = background
+      root.typingForeground = foreground
+      root.typingAccent = accent
+      root.typingUp = true
+      typingDone.restart()
+      return "ok"
+    }
+
+    function hide(): string {
+      root.typingUp = false
+      return "ok"
+    }
+  }
+
+  // A few seconds with nothing new typed, and the bar goes.
+  Timer {
+    id: typingDone
+    interval: 6000
+    onTriggered: root.typingUp = false
   }
 
   Timer {
@@ -499,6 +541,80 @@ ShellRoot {
         color: root.listenAccent
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 28
+      }
+    }
+  }
+
+  PanelWindow {
+    visible: root.typingUp
+    anchors {
+      bottom: true
+    }
+    // In the TV's safe area, 60 px up, in the middle (D4).
+    margins {
+      bottom: 60
+    }
+    implicitWidth: 1100
+    implicitHeight: 76
+    color: "transparent"
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "agentv-typing"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    mask: Region {}
+
+    Rectangle {
+      anchors.fill: parent
+      color: root.typingBackground
+      border.color: root.typingAccent
+      border.width: 3
+
+      // Whose phone it is, on the accent.
+      Rectangle {
+        id: typingWho
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: whoText.implicitWidth + 48
+        color: root.typingAccent
+
+        Text {
+          id: whoText
+          anchors.centerIn: parent
+          text: (root.typingPassword ? "\uf023  " : "") + root.typingFrom
+          color: root.typingBackground
+          font.family: "JetBrainsMono Nerd Font"
+          font.pixelSize: 26
+          font.weight: Font.ExtraBold
+        }
+      }
+
+      // What's arriving, and a block for the caret.
+      Row {
+        anchors.left: typingWho.right
+        anchors.leftMargin: 24
+        anchors.right: parent.right
+        anchors.rightMargin: 24
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 4
+        clip: true
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.typingText
+          color: root.typingForeground
+          font.family: "JetBrainsMono Nerd Font"
+          font.pixelSize: 36
+          font.weight: Font.Bold
+          font.letterSpacing: root.typingPassword ? 8 : 0
+        }
+
+        Rectangle {
+          anchors.verticalCenter: parent.verticalCenter
+          width: 20
+          height: 40
+          color: root.typingForeground
+        }
       }
     }
   }

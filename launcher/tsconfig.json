@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["*.ts", "pages/*.ts"]
+  "include": ["*.ts", "pages/*.ts", "looks/*.ts", "looks/*/*.ts"]
 }

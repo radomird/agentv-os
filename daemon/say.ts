@@ -103,7 +103,7 @@ export interface SayOptions {
   // The listening bar (ADR-054): whether one was up for this sentence,
   // which what came of it then takes over, whether a new box has it now,
   // and the bar over an app.
-  bar?: { sent: () => boolean; listening: () => boolean; show: (state: "thinking" | "said", text: string) => void };
+  bar?: { sent: (from: string) => boolean; listening: () => boolean; show: (state: "thinking" | "said", text: string) => void };
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -150,7 +150,7 @@ export class Say {
     const viewer = await this.o.viewer();
     const said: Said = { n: this.next++, sentence: cleanSentence(sentence), from, viewer: viewer.id, state: "routing", at: this.now() };
     this.current = said;
-    if (this.o.bar?.sent()) {
+    if (this.o.bar?.sent(from)) {
       this.barred.add(said.n);
       this.o.bar.show("thinking", said.sentence);
     }

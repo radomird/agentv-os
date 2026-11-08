@@ -4,6 +4,7 @@
 // the TV session, on a computer or in the tests, there's no screen daemon.
 
 import type { Placed, Size } from "./layout.ts";
+import { gridName } from "./looks/looks.ts";
 
 export interface SizeChoice {
   size: Size;
@@ -376,7 +377,8 @@ export interface Said {
 }
 
 export const daemon = {
-  home: () => call<HomeState>("GET", "/api/home"),
+  // Terminal at more on screen has a grid and a layout of its own (D6).
+  home: () => call<HomeState>("GET", gridName() ? `/api/home?grid=${gridName()}` : "/api/home"),
   said: async () => (await call<{ said: Said | null }>("GET", "/api/say")).said,
   pickSaid: (n: number, choice: number) => call<{ said: Said }>("POST", "/api/say/pick", { n, choice }),
   dismissSaid: (n: number) => call<{ ok: boolean }>("POST", "/api/say/dismiss", { n }),
@@ -391,7 +393,7 @@ export const daemon = {
   kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
-  saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", { layout }, grant),
+  saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", gridName() ? { layout, grid: gridName() } : { layout }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
   updates: () => call<Updates>("GET", "/api/updates"),
@@ -612,8 +614,12 @@ export const screen = {
   // Settings → Omarchy desktop: a log-out to it.
   desktop: (grant: string) => ask({ cmd: "desktop", grant }),
   // Settings → Power, after its question, and Shut down after its countdown
-  // (ADR-033): Omarchy's own restart or shut down.
-  power: (what: "restart" | "shutdown", grant: string) => ask({ cmd: "power", what, grant }),
+  // (ADR-033): Omarchy's own restart or shut down, or a restart to the boot
+  // menu (ADR-060).
+  power: (what: "restart" | "shutdown" | "bootmenu", grant: string) => ask({ cmd: "power", what, grant }),
+  // Whether this box restarts to its boot menu: it does when the boot
+  // loader takes the request, as on a UEFI box.
+  bootMenu: async () => (await ask({ cmd: "boot-menu" })).can === true,
   // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // Someone else is watching: the apps open take the service's profile for

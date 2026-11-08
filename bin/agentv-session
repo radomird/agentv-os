@@ -51,6 +51,9 @@ omarchy_session() {
 desktop() {
   local -a command
 
+  # The boot's splash is the TV's alone. Leaving for the desktop before home
+  # has drawn lets Plymouth go now, and the TV next time starts without it.
+  agentv-boot-splash desktop 2>/dev/null || true
   read -ra command <<<"$(omarchy_session)"
   log "starting Omarchy's desktop: ${command[*]}"
   exec "${command[@]}"

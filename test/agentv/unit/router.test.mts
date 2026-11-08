@@ -378,6 +378,16 @@ test("each CLI's recorded output reads as the route, and its errors say why", ()
   // As the Mac's Claude Code said, with its auth status still saying it was
   // signed in (2026-10-30): a sign-in that ran out says so.
   assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", terminal_reason: "api_error" }), 1), /^Error: the plan's sign-in ran out: it needs signing in again$/);
+  // The builder's words for each CLI (builder/providers.ts), so the router
+  // and the builder agree on a sign-in that ran out.
+  const ranOut = /^Error: the plan's sign-in ran out: it needs signing in again$/;
+  assert.throws(() => cliAnswer("claude", "", 1, "OAuth token revoked · Please run /login\n"), ranOut, "revoked, though it says /login");
+  assert.throws(() => cliAnswer("chatgpt", '{"type":"error","message":"Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again."}\n', 1), ranOut);
+  assert.throws(() => cliAnswer("grok", "", 1, "Your session has expired. Run `grok login` to sign in again.\n"), ranOut);
+  // A refresh that failed only this once isn't a sign-in that ran out:
+  // signing in again wouldn't help.
+  assert.throws(() => cliAnswer("claude", "", 1, "OAuth access token could not be refreshed: another Claude Code process is holding the refresh lock\n"), /^Error: claude stopped \(exit 1\): OAuth access token could not be refreshed: another Claude Code process/);
+  assert.throws(() => cliAnswer("grok", "", 1, "auth refresh failed: timed out\n"), /^Error: grok stopped \(exit 1\): auth refresh failed: timed out$/);
   assert.throws(() => cliAnswer("chatgpt", '{"type":"turn.failed","error":{"message":"usage limit"}}\n', 1), /codex stopped: usage limit/);
 });
 

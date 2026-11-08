@@ -123,8 +123,9 @@ test("the key is the router's alone: only agentv-router.service has it, and a ne
   assert.deepEqual(settings(router, "RuntimeDirectoryMode"), ["0750"]);
   for (const name of ["agentv-daemon.service", "agentv-router-cli.service"]) assert.deepEqual(settings(unit(name), "LoadCredential"), [], name);
   assert.ok(settings(unit("agentv-key.service"), "ExecStartPost").includes("-/usr/bin/systemctl try-restart agentv-router.service"));
-  // The daemon reaches the router's sockets through its group, and nothing else does.
-  assert.deepEqual(settings(unit("agentv-daemon.service"), "SupplementaryGroups"), ["agentv-router"]);
+  // The daemon reaches the router's sockets through its group, and nothing else
+  // does. Its other group is the desktop password's way to root.
+  assert.deepEqual(settings(unit("agentv-daemon.service"), "SupplementaryGroups"), ["agentv-router agentv-account"]);
   assert.match(readFileSync(join(ROOT, "system/sysusers/agentv-router.conf"), "utf8"), /^u agentv-router - "AgenTV router" - \/usr\/bin\/nologin$/m);
 });
 
