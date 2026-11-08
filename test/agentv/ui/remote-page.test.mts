@@ -130,7 +130,11 @@ async function playing(query = "") {
   const page = await app("desktop.html");
   await cdp.evaluateIn(page.target, `location.href = "title.html${query}"`);
   await page.until((s) => s.page === `title.html${query}`, "the title's page");
+  // The address changes as soon as the new page starts, before Play is
+  // drawn, so wait for Play, then for it to have the focus.
+  for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(page.target, `!!document.getElementById("play")`).catch(() => false)); tries++) await sleep(100);
   await cdp.evaluateIn(page.target, `document.getElementById("play").focus()`);
+  await page.until((s) => s.focused === "play", "Play has the focus");
   await page.press("Enter");
   await page.until((s) => s.title === "Playing" && s.page.startsWith("title.html?play"), "Play puts the player on the page's own history");
   return page;
