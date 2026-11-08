@@ -21,6 +21,8 @@ import { countryPanel, countryValue, loadCountry } from "./country.ts";
 import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
+import { loadSizes, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
+import { properUnits } from "../box-lines.ts";
 
 // The times the ambient screen can wait, in minutes (ADR-031).
 const IDLE = [5, 10, 15, 30, 60];
@@ -292,9 +294,11 @@ export function settings(ctx: Ctx, open?: string): View {
           return made ? [h("button", { class: "button wide", "data-focus": true, "data-action": `theme-made-${look.id}`, onclick: () => ctx.go(`build/${made.build}`) }, h("span", {}, `${look.name}, made by your agent`), h("span", { class: "button-value" }, "→"))] : [];
         }),
         ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
-        // The size picker comes with the sizes (track 4): until then the
-        // TV is at standard.
-        h("div", { class: "panel-row", "data-row": "size" }, h("span", {}, "size"), h("span", { class: "button-value" }, sizeId())),
+        // The TV's size (ADR-062), stepped with left and right, or OK for
+        // the next one. With the sizes off, or a TV that offers one, it just
+        // says which.
+        sizeRow(),
+        ...resolutionRow(),
         h(
           "button",
           { class: "button", "data-focus": true, "data-action": "background", onclick: () => void nextBackground() },
@@ -317,6 +321,65 @@ export function settings(ctx: Ctx, open?: string): View {
       ];
     },
   });
+
+  // The size row: a button that steps through the sizes this TV offers.
+  let sizing = false;
+  const sizeRow = (): HTMLElement => {
+    const display = sizes();
+    if (!display || display.sizes.length < 2) return h("div", { class: "panel-row", "data-row": "size" }, h("span", {}, "size"), h("span", { class: "button-value" }, SIZE_NAMES[display?.size ?? sizeId()]));
+    return h(
+      "button",
+      { class: "button", "data-focus": true, "data-action": "size", "data-adjust": "size", onclick: () => void stepSize(1, true) },
+      h("span", {}, "size"),
+      h("span", { class: "button-value" }, sizing ? "…" : SIZE_NAMES[display.size]),
+    );
+  };
+  // One size over. OK goes round from the last to the first; left and
+  // right stop at the ends. Home follows on the display event.
+  const stepSize = async (by: number, round = false) => {
+    const display = sizes();
+    if (!display || sizing) return;
+    const next = round && !stepped(display, by) ? display.sizes[0] : stepped(display, by);
+    if (!next) return;
+    sizing = true;
+    ctx.render("settings/look", "size");
+    const set = await setSize(next, ctx.held());
+    sizing = false;
+    if (set.error) {
+      ctx.sounds.play("failure");
+      ctx.toast(set.error, "fail");
+    } else ctx.sounds.play("confirm");
+    if (menu.isConnected) ctx.render("settings/look", "size");
+  };
+
+  // The resolution row, on a TV with more than 1080p: its full resolution,
+  // or 1080p output, which the TV scales up. OK and left and right switch.
+  const resolutionRow = (): HTMLElement[] => {
+    const display = sizes();
+    if (!display?.full) return [];
+    const units = lookId() === "glass" || lookId() === "cinema" ? properUnits : (text: string) => text;
+    return [
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "resolution", "data-adjust": "resolution", onclick: () => void switchOutput() },
+        h("span", {}, "resolution"),
+        h("span", { class: "button-value" }, sizing ? "…" : units(resolutionName(display))),
+      ),
+    ];
+  };
+  const switchOutput = async () => {
+    const display = sizes();
+    if (!display?.full || sizing) return;
+    sizing = true;
+    ctx.render("settings/look", "resolution");
+    const set = await setOutput(display.output === "1080p" ? "auto" : "1080p", ctx.held());
+    sizing = false;
+    if (set.error) {
+      ctx.sounds.play("failure");
+      ctx.toast(set.error, "fail");
+    } else ctx.sounds.play("confirm");
+    if (menu.isConnected) ctx.render("settings/look", "resolution");
+  };
 
   // Picks a look: the TV hears it and draws itself again in it.
   const pickLook = async (id: string) => {
@@ -689,6 +752,14 @@ export function settings(ctx: Ctx, open?: string): View {
     // Still on Settings, after the few seconds Omarchy takes.
     if (menu.isConnected) ctx.render("settings/look", `theme-${look.id}`);
   };
+  // The sizes this TV offers, against what this page drew.
+  const sized = JSON.stringify(sizes());
+  void loadSizes().then((found) => {
+    if (JSON.stringify(found) === sized || !menu.isConnected || menu.querySelector(".open")?.getAttribute("data-key") !== "look") return;
+    const at = ctx.focus.get() ?? null;
+    if (!panel.contains(at)) show(sections.find((section) => section.key === "look")!);
+    else ctx.render("settings/look", at?.getAttribute("data-action") ?? undefined);
+  });
   // Against what this page drew, not what another Settings drawn since has
   // seen: a redraw while this one waited, such as for a build's news, mustn't
   // keep the list it started with.
@@ -747,6 +818,14 @@ export function settings(ctx: Ctx, open?: string): View {
     },
     act(action) {
       const current = ctx.focus.get();
+      if (current?.dataset.adjust === "size" && (action === "left" || action === "right")) {
+        void stepSize(action === "right" ? 1 : -1);
+        return true;
+      }
+      if (current?.dataset.adjust === "resolution" && (action === "left" || action === "right")) {
+        void switchOutput();
+        return true;
+      }
       if (current?.dataset.adjust === "idle" && (action === "left" || action === "right")) {
         const at = Math.max(0, Math.min(IDLE.length - 1, IDLE.indexOf(s.idleMinutes) + (action === "right" ? 1 : -1)));
         void save({ idleMinutes: IDLE[at] }, "look", "idle");

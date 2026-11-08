@@ -1252,7 +1252,7 @@ body.counted .player-score {
 }
 
 /* The look step (ADR-063): home in each look, side by side, picked with OK.
-   The size picker joins it below once the TV's sizes come. */
+   The TV's sizes go below them (ADR-062, D3). */
 .setup-look-cards {
   margin-top: 80px;
   gap: 48px;
@@ -1264,6 +1264,30 @@ body.counted .player-score {
 
 .setup-look .look-card-line {
   font-size: 29px;
+}
+
+/* At the bottom right, beside the soundtrack player, as D3 has it. The
+   cards move up to make room. */
+.setup-look:has(.setup-look-sizes:not(:empty)) .setup-look-cards {
+  margin-top: 40px;
+}
+
+.setup-look-sizes {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+}
+
+.setup-look-sizes-label {
+  margin-right: 16px;
+  color: var(--foreground);
+  font-size: 29px;
+}
+
+.setup-look-sizes .chip {
+  font-size: 29px;
+  font-weight: 700;
 }
 
 /* The AI (design page D3): a card for each provider with its own icon, or
