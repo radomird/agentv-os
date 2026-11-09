@@ -4,7 +4,7 @@
 // ahead. With the switch off, it's phase 1's bar, as it was.
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,6 +168,40 @@ test("with the box check on, gaming says what to expect on this box", async () =
   } finally {
     await page.close();
     switches(true);
+  }
+});
+
+const route = (page: Page) => page.evaluate(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route());
+
+test("Q226 getting ready is one headline, one line and one bar, and moves on by itself once it's up to date", async () => {
+  switches(true);
+  at("ready");
+  let page = await tv();
+  try {
+    await page.waitForSelector(".ready2 .ready-bar .blocks");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "getting ready.");
+    assert.equal(await page.locator(".setup-page .prompt").textContent(), "~ $ agentv update");
+    assert.match((await page.locator(".setup-line").textContent()) ?? "", /is up to date$/);
+    assert.equal(await page.locator(".ready-list, [data-action='continue']").count(), 0, "no checklist and no continue");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() !== "ready");
+  } finally {
+    await page.close();
+  }
+
+  // Back to it later, it waits for OK instead of moving on by itself.
+  at("ready");
+  const later = JSON.parse(readFileSync(join(state, "setup.json"), "utf8"));
+  later.finished.ready = "2026-11-05T10:05:00Z";
+  writeFileSync(join(state, "setup.json"), JSON.stringify(later));
+  page = await tv();
+  try {
+    await page.waitForSelector(".ready2 .ready-bar .blocks");
+    await page.waitForTimeout(2500);
+    assert.equal(await route(page), "ready");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() !== "ready");
+  } finally {
+    await page.close();
   }
 });
 

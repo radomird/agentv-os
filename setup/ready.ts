@@ -7,6 +7,10 @@
 // here after it. A check or an install that doesn't work doesn't hold setup
 // up: it carries on with the version it has, and Settings → Updates has the
 // update later.
+//
+// With setup's own switch on (D3), it's one headline, one line and one bar,
+// with no checklist and no continue: it moves on by itself once the update
+// is done or isn't needed. Back to it later, it waits for OK.
 
 import { screen, type UpdateProgress, type UpdateStatus } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
@@ -44,11 +48,18 @@ function blocks(percent: number): HTMLElement {
   return h("span", { class: "blocks", role: "img", "aria-label": `${Math.round(percent)} percent` }, h("b", {}, "█".repeat(filled)), "█".repeat(16 - filled));
 }
 
-export function ready(ctx: Ctx): View {
-  const line = h("p", { class: "ready-line" }, "bringing setup up to date first.");
-  const list = h("div", { class: "ready-list" });
+// Getting ready as D3 draws it, with setup's own switch on.
+export const ready2 = (ctx: Ctx): View => ready(ctx, true);
+
+export function ready(ctx: Ctx, phase2 = false): View {
+  const line = h("p", { class: phase2 ? "setup-line" : "ready-line" }, phase2 ? "checking for a newer agentv" : "bringing setup up to date first.");
+  const list = h("div", { class: phase2 ? "ready-bar" : "ready-list" });
   const go = h("button", { class: "button primary ready-go hidden", "data-focus": true, "data-action": "continue", onclick: () => void next() }, "↵ continue");
-  const el = h("div", { class: "setup-page center" }, h("div", { class: "ready-head" }, ...heading("tv setup", "getting ready.", ctx.reduced()), line), list, go);
+  const el = phase2
+    ? h("div", { class: "setup-page d3 ready2" }, ...heading("agentv update", "getting ready.", ctx.reduced()), line, list)
+    : h("div", { class: "setup-page center" }, h("div", { class: "ready-head" }, ...heading("tv setup", "getting ready.", ctx.reduced()), line), list, go);
+  // With setup's own switch on, OK moves on once there's nothing left to do.
+  let done = false;
 
   let stopped = false;
   let busy = false;
@@ -72,6 +83,10 @@ export function ready(ctx: Ctx): View {
   }
 
   function draw(about: SetupInfo): void {
+    if (phase2) {
+      draw2(about);
+      return;
+    }
     const r = about.setup.ready;
     const status = ctx.updates.status as UpdateStatus | null;
     const progress = ctx.updates.progress as UpdateProgress | null;
@@ -108,6 +123,37 @@ export function ready(ctx: Ctx): View {
       ctx.focus.set(go, false);
       ctx.sounds.play("confirm");
       if (ran || !about.setup.finished.ready) leaving = window.setTimeout(() => void next(), ON_MS);
+    }
+  }
+
+  // D3's getting ready: what's happening in one line, and one bar. Once
+  // it's done, on by itself, the first time through.
+  function draw2(about: SetupInfo): void {
+    const r = about.setup.ready;
+    const status = ctx.updates.status as UpdateStatus | null;
+    const progress = ctx.updates.progress as UpdateProgress | null;
+    const phone = about.phones[about.phones.length - 1];
+    const [from, to] = versions(r.from ?? about.running, r.to ?? status?.agentv.available ?? null);
+    const finished = about.network.online && r.update !== null && !["checking", "installing"].includes(r.update);
+    let percent = 0;
+    if (!about.network.online) line.textContent = "waiting for the network";
+    else if (r.update === null || r.update === "checking") line.textContent = "checking for a newer agentv";
+    else if (r.update === "installing") {
+      const now = fresh(progress?.at, r.asked) ? progress : null;
+      percent = now?.percent ?? 0;
+      line.textContent = now?.state === "restarting" ? `agentv ${to} is in. the box restarts` : `updating agentv ${from} to ${to}`;
+    } else {
+      percent = 100;
+      line.textContent = r.update === "done" ? `agentv ${to}. on we go` : r.update === "failed" ? "couldn't update. settings has it later" : `agentv ${from} is up to date`;
+    }
+    list.replaceChildren(blocks(percent));
+    if (!finished) ran = true;
+    ctx.status(phone ? "phone paired" : "setup carries on after the update");
+    if (finished && !done) {
+      done = true;
+      ctx.sounds.play("confirm");
+      if (ran || !about.setup.finished.ready) leaving = window.setTimeout(() => void next(), ON_MS);
+      else ctx.status("↵ carry on");
     }
   }
 
@@ -171,6 +217,14 @@ export function ready(ctx: Ctx): View {
   return {
     el,
     info: "setup carries on after the update",
+    // With setup's own switch on, OK carries on once it's done.
+    act: phase2
+      ? (action) => {
+          if (action !== "ok" || !done) return false;
+          void next();
+          return true;
+        }
+      : undefined,
     heard(event) {
       if (event === "updates") void tick();
     },
