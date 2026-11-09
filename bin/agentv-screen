@@ -44,6 +44,9 @@
 #   audio volume <0-100>  Settings → Sound's volume for the output playing
 #   idle-after <s|off>  the ambient screen after s seconds with no input,
 #                  instead of Settings' time, until the session ends
+#   screensaver-after <s|off>  the terminal screensaver hands over to the
+#                  slideshow after s seconds, not 10 minutes, until the
+#                  session ends
 #   close <role>   close the home screen, the web apps or Steam
 #   toast <text>   a toast over whatever's in front
 #   frames [s]     how smoothly the home screen draws, over s seconds
@@ -126,6 +129,14 @@ case "$command" in
       request='{"cmd":"idle-after","seconds":null}'
     else
       request=$(jq -cn --argjson seconds "$1" '{cmd: "idle-after", seconds: $seconds}')
+    fi
+    ;;
+  screensaver-after)
+    (( $# == 1 )) && [[ $1 =~ ^([0-9]+|off)$ ]] || { usage >&2; exit 2; }
+    if [[ $1 == "off" ]]; then
+      request='{"cmd":"screensaver-after","seconds":null}'
+    else
+      request=$(jq -cn --argjson seconds "$1" '{cmd: "screensaver-after", seconds: $seconds}')
     fi
     ;;
   open)

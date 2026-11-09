@@ -34,3 +34,24 @@ printf 'monitor_present\t1\n' >"$asound/card0/eld#0.1"
 echo disconnected >"$drm/card1-HDMI-A-1/status"
 [[ $(on) == "false" ]] || fail "a disconnected TV is off" "$(on)"
 pass "S2.8 the TV's power comes from its connector, then its audio"
+
+# The hotplug watch, on a stand-in for udevadm monitor: a connector's change
+# counts, anything else doesn't.
+cat >"$SCRATCH/monitor" <<'MONITOR'
+#!/bin/bash
+echo "monitor will print the received events for:"
+echo "KERNEL[100.1] add      /devices/virtual/misc/foo (misc)"
+echo "KERNEL[100.2] change   /devices/pci0000:00/0000:00:02.0/drm/card1 (drm)"
+sleep 5
+MONITOR
+chmod +x "$SCRATCH/monitor"
+changes=$(node_eval "import { watchHotplug } from '$ROOT/daemon/tv-power.ts';
+let n = 0;
+const stop = watchHotplug(() => n++, ['$SCRATCH/monitor']);
+setTimeout(() => { stop(); console.log(n); }, 500);")
+[[ $changes == "1" ]] || fail "a connector's change is a hotplug, and nothing else is" "$changes"
+missing=$(node_eval "import { watchHotplug } from '$ROOT/daemon/tv-power.ts';
+const stop = watchHotplug(() => {}, ['$SCRATCH/no-such-monitor']);
+setTimeout(() => { stop(); console.log('ok'); }, 200);")
+[[ $missing == "ok" ]] || fail "with no udevadm, nothing breaks" "$missing"
+pass "T13.1 a hotplug on the TV's connector is heard, for the output that's off"

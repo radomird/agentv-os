@@ -25,6 +25,8 @@ class FakeHyprland implements Hyprland {
   specialShown = false;
   active = "";
   exited = false;
+  // The output's power, as hl.dsp.dpms leaves it.
+  dpms = true;
   private handler: (name: string, data: string) => void = () => {};
 
   async clients() {
@@ -64,6 +66,8 @@ class FakeHyprland implements Hyprland {
       this.emit("activespecial", this.specialShown ? `special:${m[1]},HDMI-A-1` : ",HDMI-A-1");
     } else if (expression === "hl.dsp.exit()") {
       this.exited = true;
+    } else if ((m = expression.match(/^hl\.dsp\.dpms\(\{ action = "(enable|disable)" \}\)$/))) {
+      this.dpms = m[1] === "enable";
     } else {
       throw new Error(`the fake doesn't know ${expression}`);
     }
@@ -388,6 +392,9 @@ async function tv(
     tvPoll?: () => boolean | null;
     tvPollMs?: number;
     tvOffCloseMs?: number;
+    tvSettleMs?: number;
+    tvHotplug?: (changed: () => void) => () => void;
+    screensaverMs?: number;
     idleReportMs?: number;
     ambientSettleMs?: number;
     homeCheckMs?: number;
@@ -1648,6 +1655,162 @@ test("S2.8 a TV back on within two minutes keeps the paused app open", async () 
   assert.equal(t.screen.front()?.address, "0xb");
   assert.deepEqual(await open(t.screen), [{ id: "agentv.tube", role: "web", paused: true, front: true, profile: null }]);
   assert.equal(t.launcher.locks, 0, "and doesn't lock it");
+  t.screen.stop();
+});
+
+test("T13.1 the terminal screensaver hands over to the slideshow after its time, and the ambient screen stays", async () => {
+  const t = await tv({ idleReportMs: 0, screensaverMs: 150 });
+  t.launcher.minutes = 0.003;
+  t.launcher.style = "terminal";
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  const saver = t.launcher.last("screensaver");
+  t.hypr.open("0xc", saver.pid, "org.agentv.screensaver");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "screensaver");
+  assert.equal(saver.stopped, false);
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(saver.stopped, true, "it's stopped after its time");
+  t.hypr.close("0xc");
+  saver.exit();
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true, "the slideshow stays up");
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(!t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(false)"), "home stays on its ambient screen");
+  assert.ok(t.lines.some((line) => line.startsWith("the terminal screensaver hands over to the slideshow")), t.lines.join("\n"));
+  // A key on it still goes home.
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.ambient, false);
+  t.screen.stop();
+});
+
+test("T13.1 agentv screen screensaver-after shortens the screensaver's 10 minutes, for the checks", async () => {
+  const t = await tv({ idleReportMs: 0 });
+  t.launcher.minutes = 0.003;
+  t.launcher.style = "terminal";
+  assert.deepEqual(await t.screen.handle({ cmd: "screensaver-after", seconds: 0.1 }), { ok: true });
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  const saver = t.launcher.last("screensaver");
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(saver.stopped, true);
+  assert.equal(t.screen.ambient, true);
+  t.screen.stop();
+});
+
+test("T13.1 with the TV off the screensaver gives way at once, and once the apps close the output goes off until the TV is back", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  t.launcher.minutes = 0.003;
+  t.launcher.style = "terminal";
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  const saver = t.launcher.last("screensaver");
+  t.hypr.open("0xc", saver.pid, "org.agentv.screensaver");
+  await t.screen.idle();
+  on = false;
+  await sleep(60);
+  await t.screen.idle();
+  assert.equal(saver.stopped, true, "the screensaver stops with the TV off");
+  t.hypr.close("0xc");
+  saver.exit();
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.includes(`window.agentvTv?.("off")`), "home hears the TV went off");
+  assert.equal(t.hypr.dpms, true, "the output stays on for a quick input switch");
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false, "then it goes off");
+  assert.equal(t.screen.outputOff, true);
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).output, "off");
+  // Idle again with the TV off: no screensaver for no one.
+  const before = t.launcher.started.filter((one) => one.role === "screensaver").length;
+  await t.screen.handle({ cmd: "ambient" });
+  await t.screen.idle();
+  assert.equal(t.launcher.started.filter((one) => one.role === "screensaver").length, before);
+  // The TV back on: the output first, then home hears it.
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true);
+  assert.equal(t.screen.outputOff, false);
+  assert.ok(t.launcher.homeBrowser.evaluated.includes(`window.agentvTv?.("on")`));
+  assert.equal(t.screen.ambient, true, "it comes back on the ambient screen");
+  t.screen.stop();
+});
+
+test("T13.1 a key with the output off lights it to look for the TV, and it goes off again if the TV's still off", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 50, tvSettleMs: 150 });
+  on = false;
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  t.screen.seatIdle(false);
+  await sleep(30);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true, "on, to look");
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false, "off again with the TV still off");
+  // This time the TV is back while it looks.
+  t.screen.seatIdle(false);
+  await sleep(30);
+  on = true;
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true);
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).tv, "on");
+  t.screen.stop();
+});
+
+test("T13.1 a hotplug with the output off lights it to look for the TV", async () => {
+  let on = true;
+  let hotplug = () => {};
+  let stopped = false;
+  const t = await tv({
+    tvPoll: () => on,
+    tvPollMs: 20,
+    tvOffCloseMs: 50,
+    tvSettleMs: 150,
+    tvHotplug: (changed) => {
+      hotplug = changed;
+      return () => (stopped = true);
+    },
+  });
+  // A hotplug with the TV on changes nothing.
+  hotplug();
+  await t.screen.idle();
+  assert.equal(t.hypr.dispatched.filter((d) => d.startsWith("hl.dsp.dpms")).length, 0);
+  on = false;
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  hotplug();
+  await sleep(10);
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true);
+  assert.equal(t.screen.outputOff, false);
+  assert.ok(t.lines.some((line) => line.includes("the TV's connector changed; looking for the TV")), t.lines.join("\n"));
+  t.screen.stop();
+  assert.equal(stopped, true, "it stops listening with the daemon");
+});
+
+test("T13.1 a TV that's off as the session starts counts as off a moment later", async () => {
+  const t = await tv({ tvPoll: () => false, tvPollMs: 20, tvOffCloseMs: 50, tvSettleMs: 100 });
+  assert.equal(t.screen.tvOff, false);
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.screen.tvOff, true);
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.hypr.dpms, false);
   t.screen.stop();
 });
 
