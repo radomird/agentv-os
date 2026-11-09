@@ -132,6 +132,16 @@ function loops(page: Page): Promise<unknown> {
   );
 }
 
+// Asks again until the check holds. page.waitForFunction can't do this with
+// an async check: it takes the check's promise as true and goes on at once.
+async function until(check: () => Promise<boolean>, ms = 5000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > end) throw new Error(`still not so after ${ms} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 async function introShown(): Promise<{ due: string; how: string; why: string | null } | null> {
   return (await (await fetch(`${url}/api/backgrounds`)).json()).theme.introShown;
 }
@@ -278,7 +288,7 @@ test("T6.1 an intro due while an app is in front waits for home, and with Omarch
 
     const off = "00000000000000000000000000000005";
     await theme("still", off, false);
-    await page.waitForFunction(async (token) => (await (await fetch("/api/backgrounds")).json()).theme.introShown?.due === token, off, { timeout: 5000 });
+    await until(async () => (await introShown())?.due === off);
     assert.deepEqual(await introShown(), { due: off, how: "still", why: "intros-off" });
     assert.equal(await page.locator("#backdrop video").count(), 0);
   } finally {
