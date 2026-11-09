@@ -25,8 +25,11 @@
 // With nothing playing and no input for the time Settings gives (10 minutes
 // at first), the home screen shows its ambient screen over whatever was in
 // front, which stays open behind it, and any key goes back there. When the
-// TV goes off, playback pauses at once; after 2 minutes every app closes and
-// the home screen waits on its ambient screen, where any key goes home.
+// TV goes off, playback pauses at once; after 2 minutes every app closes, the
+// home screen waits on its ambient screen, where any key goes home, and the
+// TV's output goes off in Hyprland, so nothing draws for a TV that's off. The
+// terminal screensaver, when Settings picks it, hands over to the slideshow
+// after 10 minutes, and never starts with the TV off (ADR-072).
 //
 // An update asked for tonight, or any with "update overnight on its own" on,
 // installs between 02:00 and 05:00 once nothing has played for 30 minutes
@@ -75,7 +78,7 @@ import { ServiceProfiles, type ProfileOutcome } from "./service-profiles.ts";
 import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
 import { THEME_NAME } from "./themes.ts";
-import { tvOn } from "./tv-power.ts";
+import { tvOn, watchHotplug } from "./tv-power.ts";
 
 export type Role = "home" | "web" | "steam" | "screensaver" | "share";
 
@@ -324,8 +327,18 @@ interface Options {
   // Whether the TV is on, or null when the box can't tell (tv-power.ts).
   tvPoll?: () => boolean | null;
   tvPollMs?: number;
-  // How long after the TV goes off every app closes.
+  // How long after the TV goes off every app closes and the output goes off.
   tvOffCloseMs?: number;
+  // Calls changed whenever the TV's connector changes (a hotplug), and
+  // returns how to stop listening. With the output off, the HDMI audio can't
+  // say the TV is back, so a change turns the output on to look again.
+  tvHotplug?: (changed: () => void) => () => void;
+  // How long the output stays on to look, after a key or a hotplug with the
+  // TV still off, before it goes off again. Also how long a TV that's off as
+  // the session starts waits before it counts as off.
+  tvSettleMs?: number;
+  // How long the terminal screensaver runs before the slideshow takes over.
+  screensaverMs?: number;
   // How long the overlay's idle monitor waits before it says so.
   idleReportMs?: number;
   // How soon after the ambient screen comes up input on the seat is taken
@@ -398,6 +411,20 @@ export class Screen {
   private tvOffCloseMs: number;
   private tvTimer: ReturnType<typeof setTimeout> | null = null;
   private tvWatch: ReturnType<typeof setInterval> | null = null;
+  // The TV's output, off in Hyprland once the TV has been off a while
+  // (ADR-072), and whether it should be.
+  outputOff = false;
+  private dark = false;
+  private tvHotplug?: (changed: () => void) => () => void;
+  private hotplugStop: (() => void) | null = null;
+  private tvSettleMs: number;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  // The terminal screensaver's 10 minutes, and the one it stopped to hand
+  // over to the slideshow, whose window closing isn't a key.
+  private screensaverMs: number;
+  private saverAfter: number | null = null;
+  private saverTimer: ReturnType<typeof setTimeout> | null = null;
+  private handedOver = 0;
   private contextWatch: ReturnType<typeof setInterval> | null = null;
   private contextMs: number;
   private context = { said: "", at: 0, busy: false, again: false };
@@ -439,6 +466,9 @@ export class Screen {
     this.tvPoll = options.tvPoll;
     this.tvPollMs = options.tvPollMs ?? 2000;
     this.tvOffCloseMs = options.tvOffCloseMs ?? 120_000;
+    this.tvHotplug = options.tvHotplug;
+    this.tvSettleMs = options.tvSettleMs ?? 10_000;
+    this.screensaverMs = options.screensaverMs ?? 10 * 60_000;
     this.idleReportMs = options.idleReportMs ?? 30_000;
     this.ambientSettleMs = options.ambientSettleMs ?? 3000;
     this.homeCheckMs = options.homeCheckMs ?? 30_000;
@@ -476,7 +506,17 @@ export class Screen {
     if (this.tvPoll) {
       this.tvSeen = this.tvPoll();
       this.tvWatch = setInterval(() => this.pollTv(), this.tvPollMs);
+      // A TV that's off as the session starts, as after the night's update
+      // restarted the box, counts once it's still off a moment later: the
+      // HDMI audio's report comes a little after the output is on.
+      if (this.tvSeen === false) {
+        this.settleTimer = setTimeout(() => {
+          this.settleTimer = null;
+          if (this.tvSeen === false && !this.tvOff) void this.tv(false);
+        }, this.tvSettleMs);
+      }
     }
+    this.hotplugStop = this.tvHotplug?.(() => this.hotplug()) ?? null;
     this.nightWatch = setInterval(() => void this.night(), this.nightTickMs);
     this.nightWatch.unref?.();
     this.contextWatch = setInterval(() => void this.tellContext(), this.contextMs);
@@ -589,8 +629,9 @@ export class Screen {
   // Stops the timers, for the tests.
   stop(): void {
     this.idleGeneration++;
-    for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer]) if (timer) clearTimeout(timer);
+    for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer, this.settleTimer, this.saverTimer]) if (timer) clearTimeout(timer);
     if (this.tvWatch) clearInterval(this.tvWatch);
+    this.hotplugStop?.();
     if (this.nightWatch) clearInterval(this.nightWatch);
     if (this.contextWatch) clearInterval(this.contextWatch);
   }
@@ -734,9 +775,11 @@ export class Screen {
       this.opens = this.opens.filter((o) => o.address !== address);
       this.running();
     }
-    // The terminal screensaver ended on a key: back to what was there.
+    // The terminal screensaver ended on a key: back to what was there. One
+    // the daemon stopped for the slideshow leaves the ambient screen up.
     if (window?.role === "screensaver") {
-      if (this.ambient) await this.endAmbient("a key on the terminal screensaver");
+      if (window.pid === this.handedOver) this.handedOver = 0;
+      else if (this.ambient) await this.endAmbient("a key on the terminal screensaver");
       return;
     }
     if (!window || !wasFront || this.ending) return;
@@ -1365,6 +1408,9 @@ export class Screen {
       if (this.now() - this.ambientAt < this.ambientSettleMs) this.log("input as the ambient screen came up; it stays");
       else void this.wake("input again");
     }
+    // A key with the output off: Hyprland lights it (key_press_enables_dpms),
+    // and the daemon looks whether the TV is back.
+    if (!idle && this.dark) void this.look("a key");
     if (!idle || this.ambient) return { ok: true };
     void (async () => {
       const minutes = await this.launcher.idleMinutes().catch(() => 10);
@@ -1553,9 +1599,45 @@ export class Screen {
       });
       this.want = { role: "screensaver", until: this.now() + 15_000 };
       this.log(`the terminal screensaver (pid ${app.pid})`);
+      // After its 10 minutes, the slideshow under it takes over (ADR-072).
+      if (this.saverTimer) clearTimeout(this.saverTimer);
+      const ms = this.saverAfter !== null ? this.saverAfter * 1000 : this.screensaverMs;
+      this.saverTimer = setTimeout(() => {
+        this.saverTimer = null;
+        if (this.apps.get("screensaver") === app) void this.handOver(`${Math.round(ms / 60_000)} min of the terminal screensaver`);
+      }, ms);
     } catch (error) {
       this.log(`no terminal screensaver: ${(error as Error).message}`);
     }
+  }
+
+  // The terminal screensaver gives way to the slideshow under it, which is
+  // mostly still and changes picture now and then, so nothing sits on an
+  // OLED for hours (ADR-072). The ambient screen stays, and a key still goes
+  // back to what was there.
+  private handOver(why: string): Promise<void> {
+    return this.queue(() => this.handOverNow(why));
+  }
+
+  private async handOverNow(why: string): Promise<void> {
+    if (this.saverTimer) clearTimeout(this.saverTimer);
+    this.saverTimer = null;
+    const saver = this.apps.get("screensaver");
+    if (!saver) return;
+    this.log(`the terminal screensaver hands over to the slideshow: ${why}`);
+    this.handedOver = saver.pid;
+    this.apps.delete("screensaver");
+    if (this.want?.role === "screensaver") this.want = null;
+    saver.stop();
+    const home = this.homeWindow();
+    if (home && this.front()?.address !== home.address) await this.toFront(home.address);
+  }
+
+  // For the checks: the slideshow takes over after this many seconds, not
+  // 10 minutes.
+  screensaverAfterSeconds(seconds: number | null): object {
+    this.saverAfter = seconds;
+    return { ok: true };
   }
 
   // A key on the ambient screen: back to what was in front, or home.
@@ -1570,6 +1652,8 @@ export class Screen {
     const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
     this.ambientFrom = null;
     if (this.want?.role === "screensaver") this.want = null;
+    if (this.saverTimer) clearTimeout(this.saverTimer);
+    this.saverTimer = null;
     this.apps.get("screensaver")?.stop();
     await this.inHome("window.agentvAmbient?.(false)");
     if (back) await this.toFront(back);
@@ -1594,8 +1678,10 @@ export class Screen {
         if (this.tvOff) return;
         this.tvOff = true;
         this.log("the TV went off; pausing");
-        // Home's moving background stops too (ADR-072).
+        // Home's moving background stops too, and the terminal screensaver
+        // gives way to the still ambient screen (ADR-072).
         void this.inHome(`window.agentvTv?.("off")`);
+        await this.handOverNow("the TV went off");
         for (const entry of this.opens.filter((o) => o.role === "web")) {
           if ((await this.media(entry, PAUSE)) > 0) entry.paused = true;
         }
@@ -1611,8 +1697,49 @@ export class Screen {
       if (this.tvTimer) clearTimeout(this.tvTimer);
       this.tvTimer = null;
       this.log("the TV came back on");
+      this.dark = false;
+      if (this.outputOff) await this.output(true, "the TV is on");
       void this.inHome(`window.agentvTv?.("on")`);
     }).then(() => ({ ok: true }));
+  }
+
+  // --- The TV's output (ADR-072) --------------------------------------------
+
+  // On or off in Hyprland. Off, nothing draws: Chromium gets no frames to
+  // draw into, and the TV's link rests.
+  private async output(on: boolean, why: string): Promise<void> {
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = null;
+    try {
+      await this.hypr.dispatch(`hl.dsp.dpms({ action = "${on ? "enable" : "disable"}" })`);
+      this.outputOff = !on;
+      this.log(`the TV's output is ${on ? "on" : "off"}: ${why}`);
+    } catch (error) {
+      this.log(`the TV's output couldn't go ${on ? "on" : "off"}: ${(error as Error).message}`);
+    }
+  }
+
+  // With the output off, the HDMI audio has nothing to report, so the box
+  // can't hear the TV come back by itself. After a key, a hotplug or a wake
+  // from sleep the output goes on, the poll looks for a few seconds, and if
+  // the TV is still off, it goes off again.
+  look(why: string): Promise<void> {
+    return this.queue(async () => {
+      if (!this.dark) return;
+      if (this.outputOff) await this.output(true, `${why}; looking for the TV`);
+      else this.log(`${why}; looking for the TV`);
+      if (this.settleTimer) clearTimeout(this.settleTimer);
+      this.settleTimer = setTimeout(() => {
+        this.settleTimer = null;
+        void this.queue(async () => {
+          if (this.dark && this.tvOff) await this.output(false, "the TV is still off");
+        });
+      }, this.tvSettleMs);
+    });
+  }
+
+  private hotplug(): void {
+    if (this.dark) void this.look("the TV's connector changed");
   }
 
   private offTooLong(): Promise<void> {
@@ -1626,7 +1753,16 @@ export class Screen {
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
       await this.launcher.lock().catch(() => {});
-    }).then(() => void this.showAmbient(false));
+    })
+      .then(() => this.showAmbient(false))
+      .then(() =>
+        this.queue(async () => {
+          // Then nothing draws until the TV is back (ADR-072).
+          if (!this.tvOff) return;
+          this.dark = true;
+          await this.output(false, "the TV is off");
+        }),
+      );
   }
 
   openWeb(url: string, id = url): Promise<object> {
@@ -1976,6 +2112,7 @@ export class Screen {
       home_restarts: this.homeRestarts,
       ambient: this.ambient,
       tv: this.tvOff ? "off" : "on",
+      output: this.outputOff ? "off" : "on",
       monitors: monitors.map((m) => ({ name: m.name, width: m.width, height: m.height, refresh_rate: m.refreshRate })),
       layers: layers.map((l) => l.namespace),
     };
@@ -2101,6 +2238,8 @@ export class Screen {
         return this.seatIdle(request.idle === true);
       case "idle-after":
         return this.idleAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
+      case "screensaver-after":
+        return this.screensaverAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
       case "ambient":
         return this.showAmbient();
       case "wake":
@@ -2816,7 +2955,7 @@ async function main(): Promise<void> {
   // starts, so it draws at its canvas from the first frame.
   const display = new DisplayWatch({ hyprland, url: HOME_URL, file: displayFile(process.env, homedir()) });
   await display.start();
-  const screen = new Screen({ hyprland, launcher, tvPoll: () => tvOn(), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
+  const screen = new Screen({ hyprland, launcher, tvPoll: () => tvOn(), tvHotplug: (changed) => watchHotplug(changed), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN. What the
   // new remote types goes into the field in front as it's typed (ADR-065).

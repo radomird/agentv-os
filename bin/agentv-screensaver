@@ -10,6 +10,10 @@
 # foot of its own when the ambient screen comes up, and brings back what was
 # on screen once it ends. Any key ends it, from the remote, the phone or a
 # keyboard.
+#
+# It draws 30 frames a second, not the 120 Omarchy's desktop asks for, so an
+# older box's fan stays quiet (ADR-072). After 10 minutes the screen daemon
+# stops it and the slideshow under it takes over.
 
 set -uo pipefail
 
@@ -39,7 +43,7 @@ done
 
 while true; do
   ttfx -i "$text" \
-    --frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas --anchor-canvas c --anchor-text c \
+    --frame-rate 30 --canvas-width 0 --canvas-height 0 --reuse-canvas --anchor-canvas c --anchor-text c \
     --random-effect --no-eol --no-restore-cursor &
   effect=$!
   # A key, looked for four times a second, so the next effect follows on.

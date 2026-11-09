@@ -49,3 +49,7 @@ printf 'x' >&3
 wait "$saver" || true
 [[ $(head -n 1 "$SCRATCH/ttfx.log") == "-i $omarchy/logo.txt "* ]] || fail "without branding text it shows Omarchy's logo" "$(cat "$SCRATCH/ttfx.log")"
 pass "without branding text of its own, it shows the logo Omarchy has"
+
+# Lighter than Omarchy's desktop (ADR-072): 30 frames a second, not 120.
+[[ $args == *"--frame-rate 30 "* ]] || fail "it draws 30 frames a second" "$args"
+pass "T13.1 the screensaver draws 30 frames a second"
