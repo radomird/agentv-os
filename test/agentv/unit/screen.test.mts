@@ -1772,6 +1772,26 @@ test("T13.1 a key with the output off lights it to look for the TV, and it goes 
   t.screen.stop();
 });
 
+test("T13.2 input that ends the ambient screen with the TV still off: home goes back to it once the TV's found off", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 50, tvSettleMs: 150 });
+  on = false;
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
+  // A mouse that moves as the box wakes: the ambient screen ends.
+  t.screen.seatIdle(false);
+  await sleep(40);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.hypr.dpms, true);
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false, "the output is off again");
+  assert.equal(t.screen.ambient, true, "and home is on its ambient screen");
+  t.screen.stop();
+});
+
 test("T13.1 a hotplug with the output off lights it to look for the TV", async () => {
   let on = true;
   let hotplug = () => {};

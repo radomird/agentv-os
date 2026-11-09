@@ -1748,6 +1748,11 @@ export class Screen {
         this.settleTimer = null;
         void this.queue(async () => {
           if (this.dark && this.tvOff) await this.output(false, "the TV is still off");
+        }).then(() => {
+          // A key, or a mouse that moved as the box woke, took home off its
+          // ambient screen, but the TV is still off: back to it, so the TV
+          // comes on to the ambient screen, where any key goes home.
+          if (this.dark && this.tvOff && !this.ambient) void this.showAmbient(false);
         });
       }, this.tvSettleMs);
     });
