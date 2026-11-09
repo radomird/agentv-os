@@ -75,7 +75,7 @@ The six requests:
 - whats_new: what's new or just came out to watch or listen to. "what's new", "anything new on Plex", "what came out this week". query is null.
 - new_episode: whether a show has a new episode or season out yet, or when it will. "is there a new episode of Severance", "has the new season of Bluey come out", "when does the new season start", "any new episodes of my show". query is the show, or null when they don't name one.
 - make: build a new app or game for this TV, one that isn't on it yet, from what they describe. "make me a game like Tetris", "build an app for the photos on my NAS", "can you make a better weather app", "I'd like a quiz game for the kids". what is the app they describe, in their own words, without the request's own words such as make me, build, can you or please: "a game like Tetris". app is null.
-- change: change an app the agent made, one marked "made by the agent" in the list below. "make the jump higher in Blocks", "change Blocks so the pieces fall faster", "add a high score to the quiz", "make it slower". what is the change, in their own words, without the app's name: "make the jump higher". app is the made app they named, or null when they don't name one.
+- change: something different in an app the agent made, one marked "made by the agent" in the list below: something added to it, taken out, fixed, or made bigger, smaller, faster, slower, harder or easier, however they put it. They may say make, change, add, fix, update or let me, or only say what's wrong with it. "make the jump higher in Blocks", "change Blocks so the pieces fall faster", "add a high score to the quiz", "make it slower". what is the change, in their own words, without the app's name: "make the jump higher". app is the made app they named, or null when they don't name one. A change with no app named is still a change, when it asks for something an app the agent made could have: the TV asks which app if it can't tell.
 
 The slots:
 - query: the title, name or words to find, as they said them, in their own language. Leave out the request's own words, such as play, watch, the film, the series, the soundtrack, season 2, on Jellyfin, for me, please. Keep the title's own words: "The Bear" stays "The Bear", and "Making a Murderer" stays "Making a Murderer".
@@ -84,12 +84,12 @@ The slots:
 - season and episode: numbers they said, such as season 2 or the third episode. Else null.
 - what: for make and change only, as above. Else null.
 
-Make and change are only ever about an app. Making or changing anything else isn't one of them: "make a playlist", "make it louder", "change the channel", "change who's watching" and "change the theme" are none. A title with make or change in it is play: "watch The Making of Dune", "play the song Changes".
+Make and change are only ever about an app. Making or changing anything else isn't one of them: "make a playlist", "make it louder", "change the channel", "change who's watching" and "change the theme" are none. A title with make or change in it is play: "watch The Making of Dune", "play the song Changes". Words that sound like controls, such as loud, quiet, pause, play or stop, are a change when they're about how an app the agent made is built (its music, its sounds, its buttons, its levels or its rules), and a control when they ask the TV to do it now, to whatever is on.
 
 Answer none, with every slot null, for anything else, and whenever you aren't sure:
-- controls such as pause, stop, skip, louder, quieter, turn it off, go home, go back or switch who's watching;
+- controls for what's on now, such as pause, stop, skip, louder, quieter, turn it off, go home, go back or switch who's watching;
 - any other question, chat, the weather, the news, the time, shopping, lights, messages or settings;
-- installing, adding or buying an app by its name, such as "install Steam", rather than describing one to make;
+- installing, adding or buying an app by its name, such as "install Steam", rather than describing one to make. Adding something to an app the agent made is a change;
 - two requests in one sentence;
 - a sentence that's cut off, makes no sense, or isn't a request.
 Never fill in a title, an app, a number or a change they didn't say.`;
