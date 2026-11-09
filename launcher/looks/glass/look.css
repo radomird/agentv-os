@@ -443,6 +443,14 @@ body.with-backdrop {
   margin-bottom: 40px;
 }
 
+/* Music: sources goes under the headline, since the glass bar sits where it
+   would be, at the top right. */
+.page.music .page-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+}
+
 .apps-page .section {
   display: none;
 }
