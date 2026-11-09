@@ -5,6 +5,10 @@
 // pairs moves setup on. Enter carries on with a keyboard instead: on to
 // getting ready when the box is online, or first to the Wi-Fi it can see,
 // with its password typed on the TV.
+//
+// With setup's own switch on (D3), it's "hi.", one line and the code, with
+// no "use a keyboard instead": the phone is the way in. Enter still carries
+// on the same way, for a household with only a keyboard.
 
 import { glyph } from "../launcher/glyphs.ts";
 import { h } from "../launcher/dom.ts";
@@ -21,7 +25,10 @@ function info(about: SetupInfo): string {
   return "no network yet";
 }
 
-export function welcome(ctx: Ctx): View {
+// The welcome screen as D3 draws it, with setup's own switch on.
+export const welcome2 = (ctx: Ctx): View => welcome(ctx, true);
+
+export function welcome(ctx: Ctx, phase2 = false): View {
   const line = h("p", { class: "welcome-line" }, "scan the code with your phone.");
   const qr = h("img", { class: "qr", alt: "" }) as HTMLImageElement;
   const label = h("span", { class: "qr-label" });
@@ -42,7 +49,9 @@ export function welcome(ctx: Ctx): View {
     h("span", { class: "key" }, "↵ enter"),
     enterLabel,
   );
-  const el = h("div", { class: "setup-page welcome" }, h("div", { class: "welcome-left" }, prompt("tv setup"), hi(), line, enter), right);
+  const el = phase2
+    ? h("div", { class: "setup-page welcome welcome2" }, h("div", { class: "welcome-left" }, hi(), line), right)
+    : h("div", { class: "setup-page welcome" }, h("div", { class: "welcome-left" }, prompt("tv setup"), hi(), line, enter), right);
 
   let pairing: { code: string; until: number; url: string | null } | null = null;
   let paired: string | null = null;
@@ -90,7 +99,7 @@ export function welcome(ctx: Ctx): View {
       line.textContent = about.phones.length ? "your phone is paired. scan the code to pair another." : "scan the code with your phone to pair it.";
       showQr(code?.url ? `/api/phones/qr?${code.code}` : null, code ? `code ${code.code}` : "");
     } else {
-      line.textContent = "plug in a network cable, or press enter to pick a wi-fi.";
+      line.textContent = phase2 ? "plug in a network cable." : "plug in a network cable, or press enter to pick a wi-fi.";
       showQr(null, "");
     }
   }
@@ -112,9 +121,18 @@ export function welcome(ctx: Ctx): View {
 
   return {
     el,
-    first: enter,
+    first: phase2 ? undefined : enter,
     bright: true,
     info: info(ctx.info),
+    // With setup's own switch on there's no button, and Enter carries on
+    // all the same.
+    act: phase2
+      ? (action) => {
+          if (action !== "ok") return false;
+          void carryOn();
+          return true;
+        }
+      : undefined,
     heard(event, data) {
       // A phone paired: it says so, and setup moves on.
       const name = event === "phones" ? (data as { paired?: string }).paired : undefined;

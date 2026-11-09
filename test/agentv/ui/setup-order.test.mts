@@ -202,6 +202,22 @@ test("Q226 getting ready is one headline, one line and one bar, and moves on by 
     await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() !== "ready");
   } finally {
     await page.close();
+  }
+});
+
+test("Q226 the welcome screen is hi., one line and the code, with no keyboard button, and Enter still carries on", async () => {
+  switches(true);
+  at("welcome");
+  const page = await tv();
+  try {
+    await page.waitForSelector(".welcome2 .qr[src]");
+    assert.equal(await page.locator(".welcome2 .welcome-line").textContent(), "scan the code with your phone to pair it.");
+    assert.equal(await page.locator("[data-action='enter']").count(), 0, "no use a keyboard instead");
+    assert.ok(!(await page.locator(".setup-page").innerText()).includes("keyboard"));
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() === "ready");
+  } finally {
+    await page.close();
     switches(false);
   }
 });

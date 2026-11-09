@@ -18,7 +18,7 @@ import { people, person } from "./people.ts";
 import { ready, ready2 } from "./ready.ts";
 import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
-import { welcome, wifi } from "./welcome.ts";
+import { welcome, welcome2, wifi } from "./welcome.ts";
 
 export type Screen = (ctx: Ctx, page: string) => View | Promise<View>;
 
@@ -28,7 +28,7 @@ const two = (now: Screen, before: Screen): Screen => (ctx, page) => (ctx.info.nu
 
 // "step/*" is any page of that step, with the page's own part of the route.
 export const SCREENS: Record<string, Screen> = {
-  welcome: welcome,
+  welcome: two(welcome2, (ctx) => welcome(ctx)),
   "welcome/wifi": wifi,
   ready: two(ready2, (ctx) => ready(ctx)),
   box: yourBox,
