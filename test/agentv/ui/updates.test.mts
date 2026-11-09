@@ -70,6 +70,16 @@ async function tv(ready = ".grid .tile.focused"): Promise<Page> {
   return page;
 }
 
+// Asks again until the check holds. page.waitForFunction can't do this with
+// an async check: it takes the check's promise as true and goes on at once.
+async function until(check: () => Promise<boolean>, ms = 5000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > end) throw new Error(`still not so after ${ms} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 function requested(page: Page, cmd: string): Promise<unknown> {
   return page.waitForFunction((c) => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === c), cmd);
 }
@@ -83,7 +93,7 @@ test("S2.13 a new release shows one toast on home, and the bar says so until it'
   assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 is ready · settings → updates/);
   // Home tells the box it showed the toast as it shows it. The page closes
   // only once the box has it, as the TV's page never closes that quickly.
-  await page.waitForFunction(async () => (await (await fetch("/api/updates")).json()).toasted === "0.3.0");
+  await until(async () => (await (await fetch(`${url}/api/updates`)).json()).toasted === "0.3.0");
   await page.close();
   // Once: the next time home shows, no toast.
   const again = await tv();
