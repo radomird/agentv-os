@@ -245,6 +245,15 @@ function fresh(): Kept {
 export class Backgrounds {
   private dir: string;
   private softwareVideo: string;
+  // The theme's state changes one at a time: the TV session's offers and
+  // home's word on an intro can come at once.
+  private changing: Promise<unknown> = Promise.resolve();
+
+  private oneAtATime<T>(change: () => Promise<T>): Promise<T> {
+    const next = this.changing.then(change, change);
+    this.changing = next.catch(() => {});
+    return next;
+  }
 
   constructor(options: { dir: string; softwareVideo?: string }) {
     this.dir = options.dir;
@@ -356,7 +365,11 @@ export class Backgrounds {
   // pictures no longer in it put away, and the ids of those it should send.
   // A video's still and its intro come with it, and the videos themselves
   // stay with the TV session.
-  async offerTheme(offer: unknown): Promise<{ state?: BackgroundState; need?: string[]; error?: string }> {
+  offerTheme(offer: unknown): Promise<{ state?: BackgroundState; need?: string[]; error?: string }> {
+    return this.oneAtATime(() => this.takeOffer(offer));
+  }
+
+  private async takeOffer(offer: unknown): Promise<{ state?: BackgroundState; need?: string[]; error?: string }> {
     const { theme, current, files, intros, introDue, serve } = (offer ?? {}) as Partial<ThemeOffer>;
     if (typeof theme !== "string" || !THEME_NAME.test(theme)) return { error: "which omarchy theme" };
     if (!Array.isArray(files) || files.length > MAX_THEME) return { error: `up to ${MAX_THEME} of its backgrounds` };
@@ -388,13 +401,15 @@ export class Backgrounds {
 
   // What home did with the intro that's due: played it, or showed the still,
   // and why. Only for the one that's due now.
-  async introShown(shown: unknown): Promise<{ state?: BackgroundState; error?: string }> {
-    const { due, how, why } = (shown ?? {}) as Partial<IntroShown>;
-    const kept = await this.kept();
-    if (typeof due !== "string" || due !== kept.theme.introDue) return { error: "that intro isn't the one that's due" };
-    if (how !== "played" && how !== "still") return { error: "played, or the still" };
-    if (why !== undefined && why !== null && (typeof why !== "string" || !/^[a-z-]{1,24}$/.test(why))) return { error: "why, in a word" };
-    return { state: await this.save(kept, { ...kept.theme, introShown: { due, how, why: why ?? null } }) };
+  introShown(shown: unknown): Promise<{ state?: BackgroundState; error?: string }> {
+    return this.oneAtATime(async () => {
+      const { due, how, why } = (shown ?? {}) as Partial<IntroShown>;
+      const kept = await this.kept();
+      if (typeof due !== "string" || due !== kept.theme.introDue) return { error: "that intro isn't the one that's due" };
+      if (how !== "played" && how !== "still") return { error: "played, or the still" };
+      if (why !== undefined && why !== null && (typeof why !== "string" || !/^[a-z-]{1,24}$/.test(why))) return { error: "why, in a word" };
+      return { state: await this.save(kept, { ...kept.theme, introShown: { due, how, why: why ?? null } }) };
+    });
   }
 
   // Where the TV session serves one of the theme's videos, a video

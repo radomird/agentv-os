@@ -718,6 +718,8 @@ export class Screen {
     this.stack = this.stack.filter((a) => a !== address);
     this.stack.push(address);
     void this.corner(this.windows.get(address)?.role !== "home");
+    // Home's moving background pauses under an app (ADR-064).
+    void this.inHome(`window.agentvFront?.(${this.windows.get(address)?.role !== "home"})`);
   }
 
   // The mouse's Home in the overlay, on while an app is in front. Said once
@@ -2101,8 +2103,18 @@ export const launcher: Launcher = {
       // The home screen's sounds play without waiting for a first key press.
       // Home reaches the internet only through the daemon's filter, which
       // lets through the origins page apps declared (ADR-043). This box's own
-      // addresses, the daemon and the page apps' origins, stay direct.
-      [...CHROMIUM_FLAGS, `--user-data-dir=${HOME_PROFILE}`, `--app=${HOME_URL}`, "--remote-debugging-pipe", "--autoplay-policy=no-user-gesture-required", `--proxy-server=${HOME_PROXY}`],
+      // addresses, the daemon and the page apps' origins, stay direct. The
+      // theme's videos decode on the GPU with VA-API where it can (ADR-064);
+      // where it can't, Chromium decodes them itself and home shows stills.
+      [
+        ...CHROMIUM_FLAGS,
+        `--user-data-dir=${HOME_PROFILE}`,
+        `--app=${HOME_URL}`,
+        "--remote-debugging-pipe",
+        "--autoplay-policy=no-user-gesture-required",
+        `--proxy-server=${HOME_PROXY}`,
+        "--enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
+      ],
       { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] },
     );
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);

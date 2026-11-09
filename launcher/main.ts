@@ -5,6 +5,7 @@
 // its sound (ADR-024).
 
 import { creditLine, daemon, listen, screen, shownCurrent, shownPictures, type Backgrounds, type HomeState, type Running, type Settings, type Share, type Updates } from "./api.ts";
+import { ambientMedia, Backdrop } from "./backdrop.ts";
 import { fieldKind, tell } from "./context.ts";
 import { clock, fit, h } from "./dom.ts";
 import { Focus } from "./focus.ts";
@@ -396,26 +397,21 @@ function apply(settings: Settings): void {
   sounds.on = settings.sound.on;
   sounds.volume = settings.sound.volume;
   document.documentElement.classList.toggle("reduce-motion", settings.reduceMotion);
+  backdrop.update({ reduceMotion: settings.reduceMotion });
 }
 
 // The background (ADR-012, ADR-048, S5.3, S5.8): the theme's own, as on
 // Omarchy's desktop, or the photo or work chosen, behind home only, dimmed so
 // the tiles read over it; or the theme's own colour with none. Settings,
-// Apps and the other pages keep the theme's colour.
-const backdropEl = document.getElementById("backdrop")!;
+// Apps and the other pages keep the theme's colour. With the dynamicbg
+// switch, the theme's video backgrounds and intros move over it (ADR-064,
+// backdrop.ts).
+const backdrop = new Backdrop(document.getElementById("backdrop")!);
 let backgrounds: Backgrounds | null = null;
-
-function drawBackdrop(): void {
-  const item = shownCurrent(backgrounds);
-  const shown = backdropEl.querySelector("img")?.dataset.id;
-  if (item && item.id !== shown) backdropEl.replaceChildren(h("img", { class: "backdrop-picture", src: `/api/backgrounds/${item.id}`, alt: "", "data-id": item.id }));
-  else if (!item) backdropEl.replaceChildren();
-  document.body.classList.toggle("with-backdrop", Boolean(item));
-}
 
 async function loadBackgrounds(): Promise<void> {
   backgrounds = await daemon.backgrounds().catch(() => backgrounds);
-  drawBackdrop();
+  backdrop.update({ backgrounds });
 }
 
 // The ambient screen (ADR-012, ADR-031): the photos or works one after another, each
@@ -432,6 +428,7 @@ const PHOTO_MS = 60_000;
 function setAmbient(on: boolean): void {
   if (on === ambient) return;
   ambient = on;
+  backdrop.setAmbient(on);
   tell({ screen: on ? "ambient" : history[history.length - 1] === "home" ? "home" : "menu" });
   ambientPointer = null;
   if (on) {
@@ -439,16 +436,16 @@ function setAmbient(on: boolean): void {
     const time = h("div", { class: "ambient-time" }, clock());
     const pictures = h("div", { class: "ambient-pictures" });
     const credit = h("div", { class: "ambient-credit" });
-    const photos = shownPictures(backgrounds);
-    let at = Math.max(0, photos.findIndex((item) => item.id === shownCurrent(backgrounds)?.id));
+    const photos = shownPictures(backgrounds, backdrop.state.dynamic);
+    let at = Math.max(0, photos.findIndex((item) => item.id === shownCurrent(backgrounds, backdrop.state.dynamic)?.id));
     const next = () => {
       const item = photos[at % photos.length];
       at++;
-      const img = h("img", { class: "ambient-picture", src: `/api/backgrounds/${item.id}`, alt: "" });
-      img.addEventListener("load", () => {
+      const { el: img, ready } = ambientMedia(backdrop.now(), item);
+      img.addEventListener(ready, () => {
         for (const old of pictures.querySelectorAll(".ambient-picture.on")) {
           old.classList.remove("on");
-          setTimeout(() => old.remove(), 2000);
+          setTimeout(() => stopMedia(old), 2000);
         }
         requestAnimationFrame(() => img.classList.add("on"));
         credit.textContent = creditLine(item);
@@ -471,6 +468,17 @@ function setAmbient(on: boolean): void {
     ambientEl.replaceChildren(pictures, h("div", { class: "ambient-drift" }, time, h("div", { class: "ambient-day" }, day)), credit);
   }
   ambientEl.classList.toggle("on", on);
+  if (!on) for (const old of ambientEl.querySelectorAll(".ambient-picture")) stopMedia(old);
+}
+
+// Takes a picture off the ambient screen, and stops it first if it's a video.
+function stopMedia(el: Element): void {
+  if (el instanceof HTMLVideoElement) {
+    el.pause();
+    el.removeAttribute("src");
+    el.load();
+  }
+  el.remove();
 }
 
 // Ends the ambient screen from this side, and asks the screen daemon to put
@@ -714,7 +722,7 @@ async function start(): Promise<void> {
   ctx.state = await daemon.home();
   shownViewer = ctx.state.viewer.id;
   apply(ctx.state.settings);
-  await loadBackgrounds();
+  await Promise.all([loadBackgrounds(), backdrop.start()]);
   await loadBuilds(ctx);
   show("home");
   void askShared();
@@ -747,6 +755,8 @@ async function start(): Promise<void> {
     },
     // A photo came from a phone, or another source was chosen.
     background: () => void loadBackgrounds(),
+    // A switch for what's still being built changed.
+    features: () => void backdrop.features(),
     // A phone shared something, or the TV may ask about one now (ADR-050).
     shared: () => void askShared(),
     // A sentence said to the TV (ADR-023): what was heard, then what came
@@ -829,11 +839,14 @@ async function start(): Promise<void> {
     agentvHome: () => void;
     agentvRunning: (json: string) => void;
     agentvAmbient: (on: boolean) => void;
+    agentvFront: (app: boolean) => void;
     agentvPage: (id: string) => void;
     agentvLauncher: object;
   };
   w.agentvHome = () => act("home");
   w.agentvAmbient = (on) => setAmbient(on);
+  // An app came in front of home, or home is in front again.
+  w.agentvFront = (app) => backdrop.setFront(!app);
   // A page app opened from elsewhere, such as Apps or the phone, through
   // the screen daemon, which put home in front first. One installed a moment
   // ago may not be in home's list yet, so home reads it again first.
@@ -848,6 +861,7 @@ async function start(): Promise<void> {
   w.agentvLauncher = {
     sounds,
     focus,
+    backdrop,
     go: (route: string) => ctx.go(route),
     // agentv-pin-check, when there's no terminal to type the PIN in, as for
     // Super+Ctrl+Home: the pad, which gives up after 2 minutes with no key.
