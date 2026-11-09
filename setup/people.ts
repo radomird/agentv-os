@@ -4,6 +4,10 @@
 // pad, and the phone's remote shows the pad too (board 07, ADR-037). An
 // adult's profile can ask for the PIN to open, and shows a lock when it
 // does. Names are typed on the TV, or on the phone's keyboard.
+//
+// With setup's own switch on, it's one headline and the row: no PIN switch,
+// since adding a child asks for the PIN then, and done sits at the end of
+// the row instead of a continue under it.
 
 import { daemon, type Viewer } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
@@ -73,12 +77,17 @@ function tile(viewer: Viewer, go: () => void): HTMLElement {
   );
 }
 
-export async function people(ctx: Ctx): Promise<View> {
+// Who watches as D3 draws it, with setup's own switch on.
+export const people2 = (ctx: Ctx): Promise<View> => people(ctx, true);
+
+export async function people(ctx: Ctx, phase2 = false): Promise<View> {
   const home = await household().catch(() => ({ viewers: [], active: "" }) as Household);
   const row = h("div", { class: "people" });
   const pinValue = h("span", { class: "pin-state" });
   const pinButton = h("button", { class: "pin-switch", "data-focus": true, "data-action": "pin", onclick: () => void togglePin() }, pinValue);
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("people") }, "↵ continue");
+  const go = phase2
+    ? h("button", { class: "person done", "data-focus": true, "data-action": "done", onclick: () => void ctx.finish("people") }, h("span", { class: "person-face" }, glyph("check", 96)), h("span", { class: "person-name" }, "done"))
+    : h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("people") }, "↵ continue");
 
   const draw = (now: Household) => {
     // The tile with the focus stays focused when the row is drawn again.
@@ -87,6 +96,7 @@ export async function people(ctx: Ctx): Promise<View> {
     row.replaceChildren(
       ...now.viewers.map((viewer) => tile(viewer, () => ctx.open(`people/${viewer.id}`))),
       h("button", { class: "person add", "data-focus": true, "data-action": "add", onclick: () => ctx.open("people/new") }, h("span", { class: "person-face" }, "+"), h("span", { class: "person-name" }, "add")),
+      phase2 ? go : "",
     );
     pinValue.textContent = ctx.info.pin ? "■ on" : "□ off";
     pinButton.classList.toggle("on", ctx.info.pin);
@@ -117,16 +127,20 @@ export async function people(ctx: Ctx): Promise<View> {
   };
 
   draw(home);
-  const el = h(
-    "div",
-    { class: "setup-page" },
-    h("div", {}, ...heading("who watches?", "who watches?", ctx.reduced())),
-    row,
-    h("div", { class: "setup-foot" }, h("span", { class: "pin-line" }, h("span", {}, "adult pin"), pinButton, h("span", { class: "setup-note" }, "needed for children")), go),
-  );
+  const el = phase2
+    ? h("div", { class: "setup-page d3 people2" }, ...heading("agentv people", "who watches?", ctx.reduced()), row)
+    : h(
+        "div",
+        { class: "setup-page" },
+        h("div", {}, ...heading("who watches?", "who watches?", ctx.reduced())),
+        row,
+        h("div", { class: "setup-foot" }, h("span", { class: "pin-line" }, h("span", {}, "adult pin"), pinButton, h("span", { class: "setup-note" }, "needed for children")), go),
+      );
   return {
     el,
-    first: row.querySelector<HTMLElement>(".person") ?? go,
+    // With setup's own switch on, done has the focus: the household as it
+    // is, and on.
+    first: phase2 ? go : (row.querySelector<HTMLElement>(".person") ?? go),
     info: "←→ move · ↵ pick",
     heard(event) {
       if (event === "viewers" || event === "pin") void household().then(draw, () => {});

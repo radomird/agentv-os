@@ -14,11 +14,12 @@ import { goal, goal2 } from "./goal.ts";
 import { location, pickLocation, zoneQuestion } from "./location.ts";
 import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
-import { people, person } from "./people.ts";
-import { ready } from "./ready.ts";
+import { people, people2, person } from "./people.ts";
+import { ready, ready2 } from "./ready.ts";
 import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
-import { welcome, wifi } from "./welcome.ts";
+import { themeBackground } from "./theme2.ts";
+import { welcome, welcome2, wifi } from "./welcome.ts";
 
 export type Screen = (ctx: Ctx, page: string) => View | Promise<View>;
 
@@ -28,9 +29,9 @@ const two = (now: Screen, before: Screen): Screen => (ctx, page) => (ctx.info.nu
 
 // "step/*" is any page of that step, with the page's own part of the route.
 export const SCREENS: Record<string, Screen> = {
-  welcome: welcome,
+  welcome: two(welcome2, (ctx) => welcome(ctx)),
   "welcome/wifi": wifi,
-  ready: ready,
+  ready: two(ready2, (ctx) => ready(ctx)),
   box: yourBox,
   country: two(location, country),
   "country/pick": two(pickLocation, pickCountry),
@@ -40,17 +41,17 @@ export const SCREENS: Record<string, Screen> = {
     (ctx, page) => ways(ctx, page as Provider),
     (ctx, page) => path(ctx, page as Provider),
   ),
-  people: people,
+  people: two(people2, (ctx) => people(ctx)),
   "people/*": person,
   goal: two(goal2, goal),
   apps: apps,
   "apps/add": (ctx) => addYourOwn(ctx),
   "apps/network": serverPage,
   look: look,
-  theme: theme,
+  theme: two(themeBackground, theme),
   "theme/colours": theme,
   "theme/own": (ctx) => addYourOwn(ctx, "theme"),
-  background: background,
+  background: two(themeBackground, background),
   "background/photos": photos,
   "background/art": art,
   "background/folder": folder,
