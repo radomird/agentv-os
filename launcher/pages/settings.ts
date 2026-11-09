@@ -305,6 +305,7 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", {}, "background"),
           h("span", { class: "button-value" }, source === "theme" ? (shown ? creditLine(shown) : "the theme's") : SOURCE_WORDS[source]),
         ),
+        ...themePictures(),
         h(
           "button",
           { class: "button", "data-focus": true, "data-action": "ambient-style", "data-adjust": "ambient-style", onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style") },
@@ -395,6 +396,48 @@ export function settings(ctx: Ctx, open?: string): View {
       return;
     }
     ctx.sounds.play("confirm");
+  };
+
+  // The theme's own pictures, each its own card, when it has more than one.
+  // OK on one asks Omarchy to show it, as its desktop does, and makes the
+  // theme's own the background.
+  const themePictures = (): HTMLElement[] => {
+    const items = pictures?.theme?.items ?? [];
+    if (items.length < 2) return [];
+    const current = pictures?.source === "theme" ? pictures.theme?.current : null;
+    return [
+      h(
+        "div",
+        { class: "theme-pictures", "data-scroll": true },
+        ...items.map((item, i) =>
+          h(
+            "button",
+            { class: `theme-picture${item.id === current ? " picked" : ""}`, "data-focus": true, "data-action": `theme-picture-${item.id}`, "aria-label": `the theme's background ${i + 1}`, onclick: () => void pickThemePicture(item.id) },
+            h("img", { src: `/api/backgrounds/${item.id}`, alt: "" }),
+          ),
+        ),
+      ),
+    ];
+  };
+
+  const pickThemePicture = async (id: string) => {
+    const reply = await screen.setBackground(id);
+    if (!reply.ok) {
+      ctx.sounds.play("failure");
+      ctx.toast(reply.error ?? "that background didn't change", "fail");
+      return;
+    }
+    try {
+      if (pictures?.source !== "theme") pictures = await daemon.chooseBackground("theme");
+    } catch (error) {
+      ctx.sounds.play("failure");
+      ctx.toast((error as Error).message, "fail");
+      return;
+    }
+    // Omarchy's own link has it now. The daemon hears it a moment later.
+    if (pictures?.theme) pictures = { ...pictures, theme: { ...pictures.theme, current: id } };
+    ctx.sounds.play("confirm");
+    ctx.render("settings/look", `theme-picture-${id}`);
   };
 
   // The background, from the sources that have pictures, then none.
