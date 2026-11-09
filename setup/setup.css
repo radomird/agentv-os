@@ -1574,3 +1574,21 @@ body.counted .player-score {
 .tb-back.soon {
   opacity: 0.6;
 }
+
+/* Who watches with setup's own switch on: done sits at the end of the row. */
+.setup-page.d3.people2 .people {
+  margin-top: 64px;
+}
+
+.person.done .person-face {
+  width: 236px;
+  height: 236px;
+  border: 2px solid var(--foreground);
+  color: var(--bright-foreground);
+}
+
+/* Getting ready with setup's own switch on: one line and one bar, D3. */
+.setup-page.d3.ready2 .ready-bar {
+  margin-top: 48px;
+  font-size: 40px;
+}
