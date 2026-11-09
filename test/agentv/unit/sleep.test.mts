@@ -139,6 +139,28 @@ test("T13.2 a wake is noticed, and the box stays up an hour before it sleeps aga
   assert.equal(t.suspends, 2, "then it sleeps again");
 });
 
+test("T13.2 a sleep cut short by the power button still counts as a wake", async () => {
+  const { t, sleep } = box();
+  t.pass(2 * HOUR);
+  sleep.tv(false);
+  t.pass(HOUR);
+  await sleep.tick();
+  assert.equal(t.suspends, 1);
+  // Asleep for 20 s, then the power button.
+  t.sleepFor(20_000);
+  t.pass(15_000);
+  await sleep.tick();
+  assert.equal(t.woke, 1);
+  t.pass(15_000);
+  await sleep.tick();
+  assert.equal(t.suspends, 1, "it doesn't drop straight back to sleep");
+  // A tick's ordinary drift isn't a wake.
+  t.wall += 200;
+  t.pass(15_000);
+  await sleep.tick();
+  assert.equal(t.woke, 1);
+});
+
 test("T13.2 when logind won't suspend, it tries again 10 minutes later, not every tick", async () => {
   const { t, sleep } = box({ suspends: false });
   t.pass(2 * HOUR);

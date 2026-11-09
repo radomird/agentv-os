@@ -115,11 +115,13 @@ export class Sleep {
 
   async tick(): Promise<void> {
     // Awake again: the wall clock moved on while the monotonic one stood.
+    // Between two looks they drift apart by far less than a second, so 10 s
+    // is a sleep, even one cut short by the power button.
     const offset = this.now() - this.monotonic();
-    if (offset - this.offset > 60_000) {
+    if (offset - this.offset > 10_000) {
       this.awakeSince = this.now();
       this.heldSaid = "";
-      this.log(`the box woke from sleep, ${Math.round((offset - this.offset) / 60_000)} min later`);
+      this.log(`the box woke from sleep, ${Math.round((offset - this.offset) / 1000)} s later`);
       this.woke?.();
     }
     this.offset = offset;
