@@ -41,6 +41,7 @@
 
 import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -231,6 +232,10 @@ export interface Launcher {
   // Sets an Omarchy theme with Omarchy's own omarchy-theme-set, as its
   // desktop does: null once it's set, or why not.
   setTheme(theme: string): Promise<string | null>;
+  // Shows one of the theme's own backgrounds, by its id, with Omarchy's own
+  // omarchy-theme-bg-set, as its desktop does: null once Omarchy shows it,
+  // or why not.
+  setBackground?(id: string): Promise<string | null>;
   // The parent of a process, or null.
   parent(pid: number): number | null;
   // The Chromium profile a process runs, or null.
@@ -1075,6 +1080,9 @@ export class Screen {
       // Setup's look and Settings → Look (board 12).
       case "theme-set":
         return this.setTheme(request.theme);
+      // Setup's theme and background, and Settings → Themes and backgrounds.
+      case "theme-bg-set":
+        return this.setBackground(request.background);
       default:
         return { ok: false, error: `unknown request: ${request?.cmd}` };
     }
@@ -1134,6 +1142,18 @@ export class Screen {
     } finally {
       this.themeRun = null;
     }
+  }
+
+  // One of the theme's own backgrounds, picked on the TV: Omarchy shows it,
+  // and the TV hears it the way it hears a background changed on Omarchy's
+  // desktop.
+  async setBackground(id: unknown): Promise<object> {
+    if (typeof id !== "string" || !/^[0-9a-f]{16}$/.test(id)) return { ok: false, error: "one of the theme's backgrounds, by its id" };
+    if (!this.launcher.setBackground) return { ok: false, error: "the theme's backgrounds can't be picked here" };
+    this.log(`showing the theme's background ${id}`);
+    const why = await this.launcher.setBackground(id).catch((error: Error) => error.message);
+    if (why) this.log(`the background didn't change: ${why}`);
+    return why ? { ok: false, error: why } : { ok: true };
   }
 
   // Brings home to the front and asks for the PIN there, for an action such
@@ -2265,6 +2285,9 @@ export class Screen {
         return this.close(request.role);
       case "toast":
         return this.toast(String(request.text ?? ""));
+      // One of the theme's own backgrounds, as picking it on the TV asks for.
+      case "theme-bg-set":
+        return this.setBackground(request.background);
       case "frames":
         return this.frames(Number(request.seconds ?? 5));
       case "keys":
@@ -2372,6 +2395,13 @@ async function barLook(): Promise<string[]> {
 
 // logind's manager on the system bus, for busctl call.
 const LOGIND = ["org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager"];
+
+// Omarchy's themes and the theme's backgrounds, as this session follows
+// them (ADR-048): one for the session, which Look's list and the background
+// picker share.
+let themesFollowed: OmarchyThemes | null = null;
+const omarchyThemes = (): OmarchyThemes =>
+  (themesFollowed ??= new OmarchyThemes({ omarchy: process.env.OMARCHY_PATH || "/usr/share/omarchy", home: homedir(), daemon: HOME_URL, log: (line) => console.log(line) }));
 
 export const launcher: Launcher = {
   async homeReady() {
@@ -2663,6 +2693,26 @@ export const launcher: Launcher = {
         },
       );
     });
+  },
+
+  async setBackground(id) {
+    // Omarchy's own command, as its background menu runs it, with the path of
+    // the theme's background that has this id. It ends by telling Omarchy's
+    // shell, which the TV session may not run, so what counts is where
+    // Omarchy's link points after it.
+    const found = await omarchyThemes()
+      .backgrounds()
+      .catch(() => null);
+    const file = found?.files.find((one) => one.id === id);
+    if (!file) return "that isn't one of the theme's backgrounds";
+    const said = await new Promise<string>((resolve) => {
+      execFile("omarchy-theme-bg-set", [file.path], { timeout: 30_000, env: { ...process.env, OMARCHY_PATH: process.env.OMARCHY_PATH || "/usr/share/omarchy" } }, (error, _stdout, stderr) =>
+        resolve(error ? String(stderr).trim().split("\n")[0] || error.message.split("\n")[0] : ""),
+      );
+    });
+    const link = join(homedir(), ".local", "state", "omarchy", "current", "background");
+    const [shown, wanted] = await Promise.all([realpath(link).catch(() => null), realpath(file.path).catch(() => null)]);
+    return shown && shown === wanted ? null : said || "omarchy didn't show it";
   },
 
   async canBootMenu() {
@@ -3012,7 +3062,7 @@ async function main(): Promise<void> {
   // USB drives and shares have had a moment.
   setTimeout(() => void music.scan().catch((error: Error) => console.log(`music: ${error.message}`)), 15_000);
   // Every theme Omarchy has, the person's own included, for Look (ADR-048).
-  void new OmarchyThemes({ omarchy: process.env.OMARCHY_PATH || "/usr/share/omarchy", home: homedir(), daemon: HOME_URL, log: (line) => console.log(line) }).start();
+  void omarchyThemes().start();
   // Which Widevine the services' Chromium has, for the box check (ADR-061).
   new WidevineWatch({ home: HOME_URL, profile: SERVICES_PROFILE, log: (line) => console.log(line) }).start();
   // When Hyprland goes, so does the TV session, and this with it.

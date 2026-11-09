@@ -302,6 +302,12 @@ class FakeLauncher implements Launcher {
   }
   themes: string[] = [];
   themeDone: (why: string | null) => void = () => {};
+  backgroundsShown: string[] = [];
+  backgroundWhy: string | null = null;
+  async setBackground(id: string) {
+    this.backgroundsShown.push(id);
+    return this.backgroundWhy;
+  }
   setTheme(theme: string) {
     this.themes.push(theme);
     return new Promise<string | null>((resolve) => (this.themeDone = resolve));
@@ -1988,6 +1994,23 @@ test("ADR-047 the first run asks each provider's CLI for its version the way it 
     process.env.HOME = before;
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("one of the theme's own backgrounds picked on the TV goes to Omarchy by its id alone, and says why when it isn't shown", async () => {
+  const t = await tv();
+  const refused = { ok: false, error: "one of the theme's backgrounds, by its id" };
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set" }), refused);
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "../../etc/passwd" }), refused);
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "0123456789ABCDEF" }), refused);
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "0123456789abcdef" }), { ok: true });
+  t.launcher.backgroundWhy = "that isn't one of the theme's backgrounds";
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "fedcba9876543210" }), { ok: false, error: "that isn't one of the theme's backgrounds" });
+  // agentv screen background asks the same over the socket.
+  t.launcher.backgroundWhy = null;
+  assert.deepEqual(await t.screen.handle({ cmd: "theme-bg-set", background: "00112233445566aa" }), { ok: true });
+  assert.deepEqual(await t.screen.handle({ cmd: "theme-bg-set", background: "nope" }), refused);
+  assert.deepEqual(t.launcher.backgroundsShown, ["0123456789abcdef", "fedcba9876543210", "00112233445566aa"]);
+  assert.ok(t.lines.some((line) => line.includes("the background didn't change: that isn't one of the theme's backgrounds")));
 });
 
 test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, one at a time, and says why when it isn't", async () => {

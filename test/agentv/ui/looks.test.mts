@@ -10,7 +10,8 @@
 //   home itself in the same look, theme and size, to the pixel.
 
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -380,4 +381,38 @@ test("T5.3 setup's look step shows each look's preview, and the preview is home 
   }
   await useTheme("tokyo-night");
   assert.deepEqual(off, []);
+});
+
+test("Settings → Themes and backgrounds shows each of the theme's own pictures, and OK on one asks Omarchy to show it", async () => {
+  // Two of Tokyo Night's, as the screen daemon hands them over, the first
+  // the one Omarchy shows.
+  const dir = join(import.meta.dirname, "..", "..", "..", "themes", "tokyo-night", "backgrounds");
+  const files = readdirSync(dir)
+    .filter((name) => /\.(jpe?g|png|webp)$/i.test(name))
+    .sort()
+    .slice(0, 2)
+    .map((name) => {
+      const body = readFileSync(join(dir, name));
+      const type = name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg";
+      return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type, body };
+    });
+  await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current: files[0].id, files: files.map(({ id, type }) => ({ id, type })) }) });
+  for (const file of files) await fetch(`${url}/api/backgrounds/theme/${file.id}`, { method: "POST", body: new Uint8Array(file.body) });
+  const before = (await (await fetch(`${url}/api/backgrounds`)).json()).source;
+  await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "theme" }) });
+  await useLook("terminal");
+  const page = await tv();
+  const card = (id: string) => `.theme-picture[data-action="theme-picture-${id}"]`;
+  try {
+    await go(page, "settings/look");
+    await page.waitForSelector(card(files[1].id));
+    assert.equal(await page.locator(".theme-picture").count(), 2, "a card for each");
+    assert.equal(await page.locator(".theme-picture.picked").getAttribute("data-action"), `theme-picture-${files[0].id}`, "the one Omarchy shows");
+    await page.locator(card(files[1].id)).click();
+    await page.waitForFunction((id) => (window as unknown as { screenRequests: { cmd: string; background?: string }[] }).screenRequests.some((r) => r.cmd === "theme-bg-set" && r.background === id), files[1].id);
+    await page.waitForSelector(`${card(files[1].id)}.picked`);
+  } finally {
+    await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: before }) });
+    await page.close();
+  }
 });

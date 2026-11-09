@@ -676,6 +676,9 @@ export const screen = {
   // Sets one of Omarchy's themes, as its desktop does (board 12). Omarchy
   // takes a few seconds; the colours arrive as a theme event.
   setTheme: (theme: string) => ask({ cmd: "theme-set", theme }, 90_000),
+  // Shows one of the theme's own backgrounds, by its id, as Omarchy's desktop
+  // does. The change comes back as a background event.
+  setBackground: (id: string) => ask({ cmd: "theme-bg-set", background: id }),
   // One of Music's folders, drives or shares as the background (ADR-012):
   // its pictures are copied over, which takes a while on a slow share.
   backgroundFolder: (source: string, grant?: string) => ask({ cmd: "background-folder", source, ...(grant ? { grant } : {}) }, 300_000),
