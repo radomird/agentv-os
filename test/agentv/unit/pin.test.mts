@@ -177,6 +177,7 @@ test("S4.5 the daemon refuses a guarded request without the PIN's grant, and nev
     assert.deepEqual(refused, { status: 403, data: { ok: false, error: "that needs the pin", pin: true } });
     assert.equal((await send("POST", "/api/updates/tonight", { version: null })).status, 200, "clearing it after the night's install doesn't");
     assert.equal((await send("POST", "/api/settings", { updateOvernight: true })).status, 403);
+    assert.equal((await send("POST", "/api/settings", { sleepWhenOff: true })).status, 403, "and sleep, which the phone can't wake (T13.2)");
     assert.equal((await send("POST", "/api/settings", { updateOvernight: false, reduceMotion: true })).status, 200, "a setting that isn't guarded doesn't");
 
     const wrong = await send("POST", "/api/pin/check", { pin: "0000" });
@@ -186,6 +187,7 @@ test("S4.5 the daemon refuses a guarded request without the PIN's grant, and nev
     const grant = right.data.grant as string;
     assert.equal((await send("POST", "/api/updates/tonight", { version: "0.3.1" }, grant)).status, 200);
     assert.equal((await send("POST", "/api/settings", { updateOvernight: true }, grant)).status, 200);
+    assert.equal((await send("POST", "/api/settings", { sleepWhenOff: true }, grant)).status, 200);
     assert.equal((await send("POST", "/api/pin/allows", { grant })).status, 200);
     assert.equal((await send("POST", "/api/pin/allows", { grant: "made-up" })).status, 403);
 

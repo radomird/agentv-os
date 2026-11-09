@@ -14,6 +14,7 @@ import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from 
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
+import { Sleep } from "../../../daemon/sleep.ts";
 import { HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
@@ -395,6 +396,8 @@ async function tv(
     tvSettleMs?: number;
     tvHotplug?: (changed: () => void) => () => void;
     screensaverMs?: number;
+    sleep?: Sleep;
+    inhibitor?: (why: string) => { set(on: boolean): void };
     idleReportMs?: number;
     ambientSettleMs?: number;
     homeCheckMs?: number;
@@ -1811,6 +1814,35 @@ test("T13.1 a TV that's off as the session starts counts as off a moment later",
   assert.equal(t.screen.tvOff, true);
   assert.equal(t.screen.ambient, true);
   assert.equal(t.hypr.dpms, false);
+  t.screen.stop();
+});
+
+test("T13.2 the screen tells sleep when the TV goes off and on, and agentv screen sleep-after reaches it", async () => {
+  const platform = { settings: async () => ({ sleep: true, overnight: false }), inhibitors: async () => [], wakeAlarm: async () => true, suspend: async () => true };
+  const sleep = new Sleep({ platform, log: () => {} });
+  const t = await tv({ sleep, tvOffCloseMs: 50 });
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).sleep.tv_off_s, null);
+  await t.screen.handle({ cmd: "tv", on: false });
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).sleep.tv_off_s, 0);
+  assert.deepEqual(await t.screen.handle({ cmd: "sleep-after", seconds: 30 }), { ok: true });
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).sleep.due_in_s, 30);
+  await t.screen.handle({ cmd: "tv", on: true });
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).sleep.tv_off_s, null);
+  t.screen.stop();
+  const without = await tv();
+  assert.equal(((await without.screen.handle({ cmd: "sleep-after", seconds: 30 })) as { ok: boolean }).ok, false);
+  without.screen.stop();
+});
+
+test("T13.2 a provider's CLI on its first fetch keeps the box awake until it's done", async () => {
+  const held: boolean[] = [];
+  const t = await tv({ inhibitor: () => ({ set: (on) => held.push(on) }) });
+  t.launcher.accepted = "claude";
+  await t.screen.installCli();
+  assert.deepEqual(held, [true]);
+  t.launcher.firstRunDone({ version: "2.0.0" });
+  await sleep(20);
+  assert.deepEqual(held, [true, false]);
   t.screen.stop();
 });
 

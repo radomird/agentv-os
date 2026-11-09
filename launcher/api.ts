@@ -62,6 +62,8 @@ export interface Settings {
   updateOvernight: boolean;
   // The TV says its answers aloud (stage 8).
   spoken: boolean;
+  // Sleep once the TV's been off for an hour (ADR-072), off by default.
+  sleepWhenOff?: boolean;
 }
 
 // Which voice says the TV's answers (stage 8): the provider's own, Piper on

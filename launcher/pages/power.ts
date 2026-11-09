@@ -14,6 +14,7 @@ import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { installing } from "./updates.ts";
+import { sleepRow } from "./sleep.ts";
 
 export const COUNTDOWN_S = 10;
 
@@ -40,6 +41,7 @@ export function powerPanel(ctx: Ctx): HTMLElement[] {
     h("button", { class: "button", "data-focus": true, "data-action": "restart", onclick: () => ctx.go("power/restart") }, "restart →"),
     h("button", { class: "button", "data-focus": true, "data-action": "shutdown", onclick: () => ctx.go("power/shutdown") }, "shut down →"),
     bootMenu,
+    ...sleepRow(ctx),
     h("p", { class: "panel-note" }, "each asks first. shut down waits 10 seconds, and the box's power button turns it back on."),
   ];
 }

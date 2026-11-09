@@ -1,0 +1,15 @@
+# Wakes a sleeping box for the night's update window (ADR-072). With Settings
+# → Power's sleep and Settings → Updates' overnight installs both on, the
+# screen daemon starts this timer before it suspends the box, and stops it
+# when overnight installs are off. It's never enabled, so a restart clears
+# it. The screen daemon installs the update once it's awake, as on any
+# night, and the box sleeps again an hour later.
+
+[Unit]
+Description=AgenTV wake for the night's update
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+WakeSystem=true
+AccuracySec=1min
+Unit=agentv-wake.service

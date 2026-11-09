@@ -236,6 +236,33 @@ test("T2.2 a box whose boot loader can't restart to its menu doesn't offer it", 
   await page.close();
 });
 
+test("T13.2 Settings → Power has sleep beside the boot menu, off by default, and turned on it says what wakes the box", async () => {
+  const page = await tv();
+  await go(page, "settings/power");
+  await page.waitForSelector('.menu-item.open[data-key="power"]');
+  await page.waitForSelector('[data-action="bootmenu"]:not(.hidden)');
+  const value = () => page.locator('[data-action="sleep"] .button-value').innerText();
+  assert.match(await page.locator('[data-action="sleep"]').innerText(), /sleep when the tv's been off for an hour\s+\[ \]/);
+  assert.doesNotMatch(await page.locator(".panel").innerText(), /usb keyboard/, "the line shows once it's on");
+  // Down from restart: shut down, the boot menu, then sleep.
+  await page.keyboard.press("Enter");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  assert.equal(await focused(page), "sleep");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-action="sleep"] .button-value')?.textContent === "[x]");
+  assert.equal(await focused(page), "sleep", "the focus stays on it");
+  assert.match(await page.locator(".panel").innerText(), /wake it with its power button or a usb keyboard\. the phone can't\./);
+  const saved = async () => ((await (await fetch(`${url}/api/home`)).json()) as { settings: { sleepWhenOff?: boolean } }).settings.sleepWhenOff;
+  assert.equal(await saved(), true);
+  // And off again.
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-action="sleep"] .button-value')?.textContent === "[ ]");
+  assert.equal(await value(), "[ ]");
+  assert.equal(await saved(), false);
+  await page.close();
+  assert.deepEqual(errors, []);
+});
+
 test("About says what AgenTV is, as its public line does", async () => {
   const page = await tv();
   await go(page, "settings/about");

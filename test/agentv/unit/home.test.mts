@@ -75,12 +75,14 @@ test("the TV's settings change only to values they can take", async () => {
   assert.equal((await get("/api/home")).settings.ambient, "pictures");
   // The TV says its answers aloud until someone turns it off (stage 8).
   assert.equal((await get("/api/home")).settings.spoken, true);
-  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal", spoken: false })).status, 200);
+  // T13.2: sleep is off until someone turns it on.
+  assert.equal((await get("/api/home")).settings.sleepWhenOff, false);
+  assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal", spoken: false, sleepWhenOff: true })).status, 200);
   const settings = (await get("/api/home")).settings;
-  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal", spoken: false });
-  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes", updateOvernight: "on", ambient: "fireworks", spoken: "loud" });
+  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal", spoken: false, sleepWhenOff: true });
+  await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes", updateOvernight: "on", ambient: "fireworks", spoken: "loud", sleepWhenOff: "on" });
   assert.deepEqual((await get("/api/home")).settings, settings);
-  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false, ambient: "pictures", spoken: true });
+  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false, ambient: "pictures", spoken: true, sleepWhenOff: false });
 });
 
 test("a tile's content comes from its app's tile(), in its own worker", async () => {

@@ -84,9 +84,12 @@ import { Discover, type DiscoverOptions } from "./discover.ts";
 import { discoverRoute, serverPickRoute } from "./routes/discover.ts";
 import { ServerPicks } from "./server-picks.ts";
 import { DisplayRoutes } from "./routes/display.ts";
+import { Inhibitor } from "./inhibit.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
+  // Keeps the box awake while a build runs (daemon/inhibit.ts, ADR-072).
+  inhibitor?: (why: string) => { set(on: boolean): void };
   state: string; // the daemon's own state: /var/lib/agentv/daemon
   apps?: string; // the box's apps: /var/lib/agentv/apps
   updates?: string; // what the update check and an install write: /var/lib/agentv/update
@@ -333,6 +336,7 @@ export class Daemon {
   private themesAsked = new Set<string>();
   private buildsSeen = "";
   private buildsTimer?: ReturnType<typeof setInterval>;
+  private buildAwake: { set(on: boolean): void };
   // What home's Chromium reaches the internet through.
   readonly homeProxy?: NetFilter;
   private art: ArtArchives;
@@ -528,6 +532,7 @@ export class Daemon {
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
     this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/agentv-build" });
+    this.buildAwake = options.inhibitor?.("building an app") ?? { set: () => {} };
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
@@ -690,6 +695,8 @@ export class Daemon {
     if (now === this.buildsSeen) return;
     this.buildsSeen = now;
     this.broadcast("builds", {});
+    // A build keeps the box awake while it runs (ADR-072).
+    this.buildAwake.set(await this.builds.running().catch(() => false));
   }
 
   private async buildsState() {
@@ -2548,6 +2555,9 @@ export class Daemon {
       // Updating overnight installs on its own, so it needs the PIN too.
       const overnight = (change as { updateOvernight?: unknown } | undefined)?.updateOvernight;
       if (typeof overnight === "boolean" && overnight !== (await this.home.settings()).updateOvernight && !this.guarded(request, response, "updating overnight")) return;
+      // And sleep, which leaves the box where the phone can't wake it.
+      const sleep = (change as { sleepWhenOff?: unknown } | undefined)?.sleepWhenOff;
+      if (typeof sleep === "boolean" && sleep !== (await this.home.settings()).sleepWhenOff && !this.guarded(request, response, "sleep")) return;
       const why = await this.home.saveSettings(change);
       if (why) {
         this.json(response, 400, { ok: false, error: why });
@@ -3766,6 +3776,7 @@ async function main(): Promise<void> {
   const port = at >= 0 ? Number(args[at + 1]) : Number(process.env.AGENTV_PORT ?? 3000);
   const daemon = new Daemon({
     root: process.env.AGENTV_PATH ?? "/usr/share/agentv",
+    inhibitor: (why) => new Inhibitor(why),
     state: process.env.AGENTV_DAEMON_STATE ?? "/var/lib/agentv/daemon",
     apps: process.env.AGENTV_APPS ?? "/var/lib/agentv/apps",
     updates: process.env.AGENTV_UPDATE_STATE ?? "/var/lib/agentv/update",
