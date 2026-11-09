@@ -2285,6 +2285,9 @@ export class Screen {
         return this.close(request.role);
       case "toast":
         return this.toast(String(request.text ?? ""));
+      // One of the theme's own backgrounds, as picking it on the TV asks for.
+      case "theme-bg-set":
+        return this.setBackground(request.background);
       case "frames":
         return this.frames(Number(request.seconds ?? 5));
       case "keys":

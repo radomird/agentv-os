@@ -2005,7 +2005,11 @@ test("one of the theme's own backgrounds picked on the TV goes to Omarchy by its
   assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "0123456789abcdef" }), { ok: true });
   t.launcher.backgroundWhy = "that isn't one of the theme's backgrounds";
   assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "fedcba9876543210" }), { ok: false, error: "that isn't one of the theme's backgrounds" });
-  assert.deepEqual(t.launcher.backgroundsShown, ["0123456789abcdef", "fedcba9876543210"]);
+  // agentv screen background asks the same over the socket.
+  t.launcher.backgroundWhy = null;
+  assert.deepEqual(await t.screen.handle({ cmd: "theme-bg-set", background: "00112233445566aa" }), { ok: true });
+  assert.deepEqual(await t.screen.handle({ cmd: "theme-bg-set", background: "nope" }), refused);
+  assert.deepEqual(t.launcher.backgroundsShown, ["0123456789abcdef", "fedcba9876543210", "00112233445566aa"]);
   assert.ok(t.lines.some((line) => line.includes("the background didn't change: that isn't one of the theme's backgrounds")));
 });
 
