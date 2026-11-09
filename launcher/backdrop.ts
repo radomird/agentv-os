@@ -8,7 +8,8 @@
 // They play only where the box decodes the video's codec in hardware, as its
 // check says (GET /api/box), and show the still otherwise. They pause while an
 // app is in front, another page covers home or the TV is off, and stay still
-// with reduce motion or Omarchy's intros switch off. Paused away from home,
+// with reduce motion. Omarchy's intros switch stops the intros only, as on its
+// own desktop, and a video background keeps moving. Paused away from home,
 // a look that blurs the background there blurs one frame, not a moving video.
 // Setup's preview of home shows the still.
 
@@ -28,10 +29,11 @@ export interface BackdropState {
   tvOn?: boolean;
 }
 
-// Why something that could move stays still, or null when it can move.
-export function stillBecause(state: BackdropState, codec: string | null | undefined): string | null {
+// Why something that could move stays still, or null when it can move: a
+// video background's loop or a picture's intro.
+export function stillBecause(state: BackdropState, codec: string | null | undefined, kind: "loop" | "intro"): string | null {
   if (state.reduceMotion) return "reduce-motion";
-  if (state.backgrounds?.theme?.intros === false) return "intros-off";
+  if (kind === "intro" && state.backgrounds?.theme?.intros === false) return "intros-off";
   if (state.backgrounds?.softwareVideo) return null;
   if (!codec || !state.decode?.includes(codec)) return "no-hardware";
   return null;
@@ -50,13 +52,13 @@ export function plan(
   const still = item.poster ?? `/api/backgrounds/${item.id}`;
   if (!state.dynamic) return { item, still, loop: null, intro: null, why: null };
   if (item.media === "video" && item.video) {
-    const why = broken.has(item.video) ? "error" : stillBecause(state, item.codec);
+    const why = broken.has(item.video) ? "error" : stillBecause(state, item.codec, "loop");
     return { item, still, loop: why ? null : item.video, intro: null, why };
   }
   const theme = state.backgrounds?.theme;
   const due = theme?.introDue;
   if (item.intro && due && theme?.introShown?.due !== due && shown !== due) {
-    const why = broken.has(item.intro) ? "error" : stillBecause(state, item.introCodec);
+    const why = broken.has(item.intro) ? "error" : stillBecause(state, item.introCodec, "intro");
     return { item, still, loop: null, intro: why ? null : { src: item.intro, due }, why };
   }
   return { item, still, loop: null, intro: null, why: null };
@@ -76,7 +78,7 @@ function loopVideo(src: string, still: string, className: string): HTMLVideoElem
 // still, and the event that says it's ready to fade in.
 export function ambientMedia(state: BackdropState, item: Background): { el: HTMLElement; ready: string } {
   const still = item.poster ?? `/api/backgrounds/${item.id}`;
-  if (state.dynamic && item.media === "video" && item.video && !stillBecause(state, item.codec)) {
+  if (state.dynamic && item.media === "video" && item.video && !stillBecause(state, item.codec, "loop")) {
     const video = loopVideo(item.video, still, "ambient-picture ambient-video");
     if (state.tvOn === false) video.autoplay = false;
     return { el: video, ready: "loadeddata" };
