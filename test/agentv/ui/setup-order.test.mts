@@ -4,7 +4,8 @@
 // ahead. With the switch off, it's phase 1's bar, as it was.
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -211,6 +212,51 @@ test("Q226 theme and background are one screen: home in each theme, the backgrou
     await page.keyboard.press("Enter");
     await until(async () => (await (await fetch(`${url}/api/setup`)).json()).setup?.done === true);
     assert.equal(streams, 0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("theme and background shows each of the theme's own pictures as a card, and OK on another asks Omarchy to show it, then finishes setup", async () => {
+  switches(true);
+  at("theme");
+  // Two of Tokyo Night's, as the screen daemon hands them over, the first
+  // the one Omarchy shows.
+  const dir = join(import.meta.dirname, "..", "..", "..", "themes", "tokyo-night", "backgrounds");
+  const files = readdirSync(dir)
+    .filter((name) => /\.(jpe?g|png|webp)$/i.test(name))
+    .sort()
+    .slice(0, 2)
+    .map((name) => {
+      const body = readFileSync(join(dir, name));
+      const type = name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg";
+      return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type, body };
+    });
+  await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current: files[0].id, files: files.map(({ id, type }) => ({ id, type })) }) });
+  for (const file of files) await fetch(`${url}/api/backgrounds/theme/${file.id}`, { method: "POST", body: new Uint8Array(file.body) });
+  await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "theme" }) });
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
+  page.on("pageerror", (error) => errors.push(error.message));
+  // The screen daemon's binding, stood in for.
+  await page.addInitScript(() => {
+    const w = window as unknown as { screenRequests: unknown[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
+    w.screenRequests = [];
+    w.agentvScreen = (json: string) => {
+      const request = JSON.parse(json);
+      w.screenRequests.push(request);
+      setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true })), 0);
+    };
+  });
+  await page.goto(`${url}/`);
+  const card = (id: string) => `.tb-back[data-picture="${id}"]`;
+  try {
+    await page.waitForSelector(card(files[1].id));
+    assert.deepEqual(await page.locator(".tb-back").evaluateAll((cards) => cards.map((one) => (one as HTMLElement).dataset.background)), ["theme", "theme", "photos", "folder", "made"]);
+    assert.equal(await page.locator(".tb-back.picked").getAttribute("data-picture"), files[0].id, "the one Omarchy shows");
+    assert.equal(await page.locator(".tb-label").innerText(), "# tokyo night's backgrounds");
+    await page.locator(card(files[1].id)).click();
+    await page.waitForFunction((id) => (window as unknown as { screenRequests: { cmd: string; background?: string }[] }).screenRequests.some((r) => r.cmd === "theme-bg-set" && r.background === id), files[1].id);
+    await until(async () => (await (await fetch(`${url}/api/setup`)).json()).setup?.done === true);
   } finally {
     await page.close();
   }
