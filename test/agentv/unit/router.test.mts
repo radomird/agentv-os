@@ -93,6 +93,9 @@ test("T11.1 the brief says make and change are only ever about an app, and that 
   // that sound like controls count when they're about the app itself.
   assert.match(BRIEF, /They may say make, change, add, fix, update or let me, or only say what's wrong with it\./);
   assert.match(BRIEF, /A change with no app named is still a change/);
+  assert.match(BRIEF, /They may say make, build, create, code or I'd like, or only describe it\./);
+  assert.match(BRIEF, /such as play, watch, my, the film, the series, the album, the playlist, the soundtrack/);
+  assert.match(BRIEF, /A word for a kind of thing, such as music, photos or games, is its kind and not an app/);
   assert.match(BRIEF, /are a change when they're about how an app the agent made is built/);
   assert.match(BRIEF, /Make and change are only ever about an app\. Making or changing anything else isn't one of them: "make a playlist"/);
   assert.match(BRIEF, /A title with make or change in it is play/);
