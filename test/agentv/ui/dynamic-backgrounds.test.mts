@@ -2,11 +2,12 @@
 // a stand-in theme's video background loops behind home, muted, and stops
 // when an app comes in front or the TV goes off; its intro plays once and
 // ends on its still. Both only with the dynamicbg switch on, only where the
-// box decodes the codec in hardware, and never with reduce motion or
-// Omarchy's intros off. In each look and at each size the video fills the
-// screen, and away from home it waits paused. The TV session's side is stood
-// in for by its own video server, serving the two stand-in videos from where
-// they are. The TV-off word is stood in for too (ADR-072).
+// box decodes the codec in hardware, and never with reduce motion. Omarchy's
+// intros switch stops the intros only. In each look and at each size the
+// video fills the screen, and away from home it waits paused. The TV
+// session's side is stood in for by its own video server, serving the two
+// stand-in videos from where they are. The TV-off word is stood in for too
+// (ADR-072).
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -193,7 +194,7 @@ test("T6.1 a video background loops behind home, muted, and stops while an app i
   }
 });
 
-test("T6.1 a video background stays still without hardware decoding for its codec, without a box check, and with reduce motion or Omarchy's intros off", async () => {
+test("T6.1 a video background stays still without hardware decoding for its codec, without a box check, and with reduce motion, but keeps moving with Omarchy's intros off", async () => {
   await dynamic(true);
   await theme("loop", null);
   for (const [why, options] of [
@@ -210,12 +211,13 @@ test("T6.1 a video background stays still without hardware decoding for its code
       await page.close();
     }
   }
+  // Omarchy's intros switch stops intros, as on its own desktop, and a video
+  // background you picked keeps moving.
   await theme("loop", null, false);
   const page = await tv();
   try {
-    await page.waitForSelector(`#backdrop img[data-id="${LOOP_ID}"]`, { timeout: 5000 });
-    await page.waitForTimeout(500);
-    assert.equal(await page.locator("#backdrop video").count(), 0, "Omarchy's intros off");
+    await page.locator("#backdrop video.backdrop-video").waitFor({ timeout: 5000 });
+    await loops(page);
   } finally {
     await page.close();
   }
