@@ -170,6 +170,24 @@ test("an app is held to its manifest", async () => {
   await fails(h.call(viewer, "constructor"), "refused");
 });
 
+test("the phone's pause and resume reach an app's own player, and an app without them says so", async () => {
+  const player = tileApp("return {};").replace(
+    "playback: { async open() {}, async readPlaybackState() { return null; } },",
+    `playback: {
+    async open() {},
+    async readPlaybackState() { return { title: "Sintel", position: 9, duration: 888, playing }; },
+    async pause() { playing = false; },
+    async resume() { playing = true; },
+  },`,
+  );
+  const h = host(app(player.replace("export default", "let playing = true;\nexport default")));
+  await h.call(viewer, "playback.pause");
+  assert.equal((await h.call<{ playing: boolean }>(viewer, "playback.readPlaybackState")).playing, false);
+  await h.call(viewer, "playback.resume");
+  assert.equal((await h.call<{ playing: boolean }>(viewer, "playback.readPlaybackState")).playing, true);
+  await fails(host(app(tileApp("return {};"))).call(viewer, "playback.pause"), "failed", /has no playback\.pause/);
+});
+
 test("a module that doesn't load says so", async () => {
   await fails(host(app("export default 1;")).start(), "failed", /no default export/);
   await fails(host(app("throw new Error('broken');")).start(), "failed", /broken/);

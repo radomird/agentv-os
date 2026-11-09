@@ -88,6 +88,14 @@ export interface TvApp {
     readPlaybackState(ctx: AppContext): Promise<PlaybackState | null>;
     /** The site's own "next episode" control, used by the continue executor. */
     next?(ctx: AppContext): Promise<void>;
+    /**
+     * The player's own pause and play, for the phone's play and pause
+     * (ADR-065, ADR-066). Each resolves once the video says so, and leaves a
+     * video that's already that way as it is. Without them, the box pauses
+     * the video on the page itself.
+     */
+    pause?(ctx: AppContext): Promise<void>;
+    resume?(ctx: AppContext): Promise<void>;
   };
 
   /** Children (ADR-009): list the service's profiles once, then open the mapped one for child viewers. */
