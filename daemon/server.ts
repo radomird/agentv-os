@@ -25,7 +25,7 @@ import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { APPS_TILE, Home } from "./home.ts";
+import { APPS_TILE, gridNamed, Home } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
@@ -42,28 +42,48 @@ import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from 
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
 import { ProviderKey } from "./key.ts";
-import { boxZone, cityOf } from "./place.ts";
+import { boxZone, cityOf, clockZone } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
 import { Phones } from "./phones.ts";
+import { Features, type FeatureMap } from "./features.ts";
+import { Box, type BoxOptions } from "./box.ts";
+import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
+import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
+import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
+import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
+import { NO_AI } from "./executors/index.ts";
+import type { ExecBuilds } from "./executors/make.ts";
 import { Pin, type PinStatus } from "./pin.ts";
 import { Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
-import { network, PARTS, Setup, STEPS, type SetupState } from "./setup.ts";
+import { network, Setup, type SetupState } from "./setup.ts";
+import { SetupRoutes } from "./routes/setup.ts";
+import { AiIcons, type PROVIDER_SITES } from "./ai-icons.ts";
+import { PlanSignIn } from "./plan-sign-in.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
+import { currentLook, lookRoute } from "./routes/look.ts";
+import { desktopPasswordRoute } from "./routes/desktop-password.ts";
+import { DesktopPassword } from "./desktop-password.ts";
 import { Updates } from "./updates.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 import { newItem } from "./executors/whatsNew.ts";
 import { boxRouter } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
+import { cleanField, type Field } from "./remote-text.ts";
+import { nowPlaying, PhoneRemote } from "./routes/remote.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
+import { Discover, type DiscoverOptions } from "./discover.ts";
+import { discoverRoute, serverPickRoute } from "./routes/discover.ts";
+import { ServerPicks } from "./server-picks.ts";
+import { DisplayRoutes } from "./routes/display.ts";
 
 export interface DaemonOptions {
   root: string; // AgenTV's files: /usr/share/agentv, or a checkout
@@ -82,6 +102,10 @@ export interface DaemonOptions {
   // Which provider has a key: /etc/agentv/key.json, which agentv-key-store
   // writes, and how long that may take.
   keyStatus?: string;
+  // The first screen's account note, and root's side of the desktop
+  // password's hand-over, for tests.
+  accountMarker?: string;
+  passwordSocket?: string;
   keyWaitMs?: number;
   // The channel `agentv channel` sets: /etc/agentv/channel (ADR-053).
   channelFile?: string;
@@ -135,10 +159,15 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // Where each AI provider's icon is fetched from: their own sites, unless a
+  // test stands them in.
+  aiSites?: Partial<typeof PROVIDER_SITES>;
   // TMDB, through the router's service, which holds the household's TMDB
   // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
   tmdb?: TmdbGet;
   tmdbStatus?: string;
+  // The clock what's new goes by, for tests that pin the day.
+  newsNow?: () => Date;
   // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
   // provider's voice and Piper, for tests.
   voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
@@ -147,6 +176,10 @@ export interface DaemonOptions {
   country?: { zone?: () => Promise<string>; waitMs?: number };
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
+  // Servers and shares on the home network: stand-ins' ports, for tests.
+  discover?: DiscoverOptions;
+  // The box check (ADR-061): stand-ins for the machine it reads, for tests.
+  box?: Omit<BoxOptions, "state">;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -183,7 +216,6 @@ const CAPTIVE_FILES = ["companion-web/setup.ts", "companion-web/lib.ts", "compan
 const MAX_BODY = 64 * 1024;
 // How long a phone's ask for the state waits for something to change.
 const PHONE_WAIT_MS = 25_000;
-const FIELD_KINDS = ["text", "search", "email", "password", "number", "url"];
 
 // An app the TV offered for Export (ADR-045), for ten minutes, with the
 // person's GitHub sign-in when they have one.
@@ -199,10 +231,12 @@ interface ExportOffer {
 // says what it shows: the PIN pad, what asks for it and how many digits are
 // in, a text field with the focus and its kind, and home, a menu or the
 // ambient screen. The screen daemon says what's in front and whether
-// something plays. The desktop's relay says when Omarchy's desktop is on.
+// something plays, and the field with the focus in an app's page, with the
+// app (ADR-065). The field is home's or the app's, whichever is in front.
+// The desktop's relay says when Omarchy's desktop is on.
 export interface TvContext {
   pin: { title: string; for: string; digits: number; error: string | null } | null;
-  field: { kind: string } | null;
+  field: (Omit<Field, "label"> & { label?: string; app?: string }) | null;
   screen: "home" | "menu" | "ambient";
   front: "home" | "app";
   playing: boolean;
@@ -237,6 +271,12 @@ export class Daemon {
   // The TMDB key, and what's new and new episodes from TMDB (stage 8).
   readonly tmdbKey: TmdbKey;
   readonly country: CountryPlace;
+  // The feature switches every phase 2 track's screens hide behind.
+  readonly features: Features;
+  // What the box is (ADR-061).
+  readonly box: Box;
+  // The TV's size (ADR-062): /api/display and the screen daemon's asks.
+  readonly displayRoutes: DisplayRoutes;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -247,6 +287,27 @@ export class Daemon {
   readonly phones: Phones;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
+  // Settings → Omarchy desktop's password (daemon/desktop-password.ts).
+  readonly desktopPassword: DesktopPassword;
+  // Setup's own routes (daemon/routes/setup.ts), and what they may use.
+  private setupRoutes = new SetupRoutes({
+    setup: () => this.setupState,
+    country: () => this.country,
+    json: (response, status, data) => this.json(response, status, data),
+    body: (request) => this.body(request),
+    broadcast: (event, data) => this.broadcast(event, data),
+    log: (line) => this.log(line),
+    adult: async (request, response, what) => this.guarded(request, response, what) && (await this.adult(request, response, what)),
+    ai: () => this.ai,
+    aiIcons: () => this.aiIcons,
+    planSignIn: () => this.planSignIn,
+    qr: (text) => this.qr(text),
+    send: (response, type, body, headers) => this.send(response, type, body, headers),
+  });
+  // The AI providers' icons (ADR-069), and a plan's sign-in from setup
+  // (ADR-070).
+  readonly aiIcons: AiIcons;
+  readonly planSignIn: PlanSignIn;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -277,8 +338,15 @@ export class Daemon {
   private art: ArtArchives;
   private immich: ImmichAlbum;
   private immichBusy = false;
+  readonly discover: Discover;
+  readonly serverPicks: ServerPicks;
   // The phone companion's listener, on the home network.
   readonly lan?: Server;
+  // The new remote's typing and playback (ADR-065).
+  readonly phoneRemote: PhoneRemote;
+  // The field with the focus on home, and in the app in front.
+  private homeField: Field | null = null;
+  private appField: (Field & { app: string }) | null = null;
   // The setup hotspot's captive page.
   readonly captive?: Server;
   // The screen daemon, taking the phone's keys and text for the virtual
@@ -322,6 +390,7 @@ export class Daemon {
       userAgent: userAgent(options.root),
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
+      looks: () => this.features.on("looks"),
       changed: (event) => this.broadcast(event, {}),
       pageTile: (id) => this.pageApps.tile(id),
       newTile: (viewer, size) => this.newTile(viewer, size),
@@ -332,6 +401,14 @@ export class Daemon {
     // apps they can open, and done through the TV session.
     // The listening bar: each change to the TV's pages and, for over an
     // app, the TV session. Nothing of the words stays (ADR-054).
+    this.phoneRemote = new PhoneRemote({
+      send: (event) => this.remote(event as Record<string, unknown>),
+      tv: () => this.tv,
+      viewer: () => this.profiles.active(),
+      toPages: (event, data) => this.toPages(event, data),
+      json: (response, status, data) => this.json(response, status, data),
+      body: (request) => this.body(request),
+    });
     this.listening = new Listening({
       idleMs: options.listenIdleMs,
       changed: (heard) => {
@@ -340,17 +417,19 @@ export class Daemon {
       },
     });
     this.say = new Say({
-      bar: { sent: () => this.listening.sent(), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
+      bar: { sent: (from) => this.listening.sent(from), listening: () => this.listening.up, show: (state, text) => void this.sayAsks.ask({ kind: "live", state, text }, 5000) },
       route: options.router ?? ((sentence, apps) => this.boxRoute(sentence, apps)),
       viewer: () => this.profiles.active(),
       apps: async (viewer) => {
         const allowed = new Set((await this.home.apps(viewer)).map((app) => app.id));
         return (await this.home.manifests())
           .filter(({ manifest }) => allowed.has(manifest.id))
-          .map(({ manifest }) => ({
+          .map(({ manifest, tier }) => ({
             id: manifest.id,
             name: manifest.name,
             category: manifest.tv.category,
+            // An app the agent made, which a change can be asked of.
+            ...(tier === "local" ? { made: true } : {}),
             // Music looks in the library in the TV session rather than in a
             // worker, so it can, though its manifest doesn't say so.
             capabilities: manifest.id === MUSIC_APP ? [...manifest.tv.capabilities, "search"] : [...manifest.tv.capabilities],
@@ -365,6 +444,8 @@ export class Daemon {
           episode: (query) => this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, ids),
         };
       },
+      // Make and change, while the askbuilds switch is on (ADR-068).
+      builds: async (viewer) => ((await this.features.on("askbuilds")) ? this.execBuilds(viewer) : undefined),
       ask: (ask, ms) => this.sayAsks.ask(ask, ms),
       changed: (said) => this.broadcast("said", said),
       log: this.log,
@@ -408,6 +489,22 @@ export class Daemon {
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
+    this.features = new Features({ state: options.state, channel: () => this.channel() });
+    this.box = new Box({ state: options.state, ...options.box });
+    this.displayRoutes = new DisplayRoutes({
+      state: options.state,
+      sizes: () => this.features.on("sizes"),
+      fourKSmooth: async () => {
+        const smooth = await this.box.smooth();
+        return smooth.result ? smooth.passed : null;
+      },
+      json: (response, status, data) => this.json(response, status, data),
+      body: (request) => this.body(request),
+      broadcast: (event, data) => this.broadcast(event, data),
+      log: this.log,
+      adult: (request, response, what) => this.adult(request, response, what),
+    });
+    this.desktopPassword = new DesktopPassword({ marker: options.accountMarker, socket: options.passwordSocket });
     this.voice = new Voice({
       ...options.voice,
       ai: () => this.ai.read(),
@@ -422,17 +519,22 @@ export class Daemon {
       region: () => this.region(),
       // Every app on the box but AgenTV's own.
       apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
+      now: options.newsNow,
       log: this.log,
     });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
-    this.setupState = new Setup({ path: join(options.state, "setup.json") });
+    this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
+    this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
+    this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/agentv-build" });
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
+    this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), screen: () => this.phonesChanged(), picked: (key) => this.toPages("discover-pick", { key }), ...options.discover });
+    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -444,6 +546,7 @@ export class Daemon {
       onChange: (apps) => {
         this.broadcast("setup-apps", apps);
         this.broadcast("apps", {});
+        void this.serverPicks.settle(Object.keys(apps).filter((id) => apps[id].state === "failed"));
       },
     });
     if (options.lanPort !== undefined) {
@@ -521,6 +624,7 @@ export class Daemon {
 
   close(): Promise<void> {
     clearInterval(this.buildsTimer);
+    this.discover.close();
     for (const stream of this.streams) stream.end();
     for (const stream of this.remotes) stream.end();
     this.lan?.close();
@@ -531,9 +635,11 @@ export class Daemon {
     this.setupApps.stop();
     this.openLedger?.close();
     this.pageAsks.close();
+    this.phoneRemote.close();
     this.sayAsks.close();
     this.exportAsks.close();
     this.themeAsks.close();
+    this.displayRoutes.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -837,13 +943,18 @@ export class Daemon {
         };
       }
     }
-    if (change.field === null) next.field = null;
-    else if (change.field && typeof change.field === "object") {
-      const kind = (change.field as Record<string, unknown>).kind;
-      next.field = { kind: typeof kind === "string" && FIELD_KINDS.includes(kind) ? kind : "text" };
-    }
+    // Home's page says its own field; the screen daemon, with what's in
+    // front, the field in the app's page, which it leaves out when there's
+    // none.
+    if (change.field !== undefined) this.homeField = cleanField(change.field);
     if (change.screen === "home" || change.screen === "menu" || change.screen === "ambient") next.screen = change.screen;
-    if (change.front === "home" || change.front === "app") next.front = change.front;
+    if (change.front === "home" || change.front === "app") {
+      next.front = change.front;
+      const field = cleanField(change.appField);
+      const app = (change.appField as { app?: unknown } | undefined)?.app;
+      this.appField = field && typeof app === "string" ? { ...field, app: app.slice(0, 120) } : null;
+    }
+    next.field = next.front === "app" ? this.appField : this.homeField;
     if (typeof change.playing === "boolean") next.playing = change.playing;
     if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
     const idle = this.idleHome();
@@ -900,21 +1011,37 @@ export class Daemon {
     const viewer = await this.profiles.active();
     const pin = this.pin.status(viewer.locked);
     const setup = await this.setup();
+    const remote2 = await this.features.on("remote2");
+    const askbuilds = await this.features.on("askbuilds");
+    // The new remote's keyboard follows the field in front, an app's page
+    // included, with the app's name; the old one only home's.
+    const tv = { ...this.tv, field: remote2 ? await this.named(this.tv.field) : this.homeField && { kind: this.homeField.kind } };
     return {
       ok: true,
       version,
       phone,
+      // The feature switches the phone draws by.
+      features: { remote2, askbuilds },
+      // What the Ask box waits on, for an adult's ok on the phone (ADR-068).
+      ...(askbuilds ? { ask: viewer.role === "adult" ? await askView(this.askKit()) : null } : {}),
+      // The look the TV is in, for the remote to match it (ADR-063, D4).
+      look: (await this.features.on("looks")) ? await currentLook({ root: this.options.root, state: this.options.state }) : null,
       viewer,
       viewers: await this.profiles.list(),
       pin: { set: pin.set, locked: pin.locked },
       signIn: this.signingIn ? { name: this.signingIn.name } : null,
       update: await this.phoneUpdate(),
-      tv: { ...this.tv, view: remoteView(this.tv, this.signingIn !== null) },
-      // TV setup's step, while it's on (stage 5): the phone says where it is.
-      setup: setup.done ? null : { step: setup.step, part: PARTS[setup.step], muted: setup.muted },
+      tv: { ...tv, view: remoteView(tv, this.signingIn !== null) },
+      // What's playing, for the new remote's card.
+      nowPlaying: remote2 && tv.playing ? await this.nowPlaying(viewer.id) : null,
+      // TV setup's step, while it's on (stage 5): the phone says where it is,
+      // and with setup's own switch on, its number of the 12.
+      setup: setup.done ? null : await this.phoneSetup(setup),
       // What setup's AI step asks of the phone (ADR-023): the provider's
       // terms for an adult to accept, then the key.
       ai: await this.aiAsk(setup),
+      // The list of what's on the network the TV shows, for the phone's line.
+      discover: (await this.features.on("discover")) ? this.discover.onScreen() : null,
       // Page apps' notices, as the TV shows them (ADR-043).
       notices: this.notices,
       // The builds an adult follows here too: how each is going, and the
@@ -926,6 +1053,24 @@ export class Daemon {
       // the phone shows it under its box, and up to three to choose from.
       said: this.saidNow(),
     };
+  }
+
+  // The newest row of the ledger, while it's fresh, with its app's name.
+  private async nowPlaying(viewer: string): Promise<object | null> {
+    const names = new Map((await this.home.manifests().catch(() => [])).map(({ manifest }) => [manifest.id, manifest.name]));
+    try {
+      return nowPlaying(this.ledger.recent(viewer, { limit: 1 }), (app) => names.get(app) ?? app);
+    } catch {
+      return null;
+    }
+  }
+
+  // A field in an app's page, with the app's name for the phone's keyboard
+  // ("<app> · search").
+  private async named(field: TvContext["field"]): Promise<(TvContext["field"] & { name?: string }) | null> {
+    if (!field?.app) return field;
+    const found = (await this.home.manifests().catch(() => [])).find(({ manifest }) => manifest.id === field.app);
+    return { ...field, name: (found?.manifest.name ?? field.app).toLowerCase() };
   }
 
   // The router this box's setup chose (daemon/router-client.ts), through
@@ -1071,6 +1216,12 @@ export class Daemon {
 
   // The update notice the TV shows, for the phone (S4.8): what there is to
   // install, What's new, and whether it's going in tonight.
+  private async phoneSetup(setup: SetupState): Promise<object> {
+    const progress = await this.setupState.progress();
+    const n = progress.numbers?.[setup.step];
+    return { step: setup.step, part: progress.parts[setup.step] ?? setup.step, ...(n ? { n, of: progress.of } : {}), muted: setup.muted };
+  }
+
   private async phoneUpdate(): Promise<object | null> {
     const state = await this.updates.read();
     const status = state.status as {
@@ -1128,6 +1279,7 @@ export class Daemon {
       await this.file(response, join("companion-web", "setup.html"));
       return;
     }
+    if (await this.setupRoutes.handle("captive", request, response, url)) return;
     if (method === "GET" && CAPTIVE_FILES.includes(path.slice(1))) {
       await this.file(response, path.slice(1));
       return;
@@ -1189,7 +1341,8 @@ export class Daemon {
     }
     // The home screen's grid, which arrange home shares with the TV, and
     // the icons both draw.
-    if (method === "GET" && (path === "/launcher/layout.ts" || path === "/launcher/glyphs.ts")) {
+    // The looks' fonts too, for the phone's remote in Glass and Cinema.
+    if (method === "GET" && (path === "/launcher/layout.ts" || path === "/launcher/glyphs.ts" || /^\/launcher\/fonts\/[a-z-]+\.woff2$/.test(path))) {
       await this.file(response, join("launcher", path.slice("/launcher/".length)));
       return;
     }
@@ -1233,6 +1386,15 @@ export class Daemon {
       this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
+    if (await this.phoneRemote.phone(method ?? "", path, request, response)) return;
+
+    // Routes in files of their own (daemon/routes/), one line each.
+    if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
+    if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
+    if (await phoneBoxRoute(this.boxKit(), method, path, response)) return;
+
+    if (await this.setupRoutes.handle("phone", request, response, url)) return;
+    if (path.startsWith("/api/phone/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
 
     // The phone asks with the count it has, and the answer waits until
     // something changes or 25 s go by, so what changes on the TV reaches it
@@ -1271,6 +1433,8 @@ export class Daemon {
         return;
       }
       this.broadcast("page", { route: "settings" });
+      // Over an app, home comes in front first (ADR-065).
+      this.remote({ cmd: "settings" });
       this.json(response, 200, { ok: true });
       return;
     }
@@ -1700,6 +1864,86 @@ export class Daemon {
     this.json(response, 404, { ok: false, error: "not found" });
   }
 
+  // The builder for make and change from the Ask box (ADR-068), for who's
+  // watching: adults only, with the AI set up the way a build needs it.
+  private execBuilds(viewer: { id: string; role: "adult" | "child" }): ExecBuilds {
+    return {
+      adult: viewer.role === "adult",
+      ready: async () => {
+        const ai = await this.ai.read();
+        if (!ai.provider || !ai.path) return NO_AI;
+        if (!ai.accepted) return `an adult accepts ${OFFERS[ai.provider].name}'s terms on a phone first`;
+        const key = this.key.status();
+        if (ai.path === "key" && !(key.set && key.provider === ai.provider)) return `add ${OFFERS[ai.provider].name}'s key in settings → ai first`;
+        return null;
+      },
+      make: async (what) => {
+        const ai = await this.builderAi();
+        if (!ai.ai) return { error: ai.error };
+        const installed = (await this.home.manifests()).map(({ manifest }) => manifest.id);
+        const asked = await this.builds.ask(what, ai.ai, installed);
+        if (!asked.build) return { error: asked.error };
+        void this.watchBuilds();
+        this.log(`${viewer.id} asked the builder for an app from the ask box`);
+        return { build: asked.build.build };
+      },
+      recipe: async (app) => (await this.builds.list()).find((b) => b.id === app && b.state === "installed")?.understood?.recipe ?? null,
+    };
+  }
+
+  // What the Ask box's routes need of the daemon.
+  private askKit(): AskRoutes {
+    return {
+      on: () => this.features.on("askbuilds"),
+      adult: async () => (await this.profiles.active()).role === "adult",
+      said: () => this.say.current,
+      find: (build) => this.builds.find(build),
+      confirm: async (build) => {
+        const done = await this.builds.confirm(build);
+        void this.watchBuilds();
+        return done;
+      },
+      forget: async (build) => {
+        const done = await this.builds.forget(build);
+        void this.watchBuilds();
+        return done;
+      },
+      change: async (app, what) => {
+        const ai = await this.builderAi();
+        if (!ai.ai) return { error: ai.error };
+        const made = await this.builds.next(app, what, ai.ai);
+        void this.watchBuilds();
+        return made;
+      },
+      settle: (n, outcome) => this.say.settle(n, outcome),
+      dismiss: (n) => this.say.dismiss(n),
+      body: (request) => this.body(request),
+      json: (response, status, data) => this.json(response, status, data),
+      log: this.log,
+    };
+  }
+
+  // What the box check's routes need of the daemon.
+  private boxKit(): BoxRoutes {
+    // Its news moves the TV to 1080p output when the box can't keep 4K
+    // smooth (ADR-062).
+    const broadcast = (event: string, data: unknown) => {
+      this.broadcast(event, data);
+      if (event === "box") void this.displayRoutes.follow();
+    };
+    return { box: this.box, json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast, log: this.log };
+  }
+
+  // What the switches' routes need of the daemon.
+  private featureKit(): FeatureRoutes {
+    // The TV's size follows the sizes switch at once (ADR-062).
+    const changed = (all: FeatureMap) => {
+      this.broadcast("features", all);
+      void this.displayRoutes.switched(all.sizes);
+    };
+    return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed, log: this.log };
+  }
+
   private json(response: ServerResponse, status: number, data: unknown): void {
     const body = JSON.stringify(data);
     response.writeHead(status, {
@@ -1981,6 +2225,16 @@ export class Daemon {
     const path = url.pathname;
     const method = request.method;
 
+    // Routes in files of their own (daemon/routes/), one line each.
+    if (await featureRoutes(this.featureKit(), request, response, path)) return;
+    if (await lookRoute({ root: this.options.root, state: this.options.state, broadcast: (event, data) => this.broadcast(event, data), adult: (q, s, what) => this.adult(q, s, what) }, request, response)) return;
+    if (await desktopPasswordRoute({ setup2: () => this.features.on("setup2"), password: this.desktopPassword, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: (text) => this.log(text), grant: (q) => this.grant(q), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) }, request, response, path)) return;
+    if (await this.setupRoutes.handle("tv", request, response, url)) return;
+    if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
+    if (await boxRoute(this.boxKit(), method, path, request, response)) return;
+    if (await this.displayRoutes.handle(method ?? "", path, request, response)) return;
+    if (await backgroundVideoRoutes({ backgrounds: this.backgrounds, body: (q) => this.body(q), json: (q, status, data) => this.json(q, status, data) }, request, response, path)) return;
+
     if (method === "GET" && path === "/health") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
       this.json(response, 200, {
@@ -1991,6 +2245,9 @@ export class Daemon {
         // What this process runs, which after an update and before AgenTV's
         // services restart is still the package from before (agentv-restart).
         running: this.running,
+        // The time zone the daemon's clock goes by, which follows the box's
+        // when the country moves it.
+        zone: clockZone(),
         screen: setup.done ? "home" : "welcome",
         // The setup step on the TV, while setup isn't done.
         setup_step: setup.done ? null : setup.step,
@@ -2010,6 +2267,9 @@ export class Daemon {
       response.writeHead(204).end();
       return;
     }
+
+    if (await discoverRoute(this.discover, method, path, url, response, false, request)) return;
+    if (await serverPickRoute({ picks: this.serverPicks, allowed: async (asked, answer) => this.guarded(asked, answer, "setting up an app") && (await this.adult(asked, answer, "setting up an app")) }, method, path, request, response)) return;
 
     if (method === "GET" && path === "/api/state") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
@@ -2046,8 +2306,8 @@ export class Daemon {
         version: (await this.settings()).AGENTV_VERSION,
         running: this.running,
         setup: await this.setup(),
-        steps: STEPS,
-        parts: PARTS,
+        // The steps shown, in order, and what the status bar says for each.
+        ...(await this.setupState.progress()),
         network: network(hotspot, this.options.interfaces?.()),
         hotspot,
         phones: this.phones.list().map((phone) => phone.name),
@@ -2167,7 +2427,8 @@ export class Daemon {
         this.settings(),
         this.setup(),
         this.home.apps(viewer),
-        this.home.layout(viewer.id, viewer.role),
+        // Terminal at more on screen asks for its 5 × 4 grid's layout.
+        this.home.layout(viewer.id, viewer.role, gridNamed(url.searchParams.get("grid"))),
         this.home.settings(),
         this.profiles.list(),
       ]);
@@ -2189,15 +2450,16 @@ export class Daemon {
 
     if (method === "PUT" && path === "/api/layout") {
       if (!(await this.adult(request, response, "changing home"))) return;
-      const body = (await this.body(request)) as { layout?: unknown } | undefined;
+      const body = (await this.body(request)) as { layout?: unknown; grid?: unknown } | undefined;
       const viewer = await this.profiles.active();
-      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role);
+      const grid = gridNamed(body?.grid);
+      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role, grid);
       if (why) {
         this.json(response, 400, { ok: false, error: why });
         return;
       }
-      const layout = await this.home.layout(viewer.id, viewer.role);
-      this.broadcast("layout", { viewer: viewer.id, layout });
+      const layout = await this.home.layout(viewer.id, viewer.role, grid);
+      this.broadcast("layout", { viewer: viewer.id, layout, grid: `${grid.columns}x${grid.rows}` });
       this.json(response, 200, { ok: true, layout });
       return;
     }
@@ -2448,6 +2710,7 @@ export class Daemon {
     // desktop's, which takes the trackpad and the keys while the desktop is
     // on. A page can't open it: it needs a header no browser sends to
     // another site.
+    if (await this.phoneRemote.local(method ?? "", path, request, response)) return;
     if (method === "GET" && path === "/api/remote") {
       const who = request.headers["x-agentv-screen"];
       if (who !== "1" && who !== "desktop") {
@@ -3468,7 +3731,10 @@ export class Daemon {
       const setup = await this.setup();
       const home = join("launcher", "index.html");
       const hasHome = await stat(join(this.options.root, home)).then((info) => info.isFile(), () => false);
-      await this.file(response, setup.done && hasHome ? home : join("setup", "index.html"));
+      // A look's preview is home itself, read-only, even while setup runs,
+      // since setup's look step shows it (ADR-063).
+      const preview = url.searchParams.has("preview");
+      await this.file(response, (setup.done || preview) && hasHome ? home : join("setup", "index.html"));
       return;
     }
 

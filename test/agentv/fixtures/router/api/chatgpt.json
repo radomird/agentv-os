@@ -6,7 +6,8 @@
     "kind": "album",
     "app": null,
     "season": null,
-    "episode": null
+    "episode": null,
+    "what": null
   },
   "reply": {
     "id": "resp_router",
@@ -27,7 +28,7 @@
         "content": [
           {
             "type": "output_text",
-            "text": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null}",
+            "text": "{\"intent\":\"play\",\"query\":\"Frozen\",\"kind\":\"album\",\"app\":null,\"season\":null,\"episode\":null,\"what\":null}",
             "annotations": []
           }
         ]

@@ -10,10 +10,11 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
+import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
-import { HELD_WORKSPACE, HOME_UP, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,6 +40,10 @@ class FakeHyprland implements Hyprland {
   }
   events(handler: (name: string, data: string) => void) {
     this.handler = handler;
+  }
+
+  async eval(code: string) {
+    this.dispatched.push(code);
   }
 
   async dispatch(expression: string) {
@@ -116,6 +121,10 @@ class FakeBrowser implements DevTools {
     return targetId;
   }
   async bind() {}
+  // The focus nudge an app's page gets, for a test that stands one in.
+  bindIn?: DevTools["bindIn"];
+  // What runs in a page's own world, for a test that stands one in.
+  evaluateInWorld?: DevTools["evaluateInWorld"];
   // What the page answers, for a test that needs more than an empty object.
   answer?: (expression: string) => object | undefined;
   async evaluate(_prefix: string, expression: string) {
@@ -198,8 +207,12 @@ class FakeLauncher implements Launcher {
   steamInstalled = true;
   browser = new FakeBrowser();
   homeBrowser = new FakeBrowser();
+  splashes = 0;
 
   async homeReady() {}
+  splashDone() {
+    this.splashes++;
+  }
   private launch(role: Role, url?: string) {
     const app = new FakeApp(role, this.pid++);
     this.started.push({ role, app, url });
@@ -292,7 +305,11 @@ class FakeLauncher implements Launcher {
   async cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }) {
     this.cliStates.push(change);
   }
-  async power(what: "restart" | "shutdown") {
+  bootMenu = true;
+  async canBootMenu() {
+    return this.bootMenu;
+  }
+  async power(what: "restart" | "shutdown" | "bootmenu") {
     this.powered.push(what);
     return this.powerWorks;
   }
@@ -412,6 +429,16 @@ test("S1.1 home that comes up stays as it is", async () => {
   await sleep(120);
   assert.equal(launcher.last("home").stopped, false);
   assert.ok(!lines.some((line) => /didn't come up/.test(line)), lines.join("\n"));
+});
+
+test("T2.1 AgenTV's splash goes once home's page is up and has drawn, and not before", async () => {
+  const { launcher } = await tv({ homeCheckMs: 500, homeUp: false });
+  await sleep(150);
+  assert.equal(launcher.splashes, 0, "the splash stays while home's page isn't up");
+  launcher.homeBrowser.up = true;
+  await sleep(250);
+  assert.ok(launcher.homeBrowser.evaluated.includes(TWO_FRAMES), "it waits for home to draw");
+  assert.equal(launcher.splashes, 1);
 });
 
 test("S1.1 home whose page doesn't come up starts again, so the TV isn't left blank", async () => {
@@ -962,6 +989,22 @@ test("S2.19 Settings → Sound and agentv screen audio reach the box's sound out
   assert.deepEqual(await none.fromHome({ cmd: "audio" }), { ok: false, error: "sound isn't here" });
 });
 
+test("T2.2 Settings → Power restarts to the boot menu past the PIN, never during an update, and says whether the box can", async () => {
+  const { launcher, screen, lines } = await tv();
+  assert.deepEqual(await screen.fromHome({ cmd: "boot-menu" }), { ok: true, can: true });
+  launcher.bootMenu = false;
+  assert.deepEqual(await screen.fromHome({ cmd: "boot-menu" }), { ok: true, can: false });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: true });
+  assert.deepEqual(launcher.powered, ["bootmenu"]);
+  assert.deepEqual(launcher.pins, ["power"], "it asks whether the pin lets it, as Restart does");
+  assert.ok(lines.includes("restarting the box to its boot menu from settings → power"), lines.join("\n"));
+  launcher.updateRunning = true;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "not while an update runs" });
+  launcher.updateRunning = false;
+  launcher.powerWorks = false;
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "the box couldn't restart" });
+});
+
 test("S2.18 Settings → Power restarts and shuts down through Omarchy's commands, past the PIN, never during an update", async () => {
   const { launcher, screen } = await tv();
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: true });
@@ -970,7 +1013,7 @@ test("S2.18 Settings → Power restarts and shuts down through Omarchy's command
   assert.deepEqual(launcher.pins, ["power", "power"], "each asks whether the pin lets it");
   // agentv screen power does the same, over SSH too.
   assert.deepEqual(await screen.handle({ cmd: "power", what: "restart" }), { ok: true });
-  assert.deepEqual(await screen.handle({ cmd: "power", what: "off" }), { ok: false, error: "power restart or shutdown" });
+  assert.deepEqual(await screen.handle({ cmd: "power", what: "off" }), { ok: false, error: "power restart, shutdown or bootmenu" });
   // Not while an update runs (ADR-025), and not past a PIN that says no.
   launcher.powered = [];
   launcher.updateRunning = true;
@@ -1091,6 +1134,66 @@ test("ADR-037 the daemon hears what's in front and whether something plays when 
   ]);
 });
 
+test("T8.1 an app's page says when its focus moves, and the daemon hears the field in front with the app, so the phone's keyboard comes up", async () => {
+  const t = await tv();
+  const nudges = new Map<string, () => void>();
+  t.launcher.browser.bindIn = async (target, name, world, handler) => {
+    assert.equal(name, FOCUS_BINDING);
+    assert.equal(world, REMOTE_WORLD);
+    nudges.set(target, () => handler(""));
+  };
+  const page = await openApp(t, "agentv.tube", "0xb");
+  await sleep(20);
+  assert.ok(nudges.has(page), "the page got the nudge with its ring and Back");
+  let field: object | null = null;
+  const evaluateIn = t.launcher.browser.evaluateIn.bind(t.launcher.browser);
+  t.launcher.browser.evaluateIn = async (target: string, expression: string) => (expression === FIELD ? field : evaluateIn(target, expression));
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "app", playing: false });
+  // Its search gets the focus: the page says so, and the daemon hears at once.
+  field = { kind: "search", label: "search", value: "" };
+  const told = t.launcher.contexts.length;
+  nudges.get(page)!();
+  for (let i = 0; i < 100 && t.launcher.contexts.length === told; i++) await sleep(5);
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "app", playing: false, appField: { kind: "search", label: "search", value: "", app: "agentv.tube" } });
+  assert.equal(t.screen.typingFront()?.id, "agentv.tube");
+  // Home in front: its field is its own to say.
+  await t.screen.handle({ cmd: "home" });
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "home", playing: false });
+  assert.deepEqual([t.screen.typingFront()?.kind, t.screen.typingFront()?.id], ["page", "home"]);
+  t.screen.stop();
+});
+
+test("T8.2 the phone's play and pause reaches the app in front, with its own playback calls, or home with Music", async () => {
+  const calls: string[] = [];
+  const playback: Playback = { opened() {}, closed() {}, call: async (id, path) => void calls.push(`${id} ${path}`) };
+  const music = { handle: async (request: Record<string, unknown>) => ({ ok: true, op: request.op }), scan: async () => {} };
+  const t = await tv({ playback, music });
+  const home = t.screen.playbackFront();
+  assert.equal(home?.kind, "home");
+  assert.deepEqual(await (home as { music: (r: object) => Promise<object> }).music({ op: "now" }), { ok: true, op: "now" });
+  await openApp(t, "agentv.tube", "0xb");
+  const front = t.screen.playbackFront();
+  assert.deepEqual([front?.kind, (front as { id: string }).id], ["page", "agentv.tube"]);
+  await (front as { app: (path: string) => Promise<unknown> }).app("playback.pause");
+  assert.deepEqual(calls, ["agentv.tube playback.pause"]);
+  t.screen.stop();
+});
+
+test("T8.3 Settings and Apps from the phone's menu bring home in front of the app first", async () => {
+  const t = await tv();
+  await openApp(t, "agentv.tube", "0xb");
+  assert.deepEqual(await t.screen.phonePage("settings"), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes('go("settings")')));
+  await openApp(t, "agentv.player", "0xc");
+  assert.deepEqual(await t.screen.phonePage("apps"), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.launcher.homeBrowser.evaluated.some((e) => e.includes('go("apps")')));
+  t.screen.stop();
+});
+
 test("S2.15 Home pauses the app in front and shows home within 1 s; choosing it again plays it where it was", async () => {
   const t = await tv();
   const page = await openApp(t, "agentv.tube", "0xb");
@@ -1203,6 +1306,36 @@ test("S2.16 holding Back for a second goes home; a tap stays with the app", asyn
   await sleep(150);
   await t.screen.idle();
   assert.equal(t.screen.front()?.role, "home");
+});
+
+test("T8.4 a tap on Back tells the web app's page it was a tap, for one it didn't see; a hold doesn't", async () => {
+  const t = await tv({ backHoldMs: 80 });
+  const target = await openApp(t, "agentv.tube", "0xb");
+  const asked: string[][] = [];
+  t.launcher.browser.evaluateInWorld = async (targetId, world, expression) => {
+    asked.push([targetId, world, expression]);
+    return "full screen";
+  };
+  const now = Date.now();
+  t.screen.back("down", now);
+  t.screen.back("up", now + 30);
+  await sleep(150);
+  assert.deepEqual(asked, [[target, REMOTE_WORLD, BACK_TAP]], "the page in front hears the tap, in its own world");
+  assert.ok(t.lines.some((line) => line.includes("left the player")), t.lines.join("\n"));
+  // Hyprland reports the press and the release from two processes, so the
+  // release can arrive first. That's a tap too.
+  const later = Date.now();
+  t.screen.back("up", later + 7);
+  t.screen.back("down", later + 10);
+  await sleep(150);
+  assert.equal(asked.length, 2, "a tap whose release arrived first tells the page too");
+  t.screen.back("down", Date.now());
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.back("up", Date.now());
+  await sleep(50);
+  assert.equal(asked.length, 2, "a hold went home, and the page heard nothing");
 });
 
 test("S2.16 a tap whose release read the clock a moment before its press is still a tap", async () => {

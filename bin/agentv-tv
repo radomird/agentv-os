@@ -8,23 +8,43 @@
 # Omarchy's session, and the login manager logs back in to the TV session
 # (bin/agentv-session). Super+Ctrl+Home on the desktop runs it, until the
 # agentv-plugin bar widget does.
+#
+# Back to TV has to stay quick at the first login to Omarchy's desktop too.
+# From Omarchy 4.5 on, its first run is still setting things up then, and it
+# reloads Hyprland. So when the keys run this on Omarchy's desktop, it doesn't
+# start node to ask a screen daemon that only the TV session has, and it gives
+# the windows a few seconds to close, no more. The journal (agentv-tv) says
+# how long each step took.
 
 set -euo pipefail
 
 AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
-# The TV session answers on the screen daemon's socket.
-status=0
-"$AGENTV_BIN_DIR/agentv-screen" home >/dev/null 2>&1 || status=$?
+started=${EPOCHREALTIME//[.,]/}
+since() {
+  echo "$(( (${EPOCHREALTIME//[.,]/} - started) / 1000 )) ms"
+}
+
+# Started from a Hyprland that isn't the TV session's: that's Omarchy's
+# desktop. From anywhere else, such as SSH, the TV session answers on the
+# screen daemon's socket, and no answer means it isn't on.
+if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && ${AGENTV_SESSION:-} != tv ]]; then
+  status=2
+else
+  status=0
+  "$AGENTV_BIN_DIR/agentv-screen" home >/dev/null 2>&1 || status=$?
+fi
 case $status in
   0) exit 0 ;;
   2) ;;
   *) echo "The TV session is on, but its screen daemon didn't put the home screen in front." >&2; exit 1 ;;
 esac
+asked=$(since)
 
 # Omarchy's desktop: close its windows the way its own Log out does, so apps
 # save what they have, then end the session.
-omarchy-hyprland-window-close-all >/dev/null 2>&1 || true
+timeout 3 omarchy-hyprland-window-close-all >/dev/null 2>&1 || true
+logger -t agentv-tv "Back to TV: on Omarchy's desktop after $asked, windows closed after $(since)" 2>/dev/null || true
 sleep 1
 if ! uwsm stop >/dev/null 2>&1; then
   echo "Couldn't end Omarchy's session; log out from its menu instead." >&2

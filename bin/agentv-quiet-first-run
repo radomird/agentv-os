@@ -3,17 +3,39 @@
 # agentv:summary=Dismiss Omarchy's first-run notifications as they arrive
 # agentv:hidden=true
 
-# Omarchy's first run, at the owner's first login, shows "Learn Keybindings"
-# and, once the network is up, "Update System", which opens Omarchy's own
-# update. Neither belongs on a TV (ADR-029), and neither has a marker that
-# would skip it, so agentv tv starts this at the first login: it dismisses
-# them through Omarchy's own omarchy-notification-dismiss until the first run
-# is done. That includes its network check, which waits up to an hour for a
-# connection and sends the update notice last.
+# Omarchy's first run, at the owner's first login, shows "Learn Keybindings",
+# "Setup Git" when there's no git identity (from Omarchy 4.5 on) and, once the
+# network is up, "Update System", which opens Omarchy's own update. None of
+# them belongs on a TV (ADR-029), and none has a marker that would skip it, so
+# agentv tv starts this at the first login: it dismisses them through
+# Omarchy's own omarchy-notification-dismiss until the first run is done. That
+# includes its network check, which waits up to an hour for a connection and
+# sends the update notice last.
+#
+# From 4.5 on, the titles come from Omarchy's catalogs in the box's language,
+# so each notice is found by its catalog key. Omarchy 4.0.x, which a box keeps
+# until its Omarchy channel serves 4.5, has no catalogs and says them in
+# English.
 
 set -uo pipefail
 
-notices=("Learn Keybindings" "Update System")
+# key=English title, one per notice.
+catalog=(
+  "firstRun.keybindingsTitle=Learn Keybindings"
+  "firstRun.gitTitle=Setup Git"
+  "firstRun.updateTitle=Update System"
+)
+
+notices=()
+for entry in "${catalog[@]}"; do
+  key=${entry%%=*}
+  title=""
+  if type -P omarchy-i18n >/dev/null; then
+    title=$(omarchy-i18n "$key" 2>/dev/null) || title=""
+  fi
+  [[ -z $title || $title == "$key" ]] && title=${entry#*=}
+  notices+=("$title")
+done
 
 dismiss() {
   local notice

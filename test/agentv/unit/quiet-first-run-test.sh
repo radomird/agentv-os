@@ -2,7 +2,8 @@
 
 # Guards bin/agentv-quiet-first-run: Omarchy's first-run notifications that
 # have no marker are dismissed until Omarchy's first run, network check
-# included, is done, and then it stops (ADR-029).
+# included, is done, and then it stops (ADR-029). From Omarchy 4.5 on they're
+# found by their catalog keys, in the box's language; on 4.0.x, in English.
 
 # shellcheck disable=SC2016 # the fakes' bodies are run later, by the script under test
 set -euo pipefail
@@ -29,10 +30,28 @@ run() {
 
 run
 grep -qx "Learn Keybindings" "$state/dismissed" || fail "it dismisses Learn Keybindings"
+grep -qx "Setup Git" "$state/dismissed" || fail "it dismisses Setup Git"
 grep -qx "Update System" "$state/dismissed" || fail "it dismisses Update System"
-! grep -Eqv '^(Learn Keybindings|Update System)$' "$state/dismissed" || fail "it dismisses nothing else, such as Setup Wi-Fi"
+! grep -Eqv '^(Learn Keybindings|Setup Git|Update System)$' "$state/dismissed" || fail "it dismisses nothing else, such as Setup Wi-Fi"
 (( $(wc -l <"$state/dismissed") < 20 )) || fail "it stops once Omarchy's first run is done"
-pass "it dismisses Omarchy's keybinding and update notices until first run is done, and then stops"
+pass "with no catalogs, as on Omarchy 4.0.x, it dismisses the keybinding, git and update notices by their English titles until first run is done"
+
+# Omarchy 4.5's catalogs, here in Danish, with one key the catalog lacks,
+# which omarchy-i18n prints as it is.
+fake omarchy-i18n '
+case "$1" in
+  firstRun.keybindingsTitle) echo "Lær genvejstaster" ;;
+  firstRun.updateTitle) echo "Opdater systemet" ;;
+  *) echo "$1" ;;
+esac'
+rm -f "$state/dismissed"
+run
+grep -qx "Lær genvejstaster" "$state/dismissed" || fail "it finds a notice by its key, in the box's language" "$(cat "$state/dismissed")"
+grep -qx "Opdater systemet" "$state/dismissed" || fail "the update notice too"
+grep -qx "Setup Git" "$state/dismissed" || fail "a key the catalog lacks falls back to English"
+! grep -q "firstRun" "$state/dismissed" || fail "it never dismisses by the key itself"
+pass "on Omarchy 4.5, it finds each notice by its catalog key, in the box's language"
+rm -f "$bin/omarchy-i18n"
 
 rm -f "$state/dismissed"
 touch "$state/network-check"

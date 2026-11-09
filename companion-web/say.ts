@@ -21,7 +21,7 @@ export interface Said {
   sentence: string;
   from: string;
   state: "routing" | "done";
-  outcome?: { kind: "opened"; say: string } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "told"; say: string } | { kind: "none"; say: string; why: string; detail?: string };
+  outcome?: { kind: "opened"; say: string } | { kind: "choose"; say: string; candidates: Candidate[] } | { kind: "told"; say: string } | { kind: "build"; say: string } | { kind: "change"; say: string } | { kind: "none"; say: string; why: string; detail?: string };
 }
 
 const KIND_WORDS: Record<string, string> = { film: "film", series: "show", episode: "episode", track: "song", album: "album", playlist: "playlist", "photo-album": "photos", game: "game" };
@@ -62,7 +62,15 @@ export function sayAnswer(said: Said | null | undefined, failed: (error: unknown
   if (box && said) box.append(answer(said, failed, done));
 }
 
-export function sayBox(said: Said | null | undefined, failed: (error: unknown) => void, done: () => void): HTMLElement {
+// The Ask box (ADR-068) leaves out the label and the send button: what's
+// typed shows on the TV as it's typed, and the keyboard's send key asks.
+export interface SayOptions {
+  bare?: boolean;
+  placeholder?: string;
+  value?: string;
+}
+
+export function sayBox(said: Said | null | undefined, failed: (error: unknown) => void, done: () => void, options: SayOptions = {}): HTMLElement {
   const field = h("input", {
     class: "field",
     id: "say-text",
@@ -72,8 +80,9 @@ export function sayBox(said: Said | null | undefined, failed: (error: unknown) =
     autocapitalize: "off",
     spellcheck: "false",
     enterkeyhint: "send",
-    placeholder: "play frozen, or continue my show",
+    placeholder: options.placeholder ?? "play frozen, or continue my show",
   }) as HTMLInputElement;
+  if (options.value) field.value = options.value;
   // The TV's listening bar: what the box holds, as it changes.
   let sending = false;
   let typed: ReturnType<typeof setTimeout> | undefined;
@@ -118,6 +127,7 @@ export function sayBox(said: Said | null | undefined, failed: (error: unknown) =
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") void go();
   });
+  if (options.bare) return h("div", { class: "say say-bare" }, h("div", { class: "say-row" }, field), said ? answer(said, failed, done) : null);
   return h(
     "div",
     { class: "say" },

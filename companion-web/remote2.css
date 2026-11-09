@@ -1,0 +1,810 @@
+/* The new phone remote (D4), in the Terminal look: sharp blocks, JetBrains
+   Mono and the Omarchy theme's colours, which /api/theme.css puts over
+   these. One layout for every look; a look restyles it by body[data-look]. */
+
+.r2 {
+  --r2-surface: var(--dark-background, #13141c);
+  --r2-line: var(--selection, #292e42);
+  --r2-on-accent: var(--darker-background, #0e0e14);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: max(56px, env(safe-area-inset-top)) 20px max(34px, env(safe-area-inset-bottom));
+  color: var(--bright-foreground);
+  font-family: var(--font);
+}
+
+.r2 button {
+  font-family: var(--font);
+}
+
+.r2 .icon {
+  flex: none;
+}
+
+/* The top bar: who's watching, the d-pad switch and the menu. */
+.r2-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+}
+
+.r2-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.r2-who .avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 0;
+  font-size: 16px;
+}
+
+.r2-top-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.r2-icon,
+.r2-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 48px;
+  height: 48px;
+  padding: 0;
+  background: var(--r2-surface);
+  border: 2px solid var(--r2-line);
+}
+
+.r2-back {
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.r2-icon.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--r2-on-accent);
+}
+
+.r2-icon.flat {
+  border: 0;
+  background: none;
+}
+
+/* What's playing. */
+.r2-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 10px 12px 10px 16px;
+  background: var(--r2-surface);
+  border: 2px solid var(--r2-line);
+}
+
+.r2-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--foreground);
+}
+
+.r2-card-text b {
+  overflow: hidden;
+  font-size: 17px;
+  color: var(--bright-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What's on the network, while the TV shows it: one row a find, and
+   "type an address" under them. A long list scrolls inside, so the remote
+   keeps its one screen. */
+.r2-network {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 216px;
+  padding: 10px 12px;
+  background: var(--r2-surface);
+  border: 2px solid var(--r2-line);
+}
+
+.r2-network-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.r2-network-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.r2-network-row {
+  min-height: 44px;
+  padding: 0 12px;
+  background: none;
+  border: 2px solid var(--r2-line);
+  color: var(--bright-foreground);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.r2-network-row:active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--r2-on-accent);
+}
+
+.r2-network-typed {
+  color: var(--foreground);
+  font-weight: 400;
+}
+
+/* The surface gives the line its room. */
+.r2-network ~ .r2-surface {
+  min-height: 200px;
+}
+
+/* The surface, and the d-pad and pointer in its place. */
+.r2-surface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  background: var(--r2-surface);
+  border: 2px solid var(--r2-line);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.r2-surface.pressed {
+  border-color: var(--accent);
+}
+
+.r2-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  color: var(--foreground);
+  text-align: center;
+  pointer-events: none;
+}
+
+.r2-hint.low {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+}
+
+.r2-dpad {
+  display: grid;
+  grid-template-columns: 104px 104px 104px;
+  grid-template-rows: 104px 104px 104px;
+  align-content: center;
+  justify-content: center;
+}
+
+.r2-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.r2-up { grid-area: 1 / 2; }
+.r2-left { grid-area: 2 / 1; }
+.r2-right { grid-area: 2 / 3; }
+.r2-down { grid-area: 3 / 2; }
+
+.r2-ok {
+  grid-area: 2 / 2;
+  border: 0;
+  background: var(--accent);
+  color: var(--r2-on-accent);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.r2-pointer {
+  border-color: var(--accent);
+}
+
+.r2-pointer-top {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.r2-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--r2-on-accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.r2-dot {
+  position: absolute;
+  top: -34px;
+  left: -34px;
+  width: 68px;
+  height: 68px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.r2-pointer.touching .r2-dot {
+  opacity: 0.6;
+}
+
+.r2-done {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--r2-surface);
+  border: 2px solid var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Back, Home, and play or pause. */
+.r2-keys {
+  display: flex;
+  gap: 10px;
+}
+
+.r2-key {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 76px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--r2-surface);
+  border: 2px solid var(--r2-line);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.r2-key > * {
+  position: relative;
+}
+
+/* Back held: it fills, and goes home when it's full. */
+.r2-key::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.35;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.r2-key.holding {
+  border-color: var(--accent);
+}
+
+.r2-key.holding::before {
+  transform: scaleX(1);
+  transition: transform 700ms linear;
+}
+
+.r2-keys.small .r2-key {
+  height: 48px;
+}
+
+.r2-ask,
+.r2-ask-small {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--r2-on-accent);
+}
+
+.r2-ask {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 60px;
+  border: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+/* The notice line. */
+.r2-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: none;
+  border: 2px solid var(--r2-line);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.r2-notice.empty {
+  visibility: hidden;
+}
+
+.r2-notice-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.r2-notice-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bright-magenta, var(--magenta));
+}
+
+.r2-notice-more {
+  color: var(--foreground);
+}
+
+/* The keyboard. */
+.r2-keyboard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+}
+
+.r2-where {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.r2-keyboard-top .r2-done {
+  height: 44px;
+  padding: 0 18px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--r2-on-accent);
+}
+
+.r2-headline {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.r2-field-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 64px;
+  padding: 0 16px;
+  background: var(--r2-surface);
+  border: 2px solid var(--accent);
+}
+
+.r2-field {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--bright-foreground);
+  caret-color: var(--accent);
+  font-family: var(--font);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.r2-field-box.secret .r2-field {
+  letter-spacing: 4px;
+}
+
+.r2-note {
+  margin: 0;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.r2-note.bad {
+  color: var(--yellow);
+}
+
+.r2-gap {
+  flex: 1;
+  min-height: 24px;
+}
+
+/* The sheets: the menu, ask and the notices. */
+.r2-sheet-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.r2-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.r2-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 80dvh;
+  padding: 14px 24px max(30px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background: var(--background);
+  border-top: 2px solid var(--accent);
+  font-family: var(--font);
+}
+
+.r2-handle {
+  align-self: center;
+  width: 44px;
+  height: 4px;
+  margin-bottom: 8px;
+  background: var(--r2-line, var(--selection));
+}
+
+.r2-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.r2-viewers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 6px 0;
+}
+
+.r2-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.r2-viewer .avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 0;
+  font-size: 22px;
+  outline: 3px solid transparent;
+  outline-offset: 3px;
+}
+
+.r2-viewer.on .avatar {
+  outline-color: var(--accent);
+}
+
+.r2-role {
+  font-size: 12px;
+  color: var(--foreground);
+}
+
+.r2-rule {
+  width: 100%;
+  margin: 8px 0;
+  border: 0;
+  border-top: 2px solid var(--selection);
+}
+
+.r2-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.r2-row > span:not(.r2-notice-dot):not(.r2-switch) {
+  flex: 1;
+}
+
+.r2-switch {
+  position: relative;
+  width: 52px;
+  height: 30px;
+  border: 2px solid var(--selection);
+}
+
+.r2-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  background: var(--foreground);
+}
+
+.r2-row[aria-checked="true"] .r2-switch {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.r2-row[aria-checked="true"] .r2-switch::after {
+  left: 24px;
+  background: var(--darker-background, #0e0e14);
+}
+
+.r2-about {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+.r2-sheet .say {
+  margin: 0;
+}
+
+.r2-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.r2 .avatar,
+.r2-viewer .avatar {
+  text-transform: uppercase;
+}
+
+.r2-ok {
+  width: 104px;
+  height: 104px;
+}
+
+/* D4 has no clear button in the field: the phone's own keyboard deletes. */
+.r2-field::-webkit-search-cancel-button,
+.r2-field::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* The keyboard's screen ends where the phone's keyboard starts, so its row
+   of keys sits just above it (remote2.ts sets --r2-height). */
+.r2[data-screen="keyboard"] {
+  height: var(--r2-height, 100dvh);
+  min-height: 0;
+}
+
+/* --- Glass and Cinema (ADR-063, D4) ----------------------------------------
+   The same remote in the TV's other two looks: rounded keys and surface,
+   the look's own font, and words that start with a capital. Glass's parts
+   are frosted, Cinema's are flat cards. Every colour is still the theme's. */
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/launcher/fonts/manrope-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+}
+
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/launcher/fonts/instrument-sans-latin-wght-normal.woff2") format("woff2");
+  font-weight: 400 700;
+}
+
+body[data-look="glass"] {
+  --font: "Manrope", system-ui, sans-serif;
+}
+
+body[data-look="cinema"] {
+  --font: "Instrument Sans", system-ui, sans-serif;
+}
+
+body[data-look="glass"] .r2,
+body[data-look="cinema"] .r2 {
+  --r2-line: transparent;
+}
+
+body[data-look="glass"] .r2 {
+  --r2-surface: color-mix(in srgb, var(--bright-foreground) 8%, var(--background));
+  --r2-line: color-mix(in srgb, var(--bright-foreground) 14%, transparent);
+}
+
+body[data-look="cinema"] .r2 {
+  --r2-surface: var(--lighter-background, #24283b);
+}
+
+body[data-look="glass"] .r2-who .avatar,
+body[data-look="cinema"] .r2-who .avatar {
+  border-radius: 50%;
+}
+
+body[data-look="glass"] .r2-icon,
+body[data-look="cinema"] .r2-icon {
+  border-radius: 50%;
+}
+
+body[data-look="glass"] .r2-back,
+body[data-look="cinema"] .r2-back,
+body[data-look="glass"] .r2-chip,
+body[data-look="cinema"] .r2-chip,
+body[data-look="glass"] .r2-done,
+body[data-look="cinema"] .r2-done {
+  border-radius: 24px;
+}
+
+body[data-look="glass"] .r2-surface,
+body[data-look="cinema"] .r2-surface {
+  border-radius: 28px;
+}
+
+body[data-look="glass"] .r2-key,
+body[data-look="cinema"] .r2-key,
+body[data-look="glass"] .r2-card,
+body[data-look="cinema"] .r2-card,
+body[data-look="glass"] .r2-network,
+body[data-look="cinema"] .r2-network,
+body[data-look="glass"] .r2-field-box,
+body[data-look="cinema"] .r2-field-box,
+body[data-look="glass"] .r2-row,
+body[data-look="cinema"] .r2-row {
+  border-radius: 20px;
+}
+
+body[data-look="glass"] .r2-ask,
+body[data-look="cinema"] .r2-ask {
+  border-radius: 20px;
+}
+
+body[data-look="glass"] .r2-ask-small,
+body[data-look="cinema"] .r2-ask-small {
+  border-radius: 50%;
+}
+
+body[data-look="glass"] .r2-notice,
+body[data-look="cinema"] .r2-notice {
+  border-radius: 22px;
+  background: var(--r2-surface);
+}
+
+body[data-look="glass"] .r2-sheet,
+body[data-look="cinema"] .r2-sheet {
+  border-top: 0;
+  border-radius: 28px 28px 0 0;
+}
+
+body[data-look="glass"] .r2-handle,
+body[data-look="cinema"] .r2-handle {
+  border-radius: 2px;
+}
+
+/* Words start with a capital in these two looks, as on the TV. */
+body[data-look="glass"] .r2-hint > span::first-letter,
+body[data-look="cinema"] .r2-hint > span::first-letter,
+body[data-look="glass"] .r2-key > span::first-letter,
+body[data-look="cinema"] .r2-key > span::first-letter,
+body[data-look="glass"] .r2-ask::first-letter,
+body[data-look="cinema"] .r2-ask::first-letter,
+body[data-look="glass"] .r2-ask > span::first-letter,
+body[data-look="cinema"] .r2-ask > span::first-letter,
+body[data-look="glass"] .r2-notice-text::first-letter,
+body[data-look="cinema"] .r2-notice-text::first-letter,
+body[data-look="glass"] .r2-label::first-letter,
+body[data-look="cinema"] .r2-label::first-letter,
+body[data-look="glass"] .r2-row > span::first-letter,
+body[data-look="cinema"] .r2-row > span::first-letter,
+body[data-look="glass"] .r2-who > span::first-letter,
+body[data-look="cinema"] .r2-who > span::first-letter {
+  text-transform: uppercase;
+}
+
+/* The Ask sheet (ADR-068, D5): the box with no send button, suggestions
+   under it, and what your agent is on. */
+.ask-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.ask-waiting {
+  border-top: 2px solid var(--selection);
+  padding-top: 12px;
+}
+
+.ask-bar {
+  height: 12px;
+  margin: 8px 0;
+  background: var(--selection);
+}
+
+.ask-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+body[data-look="glass"] .ask-waiting h1::first-letter,
+body[data-look="cinema"] .ask-waiting h1::first-letter,
+body[data-look="glass"] .ask-chips .chip::first-letter,
+body[data-look="cinema"] .ask-chips .chip::first-letter {
+  text-transform: uppercase;
+}

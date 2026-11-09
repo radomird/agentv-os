@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { FIXTURES, startBox } from "./box.mts";
+import { FIXTURES, rest, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -50,6 +50,7 @@ async function tv(): Promise<Page> {
   });
   await page.goto(`${url}/`);
   await page.waitForSelector('.tile[data-id="local.mytv"] .entry');
+  await rest(page);
   return page;
 }
 

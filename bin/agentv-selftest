@@ -80,9 +80,9 @@
 #   S7.3  a sentence that can't be routed comes back as "i didn't get that"
 #         on the TV and the phone, and nothing opens, and the TV says it
 #         aloud (stage 8). It asks the provider.
-#   S7.4  the router's 100 phrasings through this box's own router, one at a
-#         time: on a Claude plan with no key, 95% or better, with the time
-#         per sentence. It takes a few minutes and counts against the plan.
+#   S7.4  the router's 150 phrasings through this box's own router, one at a
+#         time: on a Claude plan with no key, 95% or better, make and change
+#         each at 95% too, with the time per sentence. It takes a few minutes and counts against the plan.
 #   S7.5  the listening bar (ADR-054), watched from the couch with a real
 #         phone's dictation: it says what to try.
 #
@@ -795,13 +795,19 @@ s218() {
   else
     result fail S2.18 "these may hold up a shut down for longer than 5 s: ${slow[*]}"
   fi
-  for command in omarchy-system-shutdown omarchy-system-reboot; do
-    omarchy-cmd-present "$command" || missing+=("$command")
-  done
-  if (( ${#missing[@]} == 0 )); then
-    result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
+  # Omarchy 4.5's omarchy-system, or the two commands 4.0.x had, which a box
+  # keeps until its Omarchy channel serves 4.5 (daemon/screen.ts).
+  if omarchy-cmd-present omarchy-system; then
+    result pass S2.18 "Omarchy's omarchy-system is there to restart and shut down"
   else
-    result fail S2.18 "Omarchy's ${missing[*]} isn't there"
+    for command in omarchy-system-shutdown omarchy-system-reboot; do
+      omarchy-cmd-present "$command" || missing+=("$command")
+    done
+    if (( ${#missing[@]} == 0 )); then
+      result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
+    else
+      result fail S2.18 "Omarchy has neither omarchy-system nor ${missing[*]}"
+    fi
   fi
   if [[ $(screen settings power | jq -r '.ok' 2>/dev/null) == "true" ]]; then
     result pass S2.18 "Settings opened at Power on the TV"
@@ -946,10 +952,10 @@ s74() {
     result fail S7.4 "your agent didn't answer $(jq -r '.score.failed' "$json") of them: $(jq -r '[.results[] | select(.routed.none == "failed") | .routed.error][0]' "$json")"
   elif [[ $(jq -r '.via' "$json") != "cli" ]]; then
     result fail S7.4 "the box routed through its key, not the plan's CLI"
-  elif jq -e '.score.routed.percent >= 95 and .score.unroutable.percent >= 100' "$json" >/dev/null; then
+  elif jq -e '.score.routed.percent >= 95 and .score.unroutable.percent >= 100 and ((.score.bySet.make.percent // 100) >= 95) and ((.score.bySet.change.percent // 100) >= 95)' "$json" >/dev/null; then
     result pass S7.4 "$routed routed right ($percent%) through Claude Code on the plan, median $median ms a sentence, p90 $(jq -r '.score.ms.p90' "$json") ms"
   else
-    result fail S7.4 "$routed routed right ($percent%), none for $(jq -r '"\(.score.unroutable.right) of \(.score.unroutable.of)"' "$json"), median $median ms; the misses are in $json.out"
+    result fail S7.4 "$routed routed right ($percent%), make $(jq -r '.score.bySet.make.percent // "-"' "$json")% and change $(jq -r '.score.bySet.change.percent // "-"' "$json")%, none for $(jq -r '"\(.score.unroutable.right) of \(.score.unroutable.of)"' "$json"), median $median ms; the misses are in $json.out"
   fi
   if (( median > 0 && median < 5000 )); then
     result pass S7.4 "the time per sentence is under 5 s: median $median ms, longest $(jq -r '.score.ms.max' "$json") ms"

@@ -37,7 +37,7 @@ export async function aiStep(ctx: Ctx): Promise<View> {
 }
 
 // Back from any of the provider's pages picks again.
-function again(ctx: Ctx): boolean {
+export function again(ctx: Ctx): boolean {
   void setup.choose(null).then(() => ctx.open("ai", "back"), () => {});
   return true;
 }
@@ -121,7 +121,7 @@ function termsList(ai: AiInfo, done: boolean): HTMLElement {
 
 // The terms for this way in: their names, and a QR code for a phone. An
 // adult reads them there, with a short summary, and accepts them.
-function terms(ctx: Ctx, ai: AiInfo): View {
+export function terms(ctx: Ctx, ai: AiInfo): View {
   const offer = ai.offers[ai.provider!];
   const qr = h("img", { class: "qr", alt: "" }) as HTMLImageElement;
   const label = h("span", { class: "qr-label" });
@@ -159,7 +159,7 @@ function terms(ctx: Ctx, ai: AiInfo): View {
 }
 
 // The key: pasted on the phone (board 05), or typed here with a keyboard.
-function key(ctx: Ctx, ai: AiInfo): View {
+export function key(ctx: Ctx, ai: AiInfo): View {
   const offer = ai.offers[ai.provider!];
   const field = h("input", { class: "text-field key-field", type: "password", "data-focus": true, "aria-label": `the ${offer.name} api key`, autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   const save = async () => {
@@ -206,7 +206,7 @@ function key(ctx: Ctx, ai: AiInfo): View {
 
 // What's done, and the CLI arriving. For a plan, the sign-in that comes with
 // the first build has no check mark.
-function done(ctx: Ctx, ai: AiInfo): View {
+export function done(ctx: Ctx, ai: AiInfo): View {
   const offer = ai.offers[ai.provider!];
   const cli = h("span", { class: "ready-row" });
   const drawCli = (now: AiInfo) => {

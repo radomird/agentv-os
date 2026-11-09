@@ -19,7 +19,10 @@ grep -qx 'WantedBy=default.target' "$unit" || fail "in every session of the owne
 # Omarchy's own lines, dollar signs and all.
 # shellcheck disable=SC2016
 swap='^mv "$NEXT_THEME_PATH" "$CURRENT_THEME_PATH"$'
-name_at=$(grep -n 'current/theme.name"$' "$ROOT/bin/omarchy-theme-set" | head -n 1 | cut -d: -f1)
+# The line that writes the name: 4.0 wrote to the path itself, 4.5 to a
+# variable it sets at the top, which isn't the write.
+# shellcheck disable=SC2016
+name_at=$(grep -nE '>"\$(CURRENT_THEME_NAME_PATH|HOME/\.local/state/omarchy/current/theme\.name)"$' "$ROOT/bin/omarchy-theme-set" | head -n 1 | cut -d: -f1)
 swap_at=$(grep -n "$swap" "$ROOT/bin/omarchy-theme-set" | cut -d: -f1)
 hook_at=$(grep -n 'omarchy-hook theme-set' "$ROOT/bin/omarchy-theme-set" | cut -d: -f1)
 if [[ -z $name_at || -z $swap_at || -z $hook_at ]] || (( swap_at > name_at || name_at > hook_at )); then

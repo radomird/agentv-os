@@ -3,12 +3,14 @@
 // card over the page offers up to three to choose from, as the phone does
 // too, and what's new offers its top three the same way (S8.1). Back, or
 // "none of these", puts it away. A sentence the router couldn't route is "i
-// didn't get that", and nothing else happens (S7.3).
+// didn't get that", and nothing else happens (S7.3). A make or a change
+// from the Ask box opens its page (ADR-068).
 
 import { daemon, type Candidate, type Said } from "./api.ts";
 import { h } from "./dom.ts";
 import { barTakes, cardClosed } from "./listening.ts";
 import type { Ctx } from "./main.ts";
+import { askBuilds, askHeard, askShowing, changeWaiting } from "./pages/ask.ts";
 
 // What a kind is, beside a title, as the daemon says it.
 const KIND_WORDS: Record<string, string> = { film: "film", series: "show", episode: "episode", track: "song", album: "album", playlist: "playlist", "photo-album": "photos", game: "game" };
@@ -21,6 +23,7 @@ function label(c: Candidate): string {
 let el: HTMLElement | null = null;
 let open: { n: number; before: HTMLElement | undefined } | null = null;
 let heard = 0; // the newest sentence toasted, so a redraw doesn't toast it again
+let opened = ""; // the page the Ask box last opened, so it opens once
 let restore: () => void = () => {};
 let ctx: Ctx;
 
@@ -36,6 +39,15 @@ export function setupSaid(c: Ctx, back: () => void): void {
 
 export function saidOpen(): boolean {
   return open !== null;
+}
+
+// The page under the card was drawn again, as home is when something
+// changes elsewhere. The card keeps the keys, and the focus goes back to the
+// same tile in the new page once the card is put away.
+export function saidPageDrawn(find: (was: string | undefined) => HTMLElement | null | undefined): void {
+  if (!open) return;
+  const was = open.before?.dataset.action ?? open.before?.dataset.id;
+  open.before = find(was) ?? undefined;
 }
 
 // Puts the card away. A bar waiting on it goes too, unless a pick went
@@ -56,7 +68,9 @@ function close(picked = false): void {
 // With the listening bar up, the bar shows what was heard and what came of
 // it in place of the toasts (ADR-054).
 export function saidHeard(said: Said | null): void {
-  const barred = barTakes(said);
+  // The Ask page says what came of it in its own line (ADR-068).
+  if (said) askHeard(said);
+  const barred = barTakes(said) || askShowing();
   if (!said) {
     if (open) close();
     return;
@@ -75,9 +89,24 @@ export function saidHeard(said: Said | null): void {
     if (!barred) ctx.toast(outcome.say, "ok");
     return;
   }
+  // From the Ask box (ADR-068): a make opens its build's page, where what
+  // your agent understood waits for you to confirm, and a change waits for
+  // an adult's ok on a page of its own. Each opens once, whether it was
+  // asked here or on a phone.
+  if ((outcome.kind === "build" || outcome.kind === "change") && askBuilds()) {
+    if (open) close();
+    const page = outcome.kind === "build" ? `build/${outcome.build}` : `ask-change/${said.n}`;
+    if (page === opened) return;
+    opened = page;
+    ctx.sounds.play("forward");
+    if (outcome.kind === "change") changeWaiting(said.n, outcome);
+    ctx.go(outcome.kind === "build" ? page : "ask-change");
+    return;
+  }
   // An answer, such as whether there's a new episode (S8.2): told, and
-  // nothing else happens.
-  if (outcome.kind === "told") {
+  // nothing else happens. With the Ask box off, a build or a change says
+  // what it is the same way.
+  if (outcome.kind === "told" || outcome.kind === "build" || outcome.kind === "change") {
     if (open) close();
     ctx.sounds.play("confirm");
     if (!barred) ctx.toast(outcome.say, "ok");

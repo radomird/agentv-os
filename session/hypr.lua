@@ -23,8 +23,41 @@ hl.env("ELECTRON_OZONE_PLATFORM_HINT", "wayland")
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
 
--- The TV's preferred mode. Auto scale keeps the UI the same size on a 4K TV.
+-- The TV's mode and scale (ADR-062). The screen daemon (daemon/display.ts)
+-- sets them for the size picked, the TV's full resolution at a scale that
+-- turns it into a 1600, 1920 or 2400 wide canvas, and keeps the last ones it
+-- set on one line in ~/.local/state/agentv/display, such as
+-- "HDMI-A-1 3840x2160@60 2". The session starts at that line, so there's no
+-- flash of another mode before the daemon looks. With no line (the sizes
+-- switched off, or a TV it hasn't seen yet), the TV's preferred mode at
+-- Hyprland's automatic scale.
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
+
+local function kept_display()
+  local state = os.getenv("XDG_STATE_HOME")
+  if not state or state == "" then
+    state = (os.getenv("HOME") or "") .. "/.local/state"
+  end
+  local file = io.open(state .. "/agentv/display", "r")
+  if not file then
+    return nil
+  end
+  local line = file:read("*l") or ""
+  file:close()
+  -- Only a plain connector name, mode and number, since they go into the
+  -- monitor's rule.
+  local output, mode, scale = line:match("^([%w%._%-]+) (%d+x%d+@[%d%.]+) ([%d%.]+)$")
+  scale = tonumber(scale)
+  if output and #output <= 32 and scale and scale > 0 and scale <= 8 then
+    return { output = output, mode = mode, scale = scale }
+  end
+  return nil
+end
+
+local kept = kept_display()
+if kept then
+  hl.monitor({ output = kept.output, mode = kept.mode, position = "auto", scale = kept.scale })
+end
 
 -- The keyboard layout the installer set, the way Omarchy's desktop reads it.
 local function vconsole()
@@ -43,6 +76,35 @@ local function vconsole()
   return values
 end
 local keyboard = vconsole()
+
+-- The splash's background, for the TV session's first frame, while
+-- AgenTV's splash is kept from the boot to home (ADR-060,
+-- bin/agentv-boot-splash leaves the note). It's the colour Plymouth drew,
+-- from its theme's script, so the hand-over shows no other colour.
+local function splash_background()
+  local note = io.open("/run/agentv-boot-splash", "r")
+  if not note then
+    return nil
+  end
+  note:close()
+  local file = io.open("/usr/share/plymouth/themes/omarchy/omarchy.script", "r")
+  if not file then
+    return nil
+  end
+  local colour = nil
+  for line in file:lines() do
+    local r, g, b = line:match("^Window%.SetBackgroundTopColor%(%s*([%d.]+)%s*,%s*([%d.]+)%s*,%s*([%d.]+)%s*%)")
+    if r then
+      local function byte(value)
+        return math.max(0, math.min(255, math.floor(tonumber(value) * 255 + 0.5)))
+      end
+      colour = string.format("rgb(%02x%02x%02x)", byte(r), byte(g), byte(b))
+      break
+    end
+  end
+  file:close()
+  return colour
+end
 
 hl.config({
   input = {
@@ -81,8 +143,10 @@ hl.config({
     -- Hyprland would say so in a notice over the TV.
     disable_xdg_env_checks = true,
     force_default_wallpaper = 0,
-    -- Tokyo Night's background, for the moment before the home screen draws.
-    background_color = "rgb(1a1b26)",
+    -- The splash's background while AgenTV's splash is kept from the boot
+    -- (above), and Tokyo Night's otherwise, for the moment before the home
+    -- screen draws.
+    background_color = splash_background() or "rgb(1a1b26)",
     -- Nothing comes to the front by asking for it.
     focus_on_activate = false,
     on_focus_under_fullscreen = 0,
@@ -138,6 +202,12 @@ for _, key in ipairs({ "Escape", "XF86Back" }) do
 end
 
 hl.on("hyprland.start", function()
+  -- AgenTV's splash first, before anything else starts, so it's up as soon
+  -- as it can be (ADR-060). It draws only when the boot kept the splash.
+  -- Plymouth, which let go of the screen and kept its last frame up, quits
+  -- once home has drawn (agentv-boot-splash done): this session's first
+  -- frame can come a second or more after it starts.
+  hl.exec_cmd("agentv-boot-splash tv")
   -- The screen daemon, the virtual input device and the toast overlay run
   -- as user units under agentv-tv.target, and need this session's display.
   hl.exec_cmd(

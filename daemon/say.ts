@@ -9,12 +9,17 @@
 // (daemon/asks.ts). Who's watching decides which apps the router hears of,
 // so a child's profile only routes to children's apps.
 //
+// Make and change (ADR-068) ask the box's agent to build, for an adult,
+// when the askbuilds switch is on (daemon/executors/make.ts). A change
+// waits for an adult's ok on the TV or a phone, which settle() takes.
+//
 // What was said is never logged: only which request it was and how long
 // the router took.
 
 import type { Item } from "../apps/contract/contract.ts";
 import type { Viewer } from "./apps/loader.ts";
 import { execute, run, type ExecApp, type ExecContext, type ExecNews, type Opened, type Outcome } from "./executors/index.ts";
+import type { ExecBuilds } from "./executors/make.ts";
 import type { Found } from "./executors/play.ts";
 import { fromWhatsNew } from "./executors/whatsNew.ts";
 import type { WatchRow } from "./ledger.ts";
@@ -95,6 +100,9 @@ export interface SayOptions {
   // What's new and a show's air dates, from TMDB, for who's watching and the
   // apps they can open (stage 8).
   news?: (viewer: Viewer, apps: ExecApp[]) => ExecNews;
+  // The builder for who's watching, for make and change, or nothing while
+  // the askbuilds switch is off.
+  builds?: (viewer: Viewer) => Promise<ExecBuilds | undefined>;
   ask: (ask: SayAsk, ms: number) => Promise<SayAnswer>;
   changed: (said: Said | null) => void; // null: put away
   // What came of a sentence, said aloud over HDMI (stage 8, Q146): the
@@ -103,7 +111,7 @@ export interface SayOptions {
   // The listening bar (ADR-054): whether one was up for this sentence,
   // which what came of it then takes over, whether a new box has it now,
   // and the bar over an app.
-  bar?: { sent: () => boolean; listening: () => boolean; show: (state: "thinking" | "said", text: string) => void };
+  bar?: { sent: (from: string) => boolean; listening: () => boolean; show: (state: "thinking" | "said", text: string) => void };
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -150,18 +158,19 @@ export class Say {
     const viewer = await this.o.viewer();
     const said: Said = { n: this.next++, sentence: cleanSentence(sentence), from, viewer: viewer.id, state: "routing", at: this.now() };
     this.current = said;
-    if (this.o.bar?.sent()) {
+    if (this.o.bar?.sent(from)) {
       this.barred.add(said.n);
       this.o.bar.show("thinking", said.sentence);
     }
     this.show(said);
     const apps = await this.o.apps(viewer);
-    // The apps that play something; Clock and Weather open from home.
-    const heard = apps.filter((app) => app.category !== "utility").map(({ id, name, category }) => ({ id, name, category }));
+    // The apps that play something; Clock and Weather open from home. And
+    // every app the agent made, which a change can name.
+    const heard = apps.filter((app) => app.category !== "utility" || app.made).map(({ id, name, category, made }) => ({ id, name, category, ...(made ? { made } : {}) }));
     const routed = await this.o.route(said.sentence, heard);
     this.o.log?.(`heard from ${from}: ${routed.route.intent}${routed.none ? ` (${routed.none})` : ""}, routed by ${routed.provider} in ${routed.ms} ms`);
     said.route = routed.route;
-    said.outcome = await execute(routed, this.context(viewer, apps));
+    said.outcome = await execute(routed, this.context(viewer, apps, await this.o.builds?.(viewer)));
     said.state = "done";
     said.at = this.now();
     this.show(said);
@@ -186,14 +195,28 @@ export class Say {
   }
 
   // What the executors may do for who's watching.
-  private context(viewer: Viewer, apps: ExecApp[]): ExecContext {
+  private context(viewer: Viewer, apps: ExecApp[], builds?: ExecBuilds): ExecContext {
     return {
       apps,
       rows: () => this.o.rows(viewer.id),
       search: (query, ids) => this.search(query, ids, viewer),
       open: (app, item) => this.open(app, item),
       ...(this.o.news ? { news: this.o.news(viewer, apps) } : {}),
+      ...(builds ? { builds } : {}),
     };
+  }
+
+  // What came of the sentence, settled: a change an adult said ok to on
+  // the TV or a phone, or a make they turned down. The TV and the phones
+  // hear it, and the TV says it.
+  settle(n: number, outcome: Outcome): Said | null {
+    const said = this.current;
+    if (!said || said.n !== n) return null;
+    said.outcome = outcome;
+    said.at = this.now();
+    this.show(said);
+    this.o.speak?.(outcome.say);
+    return said;
   }
 
   // What came of it, over the app in front: on the listening bar when it

@@ -13,7 +13,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import type { Provider } from "../ai.ts";
-import { GROK_BUILT_INS } from "../../builder/providers.ts";
+import { GROK_BUILT_INS, SIGN_IN_RAN_OUT as RAN_OUT_WORDS } from "../../builder/providers.ts";
 import type { Answer, Ask, Backend } from "../router.ts";
 import { ProviderError } from "./http.ts";
 import { ROUTER_MODELS } from "./index.ts";
@@ -187,7 +187,9 @@ const said = (stderr: string) => {
 export const NOT_SIGNED_IN = "the plan isn't signed in yet: it signs in the first time your agent builds something";
 export const SIGN_IN_RAN_OUT = "the plan's sign-in ran out: it needs signing in again";
 const signedOut = (text: string) => /\/login|not logged in|log ?in again|not signed in|unauthori[sz]ed/i.test(text);
-const ranOut = (text: string) => /session expired|could not be refreshed|token (has )?expired/i.test(text);
+// The builder's own list of each CLI's words, so the two agree, and a
+// refresh that only failed this once isn't taken for a sign-in that ran out.
+const ranOut = (text: string) => RAN_OUT_WORDS.test(text);
 
 // The answer in what the CLI printed, or why there isn't one.
 export function cliAnswer(provider: CliProvider, stdout: string, code: number | null, stderr = ""): Answer {

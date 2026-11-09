@@ -26,7 +26,19 @@ Layers 2 to 4 (unit, contract, UI) join the gate as their code lands. They shoul
 ## Pull requests
 
 - Layers 1 to 4 must be green, and the target is under 10 minutes.
-- Layer 5, the image test, runs on a pull request that touches `install/`, `system/`, `config/hypr/`, `migrations/`, `session/` or the screen daemon's Hyprland and input files (`daemon/screen.ts`, `daemon/hyprland.ts`, `daemon/input.py`), and on every `agentv-iso` pull request. Anything else gets it from the "image" label (add it again to run it again), from the nightly run once it's merged, and from agentv-iso on every release tag. It runs in GitHub Actions on `ubuntu-26.04` with KVM, because the Mac can't run the x86_64 ISO. See `agentv-acceptance-tests`.
+- A pull request runs only the checks its files can affect. Lint, secrets and house rules always run. One that only changes `.claude/`, the README in `.github/` or the image and nightly workflows skips the unit, contract, screen and Omarchy tests. One that only touches AgenTV's own folders (`daemon/`, `launcher/`, `setup/`, `companion-web/`, `apps/`, `builder/`, `branding/`, `session/`, `test/agentv/`, `.github/`) skips Omarchy's own tests, unless it adds or changes a `.service` or `.conf` file. A push to `agentv` runs everything.
+## The image layer, once per change
+
+Layer 5, the image test, builds the ISO, installs it in a VM and runs every image check. That takes about 50 minutes, so a pull request gets it once, when it's ready. It runs in GitHub Actions on `ubuntu-26.04` with KVM, because the Mac can't run the x86_64 ISO. See `agentv-acceptance-tests`.
+
+- **Which pull requests get it.** In agentv-os, one that touches `install/`, `system/`, `config/hypr/`, `migrations/`, `session/` or the screen daemon's Hyprland and input files (`daemon/screen.ts`, `daemon/hyprland.ts`, `daemon/input.py`). So does one with a branch of the same name in agentv-iso or agentv-pkgs. In agentv-iso, every pull request that touches the build or its tests. Everything else gets it from the nightly run once it's merged, and from agentv-iso on every release tag.
+- **Drafts get no image run.** Open your pull request as a draft, and keep it one while you work. The "image" label runs the whole thing on a draft anyway. Add it again to run it again.
+- **While you fix, rerun only the checks that fail.** Run them by name, with `image.yml` and `checks` on your branch (below). Don't push to a ready pull request to see if a fix works.
+- **Mark it ready once they pass.** That starts the one full run. Each push after that runs it again. So if the full run fails, turn the pull request back into a draft while you fix it.
+- **A paired change runs it once, in agentv-os.** When your change has a branch of the same name in agentv-iso or agentv-pkgs, agentv-os's VM test builds the ISO from those branches. agentv-iso's pull request skips its own run and links to agentv-os's. Push agentv-iso and agentv-pkgs first, then agentv-os, so its run picks them up.
+- **After pushing only the agentv-iso or agentv-pkgs branch, rerun the agentv-os pull request's Check run.** Nothing else starts it. Its VM test lists the agentv-iso and agentv-pkgs commits it built in its summary. Before a merge, check they're still the heads of those branches.
+- **Nothing merges red.** A pull request that gets the image layer needs a green full run on its last commit before it merges.
+- **To rerun one image check,** run the Image workflow (`image.yml`) by hand on your branch, with `ref` set to your branch, `checks` set to the check's file name in agentv-iso's `test/agentv/image/` without `-test.sh` (`s5.6-setup`, or several with spaces between them), and `from-disk` and `own-repo` on. It starts from the night's box with your packages on it, so you get the answer in minutes. Set `iso-ref` to your agentv-iso branch if the check changed there, and `pkgs-ref` to your agentv-pkgs branch if a package did. Leave `from-disk` off if your change touches `install/`, `config/` or `branding/`, and for `s0.4-branding`, which needs the ISO.
 
 ## Acceptance ids
 

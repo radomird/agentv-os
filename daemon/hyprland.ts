@@ -20,10 +20,16 @@ export interface Client {
 
 export interface Monitor {
   name: string;
+  // The mode it runs at, in the TV's own pixels.
   width: number;
   height: number;
   refreshRate: number;
   focused: boolean;
+  // Its scale, and the modes the TV lists, such as "3840x2160@60.00Hz"
+  // (daemon/display.ts).
+  scale?: number;
+  availableModes?: string[];
+  disabled?: boolean;
   // The special workspace shown on it, with an empty name when there's none.
   specialWorkspace?: { id: number; name: string };
 }
@@ -39,6 +45,9 @@ export interface Hyprland {
   layers(): Promise<Layer[]>;
   // A Lua dispatcher expression, such as hl.dsp.focus({ window = "address:0x1" }).
   dispatch(expression: string): Promise<void>;
+  // Lua run in the session's config, such as hl.monitor({ ... }), which
+  // takes effect at once.
+  eval(code: string): Promise<void>;
   // Calls handler with each event's name and data, such as
   // "openwindow" and "0x1,special:agentv-held,foot,foot".
   events(handler: (name: string, data: string) => void, closed: () => void): void;
@@ -92,6 +101,13 @@ export function connect(): Hyprland {
       const out = (await hyprctl(["dispatch", expression])).trim();
       if (out !== "ok" && out !== "") {
         throw new Error(`hyprctl dispatch ${expression}: ${out}`);
+      }
+    },
+
+    async eval(code) {
+      const out = (await hyprctl(["eval", code])).trim();
+      if (out !== "ok" && out !== "") {
+        throw new Error(`hyprctl eval ${code}: ${out}`);
       }
     },
 

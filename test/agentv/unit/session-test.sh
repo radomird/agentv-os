@@ -37,7 +37,7 @@ run() {
   rm -f "$calls"
   env PATH="$bin:$ROOT/bin:$PATH" HOME="$SCRATCH/home" XDG_STATE_HOME="$SCRATCH/home/.local/state" \
     CALLS="$calls" AGENTV_PATH="$ROOT" OMARCHY_PATH="$SCRATCH/omarchy" AGENTV_SESSION_DIRS="$SCRATCH/none" \
-    AGENTV_BOOT_ID_FILE="$SCRATCH/boot_id" "$BASH" "$@"
+    AGENTV_BOOT_ID_FILE="$SCRATCH/boot_id" AGENTV_BOOT_SPLASH_NOTE="$SCRATCH/splash-note" "$BASH" "$@"
 }
 
 state="$SCRATCH/home/.local/state/agentv"
@@ -58,6 +58,14 @@ run "$ROOT/bin/agentv-session" 2>/dev/null || true
   fail "a note from this boot starts Omarchy's own session, as its entry says" "$(cat "$calls")"
 [[ ! -f $state/next-session ]] || fail "the note counts once"
 pass "S1.3 a note from agentv desktop starts Omarchy's own session, once"
+
+: >"$SCRATCH/splash-note"
+echo "desktop boot-one" >"$state/next-session"
+run "$ROOT/bin/agentv-session" 2>/dev/null || true
+[[ $(cat "$calls") == $'systemctl start --no-block agentv-boot-splash-release.service\nuwsm start -g -1 -e -D Hyprland hyprland.desktop tv=' ]] ||
+  fail "leaving for the desktop during the boot's splash lets Plymouth go first" "$(cat "$calls")"
+rm -f "$SCRATCH/splash-note"
+pass "T2.1 Omarchy's desktop started before home has drawn releases Plymouth first"
 
 echo "desktop boot-zero" >"$state/next-session"
 run "$ROOT/bin/agentv-session" 2>/dev/null || true
@@ -108,6 +116,23 @@ SCREEN_STATUS=2 run "$bin/agentv-tv" || fail "agentv tv on the desktop"
 { grep -qx "close-all" "$calls" && grep -q "^uwsm stop" "$calls"; } ||
   fail "on Omarchy's desktop it closes the windows and ends the session" "$(cat "$calls")"
 pass "S1.3 on Omarchy's desktop, agentv tv closes its windows and ends its session"
+
+HYPRLAND_INSTANCE_SIGNATURE=omarchy run "$bin/agentv-tv" || fail "agentv tv from Omarchy's Hyprland"
+! grep -q "^agentv-screen" "$calls" || fail "from Omarchy's own Hyprland it doesn't ask the TV session's daemon" "$(cat "$calls")"
+{ grep -qx "close-all" "$calls" && grep -q "^uwsm stop" "$calls"; } ||
+  fail "and still closes the windows and ends the session" "$(cat "$calls")"
+HYPRLAND_INSTANCE_SIGNATURE=tv AGENTV_SESSION=tv run "$bin/agentv-tv" || fail "agentv tv from the TV session's Hyprland"
+[[ $(cat "$calls") == "agentv-screen home" ]] || fail "the TV session's Hyprland still asks its daemon" "$(cat "$calls")"
+pass "S1.3 Back to TV's keys on Omarchy's desktop go straight to ending its session"
+
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"; sleep 30'
+took=$SECONDS
+HYPRLAND_INSTANCE_SIGNATURE=omarchy run "$bin/agentv-tv" || fail "agentv tv with windows that don't close"
+took=$((SECONDS - took))
+(( took < 8 )) || fail "a close that hangs is cut off after a few seconds (took $took s)"
+grep -q "^uwsm stop" "$calls" || fail "and the session still ends" "$(cat "$calls")"
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"'
+pass "S1.3 Back to TV doesn't wait long on windows that don't close"
 
 # --- agentv-desktop-hook ----------------------------------------------------
 

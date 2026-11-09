@@ -1,0 +1,5 @@
+agentv runs on omarchy 4.5, and boxes move to it once omarchy's stable does
+restart, shut down and updates from the tv keep working on omarchy 4.5
+with omarchy 4.5 the box boots straight on, and a key shows the boot menu
+the boot splash takes your theme's colours, not always tokyo night's
+new installs use omarchy 4.5's installer, with agentv's words in it

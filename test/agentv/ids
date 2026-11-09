@@ -80,3 +80,11 @@ S7.4  manual    with a Claude plan and no key, the same set routes through Claud
 S7.5  check     with a paired phone's "ask your tv" box open, a listening bar along the bottom of the TV shows the words as they arrive, then thinking and what came of it, over home and over an app, and closing the box, Back or a while with no words takes it away; the daemon keeps none of the words (ADR-054; layers 2 and 4; a real phone's dictation on the NUC)
 S8.1  image     home's top rail shows titles that appeared on the household's services in the last 7 days, in setup's region, from TMDB; a child's profile only sees family titles on its own apps (layer 2 on a stand-in TMDB; the image layer through the router's service; agentv selftest S8.1 with a real key on the NUC)
 S8.2  image     "is there a new episode of" a running show answers yes or no correctly, with the next air date (layer 2 on a stand-in TMDB; the image layer end to end; agentv selftest S8.2 on the NUC)
+
+# Phase 2's checks, from PHASE-2-PLAN.md.
+T4.1  check     home and the built-in apps at 1600, 1920 and 2400 wide in every look, at a 4K TV's scale, with nothing cut off, and the size pickers in Settings and setup (layer 4)
+T4.2  image     on a 4K screen, each size gives its logical width, a stand-in service page's body text is at least 23 px, a toast scales with it, and a new TV session starts at the size picked (the image layer at 3840 x 2160)
+T7.1  check     setup's 12 steps in order, each screen's "n of 12", and the location step starting on the phone's time zone, asking for a zone only for a country with several (layer 4)
+T7.2  check     setup's AI step shows each provider's own icon, fetched from its site, and its name alone when there's none (layer 4)
+T7.3  image     setup on a plan signs in at the AI step, and voice answers before any build (the image layer with a stand-in CLI; a real plan on the NUC)
+T7.4  image     Settings → Omarchy desktop sets the account's password, typed on the phone, and SSH takes passwords again (the image layer with a password the test makes up)

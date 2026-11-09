@@ -15,6 +15,14 @@ printf 'drop:%s\n' "$*" >>"$TEST_LOG"
 SCRIPT
 chmod +x "$tmp_dir/bin/omarchy-pkg-drop"
 
+# omarchy-remove-ai-claude quits the running app before deleting its state;
+# a real pkill here would take the developer's own Claude with it.
+cat >"$tmp_dir/bin/pkill" <<'SCRIPT'
+#!/bin/bash
+printf 'pkill:%s\n' "$*" >>"$TEST_LOG"
+SCRIPT
+chmod +x "$tmp_dir/bin/pkill"
+
 # omarchy-remove-ai-perplexity asks through gum whether the user's data goes
 # too. The stub answers "no" unless a test says otherwise and logs the call: a
 # real gum would hang the run, and one that answered "yes" on its own would be
@@ -40,6 +48,64 @@ fresh_home() {
   export HOME="$tmp_dir/home"
 }
 
+# The Codex CLI ships in its own package and resolves its runtime out of
+# ~/.cache/codex-runtimes, so removing the desktop app must not take it.
+fresh_home
+mkdir -p "$HOME/.config/Codex" "$HOME/.cache/Codex" "$HOME/.cache/codex-runtimes/codex-primary-runtime" "$HOME/.codex"
+"$ROOT/bin/omarchy-remove-ai-chatgpt" >/dev/null
+
+[[ ! -e $HOME/.config/Codex ]] || fail "ChatGPT removal deletes the desktop app's config"
+pass "ChatGPT removal deletes the desktop app's config"
+
+[[ -d $HOME/.cache/codex-runtimes/codex-primary-runtime ]] || fail "ChatGPT removal keeps the Codex CLI's runtime cache"
+pass "ChatGPT removal keeps the Codex CLI's runtime cache"
+
+[[ -d $HOME/.codex ]] || fail "ChatGPT removal keeps the Codex CLI's config"
+pass "ChatGPT removal keeps the Codex CLI's config"
+
+# The Claude Code CLI ships in its own package and keeps its state in
+# ~/.claude, ~/.claude.json, and ~/.cache/claude-cli-nodejs, so removing the
+# desktop app must not take it.
+fresh_home
+mkdir -p "$HOME/.config/Claude" "$HOME/.cache/Claude" "$HOME/.cache/claude-cli-nodejs" "$HOME/.claude"
+touch "$HOME/.claude.json"
+"$ROOT/bin/omarchy-remove-ai-claude" >/dev/null
+
+for gone in .config/Claude .cache/Claude; do
+  [[ ! -e $HOME/$gone ]] || fail "Claude removal deletes the desktop app's config and caches" "$gone"
+done
+pass "Claude removal deletes the desktop app's config and caches"
+
+for kept in .claude .claude.json .cache/claude-cli-nodejs; do
+  [[ -e $HOME/$kept ]] || fail "Claude removal keeps the Claude Code CLI's state" "$kept"
+done
+pass "Claude removal keeps the Claude Code CLI's state"
+
+grep -qx 'pkill:-x claude-desktop' "$TEST_LOG" || fail "Claude removal quits the running app before deleting its state"
+pass "Claude removal quits the running app before deleting its state"
+
+# LM Studio's models follow a relocatable home, named only by the pointer file.
+fresh_home
+mkdir -p "$tmp_dir/relocated-models/models"
+printf '%s' "$tmp_dir/relocated-models" >"$HOME/.lmstudio-home-pointer"
+mkdir -p "$HOME/.config/LM Studio"
+"$ROOT/bin/omarchy-remove-ai-lm-studio" >/dev/null
+
+[[ ! -e $tmp_dir/relocated-models ]] || fail "LM Studio removal follows a relocated home pointer"
+pass "LM Studio removal follows a relocated home pointer"
+
+[[ ! -e "$HOME/.config/LM Studio" ]] || fail "LM Studio removal deletes its config"
+pass "LM Studio removal deletes its config"
+
+# A pointer that resolves to the home directory itself would take everything.
+fresh_home
+printf '%s' "$HOME" >"$HOME/.lmstudio-home-pointer"
+mkdir -p "$HOME/Documents"
+"$ROOT/bin/omarchy-remove-ai-lm-studio" >/dev/null
+
+[[ -d $HOME/Documents ]] || fail "LM Studio removal refuses a pointer aimed at the home directory"
+pass "LM Studio removal refuses a pointer aimed at the home directory"
+
 # T3 Code bootstraps the agents it drives; their state outlives it.
 fresh_home
 mkdir -p "$HOME/.config/t3code" "$HOME/.t3" "$HOME/.grok" "$HOME/.local/share/opencode" "$HOME/.npm"
@@ -53,6 +119,33 @@ for kept in .grok .claude.json .npm .local/share/opencode; do
   [[ -e $HOME/$kept ]] || fail "T3 Code removal keeps the agent state it bootstrapped" "$kept"
 done
 pass "T3 Code removal keeps the agent state it bootstrapped"
+
+# The AppImage install leaves its app, launchers, icons, update cache and `t3` link.
+fresh_home
+: >"$TEST_LOG"
+mkdir -p "$HOME/.local/share/t3code" "$HOME/.local/share/applications" "$HOME/.local/share/icons/hicolor/512x512/apps" \
+  "$HOME/.cache/t3code-updater" "$HOME/.config/t3code-v2" "$HOME/.t3/bin" "$HOME/.local/bin"
+touch "$HOME/.local/share/t3code/T3-Code.AppImage" "$HOME/.local/share/applications/t3code.desktop" \
+  "$HOME/.local/share/applications/com.t3tools.T3Code.desktop" "$HOME/.local/share/icons/com.t3tools.T3Code.desktop.png" \
+  "$HOME/.local/share/icons/hicolor/512x512/apps/t3code.png" "$HOME/.local/share/applications/other.desktop"
+ln -s "$HOME/.t3/bin/t3" "$HOME/.local/bin/t3"
+"$ROOT/bin/omarchy-remove-ai-t3-code" >/dev/null
+
+for gone in .local/share/t3code .local/share/applications/t3code.desktop .local/share/applications/com.t3tools.T3Code.desktop \
+  .local/share/icons/com.t3tools.T3Code.desktop.png .local/share/icons/hicolor/512x512/apps/t3code.png \
+  .cache/t3code-updater .config/t3code-v2 .local/bin/t3; do
+  [[ ! -e $HOME/$gone && ! -L $HOME/$gone ]] || fail "T3 Code removal deletes what its app install left" "$gone"
+done
+[[ -e $HOME/.local/share/applications/other.desktop ]] || fail "T3 Code removal keeps other launchers"
+grep -qx 'drop:t3code-bin t3code-nightly-bin' "$TEST_LOG" || fail "T3 Code removal drops either package" "$(cat "$TEST_LOG")"
+pass "T3 Code removal deletes the app, its launchers, icons, update cache and t3 link"
+
+fresh_home
+mkdir -p "$HOME/.local/bin"
+echo "#!/bin/sh" >"$HOME/.local/bin/t3"
+"$ROOT/bin/omarchy-remove-ai-t3-code" >/dev/null
+[[ -f $HOME/.local/bin/t3 ]] || fail "T3 Code removal keeps a t3 the user put there"
+pass "T3 Code removal keeps a t3 the user put there"
 
 # Perplexity's other products (the CLI, Comet) share the perplexity-* prefix;
 # the desktop app owns only its rpc-server runtime and Electron caches. The
@@ -135,6 +228,25 @@ if env -u HOME "$ROOT/bin/omarchy-remove-ai-perplexity" </dev/null >/dev/null 2>
   fail "Perplexity removal refuses to run without HOME"
 fi
 pass "Perplexity removal refuses to run without HOME"
+
+# ~/.grok belongs to the Grok CLI that omarchy-default-agent installs.
+fresh_home
+mkdir -p "$HOME/.config/Grok Bot" "$HOME/.grokbot" "$HOME/.grok"
+"$ROOT/bin/omarchy-remove-ai-grok-bot" >/dev/null
+
+[[ ! -e $HOME/.grokbot ]] || fail "Grok Bot removal deletes its own data"
+pass "Grok Bot removal deletes its own data"
+
+[[ -d $HOME/.grok ]] || fail "Grok Bot removal keeps the Grok CLI's state"
+pass "Grok Bot removal keeps the Grok CLI's state"
+
+# Every acceleration variant depends on the base package, so package presence is
+# the test the remover can actually act on; the command alone is also provided by
+# builds omarchy-pkg-drop will not touch.
+ollama_row=$(grep '^  "remove.ai.ollama":' "$ROOT/default/omarchy/omarchy-menu.jsonc")
+[[ $ollama_row == *'"when":"omarchy-pkg-present ollama"'* ]] ||
+  fail "Ollama removal is offered only where the package is installed" "$ollama_row"
+pass "Ollama removal is offered only where the package is installed"
 
 # OpenClaw's gateway unit and web app launcher are the app's own; the agent
 # state in ~/.openclaw is the user's. systemctl and openclaw are stubbed so the
