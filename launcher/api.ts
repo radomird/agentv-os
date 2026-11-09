@@ -264,6 +264,16 @@ export interface Background {
   kind: "photo" | "art" | "folder" | "theme";
   credit: { text: string | null; from: string };
   added: string;
+  // A picture or one of the theme's video backgrounds, and its still
+  // (ADR-064). A box from before them has neither.
+  media?: "image" | "video";
+  poster?: string;
+  // A video background, which loops, and its codec.
+  video?: string;
+  codec?: string | null;
+  // A picture's theme intro, which plays once and ends on it.
+  intro?: string;
+  introCodec?: string | null;
 }
 
 export interface Backgrounds {
@@ -271,8 +281,19 @@ export interface Backgrounds {
   current: string | null;
   items: Background[];
   // The Omarchy theme's own (ADR-048): the theme, the one Omarchy shows,
-  // and its backgrounds. A box from before them has none.
-  theme?: { name: string | null; current: string | null; items: Background[] };
+  // and its backgrounds. A box from before them has none. With them,
+  // whether Omarchy's intros are on, the intro that's due and what home
+  // did with it (ADR-064).
+  theme?: {
+    name: string | null;
+    current: string | null;
+    items: Background[];
+    intros?: boolean;
+    introDue?: string | null;
+    introShown?: { due: string; how: "played" | "still"; why: string | null } | null;
+  };
+  // Videos play without hardware decoding, for the image checks' VM.
+  softwareVideo?: boolean;
 }
 
 // A work from a museum archive, as the art picker lists it.
@@ -292,17 +313,17 @@ export function creditLine(item: Background): string {
 }
 
 // The pictures the chosen source shows: the theme's own, the photos, the art
-// or a folder's.
-export function shownPictures(backgrounds: Backgrounds | null): Background[] {
-  if (backgrounds?.source === "theme") return backgrounds.theme?.items ?? [];
+// or a folder's. The theme's video backgrounds too, with videos on.
+export function shownPictures(backgrounds: Backgrounds | null, videos = false): Background[] {
+  if (backgrounds?.source === "theme") return (backgrounds.theme?.items ?? []).filter((item) => videos || item.media !== "video");
   const kinds: Record<Backgrounds["source"], Background["kind"] | null> = { theme: null, field: null, photos: "photo", art: "art", folder: "folder" };
   const kind = backgrounds ? kinds[backgrounds.source] : null;
   return kind ? backgrounds!.items.filter((item) => item.kind === kind) : [];
 }
 
 // The one of them on screen: for the theme's own, the one Omarchy shows.
-export function shownCurrent(backgrounds: Backgrounds | null): Background | undefined {
-  const pictures = shownPictures(backgrounds);
+export function shownCurrent(backgrounds: Backgrounds | null, videos = false): Background | undefined {
+  const pictures = shownPictures(backgrounds, videos);
   const current = backgrounds?.source === "theme" ? backgrounds.theme?.current : backgrounds?.current;
   return pictures.find((one) => one.id === current) ?? pictures[0];
 }
@@ -419,6 +440,8 @@ export const daemon = {
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
   tonight: (version: string | null, grant?: string) => call<{ ok: boolean }>("POST", "/api/updates/tonight", { version }, grant),
   backgrounds: () => call<Backgrounds>("GET", "/api/backgrounds"),
+  // What home did with the intro that was due (ADR-064).
+  introShown: (due: string, how: "played" | "still", why?: string) => call<object>("POST", "/api/backgrounds/intro", { due, how, why }),
   chooseBackground: (source: Backgrounds["source"], current?: string) => call<Backgrounds>("POST", "/api/backgrounds", { source, current }),
   // Art from museum archives: a search of one, and a work picked.
   archives: () => call<{ archives: { id: Art["archive"]; name: string }[] }>("GET", "/api/art").then((r) => r.archives),
