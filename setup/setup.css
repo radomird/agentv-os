@@ -1502,3 +1502,9 @@ body.counted .player-score {
   border: 2px solid var(--foreground);
   color: var(--bright-foreground);
 }
+
+/* Getting ready with setup's own switch on: one line and one bar, D3. */
+.setup-page.d3.ready2 .ready-bar {
+  margin-top: 48px;
+  font-size: 40px;
+}
