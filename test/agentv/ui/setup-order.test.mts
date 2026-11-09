@@ -170,3 +170,38 @@ test("with the box check on, gaming says what to expect on this box", async () =
     switches(true);
   }
 });
+
+test("Q226 theme and background are one screen: home in each theme, the backgrounds under it, and OK on one finishes setup", async () => {
+  switches(true);
+  at("theme");
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
+  page.on("pageerror", (error) => errors.push(error.message));
+  // A look's preview is drawn once: no frame opens a stream of events, so a
+  // row of them can't use up the browser's connections to the box.
+  let streams = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/events") && request.frame() !== page.mainFrame()) streams++;
+  });
+  await page.goto(`${url}/`);
+  try {
+    await page.waitForSelector(".theme2 .tb-theme.focused");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a theme.");
+    assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue or done");
+    const frames = page.locator(".tb-theme iframe");
+    assert.ok((await frames.count()) >= 2, "a preview for each theme");
+    const first = await page.locator(".tb-theme").first().getAttribute("data-theme");
+    assert.match((await frames.first().getAttribute("src")) ?? "", new RegExp(`^/\\?preview&look=\\w+&size=\\w+&theme=${first}$`));
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLIFrameElement>(".tb-theme iframe")].some((frame) => frame.contentDocument?.querySelector("[data-id]")));
+    assert.deepEqual(await page.locator(".tb-back").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.background)), ["theme", "photos", "folder", "made"]);
+    assert.equal(await page.locator(".tb-back.picked").getAttribute("data-background"), "theme", "the theme's own is the default");
+
+    // Down to the theme's own background, and OK finishes setup.
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".focused").getAttribute("data-background"), "theme");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(async () => (await (await fetch("/api/setup")).json()).setup?.done === true);
+    assert.equal(streams, 0);
+  } finally {
+    await page.close();
+  }
+});
