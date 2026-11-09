@@ -17,6 +17,7 @@ export interface IndexEntry {
   name: string;
   version: string;
   description?: string;
+  category?: string; // its manifest's category, such as streaming or media
   repo: string; // the app's public git repo, https:// (file:// for tests)
   commit: string; // the exact commit that was checked (ADR-010)
   path?: string; // the app's folder in the repo, like apps/jellyfin; the repo itself without it
@@ -100,6 +101,7 @@ export function parseIndex(text: string): AppIndex {
     if (typeof entry.repo !== "string" || !/^(https|file):\/\//.test(entry.repo)) {
       throw new IndexError(`${id}'s repo in the app index isn't an https:// address`);
     }
+    if (entry.category !== undefined && typeof entry.category !== "string") throw new IndexError(`${id}'s category in the app index isn't a word`);
     if (entry.path !== undefined && (typeof entry.path !== "string" || !PATH.test(entry.path))) {
       throw new IndexError(`${id}'s folder in the app index isn't a plain folder in its repo`);
     }

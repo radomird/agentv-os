@@ -14,8 +14,8 @@ import type { Goal } from "./setup.ts";
 
 // The apps each goal puts first, in order, from the official ones and the
 // built-in Music. One the index doesn't have yet, such as Plex, isn't shown.
-// Streaming services aren't official apps: the household's TV builds those
-// ("+ add your own").
+// With the starter switch off, Streaming has the servers you run yourself,
+// and the household's TV builds a streaming service ("+ add your own").
 export const GOAL_APPS: Record<Goal, string[]> = {
   streaming: ["agentv.jellyfin", "agentv.plex"],
   music: ["agentv.music"],
@@ -25,6 +25,12 @@ export const GOAL_APPS: Record<Goal, string[]> = {
 
 // The built-in apps setup shows, ticked, since they come with AgenTV.
 const SHOWN_BUILTINS = new Set(Object.values(GOAL_APPS).flat());
+
+// The streaming starter pack (ADR-066): every official app the index says is
+// for streaming, by its manifest's category. With the starter switch on,
+// they're Streaming's own apps, ticked, and one press away for every other
+// goal. Which they are is the index's to say, so none is named here.
+export const STARTER_CATEGORY = "streaming";
 
 export type InstallState = "queued" | "installing" | "installed" | "failed";
 
@@ -51,6 +57,8 @@ export interface AvailableApp {
 export interface SetupAppList {
   for: SetupApp[];
   more: SetupApp[];
+  // The starter pack, with its switch on: none of them is in for or more.
+  starter?: SetupApp[];
   // Why the index couldn't be read, when it couldn't.
   error?: string;
 }
@@ -144,8 +152,9 @@ export class SetupApps {
   }
 
   // The apps for the goal first, then the rest, each with whether it's on the
-  // box already and how its install is going.
-  async list(goal: Goal | null, present: Present[]): Promise<SetupAppList> {
+  // box already and how its install is going. With starter, the starter
+  // pack on its own: Streaming's own apps then, with the servers under more.
+  async list(goal: Goal | null, present: Present[], starter = false): Promise<SetupAppList> {
     const { apps, error } = await this.official();
     const status = this.status();
     const here = new Map(present.map((app) => [app.id, app]));
@@ -166,10 +175,16 @@ export class SetupApps {
         ...(now?.error ? { error: now.error } : {}),
       });
     }
-    const first = goal ? GOAL_APPS[goal] : [];
-    const forGoal = first.map((id) => shown.get(id)).filter((app): app is SetupApp => !!app);
-    const more = [...shown.values()].filter((app) => !first.includes(app.id)).sort((a, b) => Number(b.builtin) - Number(a.builtin) || a.name.localeCompare(b.name));
-    return { for: forGoal, more, ...(error ? { error } : {}) };
+    const byName = (a: SetupApp, b: SetupApp) => a.name.localeCompare(b.name);
+    const pack = starter ? apps.filter((entry) => entry.category === STARTER_CATEGORY).map((entry) => shown.get(entry.id)!).sort(byName) : [];
+    const packed = new Set(pack.map((app) => app.id));
+    const first = goal && !(starter && goal === "streaming") ? GOAL_APPS[goal] : [];
+    const forGoal = first.map((id) => shown.get(id)).filter((app): app is SetupApp => !!app && !packed.has(app.id));
+    const rest = [...shown.values()].filter((app) => !first.includes(app.id) && !packed.has(app.id)).sort((a, b) => Number(b.builtin) - Number(a.builtin) || byName(a, b));
+    // Streaming's servers lead more when the starter pack takes their place.
+    const servers = first.length || !goal ? [] : GOAL_APPS[goal].filter((id) => rest.some((app) => app.id === id));
+    const more = [...servers.map((id) => rest.find((app) => app.id === id)!), ...rest.filter((app) => !servers.includes(app.id))];
+    return { for: forGoal, more, ...(starter ? { starter: pack } : {}), ...(error ? { error } : {}) };
   }
 
   // Apps → add an app (ADR-042): the official apps that aren't on the TV,

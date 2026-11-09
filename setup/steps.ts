@@ -46,7 +46,6 @@ export const SCREENS: Record<string, Screen> = {
   apps: apps,
   "apps/add": (ctx) => addYourOwn(ctx),
   "apps/network": serverPage,
-  // track 9: its page of apps, as "apps/<page>": <screen>,
   look: look,
   theme: theme,
   "theme/colours": theme,
