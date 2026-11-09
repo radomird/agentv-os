@@ -1491,6 +1491,90 @@ body.counted .player-score {
   color: var(--foreground);
 }
 
+/* Theme and background on one screen, with setup's own switch on: home in
+   each theme along the top, and the backgrounds under it. */
+.setup-page.d3.theme2 .tb-themes {
+  display: flex;
+  gap: 32px;
+  margin: 40px -16px 0;
+  padding: 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tb-theme,
+.tb-back {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--bright-foreground);
+  text-align: left;
+}
+
+.tb-theme-name {
+  font-size: 26px;
+  font-weight: 500;
+}
+
+.tb-theme.picked .tb-theme-name {
+  font-weight: 800;
+}
+
+.tb-theme.picked .look-frame {
+  border-color: var(--accent);
+}
+
+.tb-theme.setting {
+  opacity: 0.6;
+}
+
+.tb-label {
+  margin-top: 24px;
+  font-size: 26px;
+  color: var(--foreground);
+}
+
+.tb-backs {
+  display: flex;
+  gap: 32px;
+  margin-top: 16px;
+}
+
+.tb-back-shot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 240px;
+  height: 135px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 2px dashed var(--selection);
+  color: var(--foreground);
+}
+
+.tb-back-shot img,
+.tb-back-shot .pixel-field {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tb-back.picked .tb-back-shot {
+  border: 3px solid var(--bright-foreground);
+}
+
+.tb-back-name {
+  font-size: 24px;
+}
+
+.tb-back.soon {
+  opacity: 0.6;
+}
+
 /* Who watches with setup's own switch on: done sits at the end of the row. */
 .setup-page.d3.people2 .people {
   margin-top: 64px;

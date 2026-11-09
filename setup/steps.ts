@@ -18,6 +18,7 @@ import { people, people2, person } from "./people.ts";
 import { ready, ready2 } from "./ready.ts";
 import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
+import { themeBackground } from "./theme2.ts";
 import { welcome, welcome2, wifi } from "./welcome.ts";
 
 export type Screen = (ctx: Ctx, page: string) => View | Promise<View>;
@@ -47,10 +48,10 @@ export const SCREENS: Record<string, Screen> = {
   "apps/add": (ctx) => addYourOwn(ctx),
   "apps/network": serverPage,
   look: look,
-  theme: theme,
+  theme: two(themeBackground, theme),
   "theme/colours": theme,
   "theme/own": (ctx) => addYourOwn(ctx, "theme"),
-  background: background,
+  background: two(themeBackground, background),
   "background/photos": photos,
   "background/art": art,
   "background/folder": folder,
