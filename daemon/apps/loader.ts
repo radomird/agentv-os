@@ -48,6 +48,8 @@ const CALLS: Record<string, { capability: Capability; ms: number }> = {
   "playback.open": { capability: "playback", ms: 30_000 },
   "playback.readPlaybackState": { capability: "playback", ms: 5_000 },
   "playback.next": { capability: "playback", ms: 10_000 },
+  "playback.pause": { capability: "playback", ms: 10_000 },
+  "playback.resume": { capability: "playback", ms: 10_000 },
   "profiles.list": { capability: "profiles", ms: 10_000 },
   "profiles.select": { capability: "profiles", ms: 10_000 },
   nowPlaying: { capability: "nowPlaying", ms: 5_000 },
