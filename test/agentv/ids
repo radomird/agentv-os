@@ -91,5 +91,7 @@ T7.1  check     setup's 12 steps in order, each screen's "n of 12", and the loca
 T7.2  check     setup's AI step shows each provider's own icon, fetched from its site, and its name alone when there's none (layer 4)
 T7.3  image     setup on a plan signs in at the AI step, and voice answers before any build (the image layer with a stand-in CLI; a real plan on the NUC)
 T7.4  image     Settings → Omarchy desktop sets the account's password, typed on the phone, and SSH takes passwords again (the image layer with a password the test makes up)
+T9.1  agentv-apps each streaming app's contract against its stand-ins, the d-pad included (layer 3 in agentv-apps)
+T9.2  image     a fresh setup on Streaming offers the starter pack ticked, installs it, and home has a tile for each app with its icon from a stand-in site (layer 4 with the switch both ways; the image layer with six stand-in apps and sites, and the published index counted once all six are in it)
 T13.1 check     the terminal screensaver draws 30 frames a second and hands over to the slideshow after its time; with the TV reported off it gives way and never starts, home hears it, and once the apps close the output is off (layer 4, with the times shortened)
 T13.3 manual    on the NUC the screensaver keeps the fan quiet, the CPU idles with the TV off, and with sleep on it sleeps after the hour, wakes from its power button and a USB keyboard, and wakes for the night's update

@@ -99,6 +99,25 @@ test("each goal puts its own official apps first, the rest go under more, and th
   for (const ids of Object.values(GOAL_APPS)) for (const id of ids) assert.match(id, /^agentv\./, "only AgenTV's own apps");
 });
 
+test("T9.2 the starter pack: with its switch on, every official app the index says is for streaming, Streaming's own, and the servers under more", async () => {
+  const streaming = (id: string, name: string, tier: IndexEntry["tier"] = "official"): IndexEntry => ({ ...entry(id, name, tier), category: "streaming" });
+  const index = [...INDEX, streaming("agentv.kite", "Kite"), streaming("agentv.harbour", "Harbour"), streaming("someone.reel", "Reel", "community")];
+  const apps = new SetupApps({ state: join(scratch, "starter"), source: async () => "index", catalog: async () => index, status: join(scratch, "none.json") });
+  const on = await apps.list("streaming", [MUSIC], true);
+  assert.deepEqual(on.starter?.map((app) => app.id), ["agentv.harbour", "agentv.kite"], "official ones only, by name");
+  assert.deepEqual(on.for, [], "the starter pack is Streaming's own");
+  assert.deepEqual(on.more.map((app) => app.id), ["agentv.jellyfin", "agentv.music", "agentv.immich", "agentv.steam"], "the servers lead more");
+  const other = await apps.list("media", [MUSIC], true);
+  assert.deepEqual(other.starter?.map((app) => app.id), ["agentv.harbour", "agentv.kite"], "one press away for every other goal");
+  assert.deepEqual(other.for.map((app) => app.id), ["agentv.jellyfin", "agentv.immich"]);
+  assert.ok(!other.more.some((app) => app.id === "agentv.kite"), "never twice");
+  // With the switch off, a streaming app is like any other.
+  const off = await apps.list("streaming", [MUSIC]);
+  assert.equal(off.starter, undefined);
+  assert.deepEqual(off.for.map((app) => app.id), ["agentv.jellyfin"]);
+  assert.deepEqual(off.more.map((app) => app.id), ["agentv.music", "agentv.harbour", "agentv.immich", "agentv.kite", "agentv.steam"]);
+});
+
 test("an index that can't be read says why, and is asked again a little later", async () => {
   let calls = 0;
   const apps = new SetupApps({

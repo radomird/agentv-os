@@ -720,6 +720,61 @@
   color: var(--background);
 }
 
+/* With the starter pack (D3, board 9): six cards to a row, each with its
+   face and mark across the top and its name at the bottom, so the pack and
+   more fit on one screen. */
+.apps-page.pack .app-group {
+  margin-top: 36px;
+}
+
+.apps-page.pack .app-group + .app-group {
+  margin-top: 28px;
+}
+
+.apps-page.pack .app-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.apps-page.pack .app-pick,
+.apps-page.pack .app-add {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "face mark" "text text";
+  align-items: start;
+  width: auto;
+  height: 196px;
+  padding: 20px 24px;
+  gap: 0;
+}
+
+.apps-page.pack .app-face,
+.apps-page.pack .app-add > svg {
+  grid-area: face;
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+}
+
+.apps-page.pack .app-mark {
+  grid-area: mark;
+  justify-self: end;
+}
+
+.apps-page.pack .app-text {
+  grid-area: text;
+  align-self: end;
+}
+
+.apps-page.pack .app-name {
+  font-size: 32px;
+  line-height: 1.15;
+}
+
+.apps-page.pack .app-note-line {
+  font-size: 24px;
+}
+
 .wish-row {
   display: flex;
   align-items: center;
