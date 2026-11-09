@@ -6,6 +6,12 @@
 //
 // "+ add your own" asks what to add (board 10). The TV's agent will build it
 // once it can (stage 6); until then setup keeps the words for it.
+//
+// With the starter switch on, the streaming starter pack (ADR-066, D3) is
+// the official apps the index says are for streaming. For Streaming it's the
+// goal's own group, every app in it ticked, with the servers under "more".
+// For every other goal it's one card at the start of "more", and one press
+// ticks them all.
 
 import { h } from "../launcher/dom.ts";
 import { glyph } from "../launcher/glyphs.ts";
@@ -32,6 +38,21 @@ const COLOURS: Record<string, string> = { "agentv.jellyfin": "magenta", "agentv.
 const FACES = ["blue", "magenta", "orange", "green", "yellow", "cyan"];
 const NAMES: Record<Goal, string> = { streaming: "streaming", music: "music", media: "photos", gaming: "gaming" };
 
+// An app that can still be ticked: not built in, not on the TV, not going.
+const open = (app: SetupApp) => !app.builtin && !app.installed && !app.state;
+
+// A starter app's note: what its description says after its first sentence,
+// such as that it plays in SD here, and nothing when it says no more.
+function starterNote(app: SetupApp): string {
+  return app.description.split(/(?<=\.)\s+/).slice(1).join(" ").replace(/\.$/, "").toLowerCase();
+}
+
+// What's in the starter pack, as its card says it: one or two by name, and
+// how many when there are more.
+function packNames(pack: SetupApp[]): string {
+  return pack.length <= 2 ? pack.map((app) => app.name.toLowerCase()).join(" and ") : `${pack.length} apps`;
+}
+
 // What an install says in a line: the status bar's, while it runs.
 export function installLine(apps: Installs, names: Record<string, string>): string | null {
   const name = (id: string) => (names[id] ?? id.replace(/^agentv\./, "")).toLowerCase();
@@ -44,8 +65,15 @@ export function installLine(apps: Installs, names: Record<string, string>): stri
 
 export async function apps(ctx: Ctx): Promise<View> {
   let list: SetupApps | null = await setup.apps().catch(() => null);
+  const goal = ctx.info.setup.goal;
+  const pack = () => list?.starter ?? [];
+  const packed = !!list?.starter?.length;
+  // For Streaming, the starter pack starts ticked.
+  if (ctx.picked === undefined && packed && goal === "streaming") ctx.picked = pack().filter(open).map((app) => app.id);
   const ticked = new Set<string>(ctx.picked ?? []);
+  const listed = () => [...pack(), ...(list?.for ?? []), ...(list?.more ?? [])];
   const forGoal = h("div", { class: "app-row" });
+  const starterRow = h("div", { class: "app-row" });
   const more = h("div", { class: "app-row" });
   const note = h("p", { class: "setup-note app-note" });
   const add = h(
@@ -55,9 +83,8 @@ export async function apps(ctx: Ctx): Promise<View> {
     h("span", { class: "app-text" }, h("span", { class: "app-name" }, "+ add your own"), h("span", { class: "app-note-line" }, "your tv builds it")),
   );
   const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void next() }, "↵ continue");
-  const goal = ctx.info.setup.goal;
 
-  const card = (app: SetupApp, i: number): HTMLElement => {
+  const card = (app: SetupApp, i: number, starter = false): HTMLElement => {
     const on = app.builtin || app.installed || app.state === "installed" || ticked.has(app.id);
     const mark = app.state === "installing" || app.state === "queued" ? "[>]" : app.state === "failed" ? "[!]" : on ? "[x]" : "[ ]";
     const why = app.builtin
@@ -66,7 +93,9 @@ export async function apps(ctx: Ctx): Promise<View> {
         ? "on this tv"
         : app.state === "failed"
           ? (app.error ?? "didn't install")
-          : (NOTES[app.id] ?? app.description.toLowerCase());
+          : starter
+            ? starterNote(app)
+            : (NOTES[app.id] ?? app.description.toLowerCase());
     return h(
       "button",
       { class: `app-pick${on ? " on" : ""}${app.state === "failed" ? " bad" : ""}`, "data-focus": true, "data-app": app.id, onclick: () => toggle(app) },
@@ -76,13 +105,31 @@ export async function apps(ctx: Ctx): Promise<View> {
     );
   };
 
+  // For any goal but Streaming, the whole starter pack as one card.
+  const packCard = (): HTMLElement => {
+    const can = pack().filter(open);
+    const done = pack().every((app) => app.installed || app.state === "installed");
+    const going = pack().some((app) => app.state === "installing" || app.state === "queued");
+    const on = done || (can.length > 0 && can.every((app) => ticked.has(app.id)));
+    return h(
+      "button",
+      { class: `app-pick${on ? " on" : ""}`, "data-focus": true, "data-app": "starter", onclick: () => togglePack() },
+      h("span", { class: "app-mark" }, going ? "[>]" : on ? "[x]" : "[ ]"),
+      h("span", { class: `app-face avatar-${FACES[0]}` }, glyph("film", 40)),
+      h("span", { class: "app-text" }, h("span", { class: "app-name" }, "streaming"), h("span", { class: "app-note-line" }, done ? "on this tv" : packNames(pack()))),
+    );
+  };
+
   const draw = () => {
     const had = ctx.focus.get();
     const which = had?.dataset.app ?? had?.dataset.action;
-    const all = [...(list?.for ?? []), ...(list?.more ?? [])];
-    forGoal.replaceChildren(add, ...(list?.for ?? []).map((app) => card(app, all.indexOf(app))));
-    more.replaceChildren(...(list?.more ?? []).map((app) => card(app, all.indexOf(app))));
-    more.parentElement?.classList.toggle("hidden", !list?.more.length);
+    const all = listed();
+    const own = packed && goal === "streaming";
+    forGoal.replaceChildren(...(own ? [] : [add]), ...(list?.for ?? []).map((app) => card(app, all.indexOf(app))));
+    forGoal.parentElement?.classList.toggle("hidden", own && !list?.for.length);
+    starterRow.replaceChildren(...(own ? pack().map((app) => card(app, all.indexOf(app), true)) : []));
+    more.replaceChildren(...(packed && !own ? [packCard()] : []), ...(list?.more ?? []).map((app) => card(app, all.indexOf(app))), ...(own ? [add] : []));
+    more.parentElement?.classList.toggle("hidden", !list?.more.length && !packed);
     const wishes = ctx.info.setup.wishes ?? [];
     note.textContent = list?.error
       ? `the official apps aren't here right now: ${list.error}. add them later from apps.`
@@ -105,10 +152,27 @@ export async function apps(ctx: Ctx): Promise<View> {
     draw();
   };
 
+  // One press for the whole starter pack: every app in it that can still be
+  // ticked, or none of them once they all are.
+  const togglePack = () => {
+    const can = pack().filter(open);
+    if (!can.length) {
+      ctx.toast("the starter pack is on this tv", "ok");
+      return;
+    }
+    const all = can.every((app) => ticked.has(app.id));
+    for (const app of can) {
+      if (all) ticked.delete(app.id);
+      else ticked.add(app.id);
+    }
+    ctx.picked = [...ticked];
+    draw();
+  };
+
   // The ticked ones go to the box, past the PIN once there is one, and
   // setup moves on while they install.
   const next = async () => {
-    const wanted = [...ticked].filter((id) => [...(list?.for ?? []), ...(list?.more ?? [])].some((app) => app.id === id && !app.installed && !app.state));
+    const wanted = [...ticked].filter((id) => listed().some((app) => app.id === id && !app.installed && !app.state));
     if (wanted.length) {
       const grant = await ctx.grant("installing apps");
       if (grant === null) return;
@@ -119,7 +183,7 @@ export async function apps(ctx: Ctx): Promise<View> {
         ctx.sounds.play("failure");
         return;
       }
-      for (const app of [...(list?.for ?? []), ...(list?.more ?? [])]) ctx.names[app.id] = app.name;
+      for (const app of listed()) ctx.names[app.id] = app.name;
       ctx.picked = [];
     }
     if (await onNetwork(ctx, wanted)) return;
@@ -128,16 +192,27 @@ export async function apps(ctx: Ctx): Promise<View> {
 
   const el = h(
     "div",
-    { class: "setup-page apps-page" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading(`tv apps --for ${goal ?? "everything"}`, "pick your apps.", ctx.reduced())), go),
+    { class: `setup-page apps-page${packed ? " d3 pack" : ""}` },
+    h(
+      "div",
+      { class: "setup-top" },
+      h(
+        "div",
+        {},
+        ...heading(`tv apps --for ${goal ?? "everything"}`, "pick your apps.", ctx.reduced()),
+        ...(packed ? [h("p", { class: "setup-line" }, goal === "streaming" ? "the streaming starter pack is ticked" : "the streaming starter pack is one press away")] : []),
+      ),
+      go,
+    ),
     h("div", { class: "app-group" }, h("span", { class: "app-head" }, `# for ${goal ? NAMES[goal] : "you"}`), forGoal),
+    ...(packed && goal === "streaming" ? [h("div", { class: "app-group" }, h("span", { class: "app-head" }, "# starter pack"), starterRow)] : []),
     h("div", { class: "app-group" }, h("span", { class: "app-head" }, "# more"), more),
     note,
   );
   draw();
   return {
     el,
-    first: forGoal.querySelector<HTMLElement>(".app-pick") ?? add,
+    first: (packed && goal === "streaming" ? starterRow : forGoal).querySelector<HTMLElement>(".app-pick") ?? add,
     info: "←↑↓→ move · ↵ tick",
     heard(event, data) {
       if (event !== "setup-apps") return;

@@ -2354,10 +2354,11 @@ export class Daemon {
 
     // Setup's apps (board 09): the official apps, the goal's first, and how
     // the ones picked are installing, with the apps asked for at "+ add your
-    // own". Picking goes past the PIN once there is one.
+    // own", and the starter pack with its switch on. Picking goes past the
+    // PIN once there is one.
     if (method === "GET" && path === "/api/setup/apps") {
       const setup = await this.setup();
-      const list = await this.setupApps.list(setup.goal, await this.home.apps());
+      const list = await this.setupApps.list(setup.goal, await this.home.apps(), await this.features.on("starter"));
       this.json(response, 200, { ok: true, goal: setup.goal, wishes: setup.wishes, ...list });
       return;
     }

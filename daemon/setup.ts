@@ -40,8 +40,8 @@ export const ORDER = [
   { step: "ai", n: 6, name: "ai" },
   { step: "people", n: 7, name: "who watches" },
   { step: "goal", n: 8, name: "goal" },
-  // 9, apps: the starter pack (track 9) and the servers found (track 10)
-  // are pages of it, in setup/steps.ts.
+  // 9, apps: the starter pack (track 9) is a group on it, and the servers
+  // found (track 10) a page of it, in setup/steps.ts.
   { step: "apps", n: 9, name: "apps" },
   // 10, look and size: track 5's look, and track 4's sizes join its page.
   { step: "look", n: 10, name: "look and size", feature: "looks" },

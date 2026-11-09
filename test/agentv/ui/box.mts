@@ -13,6 +13,7 @@ import type { DiscoverOptions } from "../../../daemon/discover.ts";
 import type { Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
 import type { TmdbGet } from "../../../daemon/tmdb.ts";
+import type { IndexEntry } from "../../../daemon/apps/index.ts";
 
 export const ROOT = join(import.meta.dirname, "../../..");
 const SAMPLE = join(ROOT, "test/agentv/fixtures/apps/sample");
@@ -106,6 +107,9 @@ export interface BoxOptions {
   // The machine the box check reads (daemon/box.ts): the NUC8i5BEH's
   // recorded readings unless a test gives others.
   box?: ConstructorParameters<typeof Daemon>[0]["box"];
+  // The official apps the signed index lists: OFFICIAL unless a test gives
+  // others, such as stand-in streaming apps for the starter pack.
+  catalog?: IndexEntry[];
 }
 
 export function machine(name: string): NonNullable<NonNullable<BoxOptions["box"]>["machine"]> {
@@ -237,7 +241,7 @@ export const OFFICIAL = [
 // What agentv-setup-apps does as root, for a box with no root: it takes the
 // daemon's drop, puts each app in the apps folder (the sample app, named for
 // it) and says how each went.
-function appsMover(state: string, apps: string, status: string): void {
+function appsMover(state: string, apps: string, status: string, catalog: IndexEntry[]): void {
   const drop = join(state, "apps-drop", "install.json");
   setInterval(() => {
     let ids: string[];
@@ -254,7 +258,7 @@ function appsMover(state: string, apps: string, status: string): void {
     setTimeout(() => {
       const installed = JSON.parse(readFileSync(join(apps, "installed.json"), "utf8"));
       for (const id of ids) {
-        const app = OFFICIAL.find((a) => a.id === id)!;
+        const app = catalog.find((a) => a.id === id)!;
         const target = join(apps, id);
         cpSync(SAMPLE, target, { recursive: true });
         const manifest = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
@@ -289,7 +293,8 @@ export async function startBox(
   tmdbKeyMover(state, tmdbStatus);
   zoneMover(state);
   const setupAppsStatus = join(state, "..", "setup-apps.json");
-  appsMover(state, apps, setupAppsStatus);
+  const catalog = options.catalog ?? OFFICIAL;
+  appsMover(state, apps, setupAppsStatus, catalog);
   // The phone companion and the setup hotspot's captive page too, on this
   // computer only, as the box serves them on the home network and on its
   // hotspot.
@@ -323,7 +328,7 @@ export async function startBox(
     // puts the box on edge (ADR-053).
     channelFile: join(state, "..", "channel"),
     setupAppsStatus,
-    setupCatalog: async () => OFFICIAL,
+    setupCatalog: async () => catalog,
     // Omarchy's themes, from this checkout, for setup's look, and the themes
     // your agent made, empty until a test plays root's part in them.
     omarchy: ROOT,
