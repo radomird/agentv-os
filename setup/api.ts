@@ -140,6 +140,8 @@ export interface SetupApps {
   wishes: string[];
   for: SetupApp[];
   more: SetupApp[];
+  // The streaming starter pack, with its switch on.
+  starter?: SetupApp[];
   error?: string;
 }
 
