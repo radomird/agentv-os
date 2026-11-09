@@ -15,7 +15,7 @@ import { location, pickLocation, zoneQuestion } from "./location.ts";
 import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
 import { people, person } from "./people.ts";
-import { ready } from "./ready.ts";
+import { ready, ready2 } from "./ready.ts";
 import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
 import { welcome, wifi } from "./welcome.ts";
@@ -30,7 +30,7 @@ const two = (now: Screen, before: Screen): Screen => (ctx, page) => (ctx.info.nu
 export const SCREENS: Record<string, Screen> = {
   welcome: welcome,
   "welcome/wifi": wifi,
-  ready: ready,
+  ready: two(ready2, (ctx) => ready(ctx)),
   box: yourBox,
   country: two(location, country),
   "country/pick": two(pickLocation, pickCountry),
