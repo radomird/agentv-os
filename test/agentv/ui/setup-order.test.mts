@@ -4,7 +4,7 @@
 // ahead. With the switch off, it's phase 1's bar, as it was.
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -53,6 +53,16 @@ function at(step: string): void {
   const before = ORDER.slice(0, ORDER.findIndex((entry) => entry.step === step));
   const finished = Object.fromEntries(before.map((entry, i) => [entry.step, `2026-11-05T10:0${i}:00Z`]));
   writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false, step, finished, goal: "streaming", ready: { asked: null, update: "none", from: null, to: null } }));
+}
+
+// Asks again until the check holds. page.waitForFunction can't do this with
+// an async check: it takes the check's promise as true and goes on at once.
+async function until(check: () => Promise<boolean>, ms = 5000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > end) throw new Error(`still not so after ${ms} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function tv(): Promise<Page> {
@@ -168,5 +178,109 @@ test("with the box check on, gaming says what to expect on this box", async () =
   } finally {
     await page.close();
     switches(true);
+  }
+});
+
+test("Q226 theme and background are one screen: home in each theme, the backgrounds under it, and OK on one finishes setup", async () => {
+  switches(true);
+  at("theme");
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
+  page.on("pageerror", (error) => errors.push(error.message));
+  // A look's preview is drawn once: no frame opens a stream of events, so a
+  // row of them can't use up the browser's connections to the box.
+  let streams = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/events") && request.frame() !== page.mainFrame()) streams++;
+  });
+  await page.goto(`${url}/`);
+  try {
+    await page.waitForSelector(".theme2 .tb-theme.focused");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a theme.");
+    assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue or done");
+    const frames = page.locator(".tb-theme iframe");
+    assert.ok((await frames.count()) >= 2, "a preview for each theme");
+    const first = await page.locator(".tb-theme").first().getAttribute("data-theme");
+    assert.match((await frames.first().getAttribute("src")) ?? "", new RegExp(`^/\\?preview&look=\\w+&size=\\w+&theme=${first}$`));
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLIFrameElement>(".tb-theme iframe")].some((frame) => frame.contentDocument?.querySelector("[data-id]")));
+    assert.deepEqual(await page.locator(".tb-back").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.background)), ["theme", "photos", "folder", "made"]);
+    assert.equal(await page.locator(".tb-back.picked").getAttribute("data-background"), "theme", "the theme's own is the default");
+
+    // Down to the theme's own background, and OK finishes setup.
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".focused").getAttribute("data-background"), "theme");
+    await page.keyboard.press("Enter");
+    await until(async () => (await (await fetch(`${url}/api/setup`)).json()).setup?.done === true);
+    assert.equal(streams, 0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("Q226 who watches is one headline and the row, with no adult pin switch, and done at the row's end moves on", async () => {
+  switches(true);
+  at("people");
+  const page = await tv();
+  try {
+    await page.waitForSelector(".people2 .person.done.focused");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "who watches?");
+    assert.equal(await page.locator(".pin-switch, .pin-line").count(), 0, "the PIN is asked for when a child is added");
+    assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue under the row");
+    assert.equal(await page.locator(".people > :last-child").getAttribute("data-action"), "done");
+    assert.equal(await page.locator(".setup-page p").count(), 0, "no line of text");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() === "goal");
+  } finally {
+    await page.close();
+  }
+});
+
+const route = (page: Page) => page.evaluate(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route());
+
+test("Q226 getting ready is one headline, one line and one bar, and moves on by itself once it's up to date", async () => {
+  switches(true);
+  at("ready");
+  let page = await tv();
+  try {
+    await page.waitForSelector(".ready2 .ready-bar .blocks");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "getting ready.");
+    assert.equal(await page.locator(".setup-page .prompt").textContent(), "~ $ agentv update");
+    assert.match((await page.locator(".setup-line").textContent()) ?? "", /is up to date$/);
+    assert.equal(await page.locator(".ready-list, [data-action='continue']").count(), 0, "no checklist and no continue");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() !== "ready");
+  } finally {
+    await page.close();
+  }
+
+  // Back to it later, it waits for OK instead of moving on by itself.
+  at("ready");
+  const later = JSON.parse(readFileSync(join(state, "setup.json"), "utf8"));
+  later.finished.ready = "2026-11-05T10:05:00Z";
+  writeFileSync(join(state, "setup.json"), JSON.stringify(later));
+  page = await tv();
+  try {
+    await page.waitForSelector(".ready2 .ready-bar .blocks");
+    await page.waitForTimeout(2500);
+    assert.equal(await route(page), "ready");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() !== "ready");
+  } finally {
+    await page.close();
+  }
+});
+
+test("Q226 the welcome screen is hi., one line and the code, with no keyboard button, and Enter still carries on", async () => {
+  switches(true);
+  at("welcome");
+  const page = await tv();
+  try {
+    await page.waitForSelector(".welcome2 .qr[src]");
+    assert.equal(await page.locator(".welcome2 .welcome-line").textContent(), "scan the code with your phone to pair it.");
+    assert.equal(await page.locator("[data-action='enter']").count(), 0, "no use a keyboard instead");
+    assert.ok(!(await page.locator(".setup-page").innerText()).includes("keyboard"));
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() === "ready");
+  } finally {
+    await page.close();
+    switches(false);
   }
 });

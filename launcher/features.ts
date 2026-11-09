@@ -31,7 +31,10 @@ export function features(): Promise<FeatureMap> {
     .then((response) => (response.ok ? (response.json() as Promise<FeatureMap>) : {}))
     .catch(() => ({}))
     .then((all) => (mark(all), all));
-  follow();
+  // A look's preview doesn't follow them: it's drawn once, and a row of
+  // previews, each with a stream of its own, would use up the browser's
+  // connections to the box.
+  if (!new URLSearchParams(location.search).has("preview")) follow();
   return current;
 }
 
