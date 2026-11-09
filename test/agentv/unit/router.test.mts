@@ -88,10 +88,19 @@ test("the brief names the six requests and every kind, and says to answer none r
 });
 
 test("T11.1 the brief says make and change are only ever about an app, and that installing one by its name is still none", () => {
-  assert.match(BRIEF, /^- change: change an app the agent made, one marked "made by the agent" in the list below\./m);
+  assert.match(BRIEF, /^- change: something different in an app the agent made, one marked "made by the agent" in the list below/m);
+  // A change is any way of asking, with the app named or not, and words
+  // that sound like controls count when they're about the app itself.
+  assert.match(BRIEF, /They may say make, change, add, fix, update or let me, or only say what's wrong with it\./);
+  assert.match(BRIEF, /A change with no app named is still a change/);
+  assert.match(BRIEF, /They may say make, build, create, code or I'd like, or only describe it\./);
+  assert.match(BRIEF, /such as play, watch, my, the film, the series, the album, the playlist, the soundtrack/);
+  assert.match(BRIEF, /A word for a kind of thing, such as music, photos or games, is its kind and not an app/);
+  assert.match(BRIEF, /are a change when they're about how an app the agent made is built/);
   assert.match(BRIEF, /Make and change are only ever about an app\. Making or changing anything else isn't one of them: "make a playlist"/);
   assert.match(BRIEF, /A title with make or change in it is play/);
-  assert.match(BRIEF, /^- installing, adding or buying an app by its name, such as "install Steam", rather than describing one to make;$/m);
+  assert.match(BRIEF, /^- installing, adding or buying an app by its name, such as "install Steam", rather than describing one to make\. Adding something to an app the agent made is a change;$/m);
+  assert.match(BRIEF, /^- controls for what's on now, such as pause, stop, skip, louder/m);
   assert.doesNotMatch(BRIEF, /adding, building, buying or installing an app;/);
 });
 

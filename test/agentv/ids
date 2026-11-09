@@ -84,6 +84,9 @@ S8.2  image     "is there a new episode of" a running show answers yes or no cor
 # Phase 2's checks, from PHASE-2-PLAN.md.
 T4.1  check     home and the built-in apps at 1600, 1920 and 2400 wide in every look, at a 4K TV's scale, with nothing cut off, and the size pickers in Settings and setup (layer 4)
 T4.2  image     on a 4K screen, each size gives its logical width, a stand-in service page's body text is at least 23 px, a toast scales with it, and a new TV session starts at the size picked (the image layer at 3840 x 2160)
+T6.1  check     with the dynamic backgrounds on, a video background loops behind home, muted, and pauses when an app is in front, the TV is off or another page covers home; an intro plays once and ends on its still; stills only without hardware decoding, with reduce motion or with Omarchy's intros off; the video fills the screen in every look and size (layer 4)
+T6.2  image     picking a theme with an intro plays it on home, streamed from where Omarchy keeps it, and with Omarchy's intros switched off it shows the still and says why (the image layer, decoding in software)
+T6.3  manual    a video background behind home at 4K on the NUC stays smooth, with the CPU and the GPU's video engine measured
 T7.1  check     setup's 12 steps in order, each screen's "n of 12", and the location step starting on the phone's time zone, asking for a zone only for a country with several (layer 4)
 T7.2  check     setup's AI step shows each provider's own icon, fetched from its site, and its name alone when there's none (layer 4)
 T7.3  image     setup on a plan signs in at the AI step, and voice answers before any build (the image layer with a stand-in CLI; a real plan on the NUC)
