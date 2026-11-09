@@ -171,6 +171,24 @@ test("with the box check on, gaming says what to expect on this box", async () =
   }
 });
 
+test("Q226 who watches is one headline and the row, with no adult pin switch, and done at the row's end moves on", async () => {
+  switches(true);
+  at("people");
+  const page = await tv();
+  try {
+    await page.waitForSelector(".people2 .person.done.focused");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "who watches?");
+    assert.equal(await page.locator(".pin-switch, .pin-line").count(), 0, "the PIN is asked for when a child is added");
+    assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue under the row");
+    assert.equal(await page.locator(".people > :last-child").getAttribute("data-action"), "done");
+    assert.equal(await page.locator(".setup-page p").count(), 0, "no line of text");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route() === "goal");
+  } finally {
+    await page.close();
+  }
+});
+
 const route = (page: Page) => page.evaluate(() => (window as unknown as { agentvSetup: { route(): string } }).agentvSetup.route());
 
 test("Q226 getting ready is one headline, one line and one bar, and moves on by itself once it's up to date", async () => {

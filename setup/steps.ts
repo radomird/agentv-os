@@ -14,7 +14,7 @@ import { goal, goal2 } from "./goal.ts";
 import { location, pickLocation, zoneQuestion } from "./location.ts";
 import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
-import { people, person } from "./people.ts";
+import { people, people2, person } from "./people.ts";
 import { ready, ready2 } from "./ready.ts";
 import { serverPage } from "./servers.ts";
 import { theme } from "./theme.ts";
@@ -40,7 +40,7 @@ export const SCREENS: Record<string, Screen> = {
     (ctx, page) => ways(ctx, page as Provider),
     (ctx, page) => path(ctx, page as Provider),
   ),
-  people: people,
+  people: two(people2, (ctx) => people(ctx)),
   "people/*": person,
   goal: two(goal2, goal),
   apps: apps,
