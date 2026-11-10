@@ -11,9 +11,13 @@
 //
 // With overnight updates on, it first sets a wake alarm for the update
 // window (agentv-wake.timer), so the night's update still installs, and the
-// box sleeps again an hour later. The box's power button or a key on a USB
-// keyboard or remote wakes it to the ambient screen. The phone's web remote
-// can't wake it, which the setting's line says.
+// box sleeps again an hour later. The alarm is only for while the box
+// sleeps: once it's awake again, and when the screen daemon starts, the
+// alarm goes off, so turning sleep off never leaves one behind for another
+// suspend, Omarchy's desktop's say, to wake the box by every night. The
+// box's power button or a key on a USB keyboard or remote wakes it to the
+// ambient screen. The phone's web remote can't wake it, which the setting's
+// line says.
 //
 // It runs in the screen daemon, which knows when the TV is off. A wake shows
 // as the wall clock jumping ahead of the monotonic one, which stands still
@@ -66,6 +70,15 @@ export class Sleep {
   private busy = false;
   private heldSaid = "";
   private retryAt = 0;
+  // Whether the wake alarm may be on. Unknown at first: the timer outlives
+  // the screen daemon.
+  private alarm: boolean | null = null;
+  // An alarm that wouldn't clear is tried again after the next wake, not at
+  // every look.
+  private alarmStuck = false;
+  // Asked logind to suspend, and hasn't seen the box wake since. The box can
+  // take a few seconds to go, and the alarm stays on meanwhile.
+  private asked = false;
 
   constructor(options: Options) {
     this.platform = options.platform;
@@ -121,16 +134,21 @@ export class Sleep {
     if (offset - this.offset > 10_000) {
       this.awakeSince = this.now();
       this.heldSaid = "";
+      this.asked = false;
+      this.alarmStuck = false;
       this.log(`the box woke from sleep, ${Math.round((offset - this.offset) / 1000)} s later`);
       this.woke?.();
     }
     this.offset = offset;
-    if (this.busy || this.offSince === null) return;
-    const now = this.now();
-    if (now < this.retryAt) return;
-    if (now - this.offSince < this.after || now - this.awakeSince < this.after) return;
+    if (this.busy) return;
     this.busy = true;
     try {
+      // Awake, so no wake alarm.
+      if (this.alarm !== false && !this.asked && !this.alarmStuck) await this.setAlarm(false);
+      if (this.offSince === null) return;
+      const now = this.now();
+      if (now < this.retryAt) return;
+      if (now - this.offSince < this.after || now - this.awakeSince < this.after) return;
       const settings = await this.platform.settings().catch(() => ({ sleep: false, overnight: false }));
       if (!settings.sleep) return;
       const held = await this.platform.inhibitors().catch(() => [{ who: "logind", why: "it didn't answer" }]);
@@ -142,18 +160,31 @@ export class Sleep {
       }
       this.heldSaid = "";
       // The night's update still installs: the box wakes for its window.
-      if (!(await this.platform.wakeAlarm(settings.overnight).catch(() => false))) {
-        this.log(settings.overnight ? "no wake alarm for the night's update" : "the wake alarm didn't clear");
-      }
+      if (settings.overnight || this.alarm !== false) await this.setAlarm(settings.overnight);
       if (this.offSince === null) return;
       this.log(`sleeping: the TV's been off for ${Math.round((this.now() - this.offSince) / 60_000)} min${settings.overnight ? ", with a wake alarm for the night's update" : ""}`);
-      if (!(await this.platform.suspend().catch(() => false))) {
+      if (await this.platform.suspend().catch(() => false)) {
+        this.asked = true;
+      } else {
         this.log("logind wouldn't suspend the box; trying again in 10 min");
         this.retryAt = this.now() + 10 * 60_000;
       }
     } finally {
       this.busy = false;
     }
+  }
+
+  // Sets the wake alarm or clears it, and says so when it can't.
+  private async setAlarm(on: boolean): Promise<void> {
+    if (await this.platform.wakeAlarm(on).catch(() => false)) {
+      this.alarm = on;
+      this.alarmStuck = false;
+      return;
+    }
+    // Whether it's on now is anyone's guess.
+    this.alarm = null;
+    this.alarmStuck = !on;
+    this.log(on ? "no wake alarm for the night's update" : "the wake alarm didn't clear");
   }
 }
 
