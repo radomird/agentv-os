@@ -446,7 +446,7 @@ test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", as
       if (hidden) list.scrollTop += hidden.top - (own.bottom + 8);
     });
     await page.keyboard.press("ArrowDown");
-    assert.equal(await page.locator(".focused").getAttribute("data-action"), "motion");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "background", "the next row below, not a theme out of sight");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     const sight = await page.evaluate(() => {
@@ -591,6 +591,50 @@ test("S5.8 home shows the theme's own background, as on Omarchy's desktop, credi
     assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "block", "and home has it again");
   } finally {
     await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: before }) });
+    await page.close();
+  }
+});
+
+test("with the looks off, Settings → look takes the background from a phone's photo back to the theme's own", async () => {
+  // Two of Tokyo Night's, as the screen daemon hands them over, the first
+  // the one Omarchy shows.
+  const dir = join(ROOT, "themes", "tokyo-night", "backgrounds");
+  const picture = (name: string) => {
+    const body = readFileSync(join(dir, name));
+    const type = name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type, body };
+  };
+  const shipped = readdirSync(dir).filter((name) => /\.(jpe?g|png|webp)$/i.test(name)).sort();
+  const files = [picture(shipped[0]), picture(shipped[1])];
+  await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current: files[0].id, files: files.map(({ id, type }) => ({ id, type })) }) });
+  for (const file of files) await fetch(`${url}/api/backgrounds/theme/${file.id}`, { method: "POST", body: new Uint8Array(file.body) });
+  const before = (await (await fetch(`${url}/api/backgrounds`)).json()).source;
+  // A photo from a paired phone is the background now.
+  const json = { "Content-Type": "application/json" };
+  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST", headers: json, body: "{}" })).json()).pairing.code;
+  const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: json, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
+  const photo = picture(shipped[shipped.length - 1]);
+  const sent = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/background?credit=a%20photo`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": photo.type }, body: new Uint8Array(photo.body) });
+  assert.equal(sent.status, 200);
+  assert.equal((await (await fetch(`${url}/api/backgrounds`)).json()).source, "photos");
+  const page = await tv();
+  try {
+    await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/look"));
+    await page.waitForSelector('.panel [data-action="background"]');
+    assert.match(await page.locator('.panel [data-action="background"]').innerText(), /your photos/);
+    // OK on one of the theme's own pictures: Omarchy shows it, and the
+    // theme's own is the background again.
+    const card = `.theme-picture[data-action="theme-picture-${files[0].id}"]`;
+    await page.waitForSelector(card);
+    await page.locator(card).click();
+    await page.waitForFunction((id) => (window as unknown as { screenRequests: { cmd: string; background?: string }[] }).screenRequests.some((r) => r.cmd === "theme-bg-set" && r.background === id), files[0].id);
+    const started = Date.now();
+    while ((await (await fetch(`${url}/api/backgrounds`)).json()).source !== "theme") {
+      assert.ok(Date.now() - started < 5000, "the theme's own is the background again");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  } finally {
+    await fetch(`${url}/api/backgrounds`, { method: "POST", headers: json, body: JSON.stringify({ source: before }) });
     await page.close();
   }
 });

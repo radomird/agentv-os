@@ -282,8 +282,6 @@ export function settings(ctx: Ctx, open?: string): View {
     label: "themes and backgrounds",
     value: () => looksList().find((look) => look.id === lookId())?.name ?? "",
     panel: () => {
-      const shown = shownCurrent(pictures);
-      const source = pictures?.source ?? "theme";
       return [
         h("div", { class: "panel-title" }, "look"),
         h("div", { class: "look-cards" }, ...lookCards(looksList(), lookId(), sizeId(), 300, (look) => void pickLook(look.id), looks?.current)),
@@ -299,13 +297,7 @@ export function settings(ctx: Ctx, open?: string): View {
         // says which.
         sizeRow(),
         ...resolutionRow(),
-        h(
-          "button",
-          { class: "button", "data-focus": true, "data-action": "background", onclick: () => void nextBackground() },
-          h("span", {}, "background"),
-          h("span", { class: "button-value" }, source === "theme" ? (shown ? creditLine(shown) : "the theme's") : SOURCE_WORDS[source]),
-        ),
-        ...themePictures(),
+        ...backgroundRows(),
         h(
           "button",
           { class: "button", "data-focus": true, "data-action": "ambient-style", "data-adjust": "ambient-style", onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style") },
@@ -396,6 +388,23 @@ export function settings(ctx: Ctx, open?: string): View {
       return;
     }
     ctx.sounds.play("confirm");
+  };
+
+  // The background: a row that steps through the sources that have
+  // pictures, the theme's own included, then each of the theme's own
+  // pictures, so a photo from the phone is never the only way it can be.
+  const backgroundRows = (): HTMLElement[] => {
+    const shown = shownCurrent(pictures);
+    const source = pictures?.source ?? "theme";
+    return [
+      h(
+        "button",
+        { class: "button", "data-focus": true, "data-action": "background", onclick: () => void nextBackground() },
+        h("span", {}, "background"),
+        h("span", { class: "button-value" }, source === "theme" ? (shown ? creditLine(shown) : "the theme's") : SOURCE_WORDS[source]),
+      ),
+      ...themePictures(),
+    ];
   };
 
   // The theme's own pictures, each its own card, when it has more than one.
@@ -491,6 +500,7 @@ export function settings(ctx: Ctx, open?: string): View {
         }),
         // Look's last: a theme your agent makes from a few words (S6.4).
         ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
+        ...backgroundRows(),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
         // What the ambient screen shows (ADR-049).
         h(
@@ -688,8 +698,8 @@ export function settings(ctx: Ctx, open?: string): View {
       else panel.append(voiceNote(line));
     })
     .catch(() => {});
-  // The backgrounds, for Themes and backgrounds' row, with the looks on.
-  if (lookId()) {
+  // The backgrounds, for the look section's background rows.
+  {
     const drew = JSON.stringify(pictures);
     void daemon
       .backgrounds()
