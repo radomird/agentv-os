@@ -36,6 +36,10 @@ Radomir's direction (2026-11-10): the words are user centric and down to earth. 
 These are Radomir's notes on the rules, and they win where the two differ.
 
 - **The shorter line wins.** One thing to do, one headline, and as little under it as the screen can carry. If your new line is longer than the one it replaces, cut it or keep the old words. A few characters more for a real name ("Wi-Fi") or a glossary word is fine.
+- **Friendly before short.** The shorter line wins only when it's as kind. "What do you want?" reads as a demand, so Ask says "What would you like?". A question to the person never sounds like an order.
+- **Never "type here".** The phone is what types. Where a screen wants words from someone, show an example of what to ask, in the field itself, and no line of instructions.
+- **A suggestion is a whole thing you could say.** "Continue my show" and "What's new this week?", not "Continue" and "What's new".
+- **A tile that adds something has a "+" for its icon,** where an app has its logo. The plus is never in the words.
 - **Nothing is explained twice.** In Settings a row is one line: its name, then its value. A line of text shows only on the page a row opens.
 - **One way in.** Two labels for nearly the same thing never sit on one screen. Apps has one way to more apps, the app library, and "Can't find it? Build your own" is the last thing in it.
 - **It's "location",** never "country" or "region": "Pick your location", "Another location", "Change location".
@@ -122,6 +126,9 @@ A line Terminal draws over a headline ("tv apps add") is decoration. It never ca
 | your agent's builds | Your own |
 | + add your own | Can't find it? Build your own |
 | what should i make? | What do you want to build? |
+| what do you want? | What would you like? |
+| type here, or on your phone. | (an example in the field: "make me a puzzle game") |
+| continue | Continue my show |
 | pick the country. | Pick your location |
 | restart the box? | Restart? |
 | ambient screen | Screen saver |
