@@ -35,6 +35,12 @@ grep -qxF 'Server = https://example.invalid/agentv-pkgs/releases/download/stable
   fail "the server is the stable channel's release" "$(cat "$conf")"
 pass "the repository is added, on the stable channel"
 
+# L4: the package list's signature isn't optional for AgenTV's repository,
+# so an old list can't be handed over without one.
+[[ $(sed -n '/^\[agentv\]$/,/^# END agentv$/p' "$conf" | grep -c '^SigLevel = Required DatabaseRequired$') == 1 ]] ||
+  fail "L4 AgenTV's repository needs a signed package list" "$(cat "$conf")"
+pass "L4 AgenTV's repository needs a signed package list"
+
 [[ $(tail -n 1 "$conf") == "# END agentv" ]] || fail "the section ends the file" "$(cat "$conf")"
 pass "the section ends the file"
 
@@ -80,3 +86,16 @@ AGENTV_ETC="$SCRATCH/etc" AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/
 grep -qxF 'Server = http://10.0.2.2:8000/test' "$conf" || fail "a repository address wins over both" "$(cat "$conf")"
 (( $(grep -c '^\[agentv\]$' "$conf") == 1 )) || fail "still one section" "$(cat "$conf")"
 pass "a repository address wins over both, still in one section"
+
+# A box installed before, whose section let the list go unsigned: the next
+# update check or agentv update rewrites it, and only it.
+cp "$SCRATCH/omarchy.conf" "$conf"
+printf '%s\n' "" "# BEGIN agentv: added by agentv-pacman-conf, kept at the end" "[agentv]" "SigLevel = Required DatabaseOptional" \
+  "Server = https://example.invalid/agentv-pkgs/releases/download/stable" "# END agentv" >>"$conf"
+AGENTV_PATH="$SCRATCH/stable" "$cmd" --check --file "$conf" >/dev/null 2>&1 &&
+  fail "L4 --check says an older box's section is out of date"
+AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
+(( $(grep -c '^\[agentv\]$' "$conf") == 1 )) || fail "L4 still one section" "$(cat "$conf")"
+[[ $(sed -n '/^\[agentv\]$/,$p' "$conf" | grep -c 'DatabaseOptional') == 0 ]] || fail "L4 an older box's section is rewritten" "$(cat "$conf")"
+grep -qx 'SigLevel = Required DatabaseOptional' "$conf" || fail "L4 Omarchy's own SigLevel line is left alone" "$(cat "$conf")"
+pass "L4 an older box's section is rewritten to need the signature, and Omarchy's lines stay"
