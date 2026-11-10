@@ -126,10 +126,13 @@ export class TvNetwork {
     };
   }
 
-  // The networks nearby, strongest first, with the one the TV is on marked.
+  // The networks nearby, strongest first, with the one the TV is on marked,
+  // as root last saw it. A TV on a cable can be on a Wi-Fi network too.
   networks(): ListedNetwork[] {
-    const { name } = this.state();
-    return this.hotspot.networks().map((found) => ({ ...found, current: found.ssid === name }));
+    this.settle();
+    const hotspot = this.hotspot.status();
+    const on = hotspot.on || hotspot.joining ? null : this.hotspot.radio().wifi;
+    return this.hotspot.networks().map((found) => ({ ...found, current: found.ssid === on }));
   }
 
   // Asks root to look again. Null once it's asked, or why not.
