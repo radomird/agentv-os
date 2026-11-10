@@ -12,6 +12,7 @@ import { FEATURE_NAMES, type Feature, type FeatureMap } from "../../../daemon/fe
 import type { DiscoverOptions } from "../../../daemon/discover.ts";
 import type { Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
+import { HARNESS } from "../harness.mts";
 import type { TmdbGet } from "../../../daemon/tmdb.ts";
 import type { IndexEntry } from "../../../daemon/apps/index.ts";
 
@@ -311,6 +312,7 @@ export async function startBox(
     updates,
     port,
     builtins: builtins ?? null,
+    harness: HARNESS,
     log: () => {},
     lanPort: 0,
     lanHost: "127.0.0.1",

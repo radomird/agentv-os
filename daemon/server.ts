@@ -25,7 +25,7 @@ import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { APPS_TILE, gridNamed, Home } from "./home.ts";
+import { APPS_TILE, gridNamed, Home, type TileAnswer } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, planRefused, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
@@ -95,6 +95,9 @@ export interface DaemonOptions {
   inhibitor?: (why: string) => { set(on: boolean): void };
   state: string; // the daemon's own state: /var/lib/agentv/daemon
   apps?: string; // the box's apps: /var/lib/agentv/apps
+  // Only for a test harness (daemon/apps/loader.ts): the box never sets it,
+  // and nothing reads it from a file or the environment.
+  harness?: { thisBox?: boolean; noSandbox?: boolean };
   updates?: string; // what the update check and an install write: /var/lib/agentv/update
   builtins?: string | null; // AgenTV's own apps: <root>/apps/builtin, or null for none
   ledger?: string; // the ledger's database: <state>/ledger.db
@@ -401,6 +404,7 @@ export class Daemon {
       ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
+      harness: options.harness,
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
       looks: () => this.features.on("looks"),
@@ -550,7 +554,7 @@ export class Daemon {
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), screen: () => this.phonesChanged(), picked: (key) => this.toPages("discover-pick", { key }), ...options.discover });
-    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log });
+    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log, own: options.harness?.thisBox ? () => null : undefined });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -2103,7 +2107,14 @@ export class Daemon {
   // New this week's tile (S8.1): this week's titles on the apps who's
   // watching can open, each with its poster, its app and its new season, or
   // what it needs first.
-  private async newTile(viewer: Viewer, size: Size): Promise<unknown> {
+  private async newTile(viewer: Viewer, size: Size): Promise<TileAnswer> {
+    const tile = await this.newTileContent(viewer, size);
+    // TMDB not answering, with nothing kept from this week, is a wait:
+    // home shows that it's loading and asks again.
+    return { tile: tile.content, waiting: tile.failed };
+  }
+
+  private async newTileContent(viewer: Viewer, size: Size): Promise<{ content: unknown; failed: boolean }> {
     const apps = await this.home.apps(viewer);
     const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
     const name = (id: string) => (apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
@@ -2114,13 +2125,13 @@ export class Daemon {
         "no-region": adult ? "pick a region in settings → new this week" : "an adult picks a region in settings",
         "no-services": `tmdb doesn't list your apps' services in ${(feed.region ?? "your region").toLowerCase()}`,
       };
-      return { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 };
+      return { content: { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 }, failed: feed.why === "failed" };
     }
     // The region on the right of the tile's head, as Weather has its city.
     const region = ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "").toLowerCase();
-    if (!feed.titles.length) return { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 };
-    if (size === "s") return { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 };
-    return {
+    if (!feed.titles.length) return { content: { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 }, failed: false };
+    if (size === "s") return { content: { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 }, failed: false };
+    const content = {
       headline: { label: region },
       entries: feed.titles.slice(0, 8).map((title) => ({
         label: title.title.toLowerCase(),
@@ -2130,6 +2141,7 @@ export class Daemon {
       })),
       refreshMins: 180,
     };
+    return { content, failed: false };
   }
 
   private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
@@ -3204,8 +3216,8 @@ export class Daemon {
 
     const tile = /^\/api\/tile\/([a-z0-9.-]+)\/([sml])$/.exec(path);
     if (method === "GET" && tile) {
-      const content = await this.home.tile(tile[1], tile[2] as Size, await this.home.viewer(), url.searchParams.has("fresh"));
-      this.json(response, 200, { ok: true, tile: content });
+      const answer = await this.home.tileAnswer(tile[1], tile[2] as Size, await this.home.viewer(), url.searchParams.has("fresh"));
+      this.json(response, 200, { ok: true, tile: answer.tile, ...(answer.waiting ? { waiting: true } : {}) });
       return;
     }
 

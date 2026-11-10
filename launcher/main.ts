@@ -19,7 +19,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
-import { hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
+import { gameInFront, hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
@@ -42,6 +42,7 @@ import { field } from "../setup/frame.ts";
 import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
 import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
+import { forgetTiles } from "./looks/cards.ts";
 import { forecast } from "./pages/forecast.ts";
 import { newWeek } from "./pages/new-week.ts";
 import { checkWhileAmbient } from "./box.ts";
@@ -847,6 +848,7 @@ async function start(): Promise<void> {
     // The weather's city changed, or the ledger has a new row for a
     // continue tile: home's tiles ask again.
     weather: () => {
+      forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
     // A photo came from a phone, or another source was chosen.
@@ -859,12 +861,14 @@ async function start(): Promise<void> {
     // The phone's box opened, its words came, or it closed (ADR-054).
     listening: (data) => listeningHeard(data as Heard),
     ledger: () => {
+      forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
     // A page app set its tile (ADR-043): home's tiles ask again.
     tiles: () => {
+      forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
     // The box's country changed (ADR-055): Settings shows it, and New this
@@ -877,6 +881,7 @@ async function start(): Promise<void> {
     // and Settings shows it.
     "whats-new": () => {
       const route = history[history.length - 1];
+      forgetTiles();
       if (route === "home") redraw();
       else if (route.startsWith("settings")) void loadNews().then(redraw);
     },
@@ -950,6 +955,7 @@ async function start(): Promise<void> {
     agentvFront: (app: boolean) => void;
     agentvTv: (state: "on" | "off") => void;
     agentvPage: (id: string) => void;
+    agentvGame: () => string | null;
     agentvLauncher: object;
   };
   w.agentvHome = () => act("home");
@@ -965,6 +971,9 @@ async function start(): Promise<void> {
     if (ctx.state.apps.some((app) => app.id === id)) openPage(ctx, id);
     else void refresh().then(() => openPage(ctx, id));
   };
+  // The game made on this TV that's in front, if one is: the TV going off
+  // leaves it there (ADR-084).
+  w.agentvGame = () => gameInFront(ctx);
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the

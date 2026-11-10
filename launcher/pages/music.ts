@@ -7,6 +7,7 @@
 import { screen } from "../api.ts";
 import { named } from "../looks/looks.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "./network.ts";
 import { bar, heading } from "./parts.ts";
@@ -148,7 +149,7 @@ export function music(ctx: Ctx, album?: string): View {
   if (album?.startsWith("nas:")) return nas(ctx, album.slice(4));
   if (album) return albumPage(ctx, album);
   const results = h("div", { class: "row music-results" });
-  const albums = h("div", { class: "row" }, h("div", { class: "empty" }, "…"));
+  const albums = h("div", { class: "row" }, h("div", { class: "empty" }, loadingMark()));
   const playlists = h("div", { class: "row music-lists" });
   let typing: ReturnType<typeof setTimeout> | undefined;
   const search = h("input", {
@@ -238,7 +239,7 @@ export function music(ctx: Ctx, album?: string): View {
 }
 
 function albumPage(ctx: Ctx, id: string): View {
-  const body = h("div", { class: "album-page" }, h("div", { class: "empty" }, "…"));
+  const body = h("div", { class: "album-page" }, h("div", { class: "empty" }, loadingMark()));
   const el = h("div", { class: "screen" }, h("div", { class: "page music" }, nowPlaying(), body), bar(ctx, "music", "↵ play · back to music"));
   let first: HTMLElement | undefined;
   void screen.music("album", { key: id }).then((reply) => {
@@ -317,7 +318,7 @@ function nas(ctx: Ctx, host: string): View {
 // Where the music comes from: folders, USB drives and shares, a new share,
 // and reading them all again.
 function sources(ctx: Ctx): View {
-  const list = h("div", { class: "sources" }, h("div", { class: "empty" }, "…"));
+  const list = h("div", { class: "sources" }, h("div", { class: "empty" }, loadingMark()));
   const progress = h("div", { class: "scan-progress" }, "");
   const address = h("input", { class: "music-search", "data-focus": true, type: "text", placeholder: "smb://nas/music or smb://you@nas/music", "aria-label": "a share's address", autocomplete: "off" }) as HTMLInputElement;
   // Only for a share with a user name in its address. The box keeps it where

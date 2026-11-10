@@ -442,7 +442,7 @@ pass "the watch leaves a join that's under way alone"
 grep -qx "ExecStart=/usr/bin/agentv-hotspot watch" "$ROOT/system/agentv-hotspot-watch.service" || fail "the watch has its unit"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-watch.service" || fail "which starts with the box"
 if grep -qE "^(User|Environment)=" "$ROOT/system/agentv-hotspot-watch.service"; then fail "as root, with the waits it ships with"; fi
-grep -qx "PathExists=/var/lib/private/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
+grep -qx "PathExists=/var/lib/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
 grep -qx "ExecStopPost=/usr/bin/agentv-hotspot down" "$ROOT/system/agentv-hotspot.service" || fail "the hotspot's unit cleans up however it stops"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-boot.service" || fail "the first-boot check runs at boot"
 grep -qx "Type=exec" "$ROOT/system/agentv-hotspot-boot.service" || fail "without holding up the TV"
