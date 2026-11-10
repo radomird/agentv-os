@@ -22,9 +22,21 @@ const FILMS: [title: string, year: number, file: string][] = [
   ["Elephants Dream", 2006, "elephants-dream"],
 ];
 
-// A local picture the launcher serves itself, not one an app sends.
+// The seven posters, by the address the launcher serves each at.
+const POSTERS = new Set(FILMS.map(([, , file]) => `/launcher/looks/showcase/poster-${file}.jpg`));
+
+// One of the seven posters exactly: never another address under it, such as
+// one that climbs out with "..", which the launcher would then ask the
+// daemon for itself.
 export function isShowcaseImage(url: string): boolean {
-  return url.startsWith("/launcher/looks/showcase/");
+  return POSTERS.has(url);
+}
+
+// Whether a tile's picture is one the launcher serves itself, as is: only in
+// a look's preview, only on New this week's tile, and only one of the seven.
+// Any other picture goes through the daemon's image route, under its app.
+export function showcasePicture(app: string, url: string, inPreview: boolean): boolean {
+  return inPreview && app === SHOWCASE_APP && isShowcaseImage(url);
 }
 
 // New this week's tile as the daemon sent it, or the open movies when it
