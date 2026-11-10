@@ -330,6 +330,21 @@ body.with-backdrop {
   display: none;
 }
 
+/* A row further down comes up clear of the bottom edge, with its name over
+   it, and the featured title makes way. Play brings it all back down. A
+   card that scrolls in from the side stops at the safe area. */
+.cinema-row .tile {
+  scroll-margin: 100px var(--safe-x) 102px;
+}
+
+.cinema-play {
+  scroll-margin-top: 1200px;
+}
+
+.cinema-scrolled .cinema-hero {
+  visibility: hidden;
+}
+
 .cinema-row .tile.focused {
   transform: scale(1.04);
   background: var(--card-lit);
@@ -768,6 +783,25 @@ body.with-backdrop {
 :root[data-size="larger"] .cinema-row .tile {
   width: 264px;
   height: 152px;
+}
+
+/* A card that says something under its name, such as Running or Set up, has
+   less room at this size: its logo and its name make way for the line. */
+:root[data-size="larger"] .cinema-card:has(.cinema-card-state) {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+:root[data-size="larger"] .cinema-card:has(.cinema-card-state) .logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  font-size: 22px;
+}
+
+:root[data-size="larger"] .cinema-card:has(.cinema-card-state) .cinema-card-name {
+  font-size: 32px;
+  line-height: 1.1;
 }
 
 :root[data-size="larger"] .headline {
