@@ -782,7 +782,9 @@ function setRunning(apps: Running[]): void {
   const next = new Map([...apps, ...pageRunning()].map((app) => [app.id, app]));
   if (JSON.stringify([...next]) === JSON.stringify([...ctx.running])) return;
   ctx.running = next;
-  if (history[history.length - 1] === "home") redraw();
+  // Details has Quit only while its app is open.
+  const top = history[history.length - 1];
+  if (top === "home" || top.startsWith("details/")) redraw();
 }
 
 // The look and the size (ADR-063, ADR-062): what the box has, or what a
@@ -826,7 +828,10 @@ async function start(): Promise<void> {
     },
     true,
   );
-  listenInput(act);
+  // Holding OK on a tile opens its app's details (ADR-084). A tile says it
+  // has them with data-details; nothing does while something else has the
+  // keys.
+  listenInput(act, () => (preview() || updatingShown || ambient || pinOpen || noticeOpen ? undefined : focus.get()?.dataset.details));
   listen({
     layout: () => void refresh(),
     // Another look was picked, in Settings or on the phone: the page again,

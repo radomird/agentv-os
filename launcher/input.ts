@@ -36,11 +36,30 @@ const BUTTONS: Record<number, Action> = { 0: "ok", 1: "back", 2: "quit", 3: "inf
 const REPEAT_FIRST = 400;
 const REPEAT_NEXT = 120;
 const STICK = 0.6;
+// How long OK is held on a tile before it opens the app's details and not
+// the app (ADR-084), the way a long press does on a phone.
+export const HOLD_MS = 600;
 
 // In a text field, the keys type; only these still move, choose and go back.
 const FIELD_KEYS = ["ArrowUp", "ArrowDown", "Enter", "NumpadEnter", "Escape", "Home", "BrowserBack", "GoBack", "BrowserHome"];
 
-export function listen(act: (action: Action) => void): void {
+// details says which app's details a hold on OK would open: the focused
+// tile's, or nothing when the focus isn't on one. Only there does OK wait
+// for the key to come up, so a short press opens the app and a held one
+// opens its details. Everywhere else OK acts as the key goes down, as ever.
+export function listen(act: (action: Action) => void, details: () => string | undefined = () => undefined): void {
+  // The press of OK under way on a tile, and whether the hold has already
+  // opened details, so the key's repeats and its release do nothing more.
+  let press: { on: string; at: number; timer: number } | null = null;
+  let spent = false;
+  // The hold opens details only while the focus is still on that tile.
+  const settle = (action: Action) => {
+    const on = press?.on;
+    clearTimeout(press?.timer);
+    press = null;
+    if (on !== undefined && details() === on) act(action);
+  };
+
   window.addEventListener("keydown", (event) => {
     const action = KEYS[event.key];
     if (!action) return;
@@ -49,7 +68,33 @@ export function listen(act: (action: Action) => void): void {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.target instanceof HTMLInputElement && !FIELD_KEYS.includes(event.key)) return;
     event.preventDefault();
+    if (action === "ok") {
+      // A held key repeats: the press is already counted.
+      if (press || spent) return;
+      const on = event.repeat ? undefined : details();
+      if (on !== undefined) {
+        const timer = window.setTimeout(() => {
+          spent = true;
+          settle("info");
+        }, HOLD_MS);
+        press = { on, at: event.timeStamp, timer };
+        return;
+      }
+    }
     act(action);
+  });
+  window.addEventListener("keyup", (event) => {
+    if (KEYS[event.key] !== "ok") return;
+    spent = false;
+    // Let go before the hold: OK. A busy page can hear the release before
+    // its own timer, so the time between the two decides.
+    if (press) settle(event.timeStamp - press.at >= HOLD_MS ? "info" : "ok");
+  });
+  // The window lost the keys with OK still down: its release never comes.
+  window.addEventListener("blur", () => {
+    clearTimeout(press?.timer);
+    press = null;
+    spent = false;
   });
 
   // Right-click and a mouse's back button are Back (ADR-015).
