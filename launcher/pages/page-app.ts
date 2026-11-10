@@ -57,6 +57,14 @@ export function pageRunning(): Running[] {
   return [...open.values()].map((entry) => ({ id: entry.id, game: false, paused: entry !== front }));
 }
 
+// The game in front, for the screen daemon: a page app whose category is
+// games, when nothing of home's covers it. The TV going off leaves it where
+// it is (ADR-084).
+export function gameInFront(ctx: Ctx): string | null {
+  if (!front || blocked()) return null;
+  return ctx.state.apps.some((app) => app.id === front!.id && app.category === "games") ? front.id : null;
+}
+
 function close(ctx: Ctx, entry: Open): void {
   entry.host.close();
   entry.wrap.remove();
