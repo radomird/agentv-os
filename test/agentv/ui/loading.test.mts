@@ -1,0 +1,159 @@
+// What's loading says so, and comes without being asked twice (T17.1), in
+// a real Chromium on the daemon itself, with a stand-in for MET Norway.
+//
+// Home draws within seconds of a start, often before the TV is online. So
+// in each look, dark and light: with the forecast unreachable as home first
+// draws, Weather's tile shows the one shared loading mark, and once the
+// forecast can be reached the tile has it with home never left. With the
+// forecast there from the start, it's on home's first draw. Weather's own
+// page waits the same way, a look's preview never does, and with reduce
+// motion the mark keeps still.
+
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { after, before, test } from "node:test";
+import type { Browser, Page } from "playwright-core";
+import { FIXTURES, rest, startBox } from "./box.mts";
+import { rendered } from "./legible.mts";
+import { startMet } from "./met.mts";
+
+const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
+const { chromium } = require("playwright-core") as typeof import("playwright-core");
+
+const LOOKS = ["terminal", "glass", "cinema"] as const;
+// One dark theme and one light one, as Omarchy ships them.
+const THEMES = ["tokyo-night", "catppuccin-latte"] as const;
+const WEATHER = '.tile[data-id="agentv.weather"]';
+
+let browser: Browser;
+
+before(async () => {
+  browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
+});
+
+after(() => browser?.close());
+
+// A box in a look and a theme, with its forecast from a stand-in that can't
+// be reached yet when down is set.
+async function box(look: string, theme: string, down: boolean) {
+  const met = await startMet();
+  met.down(down);
+  const { daemon, url } = await startBox(0, FIXTURES, { builtins: true, zone: "Europe/Amsterdam", forecast: met.url });
+  const put = (path: string, body: unknown) => fetch(`${url}${path}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await put("/api/look", { look })).status, 200);
+  assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200);
+  const errors: string[] = [];
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on("pageerror", (error) => errors.push(error.message));
+  const close = async () => {
+    await page.close();
+    await daemon.close();
+    met.close();
+  };
+  return { met, url, page, errors, close };
+}
+
+async function home(page: Page, url: string): Promise<void> {
+  await page.goto(`${url}/`);
+  await page.waitForSelector("[data-focus].focused");
+  await rest(page);
+}
+
+// The mark on Weather's tile, once it has faded in: where it is, its
+// colour, and the colour of the tile behind it.
+async function mark(page: Page): Promise<{ inside: boolean; busy: boolean; label: string | null; colour: string; behind: string; blocks: number }> {
+  await page.waitForFunction((selector) => {
+    const found = document.querySelector(`${selector} .loading-mark`);
+    return found !== null && getComputedStyle(found).opacity === "1";
+  }, WEATHER);
+  return page.evaluate((selector) => {
+    const tile = document.querySelector<HTMLElement>(selector)!;
+    const found = tile.querySelector<HTMLElement>(".loading-mark")!;
+    const block = found.querySelector<HTMLElement>("i")!;
+    const [a, b] = [found.getBoundingClientRect(), tile.getBoundingClientRect()];
+    return {
+      inside: a.width > 0 && a.height > 0 && a.left >= b.left && a.right <= b.right && a.top >= b.top && a.bottom <= b.bottom,
+      busy: found.parentElement!.getAttribute("aria-busy") === "true",
+      label: found.getAttribute("aria-label"),
+      colour: getComputedStyle(block).backgroundColor,
+      behind: getComputedStyle(tile).backgroundColor,
+      blocks: found.querySelectorAll("i").length,
+    };
+  }, WEATHER);
+}
+
+for (const look of LOOKS) {
+  for (const theme of THEMES) {
+    test(`T17.1 in ${look}, ${theme}: Weather says it's loading while its forecast can't be reached, and has it without home being left`, async () => {
+      const { met, url, page, errors, close } = await box(look, theme, true);
+      try {
+        await home(page, url);
+        const found = await mark(page);
+        assert.ok(found.inside, "the mark is drawn inside Weather's tile");
+        assert.ok(found.busy, "what holds the mark says it's busy");
+        assert.equal(found.label, "Loading");
+        assert.equal(found.blocks, 3);
+        assert.notEqual(found.colour, found.behind, "the mark stands out from the tile");
+        assert.doesNotMatch(await page.locator(WEATHER).innerText(), /°/, "no forecast yet");
+        // The TV comes online. Nothing is pressed, and home isn't left.
+        met.down(false);
+        await page.waitForFunction((selector) => /12°/.test(document.querySelector<HTMLElement>(selector)?.innerText ?? ""), WEATHER, { timeout: 10_000 });
+        // Home draws again with the forecast, and no tile is left waiting.
+        await page.waitForFunction(() => document.querySelector(".loading-mark") === null, null, { timeout: 5_000 });
+        assert.ok(await page.evaluate(() => document.body.classList.contains("on-home")), "home is still what's on");
+        assert.deepEqual(errors, []);
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  test(`T17.1 in ${look}: Weather has its forecast on home's first draw, with no mark left on it`, async () => {
+    const { met, url, page, errors, close } = await box(look, "tokyo-night", false);
+    try {
+      await home(page, url);
+      await page.waitForFunction((selector) => /12°/.test(document.querySelector<HTMLElement>(selector)?.innerText ?? ""), WEATHER, { timeout: 10_000 });
+      await page.waitForFunction((selector) => document.querySelector(`${selector} .loading-mark`) === null, WEATHER, { timeout: 5_000 });
+      // Asked for once at each size home shows, never in a loop.
+      const asked = met.seen.length;
+      await page.waitForTimeout(1500);
+      assert.equal(met.seen.length, asked, "a tile that has its content isn't asked for again");
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+
+  test(`T17.1 in ${look}: Weather's page says it's loading, then shows the week`, async () => {
+    const { met, url, page, close } = await box(look, "tokyo-night", true);
+    try {
+      await home(page, url);
+      await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("weather"));
+      await page.waitForSelector(".forecast-week.is-loading .loading-mark");
+      assert.equal(await page.locator(".forecast-day").count(), 0);
+      met.down(false);
+      await page.waitForSelector(".forecast-day", { timeout: 10_000 });
+      assert.equal(await page.locator(".forecast-day").count(), 7);
+      await page.waitForFunction(() => document.querySelector(".forecast-week .loading-mark") === null, null, { timeout: 5_000 });
+    } finally {
+      await close();
+    }
+  });
+}
+
+test("T17.1 a look's preview never says it's loading, and reduce motion keeps the mark still", async () => {
+  const { url, page, close } = await box("glass", "tokyo-night", true);
+  try {
+    // A preview is home as a picture: it isn't waiting on anything.
+    await page.goto(`${url}/?preview&look=glass`);
+    await page.waitForSelector(WEATHER);
+    await page.waitForTimeout(800);
+    assert.equal(await page.locator(".loading-mark").count(), 0);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await home(page, url);
+    await page.waitForSelector(`${WEATHER} .loading-mark i`);
+    assert.equal(await page.locator(`${WEATHER} .loading-mark i`).first().evaluate((el) => getComputedStyle(el).animationName), "none");
+  } finally {
+    await close();
+  }
+});

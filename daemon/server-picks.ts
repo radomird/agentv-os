@@ -7,6 +7,7 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { boxHost, ownAddresses } from "../apps/contract/address.ts";
 
 // What the picks need of home (daemon/home.ts).
 export interface PickHome {
@@ -20,11 +21,25 @@ export interface ServerPicksOptions {
   // An app's address was filled in.
   saved?: (app: string) => void;
   log?: (line: string) => void;
+  // The box's addresses on its networks, for the tests. Null lets the box
+  // itself be picked, which only a test harness asks for, since its
+  // stand-in servers are on this machine.
+  own?: () => string[] | null;
 }
 
 export type PickAnswer = { ok: true; saved: boolean } | { ok: false; status: number; error: string };
 
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
+
+// A server is another machine on the network, never this box, where the
+// daemon answers. An address that doesn't parse isn't a server either.
+function isTheBox(url: string, own: Iterable<string>): boolean {
+  try {
+    return boxHost(new URL(url).hostname, own);
+  } catch {
+    return true;
+  }
+}
 
 export class ServerPicks {
   private path: string;
@@ -78,12 +93,19 @@ export class ServerPicks {
     return { error };
   }
 
+  private isTheBox(url: string): boolean {
+    const own = this.options.own ? this.options.own() : ownAddresses();
+    return own !== null && isTheBox(url, own);
+  }
+
   // A server picked for an app: its address goes in now if the app's here,
   // or once it lands.
   pick(app: unknown, url: unknown): Promise<PickAnswer> {
     return this.serial(async () => {
       if (typeof app !== "string" || !ID.test(app)) return { ok: false, status: 400, error: "say which app, by its id" };
-      if (typeof url !== "string" || url.length > 500 || !/^https?:\/\/[^\s/]+/.test(url)) return { ok: false, status: 400, error: "the server's address, like http://192.168.1.20:8096" };
+      if (typeof url !== "string" || url.length > 500 || !/^https?:\/\/[^\s/]+/.test(url) || this.isTheBox(url)) {
+        return { ok: false, status: 400, error: "the server's address, like http://192.168.1.20:8096" };
+      }
       const filled = await this.fill(app, url);
       const picks = await this.read();
       if (filled) {

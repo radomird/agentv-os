@@ -16,6 +16,7 @@ import type { Readable, Writable } from "node:stream";
 import { after, before, test } from "node:test";
 import { validatePackage, type Manifest } from "../../../apps/contract/manifest.ts";
 import { cdpCheckPage, checkApp } from "../../../builder/contract-run.ts";
+import { HARNESS } from "../harness.mts";
 import { type Contract, Fixtures } from "../../../builder/fixtures.ts";
 import { CdpPipe } from "../../../daemon/cdp.ts";
 import { BACK_TAP, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
@@ -311,7 +312,7 @@ test("the builder's contract tests on the box press the d-pad as the TV does (AD
   const chromium = join(mkdtempSync(join(tmpdir(), "agentv-remote-builder-")), "chromium");
   writeFileSync(chromium, `#!/bin/sh\nexec "${process.env.AGENTV_UI_BROWSER}" --no-sandbox "$@"\n`);
   chmodSync(chromium, 0o755);
-  const results = await checkApp({ dir: DESK, manifest: manifest as Manifest, contract, served, openPage: () => cdpCheckPage(chromium, served) });
+  const results = await checkApp({ dir: DESK, manifest: manifest as Manifest, contract, served, openPage: () => cdpCheckPage(chromium, served), harness: HARNESS });
   const failed = results.filter((result) => !result.ok);
   assert.deepEqual(failed, [], "every one of the stand-in's checks passes");
   assert.ok(results.some((result) => /OK presses/.test(result.name)));

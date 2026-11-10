@@ -5,6 +5,7 @@
 
 import { daemon, type TileData, type TileEntry } from "../api.ts";
 import { h } from "../dom.ts";
+import { keepAsking, showLoading } from "../loading.ts";
 import { hasIcon, icon } from "../looks/icons.ts";
 import { lookId, said } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
@@ -54,21 +55,26 @@ export function forecast(ctx: Ctx): View {
   const section = terminal ? null : h("div", { class: "section" }, said("this week"));
   const el = h("div", { class: "screen" }, h("div", { class: "page forecast" }, head, section, week), bar(ctx, "weather"));
   if (app) {
-    void daemon
-      .tile(app.id, "l")
-      .then((data) => {
-        const had = week.childElementCount > 0;
-        last = data;
-        if (!el.isConnected) return;
-        const at = ctx.focus.get()?.dataset.action;
-        draw(data);
-        // The days arrived after the page: the focus goes to today, unless
-        // someone already moved it.
-        const again = at ? el.querySelector<HTMLElement>(`[data-action="${at}"]`) : null;
-        const today = el.querySelector<HTMLElement>(".forecast-day") ?? undefined;
-        ctx.focus.setRoot(el, had ? (again ?? today) : today);
-      })
-      .catch(() => {});
+    // With no forecast from an earlier visit, the week says it's loading.
+    const loaded = last?.entries?.length ? () => {} : showLoading(week);
+    const ask = async (): Promise<boolean> => {
+      const answer = await daemon.tileAnswer(app.id, "l").catch(() => ({ tile: null, waiting: true }));
+      if (answer.waiting) return true;
+      const data = answer.tile;
+      const had = week.querySelector(".forecast-day") !== null;
+      last = data;
+      if (!el.isConnected) return false;
+      loaded();
+      const at = ctx.focus.get()?.dataset.action;
+      draw(data);
+      // The days arrived after the page: the focus goes to today, unless
+      // someone already moved it.
+      const again = at ? el.querySelector<HTMLElement>(`[data-action="${at}"]`) : null;
+      const today = el.querySelector<HTMLElement>(".forecast-day") ?? undefined;
+      ctx.focus.setRoot(el, had ? (again ?? today) : today);
+      return false;
+    };
+    void ask().then((waiting) => waiting && keepAsking(ask, () => el.isConnected));
   }
   return { el, first: el.querySelector<HTMLElement>(".forecast-day") ?? undefined };
 }

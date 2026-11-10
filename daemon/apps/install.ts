@@ -28,6 +28,10 @@ export interface Installed {
   commit?: string;
   path?: string;
   source?: string; // the folder a local app was installed from
+  // agentv selftest's stand-in for a streaming service, which it serves
+  // from this box (bin/agentv-selftest). Only the installer writes this,
+  // when asked with --stand-in in a terminal: an app or its manifest can't.
+  standIn?: boolean;
   installedAt: string;
 }
 
@@ -58,8 +62,8 @@ async function writeInstalled(appsDir: string, record: Record<string, Installed>
 
 // Checks the package in pkg as an app of tier: the contract's checks, and
 // not built in, since only AgenTV itself brings those. Returns its manifest.
-function check(pkg: string, id: string, tier: Tier): Manifest {
-  const { manifest, problems } = validatePackage(pkg, tier);
+function check(pkg: string, id: string, tier: Tier, thisBox = false): Manifest {
+  const { manifest, problems } = validatePackage(pkg, tier, { thisBox });
   if (!manifest) throw new IndexError(`${id} doesn't pass the app contract's checks:\n  ${problems.join("\n  ")}`);
   if (manifest.tv.runtime === "builtin") {
     throw new IndexError(`${id} says it's built in, and built-in apps only come with AgenTV itself`);
@@ -155,7 +159,7 @@ async function readable(dir: string, root = process.getuid?.() === 0): Promise<v
 // its fixtures/ and any .git, and the copy is checked; links are copied as
 // links, so the check refuses them. Then approve sees its manifest, and only
 // a yes puts it in place. The record says which folder it came from.
-export async function installLocal(dir: string, appsDir: string, approve: (manifest: Manifest) => Promise<boolean>): Promise<Installed> {
+export async function installLocal(dir: string, appsDir: string, approve: (manifest: Manifest) => Promise<boolean>, options: { standIn?: boolean } = {}): Promise<Installed> {
   const from = resolve(dir);
   const found = await lstat(from).catch(() => null);
   if (!found?.isDirectory()) throw new IndexError(`there's no app folder at ${dir}`);
@@ -169,7 +173,7 @@ export async function installLocal(dir: string, appsDir: string, approve: (manif
     await readable(pkg);
 
     const id = JSON.parse(await readFile(join(pkg, "manifest.json"), "utf8").catch(() => "{}"))?.id;
-    const manifest = check(pkg, typeof id === "string" && id ? id : "the app", "local");
+    const manifest = check(pkg, typeof id === "string" && id ? id : "the app", "local", options.standIn === true);
     if (!(await approve(manifest))) throw new IndexError(`${manifest.id} wasn't approved, so nothing was installed`);
 
     return await putInPlace(pkg, staging, appsDir, {
@@ -178,6 +182,7 @@ export async function installLocal(dir: string, appsDir: string, approve: (manif
       version: manifest.version,
       tier: "local",
       source: from,
+      ...(options.standIn ? { standIn: true } : {}),
       installedAt: new Date().toISOString(),
     });
   } finally {

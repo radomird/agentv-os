@@ -7,6 +7,7 @@
 
 import { daemon, screen, type App, type Available, type AvailableApp } from "../api.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo } from "./home.ts";
 import { bar, heading } from "./parts.ts";
@@ -84,7 +85,7 @@ async function choose(ctx: Ctx, app: AvailableApp): Promise<void> {
 export function addApp(ctx: Ctx): View {
   const apps = available?.apps ?? [];
   let body: HTMLElement;
-  if (!available) body = h("div", { class: "empty" }, "…");
+  if (!available) body = h("div", { class: "empty" }, loadingMark());
   else if (available.error && apps.length === 0) body = h("div", { class: "empty" }, `the app list couldn't be read: ${available.error}`);
   else if (apps.length === 0) body = h("div", { class: "empty" }, "every official app is on this tv.");
   else body = h("div", { class: "row add-row" }, ...apps.map((app) => appTile(ctx, app)));
