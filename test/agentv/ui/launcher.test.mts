@@ -13,7 +13,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { HOME_UP } from "../../../daemon/screen.ts";
-import { FIXTURES, ROOT, rest, startBox } from "./box.mts";
+import { FIXTURES, PHASE_1, ROOT, rest, startBox } from "./box.mts";
 import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -24,7 +24,7 @@ let daemon: Daemon;
 let url = "";
 
 before(async () => {
-  ({ daemon, url } = await startBox());
+  ({ daemon, url } = await startBox(0, undefined, { features: PHASE_1 }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER, args: ["--autoplay-policy=no-user-gesture-required"] });
 });
 
@@ -642,7 +642,7 @@ test("with the looks off, Settings → look takes the background from a phone's 
 
 test("an app's tile that says set up opens its setup: the server's address, typed, then its sign-in", async () => {
   // A box of its own, since this one fills in Radio's server.
-  const box = await startBox();
+  const box = await startBox(0, undefined, { features: PHASE_1 });
   try {
     const page = await tv({ at: box.url });
     await page.locator('.tile[data-id="someone.radio"] .tile-state:has-text("set up")').waitFor();

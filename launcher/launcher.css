@@ -481,9 +481,23 @@ button {
   aspect-ratio: 2 / 3;
 }
 
+/* A medium tile's posters take the height their titles leave, so each title
+   and where it's on stay inside the tile at every size. */
+.new-tile.size-m .entries {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.new-tile.size-m .entry {
+  min-height: 0;
+}
+
 .new-tile.size-m .entry img {
-  width: auto;
-  height: 140px;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: auto;
 }
 
 .new-tile .entry-label {
@@ -2308,11 +2322,6 @@ body.with-backdrop.on-home {
   font-weight: 800;
 }
 
-.look-card-line {
-  color: var(--foreground);
-  font-size: 23px;
-  max-width: var(--preview-width, 300px);
-}
 
 .panel-row {
   display: flex;

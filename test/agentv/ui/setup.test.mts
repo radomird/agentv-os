@@ -22,7 +22,7 @@ import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startArchives, type Archives } from "./archives.mts";
 import { startImmichShare } from "./immich-share.mts";
-import { ROOT, startBox } from "./box.mts";
+import { PHASE_1, ROOT, startBox } from "./box.mts";
 import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 // Where the TV is (ADR-055): the country to confirm, or, on a box whose
@@ -51,7 +51,7 @@ before(async () => {
   process.env.PATH = `${tools}:${path}`;
   const wired = { eth0: [{ address: "192.168.1.20", netmask: "255.255.255.0", family: "IPv4", mac: "00:00:00:00:00:01", internal: false, cidr: "192.168.1.20/24" }] };
   archives = await startArchives();
-  ({ daemon, url, state, hotspot, updates } = await startBox(0, undefined, { interfaces: () => (online ? wired : {}), art: archives.options }));
+  ({ daemon, url, state, hotspot, updates } = await startBox(0, undefined, { interfaces: () => (online ? wired : {}), art: archives.options, features: PHASE_1 }));
   captive = `http://127.0.0.1:${daemon.setupPort}`;
   writeFileSync(
     join(hotspot, "networks.json"),

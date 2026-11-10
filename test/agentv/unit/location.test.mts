@@ -140,6 +140,7 @@ test("a paired phone sends its zone, picks the location, and the TV's step moves
   await send(url, "POST", "/api/setup/finish", { step: "welcome" });
   await send(url, "POST", "/api/setup/ready", { update: "none" });
   await send(url, "POST", "/api/setup/finish", { step: "ready" });
+  await send(url, "POST", "/api/setup/finish", { step: "box" });
   const code = (await (await send(url, "POST", "/api/phones/pair", {})).json()).pairing.code;
   const phone = await pairPhone(lanUrl, code, "pixel");
   assert.equal((await phone.call("POST", "/api/phone/zone", { zone: "Europe/Oslo" })).status, 200);

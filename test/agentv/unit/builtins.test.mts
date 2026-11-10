@@ -58,6 +58,18 @@ async function get(path: string): Promise<any> {
   return (await fetch(`${url}${path}`)).json();
 }
 
+// Home as it ships, with the looks on, then with them turned off, which is
+// how home was before them: Clock pinned and the all apps tile last.
+async function withLooksOff(check: () => Promise<void>): Promise<void> {
+  const looks = (on: boolean) => fetch(`${url}/api/features`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ looks: on }) });
+  assert.equal((await looks(false)).status, 200);
+  try {
+    await check();
+  } finally {
+    await looks(true);
+  }
+}
+
 async function post(path: string, body: unknown): Promise<{ status: number; data: any }> {
   const response = await fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return { status: response.status, data: await response.json() };
@@ -90,14 +102,21 @@ test("Clock, Music, New this week and Weather come with AgenTV, first, and their
   assert.deepEqual(music.reach, ["nothing outside this tv"]);
 });
 
-test("on a new box Clock and Weather are on home first, pinned small, and Music waits in apps", async () => {
+test("on a new box Weather is on home first, pinned small, Clock too with the looks off, and Music waits in apps", async () => {
   const layout = (await get("/api/home")).layout;
-  assert.deepEqual(layout.slice(0, 2), [
-    { id: "agentv.clock", size: "s", x: 0, y: 0 },
-    { id: "agentv.weather", size: "s", x: 1, y: 0 },
-  ]);
+  // The looks show the time themselves, so Clock waits in apps.
+  assert.deepEqual(layout[0], { id: "agentv.weather", size: "s", x: 0, y: 0 });
+  assert.ok(!layout.some((tile: any) => tile.id === "agentv.clock"));
   assert.ok(!layout.some((tile: any) => tile.id === "agentv.music"));
   assert.ok(!layout.some((tile: any) => tile.id === "agentv.new"), "New this week waits in apps unless the TV is for streaming");
+  await withLooksOff(async () => {
+    const before = (await get("/api/home")).layout;
+    assert.deepEqual(before.slice(0, 2), [
+      { id: "agentv.clock", size: "s", x: 0, y: 0 },
+      { id: "agentv.weather", size: "s", x: 1, y: 0 },
+    ]);
+    assert.ok(!before.some((tile: any) => tile.id === "agentv.music"));
+  });
 });
 
 test("S8.1 a streaming household's home gets New this week once, at the largest size that fits, and its tile says what it needs", async () => {
@@ -111,21 +130,38 @@ test("S8.1 a streaming household's home gets New this week once, at the largest 
     }
   });
   try {
-    writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true, goal: "streaming" }));
-    writeFileSync(join(state, "builtins-pinned.json"), "{}");
-    writeFileSync(join(state, "layouts.json"), "{}");
-    const layout = (await get("/api/home")).layout;
-    // The built-ins in their order, New this week large between the two.
-    assert.deepEqual(layout.slice(0, 3), [
-      { id: "agentv.clock", size: "s", x: 0, y: 0 },
-      { id: "agentv.new", size: "l", x: 1, y: 0 },
-      { id: "agentv.weather", size: "s", x: 3, y: 0 },
+    const fresh = () => {
+      writeFileSync(join(state, "setup.json"), JSON.stringify({ done: true, goal: "streaming" }));
+      writeFileSync(join(state, "builtins-pinned.json"), "{}");
+      writeFileSync(join(state, "layouts.json"), "{}");
+    };
+    // The built-ins in their order, New this week large first, then Weather.
+    fresh();
+    assert.deepEqual((await get("/api/home")).layout.slice(0, 2), [
+      { id: "agentv.new", size: "l", x: 0, y: 0 },
+      { id: "agentv.weather", size: "s", x: 2, y: 0 },
     ]);
-    // On a saved home with only a medium's room left, it's medium.
-    writeFileSync(join(state, "builtins-pinned.json"), JSON.stringify({ [viewer]: ["agentv.clock", "agentv.weather"] }));
-    const full = [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "agentv.clock", x: 2, y: 0, size: "m" }, { id: "agentv.weather", x: 2, y: 1, size: "m" }, { id: "apps", x: 0, y: 2, size: "s" }];
-    writeFileSync(join(state, "layouts.json"), JSON.stringify({ [viewer]: full }));
-    assert.deepEqual((await get("/api/home")).layout.find((tile: any) => tile.id === "agentv.new"), { id: "agentv.new", size: "m", x: 1, y: 2 });
+    // On a saved home with only a medium's room left, it's medium. The
+    // looks take the all apps tile off, which leaves room at the start of
+    // the last row.
+    const saved = () => {
+      writeFileSync(join(state, "builtins-pinned.json"), JSON.stringify({ [viewer]: ["agentv.clock", "agentv.weather"] }));
+      const full = [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "agentv.clock", x: 2, y: 0, size: "m" }, { id: "agentv.weather", x: 2, y: 1, size: "m" }, { id: "apps", x: 0, y: 2, size: "s" }];
+      writeFileSync(join(state, "layouts.json"), JSON.stringify({ [viewer]: full }));
+    };
+    saved();
+    assert.deepEqual((await get("/api/home")).layout.find((tile: any) => tile.id === "agentv.new"), { id: "agentv.new", size: "m", x: 0, y: 2 });
+    await withLooksOff(async () => {
+      // With Clock pinned, New this week large between the two.
+      fresh();
+      assert.deepEqual((await get("/api/home")).layout.slice(0, 3), [
+        { id: "agentv.clock", size: "s", x: 0, y: 0 },
+        { id: "agentv.new", size: "l", x: 1, y: 0 },
+        { id: "agentv.weather", size: "s", x: 3, y: 0 },
+      ]);
+      saved();
+      assert.deepEqual((await get("/api/home")).layout.find((tile: any) => tile.id === "agentv.new"), { id: "agentv.new", size: "m", x: 1, y: 2 });
+    });
     // With no TMDB key, its tile says where to add one.
     const tile = await get("/api/tile/agentv.new/l");
     assert.equal(tile.tile.headline.caption, "add a tmdb key in settings → new this week");
@@ -297,13 +333,23 @@ test("a new time zone reaches the tiles at once, and one with no city says where
 
 test("a box from before gets them on its saved home once, and one the viewer unpins stays off", async () => {
   const viewer = (await get("/api/home")).viewer.id;
-  writeFileSync(join(state, "builtins-pinned.json"), "{}");
-  writeFileSync(
-    join(state, "layouts.json"),
-    JSON.stringify({ [viewer]: [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "apps", x: 2, y: 0, size: "s" }] }),
-  );
+  const before = () => {
+    writeFileSync(join(state, "builtins-pinned.json"), "{}");
+    writeFileSync(
+      join(state, "layouts.json"),
+      JSON.stringify({ [viewer]: [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "apps", x: 2, y: 0, size: "s" }] }),
+    );
+  };
+  // With the looks off, Clock and Weather join the all apps tile.
+  await withLooksOff(async () => {
+    before();
+    assert.deepEqual((await get("/api/home")).layout.map((tile: any) => tile.id), ["agentv.sample", "apps", "agentv.clock", "agentv.weather"]);
+  });
+  // As it ships, the looks take the all apps tile off and show the time
+  // themselves, so only Weather joins.
+  before();
   const layout = (await get("/api/home")).layout;
-  assert.deepEqual(layout.map((tile: any) => tile.id), ["agentv.sample", "apps", "agentv.clock", "agentv.weather"]);
+  assert.deepEqual(layout.map((tile: any) => tile.id), ["agentv.sample", "agentv.weather"]);
   assert.deepEqual(JSON.parse(readFileSync(join(state, "layouts.json"), "utf8"))[viewer], layout);
 
   const without = layout.filter((tile: any) => tile.id !== "agentv.weather");

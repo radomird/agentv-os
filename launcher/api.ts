@@ -4,7 +4,8 @@
 // the TV session, on a computer or in the tests, there's no screen daemon.
 
 import type { Placed, Size } from "./layout.ts";
-import { gridName } from "./looks/looks.ts";
+import { gridName, preview } from "./looks/looks.ts";
+import { isShowcaseImage, SHOWCASE_APP, showcaseTile } from "./looks/showcase.ts";
 
 export interface SizeChoice {
   size: Size;
@@ -436,7 +437,12 @@ export const daemon = {
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", gridName() ? { layout, grid: gridName() } : { layout }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
-  tile: async (id: string, size: Size) => (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile,
+  // A look's preview fills New this week with stand-ins while it has no
+  // posters of its own (looks/showcase.ts).
+  tile: async (id: string, size: Size) => {
+    const tile = (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile;
+    return preview() && id === SHOWCASE_APP ? showcaseTile(tile, size) : tile;
+  },
   updates: () => call<Updates>("GET", "/api/updates"),
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
   seen: (change: { kept?: string; wentBack?: string; later?: string }) => call<{ ok: boolean }>("POST", "/api/updates/seen", change),
@@ -503,7 +509,8 @@ export const daemon = {
   setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),
   removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),
   lock: () => call<{ locked: boolean }>("POST", "/api/pin/lock"),
-  image: (app: string, url: string) => `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`,
+  // A picture an app sends, through the daemon, or one of a preview's own.
+  image: (app: string, url: string) => (isShowcaseImage(url) ? url : `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`),
   // The builder (ADR-043 to ADR-046): an adult's asks, and how each goes.
   builds: () => call<BuildsState>("GET", "/api/builds"),
   ask: (sentence: string) => call<{ build: BuildView }>("POST", "/api/builds", { sentence }).then((r) => r.build),

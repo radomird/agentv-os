@@ -153,15 +153,19 @@ function cutOff(page: Page): Promise<string[]> {
         if (!scrolls(at, getComputedStyle(at))) continue;
         const edge = at.getBoundingClientRect();
         // The part of the list in sight: a list inside another that scrolls
-        // is cut off at that one's edge.
+        // is cut off at that one's edges.
+        let shownTop = edge.top;
         let shownBottom = edge.bottom;
         for (let outer = at.parentElement; outer && outer !== document.body; outer = outer.parentElement) {
-          if (scrolls(outer, getComputedStyle(outer))) shownBottom = Math.min(shownBottom, outer.getBoundingClientRect().bottom);
+          if (!scrolls(outer, getComputedStyle(outer))) continue;
+          const outerEdge = outer.getBoundingClientRect();
+          shownTop = Math.max(shownTop, outerEdge.top);
+          shownBottom = Math.min(shownBottom, outerEdge.bottom);
         }
         const bottomBar = bar && bar.top > innerHeight / 2;
         if (bottomBar && barEl && !at.contains(barEl) && shownBottom > bar.top + 1) push(at, `the list "${say(at)}" runs under the status bar`);
-        const top = Math.max(box.top, edge.top);
-        const bottom = Math.min(box.bottom, edge.bottom);
+        const top = Math.max(box.top, shownTop);
+        const bottom = Math.min(box.bottom, shownBottom);
         seen = bottom > top ? new DOMRect(box.left, top, box.width, bottom - top) : null;
         break;
       }
@@ -333,7 +337,7 @@ test("T4.1 setup's look step offers the TV's sizes under the looks, and each loo
 });
 
 test("T4.1 with the sizes switched off, there's no size picker and home is at standard, as before", async () => {
-  writeFileSync(join(state, "features.json"), JSON.stringify({ looks: true }));
+  writeFileSync(join(state, "features.json"), JSON.stringify({ looks: true, sizes: false }));
   const page = await tv([3840, 2160]);
   try {
     assert.deepEqual(await page.evaluate(() => [document.documentElement.dataset.size, document.documentElement.style.zoom]), ["standard", "2"]);

@@ -232,8 +232,10 @@ bothWays("discover", "setup's shared folder lists the NASes on your network, and
   writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false, step: "background", finished, keyboard: true, goal: "media" }));
   try {
     const page = await tv(url);
-    await page.waitForSelector(".backs .back");
-    await page.locator('[data-background="folder"]').click();
+    // Setup's theme and background, with a shared folder among its
+    // backgrounds.
+    await page.waitForSelector('.tb-back[data-background="folder"]');
+    await page.locator('.tb-back[data-background="folder"]').click();
     await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a folder.");
     if (!on) {
       await page.waitForTimeout(800);
@@ -283,7 +285,7 @@ bothWays("discover", "setup's apps step opens the servers on your network for ea
     await page.locator('[data-action="continue"]').click();
     if (!on) {
       // As before: on to the look, and nothing on the network asked.
-      await page.waitForSelector(".looks", { timeout: 10_000 });
+      await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
       assert.equal(await page.locator("[data-found]").count(), 0);
       assert.equal(daemon.discover.isLooking, false);
       await page.close();
@@ -301,8 +303,8 @@ bothWays("discover", "setup's apps step opens the servers on your network for ea
     await headline(page, "pick your immich.");
     // Nothing answers as Immich here. Later goes on to the look.
     await page.locator('[data-action="later"]').click();
-    await page.waitForSelector(".looks", { timeout: 10_000 });
-    assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme");
+    await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
+    assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "look");
     // Jellyfin landed with its address in, and Immich still says "set up".
     const setupOf = async (id: string) => (await (await fetch(`${url}/api/apps/${id}/setup`)).json()).setup?.fields?.[0]?.value;
     for (let i = 0; i < 100 && (await setupOf("agentv.jellyfin")) !== "http://127.0.0.1:8096"; i++) await new Promise((done) => setTimeout(done, 50));
@@ -338,7 +340,7 @@ test("setup's apps step on music lists the NASes on your network, and a NAS's fo
     await page.keyboard.press("Enter");
     await page.waitForSelector('.focused[data-share="smb://nas.local/music"]');
     await page.keyboard.press("Enter");
-    await page.waitForSelector(".looks", { timeout: 10_000 });
+    await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
     const [added] = await screenRequests(page, "music", "add-share");
     assert.deepEqual([added.uri, added.password], ["smb://nas.local/music", undefined]);
     await page.locator('.toast:has-text("music is a music source now")').waitFor();

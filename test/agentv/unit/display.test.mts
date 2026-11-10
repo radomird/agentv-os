@@ -121,9 +121,11 @@ test("/api/display picks a size, the screen daemon sets it, and the TV hears it"
     return { status: response.status, data: (await response.json()) as Record<string, unknown> };
   };
   try {
+    // Turned off, there's no size to pick. On is the default.
+    writeFileSync(join(state, "features.json"), JSON.stringify({ sizes: false }));
     assert.equal((await send("GET", "/api/features")).data.sizes, false);
     assert.equal((await send("PUT", "/api/display", { size: "larger" })).status, 409);
-    writeFileSync(join(state, "features.json"), JSON.stringify({ sizes: true }));
+    rmSync(join(state, "features.json"));
     assert.equal((await send("GET", "/api/features")).data.sizes, true);
 
     // The screen daemon tells it the TV, and hears what to set it to.

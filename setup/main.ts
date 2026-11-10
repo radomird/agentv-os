@@ -40,6 +40,9 @@ export interface View {
   stay?(): boolean;
   // Back of the page's own: true when it took it.
   back?(): boolean;
+  // The focus landed on one of the screen's elements, by the arrows, a
+  // hover or as the screen starts.
+  focused?(el: HTMLElement): void;
   stop?(): void;
 }
 
@@ -84,8 +87,12 @@ const sounds = new Sounds();
 // background step (S5.4).
 const music = new Soundtrack();
 const focus = new Focus(document.getElementById("ring")!);
-// A text field with the focus opens the phone's keyboard (ADR-037).
-focus.onSet = (el) => tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
+// A text field with the focus opens the phone's keyboard (ADR-037). The
+// screen hears where the focus is, as the look step's preview follows it.
+focus.onSet = (el) => {
+  tell({ field: el instanceof HTMLInputElement ? { kind: fieldKind(el) } : null });
+  view?.focused?.(el);
+};
 let route = "welcome";
 let view: View | undefined;
 // How many times this page has moved, and how many of its own moves are on
