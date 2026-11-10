@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-DROP=${AGENTV_ZONE_DROP:-/var/lib/private/agentv/daemon/zone-drop/zone.json}
+DROP=${AGENTV_ZONE_DROP:-/var/lib/agentv/daemon/zone-drop/zone.json}
 ZONE_TAB=${AGENTV_ZONE_TAB:-/usr/share/zoneinfo/zone.tab}
 
 [[ -f $DROP ]] || exit 0

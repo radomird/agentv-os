@@ -23,12 +23,24 @@ Restart=on-failure
 # Stopped within a few seconds, so Restart and Shut down never wait on it
 # (ADR-033).
 TimeoutStopSec=5s
-DynamicUser=yes
+# Its own account, agentv-server, which owns nothing but the three folders
+# above, and only it can open them. It's a fixed account and not one
+# systemd makes up per start (DynamicUser=), since that one always comes
+# with RestrictSUIDSGID=, whose system call filter also blocks openat2(),
+# and so bubblewrap, which every app's worker starts in.
+User=agentv-server
+Group=agentv-server
+StateDirectoryMode=0700
 SupplementaryGroups=agentv-router agentv-account
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+RemoveIPC=yes
 NoNewPrivileges=yes
+# It isn't root and can't become it, so it's never held a capability. This
+# says so, for anything it starts as well.
+CapabilityBoundingSet=
+AmbientCapabilities=
 # It faces the home network and runs apps' workers, so it gets no more of
 # the kernel than it uses: nothing to set under /proc/sys or /sys, no
 # modules, no kernel log, no hostname to set, no other user's processes in
@@ -38,9 +50,11 @@ NoNewPrivileges=yes
 # check asks the GPU what it decodes through /dev/dri, and both close the
 # unit's devices to a short list (ProtectClock= by its own DeviceAllow=);
 # RestrictNamespaces= and PrivateUsers=, since an app's worker gets
-# namespaces of its own; and MemoryDenyWriteExecute= and a
-# SystemCallFilter=, which Node's JIT and the tools the daemon runs would
-# need tuning for.
+# namespaces of its own; RestrictSUIDSGID=, for the reason above (all it
+# can write is its own three folders and its own /tmp, so a set-user-ID
+# bit it set would only ever give its own account); and
+# MemoryDenyWriteExecute= and a SystemCallFilter=, which Node's JIT and the
+# tools the daemon runs would need tuning for.
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
@@ -49,7 +63,6 @@ ProtectHostname=yes
 ProtectProc=invisible
 LockPersonality=yes
 RestrictRealtime=yes
-RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 

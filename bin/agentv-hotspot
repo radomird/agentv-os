@@ -35,7 +35,7 @@
 set -euo pipefail
 
 RUN=${AGENTV_HOTSPOT_RUN:-/run/agentv-hotspot}
-DAEMON_STATE=${AGENTV_DAEMON_PRIVATE:-/var/lib/private/agentv/daemon}
+DAEMON_STATE=${AGENTV_DAEMON_PRIVATE:-/var/lib/agentv/daemon}
 DROP=${AGENTV_HOTSPOT_DROP:-$DAEMON_STATE/hotspot-drop/request.json}
 CONNECTIONS=${AGENTV_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 HANDED=${AGENTV_HOTSPOT_HANDED:-/etc/agentv/hotspot.json}

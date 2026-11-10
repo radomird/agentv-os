@@ -426,7 +426,7 @@ function builderIds(): { uid: number; gid: number } {
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   process.removeAllListeners("warning");
   const handOver = new HandOver({
-    drop: process.env.AGENTV_BUILD_DROP ?? "/var/lib/private/agentv/daemon/build-drop",
+    drop: process.env.AGENTV_BUILD_DROP ?? "/var/lib/agentv/daemon/build-drop",
     builds: "/var/lib/agentv/build",
     apps: "/var/lib/agentv/apps",
     themes: THEMES,
