@@ -8,7 +8,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { Feature, FeatureMap } from "../../../daemon/features.ts";
+import { FEATURE_NAMES, type Feature, type FeatureMap } from "../../../daemon/features.ts";
 import type { DiscoverOptions } from "../../../daemon/discover.ts";
 import type { Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
@@ -96,8 +96,9 @@ export interface BoxOptions {
   listenIdleMs?: number;
   // A stand-in for TMDB, through the router's service (stage 8).
   tmdb?: TmdbGet;
-  // Feature switches to set (daemon/features.ts). A box with one turned on
-  // is on edge, since only edge turns them on.
+  // Feature switches to set (daemon/features.ts). Every switch is on by
+  // default, so a test turns one off to check the screen it replaced, or
+  // gives PHASE_1 for every one. A box with one turned on is on edge.
   features?: Partial<FeatureMap>;
   // Stand-ins for the servers on the network (daemon/discover.ts). Without
   // them the box asks nothing on any network.
@@ -111,6 +112,11 @@ export interface BoxOptions {
   // others, such as stand-in streaming apps for the starter pack.
   catalog?: IndexEntry[];
 }
+
+// Every switch off: the screens phase 1 shipped, for the tests written for
+// them before the switches. Phase 2's screens are on by default, and their
+// own tests run them as they ship.
+export const PHASE_1: Partial<FeatureMap> = Object.fromEntries(FEATURE_NAMES.map((name) => [name, false]));
 
 export function machine(name: string): NonNullable<NonNullable<BoxOptions["box"]>["machine"]> {
   return JSON.parse(readFileSync(join(ROOT, "test/agentv/fixtures/box", `${name}.json`), "utf8"));

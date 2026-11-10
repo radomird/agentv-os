@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { PHASE_1, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -23,7 +23,7 @@ const errors: string[] = [];
 const PIN = "4826";
 
 before(async () => {
-  ({ daemon, url } = await startBox());
+  ({ daemon, url } = await startBox(0, undefined, { features: PHASE_1 }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 

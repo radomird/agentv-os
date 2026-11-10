@@ -353,9 +353,9 @@ test("T5.3 setup's look step shows each look's preview, and the preview is home 
       await page.waitForSelector(".setup-look .look-card.focused");
       const frames = await page.$$eval(".setup-look .look-frame-page", (els) => els.map((el) => new URL((el as HTMLIFrameElement).src).search));
       assert.deepEqual(frames, LOOKS.map((look) => `?preview&look=${look}&size=standard`));
-      // Picking one sets the look and goes on to the theme.
+      // Picking one sets the look and goes on to the theme and background.
       await page.locator('.setup-look [data-look="cinema"]').click();
-      await page.waitForSelector(".looks-all");
+      await page.waitForSelector(".theme2 .tb-themes");
       assert.equal((await (await fetch(`${url}/api/look`)).json()).look, "cinema");
       assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "theme", "on to the theme, the next step");
     } finally {

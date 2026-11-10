@@ -16,7 +16,7 @@ import { AskWatch } from "../../../daemon/asks.ts";
 import type { GitHubAnswer, GitHubAsk, PushAsk } from "../../../daemon/github.ts";
 import { placeTheme, type ThemeAnswer, type ThemeAsk, themeName } from "../../../daemon/made-themes.ts";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { PHASE_1, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -41,7 +41,7 @@ async function send(method: string, path: string, body?: unknown, grant?: string
 }
 
 before(async () => {
-  ({ daemon, url, state, builds, apps, themes } = await startBox());
+  ({ daemon, url, state, builds, apps, themes } = await startBox(0, undefined, { features: PHASE_1 }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
   // Claude with a key, its terms accepted on a paired phone.
   writeFileSync(join(state, "..", "key.json"), JSON.stringify({ set: true, provider: "claude", at: new Date().toISOString() }));

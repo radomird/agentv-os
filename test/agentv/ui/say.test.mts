@@ -17,7 +17,7 @@ import { AskWatch } from "../../../daemon/asks.ts";
 import { NONE, type Route } from "../../../daemon/router.ts";
 import type { SayAnswer, SayAsk } from "../../../daemon/say.ts";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { PHASE_1, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -45,6 +45,7 @@ before(async () => {
   writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
   process.env.AGENTV_PASSWD = passwd;
   ({ daemon, url } = await startBox(0, undefined, {
+    features: PHASE_1,
     listenIdleMs: 1500,
     router: async (sentence) => {
       if (sentence === SLOW) await new Promise((resolve) => setTimeout(resolve, 800));

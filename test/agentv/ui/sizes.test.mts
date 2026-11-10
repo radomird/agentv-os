@@ -333,7 +333,7 @@ test("T4.1 setup's look step offers the TV's sizes under the looks, and each loo
 });
 
 test("T4.1 with the sizes switched off, there's no size picker and home is at standard, as before", async () => {
-  writeFileSync(join(state, "features.json"), JSON.stringify({ looks: true }));
+  writeFileSync(join(state, "features.json"), JSON.stringify({ looks: true, sizes: false }));
   const page = await tv([3840, 2160]);
   try {
     assert.deepEqual(await page.evaluate(() => [document.documentElement.dataset.size, document.documentElement.style.zoom]), ["standard", "2"]);

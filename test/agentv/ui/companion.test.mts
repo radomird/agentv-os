@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { PHASE_1, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -35,7 +35,7 @@ before(async () => {
   const passwd = join(dir, "passwd");
   writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
   process.env.AGENTV_PASSWD = passwd;
-  ({ daemon, url, updates } = await startBox());
+  ({ daemon, url, updates } = await startBox(0, undefined, { features: PHASE_1 }));
   phoneUrl = `http://127.0.0.1:${daemon.lanPort}`;
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
   const controller = new AbortController();
