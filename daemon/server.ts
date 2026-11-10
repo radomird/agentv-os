@@ -174,9 +174,9 @@ export interface DaemonOptions {
   tmdbStatus?: string;
   // The clock what's new goes by, for tests that pin the day.
   newsNow?: () => Date;
-  // The TV's spoken answers (stage 8): where Piper is, and stand-ins for the
-  // provider's voice and Piper, for tests.
-  voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "piper">>;
+  // The TV's spoken answers (stage 8): where its own voice is, and stand-ins
+  // for the provider's voice and the TV's own, for tests.
+  voice?: Partial<Pick<VoiceOptions, "dir" | "provider" | "own">>;
   // The box's country (ADR-055): a stand-in for its time zone, and how long
   // a pick waits for root to set it, for tests.
   country?: { zone?: () => Promise<string>; waitMs?: number };
@@ -2076,7 +2076,7 @@ export class Daemon {
     this.lastSpoken = { clip: n, by: clip.by, ms: clip.ms, at: new Date().toISOString() };
     const played = await this.sayAsks.ask({ kind: "speak", clip: n }, 60_000);
     if (this.lastSpoken.clip === n) Object.assign(this.lastSpoken, { played: played.ok, ...(played.error ? { error: played.error } : {}) });
-    this.log(`the tv said its answer with ${clip.by === "provider" ? `${clip.provider}'s voice` : "piper"}, made in ${clip.ms} ms${played.ok ? "" : `, but it didn't play: ${played.error ?? "no answer"}`}`);
+    this.log(`the tv said its answer with ${clip.by === "provider" ? `${clip.provider}'s voice` : "its own voice"}, made in ${clip.ms} ms${played.ok ? "" : `, but it didn't play: ${played.error ?? "no answer"}`}`);
   }
 
   // --- What's new (stage 8) ---------------------------------------------------
@@ -3353,7 +3353,7 @@ export class Daemon {
       return;
     }
     // The TV's spoken answers (stage 8): which voice says them, whether
-    // Piper is here, and how the last one went.
+    // the TV has one of its own, and how the last one went.
     if (method === "GET" && path === "/api/voice") {
       this.json(response, 200, { ok: true, ...(await this.voice.state()), last: this.lastSpoken });
       return;
