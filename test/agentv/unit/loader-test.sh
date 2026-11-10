@@ -9,3 +9,4 @@ set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
 node_test "$ROOT/test/agentv/unit/loader.test.mts"
+node_test "$ROOT/test/agentv/unit/reach.test.mts"

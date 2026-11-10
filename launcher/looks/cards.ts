@@ -4,11 +4,12 @@
 // New this week's posters, and an app's featured title, the first of its
 // entries with a picture.
 
-import { daemon, screen, type App, type TileData, type TileEntry } from "../api.ts";
+import { daemon, screen, type App, type TileAnswer, type TileData, type TileEntry } from "../api.ts";
 import { clock, h } from "../dom.ts";
 import { CLOCK, MUSIC, NEW, WEATHER } from "../pages/home.ts";
 import { hasIcon, icon } from "./icons.ts";
-import { named, said } from "./looks.ts";
+import { keepAsking, showLoading } from "../loading.ts";
+import { named, preview, said } from "./looks.ts";
 
 export interface Featured {
   app: App;
@@ -19,19 +20,61 @@ export interface Featured {
   meta?: string; // under the title, as Cinema has it
 }
 
-// Each app's tile data, asked for once per home and kept for the visit.
-const asked = new Map<string, Promise<TileData | null>>();
+// Each app's tile data, asked for once per home and kept for the visit. A
+// tile that's still waiting for its content isn't kept: it's asked for
+// again while home shows (loading.ts), and when it lands the TV says so and
+// home draws again with it.
+const asked = new Map<string, Promise<TileAnswer>>();
+const asking = new Set<string>();
 
-export function tileData(app: App, size: "s" | "m" | "l"): Promise<TileData | null> {
+export function tileAnswer(app: App, size: "s" | "m" | "l"): Promise<TileAnswer> {
   const key = `${app.id}:${size}`;
   let found = asked.get(key);
   if (!found) {
-    found = daemon.tile(app.id, size).catch(() => null);
+    const ask = () => daemon.tileAnswer(app.id, size).catch(() => ({ tile: null, waiting: true }));
+    found = ask();
+    const first = found;
     asked.set(key, found);
     // Asked again next time home draws, a minute on.
-    setTimeout(() => asked.delete(key), 60_000);
+    setTimeout(() => asked.get(key) === first && asked.delete(key), 60_000);
+    void found.then((answer) => {
+      if (!answer.waiting) return;
+      if (asked.get(key) === first) asked.delete(key);
+      if (asking.has(key)) return;
+      asking.add(key);
+      keepAsking(
+        async () => {
+          const waiting = (await ask()).waiting;
+          if (!waiting) asking.delete(key);
+          return waiting;
+        },
+        () => {
+          // Only while home shows. Away from it, the asking stops, and
+          // starts again with home's next draw.
+          const home = document.body.classList.contains("on-home");
+          if (!home) asking.delete(key);
+          return home;
+        },
+      );
+    });
   }
   return found;
+}
+
+export function tileData(app: App, size: "s" | "m" | "l"): Promise<TileData | null> {
+  return tileAnswer(app, size).then((answer) => answer.tile);
+}
+
+// A tile changed on the TV's side: every tile is asked for again.
+export function forgetTiles(): void {
+  asked.clear();
+}
+
+// The mark on a card while its content is on the way.
+function loadingUntil(box: HTMLElement, name: string, answer: Promise<TileAnswer>): void {
+  if (preview()) return;
+  const loaded = showLoading(box, name);
+  void answer.then((found) => !found.waiting && loaded());
 }
 
 // The largest size an app has content for: its entries come from there.
@@ -85,7 +128,9 @@ export function cardContent(app: App, logo: HTMLElement, wide: boolean): HTMLEle
     return box;
   }
   if (isBuiltin(app, WEATHER)) {
-    void tileData(app, "s").then((data) => {
+    const answer = tileAnswer(app, "s");
+    loadingUntil(box, `${app.id}:s`, answer);
+    void answer.then(({ tile: data }) => {
       const now = data?.headline;
       if (!now?.value) return;
       const words = (now.caption ?? "").split("\n")[0];
@@ -113,7 +158,9 @@ export function cardContent(app: App, logo: HTMLElement, wide: boolean): HTMLEle
     return box;
   }
   if (isBuiltin(app, NEW)) {
-    void tileData(app, "l").then((data) => {
+    const answer = tileAnswer(app, "l");
+    loadingUntil(box, `${app.id}:l`, answer);
+    void answer.then(({ tile: data }) => {
       const posters = (data?.entries ?? []).filter((entry) => entry.image).slice(0, 3);
       if (!posters.length) return;
       box.replaceChildren(h("span", { class: "card-posters" }, ...posters.map((entry) => h("img", { src: daemon.image(app.id, entry.image!), alt: "" }))));

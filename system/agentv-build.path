@@ -5,7 +5,7 @@
 Description=AgenTV build hand-over
 
 [Path]
-PathExistsGlob=/var/lib/private/agentv/daemon/build-drop/*.json
+PathExistsGlob=/var/lib/agentv/daemon/build-drop/*.json
 Unit=agentv-build.service
 
 [Install]

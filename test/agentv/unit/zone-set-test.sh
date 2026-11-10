@@ -42,7 +42,7 @@ if set_zone; then fail "a drop that isn't json is refused"; fi
 [[ ! -s $SCRATCH/calls ]] || fail "nothing refused reaches timedatectl" "$(cat "$SCRATCH/calls")"
 pass "a zone zone.tab doesn't list, or a drop that isn't one, changes nothing and isn't echoed"
 
-grep -qx "PathExists=/var/lib/private/agentv/daemon/zone-drop/zone.json" "$ROOT/system/agentv-zone.path" || fail "agentv-zone.path watches the daemon's drop"
+grep -qx "PathExists=/var/lib/agentv/daemon/zone-drop/zone.json" "$ROOT/system/agentv-zone.path" || fail "agentv-zone.path watches the daemon's drop"
 grep -qx "WantedBy=paths.target" "$ROOT/system/agentv-zone.path" || fail "and is enabled with the others"
 grep -qx "ExecStart=/usr/bin/agentv-zone-set" "$ROOT/system/agentv-zone.service" || fail "agentv-zone.service runs agentv-zone-set"
 if grep -q "^User=\|^DynamicUser=" "$ROOT/system/agentv-zone.service"; then fail "as root"; fi

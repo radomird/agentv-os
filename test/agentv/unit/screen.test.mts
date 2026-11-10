@@ -15,10 +15,21 @@ import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { Sleep } from "../../../daemon/sleep.ts";
-import { HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { NO_WEBRTC } from "../../../apps/contract/page.ts";
+import { homeArguments, HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("M2 home's Chromium goes out only through the filter, WebRTC too", () => {
+  const args = homeArguments("/var/lib/agentv/chromium-home", "http://127.0.0.1:3000/", "http://127.0.0.1:3005");
+  assert.ok(args.includes("--proxy-server=http://127.0.0.1:3005"));
+  // No UDP of its own for a peer connection, under both names Chromium has
+  // had for the switch.
+  assert.deepEqual(NO_WEBRTC, ["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]);
+  for (const flag of NO_WEBRTC) assert.ok(args.includes(flag), flag);
+  assert.ok(args.includes("--user-data-dir=/var/lib/agentv/chromium-home") && args.includes("--app=http://127.0.0.1:3000/"));
+});
 
 class FakeHyprland implements Hyprland {
   windows: Client[] = [];
@@ -281,8 +292,11 @@ class FakeLauncher implements Launcher {
     this.pins.push(action);
     return this.pinOk || grant === "good";
   }
+  // Whether who's watching has a profile that locks (ADR-034).
+  locking = false;
   async lock() {
     this.locks++;
+    return this.locking;
   }
   shellStops = 0;
   async stopOmarchyShell() {
@@ -1693,6 +1707,148 @@ test("S2.8 with the TV off, playback pauses at once, every app closes after a wh
   await t.screen.fromHome({ cmd: "wake" });
   assert.equal(t.screen.ambient, false);
   assert.equal(t.screen.front()?.role, "home");
+  t.screen.stop();
+});
+
+// Steam open, in front, with a web app open behind it.
+async function withSteam(t: Awaited<ReturnType<typeof tv>>): Promise<{ steam: FakeApp; page: string }> {
+  const page = await openApp(t, "agentv.tube", "0xb");
+  await t.screen.home();
+  t.launcher.targets.set("agentv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" }), { ok: true });
+  const steam = t.launcher.last("steam");
+  t.hypr.open("0xf", steam.pid, "gamescope");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "steam");
+  return { steam, page };
+}
+
+test("T16.2 the TV off for a while closes every app but Steam, which stays in front with the output off, and the TV comes back on to it", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150, tvSettleMs: 100 });
+  const { steam, page } = await withSteam(t);
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.browser.closed, [page], "the web app closed");
+  assert.equal(steam.stopped, false, "Steam didn't");
+  assert.equal(t.hypr.windows.some((w) => w.address === "0xf"), true);
+  assert.deepEqual((await open(t.screen)).map((o) => o.id), ["agentv.games"]);
+  assert.equal(t.launcher.locks, 1, "the lock is asked for as before");
+  assert.equal(t.screen.ambient, false, "no ambient screen over the game");
+  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.hypr.dpms, false, "the output is off");
+  assert.ok(t.lines.includes("the TV has been off for a while; closing every app but agentv.games"), t.lines.join("\n"));
+  // A key with the TV still off: the output looks, goes off again, and the
+  // game is still in front.
+  t.screen.seatIdle(false);
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.role, "steam");
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true, "the output is on again");
+  assert.equal(t.screen.front()?.role, "steam", "on the game");
+  assert.equal(t.hypr.get("0xf").workspace.name, "1");
+  assert.equal(t.screen.ambient, false);
+  t.screen.stop();
+});
+
+test("T16.2 Steam open behind home stays open with the TV off, and home waits on its ambient screen as before", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  const { steam, page } = await withSteam(t);
+  await t.screen.home();
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.browser.closed, [page]);
+  assert.equal(steam.stopped, false);
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.hypr.dpms, false);
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home", "a key goes home");
+  assert.deepEqual(await t.screen.fromHome({ cmd: "running" }), { ok: true, apps: [{ id: "agentv.games", game: true, paused: false }] });
+  t.screen.stop();
+});
+
+test("T16.2 a profile that locks: the TV comes back on home's PIN pad, with Steam still open behind it", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  t.launcher.locking = true;
+  const { steam } = await withSteam(t);
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(steam.stopped, false);
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home", "home is in front, where the pad is");
+  assert.equal(t.hypr.dpms, false);
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home", "a key on the ambient screen doesn't go past the pad to the game");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE);
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" });
+  assert.equal(t.screen.front()?.address, "0xf", "its tile brings it back");
+  t.screen.stop();
+});
+
+test("T16.2 the ambient screen that idling put over Steam stays with the TV off, and a key on it goes back to the game", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  const { steam } = await withSteam(t);
+  await t.screen.handle({ cmd: "ambient" });
+  assert.equal(t.screen.front()?.role, "home");
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(steam.stopped, false);
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.hypr.dpms, false);
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.address, "0xf");
+  t.screen.stop();
+});
+
+test("T16.2 a game made on this TV in front of home stays in front with the TV off: no ambient screen, the output off, and none over it after a key", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150, tvSettleMs: 100 });
+  const page = await openApp(t, "agentv.tube", "0xb");
+  await t.screen.home();
+  // Home says which game is in front, as the launcher's agentvGame does.
+  let game: string | null = "someone.blocks";
+  t.launcher.homeBrowser.answer = (expression) => (expression.includes("agentvGame") ? { game } : undefined);
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.browser.closed, [page]);
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.launcher.homeBrowser.evaluated.includes("window.agentvAmbient?.(true)"), false, "home was never told to show its ambient screen");
+  assert.equal(t.hypr.dpms, false);
+  assert.ok(t.lines.includes("someone.blocks stays in front"), t.lines.join("\n"));
+  t.screen.seatIdle(false);
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  assert.equal(t.screen.ambient, false);
+  // Once it's left, home rests on its ambient screen like any other time.
+  game = null;
+  t.screen.seatIdle(false);
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true);
   t.screen.stop();
 });
 

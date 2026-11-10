@@ -241,6 +241,18 @@ test("ADR-043 a page app declares what it reads and whether it sends notices", (
   refused(sample((m) => (m.tv.notices = true)), /only a page app declares tv\.notices/);
 });
 
+test("F2 no app's origins are the box, whatever runs it and however the address is written", () => {
+  for (const origin of ["http://127.0.0.1:3000", "http://localhost:3000", "http://tv.localhost", "http://[::1]:3000", "http://[::ffff:7f00:1]:3000", "http://0.0.0.0:3000", "http://169.254.169.254"]) {
+    refused(sample((m) => ((m.tv.origins = [origin]), (m.tv.homeUrl = `${origin}/`))), /is this box, which an app never reaches/);
+  }
+  // A server on the home network isn't the box.
+  assert.deepEqual(problems(sample((m) => ((m.tv.origins = ["http://192.168.1.20:8096"]), (m.tv.homeUrl = "http://192.168.1.20:8096/")))), []);
+  // A page app's check takes the same forms.
+  for (const origin of ["http://[::ffff:7f00:1]:3000", "http://169.254.169.254", "http://localhost.:3000"]) {
+    refused(blocks((m) => (m.tv.origins = [origin])), /is this box|isn't an origin/);
+  }
+});
+
 test("ADR-043 a page app's origins are on the network, never the box", () => {
   assert.deepEqual(problems(blocks((m) => (m.tv.origins = ["https://api.example.org", "http://nas.example.org:8080"]))), []);
   for (const origin of ["http://localhost:3000", "http://agentv.blocks.app.localhost:3003", "http://127.0.0.1", "http://[::1]:3000", "http://0.0.0.0"]) {
@@ -316,6 +328,8 @@ test("ADR-043 the policy the box serves a page app under", () => {
   assert.match(policy, /default-src 'none'/);
   assert.match(policy, /script-src 'self'(;|$)/);
   assert.match(policy, /connect-src 'self'(;|$)/);
+  // M2: no peer connections, which connect-src doesn't cover.
+  assert.match(policy, /(^|; )webrtc 'block'(;|$)/);
   assert.match(policy, /frame-ancestors http:\/\/localhost:3000/);
   assert.doesNotMatch(policy, /unsafe-eval/);
   const online = pagePolicy({ ...manifest, tv: { ...manifest.tv, origins: ["https://api.example.org"] } }, "http://localhost:3000");

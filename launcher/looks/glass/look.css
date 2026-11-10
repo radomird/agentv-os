@@ -773,3 +773,23 @@ body.with-backdrop {
   outline: 3px solid var(--bright-foreground);
   outline-offset: 4px;
 }
+
+/* --- What's loading (loading.ts): three soft dots ------------------------- */
+
+.loading-mark i {
+  border-radius: 50%;
+  background: var(--bright-foreground);
+}
+
+:root {
+  --loading-ease: ease-in-out;
+}
+
+.glass-tile .loading-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  justify-content: center;
+  font-size: 22px;
+}

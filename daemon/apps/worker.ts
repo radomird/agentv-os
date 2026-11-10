@@ -1,7 +1,9 @@
 // One app, in a process of its own (PHASE-1-PLAN.md, "App contract"). The
-// loader (loader.ts) starts this file with Node's permission model: the
-// process can read only its own app's package and this file, and it can't
-// start processes or threads, load addons or open connections. Its fetch goes
+// loader (loader.ts) starts this file under bubblewrap: no network, and a
+// root that holds only Node, the system's libraries, this file and the
+// app's own package, read-only. Inside that, Node's permission model is on
+// too: the process can read only its own app's package and this file, and
+// it can't start processes or threads or load addons. Its fetch goes
 // through the loader, which lets it reach only the app's declared origins.
 // It talks to nothing but the loader, over the IPC channel.
 //
@@ -30,8 +32,8 @@ const send = process.send!.bind(process);
 const entry = process.argv[2];
 
 // What an app could use to reach past its sandbox, gone before its code runs.
-// The permission model already refuses files, processes and (on Node 25 and
-// later) the network; these close the rest.
+// The permission model already refuses files and processes, and bubblewrap
+// leaves no network to open a connection on; these close the rest.
 const proc = process as unknown as Record<string, unknown>;
 function remove(owner: Record<string, unknown>, name: string): void {
   try {
