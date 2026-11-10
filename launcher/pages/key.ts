@@ -32,18 +32,17 @@ export function termsHeard(data: unknown): void {
   termsAccepted?.(data as { provider?: string; path?: string });
 }
 
-// The plans this box offers: Claude's everywhere, and ChatGPT's and Grok's
-// on edge as best effort (ADR-053).
-function plansOf(state: KeyState | null): { provider: string; name?: string; bestEffort: boolean }[] {
-  return state?.plans ?? [{ provider: "claude", name: "claude pro or max", bestEffort: false }];
+// The plans on offer: Claude's, ChatGPT's and Grok's, on every TV (ADR-087).
+function plansOf(state: KeyState | null): { provider: string; name?: string }[] {
+  return state?.plans ?? [{ provider: "claude", name: "claude pro or max" }];
 }
 
 // The plan builds use, once its terms are accepted, or null for a key or
 // none.
-function planInUse(state: KeyState | null): { provider: string; name?: string; bestEffort: boolean } | null {
+function planInUse(state: KeyState | null): { provider: string; name?: string } | null {
   const ai = state?.ai;
   if (!ai || ai.path !== "plan" || !ai.accepted || !ai.provider) return null;
-  return plansOf(state).find((plan) => plan.provider === ai.provider) ?? { provider: ai.provider, bestEffort: false };
+  return plansOf(state).find((plan) => plan.provider === ai.provider) ?? { provider: ai.provider };
 }
 
 export function aiValue(ctx: Ctx): string {
@@ -54,22 +53,18 @@ export function aiValue(ctx: Ctx): string {
   return keyState.set ? `${keyState.provider}${guard}` : "no key";
 }
 
-// What builds can use here: a key from any provider, or one of the plans this
-// box offers.
+// What builds can use here: a key from any provider, or one of the plans on
+// offer.
 function waysLine(state: KeyState): string {
-  const plans = plansOf(state);
-  const named = (bestEffort: boolean) => plans.filter((plan) => plan.bestEffort === bestEffort).map((plan) => `${plan.provider}'s`).join(" or ");
-  const sure = named(false);
-  const early = named(true);
+  const names = plansOf(state).map((plan) => `${plan.provider}'s`);
+  const plans = names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}` : (names[0] ?? "");
   const keys = "an api key from claude, chatgpt, gemini, grok or muse";
-  if (!sure && !early) return `${keys}. plans are coming soon.`;
-  if (!early) return `${keys}, or your plan: ${sure}. more plans are coming soon.`;
-  return `${keys}, or your plan: ${[sure, `${early} as best effort`].filter(Boolean).join(", or ")}.`;
+  return plans ? `${keys}, or your plan: ${plans}.` : `${keys}.`;
 }
 
-// A plan's line: its name, best effort or not, and when it's signed in.
-function planLine(plan: { provider: string; name?: string; bestEffort: boolean }): string {
-  return `${plan.name ?? `${plan.provider}'s plan`}${plan.bestEffort ? ", as best effort" : ""}. you sign in to it on your phone the first time your agent builds an app.`;
+// A plan's line: its name, and when it's signed in.
+function planLine(plan: { provider: string; name?: string }): string {
+  return `${plan.name ?? `${plan.provider}'s plan`}. you sign in to it on your phone the first time your agent builds an app.`;
 }
 
 export function aiPanel(ctx: Ctx): HTMLElement[] {
@@ -256,8 +251,8 @@ export function keyPage(ctx: Ctx): View {
   };
 }
 
-// The household's plan for builds (Q143): one of the plans this box's
-// channel offers, picked with left and right, past the PIN, and its
+// The household's plan for builds (Q143): one of the plans on offer,
+// picked with left and right, past the PIN, and its
 // provider's terms accepted on a phone first. Its CLI signs in to it the first
 // time the builder runs (ADR-040).
 export function planPage(ctx: Ctx): View {

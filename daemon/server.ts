@@ -27,7 +27,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, gridNamed, Home, type TileAnswer } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
-import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
+import { Ai, OFFERS, planRefused, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
@@ -667,11 +667,11 @@ export class Daemon {
   }
 
   // Settings → AI's state: which provider has a key (never the key), the
-  // plans this box's channel offers (ADR-053), and what builds use now, by
+  // plans on offer (ADR-087), and what builds use now, by
   // plan or key, and whether its terms are accepted (Q143).
   private async keyState(): Promise<object> {
     const { set, provider } = this.key.status();
-    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name, bestEffort: offer.plan.bestEffort === true }));
+    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name }));
     const ai = await this.ai.read();
     return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
   }
@@ -2850,7 +2850,7 @@ export class Daemon {
     // Settings → AI: the household's plan for builds, in place of a key
     // (Q143). An adult's, past the PIN. A plan whose terms nobody here has
     // accepted waits for them, as a key does: the phones show them, an adult
-    // accepts, and the TV asks again. Only a plan this box's channel offers
+    // accepts, and the TV asks again. Only a plan that's on offer
     // (ADR-053).
     if (method === "PUT" && path === "/api/ai/plan") {
       if (!this.guarded(request, response, "the ai plan") || !(await this.adult(request, response, "the ai plan"))) return;
@@ -2862,7 +2862,7 @@ export class Daemon {
       }
       const offer = (await this.ai.offers())[provider as Provider];
       if (!offer.plan.offered) {
-        this.json(response, 400, { ok: false, error: `${offer.plan.name} is coming soon. use an api key for now` });
+        this.json(response, 400, { ok: false, error: planRefused(offer) });
         return;
       }
       if (!(await this.ai.acceptance(provider as Provider, "plan"))) {
