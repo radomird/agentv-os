@@ -67,13 +67,13 @@ export interface Settings {
   sleepWhenOff?: boolean;
 }
 
-// Which voice says the TV's answers (stage 8): the provider's own, Piper on
-// the box, or none yet while Piper is fetched.
+// Which voice says the TV's answers (stage 8): the provider's own, the TV's
+// own, or none, on a TV with no voice of its own and no key that has one.
 export interface VoiceState {
   spoken: boolean;
-  by: "provider" | "piper" | null;
+  by: "provider" | "own" | null;
   provider: string | null;
-  piper: "ready" | "missing";
+  own: "ready" | "missing";
 }
 
 export interface HomeState {
