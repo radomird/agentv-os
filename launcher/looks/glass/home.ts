@@ -6,7 +6,8 @@
 //
 // It uses the profile's one layout for its order (reading order, as Terminal
 // places them), and every tile is the same size. An app with no picture of
-// its own shows the home's background instead.
+// its own shows the home's background instead. The games on home have a row
+// of their own under the apps, named Games (D9).
 
 import type { App } from "../../api.ts";
 import { h } from "../../dom.ts";
@@ -15,6 +16,7 @@ import { buildTile, underway } from "../../pages/build.ts";
 import { logo, openApp } from "../../pages/home.ts";
 import { bar } from "../../pages/parts.ts";
 import { cardContent, featured, type Featured } from "../cards.ts";
+import { GAMES, openWords, shelves } from "../games.ts";
 import { named } from "../looks.ts";
 
 const PER_ROW = 6;
@@ -40,12 +42,26 @@ function glassTile(ctx: Ctx, app: App): HTMLElement {
 
 export function home(ctx: Ctx): View {
   const apps = ordered(ctx);
-  const tiles = apps.map((app) => glassTile(ctx, app));
+  const shelf = shelves(apps);
+  const tiles = shelf.apps.map((app) => glassTile(ctx, app));
   // Your agent's newest build, while it isn't on home yet (D1).
   const building = underway()[0];
   if (building) tiles.splice(1, 0, buildTile(ctx, building));
   const rows: HTMLElement[] = [];
   for (let at = 0; at < tiles.length; at += PER_ROW) rows.push(h("div", { class: "glass-row" }, ...tiles.slice(at, at + PER_ROW)));
+  // The games, six a row as the apps are, with the row's name over the first.
+  const games = shelf.games.map((app) => glassTile(ctx, app));
+  for (let at = 0; at < games.length; at += PER_ROW) {
+    const first = at === 0;
+    rows.push(
+      h(
+        "div",
+        { class: `glass-row${first ? " glass-games" : ""}`, role: first ? "group" : undefined, "aria-label": first ? GAMES : undefined },
+        first ? h("span", { class: "glass-shelf" }, GAMES) : null,
+        ...games.slice(at, at + PER_ROW),
+      ),
+    );
+  }
 
   // Two pictures, so the next fades in over the last.
   const stills = [h("img", { class: "glass-still", alt: "" }), h("img", { class: "glass-still", alt: "" })];
@@ -56,7 +72,8 @@ export function home(ctx: Ctx): View {
   const title = h("div", { class: "glass-title" }, name, line);
 
   // What the focused tile features: its own title and picture, or its name
-  // over the home's background.
+  // over the home's background. An app that's open behind home says so in
+  // the line under its name.
   let asked = 0;
   const feature = (el: HTMLElement) => {
     const app = apps.find((one) => one.id === el.dataset.id);
@@ -71,7 +88,7 @@ export function home(ctx: Ctx): View {
       if (n !== asked || !el.isConnected) return;
       const first = found[0];
       name.textContent = first?.title ?? named(app.name);
-      line.textContent = first?.line ?? "";
+      line.textContent = openWords(ctx, app) || (first?.line ?? "");
       if (!first?.image) {
         for (const still of stills) still.classList.remove("on");
         return;
@@ -89,7 +106,7 @@ export function home(ctx: Ctx): View {
 
   const grid = h("div", { class: "glass-rows", "data-scroll": true }, ...rows);
   const el = h("div", { class: "screen glass-home" }, stage, title, grid, bar(ctx, "home"));
-  const first = tiles[0];
+  const first = tiles[0] ?? games[0];
   if (first) feature(first);
   return {
     el,

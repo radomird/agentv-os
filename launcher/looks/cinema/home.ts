@@ -5,7 +5,8 @@
 //
 // The featured titles are what your apps' tiles already send: titles you're
 // part way through and New this week's. Your apps are in the layout's order,
-// and an app pinned medium or large says a little more about itself.
+// and an app pinned medium or large says a little more about itself. The
+// games on home have a row of their own right under the apps (D9).
 
 import { daemon, type App } from "../../api.ts";
 import { h } from "../../dom.ts";
@@ -14,6 +15,7 @@ import { buildTile, underway } from "../../pages/build.ts";
 import { logo, NEW, openApp, openEntry } from "../../pages/home.ts";
 import { bar } from "../../pages/parts.ts";
 import { cardContent, featured, tileData, type Featured } from "../cards.ts";
+import { GAMES, openWords, shelves } from "../games.ts";
 import { ordered } from "../glass/home.ts";
 import { icon } from "../icons.ts";
 import { named, preview, said } from "../looks.ts";
@@ -26,8 +28,8 @@ const MOST = 5;
 // it's set up.
 function state(ctx: Ctx, app: App): string {
   if (preview()) return "";
-  const open = ctx.running.get(app.id);
-  if (open) return said(open.paused ? "paused" : "open");
+  const open = openWords(ctx, app);
+  if (open) return open;
   if (app.needsSetup) return said("set up");
   if (app.signIn === "needed") return said("sign in");
   return "";
@@ -47,9 +49,12 @@ function appCard(ctx: Ctx, app: App, size: string): HTMLElement {
 export function home(ctx: Ctx): View {
   const apps = ordered(ctx);
   const sizes = new Map(ctx.state.layout.map((tile) => [tile.id, tile.size]));
-  const cards = apps.map((app) => appCard(ctx, app, sizes.get(app.id) ?? "s"));
+  const shelf = shelves(apps);
+  const card = (app: App) => appCard(ctx, app, sizes.get(app.id) ?? "s");
+  const cards = shelf.apps.map(card);
   const building = underway()[0];
   if (building) cards.splice(1, 0, buildTile(ctx, building));
+  const games = shelf.games.map(card);
 
   // The carousel: one featured title at a time.
   const kicker = h("div", { class: "cinema-kicker" });
@@ -148,12 +153,15 @@ export function home(ctx: Ctx): View {
     "div",
     { class: "cinema-body", "data-scroll": true },
     hero,
-    h("div", { class: "section cinema-section" }, said("your apps")),
-    h("div", { class: "cinema-row", "data-scroll": true }, ...cards),
+    ...(cards.length ? [h("div", { class: "section cinema-section" }, said("your apps")), h("div", { class: "cinema-row", "data-scroll": true }, ...cards)] : []),
+    ...(games.length ? [h("div", { class: "section cinema-section cinema-games-name" }, GAMES), h("div", { class: "cinema-row cinema-games", "data-scroll": true }, ...games)] : []),
     newSection,
     newRow,
   );
   const el = h("div", { class: "screen cinema-home" }, backdrop, bar(ctx, "home"), body);
+  // Once the rows have come up, the featured title makes way for them, and
+  // it's back when the focus goes up to Play.
+  body.addEventListener("scroll", () => el.classList.toggle("cinema-scrolled", body.scrollTop > 0));
   return {
     el,
     first: play,
