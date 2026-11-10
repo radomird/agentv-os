@@ -4,13 +4,15 @@
 // limit and fails with a typed error.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { validatePackage } from "../../../apps/contract/manifest.ts";
-import { AppError, AppHost, allowedOrigins } from "../../../daemon/apps/loader.ts";
+import { AppError, AppHost, allowedOrigins, systemPaths, timeZoneLink, workerJail } from "../../../daemon/apps/loader.ts";
+import { HARNESS, SANDBOX_PROBLEM } from "../harness.mts";
 
 const SAMPLE = join(import.meta.dirname, "../fixtures/apps/sample");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-loader-"));
@@ -24,6 +26,11 @@ let count = 0;
 
 // Node 25 and later refuse the network to a process under the permission
 // model; on older Node the worker's fetch still goes through the loader.
+// The worker runs in its sandbox wherever bubblewrap can start one; where
+// it can't, the tests of the sandbox itself are skipped.
+const harness = HARNESS;
+const noSandbox = SANDBOX_PROBLEM;
+
 const netPermission = Number(process.versions.node.split(".")[0]) >= 25;
 
 before(async () => {
@@ -56,7 +63,7 @@ function app(code?: string, edit: (manifest: Record<string, any>) => void = () =
 
 function host(dir: string, limits = {}): AppHost {
   const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
-  const h = new AppHost({ dir, manifest, settings: { serverUrl }, limits });
+  const h = new AppHost({ dir, manifest, settings: { serverUrl }, limits, harness });
   hosts.push(h);
   return h;
 }
@@ -129,13 +136,138 @@ test("an app's fetch can't reach anywhere else", async () => {
   await fails(h.call(viewer, "tile", "s"), "failed", /fetch failed/);
 });
 
-test("an app can't open a connection of its own", { skip: !netPermission && "needs Node 25 or later" }, async () => {
+test("M1 an app can't open a connection of its own, even with Node's own modules in hand", { skip: !netPermission && noSandbox ? `needs bubblewrap or Node 25: ${noSandbox}` : false }, async () => {
   const port = new URL(serverUrl).port;
   const h = host(app(tileApp(`return await new Promise((resolve, reject) => {
     const socket = net.connect(${port}, "127.0.0.1", () => resolve({ headline: { label: "connected" } }));
     socket.on("error", reject);
   });`, 'import net from "node:net";')));
-  await fails(h.call(viewer, "tile", "s"), "failed", /ERR_ACCESS_DENIED|Access to this API has been restricted/);
+  await fails(h.call(viewer, "tile", "s"), "failed", /ECONNREFUSED|ENETUNREACH|ERR_ACCESS_DENIED|Access to this API has been restricted/);
+});
+
+test("M1 a link out of an app's package leads nowhere", { skip: noSandbox ? `needs bubblewrap: ${noSandbox}` : false }, async () => {
+  // The static checks refuse a package with a link in it; the sandbox has
+  // nothing at the other end.
+  const outside = join(scratch, "outside.txt");
+  writeFileSync(outside, "the owner's file");
+  const dir = app(tileApp('return { headline: { label: String(fs.readFileSync(new URL("./link.txt", import.meta.url))) } };', 'import fs from "node:fs";'));
+  symlinkSync(outside, join(dir, "link.txt"));
+  await fails(host(dir).call(viewer, "tile", "s"), "failed", /ENOENT|ERR_ACCESS_DENIED/);
+});
+
+test("M1 the worker's sandbox has no network, and only Node, the system's libraries and the app's package to read", { skip: noSandbox ? `needs bubblewrap: ${noSandbox}` : false }, () => {
+  const dir = app();
+  const node = realpathSync(process.execPath);
+  const look = `
+    const fs = require("node:fs"), os = require("node:os");
+    const there = (path) => { try { return fs.readdirSync(path).length; } catch { return null; } };
+    console.log(JSON.stringify({
+      root: fs.readdirSync("/").sort(),
+      etc: fs.readdirSync("/etc").sort(),
+      app: fs.readdirSync(process.cwd()).includes("manifest.json"),
+      home: there(${JSON.stringify(homedir())}), state: there("/var/lib/agentv"), keys: there("/etc/agentv"), proc: there("/proc"),
+      nets: Object.keys(os.networkInterfaces()),
+      writes: (() => { try { fs.writeFileSync(process.cwd() + "/x", "x"); return true; } catch { return false; } })(),
+      env: Object.keys(process.env).sort(),
+    }));`;
+  const ran = spawnSync("bwrap", [...workerJail({ dir, node, read: [], system: systemPaths(), localtime: timeZoneLink() }), node, "-e", look], { env: {}, encoding: "utf8" });
+  assert.equal(ran.status, 0, ran.stderr);
+  const seen = JSON.parse(ran.stdout);
+  const top = new Set(["dev", "etc", "lib", "lib64", "usr", "var", scratch.split("/")[1], node.split("/")[1]]);
+  assert.deepEqual(seen.root.filter((name: string) => !top.has(name)), []);
+  assert.deepEqual(seen.etc.filter((name: string) => !["ld.so.cache", "localtime"].includes(name)), []);
+  assert.equal(seen.app, true);
+  assert.deepEqual([seen.home, seen.state, seen.keys, seen.proc], [null, null, null, null]);
+  assert.deepEqual(seen.nets, ["lo"]);
+  assert.equal(seen.writes, false);
+  assert.deepEqual(seen.env, ["PWD"]);
+});
+
+test("M1 the sandbox's arguments, exactly", () => {
+  // As on the box: the system in /usr, with /lib and /lib64 linking into it,
+  // and an installed app under /var/lib/agentv/apps.
+  const box = workerJail({
+    dir: "/var/lib/agentv/apps/someone.radio",
+    node: "/usr/bin/node",
+    read: ["/usr/share/agentv/daemon/apps/worker.ts", "/usr/share/agentv/daemon/package.json"],
+    system: [{ path: "/usr" }, { path: "/lib", link: "usr/lib" }, { path: "/lib64", link: "usr/lib" }],
+    localtime: "/usr/share/zoneinfo/Europe/Oslo",
+  });
+  assert.deepEqual(box, [
+    "--unshare-all", "--unshare-user", "--die-with-parent", "--new-session", "--cap-drop", "ALL",
+    "--ro-bind", "/usr", "/usr",
+    "--symlink", "usr/lib", "/lib",
+    "--symlink", "usr/lib", "/lib64",
+    "--dev", "/dev",
+    "--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache",
+    "--symlink", "/usr/share/zoneinfo/Europe/Oslo", "/etc/localtime",
+    "--ro-bind", "/var/lib/agentv/apps/someone.radio", "/var/lib/agentv/apps/someone.radio",
+    "--chdir", "/var/lib/agentv/apps/someone.radio",
+    "--",
+  ]);
+  // Never the network, never anything to write, and nothing of the box's
+  // own state but the app's package.
+  assert.ok(!box.includes("--share-net"));
+  assert.ok(!box.includes("--bind") && !box.includes("--bind-try") && !box.includes("--proc"));
+  assert.deepEqual(box.filter((arg) => arg.startsWith("/var/lib/agentv") || arg.startsWith("/etc/agentv") || arg.startsWith("/home")), Array(3).fill("/var/lib/agentv/apps/someone.radio"));
+  // A built-in app is in /usr already; a checkout's files are each bound.
+  const builtin = workerJail({ dir: "/usr/share/agentv/apps/builtin/clock", node: "/usr/bin/node", read: [], system: [{ path: "/usr" }] });
+  assert.deepEqual(builtin.filter((arg) => arg === "--ro-bind").length, 1);
+  const checkout = workerJail({ dir: "/src/app", node: "/opt/node/bin/node", read: ["/src/daemon/apps/worker.ts"], system: [{ path: "/usr" }, { path: "/lib" }] });
+  assert.deepEqual(checkout.slice(6), [
+    "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib", "--dev", "/dev", "--ro-bind-try", "/etc/ld.so.cache", "/etc/ld.so.cache",
+    "--ro-bind", "/opt/node/bin/node", "/opt/node/bin/node", "--ro-bind", "/src/daemon/apps/worker.ts", "/src/daemon/apps/worker.ts", "--ro-bind", "/src/app", "/src/app",
+    "--chdir", "/src/app", "--",
+  ]);
+});
+
+test("M1 an app isn't loaded when its sandbox can't start, and never runs outside one instead", async () => {
+  const lines: string[] = [];
+  const ran = join(scratch, "ran");
+  const dir = app(tileApp("return {};"));
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  // A bubblewrap that says what the real one does where a plain user can't
+  // make a namespace, and one that isn't there at all.
+  const refuses = join(scratch, "bwrap-refuses");
+  writeFileSync(refuses, `#!/bin/sh\necho "bwrap: setting up uid map: Permission denied" >&2\ntouch ${ran}\nexit 1\n`, { mode: 0o755 });
+  for (const bwrap of [refuses, join(scratch, "no-such-bwrap")]) {
+    const h = new AppHost({ dir, manifest, settings: { serverUrl }, bwrap, log: (line) => lines.push(line) });
+    hosts.push(h);
+    await fails(h.call(viewer, "tile", "s"), "failed", /couldn't load: this tv couldn't start it safely/);
+  }
+  assert.ok(existsSync(ran), "the stand-in bubblewrap was what was started");
+  assert.ok(lines.some((line) => /its sandbox didn't start, so it isn't loaded: bwrap: setting up uid map: Permission denied/.test(line)), lines.join("\n"));
+  assert.ok(lines.some((line) => /its sandbox didn't start, so it isn't loaded: .*no-such-bwrap didn't run/.test(line)), lines.join("\n"));
+});
+
+test("F2 an app's fetch never reaches this box, even as its own declared origin", async () => {
+  // As on the box: no harness says the stand-in server may be reached.
+  const lines: string[] = [];
+  const dir = app(tileApp("const r = await fetch(ctx.settings.serverUrl + '/hello'); return { headline: { label: await r.text() } };"));
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  const h = new AppHost({ dir, manifest, settings: { serverUrl }, harness: { noSandbox: harness.noSandbox }, log: (line) => lines.push(line) });
+  hosts.push(h);
+  await fails(h.call(viewer, "tile", "s"), "failed", /isn't one of the app's origins/);
+  assert.ok(lines.some((line) => /refused a fetch to http:\/\/127\.0\.0\.1/.test(line)), lines.join("\n"));
+  assert.deepEqual([...allowedOrigins(manifest, { serverUrl: "http://localhost:3000" })], []);
+  assert.deepEqual([...allowedOrigins(manifest, { serverUrl: "http://[::ffff:7f00:1]:3000" })], []);
+});
+
+test("F2 an app can't speak as one of the box's own screens", async () => {
+  const echo = createServer((request, response) => response.end(JSON.stringify(request.headers)));
+  await new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve));
+  try {
+    const at = `http://127.0.0.1:${(echo.address() as { port: number }).port}`;
+    const dir = app(tileApp(`const r = await fetch(ctx.settings.serverUrl + "/", { headers: { "X-AgenTV-Screen": "1", "X-AgenTV-Grant": "abc", "X-Own": "kept" } }); return { headline: { label: await r.text() } };`));
+    const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    const h = new AppHost({ dir, manifest, settings: { serverUrl: at }, harness });
+    hosts.push(h);
+    const got = JSON.parse((await h.call<{ headline: { label: string } }>(viewer, "tile", "s")).headline.label);
+    assert.equal(got["x-own"], "kept");
+    assert.deepEqual(Object.keys(got).filter((name) => name.startsWith("x-agentv-")), []);
+  } finally {
+    echo.close();
+  }
 });
 
 test("a call that takes too long fails, and the app keeps answering", async () => {

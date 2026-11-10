@@ -1049,8 +1049,9 @@ export default {
 };
 APP
   # Installed the way an app built on this box is (ADR-039), so the PIN, when
-  # there is one, is asked for here in the terminal.
-  if ! agentv_app install --local "$work/app" --yes >/dev/null; then
+  # there is one, is asked for here in the terminal. It's served from this
+  # box, which no other app may reach, so the install says it's the stand-in.
+  if ! agentv_app install --local "$work/app" --yes --stand-in >/dev/null; then
     kill "$server" 2>/dev/null || true
     rm -rf "$work"
     wants S3.3 && result fail S3.3 "agentv app install --local didn't install the stand-in player"

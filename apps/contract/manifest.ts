@@ -11,6 +11,7 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, posix } from "node:path";
 import type { TileSize } from "./contract.ts";
+import { boxHost } from "./address.ts";
 import { checkPage, pageOriginProblem } from "./page.ts";
 
 // The contract's newest version. Contract 2 adds the page runtime (ADR-043);
@@ -215,7 +216,7 @@ function checkId(id: string, author: unknown, tier: Tier, problem: (text: string
   }
 }
 
-function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>, tier: Tier, problem: (text: string) => void): void {
+function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>, tier: Tier, problem: (text: string) => void, thisBox = false): void {
   if (!CONTRACTS.includes(tv.contract as number)) {
     problem(`tv.contract has to be ${CONTRACTS.join(" or ")}`);
   } else if (tv.runtime === "page" && tv.contract !== 2) {
@@ -281,6 +282,9 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
         const field = fieldOrigin(origin);
         if (field ? origin !== `{${placeholders(origin)[0]}}` : originOf(origin) !== origin) {
           problem(`'${origin}' isn't an origin: a scheme and a host, like https://example.org, or one setup field, like {serverUrl}`);
+        } else if (!field && !thisBox && boxHost(new URL(origin).hostname)) {
+          // The daemon answers on the box, and trusts what comes from it.
+          problem(`'${origin}' is this box, which an app never reaches`);
         }
       }
     }
@@ -393,7 +397,10 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
 }
 
 // Checks the app package in dir as an app of the given tier.
-export function validatePackage(dir: string, tier: Tier = "community"): Result {
+// thisBox lets a web or native app name this box as an origin, which no app
+// may otherwise. Only the installed record of the selftest's stand-in says
+// so (daemon/apps/install.ts), and a test harness: never the package.
+export function validatePackage(dir: string, tier: Tier = "community", options: { thisBox?: boolean } = {}): Result {
   const problems: string[] = [];
   const problem = (text: string) => problems.push(text);
 
@@ -487,7 +494,7 @@ export function validatePackage(dir: string, tier: Tier = "community"): Result {
   if (!isObject(m.tv)) {
     problem("the manifest needs a tv block");
   } else {
-    checkTv(m.tv, kinds, files, tier, problem);
+    checkTv(m.tv, kinds, files, tier, problem, options.thisBox === true);
   }
 
   return problems.length ? { problems } : { manifest: m as unknown as Manifest, problems };
