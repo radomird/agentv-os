@@ -7,7 +7,9 @@
 # /var/lib/agentv/shared. What's said to the TV goes to the router
 # (agentv-router.service, agentv-router-cli.service), which only the
 # agentv-router group reaches. Only the agentv-account group reaches
-# agentv-password.socket, which sets the desktop account's password.
+# agentv-password.socket, which sets the desktop account's password. The
+# agentv-builder group reads the builds (their status and screenshot), which
+# aren't for every user on the box.
 
 [Unit]
 Description=AgenTV daemon
@@ -24,7 +26,7 @@ Restart=on-failure
 # (ADR-033).
 TimeoutStopSec=5s
 DynamicUser=yes
-SupplementaryGroups=agentv-router agentv-account
+SupplementaryGroups=agentv-router agentv-account agentv-builder
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes

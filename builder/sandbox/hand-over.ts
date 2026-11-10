@@ -11,7 +11,12 @@
 // - install.json: an app an adult approved on the phone, put in place as a
 //   Local app (daemon/apps/install.ts), or a theme in /var/lib/agentv/themes
 //   (daemon/made-themes.ts), or the version before it, back for a
-//   rollback. The version that was on home is kept for that.
+//   rollback. The version that was on home is kept for that. Root checks
+//   the app it installs against what the approval showed: it reaches what
+//   was shown, every origin the build declared is in it, and stage B added
+//   none. The installed app, in root's own folder, is then the approved
+//   list: stage B's ticket takes its origins from there, never from a file
+//   the build wrote.
 // - remove.json: an app or a theme and every build of it, gone.
 // - sign-in.json: a plan's sign-in, the first time the builder runs
 //   (ADR-040): the provider's own CLI signs in, as agentv-builder in the same
@@ -24,10 +29,11 @@
 // for the daemon, and a refused build's status.json says why.
 
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, lchownSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lchownSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import type { BuildRequest, BuildStatus, Provider } from "../build.ts";
+import type { Manifest } from "../../apps/contract/manifest.ts";
+import { type BuildRequest, type BuildStatus, type Provider, reachesOf } from "../build.ts";
 import { CLIS, SIGN_IN } from "../providers.ts";
 import { KINDS, loadRecipes, planProblems, type Plan } from "../recipe.ts";
 import { checkTheme, themeRules } from "../theme.ts";
@@ -49,6 +55,8 @@ export interface HandOverOptions {
   systemctl: (args: string[]) => boolean;
 }
 
+// A version's folder: the builder, and its group to read.
+export const BUILD_MODE = 0o750;
 const BUILD = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const ID = /^local\.[a-z0-9][a-z0-9-]{0,62}$/;
 const VERSION = /^\d{1,6}\.\d{1,6}\.\d{1,6}$/;
@@ -120,10 +128,17 @@ export function escapePath(path: string): string {
     .join("-");
 }
 
-function write(path: string, data: unknown): void {
+// With a group, the file is one of root's own inside a build's folder: the
+// builder's group reads it, and nobody else does, like the rest of the
+// folder.
+function write(path: string, data: unknown, group?: number): void {
   const next = `${path}.next`;
   rmSync(next, { force: true });
-  writeFileSync(next, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o644, flag: "wx" });
+  writeFileSync(next, `${JSON.stringify(data, null, 2)}\n`, { mode: group === undefined ? 0o644 : 0o640, flag: "wx" });
+  if (group !== undefined) {
+    lchownSync(next, process.getuid!(), group);
+    chmodSync(next, 0o640);
+  }
   renameSync(next, path);
 }
 
@@ -204,6 +219,49 @@ export class HandOver {
     return stat?.isDirectory() && !stat.isSymbolicLink() ? dir : null;
   }
 
+  // The origins an adult approved with the app that's on home, from root's
+  // own copy of it, or null when that version isn't installed.
+  approvedOrigins(id: string, version: string): string[] | null {
+    try {
+      const record = JSON.parse(readFileSync(join(this.o.apps, "installed.json"), "utf8"))[id];
+      if (!record || record.version !== version) return null;
+      const path = join(this.o.apps, id, "manifest.json");
+      if (!lstatSync(path).isFile()) return null;
+      const manifest = JSON.parse(readFileSync(path, "utf8")) as Manifest;
+      if (manifest.id !== id || manifest.version !== version) return null;
+      return (manifest.tv?.origins ?? []).filter((origin): origin is string => typeof origin === "string");
+    } catch {
+      return null;
+    }
+  }
+
+  // The origins a build declared, from its state. The harness only ever
+  // adds to them.
+  private declared(dir: string): string[] {
+    try {
+      const path = join(dir, "state.json");
+      if (!lstatSync(path).isFile()) return [];
+      const state = JSON.parse(readFileSync(path, "utf8")) as { origins?: { origin?: unknown }[] };
+      return (Array.isArray(state.origins) ? state.origins : []).map((o) => o?.origin).filter((o): o is string => typeof o === "string");
+    } catch {
+      return [];
+    }
+  }
+
+  // Why the app root is about to install isn't the one its approval showed,
+  // or null. What's enforced and what an adult approved are one list.
+  private notAsApproved(manifest: Manifest, status: BuildStatus, dir: string): string | null {
+    if (JSON.stringify(reachesOf(manifest)) !== JSON.stringify(status.approval?.reaches ?? null)) return "what the app reaches isn't what its approval showed";
+    const listed = manifest.tv.origins ?? [];
+    // This version is on home already, so this is stage B's app: its origins
+    // are the ones approved with the app, no more and no fewer.
+    const approved = this.approvedOrigins(manifest.id, manifest.version);
+    if (status.phase === "stage-b" && !approved) return "the app this goes on with isn't on home any more";
+    if (approved) return listed.length !== approved.length || listed.some((origin) => !approved.includes(origin)) ? "the app's origins changed after they were approved" : null;
+    const unlisted = this.declared(dir).filter((origin) => !listed.includes(origin));
+    return unlisted.length ? `the build reached ${unlisted.join(", ")}, which its approval didn't show` : null;
+  }
+
   private readStatus(dir: string): BuildStatus | null {
     try {
       const path = join(dir, "status.json");
@@ -227,7 +285,14 @@ export class HandOver {
     try {
       const theme = join(dir, "work", "theme");
       if (!existsSync(join(dir, "work", "app")) && existsSync(theme)) await this.installTheme(theme, { id, name: String(status.understood?.name ?? themeName(id)).replace(/[\u0000-\u001f\u007f<>]/g, "").slice(0, 60), version });
-      else await installLocal(join(dir, "work", "app"), this.o.apps, async (manifest) => manifest.id === id && manifest.version === version);
+      else
+        await installLocal(join(dir, "work", "app"), this.o.apps, async (manifest) => {
+          if (manifest.id !== id || manifest.version !== version) return false;
+          // A version going back for a rollback was checked when it was approved.
+          const why = status.state === "approve" ? this.notAsApproved(manifest, status, dir) : null;
+          if (why) throw new Error(why);
+          return true;
+        });
     } catch (error) {
       return this.answer(build, false, `it couldn't be installed: ${(error as Error).message}`, "install");
     }
@@ -235,9 +300,9 @@ export class HandOver {
       if (other === version) continue;
       const otherDir = this.versionDir(id, other);
       const was = otherDir ? this.readStatus(otherDir) : null;
-      if (otherDir && was?.state === "installed") write(join(otherDir, "status.json"), { ...was, state: "kept", at: new Date().toISOString() });
+      if (otherDir && was?.state === "installed") write(join(otherDir, "status.json"), { ...was, state: "kept", at: new Date().toISOString() }, this.o.builder.gid);
     }
-    write(join(dir, "status.json"), { ...status, state: "installed", at: new Date().toISOString() });
+    write(join(dir, "status.json"), { ...status, state: "installed", at: new Date().toISOString() }, this.o.builder.gid);
     return this.answer(build, true, undefined, "install");
   }
 
@@ -346,12 +411,16 @@ export class HandOver {
       const stat = lstatSync(dir);
       if (!stat.isDirectory() || stat.isSymbolicLink()) return this.answer(request.build, false, "the build's folder isn't a folder");
     } else {
-      mkdirSync(dir, { mode: 0o755 });
+      mkdirSync(dir, { mode: BUILD_MODE });
       lchownSync(dir, this.o.builder.uid, this.o.builder.gid);
     }
+    // The builder's and its group's, and closed to everyone else on the box:
+    // a build can hold pages from a signed-in account. One made before this
+    // rule is closed here too.
+    chmodSync(dir, BUILD_MODE);
     const refuse = (reason: string) => {
       const status: BuildStatus = { build: request.build, id: request.id, version: request.version, phase: request.phase, state: "failed", steps: [], reason, started: request.at, at: request.at };
-      write(join(dir, "status.json"), status);
+      write(join(dir, "status.json"), status, this.o.builder.gid);
       return this.answer(request.build, false, reason);
     };
 
@@ -378,7 +447,16 @@ export class HandOver {
       request.budget = { build: cap.build, month: cap.month, spentMonth: spend?.month === month ? spend.spent : 0 };
     }
 
-    write(join(dir, "request.json"), request);
+    // Stage B reaches the origins approved with the app, from root's own
+    // copy of it, and nothing the build wrote since.
+    let approved: string[] | null = null;
+    if (request.phase === "stage-b") {
+      approved = this.approvedOrigins(request.id, request.version);
+      if (!approved) return refuse("the app isn't on home at this version, so there's nothing to go on with");
+      request.origins = approved;
+    }
+
+    write(join(dir, "request.json"), request, this.o.builder.gid);
     const ticket: Ticket = {
       build: request.build,
       id: request.id,
@@ -388,7 +466,7 @@ export class HandOver {
       path: request.path,
       recipe: request.recipe,
       phase: request.phase,
-      ...(request.plan ? { origins: request.plan.permissions.origins } : {}),
+      ...(request.plan ? { origins: request.plan.permissions.origins } : approved ? { origins: approved } : {}),
       ...(request.path === "key" ? { cap: { ...DEFAULT_CAP, ...checked.cap } } : {}),
     };
     mkdirSync(this.o.run, { recursive: true });

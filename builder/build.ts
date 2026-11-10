@@ -15,7 +15,8 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Media } from "../apps/contract/manifest.ts";
+import type { Manifest, Media } from "../apps/contract/manifest.ts";
+import { pagePermissions } from "../apps/contract/page.ts";
 import type { Kind, Plan, Recipe } from "./recipe.ts";
 
 // The provider the household picked, by its product's name (ADR-011, ADR-047).
@@ -39,6 +40,9 @@ export interface BuildRequest {
   budget?: { build: number; month: number; spentMonth: number };
   safeguards: boolean; // npm's guards (ADR-044)
   signedIn?: boolean; // the plan's sign-in just finished (ADR-040)
+  // Stage B: the origins an adult approved with the app, from root. Stage B
+  // reaches these and declares no more.
+  origins?: string[];
   at: string;
 }
 
@@ -141,9 +145,32 @@ export class Build {
   private write(name: string, data: unknown): void {
     mkdirSync(this.dir, { recursive: true });
     const path = join(this.dir, name);
-    writeFileSync(`${path}.next`, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o644 });
+    // For the builder and its group, which the daemon is in: never for
+    // every user on the box.
+    writeFileSync(`${path}.next`, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o640 });
     renameSync(`${path}.next`, path);
   }
+}
+
+// --- What the app reaches --------------------------------------------------
+
+// The origins this build declared, in order. One list: the build's filter
+// lets these through, the manifest lists these, and approval shows these.
+// A plan's are the ones an adult approved with the plan, and stage B's the
+// ones approved with the app, so neither can grow.
+export function declaredOrigins(build: Build, recipe: Recipe, request: BuildRequest): string[] {
+  if (recipe.kind === "plan") return [...(request.plan?.permissions.origins ?? [])];
+  if (request.phase === "stage-b") return [...(request.origins ?? [])];
+  return build.state().origins.map((o) => o.origin);
+}
+
+// What approval says an app reaches, from its manifest: a page app's in
+// plain words, a web app's origins. Root works it out again from the app it
+// installs (builder/sandbox/hand-over.ts), so what was shown is what's
+// installed.
+export function reachesOf(manifest: Manifest): { always: string[]; declared: string[] } {
+  if (manifest.tv.runtime === "page") return pagePermissions(manifest);
+  return { always: [], declared: (manifest.tv.origins ?? []).map((o) => `the internet, at ${o.replace(/^https?:\/\//, "")}`) };
 }
 
 // --- The app's manifest, as the builder keeps it -------------------------
@@ -185,15 +212,17 @@ export function keepManifest(build: Build, recipe: Recipe, request: BuildRequest
     if (tv.contract !== 1 && tv.contract !== 2) tv.contract = 1;
   }
 
-  // What it reaches: only inside the bounds, and only origins declared.
+  // What it reaches: only inside the bounds, and exactly the origins this
+  // build declared. An origin the build declared was live in its filter, so
+  // it's in the manifest whether the agent listed it or not, and approval
+  // shows it.
   const bounds = recipe.bounds;
-  const declared = new Set(recipe.kind === "plan" ? (request.plan?.permissions.origins ?? []) : state.origins.map((o) => o.origin));
-  if (Array.isArray(tv.origins)) {
-    const kept = tv.origins.filter((origin: unknown) => typeof origin === "string" && bounds.origins && declared.has(origin));
-    for (const origin of tv.origins) if (!kept.includes(origin)) said.push(`took out ${String(origin)}: it isn't an origin this build declared`);
-    if (kept.length) tv.origins = kept;
-    else delete tv.origins;
-  }
+  const declared = bounds.origins ? declaredOrigins(build, recipe, request) : [];
+  const listed: unknown[] = Array.isArray(tv.origins) ? tv.origins : [];
+  for (const origin of listed) if (!declared.includes(origin as string)) said.push(`took out ${String(origin)}: it isn't an origin this build declared`);
+  for (const origin of declared) if (!listed.includes(origin)) said.push(`added ${origin} to tv.origins: this build declared it, and approval shows every origin a build declared`);
+  if (declared.length) tv.origins = declared;
+  else delete tv.origins;
   if (Array.isArray(tv.media)) {
     const kept = tv.media.filter((media: unknown) => bounds.media.includes(media as Media));
     for (const media of tv.media) if (!kept.includes(media)) said.push(`took out tv.media ${String(media)}: this recipe doesn't read it`);
