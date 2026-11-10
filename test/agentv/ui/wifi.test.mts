@@ -144,6 +144,13 @@ async function until(check: () => Promise<boolean> | boolean, ms = 5000): Promis
 const phoneState = async () => (await phone.fetch(`/api/phone/state`)).json();
 const typeOnPhone = async (body: object) => (await phone.fetch(`/api/phone/text`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 const network = async () => (await fetch(`${url}/api/network`)).json();
+// The join root was handed last, once it has taken it. A look can come in
+// between, as when Settings has just opened.
+async function joinAsked(ssid: string): Promise<unknown> {
+  const last = () => asked.filter((request) => request.join).at(-1) as { join: { ssid: string } } | undefined;
+  await until(() => last()?.join.ssid === ssid);
+  return last();
+}
 
 async function send(method: string, route: string, body?: unknown, grant?: string): Promise<{ status: number; data: any }> {
   const response = await fetch(`${url}${route}`, {
@@ -262,7 +269,7 @@ for (const look of LOOKS) {
     assert.deepEqual(keys.at(-1), { key: "enter" });
     await page.keyboard.press("Enter");
     await page.waitForFunction((want) => document.querySelector(".wifi-join .headline")?.textContent === want, words(look, "Joining %s…", "Cafe 5G"));
-    assert.deepEqual(asked.at(-1), { join: { ssid: "Cafe 5G", password: PASSWORD, hidden: false } });
+    assert.deepEqual(await joinAsked("Cafe 5G"), { join: { ssid: "Cafe 5G", password: PASSWORD, hidden: false } });
     // It worked: back in Settings, on the new network.
     await page.waitForSelector('.wifi-panel .network.current[data-ssid="Cafe 5G"]');
     assert.equal(await text(page, '[data-line="online"]'), `${words(look, "Wi-Fi")} · Cafe 5G`);
@@ -295,7 +302,7 @@ for (const look of LOOKS) {
     // An open network joins at once, and one that hides its name asks for it.
     await pick(page, '.network[data-ssid="café open"]');
     await page.waitForSelector('.wifi-panel .network.current[data-ssid="café open"]');
-    assert.deepEqual(asked.at(-1), { join: { ssid: "café open", password: "", hidden: false } });
+    assert.deepEqual(await joinAsked("café open"), { join: { ssid: "café open", password: "", hidden: false } });
     await pick(page, '.wifi-panel [data-ssid=""]');
     await page.waitForSelector('.wifi-join input[type="text"].focused');
     assert.equal(await text(page, ".wifi-join .headline"), words(look, "Another network"));
@@ -306,7 +313,7 @@ for (const look of LOOKS) {
     await page.keyboard.type("upstairs1");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => /attic$/.test(document.querySelector('[data-line="online"]')?.textContent ?? ""));
-    assert.deepEqual(asked.at(-1), { join: { ssid: "attic", password: "upstairs1", hidden: true } });
+    assert.deepEqual(await joinAsked("attic"), { join: { ssid: "attic", password: "upstairs1", hidden: true } });
     await page.close();
   });
 
@@ -474,7 +481,7 @@ test("the hotspot's page after setup: the same page as setup's, with the adult P
   assert.match(await page.locator(".page").innerText(), /once it's on, go back to that wi-fi\.$/);
   assert.doesNotMatch(await page.locator(".page").innerText(), /new code|setup/);
   await until(() => asked.filter((request) => request.join).length === sent + 1);
-  assert.deepEqual(asked.at(-1), { join: { ssid: "Home", password: PASSWORD, hidden: false } }, "the PIN goes no further than the daemon");
+  assert.deepEqual(await joinAsked("Home"), { join: { ssid: "Home", password: PASSWORD, hidden: false } }, "the PIN goes no further than the daemon");
   await page.close();
   online = true;
   const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
