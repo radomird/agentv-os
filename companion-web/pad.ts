@@ -6,6 +6,19 @@ import { api, h, NeedsPin, prompt } from "./lib.ts";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 
+// Whether the box has an adult PIN, as its state last said. With none,
+// nothing on the phone names one (ADR-087).
+let pinSet = false;
+export function pinIs(set: boolean): void {
+  pinSet = set;
+}
+
+// A button's words for an action the PIN guards: they say so only when
+// there is one.
+export function withPinWords(words: string): string {
+  return pinSet ? `${words} with pin` : words;
+}
+
 // The grant for an action, or null when the pad was closed.
 export function askPin(what: string): Promise<string | null> {
   return new Promise((resolve) => {

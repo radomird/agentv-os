@@ -68,3 +68,20 @@ touch "$SCRATCH/home/.local/state/omarchy/reboot-required"
 run || fail "Omarchy's flag isn't a failure" "$(cat "$SCRATCH/out")"
 [[ ! -s $CALLS ]] || fail "nothing restarts when Omarchy's update wants the box restarted" "$(cat "$CALLS")"
 pass "with a new kernel, or when Omarchy's update says the box needs restarting, it leaves it to that"
+
+# An update from the TV has no sudo to give the owner, so it runs the two
+# halves apart: the daemon as root, with no sudo, and the TV session's units
+# as the owner (H1).
+rm "$SCRATCH/home/.local/state/omarchy/reboot-required"
+fake id '[[ $1 == "-u" ]] && echo "${FAKE_UID:-1000}"'
+half() {
+  : >"$CALLS"
+  env -u XDG_RUNTIME_DIR PATH="$fakes:$PATH" HOME="$SCRATCH/home" AGENTV_MODULES_DIR="$SCRATCH/modules" AGENTV_RESTART_WAIT=0 \
+    "$BASH" "$cmd" "$@" >"$SCRATCH/out" 2>&1
+}
+FAKE_UID=0 half --system || fail "root restarts the daemon alone" "$(cat "$SCRATCH/out")"
+[[ $(cat "$CALLS") == "systemctl restart agentv-daemon.service (XDG_RUNTIME_DIR=)" ]] || fail "H1 as root, the daemon restarts without sudo, and nothing of the session's" "$(cat "$CALLS")"
+half --session || fail "the owner restarts the TV session's units alone" "$(cat "$SCRATCH/out")"
+[[ $(cat "$CALLS") == "systemctl --user restart agentv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)" ]] || fail "H1 as the owner, only the TV session's units restart, without sudo" "$(cat "$CALLS")"
+! half --everything || fail "an option it doesn't know is refused"
+pass "H1 the two halves restart apart: the daemon as root without sudo, the TV session's units as the owner"

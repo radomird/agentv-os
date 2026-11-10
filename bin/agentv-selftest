@@ -782,7 +782,7 @@ s218() {
   if (( ${#denied[@]} == 0 )); then
     result pass S2.18 "polkit lets $user power off and restart with no password, with other sessions open too"
   else
-    result fail S2.18 "polkit asks $user for a password to ${denied[*]}: is 50-agentv-power.rules in /usr/share/polkit-1/rules.d/, and $user in wheel?"
+    result fail S2.18 "polkit asks $user for a password to ${denied[*]}: is 50-agentv-power.rules in /usr/share/polkit-1/rules.d/, and is $user the account the TV logs in as?"
   fi
   value=$(systemctl show -p TimeoutStopUSec --value agentv-daemon.service 2>/dev/null || true)
   (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("agentv-daemon.service ($value)")
@@ -937,7 +937,7 @@ s74() {
   local ai json flags=() routed percent median
   ai=$(ai_now)
   if [[ $(jq -r '.ai.provider // .provider // empty' <<<"$ai") != "claude" || $(jq -r '.ai.path // .path // empty' <<<"$ai") != "plan" ]]; then
-    result manual S7.4 "S7.4 is for a Claude plan: pick it in Settings → AI, past the PIN, then run agentv selftest S7.4 again"
+    result manual S7.4 "S7.4 is for a Claude plan: pick it in Settings → AI$(past_pin), then run agentv selftest S7.4 again"
     return 0
   fi
   json=$(mktemp)
@@ -991,6 +991,16 @@ ts_check() {
 # The daemon's own address, from the health check's.
 home_url() {
   printf '%s/' "${AGENTV_HEALTH_URL%/health}"
+}
+
+# Whether the box has an adult PIN. A line that sends you to a guarded page
+# names the PIN only when there is one.
+pin_set() {
+  [[ $(curl -fsS --max-time 5 "$(home_url)api/pin" 2>/dev/null | jq -r '.set // false' 2>/dev/null) == "true" ]]
+}
+
+past_pin() {
+  if pin_set; then printf ', past the PIN'; fi
 }
 
 # Whether this run checks an id.
@@ -1185,7 +1195,7 @@ s34() {
   tv_on S3.4 || return 0
   role=$(curl -fsS --max-time 5 "$(home_url)api/viewer" 2>/dev/null | jq -r '.viewer.role // empty' 2>/dev/null || true)
   if [[ $role != "child" ]]; then
-    result manual S3.4 "switch to a child's profile on the TV or the phone, then run agentv selftest S3.4 --app $id again. Switching back to an adult asks for the PIN"
+    result manual S3.4 "switch to a child's profile on the TV or the phone, then run agentv selftest S3.4 --app $id again$(pin_set && printf '. Switching back to an adult asks for the PIN')"
     return 0
   fi
   picked=$(curl -fsS --max-time 5 "$(home_url)api/apps/$id/profiles" 2>/dev/null | jq -r '.forChildren != null' 2>/dev/null || true)
@@ -1311,7 +1321,7 @@ s39() {
 # Why what's new has nothing, as the TV says it.
 whats_new_why() {
   case $1 in
-    no-key) echo "there's no TMDB key yet: add one in Settings → new this week, past the PIN" ;;
+    no-key) echo "there's no TMDB key yet: add one in Settings → new this week$(past_pin)" ;;
     no-region) echo "there's no region yet: pick one in Settings → new this week" ;;
     no-services) echo "TMDB lists none of this box's streaming apps for its region: Settings → new this week shows what each app matched" ;;
     *) echo "TMDB didn't answer: ${2:-no answer}" ;;

@@ -12,6 +12,8 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { BlockList, isIP } from "node:net";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -61,9 +63,34 @@ export function videoType(head: Buffer): VideoType | null {
   return null;
 }
 
+// The box's own addresses, on every interface it has.
+export function ownAddresses(): string[] {
+  return Object.values(networkInterfaces()).flatMap((list) => (list ?? []).map((one) => one.address));
+}
+
+// Whether a link's host is this box: localhost or a name under it, a
+// loopback address or "any address" in whichever way it's written (a URL
+// has already turned 127.1 and 0x7f000001 into 127.0.0.1), or one of the
+// box's own addresses. An IPv4 address inside an IPv6 one, as ::ffff:7f00:1,
+// counts as the IPv4 one.
+export function ownHost(hostname: string, own: readonly string[]): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  const family = isIP(host);
+  if (!family) return false;
+  const box = new BlockList();
+  box.addSubnet("127.0.0.0", 8);
+  box.addSubnet("0.0.0.0", 8);
+  box.addAddress("::1", "ipv6");
+  box.addAddress("::", "ipv6");
+  for (const address of own) if (isIP(address)) box.addAddress(address, isIP(address) === 6 ? "ipv6" : "ipv4");
+  return box.check(host, family === 6 ? "ipv6" : "ipv4");
+}
+
 // A link the TV can open: a web page, http or https, with no name or
-// password in it. Its site is what the notice says.
-export function cleanLink(value: unknown): { url: string; site: string } | { error: string } {
+// password in it, and somewhere other than this box, which has no page of
+// its own to share. Its site is what the notice says.
+export function cleanLink(value: unknown, own: readonly string[] = ownAddresses()): { url: string; site: string } | { error: string } {
   if (typeof value !== "string" || !value.trim()) return { error: "a link to send" };
   if (value.length > MAX_URL) return { error: `a link of up to ${MAX_URL} characters` };
   let url: URL;
@@ -74,6 +101,7 @@ export function cleanLink(value: unknown): { url: string; site: string } | { err
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "a link to a web page, http or https" };
   if (url.username || url.password) return { error: "a link without a name and password in it" };
+  if (ownHost(url.hostname, own)) return { error: "that isn't a link the tv can open" };
   return { url: url.href, site: url.hostname.replace(/^www\./, "") };
 }
 
@@ -87,9 +115,12 @@ export class Shared {
   // Changes to shared.json, one after another, so two shares at once don't
   // write over each other.
   private changing: Promise<unknown> = Promise.resolve();
+  // The box's own addresses, which a link can't point at.
+  private own: () => string[];
 
-  constructor(options: { dir: string }) {
+  constructor(options: { dir: string; addresses?: () => string[] }) {
     this.dir = options.dir;
+    this.own = options.addresses ?? ownAddresses;
   }
 
   private change<T>(change: (kept: Kept) => Promise<{ kept?: Kept; result: T }>): Promise<T> {
@@ -150,7 +181,7 @@ export class Shared {
   }
 
   async addLink(value: unknown, who: { from: string; to: string }): Promise<{ share?: Share; error?: string }> {
-    const link = cleanLink(value);
+    const link = cleanLink(value, this.own());
     if ("error" in link) return link;
     return { share: await this.keep({ ...this.fresh("link", link.site, who), url: link.url }) };
   }

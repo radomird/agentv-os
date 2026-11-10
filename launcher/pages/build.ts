@@ -297,6 +297,9 @@ export function buildPage(ctx: Ctx, which: string): View {
   let body: (HTMLElement | null)[] = [];
   let buttons: HTMLElement[] = [];
   let keys = "esc back";
+  // With no PIN, the phone approves without one, and nothing says otherwise
+  // (ADR-087).
+  const withPin = ctx.state.pin?.set ? ", with the pin," : "";
   switch (b.state) {
     case "starting":
     case "running":
@@ -370,7 +373,7 @@ export function buildPage(ctx: Ctx, which: string): View {
         note(p.says.toLowerCase()),
         h("div", { class: "updating-steps build-steps" }, ...p.steps.map((s, i) => h("div", { class: "updating-step" }, h("b", {}, `${i + 1}.`), ` ${s.does}`))),
         h("div", { class: "check-rows" }, row(true, "reaches", reach), row(true, "packages", p.packages.length ? p.packages.map((x) => x.name).join(", ") : "none"), row(true, "cost", costLine(b))),
-        note("approve it on your phone, with the pin, and your agent builds it."),
+        note(`approve it on your phone${withPin ? ", with the pin" : ""}, and your agent builds it.`),
       ];
       buttons = [button("not this", "forget", () => void forget())];
       break;
@@ -380,10 +383,10 @@ export function buildPage(ctx: Ctx, which: string): View {
       body = [
         note(
           b.phase === "stage-b"
-            ? `your agent learned how ${name} searches, starts a title and shows what's playing, and its checks passed. approve it on your phone, with the pin, to update ${name} on your home.`
+            ? `your agent learned how ${name} searches, starts a title and shows what's playing, and its checks passed. approve it on your phone${withPin} to update ${name} on your home.`
             : madeTheme(b)
-              ? "your agent made it, and its checks passed. approve it on your phone, with the pin, to make it your theme, on the tv and omarchy's desktop."
-              : `your agent built it, and its checks passed. approve it on your phone, with the pin, to put ${name} on your home.`,
+              ? `your agent made it, and its checks passed. approve it on your phone${withPin} to make it your theme, on the tv and omarchy's desktop.`
+              : `your agent built it, and its checks passed. approve it on your phone${withPin} to put ${name} on your home.`,
         ),
         steps(b),
       ];

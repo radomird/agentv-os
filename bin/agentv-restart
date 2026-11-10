@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # agentv:summary=Restart AgenTV's own services on the version now installed
+# agentv:args=[--system | --session]
 # agentv:hidden=true
 
 # After every update, once AgenTV's migrations are done (agentv-migrate runs
@@ -13,10 +14,21 @@
 # for a moment, then shows home. The TV session itself and everything of
 # Omarchy's keep running.
 #
-# Runs as the box's owner, with sudo for the daemon, as the update does.
+# Runs as the box's owner, with sudo for the daemon, as an update from a
+# terminal does. An update from the TV has no sudo to give the owner
+# (bin/agentv-update-tv), so it runs the two halves apart: --system as root,
+# for the daemon, and --session as the owner, for the TV session's units.
 # Exits 1 when something didn't restart.
 
 set -uo pipefail
+
+part="all"
+case "${1:-}" in
+  "") ;;
+  --system) part="system" ;;
+  --session) part="session" ;;
+  *) echo "Usage: agentv-restart [--system | --session]" >&2; exit 2 ;;
+esac
 
 MODULES=${AGENTV_MODULES_DIR:-/usr/lib/modules}
 DAEMON=${AGENTV_DAEMON_URL:-http://127.0.0.1:3000}
@@ -30,8 +42,11 @@ fi
 echo "Restarting AgenTV's services on the version now installed"
 status=0
 
-if systemctl is-active --quiet agentv-daemon.service; then
-  if sudo systemctl restart agentv-daemon.service; then
+as_root=(sudo)
+[[ $(id -u) == 0 ]] && as_root=()
+
+if [[ $part != "session" ]] && systemctl is-active --quiet agentv-daemon.service; then
+  if ${as_root[@]+"${as_root[@]}"} systemctl restart agentv-daemon.service; then
     started=$SECONDS
     until curl -fsS --max-time 3 "$DAEMON/health" >/dev/null 2>&1; do
       if (( SECONDS - started >= WAIT )); then
@@ -50,7 +65,7 @@ fi
 # The TV session's own systemd, which an update from the TV doesn't have in
 # its environment. Its units are PartOf the target, so they restart with it.
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
-if systemctl --user is-active --quiet agentv-tv.target 2>/dev/null; then
+if [[ $part != "system" ]] && systemctl --user is-active --quiet agentv-tv.target 2>/dev/null; then
   if ! systemctl --user restart agentv-tv.target; then
     echo "the TV session's services didn't restart" >&2
     status=1

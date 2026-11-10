@@ -34,7 +34,14 @@ export function profilesPanel(ctx: Ctx): HTMLElement[] {
       ),
     ),
     h("button", { class: "button", "data-focus": true, "data-action": "add-profile", onclick: () => ctx.go("profile/new") }, h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "add a profile"))),
-    h("p", { class: "panel-note" }, "a child's profile needs the adult pin, and sees only the apps ticked for children in their details. a locked one asks for the pin to open."),
+    // With no PIN, nothing here names one (ADR-087).
+    h(
+      "p",
+      { class: "panel-note" },
+      ctx.state.pin?.set
+        ? "a child's profile needs the adult pin, and sees only the apps ticked for children in their details. a locked one asks for the pin to open."
+        : "a child's profile sees only the apps ticked for children in their details.",
+    ),
   ];
 }
 
@@ -61,7 +68,9 @@ export function profile(ctx: Ctx, id: string): View {
   const lockValue = value("");
   const sharesValue = value("");
   const preview = h("span", {});
-  // Only an adult's profile locks; a child's is guarded already.
+  // Only an adult's profile locks; a child's is guarded already. With no
+  // PIN there's nothing to ask for, so the row isn't there (ADR-087).
+  const pinSet = ctx.state.pin?.set === true;
   const lock = h(
     "button",
     { class: "button", "data-focus": true, "data-action": "lock", "data-adjust": "lock", onclick: () => step("lock", 1) },
@@ -80,7 +89,7 @@ export function profile(ctx: Ctx, id: string): View {
     colourValue.textContent = `‹ ${draft.avatar} ›`;
     lockValue.textContent = `‹ ${draft.locked ? "yes" : "no"} ›`;
     sharesValue.textContent = `‹ ${draft.shares ? "yes" : "no"} ›`;
-    lock.style.display = draft.role === "child" ? "none" : "";
+    lock.style.display = draft.role === "child" || !pinSet ? "none" : "";
     shares.style.display = draft.role === "child" ? "" : "none";
     preview.replaceChildren(avatar({ name: name.value.trim() || "?", avatar: draft.avatar }, true));
   };
@@ -106,7 +115,7 @@ export function profile(ctx: Ctx, id: string): View {
   const save = async () => {
     const grant = await ctx.grant("changing profiles");
     if (grant === null) return;
-    const change = { name: name.value.trim(), role: draft.role, avatar: draft.avatar, locked: draft.role === "adult" && draft.locked, shares: draft.role === "child" && draft.shares };
+    const change = { name: name.value.trim(), role: draft.role, avatar: draft.avatar, locked: draft.role === "adult" && pinSet && draft.locked, shares: draft.role === "child" && draft.shares };
     try {
       if (fresh) await daemon.addViewer(change, grant || undefined);
       else await daemon.editViewer(id, change, grant || undefined);

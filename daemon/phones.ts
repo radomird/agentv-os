@@ -90,7 +90,7 @@ export class Phones {
     }
     this.pending = null;
     const token = randomBytes(32).toString("base64url");
-    const label = typeof name === "string" && name.trim() ? name.trim().slice(0, NAME_MAX) : "a phone";
+    const label = (typeof name === "string" && name.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, NAME_MAX)) || "a phone";
     const phone: Phone = { id: `p-${randomBytes(4).toString("hex")}`, name: label, pairedAt: new Date(this.now()).toISOString() };
     this.write([...this.read(), { ...phone, token: hash(token) }]);
     return { token, phone };
