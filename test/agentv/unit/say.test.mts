@@ -344,15 +344,21 @@ test("a child's profile routes only to children's apps", async () => {
 test("with no AI set up yet, the TV says what's missing, not a guess", async () => {
   const bare = new Daemon({ root: join(base, "root"), state: join(scratch, "bare"), builtins: null, port: 0, log: () => {}, keyStatus: join(base, "key.json") });
   const at = `http://127.0.0.1:${await bare.listen()}`;
+  const say = async () => (await (await fetch(`${at}/api/say`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentence: "play frozen" }) })).json()).said?.outcome;
   let said;
+  let before;
   try {
     mkdirSync(join(scratch, "bare"), { recursive: true });
     writeFileSync(join(scratch, "bare", "setup.json"), JSON.stringify({ done: true, at: "2026-10-29T18:00:00Z" }));
-    said = await (await fetch(`${at}/api/say`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentence: "play frozen" }) })).json();
+    said = await say();
+    // With the Ask box's builds turned off, the router's own answer.
+    writeFileSync(join(scratch, "bare", "features.json"), JSON.stringify({ askbuilds: false }));
+    before = await say();
   } finally {
     await bare.close();
   }
-  assert.deepEqual(said.said?.outcome, { kind: "none", why: "failed", say: "your agent didn't answer", detail: "set up your agent in settings → ai first" });
+  assert.deepEqual(said, { kind: "none", why: "no-ai", say: "set up an ai first: settings → ai" });
+  assert.deepEqual(before, { kind: "none", why: "failed", say: "your agent didn't answer", detail: "set up your agent in settings → ai first" });
 });
 
 test("S7.4 the router alone, through the daemon, routes with the apps it's told of and does nothing", async () => {

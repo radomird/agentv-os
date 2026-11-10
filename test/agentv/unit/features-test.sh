@@ -2,8 +2,11 @@
 
 # Guards the feature switches (daemon/features.ts) with Node's own test
 # runner, then runs the daemon the way its unit does and checks agentv
-# feature list, on and off: every track's switch is listed, on works on edge
-# only, off works anywhere, and each says when the daemon isn't there.
+# feature list, on and off: every track's switch is listed, on by default,
+# off works on any channel and lasts through a restart, on puts a switch back
+# to its default, and each says when the daemon isn't there. The rule that
+# only edge turns on a switch that's off by default is features.test.mts's,
+# since no switch is off by default now.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -13,14 +16,23 @@ type -P node >/dev/null || exit 0
 
 flags=()
 [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
-port=$(node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
+# start: the daemon on a free port, a new one each time, since another test
+# running beside this one can take a port between its pick and the listen,
+# and does across a restart. A port taken that way is tried again.
 start() {
-  AGENTV_PATH="$SCRATCH/root" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_LAN_PORT=0 AGENTV_SETUP_PORT=0 \
-    node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
-  pid=$!
-  for _ in $(seq 1 50); do
-    curl -fsS -o /dev/null "http://127.0.0.1:$port/health" 2>/dev/null && return 0
-    sleep 0.1
+  local _attempt
+  for _attempt in 1 2 3; do
+    port=$(node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
+    export AGENTV_PORT=$port
+    AGENTV_PATH="$SCRATCH/root" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_LAN_PORT=0 AGENTV_SETUP_PORT=0 \
+      node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
+    pid=$!
+    for _ in $(seq 1 50); do
+      curl -fsS -o /dev/null "http://127.0.0.1:$port/health" 2>/dev/null && return 0
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    grep -q EADDRINUSE "$SCRATCH/daemon.log" || break
   done
   fail "the daemon starts" "$(cat "$SCRATCH/daemon.log")"
 }
@@ -29,7 +41,6 @@ stop() {
   wait "$pid" 2>/dev/null || true
 }
 trap 'stop; rm -rf "$SCRATCH"' EXIT
-export AGENTV_PORT=$port
 # The channel, as the package says it: the daemon reads it each time.
 channel() {
   fake_agentv_path "$SCRATCH/root" "$1"
@@ -38,33 +49,26 @@ channel() {
 channel stable
 start
 out=$("$ROOT/bin/agentv" feature list) || fail "agentv feature list works" "$out"
-expected=$(printf '%-12s off\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
-[[ $out == "$expected" ]] || fail "T12.1 agentv feature list shows every track's switch, off" "$out"
-pass "T12.1 agentv feature list shows every track's switch, each off until it's turned on"
+expected=$(printf '%-12s on\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
+[[ $out == "$expected" ]] || fail "T12.1 agentv feature list shows every track's switch, on" "$out"
+pass "T12.1 agentv feature list shows every track's switch, each on by default"
 
-status=0
-out=$("$ROOT/bin/agentv" feature on looks 2>&1) || status=$?
-(( status == 1 )) && [[ $out == "Switches only turn on on edge. Run agentv channel edge, then agentv update, and try again." ]] ||
-  fail "on stable, agentv feature on says it's for edge" "$out"
-[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        off" ]] || fail "and the switch stays off"
-pass "on stable, agentv feature on says it's for edge, and changes nothing"
-
-channel edge
-out=$("$ROOT/bin/agentv" feature on looks) || fail "on edge, agentv feature on works" "$out"
-[[ $out == "looks is on." ]] || fail "it says what it did" "$out"
-[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        on" ]] || fail "agentv feature list shows it on"
-[[ $(jq -c . "$SCRATCH/state/features.json") == '{"looks":true}' ]] || fail "it's kept in features.json in the daemon's state" "$(cat "$SCRATCH/state/features.json")"
-grep -q "switches changed: looks on" "$SCRATCH/daemon.log" || fail "the daemon's log says so" "$(cat "$SCRATCH/daemon.log")"
-pass "on edge, agentv feature on turns a switch on, kept in the daemon's state"
+out=$("$ROOT/bin/agentv" feature off looks) || fail "on stable, agentv feature off works" "$out"
+[[ $out == "looks is off." ]] || fail "it says what it did" "$out"
+[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        off" ]] || fail "agentv feature list shows it off"
+[[ $(jq -c . "$SCRATCH/state/features.json") == '{"looks":false}' ]] || fail "it's kept in features.json in the daemon's state" "$(cat "$SCRATCH/state/features.json")"
+grep -q "switches changed: looks off" "$SCRATCH/daemon.log" || fail "the daemon's log says so" "$(cat "$SCRATCH/daemon.log")"
+pass "on stable, agentv feature off turns a switch off, kept in the daemon's state"
 
 stop
 start
-[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        on" ]] || fail "a switch stays on after the daemon restarts"
+[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        off" ]] || fail "a switch stays off after the daemon restarts"
+channel edge
+[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        off" ]] || fail "and on edge too"
 channel stable
-[[ $("$ROOT/bin/agentv" feature list | grep '^looks') == "looks        off" ]] || fail "back on stable, it's off again"
-out=$("$ROOT/bin/agentv" feature off looks) || fail "agentv feature off works on stable" "$out"
-[[ $out == "looks is off." && ! -e $SCRATCH/state/features.json ]] || fail "and leaves nothing to keep" "$out"
-pass "a switch stays on after a restart, goes off back on stable, and agentv feature off works anywhere"
+out=$("$ROOT/bin/agentv" feature on looks) || fail "agentv feature on puts it back, on stable too" "$out"
+[[ $out == "looks is on." && ! -e $SCRATCH/state/features.json ]] || fail "and leaves nothing to keep" "$out"
+pass "a switch stays off after a restart and on either channel, and agentv feature on puts it back to its default anywhere"
 
 status=0
 out=$("$ROOT/bin/agentv" feature on nope 2>&1) || status=$?

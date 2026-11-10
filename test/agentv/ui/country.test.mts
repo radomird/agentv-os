@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { PHASE_1, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -24,7 +24,7 @@ let state = "";
 const errors: string[] = [];
 
 before(async () => {
-  ({ daemon, url, state } = await startBox(0, undefined, { zone: "Europe/Oslo" }));
+  ({ daemon, url, state } = await startBox(0, undefined, { zone: "Europe/Oslo", features: PHASE_1 }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 

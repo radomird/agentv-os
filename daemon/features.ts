@@ -1,10 +1,11 @@
-// Feature switches (PHASE-2-PLAN.md, "Shared interfaces"). Something people
-// can see lands switched off, so a piece of work can merge before its design
-// is signed off. Each switch's default lives here, and a box's own changes
-// live in features.json in the daemon's state.
+// Feature switches (PHASE-2-PLAN.md, "Shared interfaces"). Phase 2's new
+// screens landed behind them, switched off, so each could merge before its
+// design was signed off. Each switch's default lives here, and a box's own
+// changes live in features.json in the daemon's state.
 //
-// - A switch's default flips to on here when its design page is signed off
-//   and its checks pass. The switches go away by 1.0.
+// - Every switch is on now, so a box shows the new screens as 1.0 will.
+//   Turning one off brings back the screen it replaced. The switches and
+//   those older screens come out after the couch test, before 1.0.
 // - Turning one on is for edge boxes only. On stable, a switch is on only
 //   when its default is, so a box that goes back to stable shows stable.
 // - Turning one off works everywhere.
@@ -14,18 +15,18 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Every switch, off until its design page is signed off. The track that
-// owns each one is in PHASE-2-PLAN.md's tracks table.
+// Every switch, and its default: all on. The track that built each one is
+// in PHASE-2-PLAN.md's tracks table.
 export const FEATURES = {
-  boxcheck: false, // the box check (track 3)
-  sizes: false, // sizes on any TV (track 4)
-  looks: false, // three looks for home (track 5)
-  dynamicbg: false, // dynamic backgrounds (track 6)
-  setup2: false, // setup, part 2 (track 7)
-  remote2: false, // the phone remote (track 8)
-  starter: false, // the streaming starter pack (track 9)
-  discover: false, // servers on your network (track 10)
-  askbuilds: false, // the Ask box builds (track 11)
+  boxcheck: true, // the box check (track 3)
+  sizes: true, // sizes on any TV (track 4)
+  looks: true, // three looks for home (track 5)
+  dynamicbg: true, // dynamic backgrounds (track 6)
+  setup2: true, // setup, part 2 (track 7)
+  remote2: true, // the phone remote (track 8)
+  starter: true, // the streaming starter pack (track 9)
+  discover: true, // servers on your network (track 10)
+  askbuilds: true, // the Ask box builds (track 11)
 } as const satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof FEATURES;

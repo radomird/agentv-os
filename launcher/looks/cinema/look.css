@@ -175,21 +175,35 @@ body.with-backdrop {
   min-height: 420px;
 }
 
+/* The featured poster, blurred over the top right of the screen as D1 has
+   it. It fades out to the left, under the title, and down, before the rows,
+   so whatever is behind home shows there: the theme's colour, or your
+   background. */
+.cinema-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 22%, rgba(0, 0, 0, 0.3) 42%, #000 70%), linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, #000 18%, #000 46%, rgba(0, 0, 0, 0.08) 62%, transparent 70%);
+  mask-image: linear-gradient(90deg, transparent 22%, rgba(0, 0, 0, 0.3) 42%, #000 70%), linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, #000 18%, #000 46%, rgba(0, 0, 0, 0.08) 62%, transparent 70%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
 .cinema-glow {
   position: absolute;
-  right: -10%;
-  top: -20%;
-  width: 70%;
-  height: 140%;
+  left: 30%;
+  top: -35%;
+  width: 80%;
+  height: 130%;
   object-fit: cover;
-  filter: blur(120px) saturate(1.6);
+  filter: blur(56px) saturate(1.4);
   opacity: 0;
   transition: opacity 600ms var(--ease);
-  pointer-events: none;
 }
 
 .cinema-glow.on {
-  opacity: 0.45;
+  opacity: 0.85;
 }
 
 .cinema-hero-text {
@@ -774,8 +788,4 @@ body.with-backdrop {
 .look-card.picked .look-frame {
   outline: 3px solid var(--bright-foreground);
   outline-offset: 4px;
-}
-
-.look-card-line {
-  color: var(--foreground);
 }

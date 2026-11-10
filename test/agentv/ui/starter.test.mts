@@ -51,7 +51,7 @@ async function walk(daemon: Awaited<ReturnType<typeof startBox>>["daemon"], url:
   await post("/api/setup", { done: false });
   await post("/api/setup/finish", { step: "welcome", keyboard: true });
   await post("/api/setup/ready", { update: "none" });
-  for (const step of ["ready", "country", "ai", "people"]) await post("/api/setup/finish", { step });
+  for (const step of ["ready", "box", "country", "ai", "people"]) await post("/api/setup/finish", { step });
   await post("/api/setup/goal", { goal });
   await post("/api/setup/finish", { step: "goal" });
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "apps");

@@ -56,6 +56,9 @@ async function setWeather(size: "s" | "m" | "l"): Promise<void> {
   assert.equal(response.status, 200, `${home.viewer.id}'s layout is saved`);
 }
 
+// The looks' switch, for a test of home as it was before them.
+const looks = (on: boolean) => fetch(`${url}/api/features`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ looks: on }) });
+
 const tile = '.grid .tile[data-id="agentv.weather"]';
 
 test("S3.8 the small weather tile draws MET's condition as its scene, with the temperature and the day's high and low", async () => {
@@ -151,7 +154,10 @@ test("the clock ticks on home, and choosing it opens the ambient screen", async 
   await page.close();
 });
 
-test("choosing Weather opens Settings → Weather, where left and right pick another city", async () => {
+test("choosing Weather opens Settings → Weather, where left and right pick another city", async (t) => {
+  // Home as it was before the looks: with them, Weather opens its own page.
+  await looks(false);
+  t.after(() => looks(true));
   const page = await tv();
   await page.locator(tile).hover();
   await page.keyboard.press("Enter");

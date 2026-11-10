@@ -44,11 +44,7 @@ const boxes: Box[] = [];
 // A box with the new remote's switch on or off, and the screen daemon's end
 // of the phone's stream.
 async function box(remote2: boolean): Promise<Box> {
-  const { daemon, url, state } = await startBox();
-  if (remote2) {
-    writeFileSync(join(state, "features.json"), JSON.stringify({ remote2: true }));
-    writeFileSync(join(state, "..", "channel"), "edge\n");
-  }
+  const { daemon, url } = await startBox(0, undefined, { features: { remote2 } });
   const made: Box = { daemon, url, phoneUrl: `http://127.0.0.1:${daemon.lanPort}`, keys: [], commands: [], typed: [], actions: [], playback: { ok: true, by: "page" }, input: null as unknown as RemoteInput };
   made.input = new RemoteInput({
     url: `${url}/api/remote`,

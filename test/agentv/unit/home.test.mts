@@ -45,20 +45,28 @@ test("the home screen gets the apps, who made each, and where they are", async (
   assert.deepEqual(byId["agentv.tube"].sizes.map((s: any) => s.size), ["s"]);
   assert.equal(byId["someone.radio"].needsSetup, true);
   assert.equal(byId["agentv.sample"].needsSetup, false);
-  // Until the viewer changes it, every app is on home, small, with all apps last.
-  assert.deepEqual(home.layout.map((t: any) => t.id), ["agentv.sample", "agentv.tube", "someone.radio", "local.mytv", "agentv.games", "apps"]);
+  // Until the viewer changes it, every app is on home, small. The looks
+  // have Apps in their own bar, so there's no all apps tile.
+  assert.deepEqual(home.layout.map((t: any) => t.id), ["agentv.sample", "agentv.tube", "someone.radio", "local.mytv", "agentv.games"]);
   assert.ok(home.layout.every((t: any) => t.size === "s"));
+  // With the looks turned off, the all apps tile is last, as before them.
+  assert.equal((await send("PUT", "/api/features", { looks: false })).status, 200);
+  try {
+    assert.deepEqual((await get("/api/home")).layout.map((t: any) => t.id), ["agentv.sample", "agentv.tube", "someone.radio", "local.mytv", "agentv.games", "apps"]);
+  } finally {
+    await send("PUT", "/api/features", { looks: true });
+  }
 });
 
 test("a layout is kept only when the grid can draw it", async () => {
-  const good = [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "apps", x: 2, y: 0, size: "s" }];
+  const good = [{ id: "agentv.sample", x: 0, y: 0, size: "l" }, { id: "agentv.tube", x: 2, y: 0, size: "s" }];
   assert.equal((await send("PUT", "/api/layout", { layout: good })).status, 200);
   assert.deepEqual((await get("/api/home")).layout, good);
   for (const [layout, why] of [
     [[{ id: "agentv.tube", x: 0, y: 0, size: "m" }], /can't be size m/],
     [[{ id: "agentv.sample", x: 3, y: 0, size: "l" }], /doesn't fit/],
     [[{ id: "agentv.nothing", x: 0, y: 0, size: "s" }], /isn't an app on this box/],
-    [[{ id: "apps", x: 0, y: 0, size: "s" }, { id: "agentv.tube", x: 0, y: 0, size: "s" }], /overlaps/],
+    [[{ id: "local.mytv", x: 0, y: 0, size: "s" }, { id: "agentv.tube", x: 0, y: 0, size: "s" }], /overlaps/],
   ] as const) {
     const { status, data } = await send("PUT", "/api/layout", { layout });
     assert.equal(status, 400);

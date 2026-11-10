@@ -10,7 +10,7 @@ import { createRequire } from "node:module";
 import { after, before, beforeEach, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import { Daemon } from "../../../daemon/server.ts";
-import { FIXTURES, ROOT, rest, startBox, type Fixture } from "./box.mts";
+import { FIXTURES, PHASE_1, ROOT, rest, startBox, type Fixture } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -41,7 +41,7 @@ let apps = "";
 let state = "";
 
 before(async () => {
-  ({ daemon, url, apps, state } = await startBox(0, [...FIXTURES, ...EXTRA]));
+  ({ daemon, url, apps, state } = await startBox(0, [...FIXTURES, ...EXTRA], { features: PHASE_1 }));
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 
