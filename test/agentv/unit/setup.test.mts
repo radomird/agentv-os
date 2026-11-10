@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Daemon } from "../../../daemon/server.ts";
 import { network, OF, ORDER, Setup, STEPS, type StepEntry } from "../../../daemon/setup.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-setup-"));
 const state = join(scratch, "state");
@@ -195,11 +196,11 @@ test("S5.6 each step moved on is broadcast, kept, and said in /health, and setup
 
 test("a paired phone hears setup's step while it's on, and nothing once it's done", async () => {
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-  const paired = await (await fetch(`${lanUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json();
-  const phone = async () => (await fetch(`${lanUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${paired.token}` } })).json();
+  const paired = await pairPhone(lanUrl, code, "iphone");
+  const phone = async () => (await paired.fetch(`/api/phone/state`)).json();
   assert.deepEqual((await phone()).setup, { step: "welcome", part: "3 of 12 · getting ready", n: 3, of: 12, muted: false });
   // The phone mutes the soundtrack, and the TV hears it.
-  const mute = await fetch(`${lanUrl}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${paired.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) });
+  const mute = await paired.fetch(`/api/phone/setup-music`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) });
   assert.equal(mute.status, 200);
   assert.equal((await phone()).setup.muted, true);
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.muted, true);
@@ -208,7 +209,7 @@ test("a paired phone hears setup's step while it's on, and nothing once it's don
   assert.deepEqual((await (await fetch(`${url}/api/setup`)).json()).phones, ["iphone"]);
   await post("/api/setup", { done: true });
   assert.equal((await phone()).setup, null);
-  assert.equal((await fetch(`${lanUrl}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${paired.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) })).status, 409, "nothing to mute once setup is done");
+  assert.equal((await paired.fetch(`/api/phone/setup-music`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) })).status, 409, "nothing to mute once setup is done");
   await post("/api/setup", { done: false });
 });
 
@@ -363,8 +364,8 @@ test("T7.1 with setup's own switch on, the setup screens and a paired phone hear
     assert.equal(info.numbers.goal, 8);
     assert.equal(info.of, 12);
     const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-    const paired = await (await fetch(`${lanUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json();
-    const phone = await (await fetch(`${lanUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${paired.token}` } })).json();
+    const paired = await pairPhone(lanUrl, code, "pixel");
+    const phone = await (await paired.fetch(`/api/phone/state`)).json();
     assert.deepEqual(phone.setup, { step: "welcome", part: "3 of 12 · getting ready", n: 3, of: 12, muted: false });
   } finally {
     rmSync(join(state, "features.json"), { force: true });

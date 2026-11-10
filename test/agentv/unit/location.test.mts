@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { called, count, decide, phoneZone, startOn, zoneChoices } from "../../../daemon/location.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 process.env.AGENTV_ZONE_TAB = join(ROOT, "test/agentv/fixtures/met/zone.tab");
@@ -141,12 +142,11 @@ test("a paired phone sends its zone, picks the location, and the TV's step moves
   await send(url, "POST", "/api/setup/finish", { step: "ready" });
   await send(url, "POST", "/api/setup/finish", { step: "box" });
   const code = (await (await send(url, "POST", "/api/phones/pair", {})).json()).pairing.code;
-  const paired = await (await send(lanUrl, "POST", "/api/phone/pair", { code, name: "pixel" })).json();
-  const auth = { Authorization: `Bearer ${paired.token}` };
-  assert.equal((await send(lanUrl, "POST", "/api/phone/zone", { zone: "Europe/Oslo" }, auth)).status, 200);
-  const where = await (await fetch(`${lanUrl}/api/phone/location`, { headers: auth })).json();
+  const phone = await pairPhone(lanUrl, code, "pixel");
+  assert.equal((await phone.call("POST", "/api/phone/zone", { zone: "Europe/Oslo" })).status, 200);
+  const where = await phone.json("GET", "/api/phone/location");
   assert.equal(where.start.called, "norway");
-  const set = await (await send(lanUrl, "PUT", "/api/phone/location", { code: "NO" }, auth)).json();
+  const set = await phone.json("PUT", "/api/phone/location", { code: "NO" });
   assert.deepEqual([set.location.zone, set.setup.step], ["Europe/Oslo", "ai"]);
   assert.equal((await send(lanUrl, "POST", "/api/phone/zone", { zone: "Europe/Oslo" })).status, 401, "only a paired phone");
 });

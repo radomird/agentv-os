@@ -1,6 +1,6 @@
 // AgenTV's phone companion (ADR-008, ADR-023, ADR-032, ADR-037, stage 4): the
 // page a phone opens from the TV's QR code, on the same network. It pairs
-// with the code the TV shows and keeps the token the box gives it. Then it's:
+// with the code the TV shows and keeps the key it and the box agree on. Then it's:
 // - a remote: a d-pad, Back, Home, play or pause and Settings;
 // - a keyboard: what's typed in its text box goes to the TV, the phone
 //   keyboard's dictation too, and on AgenTV's sign-in screen, a name and a
@@ -21,7 +21,8 @@ import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { arrange } from "./arrange.ts";
 import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild, pushBanner, pushPage } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
-import { api, avatar, h, keep, prompt, toast, token, Unpaired, type Viewer } from "./lib.ts";
+import { pair as pairWith } from "./channel.ts";
+import { api, avatar, forget, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, pinIs, withPin, withPinWords } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { Remote2 } from "./remote2.ts";
@@ -128,7 +129,7 @@ const remote2 = new Remote2(app, {
 
 const failed = (error: unknown) => {
   if (error instanceof Unpaired) {
-    keep(null);
+    forget();
     state = null;
     pairView();
     return;
@@ -138,9 +139,10 @@ const failed = (error: unknown) => {
 
 // --- Pairing ------------------------------------------------------------------
 
-async function pair(code: string): Promise<boolean> {
+// With the secret from the TV's QR code, or the code typed from the TV.
+async function pair(how: { secret: string } | { code: string }): Promise<boolean> {
   try {
-    keep((await api<{ token: string }>("POST", "/api/phone/pair", { code, name: phoneName() })).token);
+    await pairWith(how, phoneName());
     // The phone's own time zone, for setup's location step to start from,
     // while setup is on.
     void api("POST", "/api/phone/zone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
@@ -154,7 +156,7 @@ async function pair(code: string): Promise<boolean> {
 function pairView(): void {
   const field = h("input", { class: "field code", type: "text", autocapitalize: "characters", autocomplete: "one-time-code", maxlength: "7", placeholder: "ABC123", "aria-label": "the code on the tv" }) as HTMLInputElement;
   const go = async () => {
-    if (await pair(field.value)) void start();
+    if (await pair({ code: field.value })) void start();
   };
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") void go();
@@ -892,7 +894,7 @@ async function refresh(force = false, wait = false): Promise<void> {
 // the page shows.
 async function follow(): Promise<void> {
   for (;;) {
-    if (document.visibilityState === "visible" && token() && state) await refresh(false, true);
+    if (document.visibilityState === "visible" && paired() && state) await refresh(false, true);
     else await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 }
@@ -903,23 +905,27 @@ async function start(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  // A code from the TV's QR code pairs this phone, once.
+  // The secret in the TV's QR code pairs this phone, once. It comes after
+  // the # in the address, which the browser keeps to itself. A code in the
+  // address does too, as typing it would.
+  const secret = new URLSearchParams(location.hash.slice(1)).get("pair");
   const code = new URLSearchParams(location.search).get("code");
-  if (code) {
+  const how = secret ? { secret } : code ? { code } : null;
+  if (how) {
     history.replaceState(null, "", "/");
-    if (!token()) await pair(code);
+    if (!paired()) await pair(how);
     else {
       try {
         await api("GET", "/api/phone/state");
       } catch (error) {
         if (error instanceof Unpaired) {
-          keep(null);
-          await pair(code);
+          forget();
+          await pair(how);
         }
       }
     }
   }
-  if (!token()) return pairView();
+  if (!paired()) return pairView();
   await start();
   void follow();
 }

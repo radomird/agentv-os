@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { FEATURE_NAMES, FEATURES, featureOn, Features, features, isFeature } from "../../../daemon/features.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-features-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -155,10 +156,10 @@ test("T12.1 through the daemon: GET and PUT /api/features, the event, and a pair
     assert.equal((await fetch(`${phone}/api/phone/features`)).status, 401);
     const { code } = daemon.phones.code();
     {
-      const { token } = await (await fetch(`${phone}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "test" }) })).json();
-      const read = await fetch(`${phone}/api/phone/features`, { headers: { Authorization: `Bearer ${token}` } });
+      const { token } = { token: await pairPhone(phone, code, "test") };
+      const read = await token.fetch(`/api/phone/features`);
       assert.equal((await read.json()).discover, false);
-      const write = await fetch(`${phone}/api/features`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: '{"looks": false}' });
+      const write = await token.fetch(`/api/features`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: '{"looks": false}' });
       assert.notEqual(write.status, 200);
     }
   } finally {

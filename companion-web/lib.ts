@@ -1,5 +1,9 @@
 // What the phone companion's views share: building elements, the box's
-// requests with the phone's token, and a toast.
+// requests, and a toast.
+
+import { call, Unpaired } from "./channel.ts";
+
+export { call, forget, paired, Unpaired } from "./channel.ts";
 
 export type Child = Node | string | null | undefined | false;
 
@@ -19,25 +23,6 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<s
   return el;
 }
 
-const TOKEN = "agentv-phone-token";
-
-export function token(): string | null {
-  try {
-    return localStorage.getItem(TOKEN);
-  } catch {
-    return null;
-  }
-}
-
-export function keep(value: string | null): void {
-  try {
-    if (value) localStorage.setItem(TOKEN, value);
-    else localStorage.removeItem(TOKEN);
-  } catch {
-    // A private window keeps it only while the page is open.
-  }
-}
-
 let toastTimer = 0;
 export function toast(text: string, ok = false): void {
   const el = document.getElementById("toast")!;
@@ -48,25 +33,15 @@ export function toast(text: string, ok = false): void {
   toastTimer = window.setTimeout(() => el.classList.remove("on"), 3000);
 }
 
-// The box said this phone isn't paired, or not any more.
-export class Unpaired extends Error {}
 // The box said this needs the adult PIN.
 export class NeedsPin extends Error {}
 
+// A request to the box, signed and sealed (channel.ts), and its JSON answer.
 export async function api<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    headers: {
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(token() ? { Authorization: `Bearer ${token()}` } : {}),
-      ...(grant ? { "X-AgenTV-Grant": grant } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 401) throw new Unpaired(data.error ?? "this phone isn't paired");
-  if (response.status === 403 && data.pin) throw new NeedsPin(data.error ?? "that needs the pin");
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? "the tv didn't answer");
+  const { status, ok, data } = await call(method, path, body === undefined ? undefined : { json: body }, grant);
+  if (status === 401) throw new Unpaired(data.error ?? "this phone isn't paired");
+  if (status === 403 && data.pin) throw new NeedsPin(data.error ?? "that needs the pin");
+  if (!ok || data.ok === false) throw new Error(data.error ?? "the tv didn't answer");
   return data as T;
 }
 

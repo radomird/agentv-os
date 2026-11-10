@@ -23,6 +23,7 @@ import type { Daemon } from "../../../daemon/server.ts";
 import { startArchives, type Archives } from "./archives.mts";
 import { startImmichShare } from "./immich-share.mts";
 import { PHASE_1, ROOT, startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 // Where the TV is (ADR-055): the country to confirm, or, on a box whose
 // time zone has no country, the picker.
@@ -222,8 +223,7 @@ test("stage 4 the welcome screen shows the hotspot's QR code, then the code that
   assert.equal(await textOf(page, ".qr-label"), `code ${pairing.code}`);
 
   // A phone pairs with it, and setup moves on to getting ready.
-  const paired = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: pairing.code, name: "iphone" }) });
-  assert.equal(paired.status, 200);
+  await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, pairing.code, "iphone");
   await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "iphone is paired.", null, { timeout: 5000 });
   await page.waitForSelector(".ready-list", { timeout: 5000 });
   const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
@@ -764,8 +764,8 @@ test("who watches: a child's profile asks for the adult PIN first, chosen twice 
 
   // A phone follows the TV.
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-  const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
-  const phoneTv = async () => (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/state`, { headers: { Authorization: `Bearer ${token}` } })).json()).tv;
+  const token = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
+  const phoneTv = async () => (await (await token.fetch(`/api/phone/state`)).json()).tv;
 
   await page.locator('[data-action="add"]').click();
   await page.waitForSelector(".person-field.focused");
@@ -1027,9 +1027,9 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
     await page.locator('[data-background="photos"]').click();
     await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "send a photo.");
     const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-    const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
+    const token = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
     const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
-    assert.equal((await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/background?credit=photo%20by%20the%20test`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" }, body: new Uint8Array(jpeg) })).status, 200);
+    assert.equal((await token.fetch(`/api/phone/background?credit=photo%20by%20the%20test`, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: new Uint8Array(jpeg) })).status, 200);
     await page.waitForSelector(".backs .back");
   } else {
     await page.locator('[data-background="photos"]').click();
@@ -1221,8 +1221,8 @@ test("S5.4 the soundtrack plays from the welcome screen with its player, the equ
 
   // The phone plays it again, and mutes it.
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-  const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
-  const fromPhone = (muted: boolean) => fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted }) });
+  const token = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
+  const fromPhone = (muted: boolean) => token.fetch(`/api/phone/setup-music`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ muted }) });
   assert.equal((await fromPhone(false)).status, 200);
   await page.waitForSelector(".player:not(.muted)");
   assert.equal((await fromPhone(true)).status, 200);

@@ -16,6 +16,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { PHASE_1, startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -39,7 +40,7 @@ after(async () => {
   assert.deepEqual(errors, []);
 });
 
-type Box = Awaited<ReturnType<typeof startBox>> & { lan: string; token: string };
+type Box = Awaited<ReturnType<typeof startBox>> & { lan: string; paired: TestPhone };
 
 async function box(): Promise<Box> {
   // The walk goes through phase 1's screens: its Settings rows and its phone
@@ -47,20 +48,20 @@ async function box(): Promise<Box> {
   const started = await startBox(0, undefined, { zone: "Europe/Oslo", features: PHASE_1 });
   const lan = `http://127.0.0.1:${started.daemon.lanPort}`;
   const code = ((await (await fetch(`${started.url}/api/phones/pair`, { method: "POST" })).json()) as any).pairing.code;
-  const paired = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "another phone" }) })).json()) as any;
-  return { ...started, lan, token: paired.token };
+  return { ...started, lan, paired: await pairPhone(lan, code, "another phone") };
 }
 
 async function send(b: Box, method: string, path: string, body?: unknown, options: { grant?: string; phone?: boolean } = {}): Promise<Record<string, any>> {
-  const response = await fetch(`${options.phone ? b.lan : b.url}${path}`, {
+  // The phone's requests are signed and sealed, and its answers opened.
+  const init = {
     method,
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(options.grant ? { "X-AgenTV-Grant": options.grant } : {}),
-      ...(options.phone ? { Authorization: `Bearer ${b.token}` } : {}),
-    },
+    } as Record<string, string>,
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  };
+  const response = options.phone ? await b.paired.fetch(path, init) : await fetch(`${b.url}${path}`, init);
   return { status: response.status, ...((await response.json().catch(() => ({}))) as object) };
 }
 

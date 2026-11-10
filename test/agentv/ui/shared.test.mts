@@ -13,6 +13,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page, Response } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { ROOT, rest, startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(join(process.env.AGENTV_UI_MODULES ?? join(ROOT, "node_modules"), "x.js"));
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -28,7 +29,7 @@ let browser: Browser;
 let daemon: Daemon;
 let url = "";
 let lan = "";
-let token = "";
+let token: TestPhone;
 const dir = mkdtempSync(join(tmpdir(), "agentv-shared-ui-"));
 
 before(async () => {
@@ -38,7 +39,7 @@ before(async () => {
   ({ daemon, url } = await startBox());
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
-  token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+  token = await pairPhone(lan, code, "iphone");
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 
@@ -55,9 +56,9 @@ const post = async (path: string, body?: unknown, grant?: string) =>
 // What a phone sends, as the companion's Share page does.
 async function share(kind: "link" | "photo" | "video", body: unknown, query = ""): Promise<{ status: number; data: any }> {
   const json = kind === "link";
-  const response = await fetch(`${lan}/api/phone/share/${kind}${query}`, {
+  const response = await token.fetch(`/api/phone/share/${kind}${query}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": json ? "application/json" : kind === "photo" ? "image/jpeg" : "video/webm" },
+    headers: { "Content-Type": json ? "application/json" : kind === "photo" ? "image/jpeg" : "video/webm" },
     body: json ? JSON.stringify(body) : new Uint8Array(body as Buffer),
   });
   return { status: response.status, data: await response.json() };

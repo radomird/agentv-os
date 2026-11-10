@@ -14,6 +14,7 @@ import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { HOME_UP } from "../../../daemon/screen.ts";
 import { FIXTURES, PHASE_1, ROOT, rest, startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -612,9 +613,9 @@ test("with the looks off, Settings → look takes the background from a phone's 
   // A photo from a paired phone is the background now.
   const json = { "Content-Type": "application/json" };
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST", headers: json, body: "{}" })).json()).pairing.code;
-  const token = (await (await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/pair`, { method: "POST", headers: json, body: JSON.stringify({ code, name: "pixel" }) })).json()).token;
+  const token = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
   const photo = picture(shipped[shipped.length - 1]);
-  const sent = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/background?credit=a%20photo`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": photo.type }, body: new Uint8Array(photo.body) });
+  const sent = await token.fetch(`/api/phone/background?credit=a%20photo`, { method: "POST", headers: { "Content-Type": photo.type }, body: new Uint8Array(photo.body) });
   assert.equal(sent.status, 200);
   assert.equal((await (await fetch(`${url}/api/backgrounds`)).json()).source, "photos");
   const page = await tv();

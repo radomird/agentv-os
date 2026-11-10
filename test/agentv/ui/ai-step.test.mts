@@ -17,6 +17,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -103,8 +104,8 @@ async function tv(): Promise<Page> {
 // An adult on a paired phone accepts the terms the TV shows.
 async function acceptOnPhone(provider: string, way: string): Promise<void> {
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
-  const paired = await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "pixel" }) })).json();
-  const accepted = await fetch(`${lan}/api/phone/terms`, { method: "POST", headers: { Authorization: `Bearer ${paired.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ provider, path: way }) });
+  const paired = await pairPhone(lan, code, "pixel");
+  const accepted = await paired.fetch(`/api/phone/terms`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, path: way }) });
   assert.equal(accepted.status, 200);
 }
 
