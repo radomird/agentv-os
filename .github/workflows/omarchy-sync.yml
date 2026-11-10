@@ -82,7 +82,8 @@ jobs:
       packages: build
       update-test: true
       own-repo: true
-    secrets: inherit
+    # No secrets: the sync's packages are signed with a throwaway key made
+    # in the run (image.yml).
 
   decide:
     name: Merge itself, or say why not

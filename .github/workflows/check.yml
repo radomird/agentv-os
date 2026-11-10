@@ -377,7 +377,8 @@ jobs:
       update-test: true
       from-disk: ${{ needs.changes.outputs.from-disk == 'true' }}
       own-repo: true
-    secrets: inherit
+    # No secrets: a pull request's packages are signed with a throwaway key
+    # made in the run (image.yml).
 
   report:
     name: "Which acceptance checks passed"
