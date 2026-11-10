@@ -21,13 +21,14 @@ import { RemoteInput } from "../../../daemon/remote.ts";
 import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "../../../daemon/remote-play.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const PAGES = resolve(import.meta.dirname, "../fixtures/remote");
 
 let daemon: Daemon;
 let url = "";
 let phoneUrl = "";
-let token = "";
+let token: TestPhone;
 let server: Server;
 let site = "";
 let services: ChildProcess;
@@ -66,7 +67,7 @@ before(async () => {
   });
   input.start();
   const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
-  ({ token } = await (await fetch(`${phoneUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: pairing.code, name: "android phone" }) })).json());
+  token = await pairPhone(phoneUrl, pairing.code, "android phone");
 });
 
 after(async () => {
@@ -86,7 +87,7 @@ async function until(check: () => Promise<boolean> | boolean, ms = 3000): Promis
 }
 
 async function press(action: "toggle" | "next"): Promise<{ status: number; body: Record<string, unknown> }> {
-  const response = await fetch(`${phoneUrl}/api/phone/playback`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ action }) });
+  const response = await token.fetch(`/api/phone/playback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
   return { status: response.status, body: await response.json() };
 }
 
@@ -129,7 +130,7 @@ test("T8.2 with nothing to play, the phone hears so, and a native app gets the m
 });
 
 test("T8.2 a bad press is refused, and with no TV session the phone hears that too", async () => {
-  const response = await fetch(`${phoneUrl}/api/phone/playback`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ action: "rewind" }) });
+  const response = await token.fetch(`/api/phone/playback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rewind" }) });
   assert.equal(response.status, 400);
   // The screen daemon stops: the stream closes, and the next press says so.
   input.stop();

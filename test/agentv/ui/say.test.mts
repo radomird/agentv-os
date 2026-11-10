@@ -192,9 +192,14 @@ test("words that land after their sentence leave the bar on 'which one?'", async
   const hand = await phone();
   let release: () => void = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
+  // What the phone sends is sealed, so the words are known by their turn:
+  // the box's opening goes first, on its focus, and the words second.
   let words = 0;
+  let live = 0;
+  let late: unknown = null;
   await hand.route(/\/api\/phone\/say\/live$/, async (route) => {
-    if (JSON.parse(route.request().postData() ?? "{}").text !== undefined) {
+    if (++live === 2) {
+      late = route.request();
       words++;
       await held;
     }
@@ -205,7 +210,7 @@ test("words that land after their sentence leave the bar on 'which one?'", async
   await hand.click('[data-action="say"]');
   await screen.waitForSelector("#said.on .said-choice");
   assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
-  const landed = hand.waitForResponse((response) => response.url().endsWith("/api/phone/say/live") && (response.request().postData() ?? "").includes('"text"'));
+  const landed = hand.waitForResponse((response) => response.request() === late);
   release();
   await landed;
   // Long enough for an event the late words set off to reach the TV.

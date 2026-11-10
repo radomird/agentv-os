@@ -47,7 +47,8 @@ import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
 import { countries, CountryPlace } from "./country.ts";
 import { TmdbKey } from "./tmdb-key.ts";
 import { Voice, type Clip, type VoiceOptions } from "./voice.ts";
-import { Phones } from "./phones.ts";
+import { PhoneChannel } from "./phone-channel.ts";
+import { Phones, type PairRequest, type Phone } from "./phones.ts";
 import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
@@ -218,7 +219,9 @@ const TYPES: Record<string, string> = {
 // The folders the TV's pages come from, by their first path segment.
 const STATIC = ["launcher", "setup"];
 // All the captive page needs, and all a phone on the setup hotspot gets.
-const CAPTIVE_FILES = ["companion-web/setup.ts", "companion-web/lib.ts", "companion-web/companion.css", "launcher/glyphs.ts"];
+// lib.ts brings the paired phone's channel and its arithmetic with it, which
+// the captive page loads and never uses: nothing pairs there.
+const CAPTIVE_FILES = ["companion-web/setup.ts", "companion-web/lib.ts", "companion-web/channel.ts", "companion-web/seal.ts", "companion-web/companion.css", "launcher/glyphs.ts"];
 const MAX_BODY = 64 * 1024;
 // How long a phone's ask for the state waits for something to change.
 const PHONE_WAIT_MS = 25_000;
@@ -291,6 +294,8 @@ export class Daemon {
   private clipCount = 0;
   private lastSpoken: { clip: number; by: Clip["by"]; ms: number; played?: boolean; error?: string; at: string } | null = null;
   readonly phones: Phones;
+  // The paired phones' sessions: what checks and opens their requests.
+  private phoneChannel: PhoneChannel<Phone>;
   readonly hotspot: Hotspot;
   readonly setupState: Setup;
   // Settings → Omarchy desktop's password (daemon/desktop-password.ts).
@@ -531,6 +536,7 @@ export class Daemon {
       log: this.log,
     });
     this.phones = new Phones({ path: join(options.state, "phones.json") });
+    this.phoneChannel = new PhoneChannel({ phone: (id) => this.phones.key(id) });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
     this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
@@ -1191,13 +1197,22 @@ export class Daemon {
     return (this.options.address ?? lanAddress)();
   }
 
-  // The code on show, and the address it pairs at.
+  // The code on show, and the address a phone types it at.
   private pairing(): { code: string; until: string; url: string | null } | null {
     const showing = this.phones.showing();
     if (!showing) return null;
     const address = this.boxAddress();
     const port = this.lanPort;
-    return { ...showing, url: address && port ? `http://${address}:${port}/?code=${showing.code}` : null };
+    return { ...showing, url: address && port ? `http://${address}:${port}/` : null };
+  }
+
+  // What the QR code holds: the address, and after the # the secret that
+  // pairs the phone that scans it. A browser keeps that part to itself, so
+  // the secret never crosses the network, and it's never on the TV as text.
+  private pairingQr(): string | null {
+    const url = this.pairing()?.url;
+    const secret = this.phones.secret();
+    return url && secret ? `${url}#pair=${secret}` : null;
   }
 
   private qr(text: string): Promise<string | null> {
@@ -1334,8 +1349,9 @@ export class Daemon {
   // --- The phone companion, on the home network ------------------------------
 
   // Only the companion's page and its requests are here, never the TV's own.
-  // Past pairing, every request needs the phone's token. A request that
-  // changes something has to come from the companion's own page.
+  // Past pairing, every request is signed with a key of the phone's own, and
+  // what it says is sealed (daemon/phone-channel.ts). A request that changes
+  // something has to come from the companion's own page.
   private async handlePhone(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url ?? "/", "http://phone");
     const path = url.pathname;
@@ -1378,8 +1394,7 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/phone/pair") {
-      const body = (await this.body(request)) as { code?: unknown; name?: unknown } | undefined;
-      const paired = this.phones.pair(body?.code, body?.name);
+      const paired = this.phones.pair((await this.body(request)) as PairRequest | undefined);
       if ("error" in paired) {
         this.log("a phone sent a wrong pairing code");
         this.json(response, 403, { ok: false, error: paired.error });
@@ -1387,16 +1402,26 @@ export class Daemon {
       }
       this.log(`${paired.phone.name} is paired`);
       this.broadcast("phones", { paired: paired.phone.name });
-      this.json(response, 200, { ok: true, token: paired.token, phone: paired.phone });
+      this.json(response, 200, { ok: true, ...paired });
       return;
     }
 
-    const auth = String(request.headers.authorization ?? "");
-    const phone = this.phones.who(auth.startsWith("Bearer ") ? auth.slice(7) : undefined);
-    if (!phone) {
-      this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
+    // A paired phone opening a session. Nothing in it is secret.
+    if (method === "POST" && path === "/api/phone/hello") {
+      const hello = this.phoneChannel.hello(await this.body(request));
+      if (hello) this.json(response, 200, { ok: true, ...hello });
+      else this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
       return;
     }
+
+    // Everything past here is a paired phone's: the signature is checked,
+    // a sealed body is opened for the routes to read, and JSON answers are
+    // sealed on their way out.
+    const opened = await this.phoneChannel.open(request, response);
+    if (!opened) return;
+    request = opened.request;
+    const phone = opened.phone;
+    this.phones.saw(phone.id);
     if (await this.phoneRemote.phone(method ?? "", path, request, response)) return;
 
     // Routes in files of their own (daemon/routes/), one line each.
@@ -2688,7 +2713,8 @@ export class Daemon {
     // The pairing QR code, drawn by qrencode.
     if (method === "GET" && path === "/api/phones/qr") {
       const pairing = this.pairing();
-      const svg = pairing?.url ? await this.qr(pairing.url) : null;
+      const address = this.pairingQr();
+      const svg = address ? await this.qr(address) : null;
       if (!svg) {
         this.json(response, 404, { ok: false, error: pairing ? "there's no qr code without qrencode or an address" : "there's no code on show" });
         return;
@@ -2704,6 +2730,7 @@ export class Daemon {
         this.json(response, 404, { ok: false, error: "there's no such phone" });
         return;
       }
+      this.phoneChannel.forget(phone[1]);
       this.log("a phone was forgotten");
       this.broadcast("phones", {});
       this.json(response, 200, { ok: true, phones: this.phones.list() });

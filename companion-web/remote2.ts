@@ -18,7 +18,7 @@ import { arrange } from "./arrange.ts";
 import { buildBanner, buildPage, exportBanner, type Offer, type PhoneBuild, pushBanner, pushPage } from "./builds.ts";
 import { feelOn, setFeel } from "./feel.ts";
 import { icon, type Icon } from "./icons.ts";
-import { api, avatar, h, token, Unpaired, type Viewer } from "./lib.ts";
+import { api, avatar, call, h, Unpaired, type Viewer } from "./lib.ts";
 import { listKey, networkLine, type TvList } from "./network.ts";
 import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
@@ -83,14 +83,9 @@ const BACK_HOLD_MS = 700;
 
 // A request whose answer says how it went, whether or not it worked.
 async function post<T extends object>(path: string, body: unknown): Promise<T & { ok: boolean; why?: string; error?: string }> {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(token() ? { Authorization: `Bearer ${token()}` } : {}) },
-    body: JSON.stringify(body),
-  });
+  const response = await call("POST", path, { json: body });
   if (response.status === 401) throw new Unpaired("this phone isn't paired");
-  const data = await response.json().catch(() => ({}));
-  return { ok: false, ...data };
+  return { ok: false, ...response.data } as T & { ok: boolean; why?: string; error?: string };
 }
 
 function dpadOn(): boolean {
@@ -667,8 +662,8 @@ export class Remote2 {
     this.sheet = sheet;
     if (sheet === "menu" && this.about === null) {
       this.about = "";
-      void fetch("/api/phone/box", { headers: token() ? { Authorization: `Bearer ${token()}` } : {} })
-        .then((response) => (response.ok ? response.json() : null))
+      void call("GET", "/api/phone/box")
+        .then((response) => (response.ok ? response.data : null))
         .then((data: { line?: unknown } | null) => {
           if (typeof data?.line === "string" && data.line) {
             this.about = data.line;

@@ -6,7 +6,8 @@
 
 import { glyph } from "../launcher/glyphs.ts";
 import { draw, LONGEST } from "./photo.ts";
-import { api, h, prompt, toast, token, Unpaired } from "./lib.ts";
+import { sign } from "./channel.ts";
+import { api, h, prompt, toast, Unpaired } from "./lib.ts";
 
 interface Sent {
   ok: boolean;
@@ -21,27 +22,37 @@ function sent(what: string, waits: boolean): void {
 
 // A file as it is, with how far it's got. fetch can't say that of what it
 // sends, so this is an XMLHttpRequest.
-function upload(path: string, type: string, body: Blob, progress: (fraction: number) => void): Promise<Sent> {
-  return new Promise((resolve, reject) => {
+//
+// It's signed as every request is (channel.ts), with its length in place
+// of its hash, and it goes as it is. The answer comes sealed.
+async function upload(path: string, type: string, body: Blob, progress: (fraction: number) => void, again = true): Promise<Sent> {
+  const signed = await sign("POST", path, { type, length: body.size });
+  const answer = await new Promise<Partial<Sent> | null>((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", path);
-    request.setRequestHeader("Content-Type", type);
-    if (token()) request.setRequestHeader("Authorization", `Bearer ${token()}`);
+    request.responseType = "arraybuffer";
+    for (const [name, value] of Object.entries(signed.headers)) request.setRequestHeader(name, value);
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) progress(event.loaded / event.total);
     });
     request.addEventListener("load", () => {
-      let data: Partial<Sent> = {};
       try {
-        data = JSON.parse(request.responseText);
-      } catch {}
-      if (request.status === 401) reject(new Unpaired(data.error ?? "this phone isn't paired"));
-      else if (request.status >= 400 || data.ok === false) reject(new Error(data.error ?? "the tv didn't take it"));
-      else resolve(data as Sent);
+        const data = signed.answer(request.status, request.getResponseHeader("content-type") ?? "", new Uint8Array(request.response as ArrayBuffer)) as Partial<Sent> | null;
+        if (data === null) resolve(null);
+        else if (request.status === 401) reject(new Unpaired(data.error ?? "this phone isn't paired"));
+        else if (request.status >= 400 || data.ok === false) reject(new Error(data.error ?? "the tv didn't take it"));
+        else resolve(data);
+      } catch (error) {
+        reject(error);
+      }
     });
     request.addEventListener("error", () => reject(new Error("it didn't all go: try again")));
     request.send(body);
   });
+  if (answer) return answer as Sent;
+  // The box wanted a hello first: once more, with a new session.
+  if (again) return upload(path, type, body, progress, false);
+  throw new Error("the tv didn't take it");
 }
 
 export function sharePage(failed: (error: unknown) => void): HTMLElement {
