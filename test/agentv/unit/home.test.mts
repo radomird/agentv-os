@@ -269,6 +269,15 @@ test("a server's address is made whole, or turned down", () => {
   }
 });
 
+test("F2 a server's address is never this box itself", () => {
+  const own = ["192.168.1.50", "2001:db8::50"];
+  for (const typed of ["127.0.0.1:3000", "localhost:3000", "http://LOCALHOST:3000/", "tv.localhost", "[::1]:3000", "http://[::ffff:7f00:1]:3000", "0.0.0.0:3000", "2130706433:3000", "192.168.1.50:3001", "http://[2001:db8::50]:3001"]) {
+    assert.equal(asAddress(typed, own), null, typed);
+  }
+  // The server next to the box on the home network is fine.
+  assert.equal(asAddress("192.168.1.20:8096", own), "http://192.168.1.20:8096");
+});
+
 test("an app's own setup, from its tile: its fields, then the sign-in, past the PIN once there is one", async () => {
   const box = await startBox();
   const call = async (method: string, path: string, body?: unknown, grant?: string) => {

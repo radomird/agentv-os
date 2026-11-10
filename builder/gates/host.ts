@@ -170,6 +170,22 @@ function probe(since = 0): Promise<Probe> {
   });
 }
 
+// Whether a peer connection made in the app's frame finds a way out.
+function webrtc(): Promise<{ made: boolean; ways: number }> {
+  return new Promise((resolve, reject) => {
+    const id = ++nextProbe;
+    const timer = setTimeout(() => reject(new Error("the app's frame didn't answer")), 5000);
+    const heard = (event: MessageEvent) => {
+      if (event.source !== frame.contentWindow || event.data?.agentvWebrtc !== id) return;
+      clearTimeout(timer);
+      window.removeEventListener("message", heard);
+      resolve(event.data.value);
+    };
+    window.addEventListener("message", heard);
+    frame.contentWindow?.postMessage({ agentvWebrtc: id }, "*");
+  });
+}
+
 // What the builder calls, over the DevTools pipe.
 const testTv = {
   // The app, until it says it's drawn: and the tests it brings.
@@ -214,6 +230,11 @@ const testTv = {
     const undeclared = seen.requests.filter((r) => !r.declared).map((r) => r.url);
     add("requests", undeclared.length === 0, undeclared.length ? `it asked for what it didn't declare: ${[...new Set(undeclared)].slice(0, 5).join(", ")}` : "it asked only for what it declared");
     add("errors", seen.errors.length === 0, seen.errors.length ? `it threw: ${seen.errors.slice(0, 3).join("; ")}` : "nothing threw");
+
+    // WebRTC goes round the app's policy and the filter, so the TV's
+    // browser keeps it in: a peer connection here finds no way out.
+    const peer = await webrtc().catch(() => ({ made: false, ways: 0 }));
+    add("webrtc", peer.ways === 0, peer.ways === 0 ? "it reaches nothing over webrtc" : "this tv's browser gave it a way out over webrtc, round what it declared");
 
     // Back: answered in time, and out by the fourth press.
     let out = false;

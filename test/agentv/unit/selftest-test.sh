@@ -488,10 +488,17 @@ grep -qE "^pass S3.3 a ledger row appeared [0-9]+ ms after the app opened: radom
   fail "it says how soon the row came, and what it says" "$(cat "$SCRATCH/out")"
 grep -q "^manual S3.3 a second viewer" "$SCRATCH/out" || fail "it says what waits for profiles" "$(cat "$SCRATCH/out")"
 # The stand-in was a real app while it was there, and is gone with its rows.
-AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-app-validate" --local "$state/seen-app" >/dev/null || fail "the stand-in passes the app contract's checks"
+# It's served from this box, which only the stand-in may reach: its record
+# says so, and the same package without that record is refused.
+[[ $(jq -r .standIn "$state/seen-record") == true ]] || fail "the stand-in's record says it's the selftest's stand-in" "$(cat "$state/seen-record")"
+if AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-app-validate" --local "$state/seen-app" >"$SCRATCH/validate" 2>&1; then
+  fail "F2 the stand-in's package alone, naming this box, doesn't pass the app contract's checks" "$(cat "$SCRATCH/validate")"
+fi
+grep -q "is this box, which an app never reaches" "$SCRATCH/validate" || fail "and the check says why" "$(cat "$SCRATCH/validate")"
+[[ $(grep -c "^    " "$SCRATCH/validate") == 1 ]] || fail "that's the only thing wrong with the stand-in" "$(cat "$SCRATCH/validate")"
 [[ $(jq -r .tier "$state/seen-record") == local ]] || fail "the stand-in was installed as a local app" "$(cat "$state/seen-record")"
 [[ $(jq -r '.source | test("/app$")' "$state/seen-record") == true ]] || fail "its record says which folder it came from" "$(cat "$state/seen-record")"
-grep -qx "install --local .*/app --yes" "$state/app.log" || fail "S3.3 installs the stand-in with agentv app install --local" "$(cat "$state/app.log")"
+grep -qx "install --local .*/app --yes --stand-in" "$state/app.log" || fail "S3.3 installs the stand-in with agentv app install --local" "$(cat "$state/app.log")"
 grep -qx "remove local.selftest-player" "$state/app.log" || fail "and removes it with agentv app remove" "$(cat "$state/app.log")"
 [[ ! -e $SCRATCH/var/apps/local.selftest-player ]] || fail "the stand-in is removed after"
 [[ $(jq -c 'keys' "$SCRATCH/var/apps/installed.json") == '["agentv.sample"]' ]] || fail "installed.json is as it was" "$(cat "$SCRATCH/var/apps/installed.json")"

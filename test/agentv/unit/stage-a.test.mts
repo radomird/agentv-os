@@ -6,17 +6,18 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { AppHost } from "../../../daemon/apps/loader.ts";
+import { AppHost, systemPaths, workerJail } from "../../../daemon/apps/loader.ts";
 import { Build } from "../../../builder/build.ts";
-import { checkApp, workerJail } from "../../../builder/contract-run.ts";
+import { checkApp } from "../../../builder/contract-run.ts";
 import { Fixtures } from "../../../builder/fixtures.ts";
 import { extraTools } from "../../../builder/harness/extra.ts";
 import { loadRecipes } from "../../../builder/recipe.ts";
+import { SANDBOX_PROBLEM } from "../harness.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-stage-a-unit-"));
@@ -111,59 +112,46 @@ function jailed() {
   writeFileSync(join(dir, "work", "fixtures", "pages", "page.html"), "a saved page");
   writeFileSync(join(dir, "state.json"), "{}");
   cpSync(join(ROOT, "test/agentv/fixtures/apps/sample"), app, { recursive: true });
-  return { home, dir, app, jail: workerJail({ app, build: dir, home }) };
+  const node = realpathSync(process.execPath);
+  return { home, dir, app, node, jail: workerJail({ dir: app, node, read: [], system: systemPaths() }) };
 }
 
-// Whether bubblewrap can start here: it isn't on every machine, and some
-// don't let it make a user namespace. The box does (the image checks run
-// the worker under it there).
-const bwrap = spawnSync("bwrap", ["--ro-bind", "/", "/", "--unshare-user", "--unshare-net", "--", "/bin/true"]).status === 0;
-
-test("H3 the contract tests' app worker runs under bubblewrap: the builder's home hidden, no network, its package read-only", async () => {
-  const { home, dir, app, jail } = jailed();
-  const at = (flag: string, ...values: string[]) => jail.some((arg, i) => arg === flag && values.every((value, n) => jail[i + 1 + n] === value));
-  assert.equal(jail[0], "bwrap");
-  assert.ok(at("--ro-bind", "/", "/"), "the system, read-only");
-  assert.ok(at("--tmpfs", home), "the builder's home is an empty folder to it");
-  assert.ok(at("--tmpfs", dir), "and so is the rest of the build");
-  assert.ok(at("--tmpfs", "/run"), "and where the build's way out is");
-  assert.ok(at("--ro-bind", app, app), "its own package, read-only");
-  assert.ok(jail.indexOf(app) > jail.indexOf(dir), "the package goes back in after the build is hidden");
-  assert.ok(jail.includes("--unshare-net"), "no network at all");
-  for (const flag of ["--unshare-user", "--unshare-pid", "--die-with-parent", "--new-session"]) assert.ok(jail.includes(flag), flag);
-  assert.ok(!jail.includes("--bind") && !jail.includes("--share-net"), "nothing writable, nothing shared");
-  assert.equal(jail.at(-1), "--");
-
-  // The builder's contract_tests uses it, with the builder's own home, and
-  // the worker's Node and its permission flag come after it. A stand-in
-  // for bubblewrap says what it was started with.
+test("H3 the builder's contract_tests starts the app's worker in its sandbox, with nothing switched off", async () => {
+  // A stand-in for bubblewrap says what it was started with.
+  const { home, dir, app } = jailed();
   const seen = join(scratch, `seen${count}.txt`);
   const fake = join(scratch, `fake-bwrap${count}`);
   writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" >${seen}\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n`);
   chmodSync(fake, 0o755);
   const manifest = JSON.parse(readFileSync(join(app, "manifest.json"), "utf8"));
-  const results = await checkApp({ dir: app, manifest, contract: { checks: [{ name: "it's signed in", call: "signIn.isSignedIn", expect: true }] } as never, served: new Fixtures(join(dir, "work", "fixtures"), { checks: [] } as never, Date.now(), join(dir, "work")), openPage: async () => assert.fail("no page"), wrap: workerJail({ app, build: dir, home, bwrap: fake }) });
-  assert.deepEqual(results.map((r) => [r.name, r.ok, r.why]), [["its module starts in a worker of its own", true, []], ["it's signed in", true, []]]);
+  const host = new AppHost({ dir: app, manifest, settings: { serverUrl: "https://sample.test" }, bwrap: fake });
+  try {
+    assert.equal(await host.call({ id: "contract", role: "adult" }, "signIn.isSignedIn"), true);
+  } finally {
+    host.stop();
+  }
   const started = readFileSync(seen, "utf8").split("\n");
-  const after = started.slice(started.indexOf("--") + 1);
-  assert.equal(after[0], process.execPath);
-  assert.ok(after.includes("--permission"), "Node's permission flag is still the second layer");
-  assert.ok(started.includes(home) && started.includes("--unshare-net"));
-  assert.match(readFileSync(join(ROOT, "builder/harness/extra.ts"), "utf8"), /contractTests\(build, build\.recipe\(\), \{ chromium: CHROMIUM, stage, jail: \{ home: process\.env\.HOME \?\? "\/var\/lib\/agentv\/builder" \} \}\)/);
+  const before = started.slice(0, started.indexOf("--"));
+  assert.ok(before.includes("--unshare-all"), "no network at all, and namespaces of its own");
+  assert.ok(!before.includes("--bind") && !before.includes("--share-net"), "nothing writable, nothing shared");
+  assert.ok(!before.includes("/") && !before.includes(home) && !before.includes(dir), "the builder's home and the rest of the build aren't put in it");
+  assert.ok(started.slice(started.indexOf("--") + 1).includes("--permission"), "Node's permission flag is still the second layer");
+  // And the harness asks for it that way: no harness option, so no way to
+  // leave the sandbox off.
+  assert.match(readFileSync(join(ROOT, "builder/harness/extra.ts"), "utf8"), /contractTests\(build, build\.recipe\(\), \{ chromium: CHROMIUM, stage \}\)/);
 });
 
-test("H3 inside that bubblewrap the sign-in, the CLI and the saved pages aren't there, nothing is written, and the worker still answers", { skip: !bwrap && "bubblewrap can't start here" }, async () => {
-  const { home, dir, app, jail } = jailed();
-  const inside = (script: string) => spawnSync(jail[0], [...jail.slice(1), "/bin/sh", "-c", script], { encoding: "utf8" });
-  assert.notEqual(inside(`cat ${home}/.claude/.credentials.json`).status, 0, "the plan's sign-in");
-  assert.equal(inside(`ls -A ${home}`).stdout.trim(), "", "the home is empty to it");
-  assert.notEqual(inside(`cat ${dir}/work/fixtures/pages/page.html`).status, 0, "a page the build saved");
-  assert.notEqual(inside(`cat ${dir}/state.json`).status, 0);
-  assert.equal(inside(`cat ${app}/manifest.json`).status, 0, "its own package is there");
-  assert.notEqual(inside(`touch ${app}/added`).status, 0, "read-only");
-  assert.notEqual(inside(`touch ${home}/.local/bin/claude 2>/dev/null && test -e ${home}/.local/bin/claude && rm ${home}/.claude 2>/dev/null`).status, 0);
+test("H3 inside that sandbox the sign-in, the CLI and the saved pages aren't there, nothing is written, and the worker still answers", { skip: SANDBOX_PROBLEM !== null && "bubblewrap can't start here" }, async () => {
+  const { home, dir, app, node, jail } = jailed();
+  const look = (script: string) => spawnSync("bwrap", [...jail, node, "-e", script], { env: {}, encoding: "utf8" });
+  const reads = (path: string) => look(`require("node:fs").readFileSync(${JSON.stringify(path)})`).status === 0;
+  assert.equal(reads(join(app, "manifest.json")), true, "its own package is there");
+  assert.equal(reads(join(home, ".claude", ".credentials.json")), false, "the plan's sign-in");
+  assert.equal(reads(join(home, ".local", "bin", "claude")), false, "the CLI");
+  assert.equal(reads(join(dir, "work", "fixtures", "pages", "page.html")), false, "a page the build saved");
+  assert.equal(reads(join(dir, "state.json")), false);
+  assert.notEqual(look(`require("node:fs").writeFileSync(${JSON.stringify(join(app, "added"))}, "")`).status, 0, "read-only");
   assert.ok(!existsSync(join(app, "added")));
-  assert.equal(readFileSync(join(home, ".local", "bin", "claude"), "utf8"), "#!/bin/sh\n", "the CLI is as it was");
   // No network of any kind: not even this machine's own loopback, where
   // the sandbox's way out listens.
   const server = createServer(() => {});
@@ -171,19 +159,14 @@ test("H3 inside that bubblewrap the sign-in, the CLI and the saved pages aren't 
   try {
     const reach = `require("node:net").connect(${(server.address() as { port: number }).port}, "127.0.0.1").on("connect", () => process.exit(0)).on("error", () => process.exit(1))`;
     assert.equal(spawnSync(process.execPath, ["-e", reach]).status, 0, "it's there from outside");
-    assert.equal(spawnSync(jail[0], [...jail.slice(1), process.execPath, "-e", reach]).status, 1, "and not from inside");
+    assert.equal(look(reach).status, 1, "and not from inside");
   } finally {
     server.close();
   }
 
-  // And the real worker, under the real thing, starts and answers.
+  // And the real worker, under the real thing, starts and answers the
+  // contract's checks.
   const manifest = JSON.parse(readFileSync(join(app, "manifest.json"), "utf8"));
-  const host = new AppHost({ dir: app, manifest, settings: { serverUrl: "https://sample.test" }, wrap: jail });
-  try {
-    assert.equal(await host.call({ id: "contract", role: "adult" }, "signIn.isSignedIn"), true);
-    const found = await host.call<{ title: string }[]>({ id: "contract", role: "adult" }, "search", "sint");
-    assert.deepEqual(found.map((item) => item.title), ["Sintel"]);
-  } finally {
-    host.stop();
-  }
+  const results = await checkApp({ dir: app, manifest, contract: { checks: [{ name: "it's signed in", call: "signIn.isSignedIn", expect: true }] } as never, served: new Fixtures(join(dir, "work", "fixtures"), { checks: [] } as never, Date.now(), join(dir, "work")), openPage: async () => assert.fail("no page") });
+  assert.deepEqual(results.map((r) => [r.name, r.ok, r.why]), [["its module starts in a worker of its own", true, []], ["it's signed in", true, []]]);
 });

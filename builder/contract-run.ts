@@ -7,10 +7,10 @@
 // browser that's there, over its DevTools pipe, with no network at all.
 
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { Manifest } from "../apps/contract/manifest.ts";
 import { validatePackage } from "../apps/contract/manifest.ts";
-import { AppHost, type PageBroker } from "../daemon/apps/loader.ts";
+import { AppHost, type AppHostOptions, type PageBroker } from "../daemon/apps/loader.ts";
 import { cdpPage } from "../daemon/page.ts";
 import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../daemon/remote-page.ts";
 import type { Build } from "./build.ts";
@@ -62,43 +62,14 @@ export interface CheckPage {
   close(): Promise<void>;
 }
 
-// bubblewrap and its arguments for the app's worker in a build, up to the
-// worker's own command. This is the one place a build's own code runs, so
-// Node's permission flag isn't left to hold it alone. The worker sees the
-// system and its own package, both read-only, and nothing else: the
-// builder's home, with the CLI and a plan's sign-in, is an empty folder to
-// it, and so are the rest of the build, with the pages it saved, and /run,
-// where the build's way out is. It has no network at all, not even the
-// sandbox's: what it asks for is answered from the fixtures, by the builder.
-// /proc is as an install script gets it (builder/packages.ts).
-export function workerJail(o: { app: string; build: string; home: string; bwrap?: string }): string[] {
-  return [
-    o.bwrap ?? "bwrap",
-    "--ro-bind", "/", "/",
-    "--dev", "/dev",
-    "--tmpfs", "/proc",
-    "--ro-bind-try", "/proc/cpuinfo", "/proc/cpuinfo",
-    "--ro-bind-try", "/proc/meminfo", "/proc/meminfo",
-    "--ro-bind-try", "/proc/stat", "/proc/stat",
-    "--tmpfs", "/tmp",
-    "--tmpfs", "/run",
-    "--tmpfs", o.home,
-    "--tmpfs", o.build,
-    "--ro-bind", o.app, o.app,
-    "--unshare-user", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-net", "--unshare-cgroup-try",
-    "--die-with-parent", "--new-session",
-    "--chdir", o.app,
-    "--",
-  ];
-}
-
 // Every check in contract.json, after the package passed its static checks.
-export async function checkApp(o: { dir: string; manifest: Manifest; contract: Contract; served: Fixtures; openPage: () => Promise<CheckPage>; wrap?: string[] }): Promise<Result[]> {
+// harness is only for a test harness outside the box (daemon/apps/loader.ts).
+export async function checkApp(o: { dir: string; manifest: Manifest; contract: Contract; served: Fixtures; openPage: () => Promise<CheckPage>; harness?: AppHostOptions["harness"] }): Promise<Result[]> {
   const { manifest, contract, served } = o;
   const app = manifest.id;
   const results: Result[] = [];
   const page = contract.checks.some((check) => check.page || check.remote) ? await o.openPage() : undefined;
-  const host = new AppHost({ dir: o.dir, manifest, settings: contract.settings ?? {}, page: page?.broker, fetch: served.fetch, userAgent: "AgenTV-contract", ...(o.wrap ? { wrap: o.wrap } : {}) });
+  const host = new AppHost({ dir: o.dir, manifest, settings: contract.settings ?? {}, page: page?.broker, fetch: served.fetch, userAgent: "AgenTV-contract", harness: o.harness });
   try {
     await host.start();
     results.push({ app, id: "S3.1", name: "its module starts in a worker of its own", ok: true, why: [] });
@@ -240,10 +211,8 @@ export async function cdpCheckPage(chromium: string, served: Fixtures): Promise<
 }
 
 // The builder's contract_tests: the app the agent wrote, against the pages
-// it saved, and the checks the recipe wants for the stage it's in. On the
-// box the app's worker runs under bubblewrap (jail), with the builder's
-// home hidden.
-export async function contractTests(build: Build, recipe: Recipe, o: { chromium: string; stage?: "a" | "b"; jail?: { home: string; bwrap?: string } }): Promise<{ ok: boolean; lines: string[] }> {
+// it saved, and the checks the recipe wants for the stage it's in.
+export async function contractTests(build: Build, recipe: Recipe, o: { chromium: string; stage?: "a" | "b"; harness?: AppHostOptions["harness"] }): Promise<{ ok: boolean; lines: string[] }> {
   const lines: string[] = [];
   const contractPath = join(build.work, "fixtures", "contract.json");
   if (!existsSync(contractPath)) return { ok: false, lines: ["not ok: there's no fixtures/contract.json yet"] };
@@ -263,8 +232,7 @@ export async function contractTests(build: Build, recipe: Recipe, o: { chromium:
     if (!contract.checks.some((check) => check.call === call)) lines.push(`not ok: the recipe wants a check for ${call}, and fixtures/contract.json has none`);
   }
   const served = new Fixtures(join(build.work, "fixtures"), contract, Date.now(), build.work);
-  const wrap = o.jail ? workerJail({ app: resolve(build.app), build: resolve(build.dir), home: o.jail.home, bwrap: o.jail.bwrap }) : undefined;
-  const results = await checkApp({ dir: build.app, manifest: manifest as Manifest, contract, served, openPage: () => cdpCheckPage(o.chromium, served), wrap });
+  const results = await checkApp({ dir: build.app, manifest: manifest as Manifest, contract, served, openPage: () => cdpCheckPage(o.chromium, served), harness: o.harness });
   for (const result of results) {
     lines.push(`${result.ok ? "ok" : "not ok"}: ${result.name}`);
     for (const why of result.why) lines.push(`    ${why}`);

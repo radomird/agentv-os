@@ -14,6 +14,7 @@ import { after, before, test } from "node:test";
 import type { Browser, CDPSession, Page } from "playwright-core";
 import { validatePackage } from "../../../apps/contract/manifest.ts";
 import { AppHost } from "../../../daemon/apps/loader.ts";
+import { HARNESS } from "../harness.mts";
 import { cdpPage } from "../../../daemon/page.ts";
 import { SignInWatch } from "../../../daemon/signin.ts";
 import { ROOT } from "./box.mts";
@@ -61,7 +62,7 @@ before(async () => {
     },
   };
   const { manifest } = validatePackage(PAGER, "official");
-  host = new AppHost({ dir: PAGER, manifest: manifest!, settings: { serverUrl: origin }, page: cdpPage(devtools, () => "t1") });
+  host = new AppHost({ dir: PAGER, manifest: manifest!, settings: { serverUrl: origin }, page: cdpPage(devtools, () => "t1"), harness: HARNESS });
 });
 
 after(async () => {
@@ -110,7 +111,7 @@ test("ADR-032 the sign-in screen: the app shows the site's form, and once it's f
     () => "t1",
   );
   const watch = new SignInWatch({
-    host: async () => new AppHost({ dir: PAGER, manifest: manifest!, settings: { serverUrl: origin } }),
+    host: async () => new AppHost({ dir: PAGER, manifest: manifest!, settings: { serverUrl: origin }, harness: HARNESS }),
     viewer: async () => viewer,
     report: async (_app, signedIn) => void reports.push(signedIn),
     every: 100,

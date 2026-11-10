@@ -162,8 +162,10 @@ export async function extraTools(dir: string, stepId: string): Promise<Extra> {
     },
     contract_tests: async () => {
       const stage = findStep(build, stepId)?.stage;
-      // The app's own code runs here, so under bubblewrap, with this home hidden.
-      return (await contractTests(build, build.recipe(), { chromium: CHROMIUM, stage, jail: { home: process.env.HOME ?? "/var/lib/agentv/builder" } })).lines.join("\n");
+      // The app's own code runs here. Its worker starts under bubblewrap as
+      // any app's does (daemon/apps/loader.ts), so this home, with the CLI
+      // and a plan's sign-in, and the rest of the build aren't there to it.
+      return (await contractTests(build, build.recipe(), { chromium: CHROMIUM, stage })).lines.join("\n");
     },
     // The theme as Omarchy will read it, with its scenes drawn as pictures
     // and a preview of the TV in it.
