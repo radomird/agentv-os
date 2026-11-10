@@ -6,6 +6,7 @@
 // wrote against those pages, with the recipe's own checks for the stage.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -142,4 +143,17 @@ test("S6.1 contract_tests runs the stage A app against the pages look kept, with
   assert.equal(b.ok, false);
   for (const call of ["search", "playback.open", "playback.readPlaybackState"]) assert.ok(b.lines.includes(`not ok: the recipe wants a check for ${call}, and fixtures/contract.json has none`), b.lines.join("\n"));
   assert.ok(b.lines.includes("not ok: a page it has no fixture for"), b.lines.join("\n"));
+});
+
+// Whether bubblewrap can start on this machine. The box's does.
+const bwrap = spawnSync("bwrap", ["--ro-bind", "/", "/", "--unshare-user", "--unshare-net", "--", "/bin/true"]).status === 0;
+
+test("H3 contract_tests passes the same with the app's worker under bubblewrap, as it runs on the box", { skip: !bwrap && "bubblewrap can't start here" }, async () => {
+  const build = await stageA();
+  const home = join(scratch, "home");
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(home, ".claude", ".credentials.json"), "a plan's sign-in");
+  const streaming = loadRecipes(join(ROOT, "builder/recipes")).get("streaming")!;
+  const a = await contractTests(build, streaming, { chromium, stage: "a", jail: { home } });
+  assert.deepEqual(a.lines, ["ok: its module starts in a worker of its own", "ok: launch opens the home page", "ok: signed out, it says so", "ok: signed in, it says so"]);
 });

@@ -94,6 +94,10 @@ export interface AppHostOptions {
   // What answers the app's requests, once they're past the origin check:
   // the network, or the contract tests' fixtures (test/agentv/contract).
   fetch?: typeof fetch;
+  // A command the worker runs under, and its arguments, with the worker's
+  // own Node and its flags after them: bubblewrap, for the builder's
+  // contract tests (builder/contract-run.ts).
+  wrap?: string[];
   log?: (line: string) => void;
 }
 
@@ -109,6 +113,7 @@ export class AppHost {
   private userAgent: string;
   private fetcher: typeof fetch;
   private page?: PageBroker;
+  private wrap?: string[];
   private log: (line: string) => void;
 
   constructor(options: AppHostOptions) {
@@ -119,6 +124,7 @@ export class AppHost {
     this.userAgent = `${options.userAgent ?? "AgenTV"} ${options.manifest.id}/${options.manifest.version}`;
     this.fetcher = options.fetch ?? fetch;
     this.page = options.page;
+    this.wrap = options.wrap;
     this.log = options.log ?? (() => {});
   }
 
@@ -143,7 +149,7 @@ export class AppHost {
     if (!process.features.typescript) execArgv.push("--experimental-strip-types");
 
     const child = fork(WORKER, [entry], {
-      execArgv,
+      ...(this.wrap ? { execPath: this.wrap[0], execArgv: [...this.wrap.slice(1), process.execPath, ...execArgv] } : { execArgv }),
       env: {},
       cwd: this.dir,
       serialization: "advanced",

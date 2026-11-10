@@ -36,6 +36,11 @@ ProtectSystem=strict
 ProtectHome=yes
 TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
 BindPaths=/var/lib/agentv/builder
+# As in a build (agentv-builder@.service): the CLI, mise's tree and the
+# CLI's own settings file are read-only, so what runs for every sentence
+# isn't something a run can change.
+ReadOnlyPaths=-/var/lib/agentv/builder/.local -/var/lib/agentv/builder/.config -/var/lib/agentv/builder/.local/share/mise -/var/lib/agentv/builder/.local/state/mise -/var/lib/agentv/builder/.claude/settings.json
+ReadWritePaths=-/var/lib/agentv/builder/.claude -/var/lib/agentv/builder/.local/share -/var/lib/agentv/builder/.local/state -/var/lib/agentv/builder/.config/muse
 InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
 PrivateDevices=yes
 PrivateIPC=yes
