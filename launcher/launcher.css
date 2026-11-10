@@ -2330,3 +2330,32 @@ body.with-backdrop.on-home {
   color: var(--yellow);
   font-weight: 700;
 }
+
+/* Settings → Themes and backgrounds: the theme's own pictures, each its own
+   card, the one Omarchy shows in the accent. */
+.theme-pictures {
+  display: flex;
+  gap: 16px;
+  margin: 0 -8px;
+  padding: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.theme-picture {
+  flex: none;
+  padding: 0;
+  border: 3px solid var(--selection);
+  background: none;
+  line-height: 0;
+}
+
+.theme-picture.picked {
+  border-color: var(--accent);
+}
+
+.theme-picture img {
+  width: 192px;
+  height: 108px;
+  object-fit: cover;
+}

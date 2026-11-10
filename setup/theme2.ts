@@ -2,12 +2,13 @@
 // switch on. The top row is home in the look you picked, once in each of
 // Omarchy's themes, drawn by the launcher itself. OK on one sets it, as
 // Settings does, and the focus goes down to the backgrounds. The row under
-// it is the background: the theme's own, which is the default, your photos,
-// a shared folder, or one your agent will draw soon. OK on one picks it and
+// it is the background: each of the theme's own pictures, the one Omarchy
+// shows being the default, your photos, a shared folder, or one your agent
+// will draw soon. Picking another of the theme's asks Omarchy to show it. OK on one picks it and
 // finishes setup. Photos and a folder open their own page first, and come
 // back here with the one picked.
 
-import { daemon, screen, shownCurrent, type Backgrounds, type ThemePreview } from "../launcher/api.ts";
+import { daemon, screen, type Backgrounds, type ThemePreview } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import type { LookId, LookInfo } from "../launcher/looks/looks.ts";
@@ -20,7 +21,6 @@ import type { Ctx, View } from "./main.ts";
 type Back = "theme" | "photos" | "folder" | "made";
 
 const BACKS: { id: Back; name: string; icon: Glyph }[] = [
-  { id: "theme", name: "", icon: "grid" },
   { id: "photos", name: "your photos", icon: "photo" },
   { id: "folder", name: "a shared folder", icon: "grid" },
   { id: "made", name: "made for you", icon: "spark" },
@@ -66,25 +66,45 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
       h("span", { class: "tb-back-name" }, back.name),
     ),
   );
-  const backOf = (id: Back) => backCards.find((card) => card.dataset.background === id)!;
+  // Each of the theme's own pictures, as its own card. A theme with none has
+  // one card, its pixel field.
+  const pictureCard = (id: string | null, i: number) =>
+    h(
+      "button",
+      { class: "tb-back", "data-focus": true, "data-background": "theme", ...(id ? { "data-picture": id, "aria-label": `the theme's background ${i + 1}` } : {}), onclick: () => void pickBack("theme", id ?? undefined) },
+      h("span", { class: "tb-back-shot" }, id ? h("img", { src: `/api/backgrounds/${id}`, alt: "" }) : field()),
+      h("span", { class: "tb-back-name" }, id ? "" : "the theme's own"),
+    );
+  let pictureCards: HTMLElement[] = [];
+  const backsRow = h("div", { class: "tb-backs", "data-scroll": true });
+  backsRow.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
+  const label = h("span", { class: "tb-label" });
+  const backOf = (id: Back) =>
+    id === "theme" ? (pictureCards.find((card) => card.classList.contains("picked")) ?? pictureCards[0]) : backCards.find((card) => card.dataset.background === id)!;
 
   const draw = () => {
     for (const card of themeCards) {
       card.classList.toggle("picked", card.dataset.theme === current);
       card.classList.toggle("setting", card.dataset.theme === setting);
     }
-    const own = shownCurrent({ ...now, source: "theme" });
     const name = lower(themes.find((one) => one.id === current)?.name ?? now.theme?.name);
+    label.textContent = name ? `# ${name}'s backgrounds` : "# backgrounds";
+    // The theme's pictures again when they change, as when the theme does,
+    // with the focus where it was.
+    const pictures = (now.theme?.items ?? []).map((item) => item.id);
+    if (!pictureCards.length || pictures.join(" ") !== pictureCards.map((card) => card.dataset.picture ?? "").join(" ")) {
+      const at = ctx.focus.get();
+      const was = at && backsRow.contains(at) && at.dataset.background === "theme" ? (at.dataset.picture ?? "") : null;
+      pictureCards = pictures.length ? pictures.map(pictureCard) : [pictureCard(null, 0)];
+      backsRow.replaceChildren(...pictureCards, ...backCards);
+      if (was !== null) ctx.focus.set(pictureCards.find((card) => card.dataset.picture === was) ?? pictureCards[0], false);
+    }
+    const shown = now.theme?.current ?? pictures[0];
+    for (const card of pictureCards) card.classList.toggle("picked", now.source === "theme" && (!card.dataset.picture || card.dataset.picture === shown));
     for (const card of backCards) {
       const id = card.dataset.background as Back;
       card.classList.toggle("picked", id === now.source);
       const shot = card.querySelector<HTMLElement>(".tb-back-shot")!;
-      if (id === "theme") {
-        card.querySelector(".tb-back-name")!.textContent = name ? `${name}'s` : "the theme's own";
-        if (own && shot.querySelector("img")?.dataset.id !== own.id) shot.replaceChildren(h("img", { src: `/api/backgrounds/${own.id}`, alt: "", "data-id": own.id }));
-        else if (!own && !shot.querySelector(".pixel-field")) shot.replaceChildren(field());
-        continue;
-      }
       const kind = id === "photos" ? "photo" : id === "folder" ? "folder" : null;
       const mine = kind ? now.items.filter((item) => item.kind === kind) : [];
       const newest = mine.find((item) => item.id === now.current) ?? mine[0];
@@ -120,7 +140,7 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
 
   // OK on a background picks it and finishes setup. Photos before there are
   // any, and a folder not yet picked, open their page first.
-  const pickBack = async (id: Back) => {
+  const pickBack = async (id: Back, picture?: string) => {
     if (setting || leaving) return;
     if (id === "made") {
       ctx.sounds.play("failure");
@@ -131,6 +151,10 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
     if (id === "folder" && now.source !== "folder") return ctx.open("background/folder");
     leaving = true;
     try {
+      if (picture && picture !== now.theme?.current) {
+        const reply = await screen.setBackground(picture);
+        if (!reply.ok) throw new Error(reply.error ?? "that background didn't change");
+      }
       now = await daemon.chooseBackground(id);
       draw();
       if (!ctx.info.setup.finished.theme) ctx.info.setup = await setup.finish("theme");
@@ -153,8 +177,8 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
     // The look is named only once one was picked, a step before this.
     ctx.info.setup.finished.look ? h("p", { class: "setup-line" }, `shown in ${lookName}, the look you picked`) : "",
     themeRow,
-    h("span", { class: "tb-label" }, "# background"),
-    h("div", { class: "tb-backs" }, ...backCards),
+    label,
+    backsRow,
   );
   // Back from photos or a folder, the focus is on the one picked there.
   const picked = now.source === "photos" || now.source === "folder" ? backOf(now.source) : null;
