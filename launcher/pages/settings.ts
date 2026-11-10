@@ -12,6 +12,7 @@ import { powerPanel } from "./power.ts";
 import { aboutBox } from "./box.ts";
 import { glyph } from "../glyphs.ts";
 import { aiPanel, aiValue, setKeyState } from "./key.ts";
+import { controllersLabel, controllersPanel, controllersValue } from "./controllers.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
 import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
@@ -565,6 +566,8 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "tmdb", label: "new this week", value: newsValue, panel: () => newsPanel(ctx) },
     { key: "profiles", label: "profiles", value: () => String(ctx.state.viewers.length), panel: () => profilesPanel(ctx) },
     { key: "phones", label: "phones", value: () => (phones ? String(phones.length) : ""), panel: () => phonesPanel(ctx) },
+    // Game controllers (ADR-084), with the looks on: phase 1's list is as long as its screen already.
+    ...(lookId() ? [{ key: "controllers", label: controllersLabel(), value: controllersValue, panel: () => controllersPanel(ctx) }] : []),
     { key: "pin", label: "adult pin", value: () => (pinSet() ? "on" : "off"), panel: pinPanel },
     { key: "ai", label: "ai", value: () => aiValue(ctx), panel: () => aiPanel(ctx) },
     { key: "usage", label: "usage", value: usageValue, panel: () => usagePanel(ctx) },
