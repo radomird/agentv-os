@@ -3,15 +3,17 @@
 // clears the wake alarm for the night's update window, agentv-wake.timer.
 // It runs as the box's owner, from the TV session's own systemd, which isn't
 // part of a login session, so the rule can't ask for an active one.
-// Suspending goes by the owner's own account, the one SDDM logs in to the TV
-// session (agentv-session-setup writes it), not by every admin, since
-// nothing can wake a sleeping box from the phone. Starting and stopping the
-// wake alarm goes by the owner's admin group (wheel), as Restart and Shut
-// down do. It never lets a suspend past an inhibitor that blocks sleep, such
-// as a build, an update or a download: suspend-ignore-inhibit isn't here.
+// Both go by the owner's own account, the one SDDM logs in to the TV session
+// (agentv-session-setup writes it), not by every admin, since nothing can
+// wake a sleeping box from the phone. It never lets a suspend past an
+// inhibitor that blocks sleep, such as a build, an update or a download:
+// suspend-ignore-inhibit isn't here.
 polkit.addRule(function (action, subject) {
   if (action.id == "org.freedesktop.login1.suspend" ||
-      action.id == "org.freedesktop.login1.suspend-multiple-sessions") {
+      action.id == "org.freedesktop.login1.suspend-multiple-sessions" ||
+      (action.id == "org.freedesktop.systemd1.manage-units" &&
+       (action.lookup("verb") == "start" || action.lookup("verb") == "stop") &&
+       action.lookup("unit") == "agentv-wake.timer")) {
     var owner = "";
     try {
       owner = polkit.spawn(["/usr/bin/sed", "-n", "s/^User=//p", "/etc/sddm.conf.d/zz-agentv-autologin.conf"]).trim();
@@ -21,11 +23,5 @@ polkit.addRule(function (action, subject) {
     if (owner != "" && subject.user == owner) {
       return polkit.Result.YES;
     }
-  }
-  if (action.id == "org.freedesktop.systemd1.manage-units" &&
-      (action.lookup("verb") == "start" || action.lookup("verb") == "stop") &&
-      action.lookup("unit") == "agentv-wake.timer" &&
-      subject.isInGroup("wheel")) {
-    return polkit.Result.YES;
   }
 });

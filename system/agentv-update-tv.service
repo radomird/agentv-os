@@ -1,7 +1,8 @@
-# Install now in Settings → Updates (ADR-025): bin/agentv-update-tv runs agentv
-# update as the box's owner and reports its progress to the TV. Started from
-# the TV session through polkit (system/polkit/50-agentv-update.rules), never
-# enabled.
+# Install now in Settings → Updates (ADR-025): bin/agentv-update-tv runs the
+# update, root's steps as root and the owner's as the owner, and reports its
+# progress to the TV. Started from the TV session through polkit
+# (system/polkit/50-agentv-update.rules), never enabled. The box stays awake
+# for it, as it did when Omarchy's own update held the inhibitor.
 
 [Unit]
 Description=AgenTV update from the TV
@@ -10,5 +11,5 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/agentv-update-tv
+ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle --who=AgenTV "--why=installing an update" --mode=block /usr/bin/agentv-update-tv
 TimeoutStartSec=2h
