@@ -327,7 +327,7 @@ async function difference(a: Buffer, b: Buffer): Promise<number> {
 // preview, once it's had time to draw.
 // The preview's stand-ins (launcher/looks/showcase.ts) left out, so a
 // preview and home draw the same titles and can be compared.
-const NO_STAND_INS = 'export const SHOWCASE_APP = "agentv.new"; export const isShowcaseImage = () => false; export const showcaseTile = (tile) => tile;';
+const NO_STAND_INS = 'export const SHOWCASE_APP = "agentv.new"; export const isShowcaseImage = () => false; export const showcasePicture = () => false; export const showcaseTile = (tile) => tile;';
 
 async function shot(address: string, size: Size): Promise<Buffer> {
   const width = SIZES[size];
