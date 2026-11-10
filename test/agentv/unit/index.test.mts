@@ -71,11 +71,14 @@ before(() => {
 });
 
 // A folder with index.json listing apps, signed by key.
-function index(apps: object[], key = signer, extra: object = {}): string {
+// signedAt is the time the signature carries, like 20360102T030000, for the
+// tests that need one index to be older than another.
+function index(apps: object[], key = signer, extra: object = {}, signedAt?: string): string {
   const dir = join(scratch, `index-${++count}`);
   mkdirSync(dir);
   writeFileSync(join(dir, "index.json"), JSON.stringify({ schema: 1, date: "2026-10-23T00:00:00Z", apps, ...extra }, null, 2));
-  sh("gpg", ["--batch", "--yes", "--local-user", key, "--detach-sign", "--output", join(dir, "index.json.sig"), join(dir, "index.json")]);
+  const when = signedAt ? ["--faked-system-time", signedAt] : [];
+  sh("gpg", ["--batch", "--yes", ...when, "--local-user", key, "--detach-sign", "--output", join(dir, "index.json.sig"), join(dir, "index.json")]);
   return dir;
 }
 
@@ -85,6 +88,12 @@ function sample(commitId = first, version = "1.0.0", more: object = {}): object 
 
 function apps(): string {
   return join(scratch, `apps-${++count}`);
+}
+
+// What's in the apps folder, without the box's note of the newest index it
+// has taken (L4).
+function inside(dir: string): string[] {
+  return readdirSync(dir).filter((name) => name !== ".index-seen.json");
 }
 
 async function refused(promise: Promise<unknown>, pattern: RegExp): Promise<void> {
@@ -106,7 +115,7 @@ test("S2.1 a sample app installs from a signed test index", async () => {
   assert.ok(!existsSync(join(dir, "agentv.sample", "fixtures")), "its fixtures stay out, since they're for its tests");
   const record = await readInstalled(dir);
   assert.equal(record["agentv.sample"].commit, first);
-  assert.deepEqual(readdirSync(dir).sort(), ["agentv.sample", "installed.json"]);
+  assert.deepEqual(inside(dir).sort(), ["agentv.sample", "installed.json"]);
 });
 
 test("S2.1 a tampered index is refused, and nothing is installed", async () => {
@@ -140,7 +149,7 @@ test("an app that fails the contract's checks isn't installed, and leaves nothin
   const dir = apps();
   // A community listing can't carry an agentv.* app.
   await refused(installFromIndex("agentv.sample", index([sample(first, "1.0.0", { tier: "community" })]), dir, keyring), /agentv\.\*/);
-  assert.deepEqual(readdirSync(dir), []);
+  assert.deepEqual(inside(dir), []);
 });
 
 test("the manifest has to be the app and version the index names", async () => {
@@ -174,7 +183,7 @@ test("installing a newer version replaces the old one", async () => {
   const manifest = JSON.parse(readFileSync(join(dir, "agentv.sample", "manifest.json"), "utf8"));
   assert.equal(manifest.version, "1.0.1");
   assert.equal((await readInstalled(dir))["agentv.sample"].commit, second);
-  assert.deepEqual(readdirSync(dir).sort(), ["agentv.sample", "installed.json"]);
+  assert.deepEqual(inside(dir).sort(), ["agentv.sample", "installed.json"]);
 });
 
 test("an app can be removed", async () => {
@@ -217,7 +226,7 @@ test("ADR-036 a folder the commit doesn't have isn't installed, and leaves nothi
   const dir = apps();
   const source = index([sample(severalRepo(), "1.0.0", { repo: `file://${several}`, path: "apps/missing" })]);
   await refused(installFromIndex("agentv.sample", source, dir, keyring), /has no folder apps\/missing/);
-  assert.deepEqual(readdirSync(dir), []);
+  assert.deepEqual(inside(dir), []);
 });
 
 test("ADR-036 a folder that's a link isn't followed", async () => {
@@ -366,4 +375,43 @@ test("ADR-039 a local app sits beside the index's apps without touching them", a
   assert.deepEqual(Object.keys(record).sort(), ["agentv.sample", "local.sample"]);
   assert.equal(record["agentv.sample"].tier, "official");
   assert.equal(record["local.sample"].tier, "local");
+});
+
+// L4: a good signature says who made an index, not that it's the latest.
+test("L4 the first index a box ever takes is fine, and so is the same one again", async () => {
+  const dir = apps();
+  const monday = index([sample()], signer, {}, "20360102T030000");
+  assert.equal((await installFromIndex("agentv.sample", monday, dir, keyring)).version, "1.0.0");
+  assert.equal((await installFromIndex("agentv.sample", monday, dir, keyring)).version, "1.0.0");
+});
+
+test("L4 an older index with a good signature is refused once a newer one was taken, and the app stays as it was", async () => {
+  const dir = apps();
+  const monday = index([sample(first, "1.0.0")], signer, {}, "20360102T030000");
+  const tuesday = index([sample(second, "1.0.1")], signer, {}, "20360103T030000");
+  await installFromIndex("agentv.sample", tuesday, dir, keyring);
+  await refused(installFromIndex("agentv.sample", monday, dir, keyring), /older than the one this box already has/);
+  assert.equal((await readInstalled(dir))["agentv.sample"].commit, second, "the newer commit is still the one installed");
+  assert.equal((await installFromIndex("agentv.sample", tuesday, dir, keyring)).version, "1.0.1", "the newer one is still fine");
+});
+
+test("L4 a newer index after an older one is fine, and what was seen doesn't depend on the box's clock", async () => {
+  const dir = apps();
+  // Every time here is years ahead of this machine's clock (a key can't sign
+  // from before it was made), and still in order.
+  const sooner = index([sample(first, "1.0.0")], signer, {}, "20370102T030000");
+  const later = index([sample(second, "1.0.1")], signer, {}, "20370103T030000");
+  await installFromIndex("agentv.sample", sooner, dir, keyring);
+  assert.equal((await installFromIndex("agentv.sample", later, dir, keyring)).version, "1.0.1");
+  await refused(installFromIndex("agentv.sample", sooner, dir, keyring), /older than the one this box already has/);
+});
+
+test("L4 one key's indexes don't hold back another's, and reading an index without a place to remember refuses nothing", async () => {
+  const dir = apps();
+  await installFromIndex("agentv.sample", index([sample()], signer, {}, "20360103T030000"), dir, keyring);
+  // A box whose keyring is another key, as an image check's stand-in index has.
+  await installFromIndex("agentv.sample", index([sample()], otherSigner, {}, "20360101T030000"), dir, otherKeyring);
+  const old = index([sample()], signer, {}, "20360101T030000");
+  assert.equal((await loadIndex(old, keyring)).apps.length, 1);
+  await refused(loadIndex(old, keyring, join(dir, ".index-seen.json")), /older than the one this box already has/);
 });

@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="AgenTV's home: a film to continue, the clock, the weather, Disney+, music, Jellyfin and new this week" src="../branding/readme/home.jpg">
+  <img alt="AgenTV's home: a film to continue, the clock, the weather, a streaming app, music, Jellyfin and new this week" src="../branding/readme/home.jpg">
 </p>
 
 ---
@@ -28,7 +28,7 @@ Underneath it's Omarchy, so the full Linux desktop is one switch away.
 
 ## What you get today
 
-[0.1.4](https://github.com/radomird/agentv-os/releases/tag/v0.1.4) is out as a pre-release. It all passes its tests in a VM, and I'm still trying the new parts on my Intel NUC.
+[0.2.0](https://github.com/radomird/agentv-os/releases/tag/v0.2.0) is out as a pre-release: it's 0.1.4, moved onto Omarchy 4.5. It all passes its tests in a VM, and I'm still trying the new parts on my Intel NUC.
 
 New in 0.1.4:
 
@@ -59,7 +59,7 @@ Already in 0.1.3:
 | | |
 | --- | --- |
 | <img alt="Setup's first screen: hi, and a code to scan with your phone" src="../branding/readme/setup.png"> | <img alt="Add your own: type what's missing and the agent finds it" src="../branding/readme/add-your-own.png"> |
-| <img alt="Apps: Disney+, Netflix, Prime Video, YouTube, Jellyfin, music, Plex, Immich and Steam" src="../branding/readme/apps.png"> | <img alt="Who watches: a profile for each person, and children's profiles" src="../branding/readme/who-watches.png"> |
+| <img alt="Apps: four streaming apps, Jellyfin, music, Plex, Immich and Steam" src="../branding/readme/apps.png"> | <img alt="Who watches: a profile for each person, and children's profiles" src="../branding/readme/who-watches.png"> |
 
 <p align="center">
   <img alt="The phone saying an app is ready" src="../branding/readme/phone-ready.png" width="260">
@@ -77,7 +77,7 @@ You'll need:
 - a USB stick of 8 GB or more;
 - a keyboard, for Omarchy's installer.
 
-1. Download [the latest ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso) (about 6.6 GB), [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso.sha256) and [the checksum's signature](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso.sha256.sig). [This file](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.version) says which release it is. To check the download, put all three in one folder and run:
+1. Download [the latest ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso) (about 6.7 GB), [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso.sha256) and [the checksum's signature](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso.sha256.sig). [This file](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.version) says which release it is. To check the download, put all three in one folder and run:
 
    ```
    curl -LO https://raw.githubusercontent.com/radomird/agentv-pkgs/main/agentv-keyring/agentv.gpg
@@ -133,10 +133,10 @@ The AgenTV wordmark is drawn in the letters of Omarchy's logo, as a thank-you, a
 | `agentv-os` (this one) | The TV OS itself: Omarchy, plus everything AgenTV adds |
 | [`agentv-iso`](https://github.com/radomird/agentv-iso) | The installer: Omarchy's, set up to install AgenTV |
 | [`agentv-pkgs`](https://github.com/radomird/agentv-pkgs) | The packages your box installs and updates from |
-| [`agentv-apps`](https://github.com/radomird/agentv-apps) | The apps that come with AgenTV: Jellyfin, Immich, Steam and Plex |
+| [`agentv-apps`](https://github.com/radomird/agentv-apps) | The apps that come with AgenTV: Jellyfin, Immich, Steam, Plex and [six streaming apps](https://github.com/radomird/agentv-apps#what-you-get), three of them coming soon |
 | `agentv-plugin` | A "Back to TV" button for Omarchy's desktop (coming soon) |
 | `agentv-companion` | The iPhone app: remote, keyboard and microphone in one (coming soon) |
 
 ## Trademarks
 
-Apple TV, Disney+, Netflix, Prime Video, YouTube, Steam, Jellyfin, Immich, Plex, Samsung, LG and Sony are trademarks of their owners. I only name or show them to say which TVs and apps AgenTV works with. AgenTV isn't made or endorsed by any of them, and this repo has no code for Disney+, Netflix or Prime Video.
+Apple TV, Steam, Jellyfin, Immich, Plex, Samsung, LG and Sony are trademarks of their owners, and so are the names and logos of the [six streaming apps](https://github.com/radomird/agentv-apps#what-you-get). I only name or show them to say which TVs and apps AgenTV works with. AgenTV isn't made or endorsed by any of them, and the code for the streaming apps is in `agentv-apps`, not in this repo.

@@ -36,6 +36,9 @@ export interface Installed {
 }
 
 const RECORD = "installed.json";
+// The newest app index this box has installed from, so an older one is
+// refused (index.ts). A dot file, like the record's own next copy.
+const SEEN = ".index-seen.json";
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
 
 // git only over https (and file for the tests), with no prompt for a password
@@ -189,7 +192,7 @@ export async function installLocal(dir: string, appsDir: string, approve: (manif
 
 // Installs id from the index at source (a folder or an https:// address).
 export async function installFromIndex(id: string, source: string, appsDir: string, keyring?: string): Promise<Installed> {
-  const index = await loadIndex(source, keyring);
+  const index = await loadIndex(source, keyring, join(appsDir, SEEN));
   const entry = index.apps.find((app) => app.id === id);
   if (!entry) throw new IndexError(`${id} isn't in the app index`);
   return installEntry(entry, appsDir);

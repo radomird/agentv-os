@@ -29,6 +29,29 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes
+# It faces the home network and runs apps' workers, so it gets no more of
+# the kernel than it uses: nothing to set under /proc/sys or /sys, no
+# modules, no kernel log, no hostname to set, no other user's processes in
+# /proc, and only the sockets it opens (netlink is how Node lists the box's
+# addresses).
+# Left out on purpose: PrivateDevices= and ProtectClock=, since the box
+# check asks the GPU what it decodes through /dev/dri, and both close the
+# unit's devices to a short list (ProtectClock= by its own DeviceAllow=);
+# RestrictNamespaces= and PrivateUsers=, since an app's worker gets
+# namespaces of its own; and MemoryDenyWriteExecute= and a
+# SystemCallFilter=, which Node's JIT and the tools the daemon runs would
+# need tuning for.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectProc=invisible
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target
