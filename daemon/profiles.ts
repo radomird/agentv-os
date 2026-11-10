@@ -29,17 +29,22 @@ export interface ProfilesOptions {
   ledger: () => Ledger;
   state: string; // where the active viewer is kept: <state>/viewer.json
   passwd?: string; // /etc/passwd, for the owner's name
+  // Whether there's an adult PIN. With none, no profile is locked: there's
+  // nothing to ask for.
+  pinSet?: () => boolean;
 }
 
 export class Profiles {
   private ledger: () => Ledger;
   private state: string;
   private passwd: string;
+  private pinSet: () => boolean;
 
   constructor(options: ProfilesOptions) {
     this.ledger = options.ledger;
     this.state = options.state;
     this.passwd = options.passwd ?? process.env.AGENTV_PASSWD ?? "/etc/passwd";
+    this.pinSet = options.pinSet ?? (() => true);
   }
 
   // The person the box belongs to: the first ordinary user.
@@ -69,11 +74,14 @@ export class Profiles {
       viewers = this.ledger().viewers();
     }
     const { order = [], locked = [] } = await this.saved();
+    // With no PIN, no profile is locked, whatever was kept: a lock left
+    // from a PIN that's gone would ask for one nobody has.
+    const pin = this.pinSet();
     return viewers
       .map((viewer) => ({
         ...viewer,
         avatar: viewer.avatar && AVATARS.includes(viewer.avatar) ? viewer.avatar : AVATARS[0],
-        locked: viewer.role === "adult" && locked.includes(viewer.id),
+        locked: pin && viewer.role === "adult" && locked.includes(viewer.id),
       }))
       .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id) || a.id.localeCompare(b.id));
   }
@@ -131,6 +139,12 @@ export class Profiles {
   private async setLocked(id: string, on: boolean): Promise<void> {
     const locked = ((await this.saved()).locked ?? []).filter((l) => l !== id);
     await this.save({ locked: on ? [...locked, id] : locked });
+  }
+
+  // Forgets every lock, as a first PIN is set: a lock kept from a PIN that
+  // went missing doesn't come back by surprise with the next one.
+  async unlockAll(): Promise<void> {
+    if (((await this.saved()).locked ?? []).length) await this.save({ locked: [] });
   }
 
   async add(input: Record<string, unknown>): Promise<{ profile?: Profile; error?: string }> {

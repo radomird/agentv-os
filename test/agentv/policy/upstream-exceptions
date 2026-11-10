@@ -1,3 +1,12 @@
 # Omarchy files AgenTV is allowed to change, one path per line. ADR-021 allows
 # one at most, logo.txt, and only if no overlay or build step can do it. None
 # is needed so far.
+
+# GitHub reads a repo's security policy and its issue forms from .github/,
+# and Omarchy's sent AgenTV's reports to Omarchy's address, tracker and
+# Discord. These three are AgenTV's own instead (ADR-086), and nothing else
+# may join them on that ground. The Omarchy sync keeps AgenTV's version of
+# each, whatever upstream does to its own (.github/scripts/omarchy-sync).
+.github/SECURITY.md
+.github/ISSUE_TEMPLATE/bug.yml
+.github/ISSUE_TEMPLATE/config.yml

@@ -91,10 +91,16 @@ test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doe
     const state = async () => (await (await phone("/api/phone/state")).json()) as { export: { id: string } | null };
 
     assert.equal((await state()).export, null);
+    // F4: nothing is offered yet, so there's nothing to save. No PIN is set
+    // in this part, and nothing asks for one.
+    const early = await phone("/api/phone/apps/local.blocks/export");
+    assert.equal(early.status, 403, "not before the tv offers it");
+    assert.deepEqual(await early.json(), { ok: false, error: "export it from its details on the tv first" });
     assert.match((await (await send("POST", "/api/apps/local.stand-in/export", {})).json()).error, /drives a service's own site/);
     assert.equal((await send("POST", "/api/apps/local.blocks/export", {})).status, 200);
     assert.deepEqual((await state()).export, { id: "local.blocks", name: manifest.name, version: manifest.version, github: null });
-    assert.equal((await phone("/api/phone/apps/local.stand-in/export")).status, 400, "not even asked for directly");
+    assert.equal((await phone("/api/phone/apps/local.stand-in/export")).status, 403, "F4: only the app on offer, not another one");
+    assert.deepEqual((await state()).export?.id, "local.blocks", "and the offer stays");
 
     const saved = await phone("/api/phone/apps/local.blocks/export");
     assert.equal(saved.headers.get("content-type"), "application/zip");
@@ -102,6 +108,7 @@ test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doe
     const files = unzip(Buffer.from(await saved.arrayBuffer()));
     assert.ok(`local.blocks-${manifest.version}/manifest.json` in files);
     assert.equal((await state()).export, null, "the offer goes once it's saved");
+    assert.equal((await phone("/api/phone/apps/local.blocks/export")).status, 403, "F4: and it's saved once");
 
     // A child watching sees no offer, and can't save one.
     await send("PUT", "/api/pin", { pin: "2468" });
