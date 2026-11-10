@@ -16,14 +16,23 @@ type -P node >/dev/null || exit 0
 
 flags=()
 [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
-port=$(node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
+# start: the daemon on a free port, a new one each time, since another test
+# running beside this one can take a port between its pick and the listen,
+# and does across a restart. A port taken that way is tried again.
 start() {
-  AGENTV_PATH="$SCRATCH/root" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_LAN_PORT=0 AGENTV_SETUP_PORT=0 \
-    node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
-  pid=$!
-  for _ in $(seq 1 50); do
-    curl -fsS -o /dev/null "http://127.0.0.1:$port/health" 2>/dev/null && return 0
-    sleep 0.1
+  local _attempt
+  for _attempt in 1 2 3; do
+    port=$(node -e 'const s = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); })')
+    export AGENTV_PORT=$port
+    AGENTV_PATH="$SCRATCH/root" AGENTV_DAEMON_STATE="$SCRATCH/state" AGENTV_LAN_PORT=0 AGENTV_SETUP_PORT=0 \
+      node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ROOT/daemon/server.ts" --port "$port" >"$SCRATCH/daemon.log" 2>&1 &
+    pid=$!
+    for _ in $(seq 1 50); do
+      curl -fsS -o /dev/null "http://127.0.0.1:$port/health" 2>/dev/null && return 0
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    grep -q EADDRINUSE "$SCRATCH/daemon.log" || break
   done
   fail "the daemon starts" "$(cat "$SCRATCH/daemon.log")"
 }
@@ -32,7 +41,6 @@ stop() {
   wait "$pid" 2>/dev/null || true
 }
 trap 'stop; rm -rf "$SCRATCH"' EXIT
-export AGENTV_PORT=$port
 # The channel, as the package says it: the daemon reads it each time.
 channel() {
   fake_agentv_path "$SCRATCH/root" "$1"
