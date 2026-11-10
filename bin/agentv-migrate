@@ -7,8 +7,9 @@
 # AgenTV's own migrations, numbered and run the way omarchy-migrate runs
 # Omarchy's: each <unix-time>.sh once per user, oldest first, with a marker
 # file once it has finished. Omarchy's post-update hook calls this after every
-# update (ADR-025). A fresh install marks them all as done, since it already
-# is what they would migrate to.
+# update (ADR-025), and an update from the TV runs it itself, right after
+# Omarchy's migrations (bin/agentv-update-tv). A fresh install marks them all
+# as done, since it already is what they would migrate to.
 #
 # Then it restarts AgenTV's own services on the version just installed
 # (agentv-restart), so an update only restarts the box when it has to. It's

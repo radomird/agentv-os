@@ -22,21 +22,19 @@ theme_color() {
 background=$(theme_color background '#1a1b26')
 foreground=$(theme_color foreground '#c0caf5')
 
-# omarchy plymouth set runs as a user and asks sudo for its privileged steps:
-# a root bash that publishes the theme, then plymouth-set-default-theme and a
-# rebuild of the boot image. First boot has nobody to type a password, and
-# runs before the login screen, when nothing of the owner's is running. So
-# the owner may use sudo without a password for this one call; a root bash is
-# all of root anyway, so naming each command would protect nothing. The rule
-# goes right after, and also if anything here fails, and AgenTV's own tmpfiles
-# rule (system/tmpfiles/agentv-sudo.conf) removes it at the next boot even if
-# the power goes out halfway through. The name is AgenTV's own, since Omarchy
-# removes anything named like its own grants that it didn't write.
-rule="/etc/sudoers.d/99-agentv-branding-$AGENTV_OWNER"
-trap 'rm -f "$rule"' EXIT
-printf '%s ALL=(root) NOPASSWD: ALL\n' "$AGENTV_OWNER" >"$rule"
-chmod 0440 "$rule"
-visudo -cqf "$rule"
-runuser -u "$AGENTV_OWNER" -- env HOME="$AGENTV_OWNER_HOME" OMARCHY_PATH="$OMARCHY_PATH" \
-  omarchy-plymouth-set "$background" "$foreground" "$AGENTV_PATH/branding/plymouth-logo.png"
-rm -f "$rule"
+# omarchy plymouth set won't run as root. It runs as a user, opens the logo
+# as that user, and asks sudo for its privileged steps: a root bash that
+# publishes the theme, then plymouth-set-default-theme and a rebuild of the
+# boot image. First boot has nobody to type a password. A rule in
+# /etc/sudoers.d used to cover it, for every process of the owner's. Now
+# root lends this one call a sudo only it can use (bin/agentv-sudo-lend):
+# the stand-in for sudo is alone in a folder of root's, first in the call's
+# PATH. The call gets a clean environment, so nothing of the owner's runs.
+sudo_dir=$(mktemp -d "${AGENTV_RUN_DIR:-/run}/agentv-sudo.XXXXXX")
+trap 'rm -rf "$sudo_dir"' EXIT
+chmod 755 "$sudo_dir"
+ln -s "$(command -v agentv-sudo-shim)" "$sudo_dir/sudo"
+agentv-sudo-lend --fd 200 -- runuser -u "$AGENTV_OWNER" -- env -i HOME="$AGENTV_OWNER_HOME" USER="$AGENTV_OWNER" LOGNAME="$AGENTV_OWNER" \
+  PATH="$sudo_dir:${AGENTV_SYSTEM_PATH:-/usr/local/sbin:/usr/local/bin:/usr/bin}" OMARCHY_PATH="$OMARCHY_PATH" AGENTV_SUDO_FD=200 \
+  omarchy-plymouth-set "$background" "$foreground" "$AGENTV_PATH/branding/plymouth-logo.png" </dev/null
+rm -rf "$sudo_dir"
