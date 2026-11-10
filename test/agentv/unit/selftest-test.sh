@@ -488,10 +488,17 @@ grep -qE "^pass S3.3 a ledger row appeared [0-9]+ ms after the app opened: radom
   fail "it says how soon the row came, and what it says" "$(cat "$SCRATCH/out")"
 grep -q "^manual S3.3 a second viewer" "$SCRATCH/out" || fail "it says what waits for profiles" "$(cat "$SCRATCH/out")"
 # The stand-in was a real app while it was there, and is gone with its rows.
-AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-app-validate" --local "$state/seen-app" >/dev/null || fail "the stand-in passes the app contract's checks"
+# It's served from this box, which only the stand-in may reach: its record
+# says so, and the same package without that record is refused.
+[[ $(jq -r .standIn "$state/seen-record") == true ]] || fail "the stand-in's record says it's the selftest's stand-in" "$(cat "$state/seen-record")"
+if AGENTV_PATH="$ROOT" "$ROOT/bin/agentv-app-validate" --local "$state/seen-app" >"$SCRATCH/validate" 2>&1; then
+  fail "F2 the stand-in's package alone, naming this box, doesn't pass the app contract's checks" "$(cat "$SCRATCH/validate")"
+fi
+grep -q "is this box, which an app never reaches" "$SCRATCH/validate" || fail "and the check says why" "$(cat "$SCRATCH/validate")"
+[[ $(grep -c "^    " "$SCRATCH/validate") == 1 ]] || fail "that's the only thing wrong with the stand-in" "$(cat "$SCRATCH/validate")"
 [[ $(jq -r .tier "$state/seen-record") == local ]] || fail "the stand-in was installed as a local app" "$(cat "$state/seen-record")"
 [[ $(jq -r '.source | test("/app$")' "$state/seen-record") == true ]] || fail "its record says which folder it came from" "$(cat "$state/seen-record")"
-grep -qx "install --local .*/app --yes" "$state/app.log" || fail "S3.3 installs the stand-in with agentv app install --local" "$(cat "$state/app.log")"
+grep -qx "install --local .*/app --yes --stand-in" "$state/app.log" || fail "S3.3 installs the stand-in with agentv app install --local" "$(cat "$state/app.log")"
 grep -qx "remove local.selftest-player" "$state/app.log" || fail "and removes it with agentv app remove" "$(cat "$state/app.log")"
 [[ ! -e $SCRATCH/var/apps/local.selftest-player ]] || fail "the stand-in is removed after"
 [[ $(jq -c 'keys' "$SCRATCH/var/apps/installed.json") == '["agentv.sample"]' ]] || fail "installed.json is as it was" "$(cat "$SCRATCH/var/apps/installed.json")"
@@ -703,17 +710,19 @@ pass "S7.3 passes only when a sentence that can't be routed comes back as i didn
 
 # Its spoken half (stage 8, Q146): the TV said it, with which voice.
 echo '{"ok":true,"said":{"n":4,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
-echo '{"ok":true,"spoken":true,"by":"piper","provider":null,"piper":"ready","last":{"clip":2,"by":"piper","ms":600,"played":true}}' >"$state/voice-before"
-echo '{"ok":true,"spoken":true,"by":"piper","provider":null,"piper":"ready","last":{"clip":3,"by":"piper","ms":640,"played":true}}' >"$state/voice"
+echo '{"ok":true,"spoken":true,"by":"own","provider":null,"own":"ready","last":{"clip":2,"by":"own","ms":600,"played":true}}' >"$state/voice-before"
+echo '{"ok":true,"spoken":true,"by":"own","provider":null,"own":"ready","last":{"clip":3,"by":"own","ms":640,"played":true}}' >"$state/voice"
 run1 S7.3 || fail "S7.3 passes when the TV said it" "$(cat "$SCRATCH/out")"
-grep -qF "pass S7.3 the TV said it aloud, with piper" "$SCRATCH/out" || fail "it says with which voice" "$(cat "$SCRATCH/out")"
-echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":null}' >"$state/voice-before"
-echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":{"clip":3,"by":"provider","ms":900,"played":false,"error":"there'"'"'s no player for sound on this box"}}' >"$state/voice"
+grep -qF "pass S7.3 the TV said it aloud, with its own voice" "$SCRATCH/out" || fail "it says with which voice" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","own":"missing","last":null}' >"$state/voice-before"
+echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","own":"missing","last":{"clip":3,"by":"provider","ms":900,"played":false,"error":"there'"'"'s no player for sound on this box"}}' >"$state/voice"
 ! run1 S7.3 || fail "S7.3 fails when the TV didn't say it"
 grep -qF "fail S7.3 the TV didn't say it aloud: there's no player for sound on this box" "$SCRATCH/out" || fail "it says why" "$(cat "$SCRATCH/out")"
-echo '{"ok":true,"spoken":true,"by":null,"provider":null,"piper":"missing","last":null}' >"$state/voice"
-! run1 S7.3 || fail "S7.3 fails with no voice on the box"
-grep -qF "fail S7.3 the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)" "$SCRATCH/out" || fail "it says Piper is missing" "$(cat "$SCRATCH/out")"
+# A TV with no voice of its own and no key that has one (T17.1): the answer
+# is only shown, and that's as it should be.
+echo '{"ok":true,"spoken":true,"by":null,"provider":null,"own":"missing","last":null}' >"$state/voice"
+run1 S7.3 || fail "S7.3 passes on a TV with no voice" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.3 the TV has no voice of its own and no key with one, so it showed its answer without saying it" "$SCRATCH/out" || fail "it says the TV has no voice, without failing" "$(cat "$SCRATCH/out")"
 echo '{"spoken":false}' >"$state/voice"
 pass "S7.3's spoken half passes when the TV said it, and says which voice"
 

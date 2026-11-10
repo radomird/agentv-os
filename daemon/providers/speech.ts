@@ -12,7 +12,7 @@
 //   voice, which Google calls warm, with the style said apart from the words.
 // - xAI: /v1/tts with its default voice, eve.
 // - Anthropic and Meta have no speech API, so Claude and Muse households
-//   hear Piper on the box, as a household on a plan does.
+//   hear the TV's own voice, or none, as a household on a plan does.
 //
 // Nothing here logs the words.
 

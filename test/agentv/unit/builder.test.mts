@@ -222,7 +222,9 @@ test("H2 L2 declare_origin takes an https origin out on the internet, and none a
   const b = build({ recipe: "api" });
   const declare = stepTools({ build: b, recipe: api, step: api.steps.find((s) => s.id === "api")!, root: ROOT, omarchy: "/usr/share/omarchy" }).find((t) => t.name === "declare_origin")!;
   for (const origin of ["https://192.168.1.10", "https://10.0.0.5", "https://172.16.4.1", "https://100.64.0.9", "https://169.254.169.254", "https://[fd00::1]", "https://[fe80::1]", "https://[::ffff:c0a8:10a]", "https://[::ffff:7f00:1]", "https://nas.local", "https://router.lan", "https://nas", "http://192.168.1.10"]) {
-    await assert.rejects(declare.run({ origin, why: "a look" }), /is on the home network or this box: a build reaches only the internet/, origin);
+    // An address that's the box itself, or only ever on its own link, is
+    // refused as this box by the manifest's own check first.
+    await assert.rejects(declare.run({ origin, why: "a look" }), /is on the home network or this box: a build reaches only the internet|is this box, which a page app reaches only through/, origin);
   }
   await assert.rejects(declare.run({ origin: "https://127.0.0.1", why: "a look" }), /is this box/);
   await assert.rejects(declare.run({ origin: "https://api.example.org:8443", why: "a look" }), /names a port/);

@@ -10,6 +10,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { extname, join, posix } from "node:path";
+import { boxHost } from "./address.ts";
 import type { Manifest } from "./manifest.ts";
 import { KIT_PATH, STORAGE_QUOTA } from "./kit.ts";
 
@@ -29,8 +30,6 @@ const PAGE_FILES = [
 const PLAIN_FILES = ["LICENSE", "LICENCE", "NOTICE", "COPYING"];
 const TEXT = [".html", ".css", ".js", ".mjs"];
 
-// The box itself, which a page app never reaches: the daemon answers there.
-const THE_BOX = /^(localhost|.*\.localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|\[::1?\]|\[::ffff:127(\.\d{1,3}){3}\])$/i;
 
 // The origin of an absolute http(s) or ws(s) address, with ws(s) taken as
 // http(s), since the policy lists http(s) origins. Null for anything else.
@@ -55,7 +54,7 @@ export function pageOriginProblem(origin: string): string | null {
   if ((url.protocol !== "https:" && url.protocol !== "http:") || url.origin !== origin) {
     return `'${origin}' isn't an origin: a scheme and a host, like https://example.org`;
   }
-  if (THE_BOX.test(url.hostname)) return `'${origin}' is this box, which a page app reaches only through AgenTV's app kit`;
+  if (boxHost(url.hostname)) return `'${origin}' is this box, which a page app reaches only through AgenTV's app kit`;
   return null;
 }
 
@@ -213,9 +212,19 @@ export function checkPage(root: string, files: Set<string>, manifest: Record<str
   }
 }
 
+// What keeps WebRTC inside what a page app declared. A peer connection
+// sends UDP wherever its script says, past the policy below and past the
+// filter, which only sees what goes through the proxy. With these, the
+// Chromium that shows page apps (home's, and the test TV's) opens no UDP of
+// its own for WebRTC and sends the rest through its proxy, so the filter
+// decides. Chromium has had the switch under both names, so both are given.
+export const NO_WEBRTC = ["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"];
+
 // The Content-Security-Policy the box serves a page app under: its own
 // files, the origins it declared, and nothing else. home is the origin of
-// the page that holds its frame, the only one that may.
+// the page that holds its frame, the only one that may. webrtc 'block' is
+// the standard's word for no peer connections; Chromium 153 doesn't act on
+// it yet, so NO_WEBRTC above is what holds today.
 export function pagePolicy(manifest: Manifest, home: string): string {
   const origins = (manifest.tv.origins ?? []).join(" ");
   const and = origins ? ` ${origins}` : "";
@@ -234,6 +243,7 @@ export function pagePolicy(manifest: Manifest, home: string): string {
     "base-uri 'none'",
     "form-action 'none'",
     `frame-ancestors ${home}`,
+    "webrtc 'block'",
   ].join("; ");
 }
 

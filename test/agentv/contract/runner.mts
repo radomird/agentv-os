@@ -52,6 +52,7 @@ import { fileURLToPath } from "node:url";
 import type { Browser, Page, Route as PageRoute } from "playwright-core";
 import { validatePackage, type Manifest, type Tier } from "../../../apps/contract/manifest.ts";
 import { type CheckPage, checkApp, FOCUSED, REMOTE_KEYS, type Result, settled } from "../../../builder/contract-run.ts";
+import { HARNESS } from "../harness.mts";
 import { type Contract, differences, Fixtures } from "../../../builder/fixtures.ts";
 import { MusicApp, MusicLibrary, type MusicPlayer, type Track } from "../../../daemon/music.ts";
 import { cdpPage } from "../../../daemon/page.ts";
@@ -167,7 +168,7 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
       close: () => page.close(),
     };
   };
-  return [...results, ...(await checkApp({ dir, manifest: manifest as Manifest, contract, served, openPage }))];
+  return [...results, ...(await checkApp({ dir, manifest: manifest as Manifest, contract, served, openPage, harness: HARNESS }))];
 }
 
 // Every app here with fixtures: the built-ins and the test apps.

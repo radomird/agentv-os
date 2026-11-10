@@ -137,8 +137,20 @@ test("S8.1 Settings → new this week takes the key from the phone's keyboard, t
 test("S8.1 with a key, New this week shows this week's posters, each with its app, and TMDB's and JustWatch's credit; choosing one plays it", async () => {
   const { page, opened } = await tv();
   try {
-    await page.waitForSelector(`${newTile} .entry img`);
-    const entries = await page.$$eval(`${newTile} .entry`, (els) => els.map((el) => [el.querySelector(".entry-label")?.textContent, el.querySelector(".entry-caption")?.textContent]));
+    // Home draws again when the daemon says the week's titles changed, and a
+    // redraw fills the tile afresh. So this waits for all four posters and
+    // reads them in the same step, never between two draws.
+    const seen = await page.waitForFunction((sel) => {
+      const els = [...document.querySelectorAll(`${sel} .entry`)];
+      const imgs = els.map((el) => el.querySelector("img"));
+      if (els.length < 4 || !imgs.every((img) => img && img.naturalWidth > 0)) return null;
+      const box = imgs[0]!.getBoundingClientRect();
+      return {
+        entries: els.map((el) => [el.querySelector(".entry-label")?.textContent, el.querySelector(".entry-caption")?.textContent]),
+        poster: { w: box.width, h: box.height, loaded: true },
+      };
+    }, newTile);
+    const { entries, poster } = (await seen.jsonValue()) as { entries: string[][]; poster: { w: number; h: number; loaded: boolean } };
     assert.deepEqual(entries, [
       ["night train", "kino"],
       ["glass harbour", "lumen"],
@@ -146,7 +158,6 @@ test("S8.1 with a key, New this week shows this week's posters, each with its ap
       ["paper kites", "lumen"],
     ]);
     assert.equal(await page.textContent(`${newTile} .new-credit`), "from tmdb · where to watch from justwatch");
-    const poster = await page.$eval(`${newTile} .entry img`, (img) => ({ w: (img as HTMLImageElement).getBoundingClientRect().width, h: (img as HTMLImageElement).getBoundingClientRect().height, loaded: (img as HTMLImageElement).naturalWidth > 0 }));
     assert.ok(poster.loaded, "the poster loads through the daemon");
     assert.ok(Math.abs(poster.h / poster.w - 1.5) < 0.05, `posters are 2:3, ${JSON.stringify(poster)}`);
     await page.click(`${newTile} .entry >> nth=1`);

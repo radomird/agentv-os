@@ -907,9 +907,9 @@ s73_spoken() {
   if jq -e '.spoken == false' <<<"$voice" >/dev/null; then
     result manual S7.3 "spoken answers are off in Settings → Sound: turn them on to hear i didn't get that"
   elif jq -e '.by == null' <<<"$voice" >/dev/null; then
-    result fail S7.3 "the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)"
+    result pass S7.3 "the TV has no voice of its own and no key with one, so it showed its answer without saying it"
   elif jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played == true' <<<"$voice" >/dev/null; then
-    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "piper" end' <<<"$voice")"
+    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "its own voice" end' <<<"$voice")"
   else
     result fail S7.3 "the TV didn't say it aloud: $(jq -r '.last.error // "no clip played"' <<<"$voice")"
   fi
@@ -1059,8 +1059,9 @@ export default {
 };
 APP
   # Installed the way an app built on this box is (ADR-039), so the PIN, when
-  # there is one, is asked for here in the terminal.
-  if ! agentv_app install --local "$work/app" --yes >/dev/null; then
+  # there is one, is asked for here in the terminal. It's served from this
+  # box, which no other app may reach, so the install says it's the stand-in.
+  if ! agentv_app install --local "$work/app" --yes --stand-in >/dev/null; then
     kill "$server" 2>/dev/null || true
     rm -rf "$work"
     wants S3.3 && result fail S3.3 "agentv app install --local didn't install the stand-in player"

@@ -90,8 +90,8 @@ jq -e '.apps["agentv.broken"] | .state == "failed" and .error == "broken-game di
 grep -qx "TimeoutStartSec=90min" "$ROOT/system/agentv-setup-apps.service" || fail "agentv-setup-apps.service waits long enough for a program like Steam"
 pass "ADR-042 an official native app's program comes with it, and its tile says when it didn't"
 
-for word in ProtectSystem=strict NoNewPrivileges=yes StateDirectory=agentv/apps RuntimeDirectory=agentv-setup-apps ReadWritePaths=-/var/lib/private/agentv/daemon; do
+for word in ProtectSystem=strict NoNewPrivileges=yes StateDirectory=agentv/apps RuntimeDirectory=agentv-setup-apps ReadWritePaths=-/var/lib/agentv/daemon; do
   grep -qx "$word" "$ROOT/system/agentv-setup-apps.service" || fail "agentv-setup-apps.service has $word"
 done
-grep -qx "PathExists=/var/lib/private/agentv/daemon/apps-drop/install.json" "$ROOT/system/agentv-setup-apps.path" || fail "agentv-setup-apps.path watches the daemon's drop"
+grep -qx "PathExists=/var/lib/agentv/daemon/apps-drop/install.json" "$ROOT/system/agentv-setup-apps.path" || fail "agentv-setup-apps.path watches the daemon's drop"
 pass "agentv-setup-apps.path starts the installs as root when the daemon leaves the apps picked"

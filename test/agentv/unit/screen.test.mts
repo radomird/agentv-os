@@ -15,10 +15,21 @@ import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { Sleep } from "../../../daemon/sleep.ts";
-import { HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { NO_WEBRTC } from "../../../apps/contract/page.ts";
+import { homeArguments, HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("M2 home's Chromium goes out only through the filter, WebRTC too", () => {
+  const args = homeArguments("/var/lib/agentv/chromium-home", "http://127.0.0.1:3000/", "http://127.0.0.1:3005");
+  assert.ok(args.includes("--proxy-server=http://127.0.0.1:3005"));
+  // No UDP of its own for a peer connection, under both names Chromium has
+  // had for the switch.
+  assert.deepEqual(NO_WEBRTC, ["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]);
+  for (const flag of NO_WEBRTC) assert.ok(args.includes(flag), flag);
+  assert.ok(args.includes("--user-data-dir=/var/lib/agentv/chromium-home") && args.includes("--app=http://127.0.0.1:3000/"));
+});
 
 class FakeHyprland implements Hyprland {
   windows: Client[] = [];

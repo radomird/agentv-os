@@ -15,6 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
 import { validatePackage, type Manifest } from "../../apps/contract/manifest.ts";
+import { NO_WEBRTC } from "../../apps/contract/page.ts";
 import type { CdpPipe } from "../../daemon/cdp.ts";
 import { pageAppId, pageOrigin, PageApps, refusal } from "../../daemon/page-apps.ts";
 import { headless } from "./chromium.ts";
@@ -35,6 +36,9 @@ export interface TryOptions {
   proxy?: string; // the sandbox's filter
   storage: string; // a folder for the app's storage while it's tried
   shot?: string; // where the screenshot goes
+  // Chromium's switches that keep WebRTC in, as home's Chromium has them. A
+  // test gives none, to see the check catch a browser without them.
+  webrtc?: string[];
 }
 
 export interface TestResult {
@@ -131,6 +135,7 @@ export async function tryApp(o: TryOptions): Promise<TryReport> {
       "--disable-renderer-backgrounding",
       "--disable-backgrounding-occluded-windows",
       "--autoplay-policy=no-user-gesture-required",
+      ...(o.webrtc ?? NO_WEBRTC),
     ],
   });
   const cdp = browser.cdp;

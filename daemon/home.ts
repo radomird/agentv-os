@@ -11,7 +11,8 @@ import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
 import { pagePermissions } from "../apps/contract/page.ts";
 import { GRID, GRID_MORE, pin, problem, type Grid, type Placed, type Size } from "../launcher/layout.ts";
-import { AppError, AppHost, allowedOrigins, type Viewer } from "./apps/loader.ts";
+import { boxHost, ownAddresses } from "../apps/contract/address.ts";
+import { AppError, AppHost, allowedOrigins, type AppHostOptions, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
 import type { Ledger, WatchRow } from "./ledger.ts";
 import { legible } from "./legible.ts";
@@ -98,8 +99,12 @@ function addressKeys(manifest: Manifest): Set<string> {
 
 // A server's address as typed, made whole: http when no scheme is given, no
 // sign-in in it, nothing after the path, and no slash at the end. Null when
-// it isn't one.
-export function asAddress(typed: string): string | null {
+// it isn't one, and when it's this box itself (localhost, 127.0.0.1 or one
+// of own, the box's addresses on its networks): an app's server is another
+// machine, and the box's own address is where the daemon answers. Only a
+// test harness, whose stand-in servers are on this machine, gives null for
+// own, which lets the box through.
+export function asAddress(typed: string, own: Iterable<string> | null = ownAddresses()): string | null {
   const value = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `http://${typed}`;
   let url: URL;
   try {
@@ -108,6 +113,7 @@ export function asAddress(typed: string): string | null {
     return null;
   }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname || url.username || url.password || url.search || url.hash) return null;
+  if (own !== null && boxHost(url.hostname, own)) return null;
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
@@ -238,6 +244,8 @@ export interface HomeOptions {
   state: string; // the daemon's own state
   builtins?: string; // AgenTV's own apps: /usr/share/agentv/apps/builtin
   userAgent?: string; // what every app's requests say they are
+  // Only for a test harness (daemon/apps/loader.ts): the box never sets it.
+  harness?: AppHostOptions["harness"];
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
   // Who's watching now (daemon/profiles.ts). Without it, the box's owner.
   viewer?: () => Promise<Viewer & { name: string; avatar?: string }>;
@@ -250,7 +258,8 @@ export interface HomeOptions {
   // no all apps tile, and Clock isn't pinned until someone pins it.
   looks?: () => Promise<boolean>;
   // New this week's tile, which the daemon draws from TMDB (S8.1).
-  newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
+  // waiting says TMDB hasn't answered yet, so the tile gets asked for again.
+  newTile?: (viewer: Viewer, size: Size) => Promise<TileAnswer>;
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
@@ -261,6 +270,12 @@ export interface HomeOptions {
 
 // How long before a site's icon that didn't come is asked for again.
 const ICON_RETRY_MS = 6 * 3600_000;
+
+// A tile's content, and whether it's still waiting for it.
+export interface TileAnswer {
+  tile: unknown;
+  waiting: boolean;
+}
 
 // The free continue tile's entries: how far in, and how long is left.
 function caption(row: WatchRow): string {
@@ -298,6 +313,7 @@ export class Home {
   private state: string;
   private builtins?: string;
   private userAgent?: string;
+  private harness?: AppHostOptions["harness"];
   private ledger?: () => Ledger;
   private hosts = new Map<string, AppHost>();
   private tiles = new Map<string, { at: number; tile: unknown; settings: string }>();
@@ -308,7 +324,10 @@ export class Home {
   private goal?: () => Promise<string | null>;
   private looksOn?: () => Promise<boolean>;
   private pageTile?: (id: string) => Promise<unknown>;
-  private newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
+  private newTile?: (viewer: Viewer, size: Size) => Promise<TileAnswer>;
+  // Tiles that couldn't get their content yet, such as Weather's before the
+  // TV is online after a start.
+  private waiting = new Set<string>();
   private dataDirs: string[];
 
   constructor(options: HomeOptions) {
@@ -316,6 +335,7 @@ export class Home {
     this.state = options.state;
     this.builtins = options.builtins;
     this.userAgent = options.userAgent;
+    this.harness = options.harness;
     this.ledger = options.ledger;
     this.changed = options.changed ?? (() => {});
     this.log = options.log ?? (() => {});
@@ -347,16 +367,16 @@ export class Home {
 
   // AgenTV's own apps, which come with the agentv package: checked once,
   // since the package only changes with an update, which restarts the daemon.
-  private builtin?: Promise<{ manifest: Manifest; tier: AppTier; dir: string }[]>;
+  private builtin?: Promise<{ manifest: Manifest; tier: AppTier; dir: string; thisBox?: boolean }[]>;
 
-  builtinApps(): Promise<{ manifest: Manifest; tier: AppTier; dir: string }[]> {
+  builtinApps(): Promise<{ manifest: Manifest; tier: AppTier; dir: string; thisBox?: boolean }[]> {
     this.builtin ??= (async () => {
       if (!this.builtins) return [];
       const names = await readdir(this.builtins).catch(() => [] as string[]);
       const found = [];
       for (const name of names.sort()) {
         const dir = join(this.builtins, name);
-        const { manifest, problems } = validatePackage(dir, "official");
+        const { manifest, problems } = validatePackage(dir, "official", { thisBox: this.harness?.thisBox === true });
         if (manifest?.tv.runtime === "builtin") found.push({ manifest, tier: "built-in" as const, dir });
         else this.log(`the built-in ${name} isn't shown: ${problems[0] ?? "it doesn't say it's built in"}`);
       }
@@ -366,9 +386,9 @@ export class Home {
   }
 
   // Checked when installed.json changes, not on every request.
-  private checked?: { mtime: number; found: { manifest: Manifest; tier: AppTier; dir: string }[] };
+  private checked?: { mtime: number; found: { manifest: Manifest; tier: AppTier; dir: string; thisBox?: boolean }[] };
 
-  async manifests(): Promise<{ manifest: Manifest; tier: AppTier; dir: string }[]> {
+  async manifests(): Promise<{ manifest: Manifest; tier: AppTier; dir: string; thisBox?: boolean }[]> {
     const builtins = await this.builtinApps();
     const mtime = await stat(join(this.appsDir, "installed.json")).then((info) => info.mtimeMs, () => 0);
     if (this.checked?.mtime === mtime && mtime !== 0) return [...builtins, ...this.checked.found];
@@ -377,13 +397,15 @@ export class Home {
     for (const app of Object.values(record)) {
       const dir = join(this.appsDir, app.id);
       // Checked again as it's read: a package changed on disk isn't shown.
-      const { manifest } = validatePackage(dir, app.tier);
+      // The selftest's stand-in is served from this box, as its record says.
+      const thisBox = this.harness?.thisBox === true || app.standIn === true;
+      const { manifest } = validatePackage(dir, app.tier, { thisBox });
       if (!manifest) {
         this.log(`${app.id} doesn't pass the app contract's checks any more, so it isn't shown`);
       } else if (manifest.tv.runtime === "builtin" || builtins.some((b) => b.manifest.id === manifest.id)) {
         this.log(`${app.id} isn't shown: only AgenTV itself brings built-in apps`);
       } else {
-        found.push({ manifest, tier: app.tier, dir });
+        found.push({ manifest, tier: app.tier, dir, thisBox });
       }
     }
     this.checked = { mtime, found };
@@ -396,7 +418,7 @@ export class Home {
     const signIns = await this.signIns();
     const children = await this.childrenApps();
     const profiles = await this.allServiceProfiles();
-    const all = (await this.manifests()).map(({ manifest, tier }): AppSummary => {
+    const all = (await this.manifests()).map(({ manifest, tier, thisBox }): AppSummary => {
       const values = settings[manifest.id] ?? {};
       const builtin = tier === "built-in";
       const fields = (manifest.tv.setup ?? []).filter((step) => step.type === "field");
@@ -405,7 +427,7 @@ export class Home {
       // Its own logo, or else its package's icon or its site's.
       const has = !!manifest.tv.icon || (manifest.tv.runtime === "native" ? packageIcon(manifest.tv, this.dataDirs) !== null : this.hasSiteIcon(manifest.id, tier));
       const icon = has ? `/api/apps/${manifest.id}/icon` : undefined;
-      const reach = [...allowedOrigins(manifest, values)].map((origin) => origin.replace(/^https?:\/\//, ""));
+      const reach = [...allowedOrigins(manifest, values, this.onBox({ thisBox }))].map((origin) => origin.replace(/^https?:\/\//, ""));
       return {
         id: manifest.id,
         name: manifest.name,
@@ -571,7 +593,7 @@ export class Home {
     const target = await this.launch(id);
     if (target?.runtime !== "web") return;
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
-    const allowed = found ? allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}) : new Set<string>();
+    const allowed = found ? allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}, this.onBox(found)) : new Set<string>();
     const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "AgenTV"} ${id}`, allowed: (url) => allowed.has(url.origin) });
     if (!icon) {
       this.log(`${id}: its site has no icon to show, so its tile keeps its letters`);
@@ -593,7 +615,7 @@ export class Home {
     const settings = await this.appSettings();
     // The built-ins first: they come with the update itself.
     for (const { manifest, dir } of await this.builtinApps()) {
-      const host = new AppHost({ dir, manifest, settings: settings[manifest.id] ?? {}, userAgent: this.userAgent, log: this.log });
+      const host = new AppHost({ dir, manifest, settings: settings[manifest.id] ?? {}, userAgent: this.userAgent, log: this.log, harness: this.harness });
       try {
         await host.start();
         results.push({ id: manifest.id, name: manifest.name, ok: true });
@@ -605,7 +627,8 @@ export class Home {
     }
     for (const app of Object.values(await readInstalled(this.appsDir))) {
       const dir = join(this.appsDir, app.id);
-      const { manifest, problems } = validatePackage(dir, app.tier);
+      const thisBox = this.harness?.thisBox === true || app.standIn === true;
+      const { manifest, problems } = validatePackage(dir, app.tier, { thisBox });
       if (!manifest) {
         results.push({ id: app.id, name: app.name, ok: false, error: problems[0] ?? "it doesn't pass the app contract's checks" });
         continue;
@@ -614,7 +637,7 @@ export class Home {
         results.push({ id: app.id, name: manifest.name, ok: true });
         continue;
       }
-      const host = new AppHost({ dir, manifest, settings: settings[app.id] ?? {}, userAgent: this.userAgent, log: this.log });
+      const host = new AppHost({ dir, manifest, settings: settings[app.id] ?? {}, userAgent: this.userAgent, log: this.log, harness: { ...this.harness, thisBox } });
       try {
         await host.start();
         results.push({ id: app.id, name: manifest.name, ok: true });
@@ -730,7 +753,7 @@ export class Home {
         next[key] = value;
         continue;
       }
-      const address = asAddress(value);
+      const address = this.harness?.thisBox ? asAddress(value, null) : asAddress(value);
       if (!address) return `${field.label.toLowerCase()} is an address like http://192.168.1.20:8096`;
       next[key] = address;
     }
@@ -742,10 +765,16 @@ export class Home {
 
   // Where an app's package is, how it was installed and its settings, for
   // the screen daemon's worker that reads its playback while it's open.
-  async package(id: string): Promise<{ dir: string; tier: AppTier; category: string; settings: Record<string, string> } | null> {
+  async package(id: string): Promise<{ dir: string; tier: AppTier; category: string; settings: Record<string, string>; thisBox: boolean } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
-    return { dir: found.dir, tier: found.tier, category: found.manifest.tv.category, settings: (await this.appSettings())[id] ?? {} };
+    return { dir: found.dir, tier: found.tier, category: found.manifest.tv.category, settings: (await this.appSettings())[id] ?? {}, thisBox: this.onBox(found) };
+  }
+
+  // Whether an app may reach this box: only the selftest's stand-in, by its
+  // installed record, and the apps of a test harness.
+  private onBox(found: { thisBox?: boolean } | undefined): boolean {
+    return this.harness?.thisBox === true || found?.thisBox === true;
   }
 
   // An app's logo: its package's own, or its site's, kept here.
@@ -775,7 +804,7 @@ export class Home {
     const url = (tv.homeUrl ?? "").replace(/^\{([A-Za-z][A-Za-z0-9]*)\}/, (_, key: string) => (values[key] ?? "").replace(/\/+$/, ""));
     try {
       const parsed = new URL(url);
-      if (!allowedOrigins(found.manifest, values).has(parsed.origin)) return null;
+      if (!allowedOrigins(found.manifest, values, this.onBox(found)).has(parsed.origin)) return null;
       return { runtime: "web", url: parsed.href, name };
     } catch {
       return null;
@@ -793,8 +822,9 @@ export class Home {
     }
     const theirs = new Set((await this.apps(viewer)).map((app) => app.id));
     const settings = await this.appSettings();
-    for (const { manifest } of await this.manifests()) {
-      if (manifest.tv.runtime === "web" && theirs.has(manifest.id) && allowedOrigins(manifest, settings[manifest.id] ?? {}).has(origin)) return manifest.id;
+    for (const found of await this.manifests()) {
+      const { manifest } = found;
+      if (manifest.tv.runtime === "web" && theirs.has(manifest.id) && allowedOrigins(manifest, settings[manifest.id] ?? {}, this.onBox(found)).has(origin)) return manifest.id;
     }
     return null;
   }
@@ -915,38 +945,54 @@ export class Home {
   // A tile that doesn't answer in time keeps its last content; with none
   // it's null, and the launcher draws it small.
   async tile(id: string, size: Size, viewer: Viewer, fresh = false): Promise<unknown> {
+    return (await this.tileAnswer(id, size, viewer, fresh)).tile;
+  }
+
+  // The same, with whether the tile is still waiting for its content: its
+  // app couldn't get it and there's none kept, as when home draws before
+  // the TV is online. Home shows that it's loading and asks again, and
+  // every home hears "tiles" once the content is there.
+  async tileAnswer(id: string, size: Size, viewer: Viewer, fresh = false): Promise<TileAnswer> {
     const key = `${viewer.id}:${id}:${size}`;
+    const answer = await this.content(key, id, size, viewer, fresh);
+    if (answer.waiting) this.waiting.add(key);
+    else if (this.waiting.delete(key)) this.changed("tiles");
+    return answer;
+  }
+
+  private async content(key: string, id: string, size: Size, viewer: Viewer, fresh: boolean): Promise<TileAnswer> {
     const settings = (await this.appSettings())[id] ?? {};
     const signature = JSON.stringify(settings);
     const cached = this.tiles.get(key);
     const refresh = Math.max(TILE_MIN, Number((cached?.tile as { refreshMins?: number })?.refreshMins) || TILE_DEFAULT);
-    if (!fresh && cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return cached.tile;
+    if (!fresh && cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return { tile: cached.tile, waiting: false };
 
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
-    if (!found) return null;
+    if (!found) return { tile: null, waiting: false };
     const capabilities = found.manifest.tv.capabilities;
     // A page app sets its tile through the kit while it runs (ADR-043).
-    if (found.manifest.tv.runtime === "page") return capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null;
+    if (found.manifest.tv.runtime === "page") return { tile: capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null, waiting: false };
     // New this week is TMDB's, through the daemon, which keeps it itself.
-    if (id === NEW_APP && found.tier === "built-in") return (await this.newTile?.(viewer, size)) ?? null;
+    if (id === NEW_APP && found.tier === "built-in") return (await this.newTile?.(viewer, size)) ?? { tile: null, waiting: false };
     if (!capabilities.includes("tile")) {
       // The free medium continue tile, drawn from the ledger each time.
-      if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return null;
-      return continueTile(this.ledger().recent(viewer.id, { app: id, limit: 2 }));
+      if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return { tile: null, waiting: false };
+      return { tile: continueTile(this.ledger().recent(viewer.id, { app: id, limit: 2 })), waiting: false };
     }
     let host = this.hosts.get(id);
     if (!host) {
-      host = new AppHost({ dir: found.dir, manifest: found.manifest, settings, userAgent: this.userAgent, log: this.log });
+      host = new AppHost({ dir: found.dir, manifest: found.manifest, settings, userAgent: this.userAgent, log: this.log, harness: { ...this.harness, thisBox: this.onBox(found) } });
       this.hosts.set(id, host);
     }
     host.setSettings(settings);
     try {
       const tile = await host.call(viewer, "tile", size);
       this.tiles.set(key, { at: Date.now(), tile, settings: signature });
-      return tile;
+      return { tile, waiting: false };
     } catch (error) {
       this.log(`${id}'s ${size} tile: ${(error as AppError).message}`);
-      return cached?.settings === signature ? cached.tile : null;
+      // What was kept still shows. With nothing kept, the tile is waiting.
+      return cached?.settings === signature ? { tile: cached.tile, waiting: false } : { tile: null, waiting: true };
     }
   }
 
@@ -960,7 +1006,7 @@ export class Home {
     } catch {
       return null;
     }
-    const allowed = allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {});
+    const allowed = allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}, this.onBox(found));
     if (!allowed.has(parsed.origin) && parsed.origin !== TMDB_IMAGES) return null;
 
     const dir = join(this.state, "images");

@@ -14,6 +14,7 @@ import { lookup } from "node:dns/promises";
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { connect, isIP, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
+import { boxAddress, ownAddresses } from "../apps/contract/address.ts";
 
 // Whether a request may go to host:port, by scheme.
 export type Policy = (host: string, port: number, scheme: "http" | "https") => boolean | Promise<boolean>;
@@ -27,15 +28,12 @@ export interface NetFilterOptions {
   forbid?: (address: string) => boolean;
 }
 
-// This box and nowhere: loopback, unspecified and link-local addresses.
-export function forbiddenAddress(address: string): boolean {
-  const v4 = address.replace(/^::ffff:/i, "");
-  if (isIP(v4) === 4) {
-    const [a, b] = v4.split(".").map(Number);
-    return a === 127 || a === 0 || (a === 169 && b === 254);
-  }
-  const v6 = address.toLowerCase();
-  return v6 === "::1" || v6 === "::" || /^fe[89ab][0-9a-f]:/.test(v6);
+// This box and nowhere: loopback, unspecified and link-local addresses, and
+// the addresses the box has on its networks, so a name that points at the
+// box's own LAN address is refused as one that points at 127.0.0.1 is. own
+// is those addresses, read afresh each time unless given.
+export function forbiddenAddress(address: string, own: Iterable<string> = ownAddresses()): boolean {
+  return boxAddress(address, own);
 }
 
 // host:port from a CONNECT's target, with [::1]:443 for IPv6.

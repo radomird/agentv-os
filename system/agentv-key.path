@@ -7,8 +7,8 @@
 Description=AgenTV provider key hand-over
 
 [Path]
-PathExists=/var/lib/private/agentv/daemon/key-drop/key.json
-PathExists=/var/lib/private/agentv/daemon/key-drop/tmdb.json
+PathExists=/var/lib/agentv/daemon/key-drop/key.json
+PathExists=/var/lib/agentv/daemon/key-drop/tmdb.json
 Unit=agentv-key.service
 
 [Install]

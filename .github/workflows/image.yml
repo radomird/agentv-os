@@ -599,6 +599,7 @@ jobs:
             iso/test-runs/*/runs/**/*.txt
             iso/test-runs/*/runs/**/*.json
             iso/test-runs/*/runs/**/*.log
+            iso/test-runs/*/runs/**/*.wav
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1001,6 +1002,7 @@ jobs:
             iso/test-runs/*/runs/**/*.txt
             iso/test-runs/*/runs/**/*.json
             iso/test-runs/*/runs/**/*.log
+            iso/test-runs/*/runs/**/*.wav
           if-no-files-found: ignore
           retention-days: 14
 
@@ -1107,6 +1109,7 @@ jobs:
             iso/test-runs/*/runs/**/*.txt
             iso/test-runs/*/runs/**/*.json
             iso/test-runs/*/runs/**/*.log
+            iso/test-runs/*/runs/**/*.wav
           if-no-files-found: ignore
           retention-days: 14
 

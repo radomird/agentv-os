@@ -3,7 +3,7 @@
 // will use installLocal for the apps it builds (ADR-039).
 //
 // Usage: node cli.ts install <id> [--index <folder-or-url>]
-//        node cli.ts install --local <folder> [--yes]
+//        node cli.ts install --local <folder> [--yes] [--stand-in]
 //        node cli.ts list
 //        node cli.ts remove <id>
 // AGENTV_STATE (/var/lib/agentv) holds the apps; AGENTV_KEYRING overrides
@@ -74,12 +74,15 @@ async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
   if (command === "install" && rest.includes("--local")) {
     const yes = rest.includes("--yes");
-    const others = rest.filter((arg) => arg !== "--yes");
+    // For agentv selftest's stand-in player only, which it serves from this
+    // box: no other app may name the box as an origin.
+    const standIn = rest.includes("--stand-in");
+    const others = rest.filter((arg) => arg !== "--yes" && arg !== "--stand-in");
     if (others.length !== 2 || others[0] !== "--local" || others[1].startsWith("-")) {
       console.error(USAGE);
       return 2;
     }
-    const app = await installLocal(others[1], appsDir, approver(resolve(others[1]), yes));
+    const app = await installLocal(others[1], appsDir, approver(resolve(others[1]), yes), { standIn });
     console.log(`Installed ${app.name} ${app.version} (${app.id}). It's in Apps on the TV, where its details put it on home.`);
     return 0;
   }

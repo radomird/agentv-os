@@ -14,6 +14,7 @@ import { after, before, test } from "node:test";
 import { look, saidLook } from "../../../builder/browse.ts";
 import { Build } from "../../../builder/build.ts";
 import { contractTests } from "../../../builder/contract-run.ts";
+import { HARNESS } from "../harness.mts";
 import { loadRecipes } from "../../../builder/recipe.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -130,7 +131,7 @@ async function stageA(): Promise<Build> {
 test("S6.1 contract_tests runs the stage A app against the pages look kept, with the recipe's checks for the stage", async () => {
   const build = await stageA();
   const streaming = loadRecipes(join(ROOT, "builder/recipes")).get("streaming")!;
-  const a = await contractTests(build, streaming, { chromium, stage: "a" });
+  const a = await contractTests(build, streaming, { chromium, stage: "a", harness: HARNESS });
   assert.equal(a.ok, true, a.lines.join("\n"));
   assert.deepEqual(a.lines, ["ok: its module starts in a worker of its own", "ok: launch opens the home page", "ok: signed out, it says so", "ok: signed in, it says so"]);
 
@@ -138,7 +139,7 @@ test("S6.1 contract_tests runs the stage A app against the pages look kept, with
   const contract = JSON.parse(readFileSync(join(build.work, "fixtures", "contract.json"), "utf8"));
   contract.checks.push({ name: "a page it has no fixture for", page: "https://stand-in.test/films", call: "signIn.isSignedIn", expect: false });
   writeFileSync(join(build.work, "fixtures", "contract.json"), JSON.stringify(contract));
-  const b = await contractTests(build, streaming, { chromium, stage: "b" });
+  const b = await contractTests(build, streaming, { chromium, stage: "b", harness: HARNESS });
   assert.equal(b.ok, false);
   for (const call of ["search", "playback.open", "playback.readPlaybackState"]) assert.ok(b.lines.includes(`not ok: the recipe wants a check for ${call}, and fixtures/contract.json has none`), b.lines.join("\n"));
   assert.ok(b.lines.includes("not ok: a page it has no fixture for"), b.lines.join("\n"));
