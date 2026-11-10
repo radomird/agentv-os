@@ -101,8 +101,10 @@ function addressKeys(manifest: Manifest): Set<string> {
 // sign-in in it, nothing after the path, and no slash at the end. Null when
 // it isn't one, and when it's this box itself (localhost, 127.0.0.1 or one
 // of own, the box's addresses on its networks): an app's server is another
-// machine, and the box's own address is where the daemon answers.
-export function asAddress(typed: string, own: Iterable<string> = ownAddresses()): string | null {
+// machine, and the box's own address is where the daemon answers. Only a
+// test harness, whose stand-in servers are on this machine, gives null for
+// own, which lets the box through.
+export function asAddress(typed: string, own: Iterable<string> | null = ownAddresses()): string | null {
   const value = /^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `http://${typed}`;
   let url: URL;
   try {
@@ -111,7 +113,7 @@ export function asAddress(typed: string, own: Iterable<string> = ownAddresses())
     return null;
   }
   if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname || url.username || url.password || url.search || url.hash) return null;
-  if (boxHost(url.hostname, own)) return null;
+  if (own !== null && boxHost(url.hostname, own)) return null;
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
@@ -744,7 +746,7 @@ export class Home {
         next[key] = value;
         continue;
       }
-      const address = asAddress(value);
+      const address = this.harness?.thisBox ? asAddress(value, null) : asAddress(value);
       if (!address) return `${field.label.toLowerCase()} is an address like http://192.168.1.20:8096`;
       next[key] = address;
     }

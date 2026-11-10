@@ -21,8 +21,10 @@ export interface ServerPicksOptions {
   // An app's address was filled in.
   saved?: (app: string) => void;
   log?: (line: string) => void;
-  // The box's addresses on its networks, for the tests.
-  own?: () => string[];
+  // The box's addresses on its networks, for the tests. Null lets the box
+  // itself be picked, which only a test harness asks for, since its
+  // stand-in servers are on this machine.
+  own?: () => string[] | null;
 }
 
 export type PickAnswer = { ok: true; saved: boolean } | { ok: false; status: number; error: string };
@@ -91,12 +93,17 @@ export class ServerPicks {
     return { error };
   }
 
+  private isTheBox(url: string): boolean {
+    const own = this.options.own ? this.options.own() : ownAddresses();
+    return own !== null && isTheBox(url, own);
+  }
+
   // A server picked for an app: its address goes in now if the app's here,
   // or once it lands.
   pick(app: unknown, url: unknown): Promise<PickAnswer> {
     return this.serial(async () => {
       if (typeof app !== "string" || !ID.test(app)) return { ok: false, status: 400, error: "say which app, by its id" };
-      if (typeof url !== "string" || url.length > 500 || !/^https?:\/\/[^\s/]+/.test(url) || isTheBox(url, this.options.own?.() ?? ownAddresses())) {
+      if (typeof url !== "string" || url.length > 500 || !/^https?:\/\/[^\s/]+/.test(url) || this.isTheBox(url)) {
         return { ok: false, status: 400, error: "the server's address, like http://192.168.1.20:8096" };
       }
       const filled = await this.fill(app, url);
