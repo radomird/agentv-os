@@ -529,7 +529,15 @@ watch() {
   PAUSE=5
   while true; do
     coproc MONITOR { exec nmcli monitor 2>/dev/null; }
-    fd=${MONITOR[0]}
+    fd=${MONITOR[0]:-}
+    # With no monitor to wait on, as while NetworkManager is down, it looks
+    # every few seconds.
+    while [[ -z $fd ]]; do
+      watch_tick || true
+      sleep 5
+      coproc MONITOR { exec nmcli monitor 2>/dev/null; }
+      fd=${MONITOR[0]:-}
+    done
     while true; do
       watch_tick || true
       # A change wakes it, and what follows in the same second is one change.

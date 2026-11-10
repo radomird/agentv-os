@@ -189,6 +189,15 @@ test("the TV's page gets how it's online and the networks, and with no PIN set a
   await pause(20);
   rootSays({ wifi: "Home", radio: true, joined: { ssid: "Home", address: "192.168.1.20" } });
   assert.equal((await send(tv, "GET", "/api/network")).data.joining, null);
+
+  // The hotspot's page after setup, with no PIN set: it asks for none.
+  rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
+  const listedOnPage = await send(captive, "GET", "/api/setup/networks");
+  assert.deepEqual([listedOnPage.data.after, listedOnPage.data.pin], [true, false]);
+  assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" })).status, 200);
+  assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } });
+  rmSync(drop);
+  rootSays({ wifi: "Home", radio: true });
 });
 
 test("these are the TV's own: a phone's port and the hotspot's page have none of them", async () => {
@@ -254,7 +263,7 @@ test("the hotspot's page, after setup, asks for the adult PIN when one is set, a
   assert.ok(!lines.some((line) => /4826|0000/.test(line)), "no PIN in a log line");
 });
 
-test("with the right PIN the hotspot's page joins, and with no PIN set it asks for none", async () => {
+test("with the right PIN the hotspot's page joins, and the PIN goes no further", async () => {
   // The wait from the test before, taken off, as if it had run out.
   const pinFile = join(state, "pin.json");
   const stored = JSON.parse(readFileSync(pinFile, "utf8"));
@@ -264,19 +273,11 @@ test("with the right PIN the hotspot's page joins, and with no PIN set it asks f
   assert.equal(right.status, 200);
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } }, "the PIN goes no further than the daemon's check");
   rmSync(drop);
-
-  const grant = (await send(tv, "POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
-  const mila = (await send(tv, "GET", "/api/viewers")).data.viewers.find((v: { name: string }) => v.name === "mila");
-  assert.equal((await send(tv, "DELETE", `/api/viewers/${mila.id}`, undefined, grant)).status, 200);
-  assert.equal((await send(tv, "DELETE", "/api/pin", undefined, grant)).status, 200);
-  const listed = await send(captive, "GET", "/api/setup/networks");
-  assert.deepEqual([listed.data.after, listed.data.pin], [true, false]);
-  assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" })).status, 200);
-  rmSync(drop);
+  assert.ok(!lines.some((line) => line.includes("4826")), "nor into a log line");
 });
 
 test("during setup the hotspot's page is as it was: no PIN asked, even with one set", async () => {
-  assert.equal((await send(tv, "PUT", "/api/pin", { pin: "4826" })).status, 200);
+  assert.equal((await send(tv, "GET", "/api/pin")).data.set, true);
   writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false }));
   const listed = await send(captive, "GET", "/api/setup/networks");
   assert.deepEqual([listed.data.after, listed.data.pin], [undefined, undefined]);
