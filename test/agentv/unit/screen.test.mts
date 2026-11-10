@@ -1396,6 +1396,53 @@ test("S2.16 the guide button is a game's own; on the home screen Home goes to it
   assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvHome?.()"));
 });
 
+test("T16.3 holding the guide button goes home from Steam, once, and Steam stays open behind it", async () => {
+  const t = await tv();
+  t.launcher.targets.set("agentv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" });
+  const steam = t.launcher.last("steam");
+  t.hypr.open("0xf", steam.pid, "gamescope");
+  await t.screen.idle();
+  // The press is Steam's own, and so is a tap, which is a press and no more.
+  await t.screen.handle({ cmd: "home", from: "guide" });
+  assert.equal(t.screen.front()?.role, "steam");
+  assert.ok(!t.lines.some((line) => line.includes("guide button held")), t.lines.join("\n"));
+  // input.py says the hold while the button is still down.
+  assert.deepEqual(await t.screen.handle({ cmd: "home", from: "guide-hold" }), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(steam.stopped, false, "Steam keeps running");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE, "out of sight");
+  assert.deepEqual(await t.screen.fromHome({ cmd: "running" }), { ok: true, apps: [{ id: "agentv.games", game: true, paused: false }] });
+  assert.equal(t.lines.filter((line) => line.includes("guide button held")).length, 1, t.lines.join("\n"));
+  // A second hold, from a second gamepad say, finds home in front and
+  // leaves it where it is: it doesn't send home back to its home page.
+  const asked = t.launcher.homeBrowser.evaluated.length;
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.launcher.homeBrowser.evaluated.length, asked);
+  assert.equal(t.lines.filter((line) => line.includes("guide button held")).length, 1);
+  // Its tile brings the same Steam back, where it was.
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" });
+  assert.equal(t.screen.front()?.address, "0xf");
+  assert.equal(t.launcher.last("steam"), steam, "no second Steam");
+});
+
+test("T16.3 with a web app in front the guide button goes home at once, and its hold adds nothing", async () => {
+  const t = await tv();
+  // A game made on this TV is a web app too, so this is its guide button.
+  await openApp(t, "agentv.tube", "0xb");
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.address, "0xb", "a hold alone isn't Home outside Steam");
+  await t.screen.handle({ cmd: "home", from: "guide" });
+  assert.equal(t.screen.front()?.role, "home", "the press went home");
+  // Still down a second later: home stays as it is.
+  const asked = t.launcher.homeBrowser.evaluated.length;
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.launcher.homeBrowser.evaluated.length, asked);
+  assert.ok(!t.lines.some((line) => line.includes("guide button held")), t.lines.join("\n"));
+});
+
 test("a page the daemon opened by address comes back the same way", async () => {
   const t = await tv();
   assert.deepEqual(await t.screen.handle({ cmd: "open", url: "data:text/html,hello" }), { ok: true });
