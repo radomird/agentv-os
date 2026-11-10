@@ -7,9 +7,9 @@
 // against a keyring that holds that key alone.
 
 import { execFile } from "node:child_process";
-import { access, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface IndexEntry {
   id: string;
@@ -48,9 +48,17 @@ export function run(command: string, args: string[], env: Record<string, string>
   });
 }
 
-// Checks that sig is a good signature of file by a key in keyring. The keyring
-// may be armored, as agentv-keyring ships it, or binary.
-export async function verifySignature(file: string, sig: string, keyring = DEFAULT_KEYRING): Promise<void> {
+// Who signed a file and when: the key's fingerprint, and the time the
+// signature itself carries, in seconds.
+export interface Signed {
+  key: string;
+  at: number;
+}
+
+// Checks that sig is a good signature of file by a key in keyring, and says
+// which key and when. The keyring may be armored, as agentv-keyring ships it,
+// or binary.
+export async function verifySignature(file: string, sig: string, keyring = DEFAULT_KEYRING): Promise<Signed> {
   const work = await mkdtemp(join(tmpdir(), "agentv-index-"));
   try {
     await access(keyring).catch(() => {
@@ -61,9 +69,13 @@ export async function verifySignature(file: string, sig: string, keyring = DEFAU
     await run("gpg", ["--batch", "--quiet", "--yes", "--dearmor", "--output", binary, keyring], gnupg).catch(() =>
       copyFile(keyring, binary),
     );
-    await run("gpgv", ["--quiet", "--keyring", binary, sig, file], gnupg).catch(() => {
-      throw new IndexError("the app index isn't signed by AgenTV's key, so nothing was installed");
+    const unsigned = new IndexError("the app index isn't signed by AgenTV's key, so nothing was installed");
+    const { stdout } = await run("gpgv", ["--quiet", "--status-fd", "1", "--keyring", binary, sig, file], gnupg).catch(() => {
+      throw unsigned;
     });
+    const valid = /^\[GNUPG:\] VALIDSIG ([0-9A-F]{40,}) \S+ (\d+) /m.exec(stdout);
+    if (!valid) throw unsigned;
+    return { key: valid[1], at: Number(valid[2]) };
   } finally {
     await rm(work, { recursive: true, force: true });
   }
@@ -109,9 +121,33 @@ export function parseIndex(text: string): AppIndex {
   return index as AppIndex;
 }
 
+// A good signature says who made an index, not that it's the latest: an old
+// one handed over again would install an app's older commit. So the box
+// keeps, in the file seen, the time of the newest index it has taken from
+// each key, and refuses an older one. It compares signatures' own times,
+// never the box's clock, which can be wrong. The same index again is fine.
+async function newestOnly(signed: Signed, seen: string): Promise<void> {
+  let newest: Record<string, number> = {};
+  try {
+    newest = JSON.parse(await readFile(seen, "utf8"));
+  } catch {
+    // The first index this box takes.
+  }
+  const had = Number(newest?.[signed.key]) || 0;
+  if (signed.at < had) {
+    console.error(`agentv: refused an app index signed at ${new Date(signed.at * 1000).toISOString()}, older than the one this box already took (${new Date(had * 1000).toISOString()})`);
+    throw new IndexError("the app index is older than the one this box already has, so nothing was installed");
+  }
+  if (signed.at === had) return;
+  await mkdir(dirname(seen), { recursive: true });
+  await writeFile(`${seen}.next`, `${JSON.stringify({ ...newest, [signed.key]: signed.at })}\n`);
+  await rename(`${seen}.next`, seen);
+}
+
 // Reads index.json and index.json.sig from a folder or an https:// address,
-// checks the signature, then the shape. Returns the index.
-export async function loadIndex(source: string, keyring = DEFAULT_KEYRING): Promise<AppIndex> {
+// checks the signature, then the shape. Returns the index. With seen, a
+// file to remember in, an index older than the newest taken is refused.
+export async function loadIndex(source: string, keyring = DEFAULT_KEYRING, seen?: string): Promise<AppIndex> {
   const work = await mkdtemp(join(tmpdir(), "agentv-index-"));
   try {
     const file = join(work, "index.json");
@@ -130,8 +166,10 @@ export async function loadIndex(source: string, keyring = DEFAULT_KEYRING): Prom
         throw new IndexError("the app index has no signature, so nothing was installed");
       }));
     }
-    await verifySignature(file, sig, keyring);
-    return parseIndex(await readFile(file, "utf8"));
+    const signed = await verifySignature(file, sig, keyring);
+    const index = parseIndex(await readFile(file, "utf8"));
+    if (seen) await newestOnly(signed, seen);
+    return index;
   } finally {
     await rm(work, { recursive: true, force: true });
   }
