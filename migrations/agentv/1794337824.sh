@@ -2,7 +2,10 @@
 # now. A TV that had picked the terminal one forgets the pick, so its
 # settings say nothing the TV no longer knows, and one still running from
 # before the update stops. The rest of its settings stay as they are.
-settings=${AGENTV_DAEMON_STATE:-/var/lib/private/agentv/daemon}/settings.json
+# The daemon's folder is /var/lib/agentv/daemon, whether it's the folder
+# itself or, on a TV from before the daemon had its own account, a link to
+# where systemd kept it.
+settings=${AGENTV_DAEMON_STATE:-/var/lib/agentv/daemon}/settings.json
 if sudo test -f "$settings" && sudo jq -e 'has("ambient")' "$settings" >/dev/null 2>&1; then
   sudo sh -c 'jq "del(.ambient)" "$1" >"$1.next" && chown --reference="$1" "$1.next" && chmod --reference="$1" "$1.next" && mv "$1.next" "$1"' sh "$settings" ||
     sudo rm -f "$settings.next"
