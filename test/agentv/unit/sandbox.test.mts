@@ -4,15 +4,17 @@
 // sandbox, root's hand-over, and the units' sandbox, kept as it is.
 
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request, type IncomingMessage, type Server } from "node:http";
 import { createServer as createNetServer, connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { NetFilter } from "../../../daemon/net-filter.ts";
+import { Build } from "../../../builder/build.ts";
 import { checkRequest, escapePath, HandOver } from "../../../builder/sandbox/hand-over.ts";
 import { allowed, declaredBy, policy } from "../../../builder/sandbox/net.ts";
+import { buildForbidden } from "../../../builder/origins.ts";
 import { cost, NO_USAGE, rateFor } from "../../../builder/sandbox/prices.ts";
 import { keyFrom, Meter, Relay, serverTools, type Ticket } from "../../../builder/sandbox/relay.ts";
 import { forward } from "../../../builder/sandbox/start.ts";
@@ -266,6 +268,11 @@ test("a build reaches npm and OSV, its provider only on a plan, and the origins 
   const api = allowed(keyTicket({ recipe: "api" }), { origins: ["https://api.met.no", "http://plain.example", "https://x.example/path", "https://user:pw@y.example"], originsAllowed: true });
   assert.ok(api.has("api.met.no:443"));
   assert.ok(!api.has("plain.example:80") && !api.has("x.example:443") && !api.has("y.example:443"), "only https origins, nothing more");
+  // L2: only port 443, whatever port an origin names.
+  const ported = allowed(keyTicket({ recipe: "api" }), { origins: ["https://api.met.no:8443", "https://nas.example:22"], originsAllowed: true });
+  assert.deepEqual([...ported].filter((host) => !host.endsWith(":443")), []);
+  assert.ok(!ported.has("api.met.no:443") && !ported.has("api.met.no:8443") && !ported.has("nas.example:22"));
+  assert.ok(![...allowed(keyTicket({ recipe: null, origins: ["https://api.example.org:8443"] }), { origins: [], originsAllowed: true })].some((host) => host.startsWith("api.example.org")), "a plan's too");
   const game = allowed(keyTicket({ recipe: "game" }), { origins: ["https://api.met.no"], originsAllowed: false });
   assert.ok(!game.has("api.met.no:443"), "a game's recipe reaches no origin, whatever it declared");
   const approved = allowed(keyTicket({ recipe: null, origins: ["https://api.example.org"] }), { origins: ["https://other.example"], originsAllowed: true });
@@ -318,6 +325,29 @@ test("a port inside the sandbox passes each connection on to its socket file", a
   assert.equal(back, "through");
   server.close();
   echo.close();
+});
+
+test("L2 the build's filter refuses a name that points into the home network, and a port that isn't 443", async () => {
+  const path = join(scratch, "strict.sock");
+  const names: Record<string, string> = { "api.example.org": "192.168.1.20", "tail.example.org": "100.64.0.3", "six.example.org": "fd00::20" };
+  const log: string[] = [];
+  // As net.ts builds it, with made-up name resolution.
+  const filter = new NetFilter({ policy: policy(() => allowed(keyTicket({ recipe: "api" }), { origins: Object.keys(names).map((name) => `https://${name}`), originsAllowed: true })), forbid: (address) => buildForbidden(address, () => new Set()), resolve: async (host) => names[host], log: (line) => log.push(line) });
+  await filter.listenPath(path);
+  const ask = (target: string) =>
+    new Promise<string>((done) => {
+      const socket = connect(path, () => socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`));
+      let text = "";
+      socket.on("data", (chunk) => (text += chunk));
+      socket.on("end", () => done(text));
+    });
+  for (const name of Object.keys(names)) assert.match(await ask(`${name}:443`), /^HTTP\/1\.1 403/, name);
+  assert.match(await ask("api.example.org:8443"), /^HTTP\/1\.1 403/);
+  assert.match(await ask("192.168.1.20:443"), /^HTTP\/1\.1 403/);
+  assert.equal(log.filter((line) => /is this box \((192\.168\.1\.20|100\.64\.0\.3|fd00::20)\)/.test(line)).length, 3, log.join("\n"));
+  await filter.close();
+  // And the unit's own code passes that rule to its filter.
+  assert.match(readFileSync(join(ROOT, "builder/sandbox/net.ts"), "utf8"), /forbid: \(address\) => forbiddenAddress\(address\) \|\| buildForbidden\(address\)/);
 });
 
 // --- Root's hand-over ----------------------------------------------------
@@ -401,6 +431,42 @@ test("root makes the build's folder, its request and the ticket, fetches the CLI
     ["start", "--no-block", "agentv-builder@local.blocks-1.0.0.service"],
   ]);
   assert.equal(JSON.parse(readFileSync(join(o.run, "answer.json"), "utf8")).started, true);
+});
+
+test("H2 stage B's ticket carries the origins approved with the app, from root's copy of it, not from the build's state", async () => {
+  const { o, h } = handOver("stage-b");
+  writeFileSync(join(o.home, ".local/bin/claude"), "");
+  const dir = join(o.builds, "local.stand-in", "1.0.0");
+  mkdirSync(dir, { recursive: true });
+  // The build's own folder says more than was approved.
+  writeFileSync(join(dir, "state.json"), JSON.stringify({ origins: [{ origin: "https://stand-in.test", why: "its pages" }, { origin: "https://late.example", why: "after approval" }] }));
+  const stageB = asked({ id: "local.stand-in", phase: "stage-b", recipe: "streaming", name: "Stand-in" });
+
+  // Not on home: nothing to go on with.
+  writeFileSync(join(o.drop, "start.json"), JSON.stringify(stageB));
+  assert.match((await h.handle())!.reason!, /isn't on home at this version/);
+  assert.ok(!existsSync(join(o.run, "ticket.json")));
+
+  // On home, as root installed it after an adult's yes.
+  mkdirSync(join(o.apps, "local.stand-in"), { recursive: true });
+  writeFileSync(join(o.apps, "installed.json"), JSON.stringify({ "local.stand-in": { id: "local.stand-in", name: "Stand-in", version: "1.0.0", tier: "local", installedAt: "" } }));
+  writeFileSync(join(o.apps, "local.stand-in", "manifest.json"), JSON.stringify({ id: "local.stand-in", version: "1.0.0", tv: { origins: ["https://stand-in.test"] } }));
+  writeFileSync(join(o.drop, "start.json"), JSON.stringify(stageB));
+  assert.equal((await h.handle())!.started, true);
+  const ticket = JSON.parse(readFileSync(join(o.run, "ticket.json"), "utf8"));
+  assert.deepEqual([ticket.phase, ticket.origins], ["stage-b", ["https://stand-in.test"]]);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "request.json"), "utf8")).origins, ["https://stand-in.test"]);
+  // The way out goes by that ticket alone.
+  assert.ok(!allowed(ticket, declaredBy(ticket, join(ROOT, "builder/recipes"))).has("late.example:443"));
+
+  // Another version on home isn't this build's approval.
+  writeFileSync(join(o.apps, "local.stand-in", "manifest.json"), JSON.stringify({ id: "local.stand-in", version: "1.1.0", tv: { origins: ["https://stand-in.test"] } }));
+  assert.equal(h.approvedOrigins("local.stand-in", "1.0.0"), null);
+  // A stage A build's ticket has no such list: what it declares is live at once.
+  const { o: a, h: first } = handOver("stage-a");
+  writeFileSync(join(a.drop, "start.json"), JSON.stringify(asked({ id: "local.stand-in", recipe: "streaming" })));
+  assert.equal((await first.handle())!.started, true);
+  assert.equal(JSON.parse(readFileSync(join(a.run, "ticket.json"), "utf8")).origins, undefined);
 });
 
 test("a new build starts from an empty folder, whatever an earlier try left there", async () => {
@@ -547,4 +613,43 @@ test("S6.10 everything the builder can write is mounted nosuid and nodev: its bu
   // mounts above do its work instead (ADR-052).
   assert.ok(!u.has("RestrictSUIDSGID"), "bubblewrap can open what it binds");
   assert.ok(!u.has("ReadWritePaths") && !u.has("StateDirectory") && !u.has("CacheDirectory") && !u.has("RuntimeDirectory"), "it's given nothing else to write");
+});
+
+test("M5 a build's folder and what's saved in it aren't for every user on the box: the builder and its group, which the readers are in", async () => {
+  // The build writes its files closed to others.
+  assert.deepEqual(unit("agentv-builder@.service").get("UMask"), ["0027"]);
+  // Root makes a version's folder 0750, and closes one made before.
+  const { o, h } = handOver("modes");
+  writeFileSync(join(o.home, ".local/bin/claude"), "");
+  writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked()));
+  assert.equal((await h.handle())!.started, true);
+  const dir = join(o.builds, "local.blocks", "1.0.0");
+  assert.equal(lstatSync(dir).mode & 0o777, 0o750);
+  chmodSync(dir, 0o755);
+  writeFileSync(join(o.drop, "start.json"), JSON.stringify(asked()));
+  assert.equal((await h.handle())!.started, true);
+  assert.equal(lstatSync(dir).mode & 0o777, 0o750, "one from before is closed at its next start");
+  // And the builder's own files in it, whatever the umask.
+  const build = new Build(dir);
+  build.setState({ origins: [] });
+  build.setStatus({ build: "b1", id: "local.blocks", version: "1.0.0", phase: "build", state: "running", steps: [], started: "", at: "" });
+  for (const name of ["state.json", "status.json"]) assert.equal(lstatSync(join(dir, name)).mode & 0o007, 0, `${name} isn't for others`);
+  // And root's own: what it hands the build is the group's to read, too.
+  assert.equal(lstatSync(join(dir, "request.json")).mode & 0o777, 0o640, "request.json isn't for others");
+
+  // Who reads builds: the daemon and the builder's way out (its filter and
+  // the nightly package check), through the builder's group.
+  assert.ok(unit("agentv-daemon.service").get("SupplementaryGroups")![0].split(" ").includes("agentv-builder"), "the daemon reads a build's status and screenshot");
+  const users = readFileSync(join(ROOT, "system/sysusers/agentv-builder.conf"), "utf8").split("\n");
+  assert.ok(users.includes("m agentv-build-net agentv-builder"), "the way out reads a build's state and lockfile");
+  for (const name of ["agentv-build-net.service", "agentv-npm-check.service"]) assert.deepEqual(unit(name).get("User"), ["agentv-build-net"], name);
+  // The group opens nothing else: the builder's home stays its own.
+  const folders = readFileSync(join(ROOT, "system/tmpfiles/agentv-builder.conf"), "utf8").split("\n");
+  assert.ok(folders.includes("d /var/lib/agentv/builder 0700 agentv-builder agentv-builder -"));
+  assert.ok(folders.includes("f /etc/agentv/env 0600 root root -"));
+
+  // Boxes installed before close the folders they have.
+  const migrations = join(ROOT, "migrations/agentv");
+  const closes = readdirSync(migrations).filter((name) => /find \/var\/lib\/agentv\/build -mindepth 2 -maxdepth 2 -type d -exec chmod 0750/.test(readFileSync(join(migrations, name), "utf8")));
+  assert.equal(closes.length, 1, "a migration closes the builds a box already has");
 });

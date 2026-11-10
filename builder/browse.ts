@@ -31,14 +31,42 @@ export interface LookOptions {
 
 const LINES_MAX = 300;
 
+// What a signed-in page may show of the account, which a build has no use
+// for and which would go on to the AI provider and into the build's
+// fixtures: an email address, a card's digits, and a card's last four
+// where the page says that's what they are. Blanked in the page, before
+// anything leaves the browser.
+const EMAIL = "[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+";
+// A run of digits in groups, like 4111 1111 1111 1111 or 3782-822463-10005,
+// that isn't part of a longer number or a decimal.
+const DIGITS = "(?<![\\d.,])\\d+(?:[ -]\\d+)*(?!\\d)";
+const LAST_FOUR = "((?:ending(?: in| with)?|ends (?:in|with)|last (?:4|four)(?: digits)?|[\u2022\u00b7*x]{2,}|\\.{3,})[\\s:#-]*)\\d{4}(?!\\d)";
+
+// Runs in the page, as plain JavaScript: blank(text) is text with those
+// blanked. A card's number is 12 to 19 digits, in one run or in groups of
+// three or more, so a row of episode numbers stays. blankEmail is for an
+// address or an attribute, where a long number is an id an app may need.
+export const BLANK = `
+  const blankEmail = (text) => String(text).replace(new RegExp(${JSON.stringify(EMAIL)}, "g"), "[email]");
+  const blank = (text) => blankEmail(text)
+    .replace(new RegExp(${JSON.stringify(DIGITS)}, "g"), (run) => {
+      const groups = run.split(/[ -]/);
+      const count = run.replace(/[ -]/g, "").length;
+      return count >= 12 && count <= 19 && groups.every((group) => group.length >= 3) ? "[number]" : run;
+    })
+    .replace(new RegExp(${JSON.stringify(LAST_FOUR)}, "gi"), "$1[digits]");
+`;
+
 // Runs in the page: its structure, a line each, with a selector an app
 // could use for each thing on it. Stage B's page_snapshot reads a signed-in
 // page with it too, through the screen daemon (daemon/page-asks.ts).
-export const OUTLINE = `(() => {
+export const OUTLINE = `(() => {${BLANK}
   const clip = (text, n = 80) => String(text || "").replace(/\\s+/g, " ").trim().slice(0, n);
+  const words = (text, n = 80) => blank(String(text || "").replace(/\\s+/g, " ").trim()).slice(0, n);
   const lines = [];
   const seen = new Set();
-  const add = (line) => {
+  const add = (said) => {
+    const line = blankEmail(said);
     if (lines.length < ${LINES_MAX} && !seen.has(line)) {
       seen.add(line);
       lines.push(line);
@@ -55,25 +83,27 @@ export const OUTLINE = `(() => {
     const classes = [...el.classList].filter((c) => /^[A-Za-z][\\w-]{1,40}$/.test(c)).slice(0, 2);
     return tag + classes.map((c) => "." + c).join("");
   };
-  const label = (el) => clip((el.labels && el.labels[0] && el.labels[0].textContent) || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "");
-  for (const el of document.querySelectorAll("h1, h2, h3")) add(el.tagName.toLowerCase() + " " + quote(clip(el.textContent)) + " " + selector(el));
+  const label = (el) => words((el.labels && el.labels[0] && el.labels[0].textContent) || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "");
+  for (const el of document.querySelectorAll("h1, h2, h3")) add(el.tagName.toLowerCase() + " " + quote(words(el.textContent)) + " " + selector(el));
   for (const el of document.querySelectorAll("nav, main, header, footer, [role=dialog]")) add("region " + selector(el));
   for (const el of document.querySelectorAll("form")) add("form " + selector(el) + " action=" + clip(el.getAttribute("action"), 120));
   for (const el of document.querySelectorAll("input, select, textarea")) {
     if (el.type === "hidden") continue;
     add("field " + selector(el) + " type=" + (el.type || el.tagName.toLowerCase()) + (el.autocomplete ? " autocomplete=" + el.autocomplete : "") + " label=" + quote(label(el)));
   }
-  for (const el of document.querySelectorAll("button, [role=button]")) add("button " + quote(clip(el.textContent || el.getAttribute("aria-label"))) + " " + selector(el));
-  for (const el of document.querySelectorAll("a[href]")) add("link " + quote(clip(el.textContent || el.getAttribute("aria-label"))) + " -> " + clip(el.href, 160));
+  for (const el of document.querySelectorAll("button, [role=button]")) add("button " + quote(words(el.textContent || el.getAttribute("aria-label"))) + " " + selector(el));
+  for (const el of document.querySelectorAll("a[href]")) add("link " + quote(words(el.textContent || el.getAttribute("aria-label"))) + " -> " + clip(el.href, 160));
   for (const el of document.querySelectorAll("video, audio, iframe")) add(el.tagName.toLowerCase() + " " + selector(el) + " " + clip(el.currentSrc || el.src, 160));
   for (const el of document.querySelectorAll("link[rel~=icon], link[rel=apple-touch-icon], link[rel=manifest]")) add(el.rel + " -> " + clip(el.href, 160));
-  return { url: location.href, title: document.title, lines };
+  return { url: location.href, title: blank(document.title), lines };
 })()`;
 
 // Runs in the page: the page as it is now, without what would run or fetch,
 // and without what a signed-in page keeps for itself: hidden fields, what's
-// in a field, its meta tags and long data values, where tokens live.
-export const SNAPSHOT = `(() => {
+// in a field, its meta tags and long data values, where tokens live. And
+// without the account's email address and card digits, wherever it shows
+// them.
+export const SNAPSHOT = `(() => {${BLANK}
   const copy = document.documentElement.cloneNode(true);
   for (const el of copy.querySelectorAll("script, noscript, style, link, base, meta, iframe, object, embed, template, input[type=hidden]")) el.remove();
   for (const el of copy.querySelectorAll("*")) {
@@ -82,9 +112,18 @@ export const SNAPSHOT = `(() => {
       if (name.startsWith("on") || ["src", "srcset", "poster", "data", "style", "value"].includes(name)) el.removeAttribute(attr.name);
       else if (name === "href" && /^\\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
       else if (name.startsWith("data-") && attr.value.length > 100) el.removeAttribute(attr.name);
+      else {
+        const said = ["aria-label", "title", "alt", "placeholder"].includes(name) ? blank(attr.value) : blankEmail(attr.value);
+        if (said !== attr.value) el.setAttribute(attr.name, said);
+      }
     }
   }
   for (const el of copy.querySelectorAll("textarea")) el.textContent = "";
+  const texts = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+  for (let node = texts.nextNode(); node; node = texts.nextNode()) {
+    const said = blank(node.nodeValue);
+    if (said !== node.nodeValue) node.nodeValue = said;
+  }
   return "<!doctype html>\\n" + copy.outerHTML;
 })()`;
 

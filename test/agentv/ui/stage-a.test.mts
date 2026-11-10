@@ -42,9 +42,16 @@ function serve(answer: (path: string) => { type: string; body: string | Buffer }
   return new Promise((done) => server.listen(0, "127.0.0.1", () => done(`http://127.0.0.1:${(server.address() as { port: number }).port}`)));
 }
 
+const WHO = `<!doctype html><html><head><title>Who's watching, ana@example.org?</title></head><body>
+<header><h1>Hello ana@example.org</h1><a href="/search?as=ana@example.org" aria-label="Search as ana@example.org">Search</a></header>
+<main><p id="plan">Premium, paid with Visa ending in 4242</p><p id="card">Card 4111 1111 1111 1111</p>
+<button title="ana@example.org">Ana</button><a href="/watch/80123456789012">Heat (1995)</a></main></body></html>`;
+
 before(async () => {
   posters = await serve((path) => (path === "/poster.png" ? { type: "image/png", body: Buffer.alloc(0) } : null));
   site = await serve((path) => {
+    // A page that shows who's signed in, as a signed-in service's might.
+    if (path === "/who") return { type: "text/html", body: WHO };
     const file = { "/": "index.html", "/signin": "signin.html", "/browse": "browse.html", "/site.js": "site.js", "/site.css": "site.css" }[path];
     if (!file) return null;
     const text = readFileSync(join(SERVICE, "site", file), "utf8").replace("http://POSTERS", posters);
@@ -82,6 +89,19 @@ test("S6.1 look shows the sign-in form's fields as an app would find them", asyn
   assert.ok(seen.lines.includes('field #email type=email autocomplete=username label="Email"'));
   assert.ok(seen.lines.includes('field #password type=password autocomplete=current-password label="Password"'));
   assert.ok(seen.lines.includes('button "Continue" button[type="submit"]'));
+});
+
+test("M5 a page's copy and its outline come without the account's email address and card digits", async () => {
+  const seen = await look(`${site}/who`, { chromium });
+  const all = `${seen.title}\n${seen.lines.join("\n")}\n${seen.html}`;
+  assert.ok(!all.includes("ana@example.org"), all);
+  assert.ok(!all.includes("4242") && !all.includes("4111 1111"), all);
+  assert.match(seen.html, /Premium, paid with Visa ending in \[digits\]/);
+  assert.match(seen.html, /Card \[number\]/);
+  assert.ok(seen.lines.includes('h1 "Hello [email]" h1'), seen.lines.join("\n"));
+  // What an app needs is still there: a title, its year and its address.
+  assert.match(seen.html, /<a href="\/watch\/80123456789012">Heat \(1995\)<\/a>/);
+  assert.ok(seen.lines.includes(`link "Heat (1995)" -> ${site}/watch/80123456789012`), seen.lines.join("\n"));
 });
 
 // A build of the stand-in at the end of stage A, with the pages look kept.

@@ -12,14 +12,14 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
-import { Build } from "../build.ts";
+import { Build, declaredOrigins } from "../build.ts";
 import { look, saidLook, saidPage } from "../browse.ts";
 import { contractTests } from "../contract-run.ts";
 import { fetchVia, osvFor, registryFor } from "../fetch.ts";
 import { CHROMIUM, tryBuild } from "../gates/gates.ts";
 import { said as report } from "../gates/testtv.ts";
 import { PackageError, Packages } from "../packages.ts";
-import { writable } from "../recipe.ts";
+import { type Kind, loadRecipes, signedInPage, writable } from "../recipe.ts";
 import { PAGE_PORT, PROXY_PORT } from "../sandbox/ports.ts";
 import { checkTheme, themeRules } from "../theme.ts";
 import { ToolError } from "./mcp.ts";
@@ -64,7 +64,7 @@ const SAMPLE_MAX = 20 * 1024;
 
 // An address the build may reach: https, on an origin it declared.
 function declaredUrl(build: Build, value: unknown): { url: string; declared: string[] } {
-  const declared = build.state().origins.map((o) => o.origin);
+  const declared = declaredOrigins(build, build.recipe(), build.request());
   let url: URL;
   try {
     url = new URL(String(value ?? ""));
@@ -72,7 +72,10 @@ function declaredUrl(build: Build, value: unknown): { url: string; declared: str
     throw new ToolError("an address like https://service.example/");
   }
   if (url.protocol !== "https:") throw new ToolError("only https addresses");
-  if (!declared.includes(url.origin)) throw new ToolError(`declare ${url.origin} with declare_origin first: the build reaches only the origins it declared`);
+  if (!declared.includes(url.origin)) {
+    if (build.request().phase === "stage-b") throw new ToolError(`${url.origin} isn't one of the origins approved with the app, and stage B reaches no other`);
+    throw new ToolError(`declare ${url.origin} with declare_origin first: the build reaches only the origins it declared`);
+  }
   return { url: url.href, declared };
 }
 
@@ -142,6 +145,12 @@ export async function extraTools(dir: string, stepId: string): Promise<Extra> {
     // shows it, through the builder's way out and the screen daemon.
     page_snapshot: async (args) => {
       const { url } = declaredUrl(build, args.url);
+      // The TV checks this again; here it's said so the agent can read it.
+      let pages = build.recipe().signedInPages;
+      try {
+        pages = loadRecipes(join(root, "builder/recipes")).get(build.recipe().kind as Kind)?.signedInPages ?? pages;
+      } catch {}
+      if (!signedInPage(pages, new URL(url))) throw new ToolError(`stage B looks only at the service's start page and its ${(pages ?? []).join(", ")} pages, never at an account, settings or payment page`);
       const save = saveAt(build, stepId, args.save);
       const response = await fetch(`http://127.0.0.1:${PAGE_PORT}/snapshot`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }), signal: AbortSignal.timeout(150_000) }).catch((error: Error) => {
         throw new ToolError(`the TV's browser didn't answer: ${error.message}`);

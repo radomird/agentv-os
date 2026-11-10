@@ -12,7 +12,9 @@ import { createServer, request as httpRequest, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { pageServer } from "../../../builder/sandbox/net.ts";
+import vm from "node:vm";
+import { BLANK } from "../../../builder/browse.ts";
+import { allowed, declaredBy, pageServer, reachable } from "../../../builder/sandbox/net.ts";
 import type { Ticket } from "../../../builder/sandbox/relay.ts";
 import { Builds } from "../../../daemon/builds.ts";
 import { PageAsks, PageAskWatch } from "../../../daemon/page-asks.ts";
@@ -25,15 +27,18 @@ after(() => {
 });
 let count = 0;
 
-const ticket = (phase: string): Ticket => ({ build: "b1", id: "local.stand-in", version: "1.0.0", dir: "/x", provider: "claude", path: "key", recipe: "streaming", phase });
+// Root's ticket: in stage B it carries the origins an adult approved with the app.
+const ticket = (phase: string, origins: string[] = ["https://stand-in.test"]): Ticket => ({ build: "b1", id: "local.stand-in", version: "1.0.0", dir: "/x", provider: "claude", path: "key", recipe: "streaming", phase, ...(phase === "stage-b" ? { origins } : {}) });
+const RECIPES = join(import.meta.dirname, "../../../builder/recipes");
 
 // The builder's side of page.sock, on a socket file here.
-async function pageSock(o: { phase?: string; ask?: (url: string) => Promise<object> }) {
+async function pageSock(o: { phase?: string; ask?: (url: string) => Promise<object>; looksAt?: (ticket: Ticket, url: URL) => boolean }) {
   const path = join(scratch, `page${++count}.sock`);
   const asked: string[] = [];
   const server = pageServer({
     ticket: () => (o.phase ? ticket(o.phase) : null),
     declared: () => ["https://stand-in.test"],
+    ...(o.looksAt ? { looksAt: o.looksAt } : {}),
     ask: o.ask ?? (async (url) => (asked.push(url), { ok: true, url, title: "Stand-in", lines: [] })),
     log: () => {},
   });
@@ -60,12 +65,34 @@ test("ADR-011 the builder's way out takes a look at a signed-in page only in sta
   assert.match((await none.post(JSON.stringify({ url: "https://stand-in.test/" }))).body.error, /for stage B/);
 
   const b = await pageSock({ phase: "stage-b" });
-  assert.match((await b.post(JSON.stringify({ url: "https://elsewhere.test/" }))).body.error, /https:\/\/elsewhere\.test isn't one of the build's declared origins/);
+  assert.match((await b.post(JSON.stringify({ url: "https://elsewhere.test/" }))).body.error, /https:\/\/elsewhere\.test isn't one of the origins approved with the app/);
   assert.equal((await b.post(JSON.stringify({ url: "http://stand-in.test/" }))).status, 403);
   assert.equal((await b.post("not json")).status, 400);
   assert.equal((await b.post(JSON.stringify({ url: "https://stand-in.test/", pad: "x".repeat(5000) }))).status, 413);
   const seen = await b.post(JSON.stringify({ url: "https://stand-in.test/browse" }));
   assert.deepEqual([seen.status, seen.body.ok, b.asked], [200, true, ["https://stand-in.test/browse"]]);
+
+  // M5: and only a page the recipe has stage B look at.
+  const picky = await pageSock({ phase: "stage-b", looksAt: (_ticket, url) => url.pathname === "/browse" });
+  assert.match((await picky.post(JSON.stringify({ url: "https://stand-in.test/account" }))).body.error, /isn't a page a build looks at while signed in/);
+  assert.equal((await picky.post(JSON.stringify({ url: "https://stand-in.test/browse" }))).status, 200);
+  assert.deepEqual(picky.asked, ["https://stand-in.test/browse"]);
+});
+
+test("H2 in stage B the way out goes by root's ticket: an origin the build wrote into its state after approval isn't reached", () => {
+  const dir = join(scratch, "late");
+  mkdirSync(dir, { recursive: true });
+  // What a build could leave in its own folder after its app was approved.
+  writeFileSync(join(dir, "state.json"), JSON.stringify({ origins: [{ origin: "https://stand-in.test" }, { origin: "https://late.example", why: "added after approval" }] }));
+  const stageB = { ...ticket("stage-b"), dir };
+  const said = declaredBy(stageB, RECIPES);
+  assert.deepEqual(reachable(stageB, said), ["https://stand-in.test"], "stage B's pages");
+  const hosts = allowed(stageB, said);
+  assert.ok(hosts.has("stand-in.test:443") && !hosts.has("late.example:443"), "and stage B's filter");
+  // A stage B ticket with no approved list reaches no origin at all.
+  assert.deepEqual(reachable({ ...stageB, origins: undefined }, said), []);
+  // Before approval, in stage A, what's declared is live at once, as before.
+  assert.ok(allowed({ ...ticket("build"), dir }, said).has("late.example:443"));
 });
 
 test("ADR-011 one look at a time, and a TV that doesn't answer says so", async () => {
@@ -180,15 +207,23 @@ test("ADR-011 a streaming service's app on home goes on with stage B by itself o
   assert.equal(take("start").phase, "stage-b");
 });
 
-test("ADR-011 the daemon knows the build in stage B from root's ticket, with the origins it declared", () => {
+test("H2 the daemon knows the build in stage B from root's ticket, with the origins approved with its app, never from the build's folder", () => {
   const { o, builds } = box();
   assert.equal(builds.stageB(), null);
   writeFileSync(join(o.run, "ticket.json"), JSON.stringify({ ...ticket("build"), dir: "" }));
   assert.equal(builds.stageB(), null, "stage A sees no signed-in page");
-  writeFileSync(join(o.run, "ticket.json"), JSON.stringify({ ...ticket("stage-b"), dir: "" }));
+  writeFileSync(join(o.run, "ticket.json"), JSON.stringify({ ...ticket("stage-b", ["https://stand-in.test", "http://plain.test", 7 as never]), dir: "" }));
+  // The build's own state says more: it doesn't count.
   mkdirSync(join(o.builds, "local.stand-in", "1.0.0"), { recursive: true });
-  writeFileSync(join(o.builds, "local.stand-in", "1.0.0", "state.json"), JSON.stringify({ origins: [{ origin: "https://stand-in.test", why: "its pages" }, { origin: "http://plain.test" }] }));
-  assert.deepEqual(builds.stageB(), { id: "local.stand-in", version: "1.0.0", origins: ["https://stand-in.test"] });
+  writeFileSync(join(o.builds, "local.stand-in", "1.0.0", "state.json"), JSON.stringify({ origins: [{ origin: "https://stand-in.test", why: "its pages" }, { origin: "https://late.example", why: "added after approval" }] }));
+  const running = builds.stageB()!;
+  assert.deepEqual([running.id, running.version, running.origins], ["local.stand-in", "1.0.0", ["https://stand-in.test"]]);
+  assert.ok(running.looksAt(new URL("https://stand-in.test/search?q=heat")));
+  assert.ok(!running.looksAt(new URL("https://late.example/search")), "not an origin from its state");
+  assert.ok(!running.looksAt(new URL("https://stand-in.test/account")), "M5: not an account page");
+  assert.ok(!running.looksAt(new URL("http://stand-in.test/search")));
+  writeFileSync(join(o.run, "ticket.json"), JSON.stringify({ ...ticket("stage-b"), origins: undefined, dir: "" }));
+  assert.deepEqual(builds.stageB()!.origins, [], "a ticket with no approved list opens nothing");
   writeFileSync(join(o.run, "ticket.json"), JSON.stringify({ ...ticket("stage-b"), id: "../../etc", dir: "" }));
   assert.equal(builds.stageB(), null);
 });
@@ -206,9 +241,19 @@ test("ADR-011 the daemon passes on a look at a signed-in page only for the build
     const post = (path: string, body: unknown, base = url) => fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     assert.equal((await post("/api/builder/page", { url: "https://stand-in.test/" })).status, 409, "no build is in stage B");
     writeFileSync(join(run, "ticket.json"), JSON.stringify(ticket("stage-b")));
+    // H2: what the build wrote into its own state after approval opens nothing.
     mkdirSync(join(builds, "local.stand-in", "1.0.0"), { recursive: true });
-    writeFileSync(join(builds, "local.stand-in", "1.0.0", "state.json"), JSON.stringify({ origins: [{ origin: "https://stand-in.test" }] }));
-    assert.equal((await post("/api/builder/page", { url: "https://elsewhere.test/" })).status, 403);
+    writeFileSync(join(builds, "local.stand-in", "1.0.0", "state.json"), JSON.stringify({ origins: [{ origin: "https://stand-in.test" }, { origin: "https://elsewhere.test" }] }));
+    const elsewhere = await post("/api/builder/page", { url: "https://elsewhere.test/" });
+    assert.equal(elsewhere.status, 403);
+    assert.match((await elsewhere.json()).error, /isn't one of the origins approved with local\.stand-in/);
+    // M5: an account page of the service is never opened for a build.
+    for (const path of ["/account", "/settings/payment", "/en-gb/account"]) {
+      const refused = await post("/api/builder/page", { url: `https://stand-in.test${path}` });
+      assert.equal(refused.status, 403, path);
+      assert.match((await refused.json()).error, /isn't a page a build looks at while signed in/);
+    }
+    assert.equal(await daemon.pageAsks.take(20), null, "nothing was asked of the TV's browser");
     const fromPhone = (await post("/api/builder/page", { url: "https://stand-in.test/" }, `http://127.0.0.1:${daemon.lanPort}`)).status;
     assert.ok([401, 404].includes(fromPhone), `never from a phone's port (${fromPhone})`);
 
@@ -219,6 +264,15 @@ test("ADR-011 the daemon passes on a look at a signed-in page only for the build
     assert.equal((await post(`/api/builder/page-ask/${ask.n}`, { ok: true, url: ask.url, title: "Stand-in", lines: ["h1"], html: "<p>x</p>" })).status, 200);
     assert.deepEqual(await (await asking).json(), { ok: true, url: "https://stand-in.test/browse", title: "Stand-in", lines: ["h1"], html: "<p>x</p>" });
     assert.equal((await post(`/api/builder/page-ask/${ask.n}`, { ok: true })).status, 404);
+
+    // M5: a page the service sent the browser on to instead isn't handed over.
+    const sentOn = post("/api/builder/page", { url: "https://stand-in.test/watch/1" });
+    const moved = (await (await fetch(`${url}/api/builder/page-ask`)).json()).ask;
+    assert.equal((await post(`/api/builder/page-ask/${moved.n}`, { ok: true, url: "https://stand-in.test/account/payment", title: "Your account", lines: ["h1 \"ana@example.org\""], html: "<p>ana@example.org</p>" })).status, 200);
+    const kept = await (await sentOn).json();
+    assert.equal(kept.ok, false);
+    assert.match(kept.error, /the service went on to another page/);
+    assert.ok(!JSON.stringify(kept).includes("ana@example.org"));
 
     // A signed-in page's copy is far bigger than the daemon's other bodies,
     // and gets there whole.
@@ -231,4 +285,23 @@ test("ADR-011 the daemon passes on a look at a signed-in page only for the build
   } finally {
     await daemon.close();
   }
+});
+
+// --- What a page shows of the account ------------------------------------------
+
+test("M5 an email address and a card's digits are blanked in the page, before a build sees them", () => {
+  // The same JavaScript the page runs (builder/browse.ts).
+  const { blank, blankEmail } = vm.runInNewContext(`(() => {${BLANK}; return { blank, blankEmail }; })()`) as { blank: (text: string) => string; blankEmail: (text: string) => string };
+  assert.equal(blank("Signed in as ana.k+tv@example.co.uk"), "Signed in as [email]");
+  assert.equal(blank("Visa 4111 1111 1111 1111, expires 12/29"), "Visa [number], expires 12/29");
+  assert.equal(blank("4111111111111111"), "[number]");
+  assert.equal(blank("Amex 3782-822463-10005"), "Amex [number]");
+  assert.equal(blank("123456789012 and 1234567890123456789"), "[number] and [number]", "12 to 19 digits");
+  assert.equal(blank("Visa ending in 4242"), "Visa ending in [digits]");
+  assert.equal(blank("Card \u2022\u2022\u2022\u2022 4242"), "Card \u2022\u2022\u2022\u2022 [digits]");
+  assert.equal(blank("Mastercard ****4242, last four: 4242"), "Mastercard ****[digits], last four: [digits]");
+  // What an app needs stays: a title's year, episode numbers, a short id.
+  for (const text of ["Heat (1995)", "Season 2, Episode 10", "Episodes 1 2 3 4 5 6 7 8 9 10 11 12 13", "12345678901", "12345678901234567890", "1h 52m", "4K", "pi is 3.14159265358979"]) assert.equal(blank(text), text, text);
+  // In an address or an attribute only an email goes: a long number there is an id.
+  assert.equal(blankEmail("/watch/80123456789012?as=ana@example.org"), "/watch/80123456789012?as=[email]");
 });
