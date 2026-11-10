@@ -3202,7 +3202,8 @@ export class Daemon {
 
     // Stage B (ADR-011): a page of the service the running build is
     // learning, as the signed-in browser shows it, from the builder's way
-    // out. Only while the build is in stage B, on its declared origins.
+    // out. Only while the build is in stage B, on the origins an adult
+    // approved with its app.
     if (method === "POST" && path === "/api/builder/page") {
       const running = this.builds.stageB();
       if (!running) {
@@ -3218,10 +3219,23 @@ export class Daemon {
         return;
       }
       if (url.protocol !== "https:" || !running.origins.includes(url.origin)) {
-        this.json(response, 403, { ok: false, error: `${url.origin} isn't one of ${running.id}'s declared origins` });
+        this.json(response, 403, { ok: false, error: `${url.origin} isn't one of the origins approved with ${running.id}` });
         return;
       }
-      this.json(response, 200, await this.pageAsks.ask(url.href, running.origins));
+      // Only the pages the recipe names: where a title is found and played,
+      // never the account's own pages.
+      const notOne = "that isn't a page a build looks at while signed in: only the service's start page and the pages a title is found and played on";
+      if (!running.looksAt(url)) {
+        this.json(response, 403, { ok: false, error: notOne });
+        return;
+      }
+      const seen = await this.pageAsks.ask(url.href, running.origins);
+      // And not one the service sent the browser on to instead.
+      let ended: URL | null = null;
+      try {
+        ended = new URL(String(seen.url));
+      } catch {}
+      this.json(response, 200, seen.ok && !(ended && running.looksAt(ended)) ? { ok: false, error: `the service went on to another page. ${notOne}` } : seen);
       return;
     }
     // The screen daemon takes each ask, and answers it.

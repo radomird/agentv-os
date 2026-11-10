@@ -39,6 +39,17 @@ test("ADR-011 look and fetch_sample reach only what the build declared, over htt
   await assert.rejects(tools.look!({ url: "not an address" }), /an address like/);
 });
 
+test("H2 M5 in stage B the harness goes by the origins approved with the app, and only the pages the recipe names", async () => {
+  const b = build();
+  // The build's state says more than was approved: stage B doesn't go by it.
+  b.setState({ origins: [{ origin: "https://stand-in.test", why: "its pages" }, { origin: "https://late.example", why: "after approval" }] });
+  writeFileSync(join(b.dir, "request.json"), JSON.stringify({ ...b.request(), phase: "stage-b", origins: ["https://stand-in.test"] }));
+  const tools = await extraTools(b.dir, "study");
+  await assert.rejects(tools.page_snapshot!({ url: "https://late.example/search" }), /https:\/\/late\.example isn't one of the origins approved with the app, and stage B reaches no other/);
+  await assert.rejects(tools.page_snapshot!({ url: "https://stand-in.test/account" }), /stage B looks only at the service's start page and its .*search.* pages, never at an account, settings or payment page/);
+  await assert.rejects(tools.page_snapshot!({ url: "https://stand-in.test/en-gb/account/payment" }), /never at an account/);
+});
+
 test("ADR-046 what look and fetch_sample keep goes only where the step writes, checked before they open anything", async () => {
   const b = build();
   const site = await extraTools(b.dir, "site");

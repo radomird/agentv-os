@@ -30,7 +30,9 @@ export interface Ticket {
   path: "plan" | "key";
   recipe: string | null;
   phase?: string; // stage-b sees the service's signed-in pages (ADR-011)
-  origins?: string[]; // an approved plan's, when there's no recipe
+  // What an adult approved: a plan's origins when there's no recipe, and in
+  // stage B the origins of the app as it was approved and installed.
+  origins?: string[];
   // Dollars, with a key: changeable behind the PIN (ADR-011).
   cap?: { build: number; month: number };
 }

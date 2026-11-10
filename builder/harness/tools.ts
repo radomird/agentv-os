@@ -8,8 +8,8 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { validatePackage } from "../../apps/contract/manifest.ts";
-import { pageOriginProblem } from "../../apps/contract/page.ts";
 import { type Build, keepManifest, type Understood } from "../build.ts";
+import { buildOriginProblem } from "../origins.ts";
 import { KINDS, planProblems, type Kind, type Plan, type Recipe, type Step, type Tool, TOOLS, writable } from "../recipe.ts";
 import { ToolError, type ToolSpec } from "./mcp.ts";
 
@@ -156,8 +156,11 @@ export function stepTools(options: ToolsOptions): ToolSpec[] {
       inputSchema: schema({ origin: { type: "string", description: "Like https://api.example.org" }, why: { type: "string" } }, ["origin", "why"]),
       async run(args) {
         if (!recipe.bounds.origins) throw new ToolError("this recipe's apps reach no internet origin");
+        // What an adult approved is the whole list. After approval, in
+        // stage B, nothing is added to it.
+        if (build.request().phase === "stage-b" || step.stage === "b") throw new ToolError("the app's origins were approved with it, and stage B adds none");
         const origin = String(args.origin ?? "").replace(/\/+$/, "");
-        const why = pageOriginProblem(origin);
+        const why = buildOriginProblem(origin);
         if (why) throw new ToolError(why);
         if (typeof args.why !== "string" || !args.why.trim()) throw new ToolError("say why the app reaches it");
         const state = build.state();

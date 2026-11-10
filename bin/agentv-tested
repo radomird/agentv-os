@@ -64,6 +64,36 @@ if ! gpgv --quiet --keyring "$work/agentv.gpg" "$tested.sig" "$tested" 2>/dev/nu
   exit 1
 fi
 
+# Never a list older than the newest this box has taken: a good signature
+# says who made a list, not that it's the latest, so an old one handed over
+# again could hold the box on old versions. The list's own date is compared
+# with the newest date seen, never with the box's clock, which can be wrong.
+# Root keeps what it saw beside the update's state, where everyone can read
+# it, and the box's owner in their own state folder.
+seen_files=("${AGENTV_UPDATE_STATE:-/var/lib/agentv/update}/tested-seen" "${XDG_STATE_HOME:-${HOME:-/root}/.local/state}/agentv/tested-seen")
+stamp='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+date=$(jq -r '.date // empty' "$tested" 2>/dev/null || true)
+if [[ ! $date =~ $stamp ]]; then
+  echo "tested.json doesn't say when it was made, so the update waits. Nothing changed." >&2
+  exit 1
+fi
+newest=""
+for file in "${seen_files[@]}"; do
+  seen=$(head -n 1 "$file" 2>/dev/null || true)
+  [[ $seen =~ $stamp && $seen > $newest ]] && newest=$seen
+done
+if [[ $date < $newest ]]; then
+  echo "tested.json is from $date, older than the one this box already has ($newest), so the update waits. Nothing changed." >&2
+  exit 1
+fi
+if [[ $date > $newest ]]; then
+  for file in "${seen_files[@]}"; do
+    if { mkdir -p "$(dirname "$file")" && echo "$date" >"$file.new" && mv -f "$file.new" "$file"; } 2>/dev/null; then
+      break
+    fi
+  done
+fi
+
 # What the update would install: "name old -> new" per line.
 if [[ -z $pending ]]; then
   pending="$work/pending"

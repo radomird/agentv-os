@@ -56,12 +56,16 @@ elif [[ -s $AGENTV_ETC/channel ]]; then
   server="$AGENTV_REPO_URL/$AGENTV_CHANNEL"
 fi
 
+# The package list has to be signed too, not only the packages: with it
+# optional, someone who can change what the repository serves could hand a
+# box an older list without its signature, and the box would stay on old
+# versions. Every channel's list is signed when it's built.
 begin="# BEGIN agentv: added by agentv-pacman-conf, kept at the end"
 end="# END agentv"
 section=$(printf '%s\n' \
   "$begin" \
   "[agentv]" \
-  "SigLevel = Required DatabaseOptional" \
+  "SigLevel = Required DatabaseRequired" \
   "Server = $server" \
   "$end")
 

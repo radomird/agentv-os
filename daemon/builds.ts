@@ -27,7 +27,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BuildStatus, Understood } from "../builder/build.ts";
-import { loadRecipes, type Kind, type Plan, type Recipe } from "../builder/recipe.ts";
+import { loadRecipes, signedInPage, type Kind, type Plan, type Recipe } from "../builder/recipe.ts";
 
 export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
 
@@ -349,20 +349,21 @@ export class Builds {
   }
 
   // The build learning a streaming service after its sign-in (ADR-011), by
-  // root's ticket, with the origins it declared: what stage B's look at the
-  // signed-in pages keeps to.
-  stageB(): { id: string; version: string; origins: string[] } | null {
-    let ticket: { id?: unknown; version?: unknown; phase?: unknown } | null = null;
+  // root's ticket, with the origins an adult approved with its app, which
+  // root put in the ticket from its own copy of the app. Never from the
+  // build's folder: what a build wrote after approval doesn't count. That's
+  // what stage B's look at the signed-in pages keeps to, with the pages
+  // AgenTV's own recipe names for it: where a title is found and played,
+  // never an account or a payment page.
+  stageB(): { id: string; version: string; origins: string[]; looksAt: (address: URL) => boolean } | null {
+    let ticket: { id?: unknown; version?: unknown; phase?: unknown; origins?: unknown; recipe?: unknown } | null = null;
     try {
       ticket = JSON.parse(readFileSync(join(this.o.run, "ticket.json"), "utf8"));
     } catch {}
     if (!ticket || ticket.phase !== "stage-b" || typeof ticket.id !== "string" || !ID.test(ticket.id) || typeof ticket.version !== "string" || !/^\d+\.\d+\.\d+$/.test(ticket.version)) return null;
-    let state: { origins?: { origin?: unknown }[] } = {};
-    try {
-      state = JSON.parse(readFileSync(join(this.o.builds, ticket.id, ticket.version, "state.json"), "utf8"));
-    } catch {}
-    const origins = (state.origins ?? []).map((o) => o?.origin).filter((o): o is string => typeof o === "string" && o.startsWith("https://"));
-    return { id: ticket.id, version: ticket.version, origins };
+    const origins = (Array.isArray(ticket.origins) ? ticket.origins : []).filter((o): o is string => typeof o === "string" && o.startsWith("https://"));
+    const pages = this.recipe(typeof ticket.recipe === "string" ? ticket.recipe : null)?.signedInPages;
+    return { id: ticket.id, version: ticket.version, origins, looksAt: (address) => address.protocol === "https:" && origins.includes(address.origin) && signedInPage(pages, address) };
   }
 
   // Whether a build is under way, for how often to look again. One waiting

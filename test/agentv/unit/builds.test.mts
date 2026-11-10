@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { Builds, idFor, nextVersion } from "../../../daemon/builds.ts";
-import { Build } from "../../../builder/build.ts";
+import { validatePackage } from "../../../apps/contract/manifest.ts";
+import { Build, reachesOf } from "../../../builder/build.ts";
 import { HandOver } from "../../../builder/sandbox/hand-over.ts";
 import { stopped } from "../../../builder/sandbox/start.ts";
 import { Daemon } from "../../../daemon/server.ts";
@@ -245,7 +246,9 @@ test("Q117 root installs an approved app as Local, keeps the version before for 
     cpSync(join(ROOT, "test/agentv/fixtures/apps/blocks"), join(dir, "work", "app"), { recursive: true });
     const manifest = JSON.parse(readFileSync(join(dir, "work", "app", "manifest.json"), "utf8"));
     writeFileSync(join(dir, "work", "app", "manifest.json"), JSON.stringify({ ...manifest, id: "local.blocks", version, author: "your agent" }));
-    writeFileSync(join(dir, "status.json"), JSON.stringify({ build, id: "local.blocks", version, phase: "build", state, steps: [], started: "", at: "" }));
+    // What approval showed: what the app reaches, as the builder works it out.
+    const reaches = reachesOf(validatePackage(join(dir, "work", "app"), "local").manifest!);
+    writeFileSync(join(dir, "status.json"), JSON.stringify({ build, id: "local.blocks", version, phase: "build", state, steps: [], approval: { reaches, packages: [] }, started: "", at: "" }));
   };
   const state = (version: string) => JSON.parse(readFileSync(join(o.builds, "local.blocks", version, "status.json"), "utf8")).state;
   const install = async (data: object) => {
@@ -280,6 +283,55 @@ test("Q117 root installs an approved app as Local, keeps the version before for 
   assert.equal((await handOver.handle())!.started, true);
   assert.ok(!existsSync(join(o.apps, "local.blocks")));
   assert.ok(!existsSync(join(o.builds, "local.blocks")));
+});
+
+test("H2 root installs only the app its approval showed: every origin the build declared, and none added after", async () => {
+  const { o } = box();
+  const handOver = new HandOver({ drop: o.drop, builds: o.builds, apps: o.apps, home: join(o.state, "home"), run: o.run, spend: o.spend, builder: { uid: process.getuid!(), gid: process.getgid!() }, rootUid: process.getuid!(), systemctl: () => false });
+  const dir = join(o.builds, "local.forecast", "1.0.0");
+  const app = join(dir, "work", "app");
+  // A build waiting for its yes: its app lists `lists`, its state says it
+  // declared `declared`, and its approval showed what `shown` reaches.
+  const built = (lists: string[], declared: string[], o2: { shown?: string[]; phase?: string } = {}) => {
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    cpSync(join(ROOT, "test/agentv/fixtures/apps/blocks"), app, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(app, "manifest.json"), "utf8"));
+    const write = (origins: string[]) => writeFileSync(join(app, "manifest.json"), JSON.stringify({ ...manifest, id: "local.forecast", version: "1.0.0", author: "your agent", tv: { ...manifest.tv, ...(origins.length ? { origins } : {}) } }));
+    write(o2.shown ?? lists);
+    const reaches = reachesOf(validatePackage(app, "local").manifest!);
+    write(lists);
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ origins: declared.map((origin) => ({ origin, why: "the forecast" })) }));
+    writeFileSync(join(dir, "status.json"), JSON.stringify({ build: "b1", id: "local.forecast", version: "1.0.0", phase: o2.phase ?? "build", state: "approve", steps: [], approval: { reaches, packages: [] }, started: "", at: "" }));
+  };
+  const install = async () => {
+    mkdirSync(o.drop, { recursive: true });
+    writeFileSync(join(o.drop, "install.json"), JSON.stringify({ build: "b1", id: "local.forecast", version: "1.0.0" }));
+    return (await handOver.handle())!;
+  };
+  const onHome = () => existsSync(join(o.apps, "local.forecast", "manifest.json"));
+
+  // Declared, live in the build's filter, and left out of the app: not installed.
+  built(["https://api.example.org"], ["https://api.example.org", "https://cdn-metrics.example"]);
+  assert.match((await install()).reason!, /the build reached https:\/\/cdn-metrics\.example, which its approval didn't show/);
+  assert.ok(!onHome());
+  // The app changed after its approval was written: not installed.
+  built(["https://api.example.org", "https://cdn-metrics.example"], ["https://api.example.org", "https://cdn-metrics.example"], { shown: ["https://api.example.org"] });
+  assert.match((await install()).reason!, /what the app reaches isn't what its approval showed/);
+  assert.ok(!onHome());
+  // One list everywhere: installed, and that's the approved list from now on.
+  built(["https://api.example.org"], ["https://api.example.org"]);
+  assert.equal((await install()).started, true);
+  assert.deepEqual(handOver.approvedOrigins("local.forecast", "1.0.0"), ["https://api.example.org"]);
+
+  // Stage B's app, the same version again: an origin more, or one fewer, isn't installed.
+  built(["https://api.example.org", "https://late.example"], ["https://api.example.org", "https://late.example"], { phase: "stage-b" });
+  assert.match((await install()).reason!, /the app's origins changed after they were approved/);
+  built([], [], { phase: "stage-b" });
+  assert.match((await install()).reason!, /the app's origins changed after they were approved/);
+  assert.deepEqual(handOver.approvedOrigins("local.forecast", "1.0.0"), ["https://api.example.org"], "what's on home is untouched");
+  built(["https://api.example.org"], ["https://api.example.org", "https://late.example"], { phase: "stage-b" });
+  assert.equal((await install()).started, true, "the same origins go in, whatever its state says by then");
 });
 
 // --- Through the daemon ------------------------------------------------------
