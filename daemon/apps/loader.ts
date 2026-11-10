@@ -416,20 +416,27 @@ export class AppHost {
       throw new AppError("refused", `${this.manifest.name} doesn't have ${path}`);
     }
     await this.start();
-    // The worker can be gone again by now: it was stopped, or it ended,
-    // between starting and this call.
+    // The worker can be stopped between its start and here, or before the
+    // call is sent: the app was updated or removed, or the daemon is closing.
+    const stopped = () => new AppError("crashed", `${this.manifest.name} stopped`);
     const child = this.child;
-    if (!child) throw new AppError("failed", `${this.manifest.name} stopped before it could answer ${path}`);
+    if (!child?.connected) throw stopped();
     const id = ++this.nextId;
     const ms = this.limits[path] ?? known.ms;
     return new Promise<T>((resolveCall, rejectCall) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         rejectCall(new AppError("timeout", `${this.manifest.name} took too long to answer ${path}`));
-        this.checkAlive(child);
+        if (child.connected) this.checkAlive(child);
       }, ms);
       this.pending.set(id, { resolve: resolveCall as (value: unknown) => void, reject: rejectCall, timer });
-      void this.pageInfo().then((page) => child.send({ type: "call", id, path: path.split("."), args, settings: this.settings, viewer, page }));
+      void this.pageInfo().then((page) =>
+        child.send({ type: "call", id, path: path.split("."), args, settings: this.settings, viewer, page }, (error) => {
+          if (!error || !this.pending.delete(id)) return;
+          clearTimeout(timer);
+          rejectCall(stopped());
+        }),
+      );
     });
   }
 

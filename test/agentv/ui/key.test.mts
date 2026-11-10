@@ -5,9 +5,7 @@
 // (key-test.sh, key-store-test.sh) and the image layer's.
 
 import assert from "node:assert/strict";
-import { rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
@@ -58,22 +56,24 @@ async function tv(): Promise<{ page: Page; puts: { body: { provider: string; key
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
 const focused = (page: Page) => page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action") ?? document.querySelector(".focused")?.getAttribute("data-key"));
 
-test("ADR-053 Q143 Settings → AI names the plans it offers: Claude's on stable, and ChatGPT's and grok's too on edge, as best effort", async () => {
+test("T17.1 Q143 Settings → AI names the plans it offers: Claude's, ChatGPT's and Grok's, with none marked as less", async () => {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on("pageerror", (error) => errors.push(error.message));
-  let plans = [{ provider: "claude", bestEffort: false }];
+  let plans = [{ provider: "claude" }];
   await page.route(`${url}/api/key`, (route) => route.fulfill({ json: { ok: true, set: false, provider: null, plans } }));
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
   await go(page, "settings/ai");
   await page.waitForFunction(() => /no key yet/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.match(await page.locator(".panel").innerText(), /an api key from claude, chatgpt, gemini, grok or muse, or your plan: claude's\. more plans are coming soon\./);
+  assert.match(await page.locator(".panel").innerText(), /an api key from claude, chatgpt, gemini, grok or muse, or your plan: claude's\./);
+  assert.doesNotMatch(await page.locator(".panel").innerText(), /coming soon/);
   assert.equal(await page.locator('.panel [data-action="use-plan"]').innerText(), "use my plan →");
-  plans = [...plans, { provider: "chatgpt", bestEffort: true }, { provider: "grok", bestEffort: true }];
+  plans = [...plans, { provider: "chatgpt" }, { provider: "grok" }];
   await go(page, "home");
   await go(page, "settings/ai");
-  await page.waitForFunction(() => /best effort/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.match(await page.locator(".panel").innerText(), /or your plan: claude's, or chatgpt's or grok's as best effort\./);
+  await page.waitForFunction(() => /grok's/.test(document.querySelector(".panel")?.textContent ?? ""));
+  assert.match(await page.locator(".panel").innerText(), /or your plan: claude's, chatgpt's or grok's\./);
+  assert.doesNotMatch(await page.locator(".panel").innerText(), /best effort|coming soon/);
   await page.close();
 });
 
@@ -154,7 +154,7 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   await page.close();
 });
 
-test("Q143 Settings → AI picks the household's plan: its terms on a phone first, then builds use it; on edge, ChatGPT's and grok's as best effort", async () => {
+test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phone first, then builds use it, and ChatGPT's and Grok's are there on stable too", async () => {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${url}/`);
@@ -165,8 +165,6 @@ test("Q143 Settings → AI picks the household's plan: its terms on a phone firs
   await page.waitForSelector('.page [data-action="provider"]');
   assert.match(await page.locator('[data-action="provider"]').innerText(), /plan\s+‹ claude ›/);
   assert.equal(await page.locator('[data-plan="about"]').innerText(), "claude pro or max. you sign in to it on your phone the first time your agent builds an app.");
-  await page.keyboard.press("ArrowRight");
-  assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ claude ›/, "on stable, Claude's is the only plan");
   await page.locator('[data-action="save"]').click();
 
   // Claude's terms for a plan come first, accepted by an adult on a phone.
@@ -189,10 +187,9 @@ test("Q143 Settings → AI picks the household's plan: its terms on a phone firs
   await page.waitForFunction(() => /claude plan/.test(document.querySelector('.menu-item[data-key="ai"]')?.textContent ?? ""));
   assert.match(await page.locator(".panel").innerText(), /claude plan[\s\S]*claude pro or max\. you sign in to it[\s\S]*change the plan →[\s\S]*use a key instead →/);
 
-  // On edge: grok's plan, as best effort, and its own terms.
-  const channel = join(state, "..", "channel");
-  writeFileSync(channel, "edge\n");
-  try {
+  // On stable, as this box is: ChatGPT's and Grok's plans, each with its
+  // own terms. Google's and Muse's aren't in the list.
+  {
     await go(page, "home");
     await go(page, "settings/ai");
     await page.waitForSelector('.panel [data-action="use-plan"]');
@@ -200,8 +197,14 @@ test("Q143 Settings → AI picks the household's plan: its terms on a phone firs
     await page.waitForSelector('.page [data-action="provider"]');
     await page.keyboard.press("ArrowRight");
     assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ chatgpt ›/);
-    assert.equal(await page.locator('[data-plan="about"]').innerText(), "chatgpt plus or pro, as best effort. you sign in to it on your phone the first time your agent builds an app.");
+    assert.equal(await page.locator('[data-plan="about"]').innerText(), "chatgpt plus or pro. you sign in to it on your phone the first time your agent builds an app.");
     await page.keyboard.press("ArrowRight");
+    assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ grok ›/);
+    // Grok's is the last: right goes round to Claude's, never to a plan
+    // that isn't offered.
+    await page.keyboard.press("ArrowRight");
+    assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ claude ›/);
+    await page.keyboard.press("ArrowLeft");
     assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ grok ›/);
     await page.locator('[data-action="save"]').click();
     await page.waitForFunction(() => /grok's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
@@ -213,8 +216,6 @@ test("Q143 Settings → AI picks the household's plan: its terms on a phone firs
     await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
     const ai = await (await fetch(`${url}/api/key`)).json();
     assert.deepEqual(ai.ai, { provider: "claude", path: "plan", accepted: true });
-  } finally {
-    rmSync(channel, { force: true });
   }
   await phone.close();
   await page.close();

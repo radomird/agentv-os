@@ -62,7 +62,9 @@ function pick(ctx: Ctx): View {
 
 // The one line under the headline, for how the plan's sign-in stands.
 function said(offer: AiInfo["offers"][Provider], now: PlanSignIn | null): string {
-  if (!offer.plan.offered) return offer.plan.note ?? `${offer.plan.name} is coming soon. a key works now`;
+  // A plan its maker keeps to its own apps says so. One that waits for its
+  // maker's yes is coming soon.
+  if (!offer.plan.offered) return offer.plan.keyOnly && offer.plan.note ? offer.plan.note : `${offer.plan.name} is coming soon. a key works now`;
   const state = now?.now?.state;
   if (now?.signedIn) return `you're signed in to ${offer.plan.name}`;
   if (state === "waiting" && now?.now?.code) return `scan to sign in, then enter ${now.now.code}`;

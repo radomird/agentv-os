@@ -5,7 +5,7 @@
 
 import type { Placed, Size } from "./layout.ts";
 import { gridName, preview } from "./looks/looks.ts";
-import { isShowcaseImage, SHOWCASE_APP, showcaseTile } from "./looks/showcase.ts";
+import { SHOWCASE_APP, showcasePicture, showcaseTile } from "./looks/showcase.ts";
 
 export interface SizeChoice {
   size: Size;
@@ -170,9 +170,8 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
-  // The plans setup and Settings → AI offer on this box's channel, and which
-  // of them only as best effort, on edge (ADR-053).
-  plans?: { provider: string; name?: string; bestEffort: boolean }[];
+  // The plans setup and Settings → AI offer (ADR-087).
+  plans?: { provider: string; name?: string }[];
   // What builds use now: the AI picked, by plan or key, and whether its terms
   // are accepted (Q143).
   ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
@@ -509,8 +508,9 @@ export const daemon = {
   setPin: (pin: string, grant?: string) => call<{ set: boolean }>("PUT", "/api/pin", { pin }, grant),
   removePin: (grant?: string) => call<{ set: boolean }>("DELETE", "/api/pin", undefined, grant),
   lock: () => call<{ locked: boolean }>("POST", "/api/pin/lock"),
-  // A picture an app sends, through the daemon, or one of a preview's own.
-  image: (app: string, url: string) => (isShowcaseImage(url) ? url : `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`),
+  // A picture an app sends, through the daemon, or one of a preview's own
+  // posters on New this week's tile (looks/showcase.ts).
+  image: (app: string, url: string) => (showcasePicture(app, url, preview() !== null) ? url : `/api/image?app=${encodeURIComponent(app)}&url=${encodeURIComponent(url)}`),
   // The builder (ADR-043 to ADR-046): an adult's asks, and how each goes.
   builds: () => call<BuildsState>("GET", "/api/builds"),
   ask: (sentence: string) => call<{ build: BuildView }>("POST", "/api/builds", { sentence }).then((r) => r.build),
