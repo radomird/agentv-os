@@ -96,8 +96,8 @@ export interface Offer {
   maker: string;
   cli: string;
   cliName: string;
-  // bestEffort: offered on edge before a build has run on it (ADR-053).
-  plan: { offered: boolean; name: string; note?: string; bestEffort?: boolean };
+  // keyOnly: its maker keeps the plan to its own apps, and note says so.
+  plan: { offered: boolean; name: string; note?: string; keyOnly?: boolean };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   summary: Record<Path, string>;
