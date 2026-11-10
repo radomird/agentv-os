@@ -190,7 +190,8 @@ export interface Launcher {
   // for it, as AgenTV's daemon says.
   pinCheck(action: string, grant?: string): Promise<boolean>;
   // Locks the TV until the PIN is entered, once it has been off for a while.
-  lock(): Promise<void>;
+  // True when the TV is locked now.
+  lock(): Promise<boolean | void>;
   // Ends AgenTV's splash, which covers the TV from the session's start
   // until home has drawn, when the boot kept it (ADR-060).
   splashDone?(): void;
@@ -1704,7 +1705,8 @@ export class Screen {
   }
 
   // The TV went off or came back. Off: everything playing pauses at once, and
-  // after tvOffCloseMs every app closes and home waits on its ambient screen.
+  // after tvOffCloseMs every app but a game closes and home waits on its
+  // ambient screen (offTooLong).
   tv(on: boolean): Promise<object> {
     return this.queue(async () => {
       if (!on) {
@@ -1772,7 +1774,11 @@ export class Screen {
           // A key, or a mouse that moved as the box woke, took home off its
           // ambient screen, but the TV is still off: back to it, so the TV
           // comes on to the ambient screen, where any key goes home.
-          if (this.dark && this.tvOff && !this.ambient) void this.showAmbient(false);
+          // A game that stayed in front stays there (ADR-084).
+          if (!this.dark || !this.tvOff || this.ambient) return;
+          void this.gameInFront().then((game) => {
+            if (!game && this.dark && this.tvOff) void this.showAmbient(false);
+          });
         });
       }, this.tvSettleMs);
     });
@@ -1782,27 +1788,61 @@ export class Screen {
     if (this.dark) void this.look("the TV's connector changed");
   }
 
+  // The TV has been off for tvOffCloseMs. Every app closes but a game: Steam
+  // with whatever it runs, and a game made on this TV, which is a page in
+  // home's own window (ADR-084). A game that was in front stays in front, so
+  // the TV comes back on to it and not to the ambient screen. A profile that
+  // locks comes back on home's PIN pad instead, with the game open behind it.
   private offTooLong(): Promise<void> {
+    let stays = false;
     return this.queue(async () => {
       if (!this.tvOff) return;
-      this.log("the TV has been off for a while; closing every app");
-      for (const entry of [...this.opens]) await this.closeOpen(entry);
+      const games = this.opens.filter((o) => o.role === "steam");
+      this.log(`the TV has been off for a while; closing every app${games.length ? ` but ${games.map((o) => o.id).join(", ")}` : ""}`);
+      for (const entry of this.opens.filter((o) => o.role !== "steam")) await this.closeOpen(entry);
       // And a shared link's page.
       this.apps.get("share")?.stop();
-      this.ambient = false;
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
-      await this.launcher.lock().catch(() => {});
+      const locked = (await this.launcher.lock().catch(() => false)) === true;
+      // The ambient screen that idling put over a game stays as it is, and a
+      // key on it still goes back to the game.
+      const over = this.ambient && this.ambientFrom ? this.windows.get(this.ambientFrom) : undefined;
+      if (over?.role === "steam" && !locked) {
+        stays = true;
+        return;
+      }
+      const game = this.ambient || locked ? null : await this.gameInFront();
+      this.ambient = false;
+      if (game) {
+        stays = true;
+        this.log(`${game} stays in front`);
+      }
     })
-      .then(() => this.showAmbient(false))
+      .then(() => (stays ? undefined : this.showAmbient(false)))
       .then(() =>
         this.queue(async () => {
           // Then nothing draws until the TV is back (ADR-072).
           if (!this.tvOff) return;
+          // A locked TV comes back on home's PIN pad, not on the game that
+          // was in front: a key on the ambient screen doesn't go back to it.
+          if (!stays && this.ambientFrom && this.windows.get(this.ambientFrom)?.role === "steam") this.ambientFrom = null;
           this.dark = true;
           await this.output(false, "the TV is off");
         }),
       );
+  }
+
+  // The game in front, if one is: Steam's window, or a game made on this TV
+  // on home, which knows its apps' categories. Not behind the ambient screen
+  // or the PIN pad.
+  private async gameInFront(): Promise<string | null> {
+    if (this.ambient) return null;
+    const front = this.front();
+    if (front?.role === "steam") return this.opens.find((o) => o.role === "steam")?.id ?? "steam";
+    if (front && front.role !== "home") return null;
+    const home = (await Promise.race([this.inHome("({ game: window.agentvGame?.() ?? null })"), sleep(500).then(() => ({}))])) as { game?: unknown };
+    return typeof home.game === "string" ? home.game : null;
   }
 
   openWeb(url: string, id = url): Promise<object> {
@@ -2703,12 +2743,13 @@ export const launcher: Launcher = {
   // After the TV has been off: it locks only a profile that asks for the PIN
   // to open (ADR-034).
   async lock() {
-    await fetch(`${HOME_URL}api/pin/lock`, {
+    const response = await fetch(`${HOME_URL}api/pin/lock`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason: "tv-off" }),
       signal: AbortSignal.timeout(5000),
     });
+    return ((await response.json().catch(() => null)) as { locked?: boolean } | null)?.locked === true;
   },
 
   setTheme(theme) {
