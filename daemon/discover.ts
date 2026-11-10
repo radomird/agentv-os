@@ -24,7 +24,8 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createSocket, type RemoteInfo, type Socket } from "node:dgram";
-import { isIPv4, Socket as TcpSocket } from "node:net";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP, isIPv4, Socket as TcpSocket } from "node:net";
 import { networkInterfaces } from "node:os";
 import { HOTSPOT_ADDRESS } from "./hotspot.ts";
 
@@ -101,6 +102,32 @@ export function serverAnswer(text: string): { url: string; name: string; id: str
   const url = httpUrl(address);
   if (!url) return null;
   return { url, name: cleanName(name), id: typeof id === "string" && id ? id.slice(0, 100) : url };
+}
+
+// A name's IPv4 addresses, as the box resolves it.
+export type Lookup = (name: string) => Promise<string[]>;
+
+const lookup: Lookup = async (name) => (await dnsLookup(name, { all: true, family: 4 })).map((one) => one.address);
+
+// Where a Jellyfin or Emby that answered really is. Its answer names an
+// address, but any device at home can send an answer, so that address only
+// counts when it's the sender's own: the address the answer came from, or a
+// name that leads to it, as a server set up with a name of its own gives.
+// Anything else becomes the sender's address, on the port the answer gave
+// when it's plain http and on 8096 otherwise, which both listen on unless
+// they're told not to. That keeps a server whose answer names an address
+// the box can't use, such as a container's inside address.
+export async function senderUrl(answer: string, from: string, resolve: Lookup = lookup): Promise<string | null> {
+  if (!isIPv4(from)) return null;
+  const url = new URL(answer);
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (host === from) return answer;
+  if (!isIP(host)) {
+    const found = await Promise.race([resolve(host), new Promise<string[]>((done) => setTimeout(() => done([]), ASK_MS).unref())]).catch((): string[] => []);
+    if (found.includes(from)) return answer;
+  }
+  const port = url.protocol === "http:" ? url.port || "80" : "8096";
+  return `http://${from}${port === "80" ? "" : `:${port}`}${url.pathname.replace(/\/+$/, "")}`;
 }
 
 // Plex's answer to GDM's M-SEARCH, from the address it came from:
@@ -417,6 +444,8 @@ export interface DiscoverOptions {
   // avahi-browse, or null for no mDNS.
   avahi?: string | null;
   smbclient?: string;
+  // Tests: how a name in a server's answer is resolved.
+  lookup?: Lookup;
   run?: Run;
   fetch?: typeof fetch;
   lookMs?: number;
@@ -645,13 +674,23 @@ export class Discover {
     const text = message.toString("utf8");
     if (name === "jellyfin" || name === "emby") {
       const answer = serverAnswer(text);
-      if (answer) this.add({ kind: name, name: answer.name || name, url: answer.url, host: from.address, via: "udp-7359" }, from.address, `${name}:${answer.id}`);
+      if (answer) void this.serverHeard(name, answer, from.address);
     } else if (name === "plex") {
       const answer = gdmAnswer(text, from.address);
       if (answer) this.add({ kind: "plex", name: answer.name || "plex", url: answer.url, host: from.address, via: "gdm" }, from.address, `plex:${answer.id}`);
     } else {
       for (const match of wsdMatches(text)) void this.wsdHeard(match, from);
     }
+  }
+
+  // A Jellyfin or an Emby, at the address its answer came from. Its row is
+  // its own id and that address together, so an answer from somewhere else
+  // with the same id is a row of its own and never takes this one's place.
+  private async serverHeard(kind: "jellyfin" | "emby", answer: { url: string; name: string; id: string }, from: string): Promise<void> {
+    const look = this.looks;
+    const url = await senderUrl(answer.url, from, this.options.lookup);
+    if (!url || !this.looking || look !== this.looks) return;
+    this.add({ kind, name: answer.name || kind, url, host: from, via: "udp-7359" }, from, `${kind}:${answer.id === answer.url ? url : answer.id}@${from}`);
   }
 
   // A device that shares files, by its address. Its name comes from its

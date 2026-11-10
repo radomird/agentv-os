@@ -96,6 +96,33 @@ test("S4.5 five wrong tries make it wait 30 s, each one after doubles it, and a 
   assert.deepEqual(again.check("0006"), { ok: false, error: "that's not the pin" }, "the right one starts the count again");
 });
 
+test("F9 each phone has its own count of wrong tries, the TV's pad has its own, and a restart keeps them", () => {
+  const { pin, clock, make } = box();
+  pin.set("4826", undefined);
+  for (const wrong of ["0000", "0001", "0002", "0003"]) assert.equal((pin.check(wrong, "p-00000001") as { error: string }).error.startsWith("that's not the pin"), true);
+  assert.deepEqual(pin.check("0004", "p-00000001"), { ok: false, error: "that's not the pin. try again in 30 s", wait: 30 });
+  // That phone waits, by a new daemon too. The TV and another phone don't.
+  const again = make();
+  assert.deepEqual(again.check("4826", "p-00000001"), { ok: false, error: "too many tries. try again in 30 s", wait: 30 });
+  assert.equal(again.status().wait, 0);
+  assert.deepEqual(again.check("0000", "p-00000002"), { ok: false, error: "that's not the pin" });
+  granted(again.check("4826"));
+  granted(again.check("4826", "p-00000002"));
+  // The right PIN somewhere else doesn't end that phone's wait or its count.
+  assert.equal(again.check("4826", "p-00000001").ok, false);
+  clock.now += 30_000;
+  assert.deepEqual(again.check("0005", "p-00000001"), { ok: false, error: "that's not the pin. try again in 60 s", wait: 60 });
+  // The TV's own wrong tries don't make a phone wait, and the right PIN from
+  // a phone ends the TV's wait: an adult is here.
+  for (const wrong of ["0000", "0001", "0002", "0003", "0004"]) again.check(wrong);
+  assert.equal(again.status().wait, 30);
+  granted(again.check("4826", "p-00000002"));
+  assert.equal(again.status().wait, 0);
+  clock.now += 60_000;
+  granted(again.check("4826", "p-00000001"));
+  assert.deepEqual(again.check("0006", "p-00000001"), { ok: false, error: "that's not the pin" }, "the right one starts that phone's count again");
+});
+
 test("S4.5 the TV is locked after another boot, and after it's been off, until the PIN", () => {
   const { pin, clock, make } = box();
   pin.set("4826", undefined);

@@ -68,9 +68,17 @@ async function tv(): Promise<Page> {
   return page;
 }
 
+// A code that pairs a phone, as Settings → Phones asks for one: with the
+// PIN's grant once a PIN is set.
+async function pairCode(): Promise<{ code: string }> {
+  const first = await post("/api/phones/pair");
+  if (!first.pin) return first.pairing;
+  return (await post("/api/phones/pair", undefined, (await post("/api/pin/check", { pin: PIN })).grant)).pairing;
+}
+
 // A paired phone, through the QR code's address.
 async function phone(): Promise<Page> {
-  const { pairing } = await post("/api/phones/pair");
+  const pairing = await pairCode();
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${phoneUrl}/?code=${pairing.code}`);
@@ -335,7 +343,7 @@ test("S4.10 the remote follows the TV: the keyboard for a text field, playback w
 test("S4.10 every press shows, clicks and buzzes, quick taps each count and never zoom, and Settings opens on the TV", async () => {
   const screen = await tv();
   await go(screen, "home");
-  const { pairing } = await post("/api/phones/pair");
+  const pairing = await pairCode();
   const handheld = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   const hand = await handheld.newPage();
   hand.on("pageerror", (error) => errors.push(error.message));
