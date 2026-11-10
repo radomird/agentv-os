@@ -84,6 +84,16 @@ test("F1 a public key that shares nothing is refused, and counts as a try", () =
   assert.deepEqual(phones.pair(asking(code)), { error: "that code has run out: pair again from the tv" });
 });
 
+test("H7 a phone's name is one line: control characters are left out", () => {
+  const phones = new Phones({ path: join(dir, `phones-${++n}.json`) });
+  const named = phones.pair(asking(phones.code().code, "ana\n\u001b[2K is paired\u007f\u0000"));
+  assert.ok("id" in named);
+  assert.equal(named.phone.name, "ana[2K is paired");
+  const blank = phones.pair(asking(phones.code().code, "\n\t "));
+  assert.ok("id" in blank);
+  assert.equal(blank.phone.name, "a phone");
+});
+
 test("five wrong proofs end the code, and so do 10 minutes", () => {
   const clock = { now: 1_800_000_000_000 };
   const phones = new Phones({ path: join(dir, `phones-${++n}.json`), now: () => clock.now });
@@ -187,6 +197,19 @@ async function send(base: string, method: string, path: string, options: { body?
 
 let token: TestPhone;
 
+test("F6 with no PIN set, pairing a phone and forgetting one ask for nothing", async () => {
+  assert.equal((await send(tv, "POST", "/api/setup", { body: { done: true } })).status, 200);
+  const made = await send(tv, "POST", "/api/phones/pair");
+  assert.equal(made.status, 200);
+  const paired = await pairPhone(phone, made.data.pairing.code, "a guest's");
+  const forgot = await send(tv, "DELETE", `/api/phones/${paired.kept.id}`);
+  assert.equal(forgot.status, 200);
+  assert.deepEqual(forgot.data, { ok: true, phones: [] });
+  assert.ok(!lines.join("\n").includes("needs the pin"));
+  lines.length = 0;
+  events.length = 0;
+});
+
 test("pairing: the TV shows a code and a QR code with the phone companion's address, and a phone sends the code back", async () => {
   assert.deepEqual((await send(tv, "GET", "/api/phones")).data, { ok: true, phones: [], pairing: null });
   assert.equal((await send(tv, "GET", "/api/phones/qr")).status, 404, "no code on show, no qr code");
@@ -200,7 +223,7 @@ test("pairing: the TV shows a code and a QR code with the phone companion's addr
   // The QR code has the secret after the #, and not the code.
   const secret = daemon.phones.secret()!;
   assert.match(secret, /^[A-Za-z0-9_-]{22}$/);
-  assert.equal(readFileSync(qrArgs, "utf8").trim(), `-t SVG -m 1 -o - ${pairing.url}#pair=${secret}`);
+  assert.equal(readFileSync(qrArgs, "utf8").trim(), `-t SVG -m 1 -o - -- ${pairing.url}#pair=${secret}`, "H8: the text can't be read as an option");
 
   assert.equal((await send(phone, "POST", "/api/phone/pair", { body: asking("ZZZZZZ") })).status, 403);
   // The code itself, sent as the page once did, pairs nothing.
@@ -273,6 +296,19 @@ test("the PIN on the phone gives a grant, which switching from a child to an adu
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("F9 a phone's wrong PINs make only that phone wait, not the TV or another phone", async () => {
+  const grant = (await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).data.grant;
+  const code = (await send(tv, "POST", "/api/phones/pair", { grant })).data.pairing.code;
+  const other = await pairPhone(phone, code, "second phone");
+  for (let i = 0; i < 5; i++) assert.equal((await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "0000" } })).status, 403);
+  const waiting = await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "4826" } });
+  assert.equal(waiting.status, 403, "that phone waits, even with the right one");
+  assert.match(waiting.data.error, /^too many tries/);
+  assert.equal((await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).status, 200, "the tv's pad doesn't");
+  assert.equal((await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).status, 200, "and neither does another phone");
+  assert.equal((await send(tv, "DELETE", `/api/phones/${other.kept.id}`, { grant })).status, 200);
+});
 
 test("ADR-037 S4.10 the phone hears what's on the TV within a second: its ask waits for a change, and the remote's view follows", async () => {
   const first = (await send(phone, "GET", "/api/phone/state", { token })).data;
@@ -424,7 +460,21 @@ test("S4.7 S4.8 S4.9 the phone arranges home, hears about an update, and signs i
 
 test("a phone Settings forgets can't do anything any more", async () => {
   const id = (await send(tv, "GET", "/api/phones")).data.phones[0].id;
-  assert.equal((await send(tv, "DELETE", `/api/phones/${id}`)).status, 200);
+  // F6: a PIN is set by now, so pairing and forgetting need its grant.
+  const refused = await send(tv, "DELETE", `/api/phones/${id}`);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.data.pin, true);
+  assert.equal((await send(tv, "POST", "/api/phones/pair")).status, 403);
+  assert.equal((await send(tv, "GET", "/api/phones")).data.pairing, null, "and no code came on show");
+  // Setup shows a code on its own screens, so until it's done a code comes
+  // without the PIN. Forgetting isn't part of setup.
+  assert.equal((await send(tv, "POST", "/api/setup", { body: { done: false } })).status, 200);
+  assert.equal((await send(tv, "POST", "/api/phones/pair")).status, 200);
+  assert.equal((await send(tv, "DELETE", `/api/phones/${id}`)).status, 403);
+  assert.equal((await send(tv, "POST", "/api/setup", { body: { done: true } })).status, 200);
+  const grant = (await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).data.grant;
+  assert.equal((await send(tv, "POST", "/api/phones/pair", { grant })).status, 200);
+  assert.equal((await send(tv, "DELETE", `/api/phones/${id}`, { grant })).status, 200);
   assert.equal((await send(phone, "GET", "/api/phone/state", { token })).status, 401);
   assert.equal((await send(phone, "POST", "/api/phone/remote", { token, body: { key: "up" } })).status, 401);
   assert.equal((await token.hello()), false, "nor open a session");

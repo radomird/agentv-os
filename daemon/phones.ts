@@ -139,7 +139,7 @@ export class Phones {
     const key = phoneKey(shared, bySecret ? pending.secret : Buffer.from(pending.code), theirs, ours.public);
     this.pending = null;
     const name = request?.name;
-    const label = typeof name === "string" && name.trim() ? name.trim().slice(0, NAME_MAX) : "a phone";
+    const label = (typeof name === "string" && name.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, NAME_MAX)) || "a phone";
     const phone: Phone = { id: `p-${randomBytes(4).toString("hex")}`, name: label, pairedAt: new Date(this.now()).toISOString() };
     this.write([...this.read(), { ...phone, key: key.toString("base64") }]);
     return { id: phone.id, key: b64u(ours.public), confirm: b64u(hmac(key, INFO.pairBox, theirs, ours.public)), phone };

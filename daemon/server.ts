@@ -1213,7 +1213,7 @@ export class Daemon {
 
   private qr(text: string): Promise<string | null> {
     return new Promise((resolve) => {
-      execFile(this.options.qrencode ?? "qrencode", ["-t", "SVG", "-m", "1", "-o", "-", text], { timeout: 5000 }, (error, stdout) =>
+      execFile(this.options.qrencode ?? "qrencode", ["-t", "SVG", "-m", "1", "-o", "-", "--", text], { timeout: 5000 }, (error, stdout) =>
         resolve(error || !stdout.includes("<svg") ? null : stdout),
       );
     });
@@ -1803,6 +1803,11 @@ export class Daemon {
         this.json(response, 403, { ok: false, error: "an adult exports an app" });
         return;
       }
+      // Only the app the TV is offering now, as the push below.
+      if (this.exportOffer?.id !== exporting[1] || this.exportOffer.until <= Date.now()) {
+        this.json(response, 403, { ok: false, error: "export it from its details on the tv first" });
+        return;
+      }
       const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === exporting[1]);
       const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
       if (!found || refusal) {
@@ -1810,10 +1815,8 @@ export class Daemon {
         return;
       }
       const zip = zipFolder(found.dir, `${found.manifest.id}-${found.manifest.version}`);
-      if (this.exportOffer?.id === found.manifest.id) {
-        this.exportOffer = null;
-        this.phonesChanged();
-      }
+      this.exportOffer = null;
+      this.phonesChanged();
       this.log(`${found.manifest.id} was exported to ${phone.name}`);
       response.writeHead(200, {
         "Content-Type": "application/zip",
@@ -1879,7 +1882,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/pin") {
       const locked = (await this.pinStatus()).locked;
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
-      const checked = this.pin.check(body?.pin);
+      const checked = this.pin.check(body?.pin, phone.id);
       if (!checked.ok) {
         this.log(checked.wait ? `a wrong pin from ${phone.name}; the next try waits ${checked.wait} s` : `a wrong pin from ${phone.name}`);
         this.json(response, 403, checked);
@@ -2690,7 +2693,11 @@ export class Daemon {
     }
 
     // Pair a phone: a new code, and the address the QR code takes a phone to.
+    // An adult's, behind the PIN when one is set, as changing profiles is:
+    // a paired phone is a remote for good. Setup's screens show a code by
+    // themselves and keep it fresh, so until setup is done it comes without.
     if (method === "POST" && path === "/api/phones/pair") {
+      if ((await this.setup()).done && (!this.guarded(request, response, "pairing a phone") || !(await this.adult(request, response, "pairing a phone")))) return;
       this.phones.code();
       this.json(response, 200, { ok: true, pairing: this.pairing() });
       return;
@@ -2711,6 +2718,7 @@ export class Daemon {
 
     const phone = /^\/api\/phones\/(p-[0-9a-f]{8})$/.exec(path);
     if (method === "DELETE" && phone) {
+      if (!this.guarded(request, response, "forgetting a phone") || !(await this.adult(request, response, "forgetting a phone"))) return;
       if (!this.phones.forget(phone[1])) {
         this.json(response, 404, { ok: false, error: "there's no such phone" });
         return;

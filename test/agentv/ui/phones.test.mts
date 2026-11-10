@@ -187,3 +187,40 @@ test("a phone the TV forgot goes back to pairing, and one that's paired stays pa
   await hand.waitForSelector(".field.code", { timeout: 1500 });
   await hand.close();
 });
+
+test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Settings has, and Back leaves things as they were", async () => {
+  const send = async (method: string, path: string, body?: unknown, grant?: string) =>
+    (await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
+  await send("PUT", "/api/pin", { pin: "4826" });
+  const before = (await send("GET", "/api/phones")).pairing?.code ?? null;
+  const screen = await tv();
+  await go(screen, "settings/phones");
+  await screen.locator('[data-action="pair"]').click();
+  await screen.waitForSelector(".pin-pad");
+  assert.match(await screen.locator(".pin-pad").innerText(), /enter the adult pin[\s\S]*for settings\./);
+  await screen.keyboard.press("Escape");
+  await screen.waitForSelector(".pin-pad", { state: "detached" });
+  assert.equal(await screen.locator(".page.pair").count(), 0, "still on Settings → Phones");
+  assert.equal((await send("GET", "/api/phones")).pairing?.code ?? null, before, "and no new code");
+
+  await screen.locator('[data-action="pair"]').click();
+  await screen.waitForSelector(".pin-pad");
+  for (const digit of "4826") await screen.keyboard.press(digit);
+  await screen.waitForFunction(() => /^[A-HJKMNP-Z2-9]{6}$/.test(document.querySelector(".pair-code")?.textContent ?? ""));
+  const code = await screen.locator(".pair-code").innerText();
+  const hand = await phone(`/?code=${code}`);
+  await hand.waitForSelector(".dpad");
+  await screen.waitForFunction(() => /is paired/.test(document.body.textContent ?? ""));
+
+  // Forgetting it, in the same visit to Settings, doesn't ask again.
+  await go(screen, "settings/phones");
+  await screen.waitForSelector('[data-action^="phone-p-"]');
+  await screen.locator('[data-action^="phone-p-"]').first().click();
+  await screen.waitForFunction(() => /is forgotten/.test(document.getElementById("toasts")?.textContent ?? ""));
+  assert.equal(await screen.locator(".pin-pad").count(), 0);
+  assert.deepEqual((await send("GET", "/api/phones")).phones, []);
+  const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).grant;
+  await send("DELETE", "/api/pin", undefined, grant);
+  await screen.close();
+  await hand.close();
+});

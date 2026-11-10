@@ -76,6 +76,42 @@ test("a video is known by its own first bytes, and a link is a web page with no 
   }
 });
 
+test("F10 a link to the box itself is refused, however its address is written, and one to the home network is kept", async () => {
+  const own = ["192.168.1.20", "fd00::20", "fe80::1c2d:3eff:fe4f:5a6b"];
+  const refused = [
+    "http://127.0.0.1:3000/",
+    "http://127.8.9.10/",
+    "http://127.1/",
+    "http://2130706433/",
+    "http://0x7f.0.0.1/",
+    "http://0.0.0.0:3000/",
+    "http://localhost:3000/api/home",
+    "http://LOCALHOST./",
+    "http://clock.app.localhost:3000/",
+    "http://[::1]:3000/",
+    "http://[::]/",
+    "http://[::ffff:127.0.0.1]/",
+    "http://[::ffff:7f00:1]/",
+    "http://[0:0:0:0:0:ffff:7f00:0001]:3000/",
+    "http://192.168.1.20:3001/",
+    "https://192.168.1.20./",
+    "http://[::ffff:c0a8:114]/",
+    "http://[fd00::20]/",
+    "http://[FD00:0:0:0:0:0:0:20]:3000/",
+    "http://[fe80::1c2d:3eff:fe4f:5a6b]/",
+  ];
+  for (const link of refused) assert.deepEqual(cleanLink(link, own), { error: "that isn't a link the tv can open" }, link);
+  // Other machines at home, and names that only look like the box's.
+  for (const link of ["http://192.168.1.1/", "http://192.168.1.21:8096/web", "http://[fd00::21]/", "https://localhost.example.org/", "https://notlocalhost/", "http://128.0.0.1/"]) {
+    assert.ok("url" in cleanLink(link, own), link);
+  }
+  // The store asks for the box's addresses each time, since they change.
+  const store = new Shared({ dir: join(scratch, "own"), addresses: () => own });
+  assert.deepEqual(await store.addLink("http://192.168.1.20:3000/", who), { error: "that isn't a link the tv can open" });
+  assert.ok((await store.addLink("http://192.168.1.21:3000/", who)).share);
+  assert.deepEqual(await store.list().then((shares) => shares.map((share) => share.url)), ["http://192.168.1.21:3000/"]);
+});
+
 test("a video comes to disk as it's sent, kept only once it's all here and plays, and one too big is refused", async () => {
   const store = new Shared({ dir: join(scratch, "store") });
   const kept = await store.addVideo(Readable.from([MP4.subarray(0, 10), MP4.subarray(10)]), "beach.mp4", who);
