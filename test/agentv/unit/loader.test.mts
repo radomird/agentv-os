@@ -289,6 +289,15 @@ test("an app that exits mid-call has crashed, and comes back on the next call", 
   assert.deepEqual(await h.call(viewer, "tile", "s"), {});
 });
 
+test("a call to an app that's stopped just then fails cleanly, and the next one starts it again", async () => {
+  const h = host(app());
+  await h.start();
+  const call = h.call(viewer, "tile", "m");
+  h.stop();
+  await assert.rejects(call, (error: AppError) => error.kind === "failed" && /stopped before it could answer/.test(error.message));
+  assert.ok(await h.call(viewer, "tile", "m"));
+});
+
 test("a failing call says what failed", async () => {
   const h = host(app(tileApp('throw new Error("no such show");')));
   await fails(h.call(viewer, "tile", "s"), "failed", /Sample: no such show/);

@@ -416,7 +416,10 @@ export class AppHost {
       throw new AppError("refused", `${this.manifest.name} doesn't have ${path}`);
     }
     await this.start();
-    const child = this.child!;
+    // The worker can be gone again by now: it was stopped, or it ended,
+    // between starting and this call.
+    const child = this.child;
+    if (!child) throw new AppError("failed", `${this.manifest.name} stopped before it could answer ${path}`);
     const id = ++this.nextId;
     const ms = this.limits[path] ?? known.ms;
     return new Promise<T>((resolveCall, rejectCall) => {
