@@ -504,7 +504,7 @@ test("agentv-phone-call pairs with a code, sends a request as that phone, and fa
   // Not spawnSync: the daemon it talks to is in this very process.
   const run = (...args: string[]) =>
     new Promise<{ code: number | null; out: string; err: string }>((resolve) => {
-      execFile(join(ROOT, "bin/agentv-phone-call"), args, { encoding: "utf8", env: { ...process.env, AGENTV_PATH: ROOT, AGENTV_PHONE_URL: lan } }, (error, stdout, stderr) =>
+      execFile(join(ROOT, "bin/agentv-phone-call"), args, { encoding: "utf8", env: { ...process.env, AGENTV_PATH: ROOT, AGENTV_PHONE_URL: lan, AGENTV_URL: tv } }, (error, stdout, stderr) =>
         resolve({ code: error ? (typeof error.code === "number" ? error.code : 1) : 0, out: stdout.trim(), err: stderr.trim() }),
       );
     });
@@ -528,6 +528,26 @@ test("agentv-phone-call pairs with a code, sends a request as that phone, and fa
     const sent = await run("--errors", file, "POST", "/api/phone/background?credit=x", `@${picture}`, "image/jpeg");
     assert.deepEqual([sent.code, typeof JSON.parse(sent.out).error], [22, "string"], "it reached the route, which says what's wrong with it");
     assert.equal((await run(file, "GET")).code, 2);
+    // It asks the box for a code itself. Before setup is done that takes no
+    // PIN. After, with a PIN set, it says it needs one, and takes it from
+    // the environment.
+    const fresh = await run("pair-new", "another check");
+    assert.equal(fresh.code, 0, fresh.err);
+    rmSync(dirname(fresh.out), { recursive: true, force: true });
+    await local("POST", "/api/setup", { done: true });
+    const needs = await run("pair-new");
+    assert.deepEqual([needs.code, needs.out], [1, ""]);
+    assert.match(needs.err, /adult PIN set.*AGENTV_PIN/);
+    assert.equal((await run("pair-new", "x", "y")).code, 2);
+    process.env.AGENTV_PIN = "0000";
+    assert.match((await run("pair-new")).err, /didn't take the PIN/);
+    process.env.AGENTV_PIN = "4826";
+    const withPin = await run("pair-new", "a check with the pin");
+    delete process.env.AGENTV_PIN;
+    assert.equal(withPin.code, 0, withPin.err);
+    assert.equal(JSON.parse((await run(withPin.out, "GET", "/api/phone/state")).out).phone.name, "a check with the pin");
+    rmSync(dirname(withPin.out), { recursive: true, force: true });
+    await local("POST", "/api/setup", { done: false });
     assert.equal((await run(file, "POST", "/api/phone/background", `@${picture}`)).code, 2);
   } finally {
     rmSync(dirname(file), { recursive: true, force: true });

@@ -1,14 +1,15 @@
 #!/bin/bash
 
 # agentv:summary=Send a request to the box as a paired phone would, to check it
-# agentv:args=pair <code> [<name>] | [--errors] <key-file> <METHOD> <path> [<json> | @<file> <content-type>]
+# agentv:args=pair <code> [<name>] | pair-new [<name>] | [--errors] <key-file> <METHOD> <path> [<json> | @<file> <content-type>]
 # agentv:examples=agentv-phone-call pair ABC123 "a check" | agentv-phone-call /tmp/agentv-phone-x/key.json GET /api/phone/state | agentv-phone-call "$key" POST /api/phone/remote '{"key":"up"}'
 # agentv:hidden=true
 
 # A phone signs and seals what it sends the box, so curl alone can't stand in
-# for one any more. This pairs with the code on the TV, keeps the phone's key
-# in a file, and sends one request at a time with it, printing the answer
-# opened. It's for checking the box from the box: it talks to the phone
+# for one any more. This pairs with the code on the TV (or has the box show
+# a new one, with the adult PIN from AGENTV_PIN when one is set), keeps the
+# phone's key in a file, and sends one request at a time with it, printing
+# the answer opened. It's for checking the box from the box: it talks to the phone
 # companion's port there (AGENTV_PHONE_URL to point it elsewhere).
 #
 # It exits 22 when the box answers 400 or more, as curl -f does.

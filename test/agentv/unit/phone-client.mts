@@ -36,10 +36,15 @@ export async function pairPhone(lan: string, how: string | { code: string } | { 
   return new TestPhone(lan, await pair(lan, typeof how === "string" ? { code: how } : how, name));
 }
 
-// Has the TV show a code (the local port, as Settings does) and pairs with it.
-export async function pairFromTv(tv: string, lan: string, name = "a phone"): Promise<TestPhone> {
-  const { pairing } = (await (await fetch(`${tv}/api/phones/pair`, { method: "POST" })).json()) as { pairing: { code: string } };
-  return pairPhone(lan, pairing.code, name);
+// Has the TV show a code (the local port, as Settings does) and pairs with
+// it. Once setup is done and a PIN is set, a code takes the PIN.
+export async function pairFromTv(tv: string, lan: string, name = "a phone", pin?: string): Promise<TestPhone> {
+  const post = async (path: string, body: unknown, grant?: string) =>
+    (await (await fetch(`${tv}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify(body) })).json()) as { pairing?: { code: string }; grant?: string };
+  const grant = pin === undefined ? undefined : (await post("/api/pin/check", { pin })).grant;
+  const code = (await post("/api/phones/pair", {}, grant)).pairing?.code;
+  if (!code) throw new Error("the tv showed no pairing code: is a PIN set?");
+  return pairPhone(lan, code, name);
 }
 
 // The phone a page in the tests' browser paired as, from what the page keeps.
