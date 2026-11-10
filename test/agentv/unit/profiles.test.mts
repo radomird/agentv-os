@@ -159,9 +159,10 @@ test("S4.2 a switch to a child shows within a second: their home, only children'
   const home = (await send("GET", "/api/home")).data;
   assert.ok(Date.now() - at < 1000);
   assert.deepEqual(home.viewer, mila);
-  // No fixture app is child-safe, so a child's home is the all apps tile alone.
+  // No fixture app is child-safe, so a child's home is empty. The looks
+  // have Apps in their own bar, so there's no all apps tile on it.
   assert.deepEqual(home.apps, []);
-  assert.deepEqual(home.layout.map((t: any) => t.id), ["apps"]);
+  assert.deepEqual(home.layout.map((t: any) => t.id), []);
   assert.equal((await send("GET", "/api/apps/agentv.tube/launch")).status, 404, "an app children can't open doesn't open");
 
   // Settings, home's layout and switching to an adult are past the PIN.
@@ -176,7 +177,7 @@ test("S4.2 a switch to a child shows within a second: their home, only children'
   assert.equal((await send("POST", "/api/apps/agentv.tube/for-children", { allowed: true }, await grant())).status, 200);
   const ticked = (await send("GET", "/api/home")).data;
   assert.deepEqual(ticked.apps.map((a: any) => [a.id, a.forChildren]), [["agentv.tube", true]]);
-  assert.deepEqual(ticked.layout.map((t: any) => t.id), ["agentv.tube", "apps"]);
+  assert.deepEqual(ticked.layout.map((t: any) => t.id), ["agentv.tube"]);
   assert.equal((await send("GET", "/api/apps/agentv.tube/launch")).status, 200);
 
   assert.equal((await send("POST", "/api/viewer", { id: "radomir" }, await grant())).status, 200);
@@ -187,7 +188,7 @@ test("S4.2 each viewer keeps their own layout, and one taken off takes theirs", 
   const ana = (await send("GET", "/api/viewers")).data.viewers.find((v: any) => v.name === "ana");
   const mine = (await send("GET", "/api/home")).data.layout;
   await send("POST", "/api/viewer", { id: ana.id });
-  const hers = [{ id: "apps", x: 0, y: 0, size: "s" }];
+  const hers = [{ id: "agentv.tube", x: 0, y: 0, size: "s" }];
   assert.equal((await send("PUT", "/api/layout", { layout: hers })).status, 200);
   await send("POST", "/api/viewer", { id: "radomir" });
   assert.deepEqual((await send("GET", "/api/home")).data.layout, mine);

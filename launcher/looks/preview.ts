@@ -31,7 +31,7 @@ export function previewFrame(look: LookId, size: SizeId, width: number, theme?: 
   return box;
 }
 
-// A card for each look: its preview, its name and its line. OK on one picks
+// A card for each look: its preview and its name (D2, D3). OK on one picks
 // it; the one in use is marked.
 export function lookCards(looks: LookInfo[], current: string | null, size: SizeId, width: number, pick: (look: LookInfo) => void, theme?: string | null): HTMLElement[] {
   return looks.map((look) =>
@@ -40,7 +40,6 @@ export function lookCards(looks: LookInfo[], current: string | null, size: SizeI
       { class: `look-card${look.id === current ? " picked" : ""}`, "data-focus": true, "data-action": `look-${look.id}`, "data-look": look.id, onclick: () => pick(look) },
       previewFrame(look.id, size, width, theme),
       h("span", { class: "look-card-name" }, named(look.name)),
-      h("span", { class: "look-card-line" }, named(look.line)),
     ),
   );
 }

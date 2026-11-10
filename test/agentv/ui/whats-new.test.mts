@@ -70,6 +70,9 @@ after(async () => {
 
 // The TV, with TMDB's posters served from a picture in this checkout, since
 // a test never asks image.tmdb.org.
+// The looks' switch, for a test of home as it was before them.
+const looks = (on: boolean) => fetch(`${url}/api/features`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ looks: on }) });
+
 async function tv(): Promise<{ page: Page; opened: string[] }> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on("pageerror", (error) => errors.push(error.message));
@@ -87,7 +90,11 @@ async function tv(): Promise<{ page: Page; opened: string[] }> {
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
 const newTile = '.tile[data-id="agentv.new"]';
 
-test("S8.1 with no TMDB key yet, a streaming household's home has New this week large, saying where to add one", async () => {
+test("S8.1 with no TMDB key yet, a streaming household's home has New this week large, saying where to add one", async (t) => {
+  // Home as it was before the looks, where the tile opens Settings → New
+  // this week.
+  await looks(false);
+  t.after(() => looks(true));
   const { page } = await tv();
   try {
     const tile = page.locator(newTile);

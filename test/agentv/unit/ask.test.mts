@@ -219,7 +219,8 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
     writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-11-05T08:00:00Z" }));
     const say = async (sentence: string, route: Route) => ((next = route), (await (await phone("POST", "/api/phone/say", { sentence })).json()).said);
 
-    // Off, as it ships: "i didn't get that", and no Ask routes.
+    // Turned off: "i didn't get that", and no Ask routes.
+    assert.equal((await send("PUT", "/api/features", { askbuilds: false })).status, 200);
     assert.equal((await say("make me a game like tetris", make("blocks"))).outcome.say, DIDNT_GET);
     assert.equal((await phone("GET", "/api/phone/ask")).status, 404);
     assert.equal((await send("PUT", "/api/features", { askbuilds: true })).status, 200);

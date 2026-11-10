@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
-import { startBox } from "./box.mts";
+import { PHASE_1, startBox } from "./box.mts";
 import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -43,7 +43,9 @@ after(async () => {
 type Box = Awaited<ReturnType<typeof startBox>> & { lan: string; paired: TestPhone };
 
 async function box(): Promise<Box> {
-  const started = await startBox(0, undefined, { zone: "Europe/Oslo" });
+  // The walk goes through phase 1's screens: its Settings rows and its phone
+  // remote, with every switch off.
+  const started = await startBox(0, undefined, { zone: "Europe/Oslo", features: PHASE_1 });
   const lan = `http://127.0.0.1:${started.daemon.lanPort}`;
   const code = ((await (await fetch(`${started.url}/api/phones/pair`, { method: "POST" })).json()) as any).pairing.code;
   return { ...started, lan, paired: await pairPhone(lan, code, "another phone") };
