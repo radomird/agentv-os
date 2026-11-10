@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Finds the Omarchy release candidate worth trying, for the release candidate
+# run (omarchy-rc.yml, ADR-085). Omarchy tags a candidate as v4.6.0-rc1,
+# weeks before the final v4.6.0, and its rc channel serves it. The daily
+# sync never counts one (omarchy-sync), so this is where AgenTV hears about
+# the next release early.
+#
+# There's something to try when the newest candidate is for a release newer
+# than the base this fork sits on (.github/omarchy-base) and that release
+# isn't out yet. Once it's out, the sync takes it from there.
+#
+# It only looks. It writes what it found to $GITHUB_OUTPUT (or stdout): run
+# (true or false), and with a candidate, tag (v4.6.0-rc1) and version
+# (4.6.0). The last line it prints says which and why, for the job summary.
+#
+# Usage: .github/scripts/omarchy-rc [--tag <vX.Y.Z-rcN>]
+
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+tag=""
+while (( $# )); do
+  case "$1" in
+    --tag) tag="${2:?--tag needs a tag}"; shift ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+output() {
+  printf '%s=%s\n' "$1" "$2" >>"${GITHUB_OUTPUT:-/dev/stdout}"
+}
+
+# Where Omarchy's tags come from. Tests point this elsewhere.
+releases_url=${OMARCHY_RELEASES_URL:-https://github.com/omacom/omarchy.git}
+base=$(sed -n '1{s/[[:space:]]//g;p;}' .github/omarchy-base)
+[[ $base =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "The base, $base, isn't a release tag" >&2; exit 2; }
+
+tags=$(git ls-remote --tags --refs "$releases_url" 'refs/tags/v*' | sed 's#.*refs/tags/##')
+
+if [[ -z $tag ]]; then
+  tag=$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$' <<<"$tags" | sort -V | tail -n 1 || true)
+  if [[ -z $tag ]]; then
+    output run false
+    echo "Omarchy has no release candidate, so there's nothing to try."
+    exit 0
+  fi
+elif [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
+  echo "$tag isn't a release candidate's tag, like v4.6.0-rc1" >&2
+  exit 2
+elif ! grep -qxF -- "$tag" <<<"$tags"; then
+  echo "Omarchy has no tag $tag" >&2
+  exit 2
+fi
+
+version=${tag#v}
+version=${version%-rc*}
+output tag "$tag"
+output version "$version"
+
+if grep -qxF -- "v$version" <<<"$tags"; then
+  output run false
+  echo "Omarchy $version is out, so $tag has nothing left to say. The daily sync takes it from here."
+elif [[ $(printf '%s\n%s\n' "v$version" "$base" | sort -V | tail -n 1) == "$base" ]]; then
+  output run false
+  echo "AgenTV is on Omarchy $base, and $tag is no newer. Nothing to try."
+else
+  output run true
+  echo "Omarchy $tag is ahead of AgenTV's base, $base, so a box tries the move to it."
+fi

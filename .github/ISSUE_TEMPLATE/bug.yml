@@ -1,24 +1,52 @@
-name: Bug
-description: Report a validated bug -- NOT FOR SUPPORT REQUESTS
+name: Something's broken
+description: Tell me what happened on your TV
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Remember: Omarchy is an open source gift, not a product you bought from a vendor
+        Thanks for telling me. Please leave out keys, passwords and anything from your own accounts.
 
-  - type: input
-    id: system-details
+        Found a security problem? Don't write it here. [Tell me privately](https://github.com/radomird/agentv-os/security/advisories/new) instead.
+
+  - type: textarea
+    id: happened
     attributes:
-      label: System details
-      placeholder: e.g. AMD 9950X, NVIDIA 5090, Omarchy 2.1.0
+      label: What happened?
+      description: What you did, and what the TV did. A photo of the screen helps.
     validations:
       required: true
 
   - type: textarea
-    id: steps
+    id: expected
     attributes:
-      label: What's wrong?
-      description: Describe the issue, include steps to recreate it if possible, and attach the output of `omarchy-debug` if possible
+      label: What did you expect?
+    validations:
+      required: false
+
+  - type: input
+    id: release
+    attributes:
+      label: AgenTV release
+      description: It's in _Settings > About_ on the TV. Or run `agentv version` on the box.
+      placeholder: e.g. 0.2.0
     validations:
       required: true
+
+  - type: input
+    id: box
+    attributes:
+      label: Box
+      description: The make and model.
+      placeholder: e.g. Intel NUC8i5BEH
+    validations:
+      required: true
+
+  - type: textarea
+    id: about
+    attributes:
+      label: What the box says about itself
+      description: If you can open a terminal on the box, paste what `agentv box` prints. It's the box's model, its graphics, the TV and the kind of network, with nothing from your accounts.
+      render: json
+    validations:
+      required: false
