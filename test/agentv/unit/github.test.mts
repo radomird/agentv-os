@@ -15,6 +15,7 @@ import { installLocal } from "../../../daemon/apps/install.ts";
 import { AskWatch } from "../../../daemon/asks.ts";
 import { type GitHubAnswer, type GitHubAsk, NOT_SIGNED_IN, parseRepo, pushApp, type PushAsk, repoRefusal, run, type Run, signedIn } from "../../../daemon/github.ts";
 import { agentvOwner } from "../../../daemon/identity.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-github-"));
@@ -217,9 +218,9 @@ test("ADR-045 the phone offers a push only when the box is signed in, asks for t
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
       fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
-    const token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+    const token = await pairPhone(lan, code, "iphone");
     const phone = (path: string, body?: unknown, grant?: string) =>
-      fetch(`${lan}${path}`, { method: body === undefined ? "GET" : "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      token.fetch(`${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const offered = async () => ((await (await phone("/api/phone/state")).json()) as { export: { github: unknown } | null }).export;
     const until = async (check: () => Promise<boolean>) => {
       for (let i = 0; i < 100 && !(await check()); i++) await new Promise((done) => setTimeout(done, 50));

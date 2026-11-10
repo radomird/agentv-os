@@ -1,51 +1,117 @@
 // Paired phones (daemon/phones.ts, stage 4) and the daemon's phone listener:
-// a one-time code that pairs one phone, a token kept only as a hash, only the
-// phone companion's page and requests on the home network, and the phone's
-// keys and text reaching the screen daemon's stream, never its log.
+// a one-time code that pairs one phone, a key of the phone's own that never
+// crosses the network, only the phone companion's page and requests on the
+// home network, and the phone's keys and text reaching the screen daemon's
+// stream, never its log. The signing and sealing themselves are in
+// phone-channel.test.mts.
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHmac, randomBytes } from "node:crypto";
 import { after, before, test } from "node:test";
+import { x25519Pair } from "../../../daemon/phone-channel.ts";
 import { CODE_MS, Phones } from "../../../daemon/phones.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const dir = mkdtempSync(join(tmpdir(), "agentv-phones-"));
 let n = 0;
 
+// What a phone sends to pair: a public key, and proof of the secret or the
+// code, worked out here as the page does.
+const b64u = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
+function asking(k: string | Buffer, name = "x", key: Uint8Array = x25519Pair().public) {
+  return { key: b64u(key), name, proof: b64u(createHmac("sha256", k).update("agentv pair v1").update(key).digest()) };
+}
+
 test("a code is six letters and digits that don't look alike, and it pairs one phone", () => {
   const clock = { now: 1_800_000_000_000 };
   const phones = new Phones({ path: join(dir, `phones-${++n}.json`), now: () => clock.now });
-  assert.deepEqual(phones.pair("ABCDEF", "x"), { error: "that code has run out: pair again from the tv" });
+  assert.deepEqual(phones.pair(asking("ABCDEF")), { error: "that code has run out: pair again from the tv" });
+  assert.equal(phones.secret(), null);
   const { code, until } = phones.code();
   assert.match(code, /^[A-HJKMNP-Z2-9]{6}$/);
   assert.equal(Date.parse(until) - clock.now, CODE_MS);
-  assert.deepEqual(phones.showing(), { code, until });
-  const paired = phones.pair(`${code.slice(0, 3).toLowerCase()}-${code.slice(3)}`, " Ana's iPhone ");
-  assert.ok("token" in paired);
+  assert.deepEqual(phones.showing(), { code, until }, "the secret isn't shown with the code");
+  assert.equal(Buffer.from(phones.secret()!, "base64url").length, 16, "a 128-bit secret for the QR code");
+  const paired = phones.pair(asking(code, " Ana's iPhone "));
+  assert.ok("id" in paired);
   assert.equal(paired.phone.name, "Ana's iPhone");
   assert.equal(phones.showing(), null, "the code is used up");
-  assert.deepEqual(phones.pair(code, "again"), { error: "that code has run out: pair again from the tv" });
-  // Only the token's hash is kept.
-  const file = readFileSync(join(dir, `phones-${n}.json`), "utf8");
-  assert.ok(!file.includes(paired.token));
-  assert.deepEqual(phones.who(paired.token)?.id, paired.phone.id);
-  assert.equal(phones.who("x".repeat(43)), null);
+  assert.equal(phones.secret(), null);
+  assert.deepEqual(phones.pair(asking(code, "again")), { error: "that code has run out: pair again from the tv" });
+  // The phone's key is kept, in a file only the daemon reads.
+  const path = join(dir, `phones-${n}.json`);
+  assert.equal(statSync(path).mode & 0o777, 0o600);
+  const stored = JSON.parse(readFileSync(path, "utf8")).phones[0];
+  assert.equal(Buffer.from(stored.key, "base64").length, 32);
+  assert.equal(stored.token, undefined);
+  assert.deepEqual(phones.key(paired.id)?.phone.id, paired.phone.id);
+  assert.equal(phones.key("p-00000000"), null);
+  assert.ok(!JSON.stringify(phones.list()).includes(stored.key), "the list has no keys");
   assert.equal(phones.forget(paired.phone.id), true);
-  assert.equal(phones.who(paired.token), null);
+  assert.equal(phones.key(paired.id), null);
 });
 
-test("five wrong codes end the code, and so do 10 minutes", () => {
+test("F1 the QR code's secret pairs a phone too, and the code itself is no proof", () => {
+  const phones = new Phones({ path: join(dir, `phones-${++n}.json`) });
+  const { code } = phones.code();
+  const secret = Buffer.from(phones.secret()!, "base64url");
+  // Sending the code as the old page did is a wrong try, not a pairing.
+  assert.deepEqual(phones.pair({ code, name: "x" } as any), { error: "that isn't the code on the tv" });
+  assert.deepEqual(phones.pair({ ...asking(code), proof: b64u(Buffer.from(code)) }), { error: "that isn't the code on the tv" });
+  // A proof made for another key doesn't carry over.
+  assert.deepEqual(phones.pair({ ...asking(secret), key: b64u(x25519Pair().public) }), { error: "that isn't the code on the tv" });
+  const paired = phones.pair(asking(secret, "by qr"));
+  assert.ok("id" in paired, JSON.stringify(paired));
+  assert.equal(Buffer.from(paired.key, "base64url").length, 32);
+});
+
+test("F1 a public key that shares nothing is refused, and counts as a try", () => {
+  const phones = new Phones({ path: join(dir, `phones-${++n}.json`) });
+  const { code } = phones.code();
+  for (const key of [new Uint8Array(32), Uint8Array.from([1, ...new Uint8Array(31)])]) {
+    assert.deepEqual(phones.pair(asking(code, "x", key)), { error: "that isn't the code on the tv" });
+  }
+  assert.deepEqual(phones.pair(asking(code, "x", randomBytes(31))), { error: "that isn't the code on the tv" });
+  assert.equal(phones.list().length, 0);
+  // Three tries are gone: two more end the code.
+  phones.pair(asking("ZZZZZZ"));
+  phones.pair(asking("ZZZZZZ"));
+  assert.deepEqual(phones.pair(asking(code)), { error: "that code has run out: pair again from the tv" });
+});
+
+test("five wrong proofs end the code, and so do 10 minutes", () => {
   const clock = { now: 1_800_000_000_000 };
   const phones = new Phones({ path: join(dir, `phones-${++n}.json`), now: () => clock.now });
   const { code } = phones.code();
-  for (let i = 0; i < 5; i++) assert.deepEqual(phones.pair("ZZZZZZ", "x"), { error: "that isn't the code on the tv" });
-  assert.deepEqual(phones.pair(code, "x"), { error: "that code has run out: pair again from the tv" });
+  const secret = Buffer.from(phones.secret()!, "base64url");
+  for (let i = 0; i < 5; i++) assert.deepEqual(phones.pair(asking(i % 2 ? "ZZZZZZ" : randomBytes(16))), { error: "that isn't the code on the tv" });
+  assert.deepEqual(phones.pair(asking(code)), { error: "that code has run out: pair again from the tv" });
+  assert.deepEqual(phones.pair(asking(secret)), { error: "that code has run out: pair again from the tv" });
   const next = phones.code().code;
   clock.now += CODE_MS;
-  assert.deepEqual(phones.pair(next, "x"), { error: "that code has run out: pair again from the tv" });
+  assert.deepEqual(phones.pair(asking(next)), { error: "that code has run out: pair again from the tv" });
+});
+
+test("F1 a phone stored without a key (paired before phones had keys) is gone from the file once it's read", () => {
+  const path = join(dir, `phones-${++n}.json`);
+  const old = { id: "p-0badc0de", name: "old phone", pairedAt: "2026-10-01T00:00:00.000Z", token: "ab".repeat(32) };
+  writeFileSync(path, JSON.stringify({ phones: [old] }));
+  const phones = new Phones({ path });
+  assert.equal(phones.key(old.id), null);
+  assert.deepEqual(phones.list(), []);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { phones: [] });
+  // One with a key stays when another goes.
+  const paired = phones.pair(asking(phones.code().code, "new phone"));
+  assert.ok("id" in paired);
+  const kept = JSON.parse(readFileSync(path, "utf8")).phones;
+  writeFileSync(path, JSON.stringify({ phones: [old, ...kept, { ...old, id: "p-0badc0df", key: "c2hvcnQ=" }] }));
+  assert.deepEqual(phones.list().map((phone) => phone.name), ["new phone"]);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).phones, kept);
 });
 
 // --- The daemon -------------------------------------------------------------------
@@ -76,6 +142,10 @@ before(async () => {
   });
   tv = `http://127.0.0.1:${await daemon.listen()}`;
   phone = `http://127.0.0.1:${daemon.lanPort}`;
+  // The daemon's first look at the builds tells the phones something
+  // changed, two seconds in. It's had here, so it can't land in a test that
+  // counts the changes.
+  await (daemon as unknown as { watchBuilds(): Promise<void> }).watchBuilds();
   const stream = await fetch(`${tv}/api/events`);
   const reader = stream.body!.getReader();
   void (async () => {
@@ -92,17 +162,19 @@ after(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function send(base: string, method: string, path: string, options: { body?: unknown; token?: string; grant?: string; origin?: string } = {}) {
-  const response = await fetch(`${base}${path}`, {
+// A request to the TV's own port or the phone port. With `token`, it's the
+// paired phone's: signed and sealed, and its answer opened.
+async function send(base: string, method: string, path: string, options: { body?: unknown; token?: TestPhone; grant?: string; origin?: string } = {}) {
+  const init = {
     method,
     headers: {
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
       ...(options.grant ? { "X-AgenTV-Grant": options.grant } : {}),
       ...(options.origin ? { Origin: options.origin } : {}),
-    },
+    } as Record<string, string>,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  };
+  const response = options.token ? await options.token.fetch(path, init) : await fetch(`${base}${path}`, init);
   const text = await response.text();
   let data: Record<string, any> = {};
   try {
@@ -113,29 +185,33 @@ async function send(base: string, method: string, path: string, options: { body?
   return { status: response.status, type: response.headers.get("content-type") ?? "", text, data };
 }
 
-let token = "";
+let token: TestPhone;
 
 test("pairing: the TV shows a code and a QR code with the phone companion's address, and a phone sends the code back", async () => {
   assert.deepEqual((await send(tv, "GET", "/api/phones")).data, { ok: true, phones: [], pairing: null });
   assert.equal((await send(tv, "GET", "/api/phones/qr")).status, 404, "no code on show, no qr code");
   const { pairing } = (await send(tv, "POST", "/api/phones/pair")).data;
-  assert.equal(pairing.url, `http://192.168.1.20:${daemon.lanPort}/?code=${pairing.code}`);
+  // The address the TV shows as text has neither the code nor the secret.
+  assert.equal(pairing.url, `http://192.168.1.20:${daemon.lanPort}/`);
+  assert.deepEqual(Object.keys(pairing).sort(), ["code", "until", "url"]);
   const qr = await send(tv, "GET", "/api/phones/qr");
   assert.equal(qr.type, "image/svg+xml");
   assert.match(qr.text, /^<svg/);
-  assert.equal(readFileSync(qrArgs, "utf8").trim(), `-t SVG -m 1 -o - ${pairing.url}`);
+  // The QR code has the secret after the #, and not the code.
+  const secret = daemon.phones.secret()!;
+  assert.match(secret, /^[A-Za-z0-9_-]{22}$/);
+  assert.equal(readFileSync(qrArgs, "utf8").trim(), `-t SVG -m 1 -o - ${pairing.url}#pair=${secret}`);
 
-  assert.equal((await send(phone, "POST", "/api/phone/pair", { body: { code: "ZZZZZZ", name: "x" } })).status, 403);
-  const paired = await send(phone, "POST", "/api/phone/pair", { body: { code: pairing.code, name: "android phone" } });
-  assert.equal(paired.status, 200);
-  token = paired.data.token;
-  assert.equal(paired.data.phone.name, "android phone");
+  assert.equal((await send(phone, "POST", "/api/phone/pair", { body: asking("ZZZZZZ") })).status, 403);
+  // The code itself, sent as the page once did, pairs nothing.
+  assert.equal((await send(phone, "POST", "/api/phone/pair", { body: { code: pairing.code, name: "x" } })).status, 403);
+  token = await pairPhone(phone, { secret }, "android phone");
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.ok(events.includes('phones {"paired":"android phone"}'), "the TV hears it at once");
   const listed = (await send(tv, "GET", "/api/phones")).data;
   assert.deepEqual(listed.phones.map((p: any) => p.name), ["android phone"]);
   assert.equal(listed.pairing, null);
-  assert.ok(!lines.join("\n").includes(token));
+  assert.ok(!lines.join("\n").includes(secret) && !lines.join("\n").includes(pairing.code), "neither is logged");
 });
 
 test("the home network gets only the phone companion: its page, its requests, and nothing of the TV's own", async () => {
@@ -149,7 +225,7 @@ test("the home network gets only the phone companion: its page, its requests, an
   // The TV's own requests and pages aren't served, paired or not.
   for (const path of ["/api/home", "/api/pin", "/api/key", "/api/remote", "/launcher/main.ts", "/companion-web/../daemon/pin.ts", "/health"]) {
     assert.ok([401, 404].includes((await send(phone, "GET", path)).status), path);
-    assert.equal((await send(phone, "GET", path, { token: "x".repeat(43) })).status, 401, path);
+    assert.ok([401, 404].includes((await send(phone, "GET", path, { token })).status), path);
   }
   assert.equal((await send(phone, "GET", "/api/phone/state")).status, 401, "a phone that isn't paired");
   const state = await send(phone, "GET", "/api/phone/state", { token });
@@ -351,4 +427,5 @@ test("a phone Settings forgets can't do anything any more", async () => {
   assert.equal((await send(tv, "DELETE", `/api/phones/${id}`)).status, 200);
   assert.equal((await send(phone, "GET", "/api/phone/state", { token })).status, 401);
   assert.equal((await send(phone, "POST", "/api/phone/remote", { token, body: { key: "up" } })).status, 401);
+  assert.equal((await token.hello()), false, "nor open a session");
 });

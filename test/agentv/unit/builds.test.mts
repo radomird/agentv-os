@@ -14,6 +14,7 @@ import { Build } from "../../../builder/build.ts";
 import { HandOver } from "../../../builder/sandbox/hand-over.ts";
 import { stopped } from "../../../builder/sandbox/start.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-builds-"));
@@ -294,9 +295,9 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
       fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
-    const token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+    const token = await pairPhone(lan, code, "iphone");
     const phone = (method: string, path: string, body?: unknown, grant?: string) =>
-      fetch(`${lan}${path}`, { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
 
     assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /pick the AI/, "nothing's built before the AI is picked and its terms accepted");
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);

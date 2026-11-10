@@ -12,6 +12,7 @@ import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
 import { cleanLink, Shared, videoType } from "../../../daemon/shared.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-shared-"));
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
@@ -23,7 +24,7 @@ const who = { from: "radomir on iphone", to: "radomir" };
 let daemon: Daemon;
 let url = "";
 let lan = "";
-let token = "";
+let token: TestPhone;
 
 before(async () => {
   mkdirSync(join(scratch, "root", "setup"), { recursive: true });
@@ -33,7 +34,7 @@ before(async () => {
   url = `http://127.0.0.1:${await daemon.listen()}`;
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
-  token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+  token = await pairPhone(lan, code, "iphone");
 });
 
 after(async () => {
@@ -53,9 +54,9 @@ async function tv(method: string, path: string, body?: unknown, grant?: string) 
 
 async function share(kind: "link" | "photo" | "video", body: unknown, query = "") {
   const json = kind === "link";
-  const response = await fetch(`${lan}/api/phone/share/${kind}${query}`, {
+  const response = await token.fetch(`/api/phone/share/${kind}${query}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": json ? "application/json" : kind === "photo" ? "image/jpeg" : "video/mp4" },
+    headers: { "Content-Type": json ? "application/json" : kind === "photo" ? "image/jpeg" : "video/mp4" },
     body: json ? JSON.stringify(body) : new Uint8Array(body as Buffer),
   });
   return { status: response.status, data: (await response.json()) as Record<string, any> };

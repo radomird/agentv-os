@@ -16,6 +16,7 @@ import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
+import { phoneOfPage } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -70,10 +71,10 @@ async function tv(): Promise<Page> {
 
 // A paired phone, through the QR code's address.
 async function phone(): Promise<Page> {
-  const { pairing } = await post("/api/phones/pair");
+  await post("/api/phones/pair");
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${phoneUrl}/?code=${pairing.code}`);
+  await page.goto(`${phoneUrl}/#pair=${daemon.phones.secret()}`);
   await page.waitForSelector(".dpad");
   return page;
 }
@@ -300,7 +301,7 @@ test("S4.10 when the TV asks for the PIN, the phone shows a pad within 1 s, and 
   assert.ok(grant && daemon.pin.allows(grant), "what the TV asked for got its grant");
   await hand.waitForSelector("#tv-pin", { state: "detached", timeout: 1500 });
   // No digit of it went anywhere but the TV's pad.
-  assert.ok(!JSON.stringify(await (await fetch(`${phoneUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${await hand.evaluate(() => localStorage.getItem("agentv-phone-token"))}` } })).json()).includes(PIN));
+  assert.ok(!JSON.stringify(await (await phoneOfPage(hand, phoneUrl)).json("GET", "/api/phone/state")).includes(PIN));
   await screen.close();
   await hand.close();
 });

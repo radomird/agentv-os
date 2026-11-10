@@ -17,6 +17,7 @@ import type { GitHubAnswer, GitHubAsk, PushAsk } from "../../../daemon/github.ts
 import { placeTheme, type ThemeAnswer, type ThemeAsk, themeName } from "../../../daemon/made-themes.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -28,7 +29,7 @@ let state = "";
 let builds = "";
 let apps = "";
 let themes = "";
-let phoneToken = "";
+let phoneToken: TestPhone;
 const errors: string[] = [];
 
 async function send(method: string, path: string, body?: unknown, grant?: string, base = url) {
@@ -48,9 +49,9 @@ before(async () => {
   await send("POST", "/api/ai", { provider: "claude", path: "key" });
   const lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await send("POST", "/api/phones/pair", {})).pairing.code;
-  const token = (await send("POST", "/api/phone/pair", { code, name: "iphone" }, undefined, lan)).token;
+  const token = await pairPhone(lan, code, "iphone");
   phoneToken = token;
-  const accepted = await fetch(`${lan}/api/phone/terms`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ provider: "claude", path: "key" }) });
+  const accepted = await token.fetch(`/api/phone/terms`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: "claude", path: "key" }) });
   assert.equal(accepted.status, 200);
 });
 
@@ -406,9 +407,9 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
   try {
     const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
     assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
-    const accepted = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/terms`, {
+    const accepted = await phoneToken.fetch("/api/phone/terms", {
       method: "POST",
-      headers: { Authorization: `Bearer ${phoneToken}`, "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      headers: { "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", path: "plan" }),
     });
     assert.equal(accepted.status, 200);
@@ -471,9 +472,9 @@ test("ADR-040 a plan whose sign-in ran out asks for it again on the TV and the p
   try {
     const grant = (await send("POST", "/api/pin/check", { pin: "2468" })).grant;
     assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
-    const accepted = await fetch(`http://127.0.0.1:${daemon.lanPort}/api/phone/terms`, {
+    const accepted = await phoneToken.fetch("/api/phone/terms", {
       method: "POST",
-      headers: { Authorization: `Bearer ${phoneToken}`, "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      headers: { "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", path: "plan" }),
     });
     assert.equal(accepted.status, 200);

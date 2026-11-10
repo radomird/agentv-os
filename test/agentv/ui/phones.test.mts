@@ -87,12 +87,29 @@ test("pairing: the TV shows a code, the phone types it, and the TV says the phon
   await hand.close();
 });
 
-test("the phone's d-pad and typed text go to the TV, and its header says who's watching", async () => {
+test("F1 the QR code's address pairs at once, and nothing the phone sends after can be read or used again", async () => {
   const pairing = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing;
-  // The QR code's address pairs at once.
-  const hand = await phone(`/?code=${pairing.code}`);
+  const secret = `#pair=${daemon.phones.secret()}`;
+  assert.match(secret, /^#pair=[A-Za-z0-9_-]{22}$/);
+  // The TV's page gets the address to type the code at, with no secret in it.
+  assert.equal(pairing.url, `http://127.0.0.1:${daemon.lanPort}/`);
+  // Everything the page sends, as someone listening would see it.
+  const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, userAgent: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/141 Mobile Safari/537.36", hasTouch: true });
+  hand.on("pageerror", (error) => errors.push(error.message));
+  const wire: { method: string; path: string; headers: Record<string, string>; body: Buffer | null }[] = [];
+  hand.on("request", (request) => wire.push({ method: request.method(), path: new URL(request.url()).pathname + new URL(request.url()).search, headers: request.headers(), body: request.postDataBuffer() }));
+  // A token from before requests were signed is still in the browser.
+  await hand.addInitScript(() => {
+    if (!sessionStorage.getItem("seeded")) localStorage.setItem("agentv-phone-token", "an-old-token-from-before-signing-0123456789");
+    sessionStorage.setItem("seeded", "1");
+  });
+  await hand.goto(`${phoneUrl}/${secret}`);
   await hand.waitForSelector(".dpad");
-  assert.equal(new URL(hand.url()).search, "", "the code goes from the address bar");
+  assert.deepEqual([new URL(hand.url()).search, new URL(hand.url()).hash], ["", ""], "the secret goes from the address bar");
+  const kept = await hand.evaluate(() => ({ token: localStorage.getItem("agentv-phone-token"), key: JSON.parse(localStorage.getItem("agentv-phone-key") ?? "null") }));
+  assert.equal(kept.token, null, "the old token is gone");
+  assert.match(kept.key.id, /^p-[0-9a-f]{8}$/);
+  assert.equal(Buffer.from(kept.key.key, "base64url").length, 32);
   assert.match(await hand.locator(".who").innerText(), /\w+/);
   remote.length = 0;
   for (const key of ["up", "right", "enter", "back", "home", "playpause"]) await hand.locator(`[data-key="${key}"]`).tap();
@@ -104,12 +121,62 @@ test("the phone's d-pad and typed text go to the TV, and its header says who's w
   const wait = Date.now() + 3000;
   while (remote.length < 8 && Date.now() < wait) await new Promise((resolve) => setTimeout(resolve, 20));
   assert.deepEqual(remote, ['{"key":"up"}', '{"key":"right"}', '{"key":"enter"}', '{"key":"back"}', '{"key":"home"}', '{"key":"playpause"}', '{"text":"hello tv"}', '{"key":"backspace"}']);
+
+  // On the wire: the secret, the code and the key are nowhere, what was typed
+  // can't be read, and every request past pairing is signed with a counter
+  // of its own.
+  const all = Buffer.concat(wire.map((sent) => Buffer.concat([Buffer.from(`${sent.method} ${sent.path} ${JSON.stringify(sent.headers)} `), sent.body ?? Buffer.alloc(0)])));
+  for (const hidden of [secret.slice("#pair=".length), pairing.code, kept.key.key, "hello tv", "an-old-token", "authorization"]) assert.ok(!all.toString("latin1").toLowerCase().includes(hidden.toLowerCase()), hidden);
+  const asked = wire.filter((sent) => sent.path.startsWith("/api/phone/"));
+  assert.deepEqual(asked.slice(0, 2).map((sent) => sent.path), ["/api/phone/pair", "/api/phone/hello"]);
+  assert.deepEqual(Object.keys(JSON.parse(asked[0].body!.toString())).sort(), ["key", "name", "proof"]);
+  const signed = asked.filter((sent) => !["/api/phone/pair", "/api/phone/hello"].includes(sent.path));
+  assert.ok(signed.length >= 9);
+  for (const sent of signed) {
+    assert.match(sent.headers["x-agentv-sig"] ?? "", /^[A-Za-z0-9_-]{43}$/, sent.path);
+    if (sent.body) assert.equal(sent.headers["content-type"], "application/agentv-sealed", sent.path);
+  }
+  const counters = signed.map((sent) => `${sent.headers["x-agentv-session"]} ${sent.headers["x-agentv-counter"]}`);
+  assert.equal(new Set(counters).size, counters.length, "no counter is used twice");
+  await hand.close();
+});
+
+test("F1 a phone that still holds only a token from before gets the pairing page, and the token goes", async () => {
+  const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  hand.on("pageerror", (error) => errors.push(error.message));
+  await hand.addInitScript(() => localStorage.setItem("agentv-phone-token", "an-old-token-from-before-signing-0123456789"));
+  await hand.goto(`${phoneUrl}/`);
+  await hand.waitForSelector(".field.code");
+  assert.equal(await hand.evaluate(() => localStorage.getItem("agentv-phone-token")), null);
+  await hand.close();
+});
+
+test("F1 when the box no longer knows the phone's session, as after a restart, the page goes on and shows nothing", async () => {
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
+  const hand = await phone(`/#pair=${daemon.phones.secret()}`);
+  await hand.waitForSelector(".dpad");
+  const hellos: string[] = [];
+  hand.on("request", (request) => {
+    if (request.url().endsWith("/api/phone/hello")) hellos.push(request.url());
+  });
+  const id = await hand.evaluate(() => JSON.parse(localStorage.getItem("agentv-phone-key")!).id as string);
+  // What a restart does to the sessions, without taking the page's server away.
+  (daemon as unknown as { phoneChannel: { forget(id: string): void } }).phoneChannel.forget(id);
+  remote.length = 0;
+  await hand.locator('[data-key="down"]').tap();
+  await hand.locator('[data-key="enter"]').tap();
+  const wait = Date.now() + 3000;
+  while (remote.length < 2 && Date.now() < wait) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(remote, ['{"key":"down"}', '{"key":"enter"}']);
+  assert.ok(hellos.length >= 1 && hellos.length <= 2, `${hellos.length} hellos`);
+  assert.equal(await hand.locator(".field.code").count(), 0, "no pairing page");
+  assert.equal(await hand.locator("#toast.on").count(), 0, "and no toast");
   await hand.close();
 });
 
 test("a phone the TV forgot goes back to pairing, and one that's paired stays paired", async () => {
-  const pairing = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing;
-  const hand = await phone(`/?code=${pairing.code}`);
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
+  const hand = await phone(`/#pair=${daemon.phones.secret()}`);
   await hand.waitForSelector(".dpad");
   // Opened again, it's still paired.
   await hand.goto(`${phoneUrl}/`);

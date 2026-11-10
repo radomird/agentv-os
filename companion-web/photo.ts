@@ -6,7 +6,7 @@
 // here; the TV never browses those sites itself.
 
 import { glyph } from "../launcher/glyphs.ts";
-import { h, prompt, toast, token, Unpaired } from "./lib.ts";
+import { call, h, prompt, toast, Unpaired } from "./lib.ts";
 
 export const LONGEST = 3840;
 
@@ -57,12 +57,8 @@ export function photoPage(failed: (error: unknown) => void): HTMLElement {
     send.disabled = true;
     try {
       const { blob } = await draw(picked, LONGEST, "image/jpeg", 0.9);
-      const response = await fetch(`/api/phone/background?credit=${encodeURIComponent(credit.value)}`, {
-        method: "POST",
-        headers: { "Content-Type": "image/jpeg", ...(token() ? { Authorization: `Bearer ${token()}` } : {}) },
-        body: blob,
-      });
-      const data = await response.json().catch(() => ({}));
+      const response = await call("POST", `/api/phone/background?credit=${encodeURIComponent(credit.value)}`, { type: "image/jpeg", blob });
+      const data = response.data;
       if (response.status === 401) throw new Unpaired(data.error ?? "this phone isn't paired");
       if (!response.ok || data.ok === false) throw new Error(data.error ?? "the tv didn't take it");
       toast("it's the tv's background now.", true);

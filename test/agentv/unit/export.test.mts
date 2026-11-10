@@ -12,6 +12,7 @@ import { crc32, inflateRawSync } from "node:zlib";
 import type { Manifest } from "../../../apps/contract/manifest.ts";
 import { installLocal } from "../../../daemon/apps/install.ts";
 import { exportRefusal, zipFolder } from "../../../daemon/export.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-export-"));
@@ -86,8 +87,8 @@ test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doe
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
       fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
-    const token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
-    const phone = (path: string) => fetch(`${lan}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    const token = await pairPhone(lan, code, "iphone");
+    const phone = (path: string) => token.fetch(`${path}`);
     const state = async () => (await (await phone("/api/phone/state")).json()) as { export: { id: string } | null };
 
     assert.equal((await state()).export, null);

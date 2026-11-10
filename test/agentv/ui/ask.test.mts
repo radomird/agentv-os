@@ -17,6 +17,7 @@ import type { Browser, Page } from "playwright-core";
 import { installLocal } from "../../../daemon/apps/install.ts";
 import { NONE, type Route } from "../../../daemon/router.ts";
 import { bothWays, FIXTURES, startBox, type BoxOptions } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -62,8 +63,8 @@ async function box(options: Pick<BoxOptions, "features">) {
   writeFileSync(join(state, "..", "key.json"), JSON.stringify({ set: true, provider: "claude", at: new Date().toISOString() }));
   await send("POST", "/api/ai", { provider: "claude", path: "key" });
   const code = (await send("POST", "/api/phones/pair", {})).pairing.code;
-  const token = (await send("POST", "/api/phone/pair", { code, name: "iphone" }, undefined, lan)).token as string;
-  const accepted = await fetch(`${lan}/api/phone/terms`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ provider: "claude", path: "key" }) });
+  const token = await pairPhone(lan, code, "iphone");
+  const accepted = await token.fetch(`/api/phone/terms`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: "claude", path: "key" }) });
   assert.equal(accepted.status, 200);
   return { ...started, lan, token, send };
 }
@@ -150,7 +151,7 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") === "confirm", undefined, { timeout: 10_000 });
     assert.match(await page.locator(".build-page").innerText(), /make blocks\?[\s\S]*recipe: game · it stays on this tv · about \$/);
     // The phone has the same confirm, in its Ask.
-    const ask = await (await fetch(`${lan}/api/phone/ask`, { headers: { Authorization: `Bearer ${token}` } })).json();
+    const ask = await (await token.fetch(`/api/phone/ask`)).json();
     assert.deepEqual([ask.ask.kind, ask.ask.state, ask.ask.recipe], ["build", "confirm", "game"]);
     await page.locator('[data-action="confirm"]').click();
     await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") !== "confirm");
