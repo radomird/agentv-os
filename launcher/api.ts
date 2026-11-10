@@ -168,9 +168,8 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
-  // The plans setup and Settings → AI offer on this box's channel, and which
-  // of them only as best effort, on edge (ADR-053).
-  plans?: { provider: string; name?: string; bestEffort: boolean }[];
+  // The plans setup and Settings → AI offer (ADR-087).
+  plans?: { provider: string; name?: string }[];
   // What builds use now: the AI picked, by plan or key, and whether its terms
   // are accepted (Q143).
   ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
