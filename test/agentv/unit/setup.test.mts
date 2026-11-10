@@ -138,11 +138,26 @@ test("the box is online on a wired or Wi-Fi address that isn't its own setup hot
 test("the setup screens hear where setup is, how the box is online, the hotspot and the phones", async () => {
   const info = await (await fetch(`${url}/api/setup`)).json();
   assert.equal(info.setup.step, "welcome");
-  assert.deepEqual(info.steps, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
-  assert.equal(info.parts.country, "1/6 country");
-  assert.equal(info.parts.goal, "4/6 goal");
-  assert.equal(info.parts.apps, "5/6 apps");
-  assert.equal(info.parts.theme, "6/6 look");
+  assert.deepEqual(info.steps, ["welcome", "ready", "box", "country", "ai", "people", "goal", "apps", "look", "theme", "background"]);
+  assert.equal(info.parts.box, "4 of 12 · your box");
+  assert.equal(info.parts.apps, "9 of 12 · apps");
+  assert.equal(info.parts.look, "10 of 12 · look and size");
+  assert.equal(info.parts.theme, "11 of 12 · theme and background");
+  // With setup's own switch, the box check and the looks turned off: phase
+  // 1's steps, in its six parts.
+  mkdirSync(state, { recursive: true });
+  writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: false, boxcheck: false, looks: false }));
+  try {
+    const before = await (await fetch(`${url}/api/setup`)).json();
+    assert.deepEqual(before.steps, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
+    assert.equal(before.parts.country, "1/6 country");
+    assert.equal(before.parts.goal, "4/6 goal");
+    assert.equal(before.parts.apps, "5/6 apps");
+    assert.equal(before.parts.theme, "6/6 look");
+    assert.equal(before.numbers, null);
+  } finally {
+    rmSync(join(state, "features.json"), { force: true });
+  }
   assert.deepEqual(info.network, { online: true, via: "ethernet", name: null });
   assert.equal(info.hotspot.on, false);
   assert.deepEqual(info.phones, []);
@@ -166,6 +181,7 @@ test("S5.6 each step moved on is broadcast, kept, and said in /health, and setup
   assert.equal((await post("/api/setup/finish", { step: "goal" })).status, 400, "ready isn't finished yet");
   assert.equal((await post("/api/setup/ready", { update: "none", to: "0.2.1" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "ready" })).status, 200);
+  assert.equal((await post("/api/setup/finish", { step: "box" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "country" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "ai" })).status, 200);
   assert.equal((await post("/api/setup/finish", { step: "people" })).status, 200);
@@ -181,7 +197,7 @@ test("a paired phone hears setup's step while it's on, and nothing once it's don
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
   const paired = await (await fetch(`${lanUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json();
   const phone = async () => (await fetch(`${lanUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${paired.token}` } })).json();
-  assert.deepEqual((await phone()).setup, { step: "welcome", part: "1/6 connect", muted: false });
+  assert.deepEqual((await phone()).setup, { step: "welcome", part: "3 of 12 · getting ready", n: 3, of: 12, muted: false });
   // The phone mutes the soundtrack, and the TV hears it.
   const mute = await fetch(`${lanUrl}/api/phone/setup-music`, { method: "POST", headers: { Authorization: `Bearer ${paired.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ muted: true }) });
   assert.equal(mute.status, 200);

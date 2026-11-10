@@ -139,6 +139,7 @@ test("a paired phone sends its zone, picks the location, and the TV's step moves
   await send(url, "POST", "/api/setup/finish", { step: "welcome" });
   await send(url, "POST", "/api/setup/ready", { update: "none" });
   await send(url, "POST", "/api/setup/finish", { step: "ready" });
+  await send(url, "POST", "/api/setup/finish", { step: "box" });
   const code = (await (await send(url, "POST", "/api/phones/pair", {})).json()).pairing.code;
   const paired = await (await send(lanUrl, "POST", "/api/phone/pair", { code, name: "pixel" })).json();
   const auth = { Authorization: `Bearer ${paired.token}` };

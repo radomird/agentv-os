@@ -4,7 +4,7 @@
 // keys and text reaching the screen daemon's stream, never its log.
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -61,6 +61,11 @@ before(async () => {
   const qrencode = join(dir, "qrencode");
   writeFileSync(qrencode, `#!/bin/bash\necho "$*" >"${qrArgs}"\necho '<svg xmlns="http://www.w3.org/2000/svg"></svg>'\n`);
   chmodSync(qrencode, 0o755);
+  // These are the phase 1 remote's, arranging phase 1's home, so the new
+  // remote and the looks are turned off. Those have their own tests
+  // (remote2.test.mts, typing.test.mts, looks.test.mts).
+  mkdirSync(join(dir, "state"), { recursive: true });
+  writeFileSync(join(dir, "state", "features.json"), JSON.stringify({ remote2: false, looks: false }));
   daemon = new Daemon({
     root: ROOT,
     state: join(dir, "state"),

@@ -181,6 +181,7 @@ test("S5.5 setup's AI step: the phone hears the terms to accept, an adult accept
   await post("/api/setup/finish", { step: "welcome" });
   await post("/api/setup/ready", { update: "none" });
   await post("/api/setup/finish", { step: "ready" });
+  await post("/api/setup/finish", { step: "box" });
   await post("/api/setup/finish", { step: "country" });
   assert.equal((await phoneState()).ai, null, "nothing to ask until the TV picks a provider");
   assert.equal((await post("/api/ai", { provider: "claude", path: "plan" })).status, 200);
