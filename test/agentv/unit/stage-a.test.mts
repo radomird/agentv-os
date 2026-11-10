@@ -15,6 +15,7 @@ import { AppHost, systemPaths, workerJail } from "../../../daemon/apps/loader.ts
 import { Build } from "../../../builder/build.ts";
 import { checkApp } from "../../../builder/contract-run.ts";
 import { Fixtures } from "../../../builder/fixtures.ts";
+import { headless } from "../../../builder/gates/chromium.ts";
 import { extraTools } from "../../../builder/harness/extra.ts";
 import { loadRecipes } from "../../../builder/recipe.ts";
 import { SANDBOX_PROBLEM } from "../harness.mts";
@@ -169,4 +170,22 @@ test("H3 inside that sandbox the sign-in, the CLI and the saved pages aren't the
   const manifest = JSON.parse(readFileSync(join(app, "manifest.json"), "utf8"));
   const results = await checkApp({ dir: app, manifest, contract: { checks: [{ name: "it's signed in", call: "signIn.isSignedIn", expect: true }] } as never, served: new Fixtures(join(dir, "work", "fixtures"), { checks: [] } as never, Date.now(), join(dir, "work")), openPage: async () => assert.fail("no page") });
   assert.deepEqual(results.map((r) => [r.name, r.ok, r.why]), [["its module starts in a worker of its own", true, []], ["it's signed in", true, []]]);
+});
+
+test("H3 a build's Chromium keeps its own files in its throwaway profile, not in the builder's read-only ~/.config", async () => {
+  // A stand-in for Chromium says where it was told to keep them.
+  const seen = join(scratch, `xdg${++count}.txt`);
+  const fake = join(scratch, `fake-chromium${count}`);
+  writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$XDG_CONFIG_HOME" >${seen}\nfor arg in "$@"; do printf '%s\\n' "$arg" >>${seen}; done\nsleep 30\n`);
+  chmodSync(fake, 0o755);
+  const browser = headless(fake);
+  try {
+    for (let i = 0; i < 100 && !(existsSync(seen) && readFileSync(seen, "utf8").includes("about:blank")); i++) await new Promise((done) => setTimeout(done, 50));
+    const said = readFileSync(seen, "utf8").split("\n");
+    const profile = said.find((line) => line.startsWith("--user-data-dir="))!.slice("--user-data-dir=".length);
+    assert.equal(said[0], join(profile, "config"));
+    assert.ok(!said[0].startsWith(process.env.HOME ?? "/nowhere") || profile.startsWith(process.env.HOME ?? "/nowhere"), "not the home's own ~/.config");
+  } finally {
+    await browser.close();
+  }
 });
