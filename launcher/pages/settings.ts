@@ -58,13 +58,21 @@ let audio: AudioState | null = null;
 // Which voice says the TV's answers (stage 8), the same way.
 let voice: VoiceState | null = null;
 
+// A TV with nothing to say its answers with: no voice of its own, and no
+// key for a provider that has one. Its answers show on the TV, and Sound has
+// no rows about a voice.
+function noVoice(state: VoiceState | null): boolean {
+  return state !== null && state.by === null;
+}
+
 // The voice, as Settings → Sound says it.
 function voiceLine(state: VoiceState | null): string {
   if (!state) return "";
   if (!state.spoken) return "the tv shows its answers and doesn't say them.";
   if (state.by === "provider") return `the tv says its answers in ${state.provider}'s own voice.`;
-  if (state.by === "piper") return "the tv says its answers with piper, on this box.";
-  return "piper isn't on this box, so the tv shows its answers without saying them. agentv update brings it back.";
+  if (state.by === "own") return "the tv says its answers in its own voice.";
+  // No voice at all: Sound has no rows for one, so there's nothing to say.
+  return "";
 }
 // The backgrounds, for Settings → Themes and backgrounds, asked for again
 // each time Settings opens.
@@ -542,7 +550,8 @@ export function settings(ctx: Ctx, open?: string): View {
         ...outputRows(),
         toggle("ui sounds", s.sound.on, "sound", () => save({ sound: { ...s.sound, on: !s.sound.on } }, "sound", "sound")),
         // What the TV answers, said aloud (stage 8), and which voice says it.
-        toggle("spoken answers", s.spoken, "spoken", () => save({ spoken: !s.spoken }, "sound", "spoken")),
+        // A TV with no voice has neither row (ADR-087).
+        ...(noVoice(voice) ? [] : [toggle("spoken answers", s.spoken, "spoken", () => save({ spoken: !s.spoken }, "sound", "spoken"))]),
         h(
           "button",
           {
@@ -556,7 +565,7 @@ export function settings(ctx: Ctx, open?: string): View {
           h("span", { class: "button-value" }, `${Math.round(s.sound.volume * 100)}%`),
         ),
         note("left and right change how loud the ui sounds are."),
-        ...(voice ? [voiceNote(voiceLine({ ...voice, spoken: s.spoken }))] : []),
+        ...(voice && !noVoice(voice) ? [voiceNote(voiceLine({ ...voice, spoken: s.spoken }))] : []),
       ],
     },
     // The box's country (ADR-055): the time zone and new this week follow it.
@@ -697,7 +706,8 @@ export function settings(ctx: Ctx, open?: string): View {
       // move the focus, so only the voice line changes, or comes last.
       const line = voiceLine({ ...found, spoken: s.spoken });
       const kept = panel.querySelector<HTMLElement>('[data-note="voice"]');
-      if (kept) kept.textContent = line;
+      if (noVoice(found)) kept?.remove();
+      else if (kept) kept.textContent = line;
       else panel.append(voiceNote(line));
     })
     .catch(() => {});
