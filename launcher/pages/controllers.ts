@@ -68,21 +68,9 @@ function showCount(): void {
 
 export const controllersLabel = () => words("Controllers");
 
-// How many are connected, for Settings' list. The first time, it's asked
-// for and filled in when the answer comes.
-let asked = false;
-export function controllersValue(): string {
-  if (!asked) {
-    asked = true;
-    void call("GET", "/api/controllers")
-      .then((found) => {
-        state ??= found;
-        showCount();
-      })
-      .catch(() => {});
-  }
-  return String(count() ?? "");
-}
+// How many are connected, for Settings' list, once the section has been
+// opened. Settings never waits on the TV's Bluetooth to draw itself.
+export const controllersValue = () => String(count() ?? "");
 
 export function controllersPanel(ctx: Ctx): HTMLElement[] {
   const me = {};
