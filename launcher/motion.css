@@ -105,6 +105,30 @@
   to { transform: scale(1.08) translate(12px, -8px); }
 }
 
+/* What's loading (loading.ts): the mark fades in after a moment, and its
+   three blocks light up in turn. Terminal's step like a cursor, and Glass
+   and Cinema ease theirs (--loading-ease in each look.css). */
+.loading-mark {
+  animation: fade-in var(--base) ease-out 400ms both;
+}
+
+.loading-mark i {
+  animation: loading-pulse 1200ms var(--loading-ease, steps(1, end)) infinite;
+}
+
+.loading-mark i:nth-child(2) {
+  animation-delay: 200ms;
+}
+
+.loading-mark i:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
 /* Reduce motion, from the system or Settings → Look: movement becomes plain
    fades. */
 @media (prefers-reduced-motion: reduce) {
@@ -117,6 +141,7 @@
   .toast { animation: fade-in var(--base) ease-out both; }
   .ambient-drift,
   .ambient-picture.on { animation: none; }
+  .loading-mark i { animation: none; opacity: 0.6; }
 }
 
 :root.reduce-motion .tile.focused,
@@ -125,6 +150,7 @@
 :root.reduce-motion #ring { transition: opacity var(--fast) ease-out; }
 :root.reduce-motion .ambient-drift,
 :root.reduce-motion .ambient-picture.on { animation: none; }
+:root.reduce-motion .loading-mark i { animation: none; opacity: 0.6; }
 :root.reduce-motion .page-forward,
 :root.reduce-motion .page-back,
 :root.reduce-motion .toast { animation: fade-in var(--base) ease-out both; }

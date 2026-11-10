@@ -8,6 +8,7 @@
 
 import { daemon, type Country, type NewsState } from "../api.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -39,7 +40,7 @@ function serviceLine(service: NewsState["services"] extends (infer S)[] | undefi
 
 export function newsPanel(ctx: Ctx): HTMLElement[] {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
-  if (!newsState) return [h("div", { class: "panel-big" }, "…")];
+  if (!newsState) return [h("div", { class: "panel-big" }, loadingMark())];
   const state = newsState;
   const button = (action: string, label: string, onclick: () => void, primary = false) => h("button", { class: `button${primary ? " primary" : ""}`, "data-focus": true, "data-action": action, onclick }, label);
   const credit = note("what's new comes from tmdb, and where to watch from justwatch.");
