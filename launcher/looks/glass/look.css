@@ -231,7 +231,7 @@ body.with-backdrop {
   right: 0;
   top: calc(var(--canvas-height, 1080px) * 0.62);
   bottom: 0;
-  padding: 18px var(--safe-x) 0;
+  padding: 18px var(--safe-x) 73px;
   display: flex;
   flex-direction: column;
   gap: 120px;
@@ -265,6 +265,28 @@ body.with-backdrop {
 
 .glass-row .tile::after {
   display: none;
+}
+
+/* A row further down comes up with room under it for its tile's name. */
+.glass-row .tile {
+  scroll-margin: 18px 0 73px;
+}
+
+/* The games on home (D9): a row of their own under the apps, with its name
+   over its first tile. */
+.glass-games {
+  position: relative;
+  margin-top: 64px;
+}
+
+.glass-shelf {
+  position: absolute;
+  left: 4px;
+  top: -52px;
+  font-size: 29px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--bright-foreground);
 }
 
 .glass-row .tile.focused {
