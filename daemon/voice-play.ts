@@ -2,7 +2,7 @@
 // session as the person, plays the daemon's clip through PipeWire to the
 // box's sound output, over HDMI to the TV, whatever is in front. A newer
 // answer stops one still playing. The clip is WAV, from the provider's
-// voice or Piper (daemon/voice.ts), and it's gone once it's played.
+// voice or the TV's own (daemon/voice.ts), and it's gone once it's played.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";

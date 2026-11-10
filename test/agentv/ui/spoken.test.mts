@@ -46,7 +46,7 @@ async function tv(voice: object): Promise<Page> {
 const panel = (page: Page) => page.textContent(".settings-panel").then((text) => text ?? "");
 
 test("Settings → Sound has spoken answers on, and says the provider's own voice says them", async () => {
-  const page = await tv({ by: "provider", provider: "gemini", piper: "missing" });
+  const page = await tv({ by: "provider", provider: "gemini", own: "missing" });
   try {
     assert.equal(await page.textContent('[data-action="spoken"] .button-value'), "[x]");
     await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("gemini's own voice"));
@@ -64,7 +64,7 @@ test("Settings drawn again while it asks for the voice still shows which voice s
   const held: (() => void)[] = [];
   await page.route(`${url}/api/voice`, async (route) => {
     await new Promise<void>((resolve) => held.push(resolve));
-    await route.fulfill({ json: { ok: true, spoken: true, provider: "gemini", last: null, by: "provider", piper: "missing" } });
+    await route.fulfill({ json: { ok: true, spoken: true, provider: "gemini", last: null, by: "provider", own: "missing" } });
   });
   try {
     await page.goto(`${url}/`);
@@ -91,7 +91,7 @@ test("a voice that's known only once the focus is in the panel still shows, and 
   const held = new Promise<void>((resolve) => (release = resolve));
   await page.route(`${url}/api/voice`, async (route) => {
     await held;
-    await route.fulfill({ json: { ok: true, spoken: true, provider: "gemini", last: null, by: "provider", piper: "missing" } });
+    await route.fulfill({ json: { ok: true, spoken: true, provider: "gemini", last: null, by: "provider", own: "missing" } });
   });
   try {
     await page.goto(`${url}/`);
@@ -110,23 +110,44 @@ test("a voice that's known only once the focus is in the panel still shows, and 
   }
 });
 
-test("with no voice of the provider's, it says Piper says them, or that Piper isn't on the box", async () => {
-  let page = await tv({ by: "piper", piper: "ready" });
+test("with no voice of the provider's, it says the TV's own voice says them", async () => {
+  const page = await tv({ by: "own", own: "ready" });
   try {
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("with piper, on this box"));
+    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("the tv says its answers in its own voice."));
+    assert.equal(await page.locator('[data-action="spoken"]').count(), 1);
   } finally {
     await page.close();
   }
-  page = await tv({ by: null, piper: "missing" });
+});
+
+test("T17.1 a TV with no voice has no voice rows in Settings → Sound: no spoken answers switch and no line about a voice, and the rest of Sound stays", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route(`${url}/api/voice`, (route) => route.fulfill({ json: { ok: true, spoken: true, provider: null, last: null, by: null, own: "missing" } }));
   try {
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("piper isn't on this box"));
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".grid .tile.focused");
+    await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/sound"));
+    await page.waitForSelector('[data-action="sound"]');
+    // The voice's answer comes a moment after the page: the rows go then.
+    await page.waitForFunction(() => document.querySelector('[data-action="spoken"]') === null, null, { timeout: 5_000 });
+    assert.equal(await page.locator('[data-note="voice"]').count(), 0);
+    assert.doesNotMatch(await panel(page), /spoken|voice|piper/i);
+    assert.equal(await page.locator('[data-action="sound"]').count(), 1, "ui sounds keeps its switch");
+    assert.equal(await page.locator('[data-action="volume"]').count(), 1);
+    // Opened again, with the answer known from the start: still no rows.
+    await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("home"));
+    await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/sound"));
+    await page.waitForSelector('[data-action="sound"]');
+    assert.equal(await page.locator('[data-action="spoken"]').count(), 0);
+    assert.doesNotMatch(await panel(page), /spoken|voice|piper/i);
   } finally {
     await page.close();
   }
 });
 
 test("turning spoken answers off keeps it off, and says the TV only shows them", async () => {
-  const page = await tv({ by: "piper", piper: "ready" });
+  const page = await tv({ by: "own", own: "ready" });
   try {
     await page.click('[data-action="spoken"]');
     await page.waitForFunction(() => document.querySelector('[data-action="spoken"] .button-value')?.textContent === "[ ]");
@@ -143,7 +164,7 @@ test("turning spoken answers off keeps it off, and says the TV only shows them",
 // left before this page saved a setting, and came after, doesn't put the
 // old setting back.
 test("an answer about home from before a switch is turned off doesn't turn it back on", async () => {
-  const page = await tv({ by: "piper", piper: "ready" });
+  const page = await tv({ by: "own", own: "ready" });
   let release: () => void = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
   let asked = false;
