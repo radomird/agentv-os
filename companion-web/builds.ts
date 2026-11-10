@@ -9,7 +9,7 @@
 
 import { glyph } from "../launcher/glyphs.ts";
 import { api, h, prompt, toast, token } from "./lib.ts";
-import { withPin } from "./pad.ts";
+import { withPin, withPinWords } from "./pad.ts";
 
 // How each build stands, from the phone's state.
 export interface PhoneBuild {
@@ -164,7 +164,7 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
     const buttons = h(
       "div",
       { class: "build-buttons" },
-      h("button", { class: "button primary", type: "button", "data-action": plan ? "approve-plan" : "approve", onclick: () => void yes() }, glyph("lock", 20), h("span", {}, "approve with pin")),
+      h("button", { class: "button primary", type: "button", "data-action": plan ? "approve-plan" : "approve", onclick: () => void yes() }, glyph("lock", 20), h("span", {}, withPinWords("approve"))),
       h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "not now"),
     );
     if (plan && b.plan) {
@@ -256,7 +256,7 @@ function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => 
     ...head,
     link,
     h("p", { class: "note" }, "sign in there, then copy the code the page gives you and paste it here."),
-    h("form", { class: "plan-paste", onsubmit: (event: Event) => void send(event) }, field, h("button", { class: "button primary", type: "submit", "data-action": "send-code" }, glyph("lock", 20), h("span", {}, "send it with pin"))),
+    h("form", { class: "plan-paste", onsubmit: (event: Event) => void send(event) }, field, h("button", { class: "button primary", type: "submit", "data-action": "send-code" }, glyph("lock", 20), h("span", {}, withPinWords("send it")))),
     leave,
   ];
 }
@@ -302,7 +302,7 @@ export function pushBanner(offer: Offer | null | undefined, open: () => void): H
 export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: string } }, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
   const name = offer.name.toLowerCase();
   const field = h("input", { class: "field", type: "text", name: "repo", value: `${offer.github.login}/${offer.id.replace(/^local\./, "")}`, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "the repo" }) as HTMLInputElement;
-  const label = h("span", {}, "push it with pin");
+  const label = h("span", {}, withPinWords("push it"));
   const button = h("button", { class: "button primary", type: "submit", "data-action": "push" }, glyph("lock", 20), label) as HTMLButtonElement;
   const push = async (event: Event) => {
     event.preventDefault();
@@ -319,7 +319,7 @@ export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: st
       failed(error);
     } finally {
       button.disabled = false;
-      label.textContent = "push it with pin";
+      label.textContent = withPinWords("push it");
     }
   };
   return [
