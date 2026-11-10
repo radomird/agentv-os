@@ -907,9 +907,9 @@ s73_spoken() {
   if jq -e '.spoken == false' <<<"$voice" >/dev/null; then
     result manual S7.3 "spoken answers are off in Settings → Sound: turn them on to hear i didn't get that"
   elif jq -e '.by == null' <<<"$voice" >/dev/null; then
-    result fail S7.3 "the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)"
+    result pass S7.3 "the TV has no voice of its own and no key with one, so it showed its answer without saying it"
   elif jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played == true' <<<"$voice" >/dev/null; then
-    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "piper" end' <<<"$voice")"
+    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "its own voice" end' <<<"$voice")"
   else
     result fail S7.3 "the TV didn't say it aloud: $(jq -r '.last.error // "no clip played"' <<<"$voice")"
   fi

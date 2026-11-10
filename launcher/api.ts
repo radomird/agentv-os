@@ -67,13 +67,13 @@ export interface Settings {
   sleepWhenOff?: boolean;
 }
 
-// Which voice says the TV's answers (stage 8): the provider's own, Piper on
-// the box, or none yet while Piper is fetched.
+// Which voice says the TV's answers (stage 8): the provider's own, the TV's
+// own, or none, on a TV with no voice of its own and no key that has one.
 export interface VoiceState {
   spoken: boolean;
-  by: "provider" | "piper" | null;
+  by: "provider" | "own" | null;
   provider: string | null;
-  piper: "ready" | "missing";
+  own: "ready" | "missing";
 }
 
 export interface HomeState {
@@ -239,6 +239,12 @@ export interface AudioState {
   output?: string | null;
   outputs?: AudioOutput[];
   volume?: number | null;
+}
+
+// A tile's content, and whether it's still waiting for it.
+export interface TileAnswer {
+  tile: TileData | null;
+  waiting: boolean;
 }
 
 export interface TileData {
@@ -438,9 +444,13 @@ export const daemon = {
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   // A look's preview fills New this week with stand-ins while it has no
   // posters of its own (looks/showcase.ts).
-  tile: async (id: string, size: Size) => {
-    const tile = (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile;
-    return preview() && id === SHOWCASE_APP ? showcaseTile(tile, size) : tile;
+  tile: async (id: string, size: Size) => (await daemon.tileAnswer(id, size)).tile,
+  // The same, with whether the tile is still waiting for its content, as
+  // Weather is before the TV is online (loading.ts). A preview never waits.
+  tileAnswer: async (id: string, size: Size): Promise<TileAnswer> => {
+    const answer = await call<{ tile: TileData | null; waiting?: boolean }>("GET", `/api/tile/${id}/${size}`);
+    if (preview()) return { tile: id === SHOWCASE_APP ? showcaseTile(answer.tile, size) : answer.tile, waiting: false };
+    return { tile: answer.tile, waiting: answer.waiting === true };
   },
   updates: () => call<Updates>("GET", "/api/updates"),
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),
