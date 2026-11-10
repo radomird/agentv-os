@@ -1,16 +1,25 @@
 // AgenTV (ADR-025): the person at the TV can check for updates, install them
 // and go back from one, from Settings → Updates, which starts these units.
 // The TV's screen daemon asks as the box's owner, from the TV session's own
-// systemd, which isn't part of a login session, so the rule goes by the
-// owner's admin group (wheel), as sudo does. Nothing but starting these three
-// is allowed here.
+// systemd, which isn't part of a login session, so the rule can't ask for an
+// active one. It goes by the owner's own account, the one SDDM logs in to the
+// TV session (agentv-session-setup writes it), not by every admin: another
+// account in wheel is asked for its password, as for any other unit. Nothing
+// but starting these three is allowed here.
 polkit.addRule(function (action, subject) {
   if (action.id == "org.freedesktop.systemd1.manage-units" &&
       action.lookup("verb") == "start" &&
       (action.lookup("unit") == "agentv-update-check.service" ||
        action.lookup("unit") == "agentv-update-tv.service" ||
-       action.lookup("unit") == "agentv-go-back.service") &&
-      subject.isInGroup("wheel")) {
-    return polkit.Result.YES;
+       action.lookup("unit") == "agentv-go-back.service")) {
+    var owner = "";
+    try {
+      owner = polkit.spawn(["/usr/bin/sed", "-n", "s/^User=//p", "/etc/sddm.conf.d/zz-agentv-autologin.conf"]).trim();
+    } catch (error) {
+      return;
+    }
+    if (owner != "" && subject.user == owner) {
+      return polkit.Result.YES;
+    }
   }
 });

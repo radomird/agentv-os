@@ -5,34 +5,62 @@
 # agentv:requires-sudo=true
 
 # Install now in Settings → Updates starts agentv-update-tv.service, which runs
-# this as root (ADR-025). It runs agentv update as the box's owner, the way
-# someone at a terminal would, and writes each step to
-# /var/lib/agentv/update/progress.json for the TV's Updating screen. When
-# the update needs a restart, the box restarts and comes back to home.
+# this as root (ADR-025). It does what agentv update does for someone at a
+# terminal, and writes each step to /var/lib/agentv/update/progress.json for
+# the TV's Updating screen. When the update needs a restart, the box restarts
+# and comes back to home.
 #
 # Then the check after the update (bin/agentv-update-after), at once or at
-# the boot after the restart. It keeps which snapshot Omarchy's update took
-# first in go-back.json, for Go back (bin/agentv-go-back).
+# the boot after the restart. It keeps which snapshot the update took first
+# in go-back.json, for Go back (bin/agentv-go-back).
 #
-# Omarchy's update asks sudo for its privileged steps, and nobody is at a
-# terminal to type a password. So the owner may use sudo without one for this
-# update only, the way AgenTV's first boot does for the boot splash. Omarchy's
-# update also runs sudo -v, which asks for a password unless every sudo rule
-# for the owner says it needn't, and wheel's own rule doesn't; so the owner
-# isn't asked at all for this update, as upstream's own update test does. The
-# rule goes right after, and also if anything here fails, and AgenTV's own
-# tmpfiles rule (system/tmpfiles/agentv-sudo.conf) removes it at the next boot
-# even if the power goes out halfway through. The name is AgenTV's own: from
-# 4.5 on, Omarchy's update removes or sets aside anything named like its own
-# 99-omarchy-nopasswd-* grants that it didn't write, halfway through.
+# Omarchy's update is one script that runs as the owner and asks sudo for its
+# privileged steps, and nobody is at a terminal to type a password. This used
+# to let the owner use sudo without one while the update ran, which made
+# every process of the owner's root for that long. Now nothing is written to
+# /etc/sudoers.d at all, and this runs the steps of Omarchy's update itself,
+# in Omarchy's order (bin/omarchy-update), each as who it belongs to:
+#
+# - Root's half as root: AgenTV's repository line, the tested check, free
+#   space, the package cache, the snapshot, the keys, the packages, orphans
+#   and the boot files. Omarchy's own commands, from root-owned code, with a
+#   clean environment that has nothing of the owner's in it.
+# - Omarchy's and AgenTV's migrations as the owner, since they migrate the
+#   owner's own config. They're root-owned code from the packages too, but
+#   they call sudo. So for the migrations alone, root lends them a sudo that
+#   only they and what they start can use (bin/agentv-sudo-lend). It's gone
+#   before anything the owner can write runs.
+# - The rest as the owner with no privilege: the shell's update notice,
+#   Omarchy's service restarts, the owner's own post-update hooks and mise.
+#   No login shell, and none of the owner's profile.
+#
+# AgenTV's services restart in between, the daemon as root and the TV
+# session's units as the owner (bin/agentv-restart). AUR packages are left
+# for the desktop's terminal: yay won't run as root and needs sudo to
+# install, and a TV has none unless someone added them there.
 
+# shellcheck disable=SC2016 # the single quotes hold the owner's steps, run later
 set -uo pipefail
 
 AGENTV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STATE=${AGENTV_UPDATE_STATE:-/var/lib/agentv/update}
-SUDOERS=${AGENTV_SUDOERS_DIR:-/etc/sudoers.d}
 MODULES=${AGENTV_MODULES_DIR:-/usr/lib/modules}
 CHROMIUM_STATE=${AGENTV_CHROMIUM_STATE:-/var/lib/agentv/chromium}
+RUN=${AGENTV_RUN_DIR:-/run}
+
+# Only system directories, whatever started this. Omarchy's commands are in
+# /usr/bin, and its own bin folder comes last for anything that isn't.
+OMARCHY_PATH=/usr/share/omarchy
+SYSTEM_PATH=${AGENTV_UPDATE_PATH:-/usr/local/sbin:/usr/local/bin:/usr/bin}:$OMARCHY_PATH/bin
+export PATH="$SYSTEM_PATH"
+unset BASH_ENV ENV
+
+# AgenTV's own settings from this script's environment go on to what it runs.
+# systemd starts it with none, so that's the tests' stand-in paths.
+passed=()
+while IFS= read -r name; do
+  passed+=("$name=${!name}")
+done < <(compgen -v AGENTV_)
 
 mkdir -p "$STATE"
 chmod 755 "$STATE"
@@ -58,19 +86,77 @@ progress() {
 }
 
 owner=${AGENTV_OWNER:-$(awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /nologin|false/ { print $1; exit }' /etc/passwd)}
-if [[ -z $owner ]]; then
+uid="" home=""
+[[ -n $owner ]] && IFS=: read -r _ _ uid _ _ home _ < <(getent passwd "$owner")
+if [[ -z $owner || -z $uid || -z $home ]]; then
   progress failed start 0 "there's no user on this box to update as"
   exit 1
 fi
-home=$(getent passwd "$owner" | cut -d: -f6)
+runtime=${AGENTV_OWNER_RUNTIME_DIR:-/run/user/$uid}
 
-rule="$SUDOERS/99-agentv-update-$owner"
-trap 'rm -f "$rule"' EXIT
-printf '%s ALL=(root) NOPASSWD: ALL\nDefaults:%s !authenticate\n' "$owner" "$owner" >"$rule"
-chmod 0440 "$rule"
-if ! visudo -cqf "$rule"; then
-  rm -f "$rule"
-  progress failed start 0 "couldn't let the update use sudo"
+# as_root <command>: one of root's steps, with nothing of the owner's or of
+# whatever started this in its environment. Omarchy's commands call sudo
+# inside, which root may use without a password.
+as_root() {
+  env -i ${passed[@]+"${passed[@]}"} HOME=/root USER=root LOGNAME=root PATH="$SYSTEM_PATH" OMARCHY_PATH="$OMARCHY_PATH" \
+    LANG="${LANG:-C.UTF-8}" OMARCHY_UPDATE_UNATTENDED=1 "$@"
+}
+
+# owner_step <variable=value>... -- <bash script> [arguments]: fills step
+# with the command for one of the owner's steps. A login shell used to give
+# Omarchy's commands OMARCHY_PATH and the PATH, so those are set here, with
+# the owner's session bus and runtime folder, which Omarchy's shell and the
+# session's systemd are reached through. The shell reads no profile and no rc
+# file, so nothing the owner wrote runs unless a step is there to run it.
+step=()
+owner_step() {
+  local extra=()
+
+  while [[ $1 != "--" ]]; do
+    extra+=("$1")
+    shift
+  done
+  shift
+  step=(runuser -u "$owner" -- env -i ${passed[@]+"${passed[@]}"} HOME="$home" USER="$owner" LOGNAME="$owner" SHELL=/bin/bash
+    PATH="$SYSTEM_PATH" OMARCHY_PATH="$OMARCHY_PATH" LANG="${LANG:-C.UTF-8}" OMARCHY_UPDATE_UNATTENDED=1
+    XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" ${extra[@]+"${extra[@]}"}
+    bash --noprofile --norc -c "$@")
+}
+
+# as_owner: runs such a step. The owner has no sudo here: real sudo asks for
+# a password, finds no terminal and fails.
+as_owner() {
+  owner_step "$@"
+  "${step[@]}"
+}
+
+# Omarchy's update lock, so omarchy update from the desktop's terminal can't
+# run at the same time. It's a file in the owner's runtime folder, which the
+# owner can write. Root opening it there could be pointed at any file on the
+# box, so the owner's own account opens and holds it, until this script ends
+# and closes the pipe it reads from.
+# The coproc stays until then either way, so a lock that can't be had (no
+# session of the owner's, so no runtime folder) answers with an empty line.
+coproc LOCK {
+  as_owner -- 'exec 9>"$XDG_RUNTIME_DIR/omarchy-update.lock" || exit 1
+    flock -n 9 || { echo busy; exit 1; }
+    echo held
+    read -r _' 2>/dev/null
+  echo
+  read -r _
+}
+lock_out=${LOCK[1]}
+held=""
+read -r -t 10 held <&"${LOCK[0]}" || true
+release_lock() {
+  [[ -z $lock_out ]] || exec {lock_out}>&-
+  lock_out=""
+}
+trap release_lock EXIT
+if [[ $held == "busy" ]]; then
+  echo "An Omarchy update is already running." >"$STATE/update.log"
+  chmod 644 "$STATE/update.log"
+  progress failed packages 0 "nothing changed"
   exit 1
 fi
 
@@ -88,14 +174,95 @@ log="$STATE/update.log"
 : >"$log"
 chmod 644 "$log"
 
+# with_lent_sudo: runs such a step with a sudo that it may use, and nothing
+# else may. The stand-in for sudo is alone in a folder of root's, first in
+# the step's PATH, and reaches root over a socket only the step was started
+# with (bin/agentv-sudo-lend).
+with_lent_sudo() {
+  local dir status
+
+  dir=$(mktemp -d "$RUN/agentv-sudo.XXXXXX") || return 1
+  chmod 755 "$dir"
+  ln -s "$AGENTV_BIN_DIR/agentv-sudo-shim" "$dir/sudo"
+  owner_step PATH="$dir:$SYSTEM_PATH" AGENTV_SUDO_FD=200 "$@"
+  as_root "$AGENTV_BIN_DIR/agentv-sudo-lend" --fd 200 -- "${step[@]}"
+  status=$?
+  rm -rf "$dir"
+  return "$status"
+}
+
+needs_restart() {
+  [[ ! -d $MODULES/$(uname -r) || -f $home/.local/state/omarchy/reboot-required ]]
+}
+
+# The update, a step at a time, in the order Omarchy's own update has them.
+# A step that fails ends it, where it would end Omarchy's.
+update() {
+  # Omarchy writes /etc/pacman.conf from its own template, which doesn't know
+  # about AgenTV's repository. Put it back first, or AgenTV never updates.
+  as_root "$AGENTV_BIN_DIR/agentv-pacman-conf" ${AGENTV_PACMAN_CONF:+--file "$AGENTV_PACMAN_CONF"} || return 1
+
+  # Only versions AgenTV's nightly run has passed, except on edge, as agentv
+  # update has it. Nothing has changed on the box before this says yes.
+  if [[ $(as_root "$AGENTV_BIN_DIR/agentv-channel") == "edge" ]]; then
+    echo "On edge: taking AgenTV's newest green build, without waiting for the nightly run."
+  else
+    as_root "$AGENTV_BIN_DIR/agentv-tested" || return 1
+  fi
+  as_root omarchy-update-requires-free-space || return 1
+
+  as_root omarchy-update-pkg-prune
+  as_root omarchy-snapshot create || (( $? == 127 )) || echo "Continuing the update without a snapshot." >&2
+  as_root omarchy-update-keyring || return 1
+  as_root omarchy-update-system-pkgs || return 1
+
+  # Migrations call Omarchy's shell, so give them one running the new code.
+  as_owner -- 'if omarchy-migrate --pending >/dev/null; then omarchy-restart-shell || true; fi'
+
+  # Omarchy's migrations, then AgenTV's, from /usr/bin and not through the
+  # owner's copy of the post-update hook. AgenTV's services restart further
+  # down, so agentv-migrate leaves that out here.
+  with_lent_sudo AGENTV_RESTART=/usr/bin/true -- 'omarchy-migrate && "$1"' agentv-update-tv "$AGENTV_BIN_DIR/agentv-migrate" || return 1
+
+  as_root omarchy-update-orphan-pkgs -y || return 1
+  if ! as_root omarchy-update-boot; then
+    echo "The update is not finished: its boot files did not pass verification (see above)." >&2
+    return 1
+  fi
+
+  # From here on the owner's steps have no sudo. One of Omarchy's restart
+  # helpers that wants it (a USB audio reset, a trackpad driver) says so and
+  # the update goes on: the restart or the next boot does the same.
+  as_owner -- 'omarchy-shell -q omarchy.system-update clear; omarchy-update-restart --services-only' || true
+
+  # AgenTV's own services on the version now installed, unless the box
+  # restarts anyway. A service that doesn't restart says so, and the check
+  # after the update finds a daemon still on the old version.
+  if needs_restart; then
+    echo "AgenTV's services start again with the box, which this update restarts"
+  else
+    as_root "$AGENTV_BIN_DIR/agentv-restart" --system || true
+    as_owner -- '"$1" --session' agentv-update-tv "$AGENTV_BIN_DIR/agentv-restart" || true
+  fi
+
+  # The owner's own post-update hooks and mise tools. These are the owner's
+  # to write, so they run last, with the PATH a login gives them and nothing
+  # else. AgenTV's hook among them calls agentv-migrate, which finds nothing
+  # left to run, and is told not to restart everything a second time.
+  as_owner AGENTV_RESTART=/usr/bin/true \
+    PATH="$home/.local/share/mise/command-wrappers/bin:$SYSTEM_PATH:$home/.local/share/mise/shims:$home/.local/bin" \
+    -- 'omarchy-hook post-update; omarchy-update-mise' || true
+
+  if pacman -Qem >/dev/null 2>&1; then
+    echo "Packages from the AUR aren't updated from the TV. Update them from the desktop's terminal: omarchy update"
+  fi
+  return 0
+}
+
 # The update's own output, read for its steps: Omarchy's snapshot, pacman's
-# (n/m) package lines, then the migrations. It runs in a login shell, as
-# someone at the box has: that's where Omarchy's environment, OMARCHY_PATH
-# among it, comes from. OMARCHY_UPDATE_LOGGED skips Omarchy's script(1)
-# wrapper, as S0.5's check does, since there's no terminal here.
+# (n/m) package lines, then the migrations.
 status=0
-runuser -u "$owner" -- env HOME="$home" PATH="$AGENTV_BIN_DIR:$PATH" OMARCHY_UPDATE_LOGGED=1 \
-  bash -lc "agentv update -y" </dev/null 2>&1 |
+update </dev/null 2>&1 |
   while IFS= read -r line; do
     printf '%s\n' "$line" >>"$log"
     if [[ $line =~ \(\ *([0-9]+)/([0-9]+)\)\ (upgrading|installing|reinstalling|downgrading) ]]; then
@@ -108,7 +275,12 @@ runuser -u "$owner" -- env HOME="$home" PATH="$AGENTV_BIN_DIR:$PATH" OMARCHY_UPD
     fi
   done
 status=${PIPESTATUS[0]}
-rm -f "$rule"
+release_lock
+
+# What Omarchy's update looks for in its own transcript.
+if grep -q "Updating linux initcpios" "$log" && ! grep -q "Initcpio image generation successful" "$log"; then
+  echo "Error: Initramfs generation may have failed. Review logs before restart." >>"$log"
+fi
 
 "$AGENTV_BIN_DIR/agentv-update-check" >/dev/null 2>&1 || true
 
@@ -143,7 +315,7 @@ rm -f "$STATE/after.json"
 
 # A new kernel takes a restart, as does anything Omarchy's update says needs
 # one. The check runs once the box is up again (agentv-update-after.service).
-if [[ ! -d $MODULES/$(uname -r) || -f $home/.local/state/omarchy/reboot-required ]]; then
+if needs_restart; then
   touch "$STATE/check-pending"
   progress restarting restart 98
   sleep 3

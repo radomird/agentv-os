@@ -1,0 +1,69 @@
+#!/usr/bin/python3 -I
+
+# agentv:summary=Stand in for sudo where root has lent it to one command
+# agentv:args=<sudo's own arguments>
+# agentv:hidden=true
+
+"""The sudo a command finds first in its PATH while root lends it one.
+
+bin/agentv-sudo-lend has the whole story. This sends one sudo call to it over
+the socket the command was started with (AGENTV_SUDO_FD): the arguments, the
+folder it's in, and its own input, output and errors as open files. Then it
+waits and ends the way the real sudo did.
+
+Without that socket there's nothing here: it says so and fails. That's what
+anything gets that runs it once the lending is over, or from somewhere else.
+"""
+
+import json
+import os
+import socket
+import sys
+
+
+def refuse(why):
+    print(f"sudo: {why}", file=sys.stderr)
+    sys.exit(1)
+
+
+def main():
+    try:
+        channel = socket.socket(fileno=os.dup(int(os.environ["AGENTV_SUDO_FD"])))
+        if channel.type != socket.SOCK_SEQPACKET:
+            raise OSError("not the lent socket")
+    except (KeyError, ValueError, OSError):
+        refuse("no sudo has been lent to this command")
+
+    # A closed input, output or errors goes over as /dev/null.
+    files = []
+    for fd in (0, 1, 2):
+        try:
+            os.fstat(fd)
+            files.append(fd)
+        except OSError:
+            files.append(os.open(os.devnull, os.O_RDWR))
+
+    try:
+        cwd = os.getcwd()
+    except OSError:
+        cwd = "/"
+    mine, theirs = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    request = json.dumps({"argv": sys.argv[1:], "cwd": cwd}).encode()
+    try:
+        socket.send_fds(channel, [request], [*files, theirs.fileno()])
+    except OSError as error:
+        refuse(f"the sudo lent to this command is gone ({error.strerror})")
+    theirs.close()
+    channel.close()
+
+    try:
+        status = mine.recv(16)
+    except OSError:
+        status = b""
+    if not status:
+        refuse("the sudo lent to this command is gone")
+    sys.exit(int(status))
+
+
+if __name__ == "__main__":
+    main()

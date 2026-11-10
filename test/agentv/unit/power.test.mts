@@ -31,35 +31,64 @@ function rules(file: string) {
   };
 }
 
-test("S2.18 the owner (wheel) may restart and power off from the TV session, with other sessions open, never past a block", () => {
+// The owner is who SDDM logs in to the TV session, as agentv-session-setup
+// writes it. Every rule reads it from there.
+const autologin = join(scratch, "zz-agentv-autologin.conf");
+files.set("/etc/sddm.conf.d/zz-agentv-autologin.conf", autologin);
+function ownerIs(name: string | null) {
+  if (name === null) rmSync(autologin, { force: true });
+  else writeFileSync(autologin, `[Autologin]\n${name === "" ? "" : `User=${name}\n`}Session=agentv.desktop\nRelogin=true\n`);
+}
+
+test("S2.18 the owner may restart and power off from the TV session, with other sessions open, never past a block", () => {
   const power = rules("50-agentv-power.rules");
+  ownerIs("radomir");
   // T2.2: and ask for the boot menu on the next boot, before restarting.
   for (const id of ["power-off", "power-off-multiple-sessions", "reboot", "reboot-multiple-sessions", "set-reboot-to-boot-loader-menu"]) {
     assert.equal(power(`org.freedesktop.login1.${id}`, ["wheel"]), YES, id);
-    assert.equal(power(`org.freedesktop.login1.${id}`, ["users"]), null, `${id} isn't for someone outside wheel`);
+    assert.equal(power(`org.freedesktop.login1.${id}`, ["wheel"], {}, "alice"), null, `L5 ${id} isn't for another admin`);
+    assert.equal(power(`org.freedesktop.login1.${id}`, ["users"], {}, "alice"), null, `${id} isn't for someone outside wheel`);
   }
   for (const id of ["power-off-ignore-inhibit", "reboot-ignore-inhibit", "suspend", "set-reboot-to-firmware-setup"]) {
     assert.equal(power(`org.freedesktop.login1.${id}`, ["wheel"]), null, `${id} is polkit's own call`);
   }
   assert.equal(power("org.freedesktop.systemd1.manage-units", ["wheel"], { verb: "start", unit: "poweroff.target" }), null);
+  ownerIs(null);
+  assert.equal(power("org.freedesktop.login1.reboot", ["wheel"]), null, "with no owner written, it's polkit's own call");
 });
 
 test("T2.1 the owner may start the boot splash's release from the TV session, and nothing else with it", () => {
   const splash = rules("50-agentv-splash.rules");
-  const unit = (verb: string, name: string, groups = ["wheel"]) => splash("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
+  ownerIs("radomir");
+  const unit = (verb: string, name: string, user = "radomir") => splash("org.freedesktop.systemd1.manage-units", ["wheel"], { verb, unit: name }, user);
   assert.equal(unit("start", "agentv-boot-splash-release.service"), YES);
-  assert.equal(unit("start", "agentv-boot-splash-release.service", ["users"]), null);
+  assert.equal(unit("start", "agentv-boot-splash-release.service", "alice"), null, "L5 not for another admin");
   assert.equal(unit("stop", "agentv-boot-splash-release.service"), null);
   assert.equal(unit("start", "plymouth-quit.service"), null);
 });
 
-test("the update rule still allows only starting the three update units", () => {
+test("H1 only the owner's own account may start the three update units, and nothing else with them", () => {
   const update = rules("50-agentv-update.rules");
-  const unit = (verb: string, name: string, groups = ["wheel"]) => update("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
-  assert.equal(unit("start", "agentv-update-tv.service"), YES);
-  assert.equal(unit("start", "agentv-update-tv.service", ["users"]), null);
-  assert.equal(unit("stop", "agentv-update-tv.service"), null);
+  ownerIs("radomir");
+  const unit = (verb: string, name: string, user = "radomir", groups = ["wheel"]) => update("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name }, user);
+  for (const name of ["agentv-update-check.service", "agentv-update-tv.service", "agentv-go-back.service"]) {
+    assert.equal(unit("start", name), YES, name);
+    assert.equal(unit("start", name, "alice"), null, `${name} isn't for another admin: polkit asks for their password`);
+    assert.equal(unit("start", name, "radomi"), null, `${name} goes by the whole name`);
+    assert.equal(unit("start", name, "alice", ["users"]), null);
+    assert.equal(unit("stop", name), null);
+  }
   assert.equal(unit("start", "sshd.service"), null);
+  assert.equal(unit("start", "agentv-update-after.service"), null);
+  // With no owner written, or an empty one, nobody starts them without a password.
+  ownerIs(null);
+  assert.equal(unit("start", "agentv-update-tv.service"), null);
+  ownerIs("");
+  assert.equal(unit("start", "agentv-update-tv.service", ""), null);
+  // The rule never goes by the admin group again.
+  for (const file of ["50-agentv-update.rules", "50-agentv-power.rules", "50-agentv-splash.rules", "50-agentv-sleep.rules"]) {
+    assert.doesNotMatch(readFileSync(join(ROOT, "system/polkit", file), "utf8"), /isInGroup/, file);
+  }
 });
 
 test("S2.18 AgenTV's long-running units stop within a few seconds", () => {
@@ -71,11 +100,7 @@ test("S2.18 AgenTV's long-running units stop within a few seconds", () => {
 
 test("T13.2 with sleep on, the owner may suspend from the TV session and set the wake alarm, never past an inhibitor", () => {
   const sleep = rules("50-agentv-sleep.rules");
-  // The owner is who SDDM logs in to the TV session, as agentv-session-setup
-  // writes it.
-  const autologin = join(scratch, "zz-agentv-autologin.conf");
-  files.set("/etc/sddm.conf.d/zz-agentv-autologin.conf", autologin);
-  writeFileSync(autologin, "[Autologin]\nUser=radomir\nSession=agentv.desktop\nRelogin=true\n");
+  ownerIs("radomir");
   for (const id of ["suspend", "suspend-multiple-sessions"]) {
     assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"], {}, "radomir"), YES, id);
     assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"], {}, "alice"), null, `${id} isn't for another admin`);
@@ -89,10 +114,11 @@ test("T13.2 with sleep on, the owner may suspend from the TV session and set the
   for (const id of ["suspend-ignore-inhibit", "hibernate", "power-off", "reboot"]) {
     assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"]), null, `${id} is polkit's own call`);
   }
-  const unit = (verb: string, name: string, groups = ["wheel"]) => sleep("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
+  ownerIs("radomir");
+  const unit = (verb: string, name: string, user = "radomir") => sleep("org.freedesktop.systemd1.manage-units", ["wheel"], { verb, unit: name }, user);
   assert.equal(unit("start", "agentv-wake.timer"), YES);
   assert.equal(unit("stop", "agentv-wake.timer"), YES);
-  assert.equal(unit("start", "agentv-wake.timer", ["users"]), null);
+  assert.equal(unit("start", "agentv-wake.timer", "alice"), null, "L5 the wake alarm isn't for another admin");
   assert.equal(unit("enable", "agentv-wake.timer"), null);
   assert.equal(unit("start", "agentv-wake.service"), null);
   assert.equal(unit("start", "suspend.target"), null);

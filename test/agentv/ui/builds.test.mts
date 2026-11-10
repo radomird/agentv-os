@@ -147,7 +147,7 @@ test("a build shows its steps on its page, its tile in Apps and on home, and hom
   // The gates passed: it waits for an adult on the phone, and the TV says so.
   status(listed.id, listed.build, { phase: "build", state: "approve", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
   await page.waitForSelector('.build-page[data-state="approve"]', { timeout: 10_000 });
-  assert.match(await page$(page), /blocks is ready\.[\s\S]*approve it on your phone, with the pin/);
+  assert.match(await page$(page), /blocks is ready\.[\s\S]*approve it on your phone to put blocks on your home/, "with no PIN, it names none");
   await page.waitForFunction(() => /blocks is ready: approve it on your phone/.test(document.getElementById("toasts")?.textContent ?? ""));
   await page.close();
 });
@@ -201,7 +201,9 @@ test("ADR-046 what setup's + add your own kept is asked from here with one press
 
 // A paired phone's page, as it opens from the TV's QR code.
 async function phone(): Promise<Page> {
-  const { pairing } = await send("POST", "/api/phones/pair", {});
+  // As Settings → Phones asks for a code: with the PIN's grant once one is set.
+  const first = await send("POST", "/api/phones/pair", {});
+  const pairing = first.pin ? (await send("POST", "/api/phones/pair", {}, (await send("POST", "/api/pin/check", { pin: "2468" })).grant)).pairing : first.pairing;
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${pairing.code}`);
@@ -239,6 +241,7 @@ test("ADR-043 the phone follows a build, shows the finished app with its screens
   await hand.waitForFunction(() => (document.querySelector(".build-shot") as HTMLImageElement | null)?.src.startsWith("data:image/png"));
 
   rmSync(join(state, "build-drop", "install.json"), { force: true });
+  assert.equal(await hand.locator('[data-action="approve"]').innerText(), "approve with pin");
   await hand.locator('[data-action="approve"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
   for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
@@ -440,6 +443,7 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
     await hand.waitForSelector('[data-action="open-sign-in"]');
     assert.equal(await hand.locator('[data-action="open-sign-in"]').getAttribute("href"), link);
     await hand.locator('input[name="code"]').fill("good-code#s7Q");
+    assert.equal(await hand.locator('[data-action="send-code"]').innerText(), "send it with pin");
     await hand.locator('[data-action="send-code"]').tap();
     await hand.waitForSelector(".overlay .pin-keys");
     for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
@@ -595,6 +599,7 @@ test("ADR-045 with the box signed in to GitHub, the phone pushes a built app to 
     await hand.waitForSelector('input[name="repo"]');
     const shown = await hand.locator("body").innerText();
     assert.match(shown, /push blocks to github/);
+    assert.equal(await hand.locator('[data-action="push"]').innerText(), "push it with pin");
     assert.match(shown, new RegExp(`the tv pushes it as person, in a folder named ${asked.id.replace(/\./g, "\\.")}`));
     assert.match(shown, /a repo that isn't there yet is made, private/);
     assert.equal(await hand.locator('input[name="repo"]').inputValue(), `person/${asked.id.replace(/^local\./, "")}`);

@@ -10,7 +10,8 @@
 // Only a hash is kept, in the daemon's own state, which the box's user
 // account can't read. Five wrong tries in a row make it wait 30 seconds, and
 // each wrong try after that doubles the wait, up to 15 minutes. The count
-// survives a restart.
+// survives a restart. The TV's pad has its own count and so does each phone,
+// so a phone's wrong tries only make that phone wait.
 //
 // The right PIN gives a grant: a random token the TV's pages hold for a few
 // minutes and send with each guarded request. The daemon checks it, and so
@@ -33,6 +34,8 @@ interface Stored {
   // Wrong tries in a row, and when the next one may come.
   fails?: number;
   waitUntil?: number;
+  // The same for each phone that tried, by its id.
+  phones?: Record<string, { fails?: number; waitUntil?: number }>;
   // The boot the TV was last unlocked in. Another boot, or the TV off for a
   // while, locks a profile that asks for the PIN to open.
   unlockedBoot?: string;
@@ -106,7 +109,7 @@ export class Pin {
     renameSync(`${this.path}.next`, this.path);
   }
 
-  private wait(stored: Stored): number {
+  private wait(stored: { waitUntil?: number }): number {
     return Math.max(0, Math.ceil(((stored.waitUntil ?? 0) - this.now()) / 1000));
   }
 
@@ -119,23 +122,28 @@ export class Pin {
     return { set, locked, wait: set ? this.wait(stored) : 0 };
   }
 
-  // The PIN, from the TV or the phone: a grant for the guarded actions, and
-  // the TV unlocked, when it's right.
-  check(pin: unknown): Checked {
+  // The PIN, from the TV or from a phone (its id): a grant for the guarded
+  // actions, and the TV unlocked, when it's right. Wrong tries count for the
+  // one who made them. The right PIN clears that one's count, and the TV's
+  // too, since an adult is here.
+  check(pin: unknown, phone?: string): Checked {
     const stored = this.read();
     if (!stored.hash) return { ok: false, error: "there's no pin yet" };
-    const wait = this.wait(stored);
+    const mine = phone === undefined ? stored : (stored.phones?.[phone] ?? {});
+    const wait = this.wait(mine);
     if (wait > 0) return { ok: false, error: `too many tries. try again in ${wait} s`, wait };
+    const { [phone ?? ""]: _mine, ...others } = stored.phones ?? {};
     if (typeof pin !== "string" || !FOUR_DIGITS.test(pin) || !matches(pin, stored.hash)) {
-      const fails = (stored.fails ?? 0) + 1;
+      const fails = (mine.fails ?? 0) + 1;
       const over = fails - TRIES;
       const waitMs = over >= 0 ? Math.min(WAIT_MAX_MS, WAIT_FIRST_MS * 2 ** over) : 0;
-      this.write({ ...stored, fails, waitUntil: waitMs ? this.now() + waitMs : undefined });
+      const count = { fails, waitUntil: waitMs ? this.now() + waitMs : undefined };
+      this.write(phone === undefined ? { ...stored, ...count } : { ...stored, phones: { ...others, [phone]: count } });
       if (waitMs) return { ok: false, error: `that's not the pin. try again in ${waitMs / 1000} s`, wait: waitMs / 1000 };
       const left = TRIES - fails;
       return { ok: false, error: left <= 2 ? `that's not the pin. ${left} more ${left === 1 ? "try" : "tries"} before a wait` : "that's not the pin" };
     }
-    this.write({ hash: stored.hash, unlockedBoot: this.boot() });
+    this.write({ hash: stored.hash, unlockedBoot: this.boot(), ...(Object.keys(others).length ? { phones: others } : {}) });
     return this.grant();
   }
 

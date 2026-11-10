@@ -148,6 +148,47 @@ fi
 grep -q "AA add.txt" "$SCRATCH/addadd.log" || fail "it names the file both added" "$(cat "$SCRATCH/addadd.log")"
 pass "a merge where upstream added one of AgenTV's files stops and names it"
 
+# The files of upstream's that AgenTV keeps its own version of, listed in
+# test/agentv/policy/upstream-exceptions, stay AgenTV's: when upstream's
+# change would conflict, when it would merge in line by line, and on a
+# sibling line, which is otherwise the tag's own tree.
+# keeps <dir> <base> <a.txt's text>: a fork whose a.txt is AgenTV's own.
+keeps() {
+  fork "$1" "$2" ""
+  (
+    cd "$1"
+    mkdir -p test/agentv/policy
+    printf '# AgenTV keeps its own\na.txt # the policy\n' >test/agentv/policy/upstream-exceptions
+    printf '%b' "$3" >a.txt
+    git add -A && git commit -qm "AgenTV's own a.txt" && git push -q origin agentv
+  )
+}
+keeps "$SCRATCH/kept" v1.0.0 'ours\n'
+sync "$SCRATCH/kept" --tag v1.0.1 || fail "a sync goes through when upstream changes a file AgenTV keeps its own of" "$(cat "$SCRATCH/kept.log")"
+[[ $(cat "$SCRATCH/kept/a.txt") == "ours" ]] || fail "AgenTV's version stays" "$(cat "$SCRATCH/kept/a.txt")"
+git -C "$SCRATCH/kept" merge-base --is-ancestor v1.0.1 HEAD || fail "the tag is still merged"
+[[ -z $(git -C "$SCRATCH/kept" status --porcelain) ]] || fail "no merge is left half done" "$(git -C "$SCRATCH/kept" status --porcelain)"
+[[ $(outcome "$SCRATCH/kept" automerge) == "true" ]] || fail "it may still merge itself" "$(cat "$SCRATCH/kept.out")"
+pass "a file AgenTV keeps its own of stays AgenTV's when upstream changes theirs, and the sync isn't held up"
+
+keeps "$SCRATCH/kept-lines" v1.0.0 'ONE\ntwo\nthree\n'
+sync "$SCRATCH/kept-lines" --tag v1.0.1 || fail "a sync goes through when upstream's change would merge in" "$(cat "$SCRATCH/kept-lines.log")"
+[[ $(cat "$SCRATCH/kept-lines/a.txt") == $'ONE\ntwo\nthree' ]] || fail "upstream's lines aren't mixed into AgenTV's file" "$(cat "$SCRATCH/kept-lines/a.txt")"
+[[ $(outcome "$SCRATCH/kept-lines" automerge) == "true" ]] || fail "it may still merge itself" "$(cat "$SCRATCH/kept-lines.out")"
+pass "upstream's lines never mix into a file AgenTV keeps its own of"
+
+keeps "$SCRATCH/kept-sibling" v1.0.1 'ours\n'
+sync "$SCRATCH/kept-sibling" --tag v1.5.0 || fail "a sibling line syncs with a kept file" "$(cat "$SCRATCH/kept-sibling.log")"
+(
+  cd "$SCRATCH/kept-sibling"
+  [[ $(cat a.txt) == "ours" ]] || fail "a sibling line doesn't put upstream's file back" "$(cat a.txt)"
+  [[ -f new.txt && ! -e b.txt ]] || fail "the rest is the tag's tree"
+  [[ $(git diff --diff-filter=MDT --name-only v1.5.0 HEAD) == "a.txt" ]] || fail "only the kept file differs from the tag"
+  [[ -z $(git status --porcelain) ]] || fail "the working tree is the commit's"
+)
+[[ $(outcome "$SCRATCH/kept-sibling" automerge) == "false" ]] || fail "a sibling line still waits for Radomir"
+pass "a sibling line keeps AgenTV's version of those files too"
+
 # agentv-iso: omarchy-iso has no tags, so it follows omarchy-iso's release
 # branch for the tag Omarchy cut, and keeps the release it followed beside the
 # base commit. No branch for the tag yet means nothing to do.

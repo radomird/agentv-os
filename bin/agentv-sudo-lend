@@ -1,0 +1,202 @@
+#!/usr/bin/python3 -I
+
+# agentv:summary=Run a command with a sudo only it and what it starts can use
+# agentv:args=[--fd <number>] -- <command> [args...]
+# agentv:hidden=true
+# agentv:requires-sudo=true
+
+"""Lends sudo to one command for as long as it runs, and to nothing else.
+
+An update from the TV and first boot's splash run Omarchy's own code as the
+box's owner, and that code calls sudo. Nobody is there to type a password,
+and a rule in /etc/sudoers.d would let every process of the owner's be root
+for as long as it's there. So root runs this instead.
+
+It makes a pair of connected sockets. One end stays here. The other is handed
+to the command as an open file, its number in AGENTV_SUDO_FD, and from there
+to whatever the command starts. bin/agentv-sudo-shim, standing in for sudo in
+that command's PATH, sends each sudo call over it: the arguments, the folder
+it's in, and its own input, output and errors as open files. This runs the
+real sudo with them, as root, and sends back how it ended. So every option of
+sudo's works as it would have.
+
+The socket has no name and no path, and a socket can't be opened through
+/proc, so a process that wasn't started by the command has no way to it. When
+the command ends, this end closes and the lending is over, also for anything
+the command left running.
+
+That leaves one way in: tracing a process that holds the socket. The kernel
+only lets a process trace what it started itself when its ptrace_scope
+setting is 1 or more, which is what Arch ships. On a box where someone set it
+to 0, this sets it to 1 for as long as it lends, and puts it back after.
+
+Root runs it. Run by anyone else it lends them only the sudo they already
+have. AGENTV_SUDO_REAL names another sudo, for the tests.
+"""
+
+import json
+import os
+import select
+import signal
+import socket
+import subprocess
+import sys
+import threading
+
+SUDO = os.environ.get("AGENTV_SUDO_REAL", "/usr/bin/sudo")
+
+# What sudo runs with, whatever the caller's own environment was.
+ENVIRONMENT = {
+    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/bin",
+    "HOME": "/root",
+    "USER": "root",
+    "LOGNAME": "root",
+    "LANG": os.environ.get("LANG", "C.UTF-8"),
+}
+
+# Where the kernel says who may trace whom.
+PTRACE_SCOPE = os.environ.get("AGENTV_PTRACE_SCOPE_FILE", "/proc/sys/kernel/yama/ptrace_scope")
+
+# The biggest request: the kernel's limit for one message on the socket.
+LIMIT = 256 * 1024
+
+
+def log(text):
+    print(f"agentv-sudo-lend: {text}", file=sys.stderr, flush=True)
+
+
+def answer(reply, status):
+    try:
+        reply.send(str(status).encode())
+    except OSError:
+        pass
+    reply.close()
+
+
+def serve(message, fds):
+    """One sudo call: run it with the caller's own three files, answer how it ended."""
+    if len(fds) != 4:
+        for fd in fds:
+            os.close(fd)
+        return
+    reply = socket.socket(fileno=fds[3])
+    try:
+        request = json.loads(message)
+        argv = [str(arg) for arg in request["argv"]]
+        cwd = str(request["cwd"])
+    except (ValueError, KeyError, TypeError):
+        for fd in fds[:3]:
+            os.close(fd)
+        answer(reply, 1)
+        return
+    log("sudo " + " ".join(argv))
+    try:
+        child = subprocess.Popen(
+            [SUDO, *argv], stdin=fds[0], stdout=fds[1], stderr=fds[2], cwd=cwd if os.path.isdir(cwd) else "/", env=ENVIRONMENT
+        )
+    except OSError as error:
+        log(f"couldn't run sudo: {error}")
+        for fd in fds[:3]:
+            os.close(fd)
+        answer(reply, 1)
+        return
+    for fd in fds[:3]:
+        os.close(fd)
+    # A caller that goes away takes its sudo with it, as a terminal would.
+    while True:
+        try:
+            status = child.wait(timeout=0.2)
+            break
+        except subprocess.TimeoutExpired:
+            readable, _, _ = select.select([reply], [], [], 0)
+            if readable:
+                try:
+                    gone = reply.recv(1) == b""
+                except OSError:
+                    gone = True
+                if gone:
+                    child.terminate()
+                    status = child.wait()
+                    break
+    answer(reply, status if status >= 0 else 128 - status)
+
+
+def no_tracing():
+    """Keeps other processes of the same account from tracing the command. True when the setting has to go back to 0 after."""
+    try:
+        with open(PTRACE_SCOPE) as file:
+            scope = file.read().strip()
+    except OSError:
+        log("this kernel has no ptrace_scope setting, so the sudo it lends is only as private as the account")
+        return False
+    if scope != "0":
+        return False
+    try:
+        with open(PTRACE_SCOPE, "w") as file:
+            file.write("1\n")
+    except OSError as error:
+        log(f"couldn't set ptrace_scope to 1 while lending: {error}")
+        return False
+    return True
+
+
+def main():
+    args = sys.argv[1:]
+    number = 200
+    if len(args) >= 2 and args[0] == "--fd":
+        number = int(args[1])
+        args = args[2:]
+    if not args or args[0] != "--" or len(args) < 2:
+        print("Usage: agentv-sudo-lend [--fd <number>] -- <command> [args...]", file=sys.stderr)
+        return 2
+    command = args[1:]
+
+    restore = no_tracing()
+    try:
+        return lend(command, number)
+    finally:
+        if restore:
+            try:
+                with open(PTRACE_SCOPE, "w") as file:
+                    file.write("0\n")
+            except OSError as error:
+                log(f"couldn't set ptrace_scope back to 0: {error}")
+
+
+def lend(command, number):
+    ours, theirs = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    os.dup2(theirs.fileno(), number, inheritable=True)
+    theirs.close()
+    try:
+        child = subprocess.Popen(command, pass_fds=[number], env={**os.environ, "AGENTV_SUDO_FD": str(number)})
+    except OSError as error:
+        log(f"couldn't run {command[0]}: {error}")
+        return 127
+    os.close(number)
+
+    # Stopping this stops the command, so the lending never outlives it.
+    for stop in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(stop, lambda received, frame: child.terminate())
+
+    while child.poll() is None:
+        try:
+            readable, _, _ = select.select([ours], [], [], 0.2)
+        except InterruptedError:
+            continue
+        if not readable:
+            continue
+        try:
+            message, fds, _, _ = socket.recv_fds(ours, LIMIT, 8)
+        except OSError:
+            break
+        if not message and not fds:
+            break
+        threading.Thread(target=serve, args=(message, fds), daemon=True).start()
+
+    ours.close()
+    status = child.wait()
+    return status if status >= 0 else 128 - status
+
+
+if __name__ == "__main__":
+    sys.exit(main())

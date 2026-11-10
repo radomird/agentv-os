@@ -787,8 +787,16 @@ grep -qF "pass S8.1 2 titles new on Kino in NL since 2026-10-25, such as Night T
 grep -q 'api/whats-new?fresh=1' "$state/curl.log" || fail "it asks for a fresh one"
 grep -qF "manual S8.1 one of those is something you know came out this week" "$SCRATCH/out" || fail "and says what to check by eye" "$(cat "$SCRATCH/out")"
 echo '{"ok":true,"feed":{"ok":false,"why":"no-key","region":null,"titles":[],"services":[]}}' >"$state/whats-new"
+# With a PIN set, the line says the key's page is past it. With none, it
+# doesn't name one (ADR-087).
+pin_before=$(cat "$state/pin" 2>/dev/null || true)
+echo '{"ok":true,"set":true,"locked":false}' >"$state/pin"
 ! run1 S8.1 || fail "S8.1 fails with no TMDB key"
 grep -qF "fail S8.1 there's no TMDB key yet: add one in Settings → new this week, past the PIN" "$SCRATCH/out" || fail "it says where to add one" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"set":false,"locked":false}' >"$state/pin"
+! run1 S8.1 || fail "S8.1 fails with no TMDB key and no PIN"
+grep -qxF "fail S8.1 there's no TMDB key yet: add one in Settings → new this week" "$SCRATCH/out" || fail "with no PIN, it names none" "$(cat "$SCRATCH/out")"
+if [[ -n $pin_before ]]; then printf '%s\n' "$pin_before" >"$state/pin"; else rm -f "$state/pin"; fi
 echo '{"ok":true,"feed":{"ok":true,"region":"NL","from":"2026-10-25","to":"2026-11-01","services":[{"app":"local.kino","name":"Kino","providers":[]}],"titles":[]}}' >"$state/whats-new"
 ! run1 S8.1 || fail "S8.1 fails with nothing new"
 grep -qF "fail S8.1 nothing appeared on Kino in NL from 2026-10-25 to 2026-11-01" "$SCRATCH/out" || fail "it says where it looked" "$(cat "$SCRATCH/out")"

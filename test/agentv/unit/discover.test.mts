@@ -11,6 +11,7 @@ import { createServer as createTcp, type Server as TcpServer } from "node:net";
 import { createSocket, type Socket } from "node:dgram";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createSocket as createUdp } from "node:dgram";
 import { after, before, test } from "node:test";
 import {
   Discover,
@@ -22,6 +23,7 @@ import {
   nfsExports,
   rpcCall,
   rpcResult,
+  senderUrl,
   serverAnswer,
   smbShares,
   wsdComputer,
@@ -52,6 +54,74 @@ test("T10.1 Jellyfin's and Emby's answers on 7359 give their address and name", 
   }
   // A name with control characters in it, and a long one, as the TV shows them.
   assert.equal(serverAnswer(`{"Address":"http://10.0.0.2:8096","Name":"a\\u0007b${"c".repeat(100)}"}`)?.name, `ab${"c".repeat(58)}`);
+});
+
+test("F7 a Jellyfin's or an Emby's address is the one its answer came from", async () => {
+  const names: Record<string, string[]> = { "media.home": ["192.168.50.10", "192.168.50.11"], "elsewhere.example": ["203.0.113.7"] };
+  const asked: string[] = [];
+  const resolve = async (name: string) => {
+    asked.push(name);
+    if (!names[name]) throw new Error("ENOTFOUND");
+    return names[name];
+  };
+  const at = (answer: string) => senderUrl(answer, "192.168.50.10", resolve);
+  // Its own address, or a name of its own that leads to it, stays as it is.
+  assert.equal(await at("http://192.168.50.10:8096"), "http://192.168.50.10:8096");
+  assert.equal(await at("https://192.168.50.10:8920/jellyfin"), "https://192.168.50.10:8920/jellyfin");
+  assert.equal(await at("https://media.home/jellyfin"), "https://media.home/jellyfin");
+  // Another machine's address, one off the home network, a name that leads
+  // somewhere else and one that leads nowhere all become the sender's.
+  assert.equal(await at("http://192.168.50.66:8096"), "http://192.168.50.10:8096");
+  assert.equal(await at("http://192.168.50.66:8097/media"), "http://192.168.50.10:8097/media");
+  assert.equal(await at("http://203.0.113.7"), "http://192.168.50.10");
+  assert.equal(await at("https://203.0.113.7"), "http://192.168.50.10:8096");
+  assert.equal(await at("http://[fd00::66]:8096"), "http://192.168.50.10:8096");
+  assert.equal(await at("https://elsewhere.example/jellyfin"), "http://192.168.50.10:8096/jellyfin");
+  assert.equal(await at("http://nowhere.example:8096"), "http://192.168.50.10:8096");
+  assert.deepEqual(asked, ["media.home", "elsewhere.example", "nowhere.example"], "only a name is looked up");
+  assert.equal(await senderUrl("http://192.168.50.10:8096", "fe80::1", resolve), null);
+});
+
+test("F7 an answer with another machine's address, or with a server's id from somewhere else, never takes that server's row", async () => {
+  // The real server, on 127.0.0.1, and a device on 127.0.0.2 that answers
+  // too, with the real one's id and name.
+  const real = fixture("jellyfin-7359.json").replace("192.168.50.10", "127.0.0.1");
+  let box = 0;
+  const server = createUdp("udp4");
+  server.on("message", (message, from) => {
+    if (message.toString() !== "who is JellyfinServer?") return;
+    box = from.port;
+    server.send(real, from.port, from.address);
+  });
+  await new Promise<void>((resolve) => server.bind(0, "127.0.0.1", resolve));
+  const forger = createUdp("udp4");
+  await new Promise<void>((resolve) => forger.bind(0, "127.0.0.2", resolve));
+  const discover = new Discover({ targets: ["127.0.0.1"], ports: { jellyfin: 0, emby: 0, plex: 0, wsd: 0 }, serverPorts: { discovery: server.address().port, gdm: 9, wsd: 9 }, avahi: null, log: () => {}, lookMs: 3_000, rounds: [20], lookup: async () => [] });
+  const rows = () => discover.found(["jellyfin"]).map((found) => `${found.name} ${found.url}`);
+  const until = async (count: number) => {
+    for (let i = 0; i < 60 && rows().length !== count; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+  };
+  try {
+    discover.look(["jellyfin"]);
+    await until(1);
+    assert.deepEqual(rows(), ["living room http://127.0.0.1:8096"]);
+    // The same id and name, sending the real server's address, its own,
+    // and one off the home network.
+    for (const address of ["http://127.0.0.1:8096", "http://127.0.0.2:8096", "http://203.0.113.7:8096"]) {
+      await new Promise<void>((resolve) => forger.send(real.replace("http://127.0.0.1:8096", address), box, "127.0.0.1", () => resolve()));
+    }
+    await until(2);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepEqual(rows(), ["living room http://127.0.0.1:8096", "living room http://127.0.0.2:8096"], "the real one keeps its row, and the other one only ever has its own address");
+    // And the real one answering again doesn't change that.
+    await new Promise<void>((resolve) => server.send(real, box, "127.0.0.1", () => resolve()));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(rows().length, 2);
+  } finally {
+    discover.close();
+    server.close();
+    forger.close();
+  }
 });
 
 test("T10.1 Plex's GDM answer gives its name and port, at the address it came from", () => {
