@@ -16,12 +16,16 @@ import { bar } from "../../pages/parts.ts";
 import { cardContent, featured, tileData, type Featured } from "../cards.ts";
 import { ordered } from "../glass/home.ts";
 import { icon } from "../icons.ts";
-import { named, said } from "../looks.ts";
+import { named, preview, said } from "../looks.ts";
 
 // How many featured titles the carousel goes through.
 const MOST = 5;
 
+// What a card says under its app's name: open, or setup or a sign-in still
+// needed. Nothing in a look's preview, which shows each app as it is once
+// it's set up.
 function state(ctx: Ctx, app: App): string {
+  if (preview()) return "";
   const open = ctx.running.get(app.id);
   if (open) return said(open.paused ? "paused" : "open");
   if (app.needsSetup) return said("set up");

@@ -17,7 +17,7 @@ import { buildNotice, homeBuildTile } from "./build.ts";
 import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
-import { currentGrid, lookId, named } from "../looks/looks.ts";
+import { currentGrid, lookId, named, preview } from "../looks/looks.ts";
 import { isShowcaseImage } from "../looks/showcase.ts";
 
 export const CLOCK = "agentv.clock";
@@ -35,9 +35,11 @@ const FITS = { s: 1, m: 3, l: 7 } as const;
 const ICON_PX = { headline: { s: 180, m: 150, l: 250 }, entry: { s: 84, m: 150, l: 84 } } as const;
 
 export function logo(app: App, big = false): HTMLElement {
-  // Only the letters sit on the theme's colour: an app's own icon has none
-  // behind it, or the colour shows through the icon's clear edges.
-  const el = h("span", { class: `logo${app.icon ? "" : ` mono-${tint(app.id)}`}${big ? " logo-big" : ""}` });
+  // The letters and the built-ins' glyphs, drawn for it, sit on the theme's
+  // colour. Any other app's icon has its own colours and none behind it, or
+  // the colour shows through the icon's clear edges.
+  const plain = !!app.icon && app.tier !== "built-in";
+  const el = h("span", { class: `logo${plain ? "" : ` mono-${tint(app.id)}`}${big ? " logo-big" : ""}` });
   if (app.icon) el.append(h("img", { src: app.icon, alt: "" }));
   else el.append(monogram(app.name));
   return el;
@@ -45,8 +47,10 @@ export function logo(app: App, big = false): HTMLElement {
 
 // What a small tile says about its app: open behind home, setup or a
 // sign-in still needed, or what it's for. A game still running has Quit
-// (ADR-031).
+// (ADR-031). A look's preview shows each app as it is once it's set up, so
+// only what it's for.
 function state(ctx: Ctx, app: App): HTMLElement {
+  if (preview()) return h("span", { class: "tile-label" }, app.category);
   const open = ctx.running.get(app.id);
   if (open?.game) return h("span", { class: "tile-state" }, "running ", h("span", { class: "tile-quit" }, "· q quit"));
   if (open) return h("span", { class: "tile-state" }, open.paused ? "paused" : "open");
