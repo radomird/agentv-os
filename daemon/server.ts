@@ -41,6 +41,8 @@ import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal,
 import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
+import { TvNetwork } from "./network.ts";
+import { networkRoute } from "./routes/network.ts";
 import { ProviderKey } from "./key.ts";
 import { boxZone, cityOf, clockZone } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
@@ -294,6 +296,8 @@ export class Daemon {
   // The paired phones' sessions: what checks and opens their requests.
   private phoneChannel: PhoneChannel<Phone>;
   readonly hotspot: Hotspot;
+  // Settings, network: the Wi-Fi nearby and joining one (ADR-084).
+  readonly network: TvNetwork;
   readonly setupState: Setup;
   // Settings → Omarchy desktop's password (daemon/desktop-password.ts).
   readonly desktopPassword: DesktopPassword;
@@ -534,6 +538,7 @@ export class Daemon {
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.phoneChannel = new PhoneChannel({ phone: (id) => this.phones.key(id) });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
+    this.network = new TvNetwork({ hotspot: this.hotspot, run: options.hotspotRun, interfaces: options.interfaces, changed: (state) => this.toPages("network", state) });
     this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
@@ -651,6 +656,7 @@ export class Daemon {
     this.exportAsks.close();
     this.themeAsks.close();
     this.displayRoutes.close();
+    this.network.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -1311,10 +1317,13 @@ export class Daemon {
       return;
     }
 
-    // The networks the box could see before it opened its own.
+    // The networks the box could see before it opened its own. After
+    // setup, the hotspot is open because the TV lost its network, and the
+    // page says so and asks for the adult PIN when one is set.
     if (method === "GET" && path === "/api/setup/networks") {
       const hotspot = this.hotspot.status();
-      this.json(response, 200, { ok: true, hotspot: hotspot.ssid, networks: this.hotspot.networks() });
+      const after = (await this.setup()).done;
+      this.json(response, 200, { ok: true, hotspot: hotspot.ssid, networks: this.hotspot.networks(), ...(after ? { after: true, pin: this.pin.status().set } : {}) });
       return;
     }
 
@@ -1328,7 +1337,21 @@ export class Daemon {
 
     // The home Wi-Fi to join. Its password goes to root and nowhere else.
     if (method === "POST" && path === "/api/setup/wifi") {
-      const body = (await this.body(request)) as { ssid?: unknown; password?: unknown } | undefined;
+      const body = (await this.body(request)) as { ssid?: unknown; password?: unknown; pin?: unknown } | undefined;
+      // After setup, changing the TV's Wi-Fi is an adult's: with a PIN set,
+      // the page sends it too. Wrong tries from the hotspot's page count on
+      // their own, and wait as the TV's pad's do. The PIN goes no further
+      // than this check.
+      if ((await this.setup()).done && this.pin.status().set) {
+        const locked = (await this.pinStatus()).locked;
+        const checked = this.pin.check(body?.pin, "hotspot");
+        if (!checked.ok) {
+          this.log(checked.wait ? "a wrong pin on the hotspot's page; the next try waits" : "a wrong pin on the hotspot's page");
+          this.json(response, 403, { ok: false, error: checked.error, pin: true, ...(checked.wait ? { wait: checked.wait } : {}) });
+          return;
+        }
+        await this.lockChanged(locked);
+      }
       const why = this.hotspot.join(body?.ssid, body?.password ?? "");
       if (why) {
         this.json(response, 400, { ok: false, error: why });
@@ -2267,6 +2290,7 @@ export class Daemon {
     if (await this.setupRoutes.handle("tv", request, response, url)) return;
     if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
     if (await boxRoute(this.boxKit(), method, path, request, response)) return;
+    if (await networkRoute({ network: this.network, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: this.log, child: async () => (await this.profiles.active()).role === "child", guarded: (q, s, what) => this.guarded(q, s, what) }, method, path, request, response)) return;
     if (await this.displayRoutes.handle(method ?? "", path, request, response)) return;
     if (await backgroundVideoRoutes({ backgrounds: this.backgrounds, body: (q) => this.body(q), json: (q, status, data) => this.json(q, status, data) }, request, response, path)) return;
 

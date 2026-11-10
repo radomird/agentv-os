@@ -1,6 +1,6 @@
-# Joins the home Wi-Fi the daemon was given on the setup hotspot's page, or
-# closes the hotspot as setup ends (bin/agentv-hotspot). agentv-hotspot.path
-# starts it.
+# Joins the home Wi-Fi the daemon was given, on the setup hotspot's page or
+# in Settings, looks at the networks nearby for Settings, or closes the
+# hotspot as setup ends (bin/agentv-hotspot). agentv-hotspot.path starts it.
 
 [Unit]
 Description=AgenTV setup hotspot: join the home Wi-Fi
