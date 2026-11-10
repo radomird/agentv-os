@@ -183,6 +183,44 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
   }
 });
 
+test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, says Google is key only, and keeps Muse's coming soon", async () => {
+  atAi();
+  // This box goes to stable, where a plan was Claude's alone before.
+  const channel = join(state, "..", "channel");
+  const was = readFileSync(channel, "utf8");
+  writeFileSync(channel, "stable\n");
+  const page = await tv();
+  try {
+    await page.waitForSelector(".ai-cards");
+    const ways = async (provider: string) => {
+      await page.locator(`.ai-card[data-provider="${provider}"]`).click();
+      await page.waitForSelector(".ai-options");
+      const found = { buttons: await page.locator(".ai-options > .button").allTextContents(), line: (await page.locator('[data-line="sign-in"]').textContent()) ?? "" };
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".ai-cards");
+      return found;
+    };
+    assert.equal((await (await fetch(`${url}/api/ai`)).json()).channel, "stable");
+    for (const provider of ["claude", "chatgpt", "grok"]) {
+      const found = await ways(provider);
+      assert.deepEqual(found.buttons, ["↵ use my plan", "use a key from my phone", "later, in settings"], provider);
+      assert.doesNotMatch(found.line, /coming soon|best effort|key works now/, provider);
+    }
+    // Google keeps its plan to its own apps, by its own terms: no plan to
+    // pick, and the line says so without a "soon".
+    const google = await ways("gemini");
+    assert.deepEqual(google.buttons, ["use a key from my phone", "later, in settings"]);
+    assert.equal(google.line, "google keeps its plan to its own apps. a key works now");
+    // Meta has been asked, so Muse's is coming soon.
+    const muse = await ways("muse");
+    assert.deepEqual(muse.buttons, ["use a key from my phone", "later, in settings"]);
+    assert.equal(muse.line, "a muse code subscription is coming soon. a key works now");
+  } finally {
+    writeFileSync(channel, was);
+    await page.close();
+  }
+});
+
 test("ADR-070 a sign-in that fails says why and tries again, and later leaves it for Settings with the plan kept", async () => {
   atAi();
   writeFileSync(join(state, "ai.json"), JSON.stringify({ provider: "claude", path: "plan" }));
