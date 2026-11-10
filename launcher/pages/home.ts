@@ -11,6 +11,7 @@
 import { daemon, screen, type App, type Item, type TileData, type TileEntry } from "../api.ts";
 import { clock, h, monogram, tint } from "../dom.ts";
 import { GRID_MORE, span, type Placed } from "../layout.ts";
+import { keepAsking, showLoading, SHOWN_MS } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
 import { buildNotice, homeBuildTile } from "./build.ts";
@@ -240,20 +241,30 @@ async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promi
   );
 }
 
-// Fills a tile with what its app's tile() sent.
+// Fills a tile with what its app's tile() sent. A tile whose content isn't
+// there yet says it's loading and asks again (loading.ts), so Weather has
+// its forecast soon after a start without home being left and come back to.
 async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
-  let data: TileData | null = null;
-  try {
-    data = await daemon.tile(app.id, placed.size);
-  } catch {
-    if (app.id !== CLOCK) return;
-  }
-  if (!el.isConnected) return;
-  // A tile that says Sign in keeps saying so, with its logo.
-  if (app.signIn === "needed" && app.tier !== "built-in") return;
-  if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
-  else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
-  else drawTile(el, app, placed.size, data);
+  const draw = async (data: TileData | null) => {
+    // A tile that says Sign in keeps saying so, with its logo.
+    if (app.signIn === "needed" && app.tier !== "built-in") return;
+    if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
+    else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
+    else drawTile(el, app, placed.size, data);
+  };
+  // Clock keeps its own time, so it's drawn at once and never waits.
+  const clockTile = app.id === CLOCK && app.tier === "built-in";
+  const loaded = preview() || clockTile ? () => {} : showLoading(el, `${app.id}:${placed.size}`);
+  const started = Date.now();
+  const ask = async (): Promise<boolean> => {
+    const answer = await daemon.tileAnswer(app.id, placed.size).catch(() => ({ tile: null, waiting: !clockTile }));
+    if (!el.isConnected) return false;
+    if (!answer.waiting) loaded();
+    // What a waiting tile has to say for now shows once the mark has gone.
+    if (!answer.waiting || Date.now() - started >= SHOWN_MS) await draw(answer.tile);
+    return answer.waiting;
+  };
+  if (await ask()) keepAsking(ask, () => el.isConnected);
 }
 
 // What choosing a built-in does (ADR-015): they open here, not in a window.

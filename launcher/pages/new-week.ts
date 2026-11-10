@@ -5,6 +5,7 @@
 
 import { daemon, type TileData, type TileEntry } from "../api.ts";
 import { h } from "../dom.ts";
+import { keepAsking, showLoading, SHOWN_MS } from "../loading.ts";
 import { lookId, named, said } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { NEW, openEntry } from "./home.ts";
@@ -49,18 +50,25 @@ export function newWeek(ctx: Ctx): View {
   };
   draw(last);
   const el = h("div", { class: "screen" }, h("div", { class: "page new-week" }, head, row), bar(ctx, "new this week"));
-  void daemon
-    .tile(NEW, "l")
-    .then((data) => {
-      const had = row.childElementCount > 0;
-      last = data;
-      if (!el.isConnected) return;
-      const at = ctx.focus.get()?.dataset.action;
-      draw(data);
-      const again = at ? el.querySelector<HTMLElement>(`[data-action="${at}"]`) : null;
-      const first = row.querySelector<HTMLElement>("[data-focus]") ?? undefined;
-      ctx.focus.setRoot(el, had ? (again ?? first) : first);
-    })
-    .catch(() => {});
+  // With nothing from an earlier visit, the row says it's loading.
+  const loaded = last ? () => {} : showLoading(row);
+  const started = Date.now();
+  const ask = async (): Promise<boolean> => {
+    const answer = await daemon.tileAnswer(NEW, "l").catch(() => ({ tile: null, waiting: true }));
+    // What a wait has to say for now shows once the mark has gone.
+    if (answer.waiting && Date.now() - started < SHOWN_MS) return true;
+    const data = answer.tile;
+    const had = row.querySelector("[data-focus]") !== null;
+    last = answer.waiting ? last : data;
+    if (!el.isConnected) return false;
+    loaded();
+    const at = ctx.focus.get()?.dataset.action;
+    draw(data);
+    const again = at ? el.querySelector<HTMLElement>(`[data-action="${at}"]`) : null;
+    const first = row.querySelector<HTMLElement>("[data-focus]") ?? undefined;
+    ctx.focus.setRoot(el, had ? (again ?? first) : first);
+    return answer.waiting;
+  };
+  void ask().then((waiting) => waiting && keepAsking(ask, () => el.isConnected));
   return { el, first: row.querySelector<HTMLElement>("[data-focus]") ?? undefined };
 }

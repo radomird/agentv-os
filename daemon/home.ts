@@ -253,7 +253,8 @@ export interface HomeOptions {
   // no all apps tile, and Clock isn't pinned until someone pins it.
   looks?: () => Promise<boolean>;
   // New this week's tile, which the daemon draws from TMDB (S8.1).
-  newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
+  // waiting says TMDB hasn't answered yet, so the tile gets asked for again.
+  newTile?: (viewer: Viewer, size: Size) => Promise<TileAnswer>;
   // Something home shows changed by itself: a site's icon came, say.
   changed?: (event: string) => void;
   log?: (line: string) => void;
@@ -264,6 +265,12 @@ export interface HomeOptions {
 
 // How long before a site's icon that didn't come is asked for again.
 const ICON_RETRY_MS = 6 * 3600_000;
+
+// A tile's content, and whether it's still waiting for it.
+export interface TileAnswer {
+  tile: unknown;
+  waiting: boolean;
+}
 
 // The free continue tile's entries: how far in, and how long is left.
 function caption(row: WatchRow): string {
@@ -311,7 +318,10 @@ export class Home {
   private goal?: () => Promise<string | null>;
   private looksOn?: () => Promise<boolean>;
   private pageTile?: (id: string) => Promise<unknown>;
-  private newTile?: (viewer: Viewer, size: Size) => Promise<unknown>;
+  private newTile?: (viewer: Viewer, size: Size) => Promise<TileAnswer>;
+  // Tiles that couldn't get their content yet, such as Weather's before the
+  // TV is online after a start.
+  private waiting = new Set<string>();
   private dataDirs: string[];
 
   constructor(options: HomeOptions) {
@@ -916,24 +926,39 @@ export class Home {
   // A tile that doesn't answer in time keeps its last content; with none
   // it's null, and the launcher draws it small.
   async tile(id: string, size: Size, viewer: Viewer, fresh = false): Promise<unknown> {
+    return (await this.tileAnswer(id, size, viewer, fresh)).tile;
+  }
+
+  // The same, with whether the tile is still waiting for its content: its
+  // app couldn't get it and there's none kept, as when home draws before
+  // the TV is online. Home shows that it's loading and asks again, and
+  // every home hears "tiles" once the content is there.
+  async tileAnswer(id: string, size: Size, viewer: Viewer, fresh = false): Promise<TileAnswer> {
     const key = `${viewer.id}:${id}:${size}`;
+    const answer = await this.content(key, id, size, viewer, fresh);
+    if (answer.waiting) this.waiting.add(key);
+    else if (this.waiting.delete(key)) this.changed("tiles");
+    return answer;
+  }
+
+  private async content(key: string, id: string, size: Size, viewer: Viewer, fresh: boolean): Promise<TileAnswer> {
     const settings = (await this.appSettings())[id] ?? {};
     const signature = JSON.stringify(settings);
     const cached = this.tiles.get(key);
     const refresh = Math.max(TILE_MIN, Number((cached?.tile as { refreshMins?: number })?.refreshMins) || TILE_DEFAULT);
-    if (!fresh && cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return cached.tile;
+    if (!fresh && cached && cached.settings === signature && Date.now() - cached.at < refresh * 60_000) return { tile: cached.tile, waiting: false };
 
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
-    if (!found) return null;
+    if (!found) return { tile: null, waiting: false };
     const capabilities = found.manifest.tv.capabilities;
     // A page app sets its tile through the kit while it runs (ADR-043).
-    if (found.manifest.tv.runtime === "page") return capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null;
+    if (found.manifest.tv.runtime === "page") return { tile: capabilities.includes("tile") ? ((await this.pageTile?.(id)) ?? null) : null, waiting: false };
     // New this week is TMDB's, through the daemon, which keeps it itself.
-    if (id === NEW_APP && found.tier === "built-in") return (await this.newTile?.(viewer, size)) ?? null;
+    if (id === NEW_APP && found.tier === "built-in") return (await this.newTile?.(viewer, size)) ?? { tile: null, waiting: false };
     if (!capabilities.includes("tile")) {
       // The free medium continue tile, drawn from the ledger each time.
-      if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return null;
-      return continueTile(this.ledger().recent(viewer.id, { app: id, limit: 2 }));
+      if (size !== "m" || !capabilities.includes("playback") || !this.ledger) return { tile: null, waiting: false };
+      return { tile: continueTile(this.ledger().recent(viewer.id, { app: id, limit: 2 })), waiting: false };
     }
     let host = this.hosts.get(id);
     if (!host) {
@@ -944,10 +969,11 @@ export class Home {
     try {
       const tile = await host.call(viewer, "tile", size);
       this.tiles.set(key, { at: Date.now(), tile, settings: signature });
-      return tile;
+      return { tile, waiting: false };
     } catch (error) {
       this.log(`${id}'s ${size} tile: ${(error as AppError).message}`);
-      return cached?.settings === signature ? cached.tile : null;
+      // What was kept still shows. With nothing kept, the tile is waiting.
+      return cached?.settings === signature ? { tile: cached.tile, waiting: false } : { tile: null, waiting: true };
     }
   }
 

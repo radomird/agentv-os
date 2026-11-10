@@ -4,6 +4,7 @@
 
 import { creditLine, daemon, screen, shownCurrent, type AudioState, type Backgrounds, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import { lookId, looksList, sizeId } from "../looks/looks.ts";
 import { lookCards } from "../looks/preview.ts";
 import type { Ctx, View } from "../main.ts";
@@ -119,7 +120,7 @@ export function settings(ctx: Ctx, open?: string): View {
     void saveWeather({ zone: next.zone }, "city");
   };
   const weatherPanel = (): HTMLElement[] => {
-    if (!weather) return [h("div", { class: "panel-big" }, "…")];
+    if (!weather) return [h("div", { class: "panel-big" }, loadingMark())];
     const w = weather;
     return [
       h("div", { class: "panel-title" }, "the forecast is for"),

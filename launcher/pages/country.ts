@@ -4,6 +4,7 @@
 import { daemon, type Country, type CountryState } from "../api.ts";
 import { countryPicker } from "../country-picker.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -26,7 +27,7 @@ export function zoneCity(zone: string): string {
 
 export function countryPanel(ctx: Ctx): HTMLElement[] {
   const state = countryState;
-  if (!state) return [h("div", { class: "panel-big" }, "…")];
+  if (!state) return [h("div", { class: "panel-big" }, loadingMark())];
   return [
     h("div", { class: "panel-title" }, "this tv is in"),
     h("div", { class: "panel-big" }, state.name?.toLowerCase() ?? "no country yet"),

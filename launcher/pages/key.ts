@@ -10,6 +10,7 @@
 
 import { daemon, type KeyState, type KeyTerms } from "../api.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -73,7 +74,7 @@ function planLine(plan: { provider: string; name?: string; bestEffort: boolean }
 
 export function aiPanel(ctx: Ctx): HTMLElement[] {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
-  if (!keyState) return [h("div", { class: "panel-big" }, "…")];
+  if (!keyState) return [h("div", { class: "panel-big" }, loadingMark())];
   const remove = async () => {
     const grant = await ctx.grant("the ai key");
     if (grant === null) return;
