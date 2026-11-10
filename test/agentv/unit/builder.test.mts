@@ -9,7 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { Build, type BuildRequest } from "../../../builder/build.ts";
-import { KINDS, loadRecipes, planProblems, planRecipe, PAGE_TOOLS, type Plan, writable } from "../../../builder/recipe.ts";
+import { stepTools } from "../../../builder/harness/tools.ts";
+import { buildForbidden, buildOriginProblem, canonical, privateAddress } from "../../../builder/origins.ts";
+import { KINDS, loadRecipe, loadRecipes, planProblems, planRecipe, PAGE_TOOLS, type Plan, recipeProblems, signedInPage, writable } from "../../../builder/recipe.ts";
 import { phaseSteps, Runner } from "../../../builder/run.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -171,6 +173,104 @@ test("S6.9 the builder keeps what the app reaches inside its recipe's bounds", a
   assert.equal(m.tv.origins, undefined);
   assert.equal(m.tv.media, undefined);
   assert.equal(m.tv.notices, undefined);
+});
+
+// An app on a public API, as a recording: its steps' files, with what the
+// api step declares and what the build step lists.
+function apiRecording(declares: string[], lists: string[] | undefined): string {
+  const manifest = { description: "The forecast", tv: { contract: 2, runtime: "page", category: "utility", capabilities: ["launch"], ...(lists ? { origins: lists } : {}) } };
+  return recording({
+    design: { calls: [{ tool: "write", args: { path: "DESIGN.md", content: "One screen." } }] },
+    api: { calls: [...declares.map((origin) => ({ tool: "declare_origin", args: { origin, why: "the forecast" } })), { tool: "write", args: { path: "NOTES.md", content: "The API." } }] },
+    packages: { calls: [] },
+    build: {
+      calls: [
+        { tool: "write", args: { path: "app/index.html", file: "index.html" } },
+        { tool: "write", args: { path: "app/game.js", file: "game.js" } },
+        { tool: "write", args: { path: "app/manifest.json", content: JSON.stringify(manifest) } },
+      ],
+    },
+    tests: { calls: [{ tool: "write", args: { path: "tests/forecast.test.js", content: "" } }] },
+    try: { calls: [] },
+  });
+}
+
+test("H2 every origin a build declared is in its manifest and in what approval shows, whether the agent listed it or not", async () => {
+  const b = build({ recipe: "api", id: "local.forecast", name: "Forecast", sentence: "a better weather app" });
+  // The agent declares two origins and lists one: the other was live in the
+  // build's filter, so an adult sees it too.
+  const status = await run(b, apiRecording(["https://api.example.org", "https://cdn-metrics.example"], ["https://api.example.org"]));
+  assert.equal(status.state, "approve", status.reason);
+  const manifest = JSON.parse(readFileSync(join(b.app, "manifest.json"), "utf8"));
+  assert.deepEqual(manifest.tv.origins, ["https://api.example.org", "https://cdn-metrics.example"]);
+  assert.deepEqual(status.approval?.reaches.declared.filter((line) => line.startsWith("the internet")), ["the internet, only at api.example.org, cdn-metrics.example"]);
+  assert.deepEqual(b.state().origins.map((o) => o.origin), manifest.tv.origins, "one list: declared, enforced and shown");
+
+  // And one it lists without declaring is taken out, as before.
+  const other = build({ recipe: "api", id: "local.forecast", name: "Forecast", sentence: "a better weather app" });
+  const kept = await run(other, apiRecording(["https://api.example.org"], ["https://api.example.org", "https://tracker.example"]));
+  assert.equal(kept.state, "approve", kept.reason);
+  assert.deepEqual(JSON.parse(readFileSync(join(other.app, "manifest.json"), "utf8")).tv.origins, ["https://api.example.org"]);
+  // With none listed at all, the declared one is still there.
+  const none = build({ recipe: "api", id: "local.forecast", name: "Forecast", sentence: "a better weather app" });
+  assert.equal((await run(none, apiRecording(["https://api.example.org"], undefined))).approval?.reaches.declared[0], "the internet, only at api.example.org");
+});
+
+test("H2 L2 declare_origin takes an https origin out on the internet, and none at all once the app is approved", async () => {
+  const recipes = loadRecipes(join(ROOT, "builder/recipes"));
+  const api = recipes.get("api")!;
+  const b = build({ recipe: "api" });
+  const declare = stepTools({ build: b, recipe: api, step: api.steps.find((s) => s.id === "api")!, root: ROOT, omarchy: "/usr/share/omarchy" }).find((t) => t.name === "declare_origin")!;
+  for (const origin of ["https://192.168.1.10", "https://10.0.0.5", "https://172.16.4.1", "https://100.64.0.9", "https://169.254.169.254", "https://[fd00::1]", "https://[fe80::1]", "https://[::ffff:c0a8:10a]", "https://[::ffff:7f00:1]", "https://nas.local", "https://router.lan", "https://nas", "http://192.168.1.10"]) {
+    await assert.rejects(declare.run({ origin, why: "a look" }), /is on the home network or this box: a build reaches only the internet/, origin);
+  }
+  await assert.rejects(declare.run({ origin: "https://127.0.0.1", why: "a look" }), /is this box/);
+  await assert.rejects(declare.run({ origin: "https://api.example.org:8443", why: "a look" }), /names a port/);
+  assert.match(await declare.run({ origin: "https://api.example.org", why: "the forecast" }), /declared https:\/\/api\.example\.org/);
+  assert.deepEqual(b.state().origins.map((o) => o.origin), ["https://api.example.org"]);
+
+  // Stage B: the list an adult approved is the whole list.
+  const streaming = recipes.get("streaming")!;
+  const later = build({ recipe: "streaming", phase: "stage-b", origins: ["https://stand-in.test"] });
+  const site = streaming.steps.find((s) => s.id === "site")!;
+  const again = stepTools({ build: later, recipe: streaming, step: site, root: ROOT, omarchy: "/usr/share/omarchy" }).find((t) => t.name === "declare_origin")!;
+  await assert.rejects(again.run({ origin: "https://elsewhere.example", why: "more" }), /the app's origins were approved with it, and stage B adds none/);
+  assert.deepEqual(later.state().origins, []);
+  // And no recipe may give a stage B step the tool.
+  const data = JSON.parse(readFileSync(join(streaming.dir, "recipe.json"), "utf8"));
+  data.steps.find((s: { id: string }) => s.id === "study").tools.push("declare_origin");
+  assert.match(recipeProblems(data, streaming.dir).join("; "), /a stage B step declares no origin/);
+  assert.ok(!streaming.steps.some((s) => s.stage === "b" && s.tools.includes("declare_origin")));
+});
+
+test("L2 a build's filter refuses the home network, this box and anything that isn't an address", () => {
+  for (const address of ["10.0.0.5", "172.16.0.1", "172.31.255.254", "192.168.1.20", "100.64.0.1", "100.127.255.254", "169.254.1.1", "127.0.0.1", "0.0.0.0", "224.0.0.251", "255.255.255.255", "fc00::1", "fd12:3456::1", "fe80::1", "febf::1", "::1", "::", "ff02::1", "::ffff:192.168.1.20", "::ffff:c0a8:114", "0:0:0:0:0:ffff:10.0.0.5", "64:ff9b::a00:5", "not an address"]) {
+    assert.ok(privateAddress(address), address);
+  }
+  for (const address of ["93.184.215.14", "172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "192.169.0.1", "2a00:1450:4001::200e", "::ffff:93.184.215.14", "64:ff9b::5db8:d70e"]) assert.ok(!privateAddress(address), address);
+  // The box's own addresses, a public one too, however it's written.
+  const own = () => new Set([canonical("203.0.113.7"), canonical("2001:db8::7")]);
+  assert.ok(buildForbidden("203.0.113.7", own));
+  assert.ok(buildForbidden("2001:0db8:0:0:0:0:0:7", own));
+  assert.ok(!buildForbidden("203.0.113.8", own));
+  assert.ok(buildForbidden("192.168.1.20", () => new Set()));
+  assert.equal(buildOriginProblem("https://api.example.org"), null);
+  assert.equal(buildOriginProblem("https://93.184.215.14"), null);
+});
+
+test("M5 a recipe names the pages stage B looks at while signed in, and an account page isn't one", () => {
+  const streaming = loadRecipes(join(ROOT, "builder/recipes")).get("streaming")!;
+  const at = (path: string) => signedInPage(streaming.signedInPages, new URL(`https://stand-in.test${path}`));
+  for (const path of ["/", "/en-gb", "/browse", "/search?q=heat", "/en-GB/search?q=heat", "/watch/80123", "/title/80123", "/series/a-show/season/2", "/profiles", "/browse.html", "/Watch/1"]) assert.ok(at(path), path);
+  for (const path of ["/account", "/account/payment", "/settings", "/en-gb/account", "/billing", "/membership", "/YourAccount", "/profile/edit", "/orders", "/%zz"]) assert.ok(!at(path), path);
+  assert.ok(!signedInPage(undefined, new URL("https://stand-in.test/search")), "with no list, only the start page");
+  assert.ok(signedInPage(undefined, new URL("https://stand-in.test/")));
+
+  const data = JSON.parse(readFileSync(join(streaming.dir, "recipe.json"), "utf8"));
+  assert.deepEqual(recipeProblems(data, streaming.dir), []);
+  assert.match(recipeProblems({ ...data, signedInPages: undefined }, streaming.dir).join("; "), /says which, in signedInPages/);
+  for (const bad of [[], ["/search"], ["Search"], ["a/b"], "search", [7]]) assert.match(recipeProblems({ ...data, signedInPages: bad }, streaming.dir).join("; "), /signedInPages lists/, JSON.stringify(bad));
+  void loadRecipe;
 });
 
 test("S6.9 a request with no recipe gets a plan, and nothing is built before an adult approves it", async () => {

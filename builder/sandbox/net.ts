@@ -13,16 +13,24 @@
 //   the daemon asks the screen daemon for. Never the browser itself.
 //
 // What the running build is comes from root's ticket, never from the build
-// itself; the origins it declared come from its state, read again for each
-// request, so one declared mid-build works at once.
+// itself. Before approval, the origins it declared come from its state, read
+// again for each request, so one declared mid-build works at once, and
+// approval shows every one of them (builder/build.ts). After approval, in
+// stage B, they come from root's ticket alone: the list an adult approved,
+// which nothing the build writes can add to.
+//
+// The filter never connects to the home network or this box, and only to
+// port 443 (builder/origins.ts): a page app may reach a NAS, a build has no
+// reason to.
 
 import { execFileSync } from "node:child_process";
 import { chmodSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join, resolve } from "node:path";
-import { NetFilter, type Policy } from "../../daemon/net-filter.ts";
+import { forbiddenAddress, NetFilter, type Policy } from "../../daemon/net-filter.ts";
 import type { Provider } from "../build.ts";
-import { KINDS, loadRecipes, type Kind } from "../recipe.ts";
+import { buildForbidden } from "../origins.ts";
+import { KINDS, loadRecipes, signedInPage, type Kind } from "../recipe.ts";
 import { keyFrom, Relay, type Ticket } from "./relay.ts";
 
 // npm's registry and OSV.dev, for the guarded packages (ADR-044).
@@ -53,18 +61,27 @@ export interface Declared {
   originsAllowed: boolean; // the recipe's bounds
 }
 
-// host:port the build may reach, from its ticket and what it declared.
+// The origins the running build reaches: an approved plan's and stage B's
+// from root's ticket, and before approval what the build declared, within
+// its recipe's bounds.
+export function reachable(ticket: Ticket, declared: Declared): string[] {
+  if (ticket.recipe === null) return ticket.origins ?? [];
+  if (!declared.originsAllowed) return [];
+  return ticket.phase === "stage-b" ? (ticket.origins ?? []) : declared.origins;
+}
+
+// host:port the build may reach, from its ticket and what it declared. Only
+// https on its own port: an origin with any other port isn't reached.
 export function allowed(ticket: Ticket | null, declared: Declared, signIn = false): Set<string> {
   const hosts = new Set<string>();
   if (!ticket) return hosts;
   for (const host of ALWAYS) hosts.add(`${host}:443`);
   if (ticket.path === "plan") for (const host of (signIn ? SIGN_IN_HOSTS : PLAN_HOSTS)[ticket.provider]) hosts.add(`${host}:443`);
-  const origins = ticket.recipe === null ? (ticket.origins ?? []) : declared.originsAllowed ? declared.origins : [];
-  for (const origin of origins) {
+  for (const origin of reachable(ticket, declared)) {
     try {
       const url = new URL(origin);
-      if (url.protocol !== "https:" || url.pathname !== "/" || url.username || url.password) continue;
-      hosts.add(`${url.hostname.toLowerCase()}:${url.port || 443}`);
+      if (url.protocol !== "https:" || url.pathname !== "/" || url.username || url.password || url.port) continue;
+      hosts.add(`${url.hostname.toLowerCase()}:443`);
     } catch {}
   }
   return hosts;
@@ -73,12 +90,15 @@ export function allowed(ticket: Ticket | null, declared: Declared, signIn = fals
 export interface PageOptions {
   ticket: () => Ticket | null;
   declared: (ticket: Ticket) => string[]; // its origins
+  // Whether the recipe has stage B look at this page. The daemon checks it
+  // again, and that's the check that counts.
+  looksAt?: (ticket: Ticket, url: URL) => boolean;
   ask: (url: string) => Promise<object>; // the daemon's answer
   log: (line: string) => void;
 }
 
 // Stage B's look at the signed-in pages: one ask at a time, an address on
-// the running build's declared origins, while it's in stage B.
+// the origins approved with the app, while the build is in stage B.
 export function pageServer(o: PageOptions): Server {
   let busy = false;
   return createServer(async (request, response) => {
@@ -100,7 +120,8 @@ export function pageServer(o: PageOptions): Server {
     }
     const ticket = o.ticket();
     if (!ticket || ticket.phase !== "stage-b") return answer(403, { ok: false, error: "the service's signed-in pages are for stage B, after the household signed in" });
-    if (url.protocol !== "https:" || !o.declared(ticket).includes(url.origin)) return answer(403, { ok: false, error: `${url.origin} isn't one of the build's declared origins` });
+    if (url.protocol !== "https:" || !o.declared(ticket).includes(url.origin)) return answer(403, { ok: false, error: `${url.origin} isn't one of the origins approved with the app` });
+    if (o.looksAt && !o.looksAt(ticket, url)) return answer(403, { ok: false, error: "that isn't a page a build looks at while signed in" });
     if (busy) return answer(429, { ok: false, error: "one page at a time" });
     busy = true;
     try {
@@ -158,6 +179,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
       if (build) return allowed(build, declaredBy(build, join(root, "builder/recipes")));
       return allowed(readJson<Ticket>(signInPath), { origins: [], originsAllowed: false }, true);
     }),
+    // Stricter than a page app's filter, and nothing a build says changes it.
+    forbid: (address) => forbiddenAddress(address) || buildForbidden(address),
     log,
   });
   const relay = new Relay({
@@ -181,9 +204,14 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const daemon = process.env.AGENTV_DAEMON ?? "http://127.0.0.1:3000";
   const page = pageServer({
     ticket,
-    declared: (build) => {
-      const said = declaredBy(build, join(root, "builder/recipes"));
-      return said.originsAllowed ? said.origins : [];
+    // Stage B's origins are root's ticket's: the list approved with the app.
+    declared: (build) => reachable(build, declaredBy(build, join(root, "builder/recipes"))),
+    looksAt: (build, url) => {
+      try {
+        return signedInPage(loadRecipes(join(root, "builder/recipes")).get(build.recipe as Kind)?.signedInPages, url);
+      } catch {
+        return false;
+      }
     },
     ask: async (url) => {
       const response = await fetch(`${daemon}/api/builder/page`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }), signal: AbortSignal.timeout(120_000) });

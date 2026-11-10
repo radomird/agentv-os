@@ -21,8 +21,7 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { validatePackage } from "../apps/contract/manifest.ts";
-import { pagePermissions } from "../apps/contract/page.ts";
-import { Build, type BuildRequest, type BuildStatus, keepManifest } from "./build.ts";
+import { Build, type BuildRequest, type BuildStatus, declaredOrigins, keepManifest, reachesOf } from "./build.ts";
 import { PLAN, UNDERSTAND } from "./harness/steps.ts";
 import { lockedPackages } from "./packages.ts";
 import { command, outcome, type Outcome, ownTools } from "./providers.ts";
@@ -347,7 +346,15 @@ export class Runner {
       if (!manifest) return this.fail(`the static checks found: ${problems[0]}`);
       const gates = await this.options.gates?.(this.build, recipe);
       if (gates?.problems.length) return this.fail(gates.problems[0]);
-      const reaches = manifest.tv.runtime === "page" ? pagePermissions(manifest) : { always: [], declared: (manifest.tv.origins ?? []).map((o) => `the internet, at ${o.replace(/^https?:\/\//, "")}`) };
+      // What's enforced and what an adult approves are one list: an origin
+      // the build declared and the app doesn't list never reaches approval.
+      const declared = recipe.bounds.origins ? declaredOrigins(this.build, recipe, request) : [];
+      const listed = manifest.tv.origins ?? [];
+      const unlisted = declared.filter((origin) => !listed.includes(origin));
+      const undeclared = listed.filter((origin) => !declared.includes(origin));
+      if (unlisted.length) return this.fail(`the build declared ${unlisted.join(", ")}, and the app's manifest doesn't list it`);
+      if (undeclared.length) return this.fail(`the app's manifest lists ${undeclared.join(", ")}, which the build didn't declare`);
+      const reaches = reachesOf(manifest);
       const packages = this.packages();
       this.status({ state: "approve", step: undefined, steps: [...states], approval: { shot: gates?.shot, reaches, packages } });
       this.log("the build passed its checks, and waits for an adult's approval");
