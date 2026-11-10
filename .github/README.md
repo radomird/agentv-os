@@ -35,7 +35,7 @@ New in 0.1.4:
 - **TV setup,** from "hi." to home. It asks where the TV is, which AI you use and who watches. Then it helps you pick your apps, a theme and a background.
 - **An agent that builds the apps you're missing.** Ask for a streaming service, a game or a better weather app. It follows a recipe for each kind of app, builds it to AgenTV's rules for apps, and tests it. The app stays on your box unless you export it.
 - **"Play" and a title,** said into your phone, across every app you have. Claude, ChatGPT, Gemini, Grok and Muse Code all work.
-- **The TV answers out loud.** It uses your AI provider's own voice when the provider has one and you've given AgenTV a key. Otherwise it's Piper, a voice that runs right on the box.
+- **The TV answers out loud** when your AI has a voice of its own and you've given AgenTV a key. Otherwise the answer shows on the TV.
 - **What's new this week** on the services you have, and whether there's a new episode of your show yet. The list comes from TMDB, with a key from your own TMDB account. You add the key in _Settings > New this week_.
 - **Every Omarchy theme on the TV,** with the theme's own backgrounds, or your photos and open art archives instead. Omarchy's terminal screensaver comes along too.
 - **Share to the TV** from your phone: a link, a photo or a video.
