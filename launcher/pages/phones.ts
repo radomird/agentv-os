@@ -21,8 +21,9 @@ interface Pairing {
   url: string | null;
 }
 
-async function call<T>(method: string, path: string): Promise<T> {
-  const response = await fetch(path, { method });
+// Pairing and forgetting are an adult's: with a PIN set, they send its grant.
+async function call<T>(method: string, path: string, grant?: string): Promise<T> {
+  const response = await fetch(path, { method, headers: grant ? { "X-AgenTV-Grant": grant } : {} });
   const data = await response.json();
   if (!response.ok || data.ok === false) throw new Error(data.error ?? `${method} ${path} failed`);
   return data as T;
@@ -42,9 +43,12 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "n
 export function phonesPanel(ctx: Ctx): HTMLElement[] {
   const parts: (HTMLElement | null)[] = [];
   const forget = async (phone: PhoneInfo) => {
+    const grant = await ctx.grant("settings");
+    if (grant === null) return;
     try {
-      phones = (await call<{ phones: PhoneInfo[] }>("DELETE", `/api/phones/${phone.id}`)).phones;
+      phones = (await call<{ phones: PhoneInfo[] }>("DELETE", `/api/phones/${phone.id}`, grant)).phones;
     } catch (error) {
+      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
       return;
@@ -66,7 +70,7 @@ export function phonesPanel(ctx: Ctx): HTMLElement[] {
     phones && phones.length === 0 ? h("div", { class: "panel-big" }, "none yet") : null,
     h(
       "button",
-      { class: `button${phones?.length ? "" : " primary"}`, "data-focus": true, "data-action": "pair", onclick: () => ctx.go("pair") },
+      { class: `button${phones?.length ? "" : " primary"}`, "data-focus": true, "data-action": "pair", onclick: () => void ctx.grant("settings").then((grant) => grant !== null && ctx.go("pair")) },
       h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "pair a phone →")),
     ),
     h("p", { class: "panel-note" }, "a paired phone is a remote and a keyboard for the tv, on the same network."),
@@ -86,7 +90,7 @@ export function pairPage(ctx: Ctx): View {
     left.textContent = until ? (minutes > 0 ? `the code lasts ${minutes} more ${minutes === 1 ? "minute" : "minutes"}.` : "the code has run out. back, then pair again.") : "";
   };
   const timer = window.setInterval(tick, 5000);
-  void call<{ pairing: Pairing }>("POST", "/api/phones/pair")
+  void call<{ pairing: Pairing }>("POST", "/api/phones/pair", ctx.held())
     .then(({ pairing }) => {
       code.textContent = pairing.code;
       until = Date.parse(pairing.until);

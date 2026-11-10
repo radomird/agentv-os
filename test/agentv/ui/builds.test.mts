@@ -201,7 +201,9 @@ test("ADR-046 what setup's + add your own kept is asked from here with one press
 
 // A paired phone's page, as it opens from the TV's QR code.
 async function phone(): Promise<Page> {
-  const { pairing } = await send("POST", "/api/phones/pair", {});
+  // As Settings → Phones asks for a code: with the PIN's grant once one is set.
+  const first = await send("POST", "/api/phones/pair", {});
+  const pairing = first.pin ? (await send("POST", "/api/phones/pair", {}, (await send("POST", "/api/pin/check", { pin: "2468" })).grant)).pairing : first.pairing;
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${pairing.code}`);
