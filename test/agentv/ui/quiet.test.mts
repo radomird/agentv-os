@@ -7,14 +7,16 @@
 // is the NUC's.
 
 import assert from "node:assert/strict";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { HELD_WORKSPACE, Screen, type App, type Launcher, type Role } from "../../../daemon/screen.ts";
-import { startBox } from "./box.mts";
+import { ROOT, startBox } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -24,10 +26,11 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let browser: Browser;
 let daemon: Daemon;
 let url = "";
+let appsDir = "";
 const errors: string[] = [];
 
 before(async () => {
-  ({ daemon, url } = await startBox());
+  ({ daemon, url, apps: appsDir } = await startBox());
   browser = await chromium.launch({ executablePath: process.env.AGENTV_UI_BROWSER });
 });
 
@@ -139,7 +142,7 @@ async function home(): Promise<Page> {
 
 // The screen daemon on that page, with the TV's power as the test says.
 // Anything the daemon asks its launcher to start besides home is noted.
-async function tv(page: Page, tvOn: () => boolean) {
+async function tv(page: Page, tvOn: () => boolean, more: Partial<Launcher> = {}) {
   const hypr = new StandInHyprland();
   const homeApp = new StandInApp("home", 100, pipe(page));
   const started: string[] = [];
@@ -150,6 +153,7 @@ async function tv(page: Page, tvOn: () => boolean) {
     profile: () => null,
     updating: async () => false,
     nightUpdates: async () => null,
+    ...more,
   };
   // Everything else the launcher does is a quiet yes, noted by name.
   const launcher = new Proxy(parts, {
@@ -249,6 +253,110 @@ test("T13.1 with the TV reported off home hears it, the output goes off, and hom
   await t.screen.idle();
   assert.equal(t.hypr.dpms, true, "the output is on again");
   assert.deepEqual(await page.evaluate(() => (window as unknown as { tvHeard: string[] }).tvHeard), ["off", "on"]);
+  assert.deepEqual(errors, []);
+  t.screen.stop();
+  await page.close();
+});
+
+// The TV going off leaves a game where it is (ADR-084, T16.2). A web app,
+// Steam's stand-in and Blocks, a game as this TV makes them (a page on home,
+// category games), are open. Home's page is the real one, so what it shows
+// when the TV is back is what the couch sees.
+test("T16.2 with the TV off for a while a web app closes, and Steam and a game made on this TV stay open: the TV comes back on to the game, not the ambient screen", async () => {
+  cpSync(join(ROOT, "test/agentv/fixtures/apps/blocks"), join(appsDir, "agentv.blocks"), { recursive: true });
+  const installed = JSON.parse(readFileSync(join(appsDir, "installed.json"), "utf8"));
+  installed["agentv.blocks"] = { id: "agentv.blocks", name: "Blocks", version: "1.0.0", tier: "official", installedAt: "2026-10-27T12:00:00Z" };
+  writeFileSync(join(appsDir, "installed.json"), JSON.stringify(installed, null, 2));
+  const page = await home();
+  // The services' Chromium, as far as opening and closing a page goes.
+  const closed: string[] = [];
+  const webCdp = {
+    ...pipe(page),
+    pages: async () => [{ targetId: "tube", url: "https://tube.example/" }],
+    evaluateIn: async () => 0,
+    close: async (target: string) => void closed.push(target),
+  } as unknown as DevTools;
+  const web = new StandInApp("web", 300, webCdp);
+  const steam = new StandInApp("steam", 400);
+  let locks = 0;
+  let on = true;
+  const t = await tv(page, () => on, {
+    // What each app is, as the box's own daemon says.
+    appTarget: async (id) => {
+      const response = await fetch(`${url}/api/apps/${id}/launch`);
+      return response.ok ? await response.json() : null;
+    },
+    web: () => web,
+    steam: () => steam,
+    // No PIN on this box, so nothing locks, and the daemon is asked as ever.
+    lock: async () => {
+      locks++;
+      const response = await fetch(`${url}/api/pin/lock`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "tv-off" }) });
+      return ((await response.json()) as { locked?: boolean }).locked === true;
+    },
+  });
+  const open = async () => ((await t.screen.handle({ cmd: "status" })) as { open: { id: string }[] }).open.map((o) => o.id);
+
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.tube" }), { ok: true });
+  t.hypr.open("0xb", web.pid, "chromium");
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "web");
+  await t.screen.home();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" }), { ok: true });
+  t.hypr.open("0xf", steam.pid, "gamescope");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "steam");
+  await t.screen.home();
+  // The game, from its tile: home's own frame, in front.
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.blocks" }), { ok: true });
+  await page.waitForSelector('.page-app.on[data-app="agentv.blocks"]:not(.loading)', { timeout: 10_000 });
+  const frame = page.frames().find((f) => f.url().includes("agentv.blocks.app.localhost"))!;
+  await frame.evaluate(() => void ((window as unknown as { kept: string }).kept = "mid-level"));
+  assert.equal(await page.evaluate(() => (window as unknown as { agentvGame: () => string | null }).agentvGame()), "agentv.blocks", "home says the game's in front");
+  assert.deepEqual(await open(), ["agentv.tube", "agentv.games"]);
+
+  on = false;
+  await page.waitForFunction(() => (window as unknown as { tvHeard: string[] }).tvHeard.includes("off"), null, { timeout: 5000 });
+  await sleep(900);
+  await t.screen.idle();
+  assert.deepEqual(closed, ["tube"], "the web app closed");
+  assert.deepEqual(await open(), ["agentv.games"], "Steam is still open");
+  assert.equal(steam.stopped, false);
+  assert.equal(t.hypr.windows.some((w) => w.address === "0xf"), true, "with its window");
+  assert.equal(locks, 1, "the lock is asked for, as before");
+  assert.equal(t.hypr.dpms, false, "the output is off");
+  assert.equal(await page.locator("#ambient.on").count(), 0, "no ambient screen over the game");
+  assert.equal(await page.locator('.page-app.on[data-app="agentv.blocks"]').count(), 1, "the game is still in front");
+
+  on = true;
+  await page.waitForFunction(() => (window as unknown as { tvHeard: string[] }).tvHeard.includes("on"), null, { timeout: 5000 });
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true, "the output is on again");
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(await page.locator("#ambient.on").count(), 0, "the TV is back on the game, not the ambient screen");
+  assert.equal(await page.locator('.page-app.on[data-app="agentv.blocks"]').isVisible(), true);
+  assert.equal(await frame.evaluate(() => (window as unknown as { kept: string }).kept), "mid-level", "the same page, as it was left");
+  if (process.env.AGENTV_UI_SHOTS) await page.screenshot({ path: join(process.env.AGENTV_UI_SHOTS, "tv-back-on-game.png") });
+
+  // Steam in front this time: it stays in front, with home behind it and
+  // off its ambient screen.
+  await t.screen.home();
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" });
+  assert.equal(t.screen.front()?.address, "0xf");
+  on = false;
+  await sleep(1000);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  assert.equal(steam.stopped, false);
+  assert.equal(t.screen.front()?.address, "0xf", "Steam is still in front");
+  assert.equal(await page.locator("#ambient.on").count(), 0);
+  on = true;
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true);
+  assert.equal(t.screen.front()?.address, "0xf", "and the TV comes back on to it");
+  assert.equal(t.hypr.windows.find((w) => w.address === "0xf")?.workspace.name, "1");
   assert.deepEqual(errors, []);
   t.screen.stop();
   await page.close();
