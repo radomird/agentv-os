@@ -22,11 +22,12 @@ export interface Terms {
 
 // The day each provider's terms were last read on its own pages. A new
 // reading is a new acceptance. xAI's pages turn away a script, so they were
-// read in a browser (Q133).
+// read in a browser (Q133). Google's were read again on 2026-11-10, with
+// the terms of the CLI its plans moved to.
 export const TERMS_READ: Record<Provider, string> = {
   claude: "2026-10-26",
   chatgpt: "2026-10-26",
-  gemini: "2026-10-26",
+  gemini: "2026-11-10",
   grok: "2026-10-28",
   muse: "2026-10-27",
 };
@@ -41,12 +42,13 @@ export interface Offer {
   // The agent CLI Omarchy's wrapper fetches on first use, and its name.
   cli: Cli;
   cliName: string;
-  // A plan runs through the CLI's own sign-in (ADR-022). Claude's is offered.
-  // ChatGPT's and Grok's are offered on edge, as best effort, and on stable
-  // once a build has run on each headless on the NUC (ADR-053). Muse's waits
-  // for Meta (ADR-051), and Google's for its new CLI to run headless. A note
-  // says who can't use one at all.
-  plan: { offered: boolean; name: string; note?: string; edge?: boolean; bestEffort?: boolean };
+  // A plan runs through the CLI's own sign-in (ADR-022). Claude's, ChatGPT's
+  // and Grok's are offered on every TV (ADR-087). Muse's and Google's
+  // aren't: each company keeps its plan to its own apps, by its own terms
+  // (ADR-051 for Meta; Google's were read on 2026-11-10). Muse's is "coming
+  // soon", since Meta has been asked. Google's is key only, and its note is
+  // the line that says so. Muse's note says who can't use a plan at all.
+  plan: { offered: boolean; name: string; note?: string; keyOnly?: boolean };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   // One line for the TV on what the terms are.
@@ -85,7 +87,7 @@ export const OFFERS: Record<Provider, Offer> = {
     maker: "openai",
     cli: "codex",
     cliName: "codex",
-    plan: { offered: false, name: "chatgpt plus or pro", edge: true },
+    plan: { offered: true, name: "chatgpt plus or pro" },
     keyUrl: "https://platform.openai.com/api-keys",
     terms: {
       plan: [{ id: "openai-terms-of-use", name: "openai's terms of use", url: "https://openai.com/policies/terms-of-use/" }, OPENAI_USAGE],
@@ -102,7 +104,7 @@ export const OFFERS: Record<Provider, Offer> = {
     maker: "google",
     cli: "gemini",
     cliName: "gemini cli",
-    plan: { offered: false, name: "google ai pro or ultra" },
+    plan: { offered: false, name: "google ai pro or ultra", keyOnly: true, note: "google keeps its plan to its own apps. a key works now" },
     keyUrl: "https://aistudio.google.com/apikey",
     terms: {
       plan: [{ id: "google-terms", name: "google's terms of service", url: "https://policies.google.com/terms" }, GOOGLE_USE],
@@ -123,7 +125,7 @@ export const OFFERS: Record<Provider, Offer> = {
     maker: "xai",
     cli: "grok",
     cliName: "grok build",
-    plan: { offered: false, name: "supergrok or x premium+", edge: true },
+    plan: { offered: true, name: "supergrok or x premium+" },
     keyUrl: "https://console.x.ai",
     terms: {
       plan: [{ id: "xai-consumer-terms", name: "xai's consumer terms of service", url: "https://x.ai/legal/terms-of-service" }, XAI_USE],
@@ -153,14 +155,10 @@ export const OFFERS: Record<Provider, Offer> = {
   },
 };
 
-// What each provider offers on a box on this channel: on edge, a plan that
-// stable doesn't offer yet, but edge may, is offered as best effort
-// (ADR-053).
-export function offersOn(channel: string): Record<Provider, Offer> {
-  const early = (offer: Offer) => !offer.plan.offered && offer.plan.edge === true && channel === "edge";
-  return Object.fromEntries(
-    Object.values(OFFERS).map((offer) => [offer.provider, early(offer) ? { ...offer, plan: { ...offer.plan, offered: true, bestEffort: true } } : offer]),
-  ) as Record<Provider, Offer>;
+// Why a plan that isn't offered can't be picked, in one line: that its
+// maker keeps it to its own apps, or that it's coming soon.
+export function planRefused(offer: Offer): string {
+  return offer.plan.keyOnly && offer.plan.note ? offer.plan.note : `${offer.plan.name} is coming soon. use an api key for now`;
 }
 
 export interface Acceptance {
@@ -208,17 +206,16 @@ const NAME = /^[\p{L}\p{N}' ._-]{1,40}$/u;
 
 export class Ai {
   private state: string;
-  // The channel the box updates from, as `agentv channel` says it.
-  private channel: () => Promise<string>;
 
+  // channel is no longer read: what's offered is the same on every channel.
   constructor(options: { state: string; channel?: () => Promise<string> }) {
     this.state = options.state;
-    this.channel = options.channel ?? (async () => "stable");
   }
 
-  // What each provider offers on this box's channel.
+  // What each provider offers. It's the same on every TV, whichever channel
+  // its updates come from (ADR-087).
   async offers(): Promise<Record<Provider, Offer>> {
-    return offersOn(await this.channel());
+    return OFFERS;
   }
 
   private get choicePath(): string {
@@ -251,10 +248,7 @@ export class Ai {
   }
 
   // The provider and the path, as picked on the TV, or none, as when the TV
-  // goes back to pick again. A plan only where it's offered on this box's
-  // channel. A plan picked on edge stays picked if the box goes back to
-  // stable: it's the household's, already signed in, and stable only keeps
-  // it from being picked anew.
+  // goes back to pick again. A plan only where it's offered.
   async choose(provider: unknown, path: unknown): Promise<{ state?: AiState; error?: string }> {
     const saved = await readJson<Record<string, unknown>>(this.choicePath, {});
     if (provider === null) {
@@ -264,7 +258,7 @@ export class Ai {
     }
     if (!isProvider(provider)) return { error: PROVIDER_LIST };
     if (!isPath(path)) return { error: "a plan or a key" };
-    if (path === "plan" && !(await this.offers())[provider].plan.offered) return { error: `${OFFERS[provider].plan.name} is coming soon. use an api key for now` };
+    if (path === "plan" && !OFFERS[provider].plan.offered) return { error: planRefused(OFFERS[provider]) };
     await mkdir(this.state, { recursive: true });
     await writeJson(this.choicePath, { ...saved, provider, path });
     return { state: await this.read() };

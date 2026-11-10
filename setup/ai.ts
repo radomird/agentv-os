@@ -63,9 +63,8 @@ function pick(ctx: Ctx): View {
   return { el, first: cards[0], info: "←→ move · ↵ pick" };
 }
 
-// The household's plan, or an API key. A plan only where the provider's CLI
-// runs one on a box like this (ADR-022), or on edge as best effort, before a
-// build has run on it (ADR-053).
+// The household's plan, or an API key. A plan only where its maker's terms
+// let its own CLI run one on a box like this (ADR-022, ADR-087).
 export function path(ctx: Ctx, provider: Provider): View {
   const offer = ctx.ai!.offers[provider];
   const choose = async (how: Path) => {
@@ -83,13 +82,13 @@ export function path(ctx: Ctx, provider: Provider): View {
         "button",
         { class: "provider", "data-focus": true, "data-path": "plan", onclick: () => void choose("plan") },
         h("span", { class: "provider-index" }, "01"),
-        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "my plan"), h("span", { class: "provider-maker" }, offer.plan.bestEffort ? `${offer.plan.name} · best effort` : offer.plan.name)),
+        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "my plan"), h("span", { class: "provider-maker" }, offer.plan.name)),
       )
     : h(
         "div",
         { class: "provider off", "data-path": "plan" },
         h("span", { class: "provider-index" }, "01"),
-        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "my plan"), h("span", { class: "provider-maker" }, `${offer.plan.name} · coming soon`)),
+        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "my plan"), h("span", { class: "provider-maker" }, `${offer.plan.name} · ${offer.plan.keyOnly ? "key only" : "coming soon"}`)),
       );
   const keyCard = h(
     "button",
