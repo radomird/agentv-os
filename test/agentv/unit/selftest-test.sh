@@ -703,17 +703,19 @@ pass "S7.3 passes only when a sentence that can't be routed comes back as i didn
 
 # Its spoken half (stage 8, Q146): the TV said it, with which voice.
 echo '{"ok":true,"said":{"n":4,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
-echo '{"ok":true,"spoken":true,"by":"piper","provider":null,"piper":"ready","last":{"clip":2,"by":"piper","ms":600,"played":true}}' >"$state/voice-before"
-echo '{"ok":true,"spoken":true,"by":"piper","provider":null,"piper":"ready","last":{"clip":3,"by":"piper","ms":640,"played":true}}' >"$state/voice"
+echo '{"ok":true,"spoken":true,"by":"own","provider":null,"own":"ready","last":{"clip":2,"by":"own","ms":600,"played":true}}' >"$state/voice-before"
+echo '{"ok":true,"spoken":true,"by":"own","provider":null,"own":"ready","last":{"clip":3,"by":"own","ms":640,"played":true}}' >"$state/voice"
 run1 S7.3 || fail "S7.3 passes when the TV said it" "$(cat "$SCRATCH/out")"
-grep -qF "pass S7.3 the TV said it aloud, with piper" "$SCRATCH/out" || fail "it says with which voice" "$(cat "$SCRATCH/out")"
-echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":null}' >"$state/voice-before"
-echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","piper":"missing","last":{"clip":3,"by":"provider","ms":900,"played":false,"error":"there'"'"'s no player for sound on this box"}}' >"$state/voice"
+grep -qF "pass S7.3 the TV said it aloud, with its own voice" "$SCRATCH/out" || fail "it says with which voice" "$(cat "$SCRATCH/out")"
+echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","own":"missing","last":null}' >"$state/voice-before"
+echo '{"ok":true,"spoken":true,"by":"provider","provider":"chatgpt","own":"missing","last":{"clip":3,"by":"provider","ms":900,"played":false,"error":"there'"'"'s no player for sound on this box"}}' >"$state/voice"
 ! run1 S7.3 || fail "S7.3 fails when the TV didn't say it"
 grep -qF "fail S7.3 the TV didn't say it aloud: there's no player for sound on this box" "$SCRATCH/out" || fail "it says why" "$(cat "$SCRATCH/out")"
-echo '{"ok":true,"spoken":true,"by":null,"provider":null,"piper":"missing","last":null}' >"$state/voice"
-! run1 S7.3 || fail "S7.3 fails with no voice on the box"
-grep -qF "fail S7.3 the TV has no voice: Piper isn't on this box, and agentv update brings it back (agentv-voice)" "$SCRATCH/out" || fail "it says Piper is missing" "$(cat "$SCRATCH/out")"
+# A TV with no voice of its own and no key that has one (T17.1): the answer
+# is only shown, and that's as it should be.
+echo '{"ok":true,"spoken":true,"by":null,"provider":null,"own":"missing","last":null}' >"$state/voice"
+run1 S7.3 || fail "S7.3 passes on a TV with no voice" "$(cat "$SCRATCH/out")"
+grep -qF "pass S7.3 the TV has no voice of its own and no key with one, so it showed its answer without saying it" "$SCRATCH/out" || fail "it says the TV has no voice, without failing" "$(cat "$SCRATCH/out")"
 echo '{"spoken":false}' >"$state/voice"
 pass "S7.3's spoken half passes when the TV said it, and says which voice"
 
