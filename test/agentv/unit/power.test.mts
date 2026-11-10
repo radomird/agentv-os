@@ -3,21 +3,30 @@
 // units stop within a few seconds, so none holds a restart or a power-off up.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const YES = "yes";
+const scratch = mkdtempSync(join(tmpdir(), "agentv-power-"));
+after(() => rmSync(scratch, { recursive: true, force: true }));
 
-// Runs a rules file the way polkit does, and answers an action for a subject.
+// The files a rule reads, here instead of in /etc.
+const files = new Map<string, string>();
+
+// Runs a rules file the way polkit does, and answers an action for a
+// subject. polkit.spawn runs the command as polkit would, on the files above.
 function rules(file: string) {
   const added: ((action: unknown, subject: unknown) => unknown)[] = [];
-  runInNewContext(readFileSync(join(ROOT, "system/polkit", file), "utf8"), { polkit: { addRule: (rule: (typeof added)[0]) => added.push(rule), Result: { YES } } });
-  return (id: string, groups: string[], lookup: Record<string, string> = {}) => {
+  const spawn = (argv: string[]) => execFileSync(argv[0], argv.slice(1).map((arg) => files.get(arg) ?? arg), { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  runInNewContext(readFileSync(join(ROOT, "system/polkit", file), "utf8"), { polkit: { addRule: (rule: (typeof added)[0]) => added.push(rule), Result: { YES }, spawn } });
+  return (id: string, groups: string[], lookup: Record<string, string> = {}, user = "radomir") => {
     const action = { id, lookup: (key: string) => lookup[key] };
-    const subject = { isInGroup: (group: string) => groups.includes(group) };
+    const subject = { user, isInGroup: (group: string) => groups.includes(group) };
     return added.map((rule) => rule(action, subject)).find((answer) => answer !== undefined) ?? null;
   };
 }
@@ -62,10 +71,21 @@ test("S2.18 AgenTV's long-running units stop within a few seconds", () => {
 
 test("T13.2 with sleep on, the owner may suspend from the TV session and set the wake alarm, never past an inhibitor", () => {
   const sleep = rules("50-agentv-sleep.rules");
+  // The owner is who SDDM logs in to the TV session, as agentv-session-setup
+  // writes it.
+  const autologin = join(scratch, "zz-agentv-autologin.conf");
+  files.set("/etc/sddm.conf.d/zz-agentv-autologin.conf", autologin);
+  writeFileSync(autologin, "[Autologin]\nUser=radomir\nSession=agentv.desktop\nRelogin=true\n");
   for (const id of ["suspend", "suspend-multiple-sessions"]) {
-    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"]), YES, id);
-    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["users"]), null, `${id} isn't for someone outside wheel`);
+    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"], {}, "radomir"), YES, id);
+    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"], {}, "alice"), null, `${id} isn't for another admin`);
+    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"], {}, "radomi"), null, `${id} goes by the whole name`);
   }
+  // With no owner written, nobody suspends past polkit's own question.
+  rmSync(autologin);
+  assert.equal(sleep("org.freedesktop.login1.suspend", ["wheel"], {}, "radomir"), null);
+  writeFileSync(autologin, "[Autologin]\nSession=agentv.desktop\n");
+  assert.equal(sleep("org.freedesktop.login1.suspend", ["wheel"], {}, ""), null);
   for (const id of ["suspend-ignore-inhibit", "hibernate", "power-off", "reboot"]) {
     assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"]), null, `${id} is polkit's own call`);
   }

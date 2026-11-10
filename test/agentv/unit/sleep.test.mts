@@ -23,6 +23,7 @@ function box(options: { sleep?: boolean; overnight?: boolean; suspends?: boolean
     settings: { sleep: options.sleep ?? true, overnight: options.overnight ?? false },
     held: [] as { who: string; why: string }[],
     alarms: [] as boolean[],
+    alarmWorks: true,
     suspends: 0,
     woke: 0,
     lines: [] as string[],
@@ -38,7 +39,7 @@ function box(options: { sleep?: boolean; overnight?: boolean; suspends?: boolean
   const platform: SleepPlatform = {
     settings: async () => t.settings,
     inhibitors: async () => t.held,
-    wakeAlarm: async (on) => (t.alarms.push(on), true),
+    wakeAlarm: async (on) => (t.alarms.push(on), t.alarmWorks),
     suspend: async () => (t.suspends++, options.suspends ?? true),
   };
   const sleep = new Sleep({ platform, now: () => t.wall, monotonic: () => t.mono, log: (line) => t.lines.push(line), woke: () => t.woke++ });
@@ -53,7 +54,7 @@ test("T13.2 with the setting off, the box never sleeps", async () => {
     await sleep.tick();
   }
   assert.equal(t.suspends, 0);
-  assert.deepEqual(t.alarms, []);
+  assert.deepEqual(t.alarms, [false], "only the first look's, for an alarm left from before");
 });
 
 test("T13.2 with it on, the box sleeps once the TV has been off for the hour, not before", async () => {
@@ -113,9 +114,64 @@ test("T13.2 with overnight installs on, it sets the wake alarm before it sleeps"
   sleep.tv(false);
   t.pass(HOUR);
   await sleep.tick();
-  assert.deepEqual(t.alarms, [true]);
+  assert.deepEqual(t.alarms, [false, true], "an alarm left from before goes, then this one's set");
   assert.equal(t.suspends, 1);
   assert.ok(t.lines.some((line) => line.endsWith("with a wake alarm for the night's update")), t.lines.join("\n"));
+});
+
+test("T13.2 the wake alarm is only on while the box sleeps, so turning sleep off leaves none behind", async () => {
+  const { t, sleep } = box({ overnight: true });
+  t.pass(2 * HOUR);
+  sleep.tv(false);
+  t.pass(HOUR);
+  await sleep.tick();
+  assert.equal(t.suspends, 1);
+  // The box takes a few seconds to go, and the alarm stays on meanwhile.
+  t.pass(5_000);
+  await sleep.tick();
+  assert.equal(t.alarms.indexOf(false, 1), -1, t.alarms.join());
+  // Woken by the alarm, the box is up without one.
+  t.sleepFor(5 * HOUR);
+  t.pass(15_000);
+  await sleep.tick();
+  assert.equal(t.alarms.at(-1), false);
+  // Sleep turned off: the box stays up, and nothing sets the alarm again.
+  const [alarms, suspends] = [t.alarms.length, t.suspends];
+  t.settings.sleep = false;
+  for (let i = 0; i < 12; i++) {
+    t.pass(HOUR / 2);
+    await sleep.tick();
+  }
+  assert.equal(t.suspends, suspends);
+  assert.equal(t.alarms.length, alarms, t.alarms.join());
+});
+
+test("T13.2 when logind won't suspend, the alarm goes off while the box waits to try again", async () => {
+  const { t, sleep } = box({ overnight: true, suspends: false });
+  t.pass(2 * HOUR);
+  sleep.tv(false);
+  t.pass(HOUR);
+  await sleep.tick();
+  t.pass(15_000);
+  await sleep.tick();
+  assert.equal(t.suspends, 1);
+  assert.deepEqual(t.alarms, [false, true, false]);
+});
+
+test("T13.2 an alarm that won't clear is said once, and tried again after the next wake, not at every look", async () => {
+  const { t, sleep } = box({ overnight: true });
+  t.alarmWorks = false;
+  for (let i = 0; i < 4; i++) {
+    t.pass(15_000);
+    await sleep.tick();
+  }
+  assert.deepEqual(t.alarms, [false]);
+  assert.equal(t.lines.filter((line) => line === "the wake alarm didn't clear").length, 1);
+  t.alarmWorks = true;
+  t.sleepFor(60_000);
+  t.pass(15_000);
+  await sleep.tick();
+  assert.deepEqual(t.alarms, [false, false]);
 });
 
 test("T13.2 a wake is noticed, and the box stays up an hour before it sleeps again", async () => {
@@ -130,6 +186,7 @@ test("T13.2 a wake is noticed, and the box stays up an hour before it sleeps aga
   t.pass(15_000);
   await sleep.tick();
   assert.equal(t.woke, 1, "the screen hears the box is awake");
+  assert.equal(t.alarms.at(-1), false, "and the alarm's off while it's up");
   assert.ok(t.lines.some((line) => line.startsWith("the box woke from sleep")), t.lines.join("\n"));
   t.pass(HOUR / 2);
   await sleep.tick();
