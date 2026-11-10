@@ -300,12 +300,6 @@ export function settings(ctx: Ctx, open?: string): View {
         ...backgroundRows(),
         h(
           "button",
-          { class: "button", "data-focus": true, "data-action": "ambient-style", "data-adjust": "ambient-style", onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style") },
-          h("span", {}, "ambient screen"),
-          h("span", { class: "button-value" }, s.ambient === "terminal" ? "terminal" : "backgrounds"),
-        ),
-        h(
-          "button",
           { class: "button", "data-focus": true, "data-action": "idle", "data-adjust": "idle", onclick: () => save({ idleMinutes: IDLE[(IDLE.indexOf(s.idleMinutes) + 1) % IDLE.length] }, "look", "idle") },
           h("span", {}, "ambient screen after"),
           h("span", { class: "button-value" }, `${s.idleMinutes} min`),
@@ -502,19 +496,6 @@ export function settings(ctx: Ctx, open?: string): View {
         ...(ctx.state.viewer.role === "adult" ? [h("button", { class: "button wide", "data-focus": true, "data-action": "theme-own", onclick: () => ctx.go("describe") }, h("span", {}, "describe your own"), h("span", { class: "button-value" }, "your agent makes it →"))] : []),
         ...backgroundRows(),
         toggle("reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
-        // What the ambient screen shows (ADR-049).
-        h(
-          "button",
-          {
-            class: "button",
-            "data-focus": true,
-            "data-action": "ambient-style",
-            "data-adjust": "ambient-style",
-            onclick: () => save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style"),
-          },
-          h("span", {}, "ambient screen"),
-          h("span", { class: "button-value" }, s.ambient === "terminal" ? "terminal" : "backgrounds"),
-        ),
         h(
           "button",
           {
@@ -902,10 +883,6 @@ export function settings(ctx: Ctx, open?: string): View {
         const by = action === "right" ? 1 : -1;
         const cap = current.dataset.adjust === "cap-build" ? { ...caps, build: stepCap(BUILD_CAPS, caps.build, by) } : { ...caps, month: stepCap(MONTH_CAPS, caps.month, by) };
         void changeBuilder(ctx, { cap }, current.dataset.adjust);
-        return true;
-      }
-      if (current?.dataset.adjust === "ambient-style" && (action === "left" || action === "right")) {
-        void save({ ambient: s.ambient === "terminal" ? "pictures" : "terminal" }, "look", "ambient-style");
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {
