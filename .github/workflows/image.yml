@@ -35,6 +35,9 @@ name: Image
 # and Shut down on it (agentv-iso's omarchy-update check): rc tries the next
 # Omarchy release before its stable channel serves it. Nightly runs leave it
 # empty, so tested.json only ever lists what stable boxes can get. With
+# omarchy-version too, that's the Omarchy release the box should end up on
+# (4.6.0), when it isn't the one agentv-iso follows: the release candidate
+# run (omarchy-rc.yml) names the candidate's. With
 # checks, only the image checks named there run, by their file names in
 # agentv-iso's test/agentv/image/ without -test.sh (s5.6-setup update-tv), so
 # a fix to one check gets its answer in minutes: with from-disk too, that's
@@ -103,6 +106,10 @@ on:
         description: "Also move the box to the Omarchy on this channel after the update, from the TV: rc, or empty to stay on stable"
         type: string
         default: ""
+      omarchy-version:
+        description: "The Omarchy release that channel should bring, like 4.6.0 (empty: the one agentv-iso follows)"
+        type: string
+        default: ""
       checks:
         description: "Only these image checks, by name, like s5.6-setup update-tv (empty: every check). Quickest with from-disk"
         type: string
@@ -147,6 +154,9 @@ on:
         type: boolean
         default: false
       omarchy-channel:
+        type: string
+        default: ""
+      omarchy-version:
         type: string
         default: ""
       lanes:
@@ -326,6 +336,7 @@ jobs:
       - name: Build, install, boot, check
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           AGENTV_TEST_TESTED_OUT: ${{ inputs.nightly && '/w/test-runs/tested-packages.txt' || '' }}
           AGENTV_TEST_KEEP_DISK: ${{ inputs.keep-disk && '/w/test-runs/installed-disk' || '' }}
           FROM_DISK: ${{ steps.night.outputs.found }}
@@ -350,6 +361,7 @@ jobs:
           AGENTV_TEST_UPDATE_REPO: /w/test-runs/update-repo
           AGENTV_TEST_UPDATE_VERSION: ${{ steps.update.outputs.version }}
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
           ONLY: ${{ inputs.checks }}
         run: |
@@ -684,6 +696,7 @@ jobs:
         if: steps.night.outputs.key == ''
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           AGENTV_ROOT_CACHE: "1"
           AGENTV_ROOT_CACHE_FRESH: ${{ inputs.keep-iso && '1' || '' }}
         run: set -o pipefail; iso/test/agentv/image/ci --hand-on iso/test-runs/box --no-checks 2>&1 | tee -a image.log
@@ -875,6 +888,7 @@ jobs:
       - name: Check it
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           NIGHT: ${{ needs.box.outputs.night }}
           SHARE: ${{ matrix.checks }}
         run: |
