@@ -325,10 +325,15 @@ async function difference(a: Buffer, b: Buffer): Promise<number> {
 
 // A page at a size's canvas, with the clock held still, as home or as its
 // preview, once it's had time to draw.
+// The preview's stand-ins (launcher/looks/showcase.ts) left out, so a
+// preview and home draw the same titles and can be compared.
+const NO_STAND_INS = 'export const SHOWCASE_APP = "agentv.new"; export const isShowcaseImage = () => false; export const showcaseTile = (tile) => tile;';
+
 async function shot(address: string, size: Size): Promise<Buffer> {
   const width = SIZES[size];
   const page = await browser.newPage({ viewport: { width, height: Math.round((width * 9) / 16) } });
   try {
+    await page.route("**/launcher/looks/showcase.ts", (route) => route.fulfill({ contentType: "text/javascript", body: NO_STAND_INS }));
     await page.clock.setFixedTime(new Date("2026-11-08T20:47:00"));
     await page.goto(`${url}${address}`);
     await page.waitForSelector("html[data-look] #page .focused");
@@ -353,6 +358,21 @@ test("T5.3 setup's look step shows each look's preview, and the preview is home 
       await page.waitForSelector(".setup-look .look-card.focused");
       const frames = await page.$$eval(".setup-look .look-frame-page", (els) => els.map((el) => new URL((el as HTMLIFrameElement).src).search));
       assert.deepEqual(frames, LOOKS.map((look) => `?preview&look=${look}&size=standard`));
+      // The looks by name, with no line under them, and one preview: the
+      // focused look's, which moves with the focus.
+      assert.equal(await page.locator(".setup-look .look-card-line").count(), 0);
+      const shown = () => page.$eval(".setup-look-stage .look-frame.on", (el) => (el as HTMLElement).dataset.preview);
+      assert.equal(await shown(), await page.$eval(".setup-look .look-card.focused", (el) => (el as HTMLElement).dataset.look));
+      const focusedLook = () => page.$eval(".setup-look .look-card.focused", (el) => (el as HTMLElement).dataset.look);
+      for (let i = 0; i < LOOKS.length && (await focusedLook()) !== "cinema"; i++) await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(() => (document.querySelector(".setup-look-stage .look-frame.on") as HTMLElement | null)?.dataset.preview === "cinema");
+      // With no TMDB key yet, the preview fills New this week with the open
+      // movies, and home itself doesn't.
+      const cinema = page.frameLocator('.setup-look-stage [data-preview="cinema"] iframe');
+      await cinema.locator('.cinema-poster-card img[src^="/launcher/looks/showcase/"]').first().waitFor();
+      assert.match(await cinema.locator(".cinema-hero").innerText(), /cosmos laundromat/i);
+      const home = (await (await fetch(`${url}/api/tile/agentv.new/l`)).json()).tile;
+      assert.equal((home?.entries ?? []).length, 0, "the daemon's own tile has none");
       // Picking one sets the look and goes on to the theme and background.
       await page.locator('.setup-look [data-look="cinema"]').click();
       await page.waitForSelector(".theme2 .tb-themes");

@@ -1,16 +1,21 @@
-// Setup's look step (ADR-063, D3), with the looks switch on: home in each
-// look, Terminal, Glass and Cinema, drawn by the launcher itself in a frame,
-// and OK on one picks it and goes on to the theme, step 11 of 12. Under the
-// cards, with the sizes switch on, the TV's sizes (ADR-062): OK on one sets
-// it, and the cards show home at it.
+// Setup's look step (ADR-063, D3), with the looks switch on: Terminal,
+// Glass and Cinema by name down the left, and home in the focused one on the
+// right, drawn by the launcher itself in a frame. OK on a name picks it and
+// goes on to the theme, step 11 of 12. Under the preview, with the sizes
+// switch on, the TV's sizes (ADR-062): OK on one sets it, and the preview
+// shows home at it. Where the TV has nothing of its own yet, the preview
+// fills in with open movies (launcher/looks/showcase.ts).
 // Settings → Themes and backgrounds changes both any time.
 
 import { h } from "../launcher/dom.ts";
-import { lookCards } from "../launcher/looks/preview.ts";
-import type { LookId, LookInfo, SizeId } from "../launcher/looks/looks.ts";
+import { previewFrame } from "../launcher/looks/preview.ts";
+import { named, type LookId, type LookInfo, type SizeId } from "../launcher/looks/looks.ts";
 import { loadSizes, setSize, SIZE_NAMES } from "../launcher/size.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
+
+// The preview's width, as D3 has it: home at 58 percent.
+const PREVIEW_WIDTH = 1114;
 
 export async function look(ctx: Ctx): Promise<View> {
   const found = await fetch("/api/look")
@@ -32,12 +37,37 @@ export async function look(ctx: Ctx): Promise<View> {
     // On to the theme and background, setup's next step.
     await ctx.finish("look");
   };
-  let display = await loadSizes();
-  const cardsFor = (size: SizeId) => lookCards(looks, current, size, 480, (one) => void pick(one));
-  const cards = cardsFor(display?.size ?? "standard");
-  const cardsBox = h("div", { class: "look-cards setup-look-cards" }, ...cards);
+
+  // The looks by name, the one in use marked.
+  const names = looks.map((one) =>
+    h(
+      "button",
+      { class: `look-card setup-look-name${one.id === current ? " picked" : ""}`, "data-focus": true, "data-action": `look-${one.id}`, "data-look": one.id, onclick: () => void pick(one) },
+      h("span", { class: "look-card-name" }, named(one.name)),
+    ),
+  );
+
+  // Home in each look, one over the other, and the focused one shown. They
+  // all load at once, so moving between them shows each straight away.
+  let shown = current;
+  const stage = h("div", { class: "setup-look-stage", "aria-hidden": "true" });
+  const drawFrames = (size: SizeId) =>
+    stage.replaceChildren(
+      ...looks.map((one) => {
+        const frame = previewFrame(one.id as LookId, size, PREVIEW_WIDTH);
+        frame.dataset.preview = one.id;
+        frame.classList.toggle("on", one.id === shown);
+        return frame;
+      }),
+    );
+  const show = (id: string) => {
+    shown = id;
+    for (const frame of stage.children) (frame as HTMLElement).classList.toggle("on", (frame as HTMLElement).dataset.preview === id);
+  };
+
   // The sizes this TV offers, the one it's at marked. None with the sizes
   // off, or on a TV that offers one.
+  let display = await loadSizes();
   const sizesBox = h("div", { class: "setup-look-sizes", "data-sizes": "" });
   const drawSizes = () => {
     if (!display || display.sizes.length < 2) return sizesBox.replaceChildren();
@@ -62,22 +92,30 @@ export async function look(ctx: Ctx): Promise<View> {
     }
     display = set.state;
     ctx.sounds.play("confirm");
-    cardsBox.replaceChildren(...cardsFor(display.size));
+    drawFrames(display.size);
     drawSizes();
     const again = sizesBox.querySelector<HTMLElement>(`[data-action="size-${one}"]`);
     if (again) ctx.focus.set(again);
   };
+  drawFrames(display?.size ?? "standard");
   drawSizes();
+
   const el = h(
     "div",
-    { class: "setup-page setup-look" },
+    { class: "setup-page d3 setup-look" },
     h("div", { class: "setup-top" }, h("div", {}, ...heading("tv look", "pick a look.", ctx.reduced()))),
-    cardsBox,
-    sizesBox,
+    h("div", { class: "setup-look-list" }, ...names),
+    h("div", { class: "setup-look-right" }, stage, sizesBox),
   );
   return {
     el,
-    first: cards.find((card) => card.dataset.look === current) ?? cards[0],
-    info: "←→ move · ↵ pick",
+    first: names.find((name) => name.dataset.look === current) ?? names[0],
+    info: "↑↓ move · ↵ pick",
+    // The preview follows the look with the focus, and stays on it while the
+    // focus is on a size.
+    focused(target) {
+      const id = target.dataset.look;
+      if (id) show(id);
+    },
   };
 }

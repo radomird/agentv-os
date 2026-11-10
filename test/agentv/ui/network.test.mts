@@ -285,7 +285,7 @@ bothWays("discover", "setup's apps step opens the servers on your network for ea
     await page.locator('[data-action="continue"]').click();
     if (!on) {
       // As before: on to the look, and nothing on the network asked.
-      await page.waitForSelector(".setup-look-cards", { timeout: 10_000 });
+      await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
       assert.equal(await page.locator("[data-found]").count(), 0);
       assert.equal(daemon.discover.isLooking, false);
       await page.close();
@@ -303,7 +303,7 @@ bothWays("discover", "setup's apps step opens the servers on your network for ea
     await headline(page, "pick your immich.");
     // Nothing answers as Immich here. Later goes on to the look.
     await page.locator('[data-action="later"]').click();
-    await page.waitForSelector(".setup-look-cards", { timeout: 10_000 });
+    await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
     assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "look");
     // Jellyfin landed with its address in, and Immich still says "set up".
     const setupOf = async (id: string) => (await (await fetch(`${url}/api/apps/${id}/setup`)).json()).setup?.fields?.[0]?.value;
@@ -340,7 +340,7 @@ test("setup's apps step on music lists the NASes on your network, and a NAS's fo
     await page.keyboard.press("Enter");
     await page.waitForSelector('.focused[data-share="smb://nas.local/music"]');
     await page.keyboard.press("Enter");
-    await page.waitForSelector(".setup-look-cards", { timeout: 10_000 });
+    await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
     const [added] = await screenRequests(page, "music", "add-share");
     assert.deepEqual([added.uri, added.password], ["smb://nas.local/music", undefined]);
     await page.locator('.toast:has-text("music is a music source now")').waitFor();

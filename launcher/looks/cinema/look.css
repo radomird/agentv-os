@@ -775,7 +775,3 @@ body.with-backdrop {
   outline: 3px solid var(--bright-foreground);
   outline-offset: 4px;
 }
-
-.look-card-line {
-  color: var(--foreground);
-}

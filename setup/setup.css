@@ -1306,38 +1306,84 @@ body.counted .player-score {
   color: var(--foreground);
 }
 
-/* The look step (ADR-063): home in each look, side by side, picked with OK.
-   The TV's sizes go below them (ADR-062, D3). */
-.setup-look-cards {
-  margin-top: 80px;
-  gap: 48px;
+/* The look step (ADR-063, D3): the looks by name down the left, the focused
+   one filled with the accent, and home in it on the right at 58 percent,
+   with the TV's sizes under it (ADR-062). Laid out where D3 has them, so
+   the soundtrack player sits under the names and the counted bar under
+   both. */
+.setup-look-list {
+  position: absolute;
+  left: 80px;
+  top: 230px;
+  width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setup-look .setup-look-name {
+  width: 100%;
+  padding: 20px 26px;
+  border: 2px solid var(--selection);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  color: var(--bright-foreground);
+  text-align: left;
+}
+
+.setup-look .setup-look-name.picked {
+  border-color: var(--accent);
+}
+
+.setup-look .setup-look-name.focused {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
 }
 
 .setup-look .look-card-name {
   font-size: 36px;
 }
 
-.setup-look .look-card-line {
-  font-size: 29px;
+.setup-look-right {
+  position: absolute;
+  left: 660px;
+  top: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
-/* At the bottom right, beside the soundtrack player, as D3 has it. The
-   cards move up to make room. */
-.setup-look:has(.setup-look-sizes:not(:empty)) .setup-look-cards {
-  margin-top: 40px;
+.setup-look-stage {
+  position: relative;
+  width: 1114px;
+  height: 626px;
+  outline: 2px solid var(--selection);
+  background: var(--background);
+}
+
+.setup-look-stage .look-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 0;
+  opacity: 0;
+  transition: opacity var(--fast, 120ms) ease-out;
+}
+
+.setup-look-stage .look-frame.on {
+  opacity: 1;
 }
 
 .setup-look-sizes {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 16px;
 }
 
 .setup-look-sizes-label {
-  margin-right: 16px;
+  margin-right: 8px;
   color: var(--foreground);
-  font-size: 29px;
+  font-size: 26px;
 }
 
 .setup-look-sizes .chip {

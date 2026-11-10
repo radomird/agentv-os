@@ -2308,11 +2308,6 @@ body.with-backdrop.on-home {
   font-weight: 800;
 }
 
-.look-card-line {
-  color: var(--foreground);
-  font-size: 23px;
-  max-width: var(--preview-width, 300px);
-}
 
 .panel-row {
   display: flex;

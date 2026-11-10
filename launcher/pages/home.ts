@@ -18,6 +18,7 @@ import { openPage } from "./page-app.ts";
 import { bar } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
 import { currentGrid, lookId, named } from "../looks/looks.ts";
+import { isShowcaseImage } from "../looks/showcase.ts";
 
 export const CLOCK = "agentv.clock";
 export const WEATHER = "agentv.weather";
@@ -150,9 +151,15 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
       { class: "tile-content" },
       now,
       entries.length ? h("div", { class: `entries entries-${entries.length}` }, ...entries.map((item, at) => entry(app, item, size, at))) : null,
-      isNew && entries.length && size === "l" ? h("span", { class: "new-credit" }, "from tmdb · where to watch from justwatch") : null,
+      isNew && entries.length && size === "l" ? h("span", { class: "new-credit" }, credit(entries)) : null,
     ),
   );
+}
+
+// New this week's credit: TMDB's and JustWatch's, or, for the open movies
+// a look's preview stands in with, Blender Studio's (looks/showcase.ts).
+function credit(entries: TileEntry[]): string {
+  return entries.some((entry) => entry.image && isShowcaseImage(entry.image)) ? "open movies by blender studio · cc by" : "from tmdb · where to watch from justwatch";
 }
 
 // Clock's tile: the time, kept ticking here, with the date on the small
