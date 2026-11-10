@@ -100,6 +100,6 @@ pass "the TMDB key has a drop of its own, goes into the env file beside the prov
 for word in ConfigurationDirectory=agentv ProtectSystem=strict NoNewPrivileges=yes; do
   grep -qx "$word" "$ROOT/system/agentv-key.service" || fail "agentv-key.service has $word"
 done
-grep -qx "PathExists=/var/lib/private/agentv/daemon/key-drop/key.json" "$ROOT/system/agentv-key.path" || fail "agentv-key.path watches the daemon's drop"
-grep -qx "PathExists=/var/lib/private/agentv/daemon/key-drop/tmdb.json" "$ROOT/system/agentv-key.path" || fail "and the TMDB key's"
+grep -qx "PathExists=/var/lib/agentv/daemon/key-drop/key.json" "$ROOT/system/agentv-key.path" || fail "agentv-key.path watches the daemon's drop"
+grep -qx "PathExists=/var/lib/agentv/daemon/key-drop/tmdb.json" "$ROOT/system/agentv-key.path" || fail "and the TMDB key's"
 pass "agentv-key.path starts the move as root when the daemon leaves a key"

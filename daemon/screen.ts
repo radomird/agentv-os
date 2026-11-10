@@ -48,6 +48,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Readable, Writable } from "node:stream";
 import { validatePackage, type Tier } from "../apps/contract/manifest.ts";
+import { NO_WEBRTC } from "../apps/contract/page.ts";
 import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { AskWatch } from "./asks.ts";
@@ -2375,6 +2376,27 @@ const CHROMIUM_FLAGS = [
   "--password-store=basic",
 ];
 
+// The home screen's sounds play without waiting for a first key press.
+// Home reaches the internet only through the daemon's filter, which
+// lets through the origins page apps declared (ADR-043). This box's own
+// addresses, the daemon and the page apps' origins, stay direct. The
+// theme's videos decode on the GPU with VA-API where it can (ADR-064);
+// where it can't, Chromium decodes them itself and home shows stills.
+// A page app's WebRTC stays in too: no UDP of its own, and the rest through
+// the same filter (apps/contract/page.ts).
+export function homeArguments(profile = HOME_PROFILE, url = HOME_URL, proxy = HOME_PROXY): string[] {
+  return [
+    ...CHROMIUM_FLAGS,
+    `--user-data-dir=${profile}`,
+    `--app=${url}`,
+    "--remote-debugging-pipe",
+    "--autoplay-policy=no-user-gesture-required",
+    `--proxy-server=${proxy}`,
+    "--enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
+    ...NO_WEBRTC,
+  ];
+}
+
 function track(role: Role, child: ChildProcess, group = false, cdp?: CdpPipe): App {
   const exits: Array<() => void> = [];
   let exited = false;
@@ -2450,25 +2472,7 @@ export const launcher: Launcher = {
   },
 
   home() {
-    const child = spawn(
-      chromium(),
-      // The home screen's sounds play without waiting for a first key press.
-      // Home reaches the internet only through the daemon's filter, which
-      // lets through the origins page apps declared (ADR-043). This box's own
-      // addresses, the daemon and the page apps' origins, stay direct. The
-      // theme's videos decode on the GPU with VA-API where it can (ADR-064);
-      // where it can't, Chromium decodes them itself and home shows stills.
-      [
-        ...CHROMIUM_FLAGS,
-        `--user-data-dir=${HOME_PROFILE}`,
-        `--app=${HOME_URL}`,
-        "--remote-debugging-pipe",
-        "--autoplay-policy=no-user-gesture-required",
-        `--proxy-server=${HOME_PROXY}`,
-        "--enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
-      ],
-      { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] },
-    );
+    const child = spawn(chromium(), homeArguments(), { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
     return track("home", child, false, cdp);
   },
@@ -2884,9 +2888,9 @@ export function playbackWatch(home = HOME_URL, log: (line: string) => void = con
       const found = await get(`api/apps/${encodeURIComponent(id)}/package`).catch(() => null);
       if (!found?.dir) return null;
       const tier: Tier = found.tier === "built-in" ? "official" : found.tier;
-      const { manifest } = validatePackage(found.dir, tier);
+      const { manifest } = validatePackage(found.dir, tier, { thisBox: found.thisBox === true });
       if (!manifest?.tv.capabilities.includes("playback")) return null;
-      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log });
+      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log, harness: { thisBox: found.thisBox === true } });
     },
     async viewer() {
       return (await get("api/viewer")).viewer;
@@ -2917,9 +2921,9 @@ export function signInWatch(home = HOME_URL, log: (line: string) => void = conso
       const found = await get(`api/apps/${encodeURIComponent(id)}/package`).catch(() => null);
       if (!found?.dir) return null;
       const tier: Tier = found.tier === "built-in" ? "official" : found.tier;
-      const { manifest } = validatePackage(found.dir, tier);
+      const { manifest } = validatePackage(found.dir, tier, { thisBox: found.thisBox === true });
       if (!manifest?.tv.capabilities.includes("signIn") || manifest.tv.runtime !== "web") return null;
-      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log });
+      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log, harness: { thisBox: found.thisBox === true } });
     },
     async viewer() {
       return (await get("api/viewer")).viewer;
@@ -2950,9 +2954,9 @@ export function serviceProfiles(home = HOME_URL, log: (line: string) => void = c
       const found = await get(`api/apps/${encodeURIComponent(id)}/package`).catch(() => null);
       if (!found?.dir) return null;
       const tier: Tier = found.tier === "built-in" ? "official" : found.tier;
-      const { manifest } = validatePackage(found.dir, tier);
+      const { manifest } = validatePackage(found.dir, tier, { thisBox: found.thisBox === true });
       if (!manifest?.tv.capabilities.includes("profiles") || manifest.tv.runtime !== "web") return null;
-      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log });
+      return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent: userAgent(), log, harness: { thisBox: found.thisBox === true } });
     },
     async viewer() {
       return (await get("api/viewer")).viewer;

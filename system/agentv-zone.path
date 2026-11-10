@@ -6,7 +6,7 @@
 Description=AgenTV time zone hand-over
 
 [Path]
-PathExists=/var/lib/private/agentv/daemon/zone-drop/zone.json
+PathExists=/var/lib/agentv/daemon/zone-drop/zone.json
 Unit=agentv-zone.service
 
 [Install]

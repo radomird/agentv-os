@@ -93,6 +93,9 @@ export interface DaemonOptions {
   inhibitor?: (why: string) => { set(on: boolean): void };
   state: string; // the daemon's own state: /var/lib/agentv/daemon
   apps?: string; // the box's apps: /var/lib/agentv/apps
+  // Only for a test harness (daemon/apps/loader.ts): the box never sets it,
+  // and nothing reads it from a file or the environment.
+  harness?: { thisBox?: boolean; noSandbox?: boolean };
   updates?: string; // what the update check and an install write: /var/lib/agentv/update
   builtins?: string | null; // AgenTV's own apps: <root>/apps/builtin, or null for none
   ledger?: string; // the ledger's database: <state>/ledger.db
@@ -397,6 +400,7 @@ export class Daemon {
       ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
+      harness: options.harness,
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
       looks: () => this.features.on("looks"),
@@ -545,7 +549,7 @@ export class Daemon {
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), screen: () => this.phonesChanged(), picked: (key) => this.toPages("discover-pick", { key }), ...options.discover });
-    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log });
+    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log, own: options.harness?.thisBox ? () => null : undefined });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
