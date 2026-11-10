@@ -1,13 +1,15 @@
 // The three looks' plumbing (ADR-063): the look the box is drawn in, and what
 // turning the looks on does to home's layout: no all apps tile anywhere, and
 // Clock off the home of anyone who never arranged it. The box is on edge, so
-// its switches can turn on.
+// its switches can turn on. And which pictures a look's preview serves itself
+// (D3): the seven posters it stands in with, and nothing else.
 
 import assert from "node:assert/strict";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Daemon } from "../../../daemon/server.ts";
+import { isShowcaseImage, SHOWCASE_APP, showcasePicture } from "../../../launcher/looks/showcase.ts";
 import { startBox } from "../ui/box.mts";
 
 let daemon: Daemon;
@@ -104,4 +106,25 @@ test("a home someone arranged keeps its Clock, and only loses the all apps tile"
   looks(false);
   assert.deepEqual((await get("/api/home")).layout, arranged);
   looks(null);
+});
+
+test("a preview serves only its seven posters itself, on New this week's tile, and everything else goes through the daemon", () => {
+  const poster = "/launcher/looks/showcase/poster-sintel.jpg";
+  assert.equal(isShowcaseImage(poster), true);
+  assert.equal(showcasePicture(SHOWCASE_APP, poster, true), true);
+  // An address that climbs out of the folder, or anything else in it, isn't one.
+  for (const url of [
+    "/launcher/looks/showcase/../../api/apps",
+    "/launcher/looks/showcase/poster-sintel.jpg/../../../api/setup",
+    "/launcher/looks/showcase/%2e%2e/%2e%2e/api/apps",
+    "/launcher/looks/showcase/CREDITS.md",
+    "/launcher/looks/showcase/poster-sintel.jpg?x=1",
+    "/launcher/looks/showcase/",
+  ]) {
+    assert.equal(isShowcaseImage(url), false, url);
+    assert.equal(showcasePicture(SHOWCASE_APP, url, true), false, url);
+  }
+  // Home itself never takes one, and no other app's tile does.
+  assert.equal(showcasePicture(SHOWCASE_APP, poster, false), false);
+  assert.equal(showcasePicture("agentv.sample", poster, true), false);
 });
