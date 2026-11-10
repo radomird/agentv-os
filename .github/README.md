@@ -77,7 +77,16 @@ You'll need:
 - a USB stick of 8 GB or more;
 - a keyboard, for Omarchy's installer.
 
-1. Download [the 0.1.4 ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso) (about 6.6 GB) and [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-0.1.4-x86_64.iso.sha256). To check the download, put both in one folder and run `shasum -a 256 -c agentv-0.1.4-x86_64.iso.sha256` on a Mac, or `sha256sum -c` on Linux. Each [agentv-iso release](https://github.com/radomird/agentv-iso/releases) links to its own ISO.
+1. Download [the latest ISO](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso) (about 6.6 GB), [its checksum](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso.sha256) and [the checksum's signature](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.iso.sha256.sig). [This file](https://pub-18fa48b004b845838c98225b8955c7e6.r2.dev/iso/agentv-stable.version) says which release it is. To check the download, put all three in one folder and run:
+
+   ```
+   curl -LO https://raw.githubusercontent.com/radomird/agentv-pkgs/main/agentv-keyring/agentv.gpg
+   gpg --import agentv.gpg
+   gpg --verify agentv-stable.iso.sha256.sig agentv-stable.iso.sha256
+   sha256sum -c agentv-stable.iso.sha256
+   ```
+
+   The first two lines fetch AgenTV's public key. `gpg --verify` should say "Good signature", from the key `B4D4 7D67 1A03 84BF 7516 4CF1 AD68 7DD5 C049 475F`, and `sha256sum -c` should say the ISO is OK. On a Mac it's `shasum -a 256 -c`. [agentv-iso's README](https://github.com/radomird/agentv-iso#getting-the-iso) has the release candidate's ISO and last night's build too.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux, like [Omarchy's manual](../manual/02-getting-started.md) says.
 3. Boot the box from the stick and answer Omarchy's usual installer questions. It wipes the box's disk.
 4. The box reboots into AgenTV, and TV setup starts on the TV. Scan its code with your phone, and setup takes you the rest of the way to home.
