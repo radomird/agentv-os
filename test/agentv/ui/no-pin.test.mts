@@ -6,15 +6,21 @@
 // see says "pin", but for Settings' own row for setting one. With a PIN set,
 // the pad still comes, here for what no other check covers: updates and the
 // location.
+//
+// Every check runs twice. Once on phase 1's screens, with every switch off.
+// And once on the screens that ship, with every switch on: home and Settings
+// in each look, and the new phone remote.
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
+import type { FeatureMap } from "../../../daemon/features.ts";
 import { PHASE_1, startBox } from "./box.mts";
 import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
@@ -40,15 +46,31 @@ after(async () => {
   assert.deepEqual(errors, []);
 });
 
-type Box = Awaited<ReturnType<typeof startBox>> & { lan: string; paired: TestPhone };
+// The screens a walk goes through, and what tells that each has drawn.
+interface Screens {
+  name: string;
+  features?: Partial<FeatureMap>; // none: every switch on, as a box ships
+  ships: boolean;
+  home: string; // on the TV's home
+  remote: string; // on the phone's remote
+  who: string; // the phone's who's watching, and each profile on it
+  viewer: string;
+}
 
-async function box(): Promise<Box> {
-  // The walk goes through phase 1's screens: its Settings rows and its phone
-  // remote, with every switch off.
-  const started = await startBox(0, undefined, { zone: "Europe/Oslo", features: PHASE_1 });
+const SCREENS: Screens[] = [
+  // Phase 1's Settings rows and its phone remote, with every switch off.
+  { name: "phase 1's screens", features: PHASE_1, ships: false, home: ".grid .tile.focused", remote: ".dpad", who: ".typing", viewer: ".viewer" },
+  // Home and Settings in the looks, and the new phone remote.
+  { name: "the screens that ship", ships: true, home: "html[data-look] #page .focused", remote: ".r2-surface", who: "#r2-sheet", viewer: ".r2-viewer" },
+];
+
+type Box = Awaited<ReturnType<typeof startBox>> & { lan: string; paired: TestPhone; screens: Screens };
+
+async function box(screens: Screens): Promise<Box> {
+  const started = await startBox(0, undefined, { zone: "Europe/Oslo", features: screens.features });
   const lan = `http://127.0.0.1:${started.daemon.lanPort}`;
   const code = ((await (await fetch(`${started.url}/api/phones/pair`, { method: "POST" })).json()) as any).pairing.code;
-  return { ...started, lan, paired: await pairPhone(lan, code, "another phone") };
+  return { ...started, lan, screens, paired: await pairPhone(lan, code, "another phone") };
 }
 
 async function send(b: Box, method: string, path: string, body?: unknown, options: { grant?: string; phone?: boolean } = {}): Promise<Record<string, any>> {
@@ -137,20 +159,69 @@ async function tv(b: Box): Promise<Page> {
       setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true, apps: [] })), 0);
     };
   });
+  // Settings' previews of the looks are home itself, three more of it. The
+  // walk sees home in each look by going there, so here they stay blank.
+  await page.route(/\/\?preview/, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html>" }));
   await page.goto(`${b.url}/`);
-  await page.waitForSelector(".grid .tile.focused");
+  await page.waitForSelector(b.screens.home);
   return page;
 }
 
-// A paired phone, through the QR code's address.
-async function phone(b: Box): Promise<Page> {
-  const { pairing } = await send(b, "POST", "/api/phones/pair", {});
+// A paired phone, through the QR code's address. With a PIN set, pairing
+// takes its grant.
+async function phone(b: Box, grant?: string): Promise<Page> {
+  const { pairing } = await send(b, "POST", "/api/phones/pair", {}, { grant });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(keepWatch, "phone" as const);
   await page.goto(`${b.lan}/?code=${pairing.code}`);
-  await page.waitForSelector(".dpad");
+  await page.waitForSelector(b.screens.remote);
   return page;
+}
+
+// --- The phone's two remotes --------------------------------------------------
+
+// The phone back on its remote. The new one follows the TV: it shows a
+// keyboard while a field has the focus there, keeps its menu open until
+// it's closed, and has a way back on each of its pages.
+async function remote(b: Box, hand: Page): Promise<void> {
+  if (!b.screens.ships) {
+    await hand.waitForSelector(b.screens.remote);
+    return;
+  }
+  // Whichever is in the way goes, and again if the TV moved meanwhile.
+  const tap = (selector: string, position?: { x: number; y: number }) => hand.locator(selector).tap({ timeout: 1000, position }).catch(() => {});
+  await until(async () => {
+    if (await hand.locator("#r2-sheet").count()) await tap('[data-action="close-sheet"]', { x: 8, y: 8 });
+    else if (await hand.locator('[data-action="to-remote"]').count()) await tap('[data-action="to-remote"]');
+    else if (await hand.locator('[data-action="keyboard-done"]').count()) await tap('[data-action="keyboard-done"]');
+    else return (await hand.locator(b.screens.remote).count()) > 0;
+    return false;
+  }, "the phone's remote");
+}
+
+// Who's watching: a page of its own on phase 1's remote, and the top of the
+// menu on the new one.
+async function openWho(b: Box, hand: Page): Promise<void> {
+  await remote(b, hand);
+  await hand.locator('[data-action="who"]').tap();
+  await hand.waitForSelector(`${b.screens.who} ${b.screens.viewer}`);
+}
+
+// Opens what the TV has for the phone: a banner over phase 1's remote, and
+// on the new one its notice line, or a row of its list when there's more
+// than one thing to say.
+async function openOffer(b: Box, hand: Page, action: string, says: RegExp): Promise<void> {
+  if (!b.screens.ships) {
+    await hand.waitForSelector(`[data-action="${action}"]`, { timeout: 10_000 });
+    await hand.locator(`[data-action="${action}"]`).tap();
+    return;
+  }
+  await remote(b, hand);
+  await hand.waitForFunction((source) => new RegExp(source).test(document.querySelector(".r2-notice-text")?.textContent ?? "") || document.querySelector(".r2-notice-more") !== null, says.source, { timeout: 10_000 });
+  const more = (await hand.locator(".r2-notice-more").count()) > 0;
+  await hand.locator(".r2-notice").tap();
+  if (more) await hand.locator('#r2-sheet [data-action="notice-row"]').filter({ hasText: says }).tap();
 }
 
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go(r), route);
@@ -238,10 +309,9 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
     await say("from a child's profile to an adult's on the tv");
     // And on the phone.
     assert.equal((await send(b, "POST", "/api/viewer", { id: who.child })).status, 200);
-    await hand.waitForFunction(() => /mila/.test(document.querySelector(".who")?.textContent ?? ""), undefined, { timeout: 5000 });
-    await hand.locator('[data-action="who"]').tap();
-    await hand.waitForSelector(".viewer");
-    assert.doesNotMatch(await hand.locator(".typing").innerText(), /needs/);
+    await hand.waitForFunction(() => /mila/.test(document.querySelector('[data-action="who"]')?.textContent ?? ""), undefined, { timeout: 5000 });
+    await openWho(b, hand);
+    assert.doesNotMatch(await hand.locator(b.screens.who).innerText(), /needs/);
     await say("who's watching on the phone");
     await hand.locator('[data-viewer="radomir"]').tap();
     await until(async () => (await send(b, "GET", "/api/viewer")).viewer.id === "radomir", "the switch from the phone");
@@ -267,9 +337,8 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await go(screen, `profile/${who.wasLocked}`);
   await screen.locator('[data-action="save"]').click();
   await toasted(screen, "ana is saved");
-  await hand.locator('[data-action="who"]').tap();
-  await hand.waitForSelector(".viewer");
-  assert.equal(await hand.locator(".viewer svg.glyph-lock").count(), 0, "no lock on the phone");
+  await openWho(b, hand);
+  assert.equal(await hand.locator(`${b.screens.who} svg.glyph-lock`).count(), 0, "no lock on the phone");
   await hand.locator('[data-viewer="radomir"]').tap();
   await until(async () => (await send(b, "GET", "/api/viewer")).viewer.id === "radomir", "the switch back from the phone");
   await say("back to the owner from the phone");
@@ -285,8 +354,15 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
     await screen.waitForTimeout(150);
     await clean(screen, `settings → ${section}`);
   }
-  assert.match(await screen.locator('.menu-item[data-key="pin"]').innerText(), /adult pin\s+off/);
-  assert.match(await screen.locator('.menu-item[data-key="desktop"]').innerText(), /omarchy desktop\s+switch/);
+  // In the looks a row says only its name, and its panel says the rest.
+  if (b.screens.ships) {
+    await go(screen, "settings/pin");
+    await screen.waitForSelector('.menu-item.open[data-key="pin"]');
+    assert.match(await screen.locator(".settings-panel").innerText(), /the adult pin\s+off/);
+  } else {
+    assert.match(await screen.locator('.menu-item[data-key="pin"]').innerText(), /adult pin\s+off/);
+    assert.match(await screen.locator('.menu-item[data-key="desktop"]').innerText(), /omarchy desktop\s+switch/);
+  }
   // Omarchy's desktop goes at once.
   await go(screen, "settings/desktop");
   await screen.locator('.settings-panel [data-action="desktop"]').click();
@@ -295,8 +371,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
 
   // Updates: tonight on the phone, tonight and now on the TV.
   update(b);
-  await hand.waitForSelector('[data-action="update"]', { timeout: 10_000 });
-  await hand.locator('[data-action="update"]').tap();
+  await openOffer(b, hand, "update", /is ready/);
   await hand.waitForSelector('[data-action="tonight"]');
   assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["install tonight", "install now"]);
   await hand.locator('[data-action="tonight"]').tap();
@@ -306,7 +381,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await hand.locator('[data-action="not-tonight"]').tap();
   await until(async () => (await send(b, "GET", "/api/updates")).tonight === null, "not tonight");
   await hand.locator('[data-action="later"]').tap();
-  await hand.waitForSelector(".dpad");
+  await remote(b, hand);
   rmSync(join(b.state, "update-seen.json"), { force: true });
   await go(screen, "settings/updates");
   await screen.waitForSelector('.settings-panel [data-action="tonight"]');
@@ -346,8 +421,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await screen.waitForSelector('.build-page[data-state="approve"]', { timeout: 10_000 });
   assert.match(await screen.locator(".build-page").innerText(), /blocks is ready\.[\s\S]*your agent built it, and its checks passed\. approve it on your phone to put blocks on your home\./);
   await say("a build waiting for a yes");
-  await hand.waitForSelector('[data-action="approve-build"]', { timeout: 10_000 });
-  await hand.locator('[data-action="approve-build"]').tap();
+  await openOffer(b, hand, "approve-build", /approve it/);
   await hand.waitForSelector(".build-approve h1");
   assert.equal(await hand.locator('[data-action="approve"]').innerText(), "approve");
   await say("the phone's page for a finished build");
@@ -394,8 +468,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await go(screen, `build/${planned.build}`);
   await screen.waitForSelector('.build-page[data-state="plan-sign-in"]', { timeout: 10_000 });
   await say("the plan's sign-in on the tv");
-  await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
-  await hand.locator('[data-action="plan-sign-in"]').tap();
+  await openOffer(b, hand, "plan-sign-in", /sign in to your claude plan/);
   await hand.waitForSelector('[data-action="open-sign-in"]');
   assert.equal(await hand.locator('[data-action="send-code"]').innerText(), "send it");
   await hand.locator('input[name="code"]').fill("good-code#s7Q");
@@ -417,169 +490,303 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   assert.equal((await send(b, "GET", "/api/country")).code, "PT");
   await screen.waitForSelector('.menu-item.open[data-key="country"]');
   await say("changing the location");
+
+  if (b.screens.ships) await shipped(b, screen, hand, say);
 }
 
-test("ADR-087 a TV with no PIN: the guarded actions go through on the TV and the phone, even from a child's profile, with no pad and no word about a PIN", async () => {
-  const b = await box();
-  try {
-    // A child's profile and a locked one need a PIN to be made, so the box
-    // gets one first and then loses it, as a box whose PIN file went would.
-    assert.equal(b.daemon.pin.set(PIN, undefined), null);
-    const grant = (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant;
-    const mila = (await send(b, "POST", "/api/viewers", { name: "mila", role: "child" }, { grant })).profile.id;
-    const ana = (await send(b, "POST", "/api/viewers", { name: "ana", role: "adult", locked: true }, { grant })).profile.id;
-    assert.equal((await send(b, "POST", "/api/ai", { provider: "claude", path: "key" }, { grant })).ok, true);
-    assert.equal((await send(b, "POST", "/api/phone/terms", { provider: "claude", path: "key" }, { phone: true, grant })).status, 200);
-    rmSync(join(b.state, "pin.json"));
-    assert.equal(b.daemon.pin.status().set, false);
+// What the screens that ship add to the walk: a phone paired and one
+// forgotten, Settings opened from the phone's menu, an app ticked for
+// children, Apps and Ask, the desktop's first password, and a look picked,
+// with home and every section of Settings in each look.
+async function shipped(b: Box, screen: Page, hand: Page, say: (where: string) => Promise<void>): Promise<void> {
+  const { pairing } = await send(b, "POST", "/api/phones/pair", {});
+  await pairPhone(b.lan, pairing.code, "old phone");
+  await go(screen, "home");
+  await go(screen, "settings/phones");
+  await screen.waitForSelector('.settings-panel .button:has-text("old phone")');
+  await screen.locator('.settings-panel [data-action="pair"]').click();
+  await screen.waitForFunction(() => /^[^·]+$/.test(document.querySelector(".pair-code")?.textContent ?? ""));
+  await say("pairing a phone");
+  await screen.keyboard.press("Escape");
+  await screen.waitForSelector('.menu-item.open[data-key="phones"]');
+  await screen.locator('.settings-panel .button:has-text("old phone")').click();
+  await toasted(screen, "old phone is forgotten");
+  await say("forgetting a phone");
 
-    const screen = await tv(b);
-    const hand = await phone(b);
-    await walk(b, screen, hand, { child: mila, wasLocked: ana });
-    await screen.close();
-    await hand.close();
-  } finally {
-    await b.daemon.close();
+  // Settings, from the phone's menu.
+  await go(screen, "home");
+  await remote(b, hand);
+  await hand.locator('[data-action="menu"]').tap();
+  await hand.locator('#r2-sheet [data-action="settings"]').tap();
+  await screen.waitForSelector(".menu-item");
+  await say("settings from the phone's menu");
+
+  // An app ticked for children, in its details.
+  await go(screen, "details/agentv.sample");
+  await screen.waitForSelector('[data-action="children"]');
+  const ticked = await screen.locator('[data-action="children"]').innerText();
+  await screen.locator('[data-action="children"]').click();
+  await screen.waitForFunction((was) => document.querySelector<HTMLElement>('[data-action="children"]')?.innerText !== was, ticked);
+  await say("an app ticked for children");
+
+  // Apps and Ask on the TV, and Ask on the phone.
+  for (const page of ["apps", "ask"]) {
+    await go(screen, page);
+    await screen.waitForSelector(`#page .focused`);
+    await screen.waitForTimeout(150);
+    await say(`${page} on the tv`);
   }
-});
+  await go(screen, "home");
+  await remote(b, hand);
+  await hand.locator('[data-action="ask"]').tap();
+  await hand.waitForSelector("#r2-sheet");
+  await say("ask on the phone");
+  await remote(b, hand);
 
-test("ADR-087 a PIN set in Settings and taken off there again: the same walk, on the same pages, with no pad and no word about a PIN", async () => {
-  const b = await box();
-  try {
-    const screen = await tv(b);
-    const hand = await phone(b);
-    assert.equal((await send(b, "POST", "/api/ai", { provider: "claude", path: "key" })).ok, true);
-    assert.equal((await send(b, "POST", "/api/phone/terms", { provider: "claude", path: "key" }, { phone: true })).status, 200);
-    await clean(screen, "the tv, before there's a pin");
-    await clean(hand, "the phone, before there's a pin");
-
-    // Settings → Adult PIN sets it, on its pad, twice.
-    await watching(screen, false);
-    await watching(hand, false);
-    await go(screen, "settings/pin");
-    await screen.waitForSelector('.menu-item.open[data-key="pin"]');
-    await screen.locator('.settings-panel [data-action="set-pin"]').click();
-    await padUp(screen, true);
-    for (const digit of PIN) await screen.keyboard.press(digit);
-    await screen.waitForFunction(() => /the same pin again/.test(document.getElementById("pin")?.textContent ?? ""));
-    for (const digit of PIN) await screen.keyboard.press(digit);
-    await padUp(screen, false);
-    assert.equal(b.daemon.pin.status().set, true);
-    // With it, a profile locks, and its page and the phone say so.
-    const grant = (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant;
-    const ana = (await send(b, "POST", "/api/viewers", { name: "ana", role: "adult", locked: true }, { grant })).profile.id;
-    await go(screen, `profile/${ana}`);
-    await screen.waitForSelector('[data-action="lock"]');
-    assert.match(await screen.locator('[data-action="lock"]').innerText(), /ask for the pin to open\s+‹ yes ›/);
-    await screen.keyboard.press("Escape");
-    await hand.locator('[data-action="who"]').tap();
-    await hand.waitForSelector(`[data-viewer="${ana}"] svg.glyph-lock`);
-    assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the adult pin/);
-    await hand.locator('[data-viewer="radomir"]').tap();
-    await hand.waitForSelector(".dpad");
-
-    // Taking the PIN off waits for the lock to go first, and says so.
-    await go(screen, "settings/pin");
-    await screen.waitForSelector('.settings-panel [data-action="remove-pin"]');
-    await screen.locator('.settings-panel [data-action="remove-pin"]').click();
-    await padUp(screen, true);
-    for (const digit of PIN) await screen.keyboard.press(digit);
-    await padUp(screen, false);
-    await toasted(screen, "a locked profile needs the pin. unlock it in settings → profiles first");
-    assert.equal(b.daemon.pin.status().set, true);
-    assert.equal((await send(b, "PUT", `/api/viewers/${ana}`, { locked: false }, { grant: (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant })).status, 200);
-    await screen.waitForSelector('.settings-panel [data-action="remove-pin"]');
-    await screen.locator('.settings-panel [data-action="remove-pin"]').click();
-    await toasted(screen, "the pin is off");
-    assert.equal(b.daemon.pin.status().set, false);
-    await screen.waitForFunction(() => /adult pin\s*off/.test(document.querySelector('.menu-item[data-key="pin"]')?.textContent ?? ""));
-
-    // From here on, the same pages never show a pad or say pin again.
-    await watching(screen, true);
-    await hand.waitForFunction(() => document.querySelector(".dpad") !== null);
-    await watching(hand, true);
-    await walk(b, screen, hand, { wasLocked: ana });
-    await screen.close();
-    await hand.close();
-  } finally {
-    await b.daemon.close();
-  }
-});
-
-test("ADR-087 with a PIN set, updates and the location still ask for it on the pad, and the phone's buttons still say so", async () => {
-  const b = await box();
-  try {
-    assert.equal(b.daemon.pin.set(PIN, undefined), null);
-    update(b);
-    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-    page.on("pageerror", (error) => errors.push(error.message));
-    await page.addInitScript(() => {
-      const w = window as unknown as { screenRequests: Request[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
-      w.screenRequests = [];
-      w.agentvScreen = (json: string) => {
-        const request = JSON.parse(json);
-        w.screenRequests.push(request);
-        setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true, apps: [] })), 0);
-      };
+  // The desktop's first password, on a box set up from the USB stick: root's
+  // side of it is stood in for, and says the password is set.
+  const marker = join(b.state, "..", "account.json");
+  const known = (yes: boolean) => writeFileSync(marker, `${JSON.stringify({ name: "agentv", passwordKnown: yes })}\n`);
+  const root = createServer((connection) => {
+    connection.once("data", () => {
+      known(true);
+      connection.end('{"ok":true}\n');
     });
-    await page.goto(`${b.url}/`);
-    await page.waitForSelector(".grid .tile.focused");
-    const sent = (cmd: string) => page.evaluate((c) => (window as unknown as { screenRequests: Request[] }).screenRequests.filter((r) => r.cmd === c).length, cmd);
-
-    // Tonight: Back leaves it unasked, and the PIN asks it.
-    await go(page, "settings/updates");
-    await page.waitForSelector('.settings-panel [data-action="tonight"]');
-    await page.locator('.settings-panel [data-action="tonight"]').click();
-    await padUp(page, true);
-    assert.match(await page.locator("#pin").innerText(), /enter the adult pin/);
-    await page.keyboard.press("Escape");
-    await padUp(page, false);
-    assert.equal((await send(b, "GET", "/api/updates")).tonight, null);
-    // Install now: the same, and nothing is asked of the TV without it.
-    await page.locator('.settings-panel [data-action="install"]').click();
-    await padUp(page, true);
-    await page.keyboard.press("Escape");
-    await padUp(page, false);
-    assert.equal(await sent("update-install"), 0);
-    await page.locator('.settings-panel [data-action="install"]').click();
-    await padUp(page, true);
-    for (const digit of PIN) await page.keyboard.press(digit);
-    await padUp(page, false);
-    await requested(page, "update-install");
-    rmSync(join(b.updates, "status.json"), { force: true });
-    await page.reload();
-    await page.waitForSelector(".grid .tile.focused");
-
-    // The location: the pad comes before anything changes.
-    await go(page, "settings/country");
-    await page.waitForSelector('.settings-panel [data-action="country"]');
-    await page.locator('.settings-panel [data-action="country"]').click();
-    await page.waitForSelector(".country-picker");
-    await page.fill('[data-action="country-field"]', "port");
-    await page.click('.country-list [data-code="PT"]');
-    await padUp(page, true);
-    assert.match(await page.locator("#pin").innerText(), /enter the adult pin[\s\S]*for the country\./);
-    await page.keyboard.press("Escape");
-    await padUp(page, false);
-    assert.notEqual((await send(b, "GET", "/api/country")).code, "PT");
-    await page.click('.country-list [data-code="PT"]');
-    await padUp(page, true);
-    for (const digit of PIN) await page.keyboard.press(digit);
-    await toasted(page, "this tv is in portugal now");
-    assert.equal((await send(b, "GET", "/api/country")).code, "PT");
-
-    // Settings → Profiles says what the PIN is for, and a profile's page
-    // has the row that locks it.
-    // Back in Settings first, where the picker leaves it.
-    await page.waitForSelector('.menu-item.open[data-key="country"]');
-    await go(page, "settings/profiles");
-    await page.waitForFunction(() => /who watches\?/.test(document.querySelector(".settings-panel")?.textContent ?? ""));
-    assert.match(await page.locator(".settings-panel").innerText(), /a child's profile needs the adult pin, and sees only the apps ticked for children in their details\. a locked one asks for the pin to open\./);
-    await go(page, "profile/radomir");
-    await page.waitForSelector('[data-action="lock"]');
-    assert.equal(await page.locator('[data-action="lock"]').isVisible(), true);
-    await page.close();
+  });
+  await new Promise<void>((done) => root.listen(join(b.state, "..", "password.sock"), done));
+  try {
+    known(false);
+    await go(screen, "settings/desktop");
+    await screen.waitForSelector('[data-note="desktop-password"]');
+    const switches = () => screen.evaluate(() => (window as unknown as { screenRequests: Request[] }).screenRequests.filter((r) => r.cmd === "desktop").length);
+    const before = await switches();
+    await screen.locator('.settings-panel [data-action="desktop"]').click();
+    await screen.waitForSelector(".desktop-password");
+    await say("the desktop's first password");
+    // A throwaway password, made up here.
+    const password = `tv test ${process.pid}`;
+    await screen.fill('[data-action="password"]', password);
+    await screen.fill('[data-action="password-again"]', password);
+    await screen.locator('[data-action="set-password"]').click();
+    await toasted(screen, "the desktop's password is set");
+    await until(async () => (await switches()) === before + 1, "the switch to the desktop");
+    await say("setting the desktop's password");
   } finally {
-    await b.daemon.close();
+    root.close();
+    rmSync(marker, { force: true });
   }
-});
+
+  // A look picked in Settings, then home and Settings in it.
+  for (const look of ["glass", "cinema", "terminal"]) {
+    await go(screen, "settings/look");
+    await screen.waitForSelector(`.settings-panel [data-action="look-${look}"]`);
+    await screen.locator(`.settings-panel [data-action="look-${look}"]`).click();
+    await screen.waitForSelector(`html[data-look="${look}"] .menu-item`);
+    await until(async () => (await send(b, "GET", "/api/look")).look === look, `the ${look} look`);
+    await say(`picking the ${look} look`);
+    await go(screen, "home");
+    await screen.waitForSelector(`html[data-look="${look}"] ${b.screens.home.replace("html[data-look] ", "")}`);
+    await hand.waitForFunction((id) => document.body.dataset.look === id, look, { timeout: 10_000 });
+    await say(`home in the ${look} look`);
+    await go(screen, "settings");
+    await screen.waitForSelector(".menu-item");
+    for (const section of await screen.locator(".menu-item").evaluateAll((els) => els.map((el) => el.getAttribute("data-key") ?? ""))) {
+      await go(screen, `settings/${section}`);
+      await screen.waitForSelector(`.menu-item.open[data-key="${section}"]`);
+      await screen.waitForTimeout(150);
+      await clean(screen, `settings → ${section} in the ${look} look`);
+    }
+  }
+}
+
+for (const screens of SCREENS) {
+  test(`ADR-087 a TV with no PIN, on ${screens.name}: the guarded actions go through on the TV and the phone, even from a child's profile, with no pad and no word about a PIN`, async () => {
+    const b = await box(screens);
+    try {
+      // A child's profile and a locked one need a PIN to be made, so the box
+      // gets one first and then loses it, as a box whose PIN file went would.
+      assert.equal(b.daemon.pin.set(PIN, undefined), null);
+      const grant = (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant;
+      const mila = (await send(b, "POST", "/api/viewers", { name: "mila", role: "child" }, { grant })).profile.id;
+      const ana = (await send(b, "POST", "/api/viewers", { name: "ana", role: "adult", locked: true }, { grant })).profile.id;
+      assert.equal((await send(b, "POST", "/api/ai", { provider: "claude", path: "key" }, { grant })).ok, true);
+      assert.equal((await send(b, "POST", "/api/phone/terms", { provider: "claude", path: "key" }, { phone: true, grant })).status, 200);
+      rmSync(join(b.state, "pin.json"));
+      assert.equal(b.daemon.pin.status().set, false);
+
+      const screen = await tv(b);
+      const hand = await phone(b);
+      await walk(b, screen, hand, { child: mila, wasLocked: ana });
+      await screen.close();
+      await hand.close();
+    } finally {
+      await b.daemon.close();
+    }
+  });
+
+  test(`ADR-087 a PIN set in Settings and taken off there again, on ${screens.name}: the same walk, on the same pages, with no pad and no word about a PIN`, async () => {
+    const b = await box(screens);
+    try {
+      const screen = await tv(b);
+      const hand = await phone(b);
+      assert.equal((await send(b, "POST", "/api/ai", { provider: "claude", path: "key" })).ok, true);
+      assert.equal((await send(b, "POST", "/api/phone/terms", { provider: "claude", path: "key" }, { phone: true })).status, 200);
+      await clean(screen, "the tv, before there's a pin");
+      await clean(hand, "the phone, before there's a pin");
+
+      // Settings → Adult PIN sets it, on its pad, twice.
+      await watching(screen, false);
+      await watching(hand, false);
+      await go(screen, "settings/pin");
+      await screen.waitForSelector('.menu-item.open[data-key="pin"]');
+      await screen.locator('.settings-panel [data-action="set-pin"]').click();
+      await padUp(screen, true);
+      for (const digit of PIN) await screen.keyboard.press(digit);
+      await screen.waitForFunction(() => /the same pin again/.test(document.getElementById("pin")?.textContent ?? ""));
+      for (const digit of PIN) await screen.keyboard.press(digit);
+      await padUp(screen, false);
+      assert.equal(b.daemon.pin.status().set, true);
+      // With it, a profile locks, and its page and the phone say so.
+      const grant = (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant;
+      const ana = (await send(b, "POST", "/api/viewers", { name: "ana", role: "adult", locked: true }, { grant })).profile.id;
+      await go(screen, `profile/${ana}`);
+      await screen.waitForSelector('[data-action="lock"]');
+      assert.match(await screen.locator('[data-action="lock"]').innerText(), /ask for the pin to open\s+‹ yes ›/);
+      await screen.keyboard.press("Escape");
+      await openWho(b, hand);
+      if (screens.ships) {
+        // The new remote's menu shows no lock. Its pad comes for the locked
+        // profile once it's picked. The pad comes up under the menu today,
+        // so the menu closes before Cancel can be tapped.
+        await hand.locator(`[data-viewer="${ana}"]`).tap();
+        await hand.waitForSelector(".pin-keys");
+        assert.match(await hand.locator('.overlay[aria-label="the adult pin"]').innerText(), /enter the adult pin\s+for watching as ana\./);
+        await hand.locator('[data-action="close-sheet"]').tap({ position: { x: 8, y: 8 } });
+        await hand.locator('.overlay [data-action="cancel"]').tap();
+      } else {
+        await hand.waitForSelector(`[data-viewer="${ana}"] svg.glyph-lock`);
+        assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the adult pin/);
+        await hand.locator('[data-viewer="radomir"]').tap();
+      }
+      await remote(b, hand);
+
+      // Taking the PIN off waits for the lock to go first, and says so.
+      await go(screen, "settings/pin");
+      await screen.waitForSelector('.settings-panel [data-action="remove-pin"]');
+      await screen.locator('.settings-panel [data-action="remove-pin"]').click();
+      await padUp(screen, true);
+      for (const digit of PIN) await screen.keyboard.press(digit);
+      await padUp(screen, false);
+      await toasted(screen, "a locked profile needs the pin. unlock it in settings → profiles first");
+      assert.equal(b.daemon.pin.status().set, true);
+      assert.equal((await send(b, "PUT", `/api/viewers/${ana}`, { locked: false }, { grant: (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant })).status, 200);
+      await screen.waitForSelector('.settings-panel [data-action="remove-pin"]');
+      await screen.locator('.settings-panel [data-action="remove-pin"]').click();
+      await toasted(screen, "the pin is off");
+      assert.equal(b.daemon.pin.status().set, false);
+      await screen.waitForFunction(() => /adult pin\s*off/.test(document.querySelector('.menu-item[data-key="pin"]')?.textContent ?? ""));
+
+      // From here on, the same pages never show a pad or say pin again.
+      await watching(screen, true);
+      await remote(b, hand);
+      await watching(hand, true);
+      await walk(b, screen, hand, { wasLocked: ana });
+      await screen.close();
+      await hand.close();
+    } finally {
+      await b.daemon.close();
+    }
+  });
+
+  test(`ADR-087 with a PIN set, on ${screens.name}: updates and the location still ask for it on the pad, and the phone's buttons still say so`, async () => {
+    const b = await box(screens);
+    try {
+      assert.equal(b.daemon.pin.set(PIN, undefined), null);
+      update(b);
+      const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.addInitScript(() => {
+        const w = window as unknown as { screenRequests: Request[]; agentvScreen: (json: string) => void; agentvScreenReply?: (id: number, reply: string) => void };
+        w.screenRequests = [];
+        w.agentvScreen = (json: string) => {
+          const request = JSON.parse(json);
+          w.screenRequests.push(request);
+          setTimeout(() => w.agentvScreenReply?.(request.id, JSON.stringify({ ok: true, apps: [] })), 0);
+        };
+      });
+      await page.goto(`${b.url}/`);
+      await page.waitForSelector(screens.home);
+      const sent = (cmd: string) => page.evaluate((c) => (window as unknown as { screenRequests: Request[] }).screenRequests.filter((r) => r.cmd === c).length, cmd);
+
+      // Tonight: Back leaves it unasked, and the PIN asks it.
+      await go(page, "settings/updates");
+      await page.waitForSelector('.settings-panel [data-action="tonight"]');
+      await page.locator('.settings-panel [data-action="tonight"]').click();
+      await padUp(page, true);
+      assert.match(await page.locator("#pin").innerText(), /enter the adult pin/);
+      await page.keyboard.press("Escape");
+      await padUp(page, false);
+      assert.equal((await send(b, "GET", "/api/updates")).tonight, null);
+      // Install now: the same, and nothing is asked of the TV without it.
+      await page.locator('.settings-panel [data-action="install"]').click();
+      await padUp(page, true);
+      await page.keyboard.press("Escape");
+      await padUp(page, false);
+      assert.equal(await sent("update-install"), 0);
+      await page.locator('.settings-panel [data-action="install"]').click();
+      await padUp(page, true);
+      for (const digit of PIN) await page.keyboard.press(digit);
+      await padUp(page, false);
+      await requested(page, "update-install");
+      rmSync(join(b.updates, "status.json"), { force: true });
+      await page.reload();
+      await page.waitForSelector(screens.home);
+
+      // The location: the pad comes before anything changes.
+      await go(page, "settings/country");
+      await page.waitForSelector('.settings-panel [data-action="country"]');
+      await page.locator('.settings-panel [data-action="country"]').click();
+      await page.waitForSelector(".country-picker");
+      await page.fill('[data-action="country-field"]', "port");
+      await page.click('.country-list [data-code="PT"]');
+      await padUp(page, true);
+      assert.match(await page.locator("#pin").innerText(), /enter the adult pin[\s\S]*for the country\./);
+      await page.keyboard.press("Escape");
+      await padUp(page, false);
+      assert.notEqual((await send(b, "GET", "/api/country")).code, "PT");
+      await page.click('.country-list [data-code="PT"]');
+      await padUp(page, true);
+      for (const digit of PIN) await page.keyboard.press(digit);
+      await toasted(page, "this tv is in portugal now");
+      assert.equal((await send(b, "GET", "/api/country")).code, "PT");
+
+      // Settings → Profiles says what the PIN is for, and a profile's page
+      // has the row that locks it.
+      // Back in Settings first, where the picker leaves it.
+      await page.waitForSelector('.menu-item.open[data-key="country"]');
+      await go(page, "settings/profiles");
+      await page.waitForFunction(() => /who watches\?/.test(document.querySelector(".settings-panel")?.textContent ?? ""));
+      assert.match(await page.locator(".settings-panel").innerText(), /a child's profile needs the adult pin, and sees only the apps ticked for children in their details\. a locked one asks for the pin to open\./);
+      await go(page, "profile/radomir");
+      await page.waitForSelector('[data-action="lock"]');
+      assert.equal(await page.locator('[data-action="lock"]').isVisible(), true);
+      await page.close();
+
+      // The phone's update page says which button asks for the PIN, and its
+      // pad comes for tonight's install.
+      update(b);
+      const hand = await phone(b, (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant);
+      await openOffer(b, hand, "update", /is ready/);
+      await hand.waitForSelector('[data-action="tonight"]');
+      assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["install tonight", "install now with pin"]);
+      await hand.locator('[data-action="tonight"]').tap();
+      await hand.waitForSelector(".pin-keys");
+      assert.match(await hand.locator('.overlay[aria-label="the adult pin"]').innerText(), /enter the adult pin\s+for installing tonight\./);
+      await hand.locator('.overlay [data-action="cancel"]').tap();
+      assert.equal((await send(b, "GET", "/api/updates")).tonight, null);
+      await hand.close();
+    } finally {
+      await b.daemon.close();
+    }
+  });
+}
