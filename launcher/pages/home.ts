@@ -35,7 +35,9 @@ const FITS = { s: 1, m: 3, l: 7 } as const;
 const ICON_PX = { headline: { s: 180, m: 150, l: 250 }, entry: { s: 84, m: 150, l: 84 } } as const;
 
 export function logo(app: App, big = false): HTMLElement {
-  const el = h("span", { class: `logo mono-${tint(app.id)}${big ? " logo-big" : ""}` });
+  // Only the letters sit on the theme's colour: an app's own icon has none
+  // behind it, or the colour shows through the icon's clear edges.
+  const el = h("span", { class: `logo${app.icon ? "" : ` mono-${tint(app.id)}`}${big ? " logo-big" : ""}` });
   if (app.icon) el.append(h("img", { src: app.icon, alt: "" }));
   else el.append(monogram(app.name));
   return el;

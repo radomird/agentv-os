@@ -1,7 +1,7 @@
 // Cinema's home (D1, Q194): tabs along the top, a featured title as big as
-// the screen allows with Play and its poster, then labelled rows: your apps,
-// and the week's new titles. Left and right on Play go through what's
-// featured, and its dots say where you are.
+// the screen allows with Play and its poster over a wash of the poster's own
+// colours, then labelled rows: your apps, and the week's new titles. Left and
+// right on Play go through what's featured, and its dots say where you are.
 //
 // The featured titles are what your apps' tiles already send: titles you're
 // part way through and New this week's. Your apps are in the layout's order,
@@ -53,7 +53,11 @@ export function home(ctx: Ctx): View {
   const meta = h("div", { class: "cinema-meta" });
   const dots = h("span", { class: "cinema-dots", "aria-hidden": "true" });
   const poster = h("img", { class: "cinema-poster", alt: "" });
-  const glow = h("img", { class: "cinema-glow", alt: "", "aria-hidden": "true" });
+  // Behind it all, the poster again, blurred across the top of the screen.
+  // Two of them, so the next title's fades in over the last.
+  const glows = [h("img", { class: "cinema-glow", alt: "" }), h("img", { class: "cinema-glow", alt: "" })];
+  let glowing = 0;
+  const backdrop = h("div", { class: "cinema-backdrop", "aria-hidden": "true" }, ...glows);
   let slides: Featured[] = [];
   let at = 0;
   const play = h(
@@ -83,12 +87,19 @@ export function home(ctx: Ctx): View {
     dots.replaceChildren(...slides.map((_, i) => h("span", { class: `cinema-dot${i === at ? " on" : ""}` })));
     if (slide?.image) {
       poster.src = slide.image;
-      glow.src = slide.image;
       poster.classList.add("on");
-      glow.classList.add("on");
+      const next = glows[1 - glowing];
+      const image = slide.image;
+      next.onload = () => {
+        if (slides[at]?.image !== image) return;
+        glows[glowing].classList.remove("on");
+        next.classList.add("on");
+        glowing = 1 - glowing;
+      };
+      next.src = image;
     } else {
       poster.classList.remove("on");
-      glow.classList.remove("on");
+      for (const glow of glows) glow.classList.remove("on");
     }
   };
   show();
@@ -126,7 +137,6 @@ export function home(ctx: Ctx): View {
   const hero = h(
     "div",
     { class: "cinema-hero" },
-    glow,
     h("div", { class: "cinema-hero-text" }, kicker, name, meta, h("div", { class: "cinema-actions" }, play, dots)),
     poster,
   );
@@ -139,7 +149,7 @@ export function home(ctx: Ctx): View {
     newSection,
     newRow,
   );
-  const el = h("div", { class: "screen cinema-home" }, bar(ctx, "home"), body);
+  const el = h("div", { class: "screen cinema-home" }, backdrop, bar(ctx, "home"), body);
   return {
     el,
     first: play,

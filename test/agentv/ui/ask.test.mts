@@ -117,9 +117,8 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
   try {
     const page = await tv(url);
     if (!on) {
-      // As it ships: no Ask on phase 1's bar, a make is "i didn't get that",
-      // and Apps' "+ add your own" is the old page.
-      assert.equal(await page.locator('[data-action="bar-ask"]').count(), 0);
+      // Off: a make is "i didn't get that", and Apps' "+ add your own" is
+      // the old page. The bar's Ask is the look's own, so it stays.
       assert.equal((await send("POST", "/api/say", { sentence: "make me a game like tetris" })).said.outcome.say, "i didn't get that");
       assert.equal(existsSync(join(state, "build-drop", "start.json")), false, "nothing was built");
       await go(page, "apps");
