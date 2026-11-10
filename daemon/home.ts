@@ -170,9 +170,12 @@ export interface TvSettings {
   // Settings → Sound: the TV says its answers aloud (stage 8), on by
   // default.
   spoken: boolean;
+  // Settings → Power: sleep once the TV's been off for an hour, off by
+  // default (ADR-072, daemon/sleep.ts).
+  sleepWhenOff: boolean;
 }
 
-const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, ambient: "pictures", updateOvernight: false, spoken: true };
+const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, ambient: "pictures", updateOvernight: false, spoken: true, sleepWhenOff: false };
 
 // The launcher's own tile, to all apps (board 19). Its id has no dot, so no
 // app can take it.
@@ -898,6 +901,7 @@ export class Home {
     if (c.ambient === "pictures" || c.ambient === "terminal") next.ambient = c.ambient;
     if (typeof c.updateOvernight === "boolean") next.updateOvernight = c.updateOvernight;
     if (typeof c.spoken === "boolean") next.spoken = c.spoken;
+    if (typeof c.sleepWhenOff === "boolean") next.sleepWhenOff = c.sleepWhenOff;
     await mkdir(this.state, { recursive: true });
     await writeJson(join(this.state, "settings.json"), next);
     return null;

@@ -80,6 +80,8 @@ import { SignInWatch } from "./signin.ts";
 import { Storage } from "./storage.ts";
 import { THEME_NAME } from "./themes.ts";
 import { tvOn, watchHotplug } from "./tv-power.ts";
+import { Inhibitor } from "./inhibit.ts";
+import { Sleep, logindSleep } from "./sleep.ts";
 
 export type Role = "home" | "web" | "steam" | "screensaver" | "share";
 
@@ -344,6 +346,11 @@ interface Options {
   tvSettleMs?: number;
   // How long the terminal screensaver runs before the slideshow takes over.
   screensaverMs?: number;
+  // Sleep as a setting (daemon/sleep.ts), told when the TV goes off and on.
+  sleep?: Sleep;
+  // Keeps the box awake while something it starts mustn't be cut off, such
+  // as a provider's CLI on its first fetch (daemon/inhibit.ts).
+  inhibitor?: (why: string) => { set(on: boolean): void };
   // How long the overlay's idle monitor waits before it says so.
   idleReportMs?: number;
   // How soon after the ambient screen comes up input on the seat is taken
@@ -430,6 +437,8 @@ export class Screen {
   private saverAfter: number | null = null;
   private saverTimer: ReturnType<typeof setTimeout> | null = null;
   private handedOver = 0;
+  private sleep?: Sleep;
+  private fetching?: { set(on: boolean): void };
   private contextWatch: ReturnType<typeof setInterval> | null = null;
   private contextMs: number;
   private context = { said: "", at: 0, busy: false, again: false };
@@ -474,6 +483,8 @@ export class Screen {
     this.tvHotplug = options.tvHotplug;
     this.tvSettleMs = options.tvSettleMs ?? 10_000;
     this.screensaverMs = options.screensaverMs ?? 10 * 60_000;
+    this.sleep = options.sleep;
+    this.fetching = options.inhibitor?.("fetching the AI's command-line tool");
     this.idleReportMs = options.idleReportMs ?? 30_000;
     this.ambientSettleMs = options.ambientSettleMs ?? 3000;
     this.homeCheckMs = options.homeCheckMs ?? 30_000;
@@ -1113,6 +1124,7 @@ export class Screen {
     if (this.cliRun) return { ok: true, running: true };
     this.log(`fetching ${cli} on its first run, now its provider's terms are accepted`);
     await this.launcher.cliState({ state: "installing" }).catch(() => {});
+    this.fetching?.set(true);
     this.cliRun = this.launcher
       .firstRun(cli)
       .then(async (run) => {
@@ -1121,6 +1133,7 @@ export class Screen {
       })
       .finally(() => {
         this.cliRun = null;
+        this.fetching?.set(false);
       });
     return { ok: true };
   }
@@ -1697,6 +1710,7 @@ export class Screen {
       if (!on) {
         if (this.tvOff) return;
         this.tvOff = true;
+        this.sleep?.tv(false);
         this.log("the TV went off; pausing");
         // Home's moving background stops too, and the terminal screensaver
         // gives way to the still ambient screen (ADR-072).
@@ -1717,6 +1731,7 @@ export class Screen {
       if (this.tvTimer) clearTimeout(this.tvTimer);
       this.tvTimer = null;
       this.log("the TV came back on");
+      this.sleep?.tv(true);
       this.dark = false;
       if (this.outputOff) await this.output(true, "the TV is on");
       void this.inHome(`window.agentvTv?.("on")`);
@@ -1753,6 +1768,11 @@ export class Screen {
         this.settleTimer = null;
         void this.queue(async () => {
           if (this.dark && this.tvOff) await this.output(false, "the TV is still off");
+        }).then(() => {
+          // A key, or a mouse that moved as the box woke, took home off its
+          // ambient screen, but the TV is still off: back to it, so the TV
+          // comes on to the ambient screen, where any key goes home.
+          if (this.dark && this.tvOff && !this.ambient) void this.showAmbient(false);
         });
       }, this.tvSettleMs);
     });
@@ -2133,6 +2153,7 @@ export class Screen {
       ambient: this.ambient,
       tv: this.tvOff ? "off" : "on",
       output: this.outputOff ? "off" : "on",
+      sleep: this.sleep?.status() ?? null,
       monitors: monitors.map((m) => ({ name: m.name, width: m.width, height: m.height, refresh_rate: m.refreshRate })),
       layers: layers.map((l) => l.namespace),
     };
@@ -2260,6 +2281,9 @@ export class Screen {
         return this.idleAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
       case "screensaver-after":
         return this.screensaverAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
+      case "sleep-after":
+        if (!this.sleep) return { ok: false, error: "sleep isn't here" };
+        return this.sleep.afterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
       case "ambient":
         return this.showAmbient();
       case "wake":
@@ -2395,6 +2419,14 @@ async function barLook(): Promise<string[]> {
 
 // logind's manager on the system bus, for busctl call.
 const LOGIND = ["org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager"];
+
+// Whether Settings → Power's sleep is on, and Settings → Updates' overnight
+// installs, as AgenTV's daemon has them. Off when it doesn't answer.
+async function sleepSettings(): Promise<{ sleep: boolean; overnight: boolean }> {
+  const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
+  const settings = (await response.json())?.settings;
+  return { sleep: settings?.sleepWhenOff === true, overnight: settings?.updateOvernight === true };
+}
 
 // Omarchy's themes and the theme's backgrounds, as this session follows
 // them (ADR-048): one for the session, which Look's list and the background
@@ -3005,7 +3037,27 @@ async function main(): Promise<void> {
   // starts, so it draws at its canvas from the first frame.
   const display = new DisplayWatch({ hyprland, url: HOME_URL, file: displayFile(process.env, homedir()) });
   await display.start();
-  const screen = new Screen({ hyprland, launcher, tvPoll: () => tvOn(), tvHotplug: (changed) => watchHotplug(changed), playback: playbackWatch(), music, sound, pictures: new FolderPictures({ home: HOME_URL }), pageMedia: pageMedia(), signIn: signInWatch(), profiles: serviceProfiles() });
+  // Sleep as a setting (ADR-072), off unless Settings → Power turns it on.
+  // Once the box is awake again, the screen looks for the TV.
+  let woken = () => {};
+  const sleep = new Sleep({ platform: logindSleep(sleepSettings), woke: () => woken() });
+  const screen = new Screen({
+    hyprland,
+    launcher,
+    tvPoll: () => tvOn(),
+    tvHotplug: (changed) => watchHotplug(changed),
+    sleep,
+    inhibitor: (why) => new Inhibitor(why),
+    playback: playbackWatch(),
+    music,
+    sound,
+    pictures: new FolderPictures({ home: HOME_URL }),
+    pageMedia: pageMedia(),
+    signIn: signInWatch(),
+    profiles: serviceProfiles(),
+  });
+  woken = () => void screen.look("the box woke from sleep");
+  sleep.start();
   // The paired phones' d-pad and keyboard, to the virtual input device, and
   // Install now from a phone, which the daemon let past the PIN. What the
   // new remote types goes into the field in front as it's typed (ADR-065).

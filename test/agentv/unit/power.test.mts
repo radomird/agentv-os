@@ -59,3 +59,34 @@ test("S2.18 AgenTV's long-running units stop within a few seconds", () => {
     assert.ok(found && Number(found[1]) <= 5, `${unit} stops within 5 s`);
   }
 });
+
+test("T13.2 with sleep on, the owner may suspend from the TV session and set the wake alarm, never past an inhibitor", () => {
+  const sleep = rules("50-agentv-sleep.rules");
+  for (const id of ["suspend", "suspend-multiple-sessions"]) {
+    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"]), YES, id);
+    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["users"]), null, `${id} isn't for someone outside wheel`);
+  }
+  for (const id of ["suspend-ignore-inhibit", "hibernate", "power-off", "reboot"]) {
+    assert.equal(sleep(`org.freedesktop.login1.${id}`, ["wheel"]), null, `${id} is polkit's own call`);
+  }
+  const unit = (verb: string, name: string, groups = ["wheel"]) => sleep("org.freedesktop.systemd1.manage-units", groups, { verb, unit: name });
+  assert.equal(unit("start", "agentv-wake.timer"), YES);
+  assert.equal(unit("stop", "agentv-wake.timer"), YES);
+  assert.equal(unit("start", "agentv-wake.timer", ["users"]), null);
+  assert.equal(unit("enable", "agentv-wake.timer"), null);
+  assert.equal(unit("start", "agentv-wake.service"), null);
+  assert.equal(unit("start", "suspend.target"), null);
+});
+
+test("T13.2 the wake alarm wakes the box for the night's update window, and is never enabled", () => {
+  const timer = readFileSync(join(ROOT, "system/agentv-wake.timer"), "utf8");
+  assert.match(timer, /^OnCalendar=\*-\*-\* 02:00:00$/m, "at the start of the 02:00 to 05:00 window");
+  assert.match(timer, /^WakeSystem=true$/m);
+  assert.doesNotMatch(timer, /^\[Install\]/m, "the screen daemon starts it, only before it sleeps");
+  assert.match(readFileSync(join(ROOT, "system/agentv-wake.service"), "utf8"), /^ExecStart=\/usr\/bin\/true$/m);
+});
+
+test("T13.2 installing apps holds the box awake", () => {
+  const unit = readFileSync(join(ROOT, "system/agentv-setup-apps.service"), "utf8");
+  assert.match(unit, /^ExecStart=\/usr\/bin\/systemd-inhibit --what=sleep --who=AgenTV "--why=installing apps" --mode=block \/usr\/bin\/agentv-setup-apps$/m);
+});

@@ -50,6 +50,9 @@
 #   screensaver-after <s|off>  the terminal screensaver hands over to the
 #                  slideshow after s seconds, not 10 minutes, until the
 #                  session ends
+#   sleep-after <s|off>  with Settings → Power's sleep on, the box sleeps
+#                  once the TV's been off s seconds, not an hour, until the
+#                  session ends
 #   close <role>   close the home screen, the web apps or Steam
 #   toast <text>   a toast over whatever's in front
 #   frames [s]     how smoothly the home screen draws, over s seconds
@@ -136,6 +139,14 @@ case "$command" in
       request='{"cmd":"idle-after","seconds":null}'
     else
       request=$(jq -cn --argjson seconds "$1" '{cmd: "idle-after", seconds: $seconds}')
+    fi
+    ;;
+  sleep-after)
+    (( $# == 1 )) && [[ $1 =~ ^([0-9]+|off)$ ]] || { usage >&2; exit 2; }
+    if [[ $1 == "off" ]]; then
+      request='{"cmd":"sleep-after","seconds":null}'
+    else
+      request=$(jq -cn --argjson seconds "$1" '{cmd: "sleep-after", seconds: $seconds}')
     fi
     ;;
   screensaver-after)

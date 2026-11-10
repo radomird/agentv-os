@@ -10,7 +10,10 @@ Description=AgenTV setup's apps
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/agentv-setup-apps
+# Held awake while it runs: with Settings → Power's sleep on, the box never
+# suspends in the middle of a download (ADR-072). That covers a native app's
+# program too, which it waits for.
+ExecStart=/usr/bin/systemd-inhibit --what=sleep --who=AgenTV "--why=installing apps" --mode=block /usr/bin/agentv-setup-apps
 TimeoutStartSec=90min
 StateDirectory=agentv/apps
 StateDirectoryMode=0755
