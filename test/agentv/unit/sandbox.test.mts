@@ -634,6 +634,8 @@ test("M5 a build's folder and what's saved in it aren't for every user on the bo
   build.setState({ origins: [] });
   build.setStatus({ build: "b1", id: "local.blocks", version: "1.0.0", phase: "build", state: "running", steps: [], started: "", at: "" });
   for (const name of ["state.json", "status.json"]) assert.equal(lstatSync(join(dir, name)).mode & 0o007, 0, `${name} isn't for others`);
+  // And root's own: what it hands the build is the group's to read, too.
+  assert.equal(lstatSync(join(dir, "request.json")).mode & 0o777, 0o640, "request.json isn't for others");
 
   // Who reads builds: the daemon and the builder's way out (its filter and
   // the nightly package check), through the builder's group.

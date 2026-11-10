@@ -128,10 +128,17 @@ export function escapePath(path: string): string {
     .join("-");
 }
 
-function write(path: string, data: unknown): void {
+// With a group, the file is one of root's own inside a build's folder: the
+// builder's group reads it, and nobody else does, like the rest of the
+// folder.
+function write(path: string, data: unknown, group?: number): void {
   const next = `${path}.next`;
   rmSync(next, { force: true });
-  writeFileSync(next, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o644, flag: "wx" });
+  writeFileSync(next, `${JSON.stringify(data, null, 2)}\n`, { mode: group === undefined ? 0o644 : 0o640, flag: "wx" });
+  if (group !== undefined) {
+    lchownSync(next, process.getuid!(), group);
+    chmodSync(next, 0o640);
+  }
   renameSync(next, path);
 }
 
@@ -293,9 +300,9 @@ export class HandOver {
       if (other === version) continue;
       const otherDir = this.versionDir(id, other);
       const was = otherDir ? this.readStatus(otherDir) : null;
-      if (otherDir && was?.state === "installed") write(join(otherDir, "status.json"), { ...was, state: "kept", at: new Date().toISOString() });
+      if (otherDir && was?.state === "installed") write(join(otherDir, "status.json"), { ...was, state: "kept", at: new Date().toISOString() }, this.o.builder.gid);
     }
-    write(join(dir, "status.json"), { ...status, state: "installed", at: new Date().toISOString() });
+    write(join(dir, "status.json"), { ...status, state: "installed", at: new Date().toISOString() }, this.o.builder.gid);
     return this.answer(build, true, undefined, "install");
   }
 
@@ -413,7 +420,7 @@ export class HandOver {
     chmodSync(dir, BUILD_MODE);
     const refuse = (reason: string) => {
       const status: BuildStatus = { build: request.build, id: request.id, version: request.version, phase: request.phase, state: "failed", steps: [], reason, started: request.at, at: request.at };
-      write(join(dir, "status.json"), status);
+      write(join(dir, "status.json"), status, this.o.builder.gid);
       return this.answer(request.build, false, reason);
     };
 
@@ -449,7 +456,7 @@ export class HandOver {
       request.origins = approved;
     }
 
-    write(join(dir, "request.json"), request);
+    write(join(dir, "request.json"), request, this.o.builder.gid);
     const ticket: Ticket = {
       build: request.build,
       id: request.id,
