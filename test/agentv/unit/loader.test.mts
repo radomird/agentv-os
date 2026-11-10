@@ -157,6 +157,17 @@ test("an app that exits mid-call has crashed, and comes back on the next call", 
   assert.deepEqual(await h.call(viewer, "tile", "s"), {});
 });
 
+test("a call that arrives as the app is stopped has crashed, and the next call starts it again", async () => {
+  // An app is stopped when it's updated or removed, and as the daemon closes.
+  // A tile asked for at that moment gets an answer, not a daemon error.
+  const h = host(app(tileApp("return {};")));
+  await h.start();
+  const call = h.call(viewer, "tile", "s");
+  h.stop();
+  await fails(call, "crashed", /Sample stopped/);
+  assert.deepEqual(await h.call(viewer, "tile", "s"), {});
+});
+
 test("a failing call says what failed", async () => {
   const h = host(app(tileApp('throw new Error("no such show");')));
   await fails(h.call(viewer, "tile", "s"), "failed", /Sample: no such show/);

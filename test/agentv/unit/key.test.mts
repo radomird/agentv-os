@@ -53,9 +53,13 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
   const stop = root();
   const { daemon, lines, send } = await box();
   try {
-    // With the plans this box's channel offers, stable here, and what builds
+    // With the plans on offer, the same on every channel, and what builds
     // use: nothing yet.
-    const claude = [{ provider: "claude", name: "claude pro or max", bestEffort: false }];
+    const claude = [
+      { provider: "claude", name: "claude pro or max" },
+      { provider: "chatgpt", name: "chatgpt plus or pro" },
+      { provider: "grok", name: "supergrok or x premium+" },
+    ];
     const none = { provider: null, path: null, accepted: false };
     assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null, plans: claude, ai: none });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "claude, chatgpt, gemini, grok or muse" });
