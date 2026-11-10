@@ -25,6 +25,7 @@ import { FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "..
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "../../../daemon/remote-text.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
@@ -39,7 +40,7 @@ let browser: Browser;
 let daemon: Daemon;
 let url = "";
 let phoneUrl = "";
-let token = "";
+let token: TestPhone;
 let state = "";
 let server: Server;
 let site = "";
@@ -95,7 +96,7 @@ before(async () => {
   });
   input.start();
   const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
-  ({ token } = await (await fetch(`${phoneUrl}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: pairing.code, name: "iphone" }) })).json());
+  token = await pairPhone(phoneUrl, pairing.code, "iphone");
   await until(async () => (await phoneState()).ok === true);
 });
 
@@ -118,10 +119,10 @@ async function until(check: () => Promise<boolean> | boolean, ms = 3000): Promis
   }
 }
 
-const phoneState = async () => (await fetch(`${phoneUrl}/api/phone/state`, { headers: { Authorization: `Bearer ${token}` } })).json();
+const phoneState = async () => (await token.fetch(`/api/phone/state`)).json();
 
 async function typeOnPhone(body: object): Promise<{ ok: boolean; why?: string; by?: string }> {
-  const response = await fetch(`${phoneUrl}/api/phone/text`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+  const response = await token.fetch(`/api/phone/text`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return response.json();
 }
 

@@ -46,3 +46,12 @@ pass "nothing the box check, an app's worker or Node's JIT needs is taken away"
 dupes=$(grep -E '^[A-Z][A-Za-z]+=' "$unit" | cut -d= -f1 | grep -vxE 'Environment|ExecStart' | sort | uniq -d)
 [[ -z $dupes ]] || fail "no setting is given twice" "$dupes"
 pass "no setting is given twice"
+
+# The other two units that run a filter read the box's addresses the same
+# way, before each connection. Without netlink the read fails, and the
+# filter with it: nothing gets out at all.
+for other in agentv-build-net agentv-router; do
+  sed -n 's/^RestrictAddressFamilies=//p' "$ROOT/system/$other.service" | grep -qw AF_NETLINK ||
+    fail "$other, which runs a filter, can list the box's addresses"
+done
+pass "the builder's way out and the plan's can list the box's addresses"

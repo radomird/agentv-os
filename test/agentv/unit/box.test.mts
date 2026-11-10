@@ -32,6 +32,7 @@ import { HOTSPOT_ADDRESS } from "../../../daemon/hotspot.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { Setup } from "../../../daemon/setup.ts";
 import { boxLines, properUnits, summary } from "../../../launcher/box-lines.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const FIXTURES = join(ROOT, "test/agentv/fixtures/box");
@@ -382,8 +383,8 @@ test("the screen daemon tells the daemon about Widevine, and the readings can be
 test("a paired phone gets the box in one line, for its menu", async () => {
   assert.equal((await fetch(`${lan}/api/phone/box`)).status, 401);
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
-  const token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
-  const answer = await (await fetch(`${lan}/api/phone/box`, { headers: { Authorization: `Bearer ${token}` } })).json();
+  const token = await pairPhone(lan, code, "iphone");
+  const answer = await (await token.fetch(`/api/phone/box`)).json();
   assert.equal(answer.ok, true);
   assert.match(answer.line, /^4k tv · light games · .+ free · wi-fi$/);
   assert.equal(answer.box.model, "NUC8i5BEH");

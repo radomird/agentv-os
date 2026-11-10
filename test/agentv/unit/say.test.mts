@@ -20,6 +20,7 @@ import type { WatchRow } from "../../../daemon/ledger.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "../../../daemon/router.ts";
 import { cleanSayAnswer, type SayAnswer, type SayAsk } from "../../../daemon/say.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-say-"));
@@ -192,7 +193,7 @@ const base = join(scratch, "daemon");
 let daemon: Daemon;
 let url = "";
 let lan = "";
-let token = "";
+let token: TestPhone;
 let heard: RouterApp[] = [];
 const asks: SayAsk[] = [];
 let routes: Record<string, Route | Error> = {};
@@ -227,7 +228,7 @@ before(async () => {
   url = `http://127.0.0.1:${await daemon.listen()}`;
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-  token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+  token = await pairPhone(lan, code, "iphone");
   // The screen daemon, as the person: it finds what FOUND has, and opens.
   watch = new AskWatch<SayAsk, SayAnswer>({
     url: `${url}/`,
@@ -259,7 +260,7 @@ function post(path: string, body: unknown): Promise<Response> {
   return fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 }
 const phone = (path: string, body?: unknown) =>
-  fetch(`${lan}${path}`, { method: body === undefined ? "GET" : "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  token.fetch(`${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 test("the TV takes a sentence only once setup is done", async () => {
   const early = await phone("/api/phone/say", { sentence: "play frozen" });

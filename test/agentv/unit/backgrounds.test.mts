@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Backgrounds, creditText, imageType, MAX_PHOTOS, MAX_THEME, pictureId } from "../../../daemon/backgrounds.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-backgrounds-"));
 // The smallest pictures of each kind, by their first bytes.
@@ -22,7 +23,7 @@ const NO_INTRO = { intros: true, introDue: null, introShown: null };
 let daemon: Daemon;
 let url = "";
 let lan = "";
-let token = "";
+let token: TestPhone;
 
 before(async () => {
   mkdirSync(join(scratch, "root", "setup"), { recursive: true });
@@ -30,7 +31,7 @@ before(async () => {
   url = `http://127.0.0.1:${await daemon.listen()}`;
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
-  token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+  token = await pairPhone(lan, code, "iphone");
 });
 
 after(async () => {
@@ -38,8 +39,13 @@ after(async () => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-const send = (body: Buffer, credit = "", auth = token) =>
-  fetch(`${lan}/api/phone/background?credit=${encodeURIComponent(credit)}`, { method: "POST", headers: { "Content-Type": "image/jpeg", ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, body: new Uint8Array(body) });
+// A photo from the paired phone, or with `paired` false from anything else
+// on the home network.
+const send = (body: Buffer, credit = "", paired = true) => {
+  const path = `/api/phone/background?credit=${encodeURIComponent(credit)}`;
+  const init = { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: new Uint8Array(body) };
+  return paired ? token.fetch(path, init) : fetch(`${lan}${path}`, init);
+};
 
 test("a picture is known by its own first bytes, whatever it says it is", () => {
   assert.equal(imageType(JPEG), "image/jpeg");
@@ -149,13 +155,13 @@ test("S5.8 the screen daemon hands the theme's own over through the daemon's loc
   const list = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.deepEqual([list.theme.name, list.theme.current], ["gruvbox", pictureId(PNG)]);
   assert.deepEqual(Buffer.from(await (await fetch(`${url}/api/backgrounds/${pictureId(PNG)}`)).arrayBuffer()), PNG);
-  assert.equal((await fetch(`${lan}/api/backgrounds/theme`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" })).status, 404, "not from a phone");
+  assert.equal((await token.fetch(`/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: "{}" })).status, 404, "not from a phone");
 });
 
 test("S5.3 a photo shared from a paired phone becomes the TV's background, with its credit, and the TV hears it", async () => {
   const events = await fetch(`${url}/api/events`);
   const reader = events.body!.getReader();
-  assert.equal((await send(JPEG, "photo by ana", "")).status, 401, "only a paired phone");
+  assert.equal((await send(JPEG, "photo by ana", false)).status, 401, "only a paired phone");
   const reply = await send(JPEG, "photo by ana");
   assert.equal(reply.status, 200);
   const sent = (await reply.json()).background;
@@ -170,7 +176,7 @@ test("S5.3 a photo shared from a paired phone becomes the TV's background, with 
   const picture = await fetch(`${url}/api/backgrounds/${sent.id}`);
   assert.equal(picture.headers.get("content-type"), "image/jpeg");
   assert.deepEqual(Buffer.from(await picture.arrayBuffer()), JPEG);
-  assert.equal((await fetch(`${lan}/api/backgrounds/${sent.id}`, { headers: { Authorization: `Bearer ${token}` } })).status, 404, "the phone's side has no pictures to give out");
+  assert.equal((await token.fetch(`/api/backgrounds/${sent.id}`)).status, 404, "the phone's side has no pictures to give out");
 });
 
 test("too big, or not a picture, is refused; a child's profile can't send one; taking one off needs the PIN", async () => {

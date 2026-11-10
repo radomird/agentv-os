@@ -166,7 +166,7 @@ test("on its own address it serves the captive page and what it needs, and nothi
   const page = await phone("/", host);
   assert.equal(page.status, 200);
   assert.match(page.body, /companion-web\/setup\.ts/);
-  for (const path of ["/companion-web/setup.ts", "/companion-web/lib.ts", "/companion-web/companion.css", "/launcher/glyphs.ts", "/api/theme.css"]) {
+  for (const path of ["/companion-web/setup.ts", "/companion-web/lib.ts", "/companion-web/channel.ts", "/companion-web/seal.ts", "/companion-web/companion.css", "/launcher/glyphs.ts", "/api/theme.css"]) {
     assert.equal((await phone(path, host)).status, 200, path);
   }
   assert.doesNotMatch((await phone("/companion-web/setup.ts", host)).body, /interface Network/, "served as JavaScript");
@@ -235,10 +235,10 @@ test("the TV gets the hotspot's name, password and QR code, and setup ending clo
 test("once the hotspot joined the home Wi-Fi, phones pair at the box's address there", async () => {
   const pair = async () => (await (await fetch(`${tv}/api/phones/pair`, { method: "POST" })).json()).pairing.url as string;
   hotspotIs({ on: false });
-  assert.match(await pair(), /^http:\/\/192\.168\.1\.20:\d+\/\?code=/, "the home network's address, with no hotspot");
+  assert.match(await pair(), /^http:\/\/192\.168\.1\.20:\d+\/$/, "the home network's address, with no hotspot");
   // 127.0.0.1 stands in for the address the box got on the Wi-Fi it joined.
   hotspotIs({ on: false, joined: { ssid: "home wi-fi", address: "127.0.0.1" } });
-  assert.match(await pair(), /^http:\/\/127\.0\.0\.1:\d+\/\?code=/);
+  assert.match(await pair(), /^http:\/\/127\.0\.0\.1:\d+\/$/);
   // An address the box doesn't have any more isn't used.
   hotspotIs({ on: false, joined: { ssid: "home wi-fi", address: "10.9.9.9" } });
   assert.match(await pair(), /^http:\/\/192\.168\.1\.20:/);

@@ -14,6 +14,7 @@ import { Ledger } from "../../../daemon/ledger.ts";
 import { Profiles } from "../../../daemon/profiles.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "../ui/box.mts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const dir = mkdtempSync(join(tmpdir(), "agentv-no-pin-"));
 const passwd = join(dir, "passwd");
@@ -26,20 +27,21 @@ let daemon: Daemon;
 let url = "";
 let lan = "";
 let state = "";
-let token = "";
+let paired: TestPhone;
 
 type Reply = { status: number; data: Record<string, any> };
 
 async function send(method: string, path: string, body?: unknown, options: { grant?: string; phone?: boolean } = {}): Promise<Reply> {
-  const response = await fetch(`${options.phone ? lan : url}${path}`, {
+  // The phone's requests are signed and sealed, and its answers opened.
+  const init = {
     method,
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(options.grant ? { "X-AgenTV-Grant": options.grant } : {}),
-      ...(options.phone ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    } as Record<string, string>,
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  };
+  const response = options.phone ? await paired.fetch(path, init) : await fetch(`${url}${path}`, init);
   return { status: response.status, data: (await response.json().catch(() => ({}))) as Record<string, any> };
 }
 
@@ -50,8 +52,7 @@ before(async () => {
   ({ daemon, url, state } = await startBox());
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await send("POST", "/api/phones/pair", {})).data.pairing.code;
-  token = (await send("POST", "/api/phone/pair", { code, name: "iphone" }, { phone: true })).data.token;
-  assert.ok(token, "a phone is paired");
+  paired = await pairPhone(lan, code, "iphone");
 });
 
 after(async () => {
