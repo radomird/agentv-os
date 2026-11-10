@@ -35,12 +35,27 @@ name: Image
 # and Shut down on it (agentv-iso's omarchy-update check): rc tries the next
 # Omarchy release before its stable channel serves it. Nightly runs leave it
 # empty, so tested.json only ever lists what stable boxes can get. With
+# omarchy-version too, that's the Omarchy release the box should end up on
+# (4.6.0), when it isn't the one agentv-iso follows: the release candidate
+# run (omarchy-rc.yml) names the candidate's. With
 # checks, only the image checks named there run, by their file names in
 # agentv-iso's test/agentv/image/ without -test.sh (s5.6-setup update-tv), so
 # a fix to one check gets its answer in minutes: with from-disk too, that's
 # the night's box with this commit's packages on it, and only those checks.
 # A run that names its checks keeps nothing and signs nothing, since it
 # didn't run them all.
+#
+# Which key signs the packages a run builds: a throwaway one made in the
+# run (agentv-pkgs' bin/test-key), unless release-key is set. A pull
+# request, a branch or a sync builds code nobody has reviewed yet, so it
+# never gets AgenTV's own key. The run's agentv-keyring trusts the
+# throwaway key too, so the run's box takes its packages, and nothing
+# signed with it leaves the run. Only the nightly run sets release-key: it
+# updates a box installed from a channel, which trusts AgenTV's key alone,
+# and it signs tested.json. Its jobs then read AGENTV_SIGNING_KEY through
+# the "release" environment, which only the agentv branch may use. The
+# packages are built without any key (bin/build) and signed in a step of
+# their own (bin/sign).
 #
 # With shards above 1 (4 unless a caller says otherwise), the run is shared
 # out across jobs. One gets the box ready: it builds the ISO and installs
@@ -103,6 +118,10 @@ on:
         description: "Also move the box to the Omarchy on this channel after the update, from the TV: rc, or empty to stay on stable"
         type: string
         default: ""
+      omarchy-version:
+        description: "The Omarchy release that channel should bring, like 4.6.0 (empty: the one agentv-iso follows)"
+        type: string
+        default: ""
       checks:
         description: "Only these image checks, by name, like s5.6-setup update-tv (empty: every check). Quickest with from-disk"
         type: string
@@ -111,6 +130,10 @@ on:
         description: "How many jobs share the checks out (1: all in one job, as before)"
         type: number
         default: 4
+      release-key:
+        description: "Sign with AgenTV's own key, not a throwaway one. Only on agentv, and only with packages from a channel"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
@@ -149,6 +172,9 @@ on:
       omarchy-channel:
         type: string
         default: ""
+      omarchy-version:
+        type: string
+        default: ""
       lanes:
         type: number
         default: 2
@@ -158,9 +184,14 @@ on:
       shards:
         type: number
         default: 4
+      release-key:
+        type: boolean
+        default: false
+    # Only a caller that sets release-key hands it over, and only until the
+    # key lives in the "release" environment, where the jobs read it from.
     secrets:
       AGENTV_SIGNING_KEY:
-        required: true
+        required: false
 
 permissions:
   contents: write
@@ -174,6 +205,8 @@ jobs:
     if: ${{ !(inputs.shards > 1 && !inputs.nightly && inputs.update-checks == '') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 240
+    # AgenTV's own key is the environment's. Every other run names none.
+    environment: ${{ inputs.release-key && 'release' || '' }}
     env:
       GH_TOKEN: ${{ github.token }}
       OWNER: ${{ github.repository_owner }}
@@ -242,31 +275,76 @@ jobs:
           echo "Free: $(avail) GB"
           (( $(avail) >= 40 )) || { echo "::error::only $(avail) GB free, the build and install test need about 40 GB"; exit 1; }
 
+      # AgenTV's own key signs only what a channel's box updates to, built
+      # from agentv-pkgs' main. Anything else gets a key made here, good for
+      # a day, that only this run's box trusts.
+      - name: The key this run's packages are signed with
+        if: inputs.packages == 'build' || inputs.update-test
+        env:
+          RELEASE_KEY: ${{ inputs.release-key }}
+          PACKAGES: ${{ inputs.packages }}
+          PKGS_REF: ${{ inputs.pkgs-ref }}
+        run: |
+          if [[ $RELEASE_KEY == "true" ]]; then
+            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]]; then
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel and agentv-pkgs' main. This run gets a throwaway key when release-key is off."
+              exit 1
+            fi
+            echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ $PACKAGES != "build" ]]; then
+            echo "::error::A box installed from the $PACKAGES channel trusts AgenTV's key alone, so it won't take an update signed with a throwaway key. Build the packages (packages: build), turn update-test off, or run it on agentv with release-key."
+            exit 1
+          fi
+          pkgs/bin/test-key "$RUNNER_TEMP/test-key"
+          # The public half, where the build's container and the checks' can
+          # read it. The key itself stays in the runner's own folder.
+          mkdir -p iso/test-runs/test-key
+          cp "$RUNNER_TEMP/test-key/public.asc" iso/test-runs/test-key/public.asc
+          echo "AGENTV_TEST_PACKAGE_KEY=/w/test-runs/test-key/public.asc" >>"$GITHUB_ENV"
+          echo "This run signs its packages with a throwaway key, $(cat "$RUNNER_TEMP/test-key/fingerprint"), which only its own box trusts." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Built with no key around (agentv-pkgs' bin/build). A run with a
+      # throwaway key gets an agentv-keyring that trusts it too.
       - name: AgenTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
-          OWN_REPO: ${{ inputs.own-repo }}
-          AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
         run: |
           dest=iso/configs/airootfs/usr/share/agentv-iso/packages
           if [[ $PACKAGES == "build" ]]; then
             sha=$(git -C os rev-parse HEAD)
             mkdir -p repo
             docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/repo:/repo" \
-              -e AGENTV_SIGNING_KEY -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" \
+              -v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc \
+              -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" \
               -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
               -e AGENTV_REPO_URL="https://github.com/$OWNER/agentv-pkgs/releases/download" \
               ghcr.io/archlinux/archlinux:latest /src/bin/build /repo
-            mkdir -p "$dest"
-            cp repo/agentv-*.pkg.tar.zst "$dest/"
-            # The whole signed repository, served to the box for the run.
-            if [[ $OWN_REPO == "true" ]]; then
-              mkdir -p iso/test-runs
-              cp -r repo iso/test-runs/own-repo
-              echo "AGENTV_TEST_OWN_REPO=/w/test-runs/own-repo" >>"$GITHUB_ENV"
-            fi
+            # The container wrote them as its own users.
+            sudo chown -R "$(id -u):$(id -g)" repo
           else
             AGENTV_OWNER="$OWNER" iso/bin/agentv-iso-packages "$PACKAGES" "$dest"
+            ls -l "$dest"
+          fi
+
+      # Packages are only built here for a run with a throwaway key (the
+      # step above the build says so), so AgenTV's own key is never asked for.
+      - name: Sign them with the run's throwaway key
+        if: inputs.packages == 'build'
+        env:
+          OWN_REPO: ${{ inputs.own-repo }}
+          AGENTV_TEST_KEY: ${{ runner.temp }}/test-key/public.asc
+        run: |
+          dest=iso/configs/airootfs/usr/share/agentv-iso/packages
+          AGENTV_SIGNING_KEY=$(cat "$RUNNER_TEMP/test-key/secret.asc") pkgs/bin/sign repo
+          mkdir -p "$dest"
+          cp repo/agentv-*.pkg.tar.zst "$dest/"
+          # The whole signed repository, served to the box for the run.
+          if [[ $OWN_REPO == "true" ]]; then
+            mkdir -p iso/test-runs
+            cp -r repo iso/test-runs/own-repo
+            echo "AGENTV_TEST_OWN_REPO=/w/test-runs/own-repo" >>"$GITHUB_ENV"
           fi
           ls -l "$dest"
 
@@ -276,17 +354,24 @@ jobs:
         id: update
         if: inputs.update-test
         env:
-          AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
+          RELEASE_KEY: ${{ inputs.release-key }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
           sha=$(git -C os rev-parse HEAD)
           update=iso/test-runs/update-repo
           mkdir -p "$update"
-          docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/$update:/repo" \
-            -e AGENTV_SIGNING_KEY -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" -e AGENTV_PKGREL=99 \
+          # A run with a throwaway key builds a keyring that trusts it.
+          test_key=()
+          if [[ $RELEASE_KEY != "true" ]]; then
+            test_key=(-v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc)
+          fi
+          docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/$update:/repo" ${test_key[@]+"${test_key[@]}"} \
+            -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" -e AGENTV_PKGREL=99 \
             -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
             -e AGENTV_REPO_URL="https://github.com/$OWNER/agentv-pkgs/releases/download" \
             ghcr.io/archlinux/archlinux:latest /src/bin/build /repo
+          # The container wrote them as its own users.
+          sudo chown -R "$(id -u):$(id -g)" "$update"
           version=$(find "$update" -maxdepth 1 -name 'agentv-[0-9]*-99-any.pkg.tar.zst' -printf '%f\n' |
             sed -E 's/^agentv-(.*)-any\.pkg\.tar\.zst$/\1/')
           echo "version=$version" >>"$GITHUB_OUTPUT"
@@ -296,6 +381,21 @@ jobs:
             echo "AGENTV_TEST_UPDATE_REPO=/w/test-runs/update-repo" >>"$GITHUB_ENV"
             echo "AGENTV_TEST_UPDATE_VERSION=$version" >>"$GITHUB_ENV"
           fi
+
+      # The only step with a key in it, and all it runs is agentv-pkgs'
+      # bin/sign, which fetches nothing. AgenTV's own key is here only when
+      # release-key is set, from the "release" environment.
+      - name: Sign the newer agentv
+        if: inputs.update-test
+        env:
+          AGENTV_SIGNING_KEY: ${{ inputs.release-key && secrets.AGENTV_SIGNING_KEY || '' }}
+          RELEASE_KEY: ${{ inputs.release-key }}
+        run: |
+          if [[ $RELEASE_KEY != "true" ]]; then
+            AGENTV_SIGNING_KEY=$(cat "$RUNNER_TEMP/test-key/secret.asc")
+            export AGENTV_SIGNING_KEY AGENTV_TEST_KEY="$RUNNER_TEMP/test-key/public.asc"
+          fi
+          pkgs/bin/sign iso/test-runs/update-repo
 
       # The newest box kept in the cache. A pull request reads the ones runs
       # on agentv kept, and a run on a branch its own too. The cache, unlike
@@ -326,6 +426,7 @@ jobs:
       - name: Build, install, boot, check
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           AGENTV_TEST_TESTED_OUT: ${{ inputs.nightly && '/w/test-runs/tested-packages.txt' || '' }}
           AGENTV_TEST_KEEP_DISK: ${{ inputs.keep-disk && '/w/test-runs/installed-disk' || '' }}
           FROM_DISK: ${{ steps.night.outputs.found }}
@@ -350,6 +451,7 @@ jobs:
           AGENTV_TEST_UPDATE_REPO: /w/test-runs/update-repo
           AGENTV_TEST_UPDATE_VERSION: ${{ steps.update.outputs.version }}
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
           ONLY: ${{ inputs.checks }}
         run: |
@@ -381,8 +483,12 @@ jobs:
       - name: Sign and publish tested.json
         if: inputs.nightly && inputs.checks == ''
         env:
-          AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
+          AGENTV_SIGNING_KEY: ${{ inputs.release-key && secrets.AGENTV_SIGNING_KEY || '' }}
         run: |
+          if [[ -z $AGENTV_SIGNING_KEY ]]; then
+            echo "::error::tested.json is signed with AgenTV's own key, and this run has none. Only the nightly run on agentv does (release-key)."
+            exit 1
+          fi
           list=iso/test-runs/tested-packages.txt
           test -s "$list"
           jq -Rn --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run "$GITHUB_RUN_ID" '
@@ -390,8 +496,13 @@ jobs:
             | {schema: 1, date: $date, run: $run,
                agentv: $packages.agentv, omarchy: $packages.omarchy, packages: $packages}
           ' <"$list" >tested.json
+          # In, and straight out of the environment, before gh or anything
+          # else runs in this step.
+          key=$AGENTV_SIGNING_KEY
+          unset AGENTV_SIGNING_KEY
           export GNUPGHOME=$(mktemp -d)
-          printf '%s\n' "$AGENTV_SIGNING_KEY" | gpg --batch --quiet --import
+          printf '%s\n' "$key" | gpg --batch --quiet --import
+          unset key
           gpg --batch --yes --detach-sign --output tested.json.sig tested.json
           rm -rf "$GNUPGHOME"
           if ! gh release view tested -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -432,6 +543,17 @@ jobs:
             iso/release/*.iso
             iso/release/*.iso.sha256
           compression-level: 0
+          retention-days: 7
+
+      # The checksum on its own too, a few bytes: agentv-iso's publish-iso.yml
+      # signs it without fetching the ISO.
+      - name: Keep the checksum
+        if: success() && inputs.keep-iso && inputs.checks == ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.name.outputs.name }}.sha256
+          path: iso/release/*.iso.sha256
+          if-no-files-found: error
           retention-days: 7
 
       # The installed box, for the runs that start from it, under a key of
@@ -487,6 +609,8 @@ jobs:
     if: inputs.shards > 1 && !inputs.nightly && inputs.update-checks == ''
     runs-on: ubuntu-26.04
     timeout-minutes: 150
+    # AgenTV's own key is the environment's. Every other run names none.
+    environment: ${{ inputs.release-key && 'release' || '' }}
     env:
       GH_TOKEN: ${{ github.token }}
       OWNER: ${{ github.repository_owner }}
@@ -551,31 +675,76 @@ jobs:
           echo "Free: $(avail) GB"
           (( $(avail) >= 40 )) || { echo "::error::only $(avail) GB free, the build and install test need about 40 GB"; exit 1; }
 
+      # AgenTV's own key signs only what a channel's box updates to, built
+      # from agentv-pkgs' main. Anything else gets a key made here, good for
+      # a day, that only this run's box trusts.
+      - name: The key this run's packages are signed with
+        if: inputs.packages == 'build' || inputs.update-test
+        env:
+          RELEASE_KEY: ${{ inputs.release-key }}
+          PACKAGES: ${{ inputs.packages }}
+          PKGS_REF: ${{ inputs.pkgs-ref }}
+        run: |
+          if [[ $RELEASE_KEY == "true" ]]; then
+            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]]; then
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel and agentv-pkgs' main. This run gets a throwaway key when release-key is off."
+              exit 1
+            fi
+            echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ $PACKAGES != "build" ]]; then
+            echo "::error::A box installed from the $PACKAGES channel trusts AgenTV's key alone, so it won't take an update signed with a throwaway key. Build the packages (packages: build), turn update-test off, or run it on agentv with release-key."
+            exit 1
+          fi
+          pkgs/bin/test-key "$RUNNER_TEMP/test-key"
+          # The public half, where the build's container and the checks' can
+          # read it. The key itself stays in the runner's own folder.
+          mkdir -p iso/test-runs/test-key
+          cp "$RUNNER_TEMP/test-key/public.asc" iso/test-runs/test-key/public.asc
+          echo "AGENTV_TEST_PACKAGE_KEY=/w/test-runs/test-key/public.asc" >>"$GITHUB_ENV"
+          echo "This run signs its packages with a throwaway key, $(cat "$RUNNER_TEMP/test-key/fingerprint"), which only its own box trusts." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Built with no key around (agentv-pkgs' bin/build). A run with a
+      # throwaway key gets an agentv-keyring that trusts it too.
       - name: AgenTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
-          OWN_REPO: ${{ inputs.own-repo }}
-          AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
         run: |
           dest=iso/configs/airootfs/usr/share/agentv-iso/packages
           if [[ $PACKAGES == "build" ]]; then
             sha=$(git -C os rev-parse HEAD)
             mkdir -p repo
             docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/repo:/repo" \
-              -e AGENTV_SIGNING_KEY -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" \
+              -v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc \
+              -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" \
               -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
               -e AGENTV_REPO_URL="https://github.com/$OWNER/agentv-pkgs/releases/download" \
               ghcr.io/archlinux/archlinux:latest /src/bin/build /repo
-            mkdir -p "$dest"
-            cp repo/agentv-*.pkg.tar.zst "$dest/"
-            # The whole signed repository, served to the box for the run.
-            if [[ $OWN_REPO == "true" ]]; then
-              mkdir -p iso/test-runs
-              cp -r repo iso/test-runs/own-repo
-              echo "AGENTV_TEST_OWN_REPO=/w/test-runs/own-repo" >>"$GITHUB_ENV"
-            fi
+            # The container wrote them as its own users.
+            sudo chown -R "$(id -u):$(id -g)" repo
           else
             AGENTV_OWNER="$OWNER" iso/bin/agentv-iso-packages "$PACKAGES" "$dest"
+            ls -l "$dest"
+          fi
+
+      # Packages are only built here for a run with a throwaway key (the
+      # step above the build says so), so AgenTV's own key is never asked for.
+      - name: Sign them with the run's throwaway key
+        if: inputs.packages == 'build'
+        env:
+          OWN_REPO: ${{ inputs.own-repo }}
+          AGENTV_TEST_KEY: ${{ runner.temp }}/test-key/public.asc
+        run: |
+          dest=iso/configs/airootfs/usr/share/agentv-iso/packages
+          AGENTV_SIGNING_KEY=$(cat "$RUNNER_TEMP/test-key/secret.asc") pkgs/bin/sign repo
+          mkdir -p "$dest"
+          cp repo/agentv-*.pkg.tar.zst "$dest/"
+          # The whole signed repository, served to the box for the run.
+          if [[ $OWN_REPO == "true" ]]; then
+            mkdir -p iso/test-runs
+            cp -r repo iso/test-runs/own-repo
+            echo "AGENTV_TEST_OWN_REPO=/w/test-runs/own-repo" >>"$GITHUB_ENV"
           fi
           ls -l "$dest"
 
@@ -585,17 +754,24 @@ jobs:
         id: update
         if: inputs.update-test
         env:
-          AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
+          RELEASE_KEY: ${{ inputs.release-key }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
           sha=$(git -C os rev-parse HEAD)
           update=iso/test-runs/update-repo
           mkdir -p "$update"
-          docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/$update:/repo" \
-            -e AGENTV_SIGNING_KEY -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" -e AGENTV_PKGREL=99 \
+          # A run with a throwaway key builds a keyring that trusts it.
+          test_key=()
+          if [[ $RELEASE_KEY != "true" ]]; then
+            test_key=(-v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc)
+          fi
+          docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/$update:/repo" ${test_key[@]+"${test_key[@]}"} \
+            -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" -e AGENTV_PKGREL=99 \
             -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
             -e AGENTV_REPO_URL="https://github.com/$OWNER/agentv-pkgs/releases/download" \
             ghcr.io/archlinux/archlinux:latest /src/bin/build /repo
+          # The container wrote them as its own users.
+          sudo chown -R "$(id -u):$(id -g)" "$update"
           version=$(find "$update" -maxdepth 1 -name 'agentv-[0-9]*-99-any.pkg.tar.zst' -printf '%f\n' |
             sed -E 's/^agentv-(.*)-any\.pkg\.tar\.zst$/\1/')
           echo "version=$version" >>"$GITHUB_OUTPUT"
@@ -605,6 +781,21 @@ jobs:
             echo "AGENTV_TEST_UPDATE_REPO=/w/test-runs/update-repo" >>"$GITHUB_ENV"
             echo "AGENTV_TEST_UPDATE_VERSION=$version" >>"$GITHUB_ENV"
           fi
+
+      # The only step with a key in it, and all it runs is agentv-pkgs'
+      # bin/sign, which fetches nothing. AgenTV's own key is here only when
+      # release-key is set, from the "release" environment.
+      - name: Sign the newer agentv
+        if: inputs.update-test
+        env:
+          AGENTV_SIGNING_KEY: ${{ inputs.release-key && secrets.AGENTV_SIGNING_KEY || '' }}
+          RELEASE_KEY: ${{ inputs.release-key }}
+        run: |
+          if [[ $RELEASE_KEY != "true" ]]; then
+            AGENTV_SIGNING_KEY=$(cat "$RUNNER_TEMP/test-key/secret.asc")
+            export AGENTV_SIGNING_KEY AGENTV_TEST_KEY="$RUNNER_TEMP/test-key/public.asc"
+          fi
+          pkgs/bin/sign iso/test-runs/update-repo
 
       # Only whether there's one, and its key: each job that runs checks
       # fetches it itself.
@@ -684,6 +875,7 @@ jobs:
         if: steps.night.outputs.key == ''
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           AGENTV_ROOT_CACHE: "1"
           AGENTV_ROOT_CACHE_FRESH: ${{ inputs.keep-iso && '1' || '' }}
         run: set -o pipefail; iso/test/agentv/image/ci --hand-on iso/test-runs/box --no-checks 2>&1 | tee -a image.log
@@ -729,7 +921,7 @@ jobs:
       - name: Pack the packages
         run: |
           folders=(configs/airootfs/usr/share/agentv-iso/packages)
-          for folder in test-runs/update-repo test-runs/own-repo; do
+          for folder in test-runs/update-repo test-runs/own-repo test-runs/test-key; do
             [[ -d iso/$folder ]] && folders+=("$folder")
           done
           tar -cf box-packages.tar -C iso "${folders[@]}"
@@ -780,6 +972,17 @@ jobs:
             iso/release/*.iso
             iso/release/*.iso.sha256
           compression-level: 0
+          retention-days: 7
+
+      # The checksum on its own too, a few bytes: agentv-iso's publish-iso.yml
+      # signs it without fetching the ISO.
+      - name: Keep the checksum
+        if: success() && steps.name.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.name.outputs.name }}.sha256
+          path: iso/release/*.iso.sha256
+          if-no-files-found: error
           retention-days: 7
 
       - name: Keep the screenshots and logs
@@ -855,6 +1058,10 @@ jobs:
             echo "AGENTV_TEST_UPDATE_REPO=/w/test-runs/update-repo" >>"$GITHUB_ENV"
             echo "AGENTV_TEST_UPDATE_VERSION=$VERSION" >>"$GITHUB_ENV"
           fi
+          # The public half of the run's throwaway key, when it has one.
+          if [[ -f iso/test-runs/test-key/public.asc ]]; then
+            echo "AGENTV_TEST_PACKAGE_KEY=/w/test-runs/test-key/public.asc" >>"$GITHUB_ENV"
+          fi
 
       - name: The night's installed box
         if: needs.box.outputs.night != ''
@@ -875,6 +1082,7 @@ jobs:
       - name: Check it
         env:
           AGENTV_TEST_OMARCHY_CHANNEL: ${{ inputs.omarchy-channel }}
+          AGENTV_TEST_OMARCHY_VERSION: ${{ inputs.omarchy-version }}
           NIGHT: ${{ needs.box.outputs.night }}
           SHARE: ${{ matrix.checks }}
         run: |

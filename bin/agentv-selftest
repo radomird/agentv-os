@@ -782,7 +782,7 @@ s218() {
   if (( ${#denied[@]} == 0 )); then
     result pass S2.18 "polkit lets $user power off and restart with no password, with other sessions open too"
   else
-    result fail S2.18 "polkit asks $user for a password to ${denied[*]}: is 50-agentv-power.rules in /usr/share/polkit-1/rules.d/, and $user in wheel?"
+    result fail S2.18 "polkit asks $user for a password to ${denied[*]}: is 50-agentv-power.rules in /usr/share/polkit-1/rules.d/, and is $user the account the TV logs in as?"
   fi
   value=$(systemctl show -p TimeoutStopUSec --value agentv-daemon.service 2>/dev/null || true)
   (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("agentv-daemon.service ($value)")

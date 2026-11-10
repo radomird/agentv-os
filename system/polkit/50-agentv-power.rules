@@ -3,16 +3,24 @@
 // (ADR-060), which logind asks the boot loader for, for the next boot only.
 // The TV's screen daemon runs them as the box's owner, from the TV session's
 // own systemd, which isn't part of a login session, so, as for the update
-// units, the rule goes by the owner's admin group (wheel). It allows
-// restarting and powering off with another session open, such as one over
-// SSH, but never past something that blocks it, such as an update.
+// units, the rule goes by the owner's own account, the one SDDM logs in to
+// the TV session (agentv-session-setup writes it), not by every admin. It
+// allows restarting and powering off with another session open, such as one
+// over SSH, but never past something that blocks it, such as an update.
 polkit.addRule(function (action, subject) {
-  if ((action.id == "org.freedesktop.login1.power-off" ||
-       action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
-       action.id == "org.freedesktop.login1.reboot" ||
-       action.id == "org.freedesktop.login1.reboot-multiple-sessions" ||
-       action.id == "org.freedesktop.login1.set-reboot-to-boot-loader-menu") &&
-      subject.isInGroup("wheel")) {
-    return polkit.Result.YES;
+  if (action.id == "org.freedesktop.login1.power-off" ||
+      action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+      action.id == "org.freedesktop.login1.reboot" ||
+      action.id == "org.freedesktop.login1.reboot-multiple-sessions" ||
+      action.id == "org.freedesktop.login1.set-reboot-to-boot-loader-menu") {
+    var owner = "";
+    try {
+      owner = polkit.spawn(["/usr/bin/sed", "-n", "s/^User=//p", "/etc/sddm.conf.d/zz-agentv-autologin.conf"]).trim();
+    } catch (error) {
+      return;
+    }
+    if (owner != "" && subject.user == owner) {
+      return polkit.Result.YES;
+    }
   }
 });

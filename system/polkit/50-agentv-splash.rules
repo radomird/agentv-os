@@ -1,13 +1,21 @@
 // AgenTV (ADR-060): once home has drawn, the TV session lets Plymouth quit,
 // by starting agentv-boot-splash-release.service as the box's owner. It runs
 // from the screen daemon, a user unit that isn't part of a login session's
-// processes, so, as for the update units, the rule goes by the owner's admin
-// group (wheel), and allows starting that one unit and nothing else.
+// processes, so, as for the update units, the rule goes by the owner's own
+// account, the one SDDM logs in to the TV session, and allows starting that
+// one unit and nothing else.
 polkit.addRule(function (action, subject) {
   if (action.id == "org.freedesktop.systemd1.manage-units" &&
       action.lookup("unit") == "agentv-boot-splash-release.service" &&
-      action.lookup("verb") == "start" &&
-      subject.isInGroup("wheel")) {
-    return polkit.Result.YES;
+      action.lookup("verb") == "start") {
+    var owner = "";
+    try {
+      owner = polkit.spawn(["/usr/bin/sed", "-n", "s/^User=//p", "/etc/sddm.conf.d/zz-agentv-autologin.conf"]).trim();
+    } catch (error) {
+      return;
+    }
+    if (owner != "" && subject.user == owner) {
+      return polkit.Result.YES;
+    }
   }
 });
