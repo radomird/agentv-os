@@ -1,47 +1,40 @@
-# Security at Omarchy
+# Security
 
-## Report a vulnerability
+Found a security problem in AgenTV? Please tell me privately first, so I can fix it before it's public.
 
-If you believe you’ve found a security vulnerability in Omarchy, please tell the [Omarchy Security Team](https://omarchy.org/teams/#security) privately so we have an opportunity to investigate and fix it before it is made public.
+## How to report it
 
-[security@omarchy.org](mailto:security@omarchy.org?subject=Security%20report)
+Open this repo's [Security tab](https://github.com/radomird/agentv-os/security) and press **Report a vulnerability**. Or go [straight to the form](https://github.com/radomird/agentv-os/security/advisories/new). Only you and I see what you write there.
 
-Please don’t report potential vulnerabilities publicly in GitHub Issues, Discord, or social media before they’ve been resolved.
+Please don't open a public issue for it.
 
-## What is a vulnerability?
+## What to tell me
 
-We consider a bug a security vulnerability when it can be exploited to cross a meaningful security boundary: an untrusted or lower-privileged party gains access, permissions, or control they didn’t already have.
+- What you found, and what someone could do with it.
+- How to make it happen, step by step.
+- The release you're on. It's in _Settings > About_ on the TV, or run `agentv version` on the box.
+- Your box, if it matters.
 
-Code that could be more robust but does not cross a security boundary is an improvement rather than a security vulnerability. We may still merge a proposed fix and credit the reporter in our release notes.
+Leave out keys, passwords and anything from your own accounts. I don't need them to fix it.
 
-Eligibility for our [security credits](https://omarchy.org/security/credits/) page depends on whether a report identifies a confirmed security vulnerability, not on its severity.
+## What happens next
 
-## What to include
+AgenTV is one person's project, so I won't promise a number of hours. I'll answer as soon as I can, tell you what I found, and tell you when the fix is out. If you'd like, I'll thank you in the release notes.
 
-Give us enough information to understand and reproduce the issue:
+Fixes go into the next release and into edge. I don't patch older releases, so the way to get a fix is to update.
 
-- The affected component and Omarchy version.
-- An explanation of what an attacker can do before and after exploitation.
-- Steps to reproduce the issue and any proof of concept.
-- Your preferred contact details for follow-up.
+## What's in this repo
 
-## Responsible disclosure
+This is AgenTV itself: the TV's home, TV setup, your phone as the remote, building your own apps, updates and the `agentv` command. The USB stick installer is in [agentv-iso](https://github.com/radomird/agentv-iso), the packages your box updates from are in [agentv-pkgs](https://github.com/radomird/agentv-pkgs), and the apps, six streaming apps among them, are in [agentv-apps](https://github.com/radomird/agentv-apps).
 
-Please act in good faith while investigating and reporting vulnerabilities:
+Not sure which repo a problem belongs to? Report it here. I'll move it.
 
-- Only test systems and accounts you own or have explicit permission to test.
-- Avoid privacy violations, disruption, data destruction, and service degradation.
-- Don’t exploit a vulnerability beyond what is needed to demonstrate it.
-- Give us a reasonable opportunity to investigate and address the issue before publishing details.
+## AgenTV's or Omarchy's?
 
-We’ll review your report and keep you informed as we’re able while we work toward a resolution.
+AgenTV is built on Omarchy. This policy covers what AgenTV adds, which is everything named `agentv`: the TV's home, TV setup, your phone as the remote, building your own apps, updates, the installer's first screen, the packages and the list of apps.
 
-## Credits
+A problem in Omarchy itself goes to Omarchy, at [security@omarchy.org](mailto:security@omarchy.org). That's the Linux desktop, and Omarchy's own `omarchy` commands and packages. AgenTV isn't made or endorsed by the Omarchy project.
 
-Researchers who privately report a confirmed security vulnerability and give us the chance to ship a fix are thanked on the [security credits](https://omarchy.org/security/credits/) page. Accepted improvements that don’t cross a security boundary may still be credited in our release notes.
+## Not a security problem?
 
-Credits link to each reporter’s X profile and show their avatar. For duplicate reports, only the first reporter is eligible for credit.
-
-## Regular bugs and support
-
-For anything that isn’t a security vulnerability, please use the [Omarchy issue tracker](https://github.com/omacom/omarchy/issues).
+[Open an issue](https://github.com/radomird/agentv-os/issues/new/choose).
