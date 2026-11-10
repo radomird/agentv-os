@@ -11,13 +11,14 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { Ai, OFFERS, offersOn, TERMS_READ } from "../../../daemon/ai.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const scratch = mkdtempSync(join(tmpdir(), "agentv-ai-"));
 const state = join(scratch, "state");
 let daemon: Daemon;
 let url = "";
 let lan = "";
-let token = "";
+let token: TestPhone;
 const keyStatus = join(scratch, "key.json");
 // The channel, as agentv channel keeps it: none, so stable, until a test
 // puts the box on edge.
@@ -29,7 +30,7 @@ before(async () => {
   url = `http://127.0.0.1:${await daemon.listen()}`;
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
-  token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+  token = await pairPhone(lan, code, "iphone");
 });
 
 after(async () => {
@@ -40,9 +41,9 @@ after(async () => {
 const post = (path: string, body: unknown, grant?: string) =>
   fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
 const phone = (path: string, body?: unknown, grant?: string) =>
-  fetch(`${lan}${path}`, {
+  token.fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+    headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 const phoneState = async () => (await phone("/api/phone/state")).json();

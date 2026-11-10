@@ -19,6 +19,7 @@ import { NONE, type Route, type Routed, type RouterApp } from "../../../daemon/r
 import type { Said } from "../../../daemon/say.ts";
 import type { BuildView } from "../../../daemon/builds.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-ask-"));
@@ -212,9 +213,9 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
       fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
-    const token = (await (await fetch(`${lan}/api/phone/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, name: "iphone" }) })).json()).token;
+    const token = await pairPhone(lan, code, "iphone");
     const phone = (method: string, path: string, body?: unknown, grant?: string) =>
-      fetch(`${lan}${path}`, { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-11-05T08:00:00Z" }));
     const say = async (sentence: string, route: Route) => ((next = route), (await (await phone("POST", "/api/phone/say", { sentence })).json()).said);
 
