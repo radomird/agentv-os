@@ -326,9 +326,10 @@ export class Controllers {
     let found = await this.read();
     if (!found.adapter) return this.answer(found, { ok: false, why: "none", error: "there's no bluetooth here" });
     if (found.adapter.powered) return this.answer(found);
+    const { path } = found.adapter;
     await this.o.run("rfkill", ["unblock", "bluetooth"], 3000);
     for (let tries = 0; tries < 6; tries++) {
-      await this.bus(["set-property", "org.bluez", found.adapter.path, "org.bluez.Adapter1", "Powered", "b", "true"]);
+      await this.bus(["set-property", "org.bluez", path, "org.bluez.Adapter1", "Powered", "b", "true"]);
       found = await this.read();
       if (found.adapter?.powered) break;
       await sleep(this.o.settleMs / 12);
