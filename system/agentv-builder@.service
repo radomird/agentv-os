@@ -19,6 +19,12 @@
 # RestrictSUIDSGID= gave without its system call filter, which also blocks
 # openat2(), and so bubblewrap, which a package's install script with
 # safeguards off runs in.
+#
+# What a build writes isn't for every user on the box: a streaming
+# service's stage B keeps pages from a signed-in account in it. The build's
+# folder is 0750 and its files come out 0640 (UMask=0027), so only the
+# builder and its group read them. The daemon and the builder's way out are
+# in that group (agentv-daemon.service, sysusers/agentv-builder.conf).
 
 [Unit]
 Description=AgenTV build %I
@@ -38,7 +44,7 @@ WorkingDirectory=/var/lib/agentv/builder
 # The longest recipe is 40 minutes; this is the box's own stop.
 RuntimeMaxSec=90min
 TimeoutStopSec=10s
-UMask=0022
+UMask=0027
 MemoryMax=4G
 TasksMax=512
 PrivateNetwork=yes

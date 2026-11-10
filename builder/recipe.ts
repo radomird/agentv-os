@@ -33,7 +33,7 @@ export const TOOLS = {
   declare_origin: "Declare an internet origin the app reaches, with why. Approval shows it.",
   fetch_sample: "Fetch an address on a declared origin, to see what it answers, and with save keep it as a recorded reply for the fixtures.",
   look: "Open a page on the app's declared origins in a fresh browser with no sign-in, and see its structure, the origins it asked for and whether it plays protected video. With save, keep the page as a fixture.",
-  page_snapshot: "See the structure of the service's page in the TV's browser, signed in, on the app's declared origins.",
+  page_snapshot: "See the structure of the service's page in the TV's browser, signed in, on the app's approved origins: its start page and the pages a title is found and played on.",
   contract_tests: "Run the contract tests on the app against what was saved from the service's page.",
   theme_check: "Check the theme folder the way Omarchy will read it, draw its scenes as pictures, and make its preview.",
   understood: "Say what you understood the request to be.",
@@ -70,6 +70,11 @@ export interface Recipe {
   runtime: "page" | "web" | "theme";
   bounds: Bounds;
   steps: Step[];
+  // Where stage B may look while signed in (ADR-011): the first part of a
+  // page's path, like "search" for /search?q=x. The service's start page is
+  // always one. Anything else, such as an account or a payment page, is
+  // never opened for a build.
+  signedInPages?: string[];
   template: string; // a folder in the recipe, copied into the work folder first
   tests: string; // a folder of the recipe's own tests
   cost: { low: number; high: number }; // US dollars on Claude with a key, rough
@@ -88,6 +93,26 @@ export interface Plan {
 }
 
 const STEP_ID = /^[a-z][a-z0-9-]{0,30}$/;
+const PAGE = /^[a-z0-9][a-z0-9_-]{0,30}$/;
+// A language or a country at the front of a path, like /en or /en-gb.
+const LOCALE = /^[a-z]{2}([-_][a-z]{2})?$/;
+
+// Whether stage B may look at this address while signed in: the service's
+// start page, or a path whose first part the recipe names. A language at
+// the front and a file ending don't count: /en-gb/search and /search.html
+// are both "search".
+export function signedInPage(pages: string[] | undefined, address: URL): boolean {
+  let parts: string[];
+  try {
+    parts = address.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part).toLowerCase());
+  } catch {
+    return false;
+  }
+  if (parts.length && LOCALE.test(parts[0])) parts = parts.slice(1);
+  if (parts.length === 0) return true;
+  const first = parts[0].replace(/\.[a-z0-9]{1,5}$/, "");
+  return first === "index" || (pages ?? []).includes(first);
+}
 const MAX_STEPS = 12;
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -136,6 +161,14 @@ export function recipeProblems(data: unknown, dir: string): string[] {
       if (step.stage !== undefined && step.stage !== "a" && step.stage !== "b") problems.push(`the step ${step.id}'s stage is a or b`);
     }
   }
+  const pages: unknown = data.signedInPages;
+  if (pages !== undefined && (!Array.isArray(pages) || pages.length === 0 || pages.length > 60 || !pages.every((page) => typeof page === "string" && PAGE.test(page)))) {
+    problems.push("signedInPages lists the first part of each path stage B may look at, in lowercase, like search");
+  }
+  const looks = Array.isArray(data.steps) && data.steps.some((step) => isObject(step) && step.stage === "b" && Array.isArray(step.tools) && step.tools.includes("page_snapshot"));
+  if (looks && pages === undefined) problems.push("a recipe whose stage B looks at signed-in pages says which, in signedInPages");
+  const late = Array.isArray(data.steps) && data.steps.some((step) => isObject(step) && step.stage === "b" && Array.isArray(step.tools) && step.tools.includes("declare_origin"));
+  if (late) problems.push("a stage B step declares no origin: the app's origins were approved before it");
   for (const folder of [data.template, data.tests]) {
     if (typeof folder !== "string" || !existsSync(join(dir, folder))) problems.push(`${String(folder)} isn't a folder in the recipe`);
   }

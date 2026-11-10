@@ -4,6 +4,14 @@
   "fits": "A video or music streaming service the household signs in to on its website: films and series, live TV, music. The app opens the service's own site in the TV's browser, and learns how to search, start a title, read what plays, and pick a profile for children.",
   "runtime": "web",
   "bounds": { "origins": true, "media": [], "tile": false, "notices": false },
+  "signedInPages": [
+    "home", "browse", "search", "results", "discover", "explore", "kids", "live",
+    "watch", "play", "player", "video", "videos", "title", "titles", "detail", "details",
+    "movie", "movies", "film", "films", "series", "show", "shows", "season", "seasons", "episode", "episodes",
+    "channel", "channels", "genre", "genres", "category", "categories", "collection", "collections",
+    "music", "album", "albums", "artist", "artists", "playlist", "playlists", "track", "tracks",
+    "profiles", "select-profile", "who"
+  ],
   "template": "template",
   "tests": "tests",
   "cost": { "low": 1, "high": 5 },
@@ -31,7 +39,7 @@
     {
       "id": "study",
       "stage": "b",
-      "does": "Stage B, after the household signed in on the TV. Look at the service's own pages with page_snapshot, through AgenTV's harness, on its declared origins only: a search with results, a series' page with its seasons and episodes, a film's page, the player while it plays, and the profile picker if there is one. Keep each as a fixture with page_snapshot's save, like fixtures/pages/search.html. Write down in NOTES.md how to search, how to start a title or an episode, where the player shows its title, season and episode, and where the next episode control is. Never use the service's own continue watching row.",
+      "does": "Stage B, after the household signed in on the TV. Look at the service's own pages with page_snapshot, through AgenTV's harness, on its approved origins only, and only the pages a title is found and played on, never an account, settings or payment page: a search with results, a series' page with its seasons and episodes, a film's page, the player while it plays, and the profile picker if there is one. Keep each as a fixture with page_snapshot's save, like fixtures/pages/search.html. Write down in NOTES.md how to search, how to start a title or an episode, where the player shows its title, season and episode, and where the next episode control is. Never use the service's own continue watching row.",
       "tools": ["read", "write", "page_snapshot"],
       "writes": ["NOTES.md", "fixtures/**"],
       "reads": ["contract"],
