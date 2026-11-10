@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-DROP=${AGENTV_SETUP_APPS_DROP:-/var/lib/private/agentv/daemon/apps-drop/install.json}
+DROP=${AGENTV_SETUP_APPS_DROP:-/var/lib/agentv/daemon/apps-drop/install.json}
 STATUS=${AGENTV_SETUP_APPS_STATUS:-/run/agentv-setup-apps/state.json}
 INSTALL=${AGENTV_APP_INSTALL:-agentv-app-install}
 APPS=${AGENTV_APPS:-/var/lib/agentv/apps}

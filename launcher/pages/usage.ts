@@ -6,6 +6,7 @@
 
 import { daemon, type BuilderSettings } from "../api.ts";
 import { h } from "../dom.ts";
+import { loadingMark } from "../loading.ts";
 import type { Ctx } from "../main.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 
@@ -48,7 +49,7 @@ export function usagePanel(ctx: Ctx): HTMLElement[] {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
   const state = buildsState();
   if (ctx.state.viewer.role !== "adult") return [h("div", { class: "panel-big" }, "an adult's"), note("your agent's spending is for an adult to see and change.")];
-  if (!state) return [h("div", { class: "panel-big" }, "…")];
+  if (!state) return [h("div", { class: "panel-big" }, loadingMark())];
   const { settings, spend, warnings } = state;
   const capButton = (label: string, value: number, adjust: string) =>
     h(
