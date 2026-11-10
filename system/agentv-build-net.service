@@ -34,7 +34,9 @@ PrivateTmp=yes
 PrivateDevices=yes
 NoNewPrivileges=yes
 CapabilityBoundingSet=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Netlink is how Node lists the box's own addresses, which the filter reads
+# before each connection so it never connects back to this box.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
