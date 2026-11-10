@@ -23,7 +23,7 @@ import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type Ph
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { pair as pairWith } from "./channel.ts";
 import { api, avatar, forget, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
-import { askPin, withPin } from "./pad.ts";
+import { askPin, pinIs, withPin, withPinWords } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { Remote2 } from "./remote2.ts";
 import { sayAnswer, sayBox, type Said } from "./say.ts";
@@ -524,7 +524,8 @@ function who(): HTMLElement {
         h("span", { class: "viewer-role" }, [viewer.role === "child" ? "child" : "", viewer.id === state?.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
-    h("p", { class: "note" }, "from a child's profile to an adult's, or to a locked one, needs the adult pin."),
+    // With no PIN, a switch needs nothing, so nothing says it does (ADR-087).
+    state?.pin.set ? h("p", { class: "note" }, "from a child's profile to an adult's, or to a locked one, needs the adult pin.") : null,
   );
 }
 
@@ -558,7 +559,7 @@ function updatePage(update: Update): HTMLElement {
         : iconButton("clock", "install tonight", { class: "button primary", "data-action": "tonight", onclick: () => void act("installing tonight", "/api/phone/updates/tonight", { version: update.version }, true) }, 20),
       iconButton(
         "download",
-        state?.pin.set ? "install now with pin" : "install now",
+        withPinWords("install now"),
         { class: "button", "data-action": "install", onclick: () => void act("installing the update", "/api/phone/updates/install", undefined, true) },
         20,
       ),
@@ -853,6 +854,7 @@ async function refresh(force = false, wait = false): Promise<void> {
   const { version: _now, ...now } = next;
   const changed = JSON.stringify(now) !== JSON.stringify(was);
   state = next;
+  pinIs(next.pin.set);
   // A build that moved on says so here as it does on the TV.
   buildNotices(before?.builds, next.builds);
   // A page app's new notice shows here as it does on the TV.

@@ -494,7 +494,7 @@ export class Daemon {
       });
     }
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
-    this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state });
+    this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state, pinSet: () => this.pin.status().set });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
@@ -2639,11 +2639,14 @@ export class Daemon {
     // the one before.
     if ((method === "PUT" || method === "DELETE") && path === "/api/pin") {
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
+      const first = method === "PUT" && !this.pin.status().set;
       const why = method === "PUT" ? this.pin.set(body?.pin, this.grant(request)) : this.pin.remove(this.grant(request), await this.profiles.needPin());
       if (why) {
         this.json(response, why === "that needs the pin" ? 403 : 400, { ok: false, error: why });
         return;
       }
+      // A first PIN starts with no profile locked (ADR-087).
+      if (first) await this.profiles.unlockAll();
       this.log(method === "PUT" ? "the pin was set" : "the pin was taken off");
       const status = await this.pinStatus();
       this.broadcast("pin", status);
