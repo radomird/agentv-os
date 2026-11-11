@@ -438,6 +438,11 @@ body.with-backdrop {
   --lift: 0;
 }
 
+/* A theme's row in Look is a button, so the list shows two of this height. */
+.look-list {
+  --look-row: 76px;
+}
+
 .button.primary {
   background: var(--bright-foreground);
   color: var(--background);

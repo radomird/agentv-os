@@ -436,3 +436,107 @@ test("Settings → Themes and backgrounds shows each of the theme's own pictures
     await page.close();
   }
 });
+
+// Why the ring isn't on the focused element, to the pixel, or "" when it is.
+// It runs in the page.
+function ringOff(wanted: string): string {
+  const el = document.querySelector<HTMLElement>("#page .focused");
+  if (el?.dataset.action !== wanted) return `${el?.dataset.action ?? el?.className ?? "nothing"} has the focus, not ${wanted}`;
+  const ring = document.getElementById("ring")!.getBoundingClientRect();
+  const at = el.getBoundingClientRect();
+  const far = Math.max(Math.abs(ring.left - at.left), Math.abs(ring.top - at.top), Math.abs(ring.right - at.right), Math.abs(ring.bottom - at.bottom));
+  const say = (r: DOMRect) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`;
+  return far > 1.5 ? `the ring is at ${say(ring)} and ${wanted} at ${say(at)}` : "";
+}
+
+// The arrow that goes from the focused element toward another: along its
+// row when they share one, and up or down otherwise. It runs in the page.
+function arrowTo(wanted: string): string {
+  const from = document.querySelector("#page .focused")!.getBoundingClientRect();
+  const to = document.querySelector(`[data-action="${wanted}"]`)!.getBoundingClientRect();
+  if (Math.abs(to.top - from.top) < from.height / 2) return to.left > from.left ? "ArrowRight" : "ArrowLeft";
+  return to.top > from.top ? "ArrowDown" : "ArrowUp";
+}
+
+// Two frames on, so what a scroll or a load set off has been drawn.
+function frames(page: Page): Promise<null> {
+  return page.evaluate(() => new Promise<null>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))));
+}
+
+// Waits for the ring to get there, and says where each is when it doesn't.
+async function ringOn(page: Page, action: string, when: string): Promise<void> {
+  let why = "";
+  for (const until = Date.now() + 3000; Date.now() < until; await page.waitForTimeout(50)) {
+    why = await page.evaluate(ringOff, action);
+    if (!why) return;
+  }
+  assert.fail(`${when}: ${why}`);
+}
+
+test("Settings → Themes and backgrounds keeps the focus ring on the card as each look is picked, and its theme list shows whole rows and that it goes on", async () => {
+  try {
+    for (const size of Object.keys(SIZES) as Size[]) {
+      for (const from of ["glass", "cinema"] as const) {
+        await useLook(from);
+        const page = await tv(size);
+        const at = `${from} at ${size}`;
+        try {
+          await go(page, "settings/look");
+          await settled(page);
+          await page.keyboard.press("Enter");
+          await ringOn(page, "look-terminal", `${at}, into the panel`);
+          // Across the three cards, and each look picked in turn: the page
+          // is laid out again in the new look after the pick. At larger the
+          // third card is under the first, so the arrows go by where a card is.
+          for (const look of ["glass", "terminal", "cinema", "terminal", "glass"] as const) {
+            for (let presses = 0; presses < 2 && (await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) !== `look-${look}`; presses++) {
+              await page.keyboard.press(await page.evaluate(arrowTo, `look-${look}`));
+            }
+            await ringOn(page, `look-${look}`, `${at}, across to ${look}`);
+            await page.keyboard.press("Enter");
+            await page.waitForSelector(`html[data-look="${look}"]`);
+            await ringOn(page, `look-${look}`, `${at}, ${look} picked`);
+          }
+          // The theme list under the cards shows whole rows, never part
+          // of one, and a thumb beside it says it goes on and how far down.
+          const list = () =>
+            page.evaluate(() => {
+              const box = document.querySelector(".look-list")!.getBoundingClientRect();
+              const rows = [...document.querySelectorAll(".look-item")].map((el) => el.getBoundingClientRect());
+              const cut = rows.filter((r) => r.bottom > box.top + 1 && r.top < box.bottom - 1 && (r.top < box.top - 1 || r.bottom > box.bottom + 1)).length;
+              const thumb = document.querySelector<HTMLElement>(".look-scroll.scrolls .look-thumb span");
+              const track = thumb?.parentElement?.getBoundingClientRect();
+              const mark = thumb?.getBoundingClientRect();
+              return { cut, shown: rows.filter((r) => r.top >= box.top - 1 && r.bottom <= box.bottom + 1).length, thumb: Boolean(mark?.width && mark.height), down: mark && track ? Math.round(mark.top - track.top) : -1 };
+            });
+          await page.keyboard.press("ArrowDown");
+          assert.match((await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "", /^theme-/, `${at}: down from the cards is the theme list`);
+          assert.deepEqual(await list(), { cut: 0, shown: 4, thumb: true, down: 0 }, `${at}: two whole rows of themes, and the thumb at the top`);
+          // The cards' previews load again after a pick. Each is home in a
+          // frame, and what it scrolls is its own: the panel stays where the
+          // focus is.
+          await page.waitForFunction(() => [...document.querySelectorAll<HTMLIFrameElement>(".look-cards iframe")].every((frame) => frame.contentDocument?.querySelector("#page .focused")));
+          await frames(page);
+          const inSight = await page.evaluate(() => {
+            const panel = document.querySelector(".settings-panel")!.getBoundingClientRect();
+            const row = document.querySelector("#page .focused")!.getBoundingClientRect();
+            return row.top >= panel.top - 1 && row.bottom <= panel.bottom + 1;
+          });
+          assert.ok(inSight, `${at}: the focused theme is still in sight once the previews have loaded`);
+          for (let row = 0; row < 3; row++) await page.keyboard.press("ArrowDown");
+          const focused = (await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "";
+          assert.match(focused, /^theme-/, `${at}: still in the list`);
+          await ringOn(page, focused, `${at}, down the theme list`);
+          // The thumb moves with the list's scroll, a frame after the keys.
+          await frames(page);
+          const down = await list();
+          assert.ok(down.cut === 0 && down.shown === 4 && down.down > 0, `${at}: whole rows still, and the thumb has moved down: ${JSON.stringify(down)}`);
+        } finally {
+          await page.close();
+        }
+      }
+    }
+  } finally {
+    await useLook("terminal");
+  }
+});

@@ -775,8 +775,26 @@ export function settings(ctx: Ctx, open?: string): View {
         );
       }),
     );
-    list.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
-    return list;
+    // The list shows whole rows, and a thumb beside it says it goes on and
+    // how far down it is (launcher.css). The thumb is only to look at.
+    const thumb = h("span", {});
+    const wrap = h("div", { class: "look-scroll" }, list, h("span", { class: "look-thumb", "aria-hidden": "true" }, thumb));
+    const mark = () => {
+      const all = list.scrollHeight;
+      wrap.classList.toggle("scrolls", all > list.clientHeight + 2);
+      thumb.style.height = `${(list.clientHeight / all) * 100}%`;
+      thumb.style.top = `${(list.scrollTop / all) * 100}%`;
+    };
+    list.addEventListener(
+      "scroll",
+      () => {
+        mark();
+        ctx.focus.refresh();
+      },
+      { passive: true },
+    );
+    new ResizeObserver(mark).observe(list);
+    return wrap;
   }
   void loadBuilds(ctx).then(() => {
     const item = menu.querySelector<HTMLElement>('[data-key="usage"] .menu-value');
@@ -906,6 +924,8 @@ export function settings(ctx: Ctx, open?: string): View {
         return true;
       }
       if (action === "left" && current && panel.contains(current)) {
+        // Left along a row of cards first, then back to the list.
+        if (ctx.focus.move("left", panel)) return true;
         const openItem = menu.querySelector<HTMLElement>(".open");
         if (openItem) ctx.focus.set(openItem);
         return true;
