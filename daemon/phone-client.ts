@@ -87,10 +87,19 @@ export class PhoneClient {
     return true;
   }
 
+  // The address as fetch puts it on the wire. It escapes a few characters
+  // the caller may have left as they are, an apostrophe for one, and the box
+  // checks the signature against what arrived.
+  sent(address: string): string {
+    const url = new URL(`${this.base}${address}`);
+    return url.pathname + url.search;
+  }
+
   // The headers and the body of one signed request, as they go on the wire.
   // A JSON body is sealed. With a type, the body goes as it is.
-  sign(method: string, address: string, body?: unknown, options: CallOptions = {}): { headers: Record<string, string>; body: Buffer | undefined; counter: number } {
+  sign(method: string, path: string, body?: unknown, options: CallOptions = {}): { headers: Record<string, string>; body: Buffer | undefined; counter: number } {
     if (!this.session) throw new Error("say hello first");
+    const address = this.sent(path);
     const counter = ++this.counter;
     const headers: Record<string, string> = { ...options.headers, [HEADERS.session]: this.session.id, [HEADERS.counter]: String(counter) };
     if (options.grant) headers[HEADERS.grant] = options.grant;
@@ -115,27 +124,48 @@ export class PhoneClient {
   // One request, signed and sealed, and its answer opened. When the box
   // doesn't know the session (it restarted, say), it says hello and tries
   // once more.
-  async call(method: string, address: string, body?: unknown, options: CallOptions = {}): Promise<Answer> {
+  //
+  // Anyone on the network can write an answer that isn't sealed, so only two
+  // of them are taken: the box wanting a hello first, which it can't seal,
+  // and a picture or a file that was asked for, which is never read as JSON.
+  // Anything else throws. A phone the box doesn't know gets a 401 with
+  // `pair` from here, once its hello has failed.
+  async call(method: string, path: string, body?: unknown, options: CallOptions = {}): Promise<Answer> {
+    const address = this.sent(path);
     for (let attempt = 0; ; attempt++) {
       if (!this.session && !(await this.hello())) return { status: 401, ok: false, type: "application/json", headers: {}, body: Buffer.alloc(0), sealed: false, data: { ok: false, pair: true } };
       const keys = this.session!.keys;
       const request = this.sign(method, address, body, options);
       const response = await fetch(`${this.base}${address}`, { method, headers: request.headers, body: request.body === undefined ? undefined : new Uint8Array(request.body) });
       const raw = Buffer.from(await response.arrayBuffer());
-      const sealed = (response.headers.get("content-type") ?? "") === SEALED;
-      const opened = sealed ? open(keys.down, raw, answerExtra(method, address, request.counter, response.status)) : raw;
-      if (!opened) throw new Error("the box's answer couldn't be opened");
-      let data: Record<string, any> = {};
-      try {
-        data = JSON.parse(opened.toString("utf8"));
-      } catch {
-        // A picture or a file.
+      const type = response.headers.get("content-type") ?? "";
+      const headers = Object.fromEntries(response.headers);
+      if (type === SEALED) {
+        const opened = open(keys.down, raw, answerExtra(method, address, request.counter, response.status));
+        if (!opened) throw new Error("the box's answer couldn't be opened");
+        let data: Record<string, any> = {};
+        try {
+          data = JSON.parse(opened.toString("utf8"));
+        } catch {
+          // Sealed, but not JSON.
+        }
+        return { status: response.status, ok: response.ok, type: "application/json", headers, body: opened, sealed: true, data };
       }
-      if (response.status === 401 && !sealed && data.session === true && attempt === 0) {
-        this.session = null;
-        continue;
+      const json = type.startsWith("application/json");
+      if (response.status === 401 && json && attempt === 0) {
+        let data: Record<string, any> = {};
+        try {
+          data = JSON.parse(raw.toString("utf8"));
+        } catch {
+          // Not the box's.
+        }
+        if (data.session === true || data.pair === true) {
+          this.session = null;
+          continue;
+        }
       }
-      return { status: response.status, ok: response.ok, type: sealed ? "application/json" : (response.headers.get("content-type") ?? ""), headers: Object.fromEntries(response.headers), body: opened, sealed, data };
+      if (method === "GET" && response.status === 200 && !json) return { status: 200, ok: true, type, headers, body: raw, sealed: false, data: {} };
+      throw new Error("the box's answer wasn't sealed");
     }
   }
 }

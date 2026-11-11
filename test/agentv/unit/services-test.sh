@@ -152,3 +152,9 @@ grep -q "^sudo bash $ROOT/install/tv/services.sh" "$CALLS" || fail "the migratio
 [[ $(state docker.socket) == "disabled" && $(state cups.service) == "disabled" ]] || fail "the migration turns them off"
 grep -q "53317" "$BOX/rules" && fail "the migration closes LocalSend's port"
 pass "boxes installed before get the same from a migration, as root"
+
+cp "$BOX/rules" "$SCRATCH/rules.migrated"
+output=$(PATH="$SCRATCH/bin:$PATH" AGENTV_PATH="$ROOT" bash -euo pipefail "$migration" 2>&1) || fail "the migration runs again" "$output"
+diff -q "$BOX/rules" "$SCRATCH/rules.migrated" >/dev/null || fail "running the migration again changes nothing"
+[[ $(state docker.socket) == "disabled" && $(state cups.service) == "disabled" && $(state avahi-daemon.service) == "enabled" ]] || fail "running the migration again leaves them as they were"
+pass "running the migration again changes nothing"

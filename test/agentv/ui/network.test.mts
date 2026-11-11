@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { DiscoverOptions, Run } from "../../../daemon/discover.ts";
+import type { Daemon } from "../../../daemon/server.ts";
 import { bothWays, FIXTURES, startBox, type BoxOptions } from "./box.mts";
 
 const require = createRequire(`${process.env.AGENTV_UI_MODULES}/`);
@@ -351,11 +352,11 @@ test("setup's apps step on music lists the NASes on your network, and a NAS's fo
 });
 
 // A phone paired with the box, on its remote.
-async function phoneOn(url: string, phoneUrl: string): Promise<Page> {
-  const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
+async function phoneOn(daemon: Daemon, url: string): Promise<Page> {
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
   const page = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${phoneUrl}/?code=${pairing.code}`);
+  await page.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await page.waitForSelector(".r2");
   return page;
 }
@@ -364,7 +365,7 @@ bothWays("discover", "the phone shows what's on your network while the TV does, 
   const { daemon, url } = await box({ features: { ...options.features, remote2: true } });
   try {
     const page = await tv(url);
-    const phone = await phoneOn(url, `http://127.0.0.1:${daemon.lanPort}`);
+    const phone = await phoneOn(daemon, url);
     await page.locator('.tile[data-id="someone.radio"]').click();
     await page.locator('input[data-field="serverUrl"]').waitFor({ state: "attached" });
     if (!on) {

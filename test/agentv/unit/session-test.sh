@@ -49,6 +49,11 @@ grep -q "^start-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1
   fail "with no note it starts the TV session with AgenTV's Hyprland setup" "$(cat "$calls")"
 grep -qx "systemctl --user stop agentv-tv.target" "$calls" || fail "the TV session's units stop with it" "$(cat "$calls")"
 pass "S1.1 with no note, the log-in starts the TV session, without graphical-session.target"
+stopped=$(grep -n -m1 -x "systemctl --user stop bt-agent.service" "$calls" | cut -d: -f1 || true)
+started=$(grep -n -m1 "^start-hyprland " "$calls" | cut -d: -f1 || true)
+(( ${stopped:-999} < ${started:-0} )) ||
+  fail "Omarchy's pairing agent is stopped before the TV session starts" "$(cat "$calls")"
+pass "the desktop's Bluetooth pairing agent, which says yes to any pairing, is stopped before the TV session starts"
 
 rm -f "$state/quick-exits"
 mkdir -p "$state"

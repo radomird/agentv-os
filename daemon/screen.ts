@@ -1469,9 +1469,11 @@ export class Screen {
   // Tonight, or every night with "update overnight on its own" on, an update
   // installs between 02:00 and 05:00, once nothing has played for 30
   // minutes. The first look each night checks for updates; a later one
-  // installs. Runs every minute, and notes when something last played.
+  // installs. Runs every minute, and notes when something last played. An
+  // open game counts as playing: it stays open with the TV off (ADR-084),
+  // and the update's restart would end it.
   async night(): Promise<void> {
-    if (await this.playing()) this.lastPlayed = this.now();
+    if ((await this.playing()) || (await this.gameOpen())) this.lastPlayed = this.now();
     const at = new Date(this.now());
     if (at.getHours() < 2 || at.getHours() >= 5) return;
     const updates = await this.launcher.nightUpdates().catch(() => null);
@@ -1525,6 +1527,15 @@ export class Screen {
       if (home.playing === true) return true;
     }
     return false;
+  }
+
+  // Whether a game is open, in front or not: Steam with whatever it runs, or
+  // a game made on this TV, which home knows.
+  private async gameOpen(): Promise<boolean> {
+    if (this.opens.some((o) => o.role === "steam")) return true;
+    if (!this.apps.has("home")) return false;
+    const home = (await Promise.race([this.inHome("({ open: window.agentvGameOpen?.() ?? false })"), sleep(500).then(() => ({}))])) as { open?: unknown };
+    return home.open === true;
   }
 
   // --- Shared to the TV (ADR-050, S5.10) ------------------------------------
@@ -1733,6 +1744,7 @@ export class Screen {
   // locks comes back on home's PIN pad instead, with the game open behind it.
   private offTooLong(): Promise<void> {
     let stays = false;
+    let locked = false;
     return this.queue(async () => {
       if (!this.tvOff) return;
       const games = this.opens.filter((o) => o.role === "steam");
@@ -1742,7 +1754,13 @@ export class Screen {
       this.apps.get("share")?.stop();
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
-      const locked = (await this.launcher.lock().catch(() => false)) === true;
+      // No answer counts as locked: a game in front of a pad that should be
+      // there is worse than one more press to get back to it.
+      locked =
+        (await this.launcher.lock().catch((error: Error) => {
+          this.log(`couldn't ask whether the TV locks, so it counts as locked: ${error.message}`);
+          return true;
+        })) === true;
       // The ambient screen that idling put over a game stays as it is, and a
       // key on it still goes back to the game.
       const over = this.ambient && this.ambientFrom ? this.windows.get(this.ambientFrom) : undefined;
@@ -1760,11 +1778,12 @@ export class Screen {
       .then(() => (stays ? undefined : this.showAmbient()))
       .then(() =>
         this.queue(async () => {
-          // Then nothing draws until the TV is back (ADR-072).
-          if (!this.tvOff) return;
           // A locked TV comes back on home's PIN pad, not on the game that
           // was in front: a key on the ambient screen doesn't go back to it.
-          if (!stays && this.ambientFrom && this.windows.get(this.ambientFrom)?.role === "steam") this.ambientFrom = null;
+          // That holds for a TV that came back on while the apps closed too.
+          if (locked && this.ambientFrom && this.windows.get(this.ambientFrom)?.role === "steam") this.ambientFrom = null;
+          // Then nothing draws until the TV is back (ADR-072).
+          if (!this.tvOff) return;
           this.dark = true;
           await this.output(false, "the TV is off");
         }),
@@ -2688,7 +2707,9 @@ export const launcher: Launcher = {
       body: JSON.stringify({ reason: "tv-off" }),
       signal: AbortSignal.timeout(5000),
     });
-    return ((await response.json().catch(() => null)) as { locked?: boolean } | null)?.locked === true;
+    // An answer that isn't one throws, and the caller takes that as locked.
+    if (!response.ok) throw new Error(`the daemon said ${response.status}`);
+    return ((await response.json()) as { locked?: boolean } | null)?.locked === true;
   },
 
   setTheme(theme) {
@@ -3076,7 +3097,7 @@ async function main(): Promise<void> {
   }).start();
   // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ
   // lets pair a Bluetooth game controller, so the daemon's asks come here.
-  const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`) });
+  const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`), store: join(homedir(), ".local", "state", "agentv", "controllers.json") });
   new AskWatch<ControllerAsk, ControllerAnswer>({
     url: HOME_URL,
     path: "api/controllers/ask",

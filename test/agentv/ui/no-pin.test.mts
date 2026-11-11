@@ -170,11 +170,11 @@ async function tv(b: Box): Promise<Page> {
 // A paired phone, through the QR code's address. With a PIN set, pairing
 // takes its grant.
 async function phone(b: Box, grant?: string): Promise<Page> {
-  const { pairing } = await send(b, "POST", "/api/phones/pair", {}, { grant });
+  await send(b, "POST", "/api/phones/pair", {}, { grant });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(keepWatch, "phone" as const);
-  await page.goto(`${b.lan}/?code=${pairing.code}`);
+  await page.goto(`${b.lan}/#pair=${b.daemon.phones.secret()}`);
   await page.waitForSelector(b.screens.remote);
   return page;
 }
@@ -610,7 +610,8 @@ for (const screens of SCREENS) {
       const mila = (await send(b, "POST", "/api/viewers", { name: "mila", role: "child" }, { grant })).profile.id;
       const ana = (await send(b, "POST", "/api/viewers", { name: "ana", role: "adult", locked: true }, { grant })).profile.id;
       assert.equal((await send(b, "POST", "/api/ai", { provider: "claude", path: "key" }, { grant })).ok, true);
-      assert.equal((await send(b, "POST", "/api/phone/terms", { provider: "claude", path: "key" }, { phone: true, grant })).status, 200);
+      const onPhone = (await send(b, "POST", "/api/phone/pin", { pin: PIN }, { phone: true })).grant;
+      assert.equal((await send(b, "POST", "/api/phone/terms", { provider: "claude", path: "key" }, { phone: true, grant: onPhone })).status, 200);
       rmSync(join(b.state, "pin.json"));
       assert.equal(b.daemon.pin.status().set, false);
 

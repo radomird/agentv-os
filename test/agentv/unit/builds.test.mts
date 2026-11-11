@@ -354,7 +354,9 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /pick the AI/, "nothing's built before the AI is picked and its terms accepted");
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
     const grant = (await (await phone("POST", "/api/phone/pin", { pin: "2468" })).json()).grant;
-    await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant);
+    // The TV's own pages hold a grant of their own: a phone's is no use to them.
+    const onTv = (await (await send("POST", "/api/pin/check", { pin: "2468" })).json()).grant;
+    await send("POST", "/api/ai", { provider: "claude", path: "plan" }, onTv);
     assert.equal((await phone("POST", "/api/phone/terms", { provider: "claude", path: "plan" }, grant)).status, 200);
 
     // What setup kept for later is listed, and asked no longer once asked.
@@ -389,7 +391,7 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     assert.deepEqual(JSON.parse(readFileSync(join(base, "state", "build-drop", "install.json"), "utf8")), { build: asked.build.build, id: asked.build.id, version: "1.0.0" });
 
     assert.equal((await send("PUT", "/api/builds/settings", { safeguards: false })).status, 403, "the safeguards are behind the PIN");
-    assert.equal((await (await send("PUT", "/api/builds/settings", { safeguards: false }, grant)).json()).settings.safeguards, false);
+    assert.equal((await (await send("PUT", "/api/builds/settings", { safeguards: false }, onTv)).json()).settings.safeguards, false);
   } finally {
     await daemon.close();
   }

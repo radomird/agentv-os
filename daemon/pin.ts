@@ -16,6 +16,9 @@
 // The right PIN gives a grant: a random token the TV's pages hold for a few
 // minutes and send with each guarded request. The daemon checks it, and so
 // do the screen daemon and agentv-pin-check before their actions.
+//
+// A grant belongs to whoever entered the PIN: the TV, or one phone. Nobody
+// else can use it, so a PIN entered on one phone opens nothing for another.
 
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -85,7 +88,9 @@ export class Pin {
   private boot: () => string;
   private now: () => number;
   private needed: () => string | null;
-  private grants = new Map<string, number>();
+  // Each grant: when it runs out, and whose it is (a phone's id, or
+  // undefined for the TV's own).
+  private grants = new Map<string, { until: number; phone: string | undefined }>();
 
   constructor(options: PinOptions) {
     this.path = options.path;
@@ -128,7 +133,7 @@ export class Pin {
   // too, since an adult is here.
   check(pin: unknown, phone?: string): Checked {
     const right = this.right(pin, phone);
-    return right.ok ? this.grant() : right;
+    return right.ok ? this.grant(phone) : right;
   }
 
   // The same check with no grant, for one that only needs to know an adult
@@ -154,21 +159,22 @@ export class Pin {
     return { ok: true };
   }
 
-  private grant(): Checked & { ok: true } {
-    for (const [token, until] of this.grants) if (until <= this.now()) this.grants.delete(token);
+  private grant(phone: string | undefined): Checked & { ok: true } {
+    for (const [token, { until }] of this.grants) if (until <= this.now()) this.grants.delete(token);
     const token = randomBytes(24).toString("base64url");
     const until = this.now() + GRANT_MS;
-    this.grants.set(token, until);
+    this.grants.set(token, { until, phone });
     return { ok: true, grant: token, until: new Date(until).toISOString() };
   }
 
   // Whether a guarded action may go ahead: always with no PIN set, and with
-  // one, only with a grant that hasn't run out.
-  allows(grant: unknown): boolean {
+  // one, only with a grant that hasn't run out and is the asker's own. The
+  // asker is a phone (its id) or, with none, the TV.
+  allows(grant: unknown, phone?: string): boolean {
     if (!this.read().hash) return true;
     if (typeof grant !== "string") return false;
-    const until = this.grants.get(grant);
-    return until !== undefined && until > this.now();
+    const held = this.grants.get(grant);
+    return held !== undefined && held.until > this.now() && held.phone === phone;
   }
 
   // Sets the PIN, or changes it, which needs a grant from the one before.

@@ -421,7 +421,8 @@ test("F1 the daemon's own routes: the state comes sealed, the PIN goes sealed, a
   assert.equal(typeof right.data.grant, "string");
   assert.ok(!right.sentBody!.includes("4826") && !right.raw.includes(right.data.grant), "neither the PIN nor its grant can be read on the way");
   // The grant is in the signature: it can't be put on another request.
-  const child = (await (await fetch(`${tv}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": right.data.grant }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()) as Record<string, any>;
+  const onTv = (await local("POST", "/api/pin/check", { pin: "4826" })).grant;
+  const child = (await (await fetch(`${tv}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onTv }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()) as Record<string, any>;
   const to = (id: string, counter: number, how: Partial<Ask> = {}) => ask(lan, keys, { counter, method: "POST", address: "/api/phone/viewer", body: { id }, ...how });
   assert.equal((await to(child.profile.id, 4)).status, 200);
   const owner = (await ask(lan, keys, { counter: 5, address: "/api/phone/state" })).data.viewers.find((viewer: { role: string }) => viewer.role === "adult");

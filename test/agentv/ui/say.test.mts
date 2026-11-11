@@ -91,10 +91,10 @@ async function tv(): Promise<Page> {
 }
 
 async function phone(): Promise<Page> {
-  const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${phoneUrl}/?code=${pairing.code}`);
+  await page.goto(`${phoneUrl}/#pair=${daemon.phones.secret()}`);
   await page.waitForSelector(".dpad");
   return page;
 }

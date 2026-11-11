@@ -539,10 +539,9 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   assert.equal(await screenAsked(page, "cli-install"), 0, "nothing installs before the terms are accepted");
 
   // An adult on a phone reads them and accepts.
-  const code = (await (await fetch(`${url}/api/phones`)).json()).pairing.code;
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148" });
   phone.on("pageerror", (error) => errors.push(error.message));
-  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector("#tv-ask");
   assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
   assert.match(await phone.locator("#tv-ask").innerText(), /anthropic's commercial terms and usage policy/);
@@ -1259,10 +1258,10 @@ async function waitFor(check: () => Promise<boolean>, ms = 5000): Promise<void> 
 test("the phone's remote says which setup step the TV is on", async () => {
   await fresh();
   await post("/api/setup/finish", { step: "welcome" });
-  const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
+  await post("/api/phones/pair", {});
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   phone.on("pageerror", (error) => errors.push(error.message));
-  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector(".setup-step");
   assert.equal(await phone.locator(".setup-step").innerText(), "tv setup · 1/6 getting ready");
   await post("/api/setup", { done: true });

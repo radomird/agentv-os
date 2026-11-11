@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { AskWatch } from "../../../daemon/asks.ts";
-import { cleanAnswer, cleanName, Controllers, isController, listed, parseObjects, type ControllerAnswer, type ControllerAsk } from "../../../daemon/controllers.ts";
+import { cleanAnswer, cleanName, Controllers, isController, listed, parseObjects, typesOrPoints, type ControllerAnswer, type ControllerAsk } from "../../../daemon/controllers.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { DUALSENSE, HEADPHONES, KEYBOARD, StandInBluez, XBOX } from "../fixtures/controllers/bluez.mts";
 
@@ -91,7 +91,7 @@ test("a name is one plain line, whatever the device sent", () => {
 function standIn(devices = [XBOX, DUALSENSE, KEYBOARD, HEADPHONES], options = {}) {
   const bluez = new StandInBluez(devices);
   const logged: string[] = [];
-  const controllers = new Controllers({ run: bluez.run, look: bluez.look, log: (line) => logged.push(line), keepMs: 150, settleMs: 60, ...options });
+  const controllers = new Controllers({ run: bluez.run, look: bluez.look, inputs: bluez.inputs, log: (line) => logged.push(line), keepMs: 150, settleMs: 60, ...options });
   return { bluez, controllers, logged };
 }
 
@@ -148,6 +148,66 @@ test("T16.1 a keyboard is refused when it's asked for by its address, and so is 
   }
   assert.equal(bluez.calls.some((call) => / Pair$|RemoveDevice/.test(call)), false);
   controllers.stop();
+});
+
+test("what the kernel made of a device is read: a keyboard's keys or a mouse's movement, and not a gamepad's buttons or its touchpad", () => {
+  const block = (uniq: string, lines: string[]) => ["I: Bus=0005 Vendor=054c Product=0ce6 Version=8100", 'N: Name="Wireless Controller"', "P: Phys=a4:6b:b6:00:00:01", "S: Sysfs=/devices/x", `U: Uniq=${uniq}`, ...lines, ""].join("\n");
+  const pad = block("d0:bc:c1:44:55:66", ["H: Handlers=event20 js0", "B: PROP=0", "B: EV=20001b", "B: KEY=7fdb000000000000 0 100040000000 0 0", "B: ABS=3003f"]);
+  // A controller's touchpad: a click and touches at a position, no movement.
+  const touchpad = block("d0:bc:c1:44:55:66", ["H: Handlers=mouse2 event21", "B: PROP=5", "B: EV=b", "B: KEY=2420 10000 0 0 0 0", "B: ABS=2608000 3"]);
+  const keyboard = block("D0:BC:C1:44:55:66", ["H: Handlers=sysrq kbd event22 leds", "B: EV=120013", "B: KEY=1000000000007 ff9f207ac14057ff febeffdfffefffff fffffffffffffffe"]);
+  const mouse = block("d0:bc:c1:44:55:66", ["H: Handlers=mouse1 event23", "B: EV=17", "B: KEY=1f0000 0 0 0 0", "B: REL=1943"]);
+  const enterOnly = block("d0:bc:c1:44:55:66", ["H: Handlers=kbd event24", "B: EV=3", "B: KEY=10000000"]);
+  const other = block("34:88:5d:77:88:99", ["H: Handlers=kbd event3", "B: EV=120013", "B: KEY=fffffffffffffffe"]);
+  const mine = "D0:BC:C1:44:55:66";
+  assert.equal(typesOrPoints("", mine), null, "nothing there yet");
+  assert.equal(typesOrPoints(other, mine), null, "another device's keyboard isn't this one's");
+  assert.equal(typesOrPoints([other, pad, touchpad].join("\n"), mine), false, "a gamepad with a touchpad, and Back and Home among its keys");
+  assert.equal(typesOrPoints([pad, keyboard].join("\n"), mine), true, "a keyboard comes with it");
+  assert.equal(typesOrPoints([pad, mouse].join("\n"), mine), true, "a mouse comes with it");
+  assert.equal(typesOrPoints(enterOnly, mine), true, "one typing key is enough");
+});
+
+test("T16.1 a device that says it's a game controller and turns out to type or point is removed again once it's connected", async () => {
+  for (const presents of ["keyboard", "mouse"] as const) {
+    const { bluez, controllers, logged } = standIn([{ ...XBOX, presents }, DUALSENSE]);
+    await controllers.handle({ kind: "look", on: true });
+    const answer = await controllers.handle({ kind: "pair", id: XBOX.address });
+    assert.equal(answer.ok, false, presents);
+    assert.equal(answer.why, "not-a-controller");
+    assert.equal(answer.controllers.some((one) => one.paired), false, "it isn't left paired");
+    const device = bluez.devices.find((d) => d.address === XBOX.address);
+    assert.equal(device?.paired, false);
+    assert.equal(device?.trusted, false, "so it can't come back by itself");
+    assert.equal(device?.connected, false);
+    assert.match(logged.join("\n"), /removed a bluetooth device that paired as a game controller and can type or point/);
+    // A real one beside it still pairs.
+    assert.equal((await controllers.handle({ kind: "pair", id: DUALSENSE.address })).ok, true);
+    controllers.stop();
+  }
+});
+
+test("T16.1 a controller paired here that says something else about itself afterwards still shows, and can be removed", async () => {
+  const store = join(scratch, "paired", "controllers.json");
+  const { bluez, controllers } = standIn([{ ...XBOX, becomes: { icon: "input-keyboard", appearance: 0x03c1 } }, HEADPHONES], { store });
+  await controllers.handle({ kind: "look", on: true });
+  const paired = await controllers.handle({ kind: "pair", id: XBOX.address });
+  assert.equal(paired.ok, true);
+  assert.deepEqual(paired.controllers, [{ id: XBOX.address, name: "Xbox Wireless Controller", paired: true, connected: true }]);
+  controllers.stop();
+  // After a restart too, since which ones were paired here is kept.
+  assert.deepEqual(JSON.parse(readFileSync(store, "utf8")), [XBOX.address]);
+  const later = new Controllers({ run: bluez.run, look: bluez.look, inputs: bluez.inputs, log: () => {}, settleMs: 60, store });
+  assert.deepEqual((await later.handle({ kind: "list" })).controllers.map((one) => one.id), [XBOX.address]);
+  // What it says now is still no way to pair it, and nothing else paired
+  // elsewhere is this page's to remove.
+  assert.equal((await later.handle({ kind: "remove", id: HEADPHONES.address })).why, "not-a-controller");
+  const removed = await later.handle({ kind: "remove", id: XBOX.address });
+  assert.equal(removed.ok, true);
+  assert.deepEqual(removed.controllers, []);
+  assert.equal(bluez.devices.find((d) => d.address === XBOX.address)?.paired, false);
+  assert.deepEqual(JSON.parse(readFileSync(store, "utf8")), []);
+  later.stop();
 });
 
 test("a controller that wants a code fails with that reason, and leaves nothing half paired", async () => {
@@ -245,7 +305,7 @@ before(async () => {
     if (ran.code === 0 && args.includes("RemoveDevice")) rmSync(join(tree, "sys/class/input/event9"), { recursive: true, force: true });
     return ran;
   };
-  driver = new Controllers({ run, look: bluez.look, log: () => {}, settleMs: 60 });
+  driver = new Controllers({ run, look: bluez.look, inputs: bluez.inputs, log: () => {}, settleMs: 60 });
 });
 
 after(async () => {
