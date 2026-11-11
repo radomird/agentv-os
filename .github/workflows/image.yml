@@ -290,10 +290,6 @@ jobs:
           OS_REF: ${{ inputs.ref }}
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
-          OWNER: ${{ github.repository_owner }}
-          # Only to ask GitHub whether a commit is on agentv, and only in a
-          # run that's asking for AgenTV's own key.
-          GH_TOKEN: ${{ inputs.release-key && github.token || '' }}
         run: |
           # What may be checked out beside AgenTV's own key: agentv, a
           # release's tag, or a commit agentv already has (the nightly run
@@ -582,11 +578,25 @@ jobs:
       # its own each night. The cache drops the ones no run has read for a
       # week, and the oldest first when it's full.
       - name: Keep the installed box
+        id: saved
         if: success() && inputs.keep-disk && inputs.checks == ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: iso/test-runs/installed-disk
           key: installed-disk-${{ github.run_id }}
+
+      # One night's box in the cache at a time, as the run shared out keeps
+      # it: edge's run is in one job on a night its update is checked with
+      # another agentv-iso.
+      - name: Only tonight's box
+        if: steps.saved.outcome == 'success'
+        env:
+          KEEP: installed-disk-${{ github.run_id }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key installed-disk- --limit 100 --json key --jq '.[].key' |
+            while read -r key; do
+              [[ $key == "$KEEP" ]] || gh cache delete "$key" -R "$GITHUB_REPOSITORY" || echo "::warning::couldn't delete $key"
+            done
 
       - name: Acceptance ids
         if: always()
@@ -714,10 +724,6 @@ jobs:
           OS_REF: ${{ inputs.ref }}
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
-          OWNER: ${{ github.repository_owner }}
-          # Only to ask GitHub whether a commit is on agentv, and only in a
-          # run that's asking for AgenTV's own key.
-          GH_TOKEN: ${{ inputs.release-key && github.token || '' }}
         run: |
           # What may be checked out beside AgenTV's own key: agentv, a
           # release's tag, or a commit agentv already has (the nightly run

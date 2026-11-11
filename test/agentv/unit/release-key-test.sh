@@ -119,9 +119,6 @@ for n in 1 2; do
     grep -qF "$line" <<<"$step" || fail "M3 the step that picks the key is told every ref the run checks out" "$step"
   done
   grep -q '^ *if: .*inputs\.release-key' <<<"$step" || fail "M3 a run with release-key never skips the step that checks it" "$step"
-  # shellcheck disable=SC2016 # the workflow's own expression, not the shell's
-  grep -qxF "          GH_TOKEN: \${{ inputs.release-key && github.token || '' }}" <<<"$step" ||
-    fail "M3 the step that picks the key has a token only in a run that asks for the key" "$step"
 
   guard agentv agentv "" || fail "M3 the night's own refs get AgenTV's key" "$(cat "$SCRATCH/guard.log")"
   guard agentv v0.2.0 agentv || fail "M3 a release's tag, updated to agentv, gets AgenTV's key" "$(cat "$SCRATCH/guard.log")"
