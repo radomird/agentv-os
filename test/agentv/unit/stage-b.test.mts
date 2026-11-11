@@ -248,7 +248,7 @@ test("ADR-011 the daemon passes on a look at a signed-in page only for the build
     assert.equal(elsewhere.status, 403);
     assert.match((await elsewhere.json()).error, /isn't one of the origins approved with local\.stand-in/);
     // M5: an account page of the service is never opened for a build.
-    for (const path of ["/account", "/settings/payment", "/en-gb/account"]) {
+    for (const path of ["/account", "/settings/payment", "/en-gb/account", "/#/account", "/browse#!/settings"]) {
       const refused = await post("/api/builder/page", { url: `https://stand-in.test${path}` });
       assert.equal(refused.status, 403, path);
       assert.match((await refused.json()).error, /isn't a page a build looks at while signed in/);
@@ -273,6 +273,14 @@ test("ADR-011 the daemon passes on a look at a signed-in page only for the build
     assert.equal(kept.ok, false);
     assert.match(kept.error, /the service went on to another page/);
     assert.ok(!JSON.stringify(kept).includes("ana@example.org"));
+    // The same for a site that keeps the page after the #.
+    const routed = post("/api/builder/page", { url: "https://stand-in.test/#/browse" });
+    const hashed = (await (await fetch(`${url}/api/builder/page-ask`)).json()).ask;
+    assert.equal(hashed.url, "https://stand-in.test/#/browse", "a named page after the # is asked for as it is");
+    assert.equal((await post(`/api/builder/page-ask/${hashed.n}`, { ok: true, url: "https://stand-in.test/#/account", title: "Your account", lines: ["h1 \"ana@example.org\""], html: "<p>ana@example.org</p>" })).status, 200);
+    const held = await (await routed).json();
+    assert.match(held.error, /the service went on to another page/);
+    assert.ok(!JSON.stringify(held).includes("ana@example.org"));
 
     // A signed-in page's copy is far bigger than the daemon's other bodies,
     // and gets there whole.
