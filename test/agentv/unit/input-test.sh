@@ -230,7 +230,38 @@ watcher.join(2)
 assert not watcher.is_alive(), "the watcher stops"
 for fd in pads.values():
     os.close(fd)
+pads.clear()
+
+# An error in the watcher nobody caught: it says so and starts again, so the
+# guide button still works. Here the first press's Home fails that way.
+fifo = pad("three")
+said.clear()
+logged = []
+stop = threading.Event()
+def home():
+    said.append("guide")
+    if len(said) == 1:
+        raise RuntimeError("the screen daemon's answer couldn't be read")
+watch = lambda: agentv_input.watch_guide(lambda: [fifo], home, stop, 0.05)
+watcher = threading.Thread(target=agentv_input.keep_watching, args=(watch, stop, 0.05, lambda line, flush=False: logged.append(line)))
+watcher.start()
+time.sleep(0.2)
+press(fifo, 0x13C, 1)
+press(fifo, 0x13C, 0)
+time.sleep(0.4)
+assert watcher.is_alive(), "the watcher outlives the error"
+press(fifo, 0x13C, 1)
+deadline = time.monotonic() + 2
+while len(said) < 2 and time.monotonic() < deadline:
+    time.sleep(0.05)
+stop.set()
+watcher.join(2)
+assert said == ["guide", "guide"], f"the guide button still works after an error, not {said}"
+assert len(logged) == 1 and "starting it again" in logged[0], logged
+assert not watcher.is_alive(), "the watcher stops"
+os.close(pads.pop(fifo))
 shutil.rmtree(folder)
+print("ok - the guide button's watcher starts again after an error nobody caught")
 
 # Which devices are gamepads: the ones udev marked as joysticks, a
 # Bluetooth one too, which has no link in /dev/input/by-id.

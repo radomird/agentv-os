@@ -258,6 +258,17 @@ def watch_guide(find, on_guide, stop, rescan=3.0, on_hold=None, hold=GUIDE_HOLD)
     does one whose events the kernel dropped, since the release can be among
     them: nothing is left to go home later."""
     fds = {}
+    try:
+        _watch_guide(fds, find, on_guide, stop, rescan, on_hold, hold)
+    finally:
+        for fd in fds.values():
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _watch_guide(fds, find, on_guide, stop, rescan, on_hold, hold):
     # When each gamepad's guide button went down, while it's down and its
     # hold hasn't been reported yet.
     down = {}
@@ -310,8 +321,20 @@ def watch_guide(find, on_guide, stop, rescan=3.0, on_hold=None, hold=GUIDE_HOLD)
                 del down[fd]
                 if on_hold:
                     on_hold()
-    for fd in fds.values():
-        os.close(fd)
+
+
+def keep_watching(watch, stop, pause=1.0, log=print):
+    """Runs the guide button's watcher until stop is set. It's a thread
+    beside the service's own work, so an error nobody caught would end it
+    with the service still up: the guide button and its hold would do
+    nothing until the next restart. So after one, it says so and starts
+    again."""
+    while not stop.is_set():
+        try:
+            watch()
+        except Exception as error:  # pylint: disable=broad-except
+            log(f"agentv input: the guide button's watcher stopped ({error!r}); starting it again", flush=True)
+            stop.wait(pause)
 
 
 def screen_home(source="guide"):
@@ -353,7 +376,8 @@ def serve():
     server.listen(8)
     print(f"agentv input: {NAME.decode()} is ready on {path}", flush=True)
     stop = threading.Event()
-    threading.Thread(target=watch_guide, args=(gamepads, screen_home, stop), kwargs={"on_hold": lambda: screen_home("guide-hold")}, daemon=True).start()
+    watch = lambda: watch_guide(gamepads, screen_home, stop, on_hold=lambda: screen_home("guide-hold"))
+    threading.Thread(target=keep_watching, args=(watch, stop), daemon=True).start()
     try:
         while True:
             conn, _ = server.accept()
