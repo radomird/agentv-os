@@ -8,7 +8,7 @@
 // the provider's page, and hands back the code it gives, behind the PIN.
 
 import { glyph } from "../launcher/glyphs.ts";
-import { api, call, h, prompt, toast } from "./lib.ts";
+import { api, file, h, prompt, toast } from "./lib.ts";
 import { withPin, withPinWords } from "./pad.ts";
 
 // How each build stands, from the phone's state.
@@ -109,7 +109,7 @@ export function buildBanner(builds: PhoneBuild[] | undefined, open: (build: stri
 // The screenshot, as a data: address: the page's policy takes no other.
 async function shot(build: string): Promise<string | null> {
   try {
-    const response = await call("GET", `/api/phone/builds/${build}/shot`);
+    const response = await file(`/api/phone/builds/${build}/shot`);
     if (!response.ok) return null;
     const blob = new Blob([response.bytes as BlobPart], { type: response.type });
     return await new Promise((done) => {
@@ -276,7 +276,7 @@ export function exportBanner(offer: Offer | null | undefined, failed: (error: un
   const name = offer.name.toLowerCase();
   const save = async () => {
     try {
-      const response = await call("GET", `/api/phone/apps/${offer.id}/export`);
+      const response = await file(`/api/phone/apps/${offer.id}/export`);
       if (!response.ok) throw new Error((response.data as { error?: string }).error ?? "it couldn't be exported");
       const link = h("a", { href: URL.createObjectURL(new Blob([response.bytes as BlobPart], { type: response.type })), download: `${offer.id}-${offer.version}.zip` }) as HTMLAnchorElement;
       document.body.append(link);

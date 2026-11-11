@@ -60,9 +60,11 @@ async function main(args: string[]): Promise<number> {
     return 2;
   }
   const phone = new PhoneClient(base, JSON.parse(readFileSync(file, "utf8")) as Kept);
+  // What comes back is printed as it is, so a picture or a file may be asked
+  // for.
   const answer = body?.startsWith("@")
     ? await phone.call(method.toUpperCase(), path, readFileSync(body.slice(1)), { type })
-    : await phone.call(method.toUpperCase(), path, body === undefined ? undefined : Buffer.from(body));
+    : await phone.call(method.toUpperCase(), path, body === undefined ? undefined : Buffer.from(body), { file: true });
   if (answer.status >= 400 && !errors) {
     console.error(`agentv-phone-call: the box answered ${answer.status}`);
     return 22;

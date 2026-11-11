@@ -34,6 +34,7 @@ interface Channel {
   paired(): boolean;
   pair(how: { secret: string } | { code: string }, name: string): Promise<void>;
   call(method: string, path: string, body?: { json: unknown } | { type: string; blob: Blob }, grant?: string): Promise<{ status: number; ok: boolean; type: string; bytes: Uint8Array; data: Record<string, any> }>;
+  file(path: string): Promise<{ status: number; ok: boolean; type: string; bytes: Uint8Array; data: Record<string, any> }>;
 }
 
 // The page's client as a page that just opened has it. Each import is a
@@ -44,6 +45,8 @@ const page = async (): Promise<Channel> => (await import(`${join(ROOT, "companio
 const local = async (method: string, path: string, body?: unknown) => (await realFetch(`${tv}${path}`, { method, headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) })).json() as Promise<Record<string, any>>;
 const code = async (): Promise<string> => (await local("POST", "/api/phones/pair")).pairing.code;
 const json = (status: number, data: unknown) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+// What a network's own sign-in page answers in the box's place, to anything.
+const portal = () => new Response("<html><body>sign in to this wi-fi</body></html>", { status: 200, headers: { "Content-Type": "text/html" } });
 
 before(async () => {
   // Shares and photos go in the test's own folder, not the box's.
@@ -124,6 +127,10 @@ test("the page's client takes no answer that isn't sealed, and a made-up \"pair 
     }
     forged = (path) => (path === "/api/phone/state" ? json(200, { ok: true, phone: { name: "someone else" } }) : null);
     await assert.rejects(phone.call("GET", "/api/phone/state"), /the tv didn't answer/, "JSON to a GET");
+    // A page that isn't JSON, to a GET that wants JSON: not an answer with
+    // nothing in it.
+    forged = (path) => (path === "/api/phone/state" ? portal() : null);
+    await assert.rejects(phone.call("GET", "/api/phone/state"), (error: Error) => /the tv didn't answer/.test(error.message) && !(error instanceof phone.Unpaired), "a page to a GET");
 
     // "Pair again", to a request and then to the hello too.
     for (const paths of [["/api/phone/state"], ["/api/phone/state", "/api/phone/hello"]]) {
@@ -149,8 +156,12 @@ test("the page's client: a picture the phone asked for comes as it is, and a pho
   // The box has no picture here, so the test answers with one.
   forged = (path) => (path === "/api/phone/builds/b-1/shot" ? new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": "image/png" } }) : null);
   try {
-    const picture = await phone.call("GET", "/api/phone/builds/b-1/shot");
+    const picture = await phone.file("/api/phone/builds/b-1/shot");
     assert.deepEqual([picture.status, picture.type, [...picture.bytes], picture.data], [200, "image/png", [1, 2, 3], {}]);
+    // Only the one who asked for a file takes it, and JSON is never one.
+    await assert.rejects(phone.call("GET", "/api/phone/builds/b-1/shot"), /the tv didn't answer/);
+    forged = (path) => (path === "/api/phone/builds/b-1/shot" ? json(200, { ok: true }) : null);
+    await assert.rejects(phone.file("/api/phone/builds/b-1/shot"), /the tv didn't answer/);
   } finally {
     forged = null;
   }
@@ -167,6 +178,22 @@ test("the page's client: a picture the phone asked for comes as it is, and a pho
   assert.equal((await phone.call("GET", "/api/phone/state")).data.phone.name, "the page again");
 });
 
+test("the page's requests for JSON (lib.ts) refuse a page that isn't the box's, and take the box's answer after", async () => {
+  kept.clear();
+  // One page: lib.ts and the channel it asks through.
+  const channel = (await import(join(ROOT, "companion-web/channel.ts"))) as Channel;
+  const { api } = (await import(join(ROOT, "companion-web/lib.ts"))) as { api<T>(method: string, path: string, body?: unknown): Promise<T> };
+  await channel.pair({ code: await code() }, "the page");
+  forged = (path) => (path === "/api/phone/state" || path === "/api/phone/home" ? portal() : null);
+  try {
+    await assert.rejects(api("GET", "/api/phone/state"), (error: Error) => /the tv didn't answer/.test(error.message) && !(error instanceof channel.Unpaired));
+    await assert.rejects(api("GET", "/api/phone/home"), /the tv didn't answer/);
+  } finally {
+    forged = null;
+  }
+  assert.equal((await api<{ phone: { name: string } }>("GET", "/api/phone/state")).phone.name, "the page");
+});
+
 test("the box's own client takes no answer that isn't sealed, keeps its key through a made-up \"pair again\", and a phone the box forgot can pair again", async () => {
   const phone = await pairPhone(lan, await code(), "the client");
   assert.equal((await phone.json("GET", "/api/phone/state")).phone.name, "the client");
@@ -177,11 +204,15 @@ test("the box's own client takes no answer that isn't sealed, keeps its key thro
     }
     forged = (path) => (path === "/api/phone/state" ? json(200, { ok: true, phone: { name: "someone else" } }) : null);
     await assert.rejects(phone.call("GET", "/api/phone/state"), /wasn't sealed/, "JSON to a GET");
+    forged = (path) => (path === "/api/phone/state" ? portal() : null);
+    await assert.rejects(phone.call("GET", "/api/phone/state"), /wasn't sealed/, "a page to a GET");
+    await assert.rejects(phone.json("GET", "/api/phone/state"), /wasn't sealed/, "a page to a GET");
     forged = (path) => (path === "/api/phone/state" ? json(401, { ok: false, pair: true }) : null);
     await assert.rejects(phone.call("GET", "/api/phone/state"), /wasn't sealed/);
     forged = (path) => (path === "/api/phone/builds/b-1/shot" ? new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": "image/png" } }) : null);
-    const picture = await phone.call("GET", "/api/phone/builds/b-1/shot");
+    const picture = await phone.call("GET", "/api/phone/builds/b-1/shot", undefined, { file: true });
     assert.deepEqual([picture.status, picture.sealed, picture.type, [...picture.body]], [200, false, "image/png", [1, 2, 3]]);
+    await assert.rejects(phone.call("GET", "/api/phone/builds/b-1/shot"), /wasn't sealed/, "only the one who asked for a file takes it");
   } finally {
     forged = null;
   }

@@ -134,10 +134,11 @@ export interface Signed {
   // A JSON body, sealed.
   body?: Bytes;
   // The answer's status, content type and bytes, opened: its JSON, or {}
-  // for a picture or a file. Null when the box wants a hello first, and
-  // the request should be signed and sent again. It throws for an answer
-  // that should have come sealed and didn't.
-  answer(status: number, type: string, bytes: Bytes): Record<string, any> | null;
+  // for a picture or a file, which only the one who asked for a file takes.
+  // Null when the box wants a hello first, and the request should be signed
+  // and sent again. It throws for an answer that should have come sealed
+  // and didn't.
+  answer(status: number, type: string, bytes: Bytes, file?: boolean): Record<string, any> | null;
 }
 
 // The address as the browser puts it on the wire. It escapes a few
@@ -176,7 +177,7 @@ export async function sign(method: string, address: string, body: { json: unknow
   return {
     headers,
     body: sealed,
-    answer(status, type, bytes) {
+    answer(status, type, bytes, file = false) {
       if (type === SEALED) {
         const opened = bytes.length < 28 ? null : open(now.down, bytes.subarray(0, 12), bytes.subarray(12), utf8(`${method}\n${path}\n${counter}\n${status}`));
         if (!opened) throw new Error("the tv didn't answer");
@@ -205,8 +206,10 @@ export async function sign(method: string, address: string, body: { json: unknow
         }
       }
       // The other is a picture or a file the phone asked for, which goes as
-      // it is. It's never read as JSON.
-      if (method === "GET" && status === 200 && !isJson(type)) return {};
+      // it is. It's never read as JSON, and nothing that asked for JSON
+      // takes it: a sign-in page some network put in the box's place isn't
+      // an answer with nothing in it.
+      if (file && method === "GET" && status === 200 && !isJson(type)) return {};
       throw new Error("the tv didn't answer");
     },
   };
@@ -223,13 +226,23 @@ export interface Answer {
 // A request to the box and its answer. When the box doesn't know the
 // session (it restarted, or the page sat a day), the phone says hello again
 // and asks once more, and nobody sees a thing.
-export async function call(method: string, path: string, body?: { json: unknown } | { type: string; blob: Blob }, grant = ""): Promise<Answer> {
+export function call(method: string, path: string, body?: { json: unknown } | { type: string; blob: Blob }, grant = ""): Promise<Answer> {
+  return ask(method, path, body, grant, false);
+}
+
+// A picture or a file from the box, which comes as it is, in bytes. When the
+// box says no, that comes sealed, as every answer to call does.
+export function file(path: string): Promise<Answer> {
+  return ask("GET", path, undefined, "", true);
+}
+
+async function ask(method: string, path: string, body: { json: unknown } | { type: string; blob: Blob } | undefined, grant: string, wantsFile: boolean): Promise<Answer> {
   for (let attempt = 0; ; attempt++) {
     const signed = await sign(method, path, body && "blob" in body ? { type: body.type, length: body.blob.size } : body, grant);
     const response = await fetch(path, { method, headers: signed.headers, body: body && "blob" in body ? body.blob : (signed.body as BodyInit | undefined) });
     const type = response.headers.get("content-type") ?? "";
     let bytes = new Uint8Array(await response.arrayBuffer());
-    const data = signed.answer(response.status, type, bytes);
+    const data = signed.answer(response.status, type, bytes, wantsFile);
     if (data === null) {
       // The session is cleared by now: the next sign says hello.
       if (attempt === 0) continue;

@@ -850,10 +850,21 @@ async function refresh(force = false, wait = false): Promise<void> {
     return;
   }
   const before = state;
+  state = next;
+  try {
+    took(next, before, force);
+  } catch (error) {
+    // A state that couldn't be drawn isn't kept: the next ask is for what
+    // changed since the last one that could.
+    state = before;
+    throw error;
+  }
+}
+
+function took(next: State, before: State | null, force: boolean): void {
   const { version: _then, ...was } = before ?? ({} as State);
   const { version: _now, ...now } = next;
   const changed = JSON.stringify(now) !== JSON.stringify(was);
-  state = next;
   pinIs(next.pin.set);
   // A build that moved on says so here as it does on the TV.
   buildNotices(before?.builds, next.builds);
@@ -894,8 +905,13 @@ async function refresh(force = false, wait = false): Promise<void> {
 // the page shows.
 async function follow(): Promise<void> {
   for (;;) {
-    if (document.visibilityState === "visible" && paired() && state) await refresh(false, true);
-    else await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      if (document.visibilityState === "visible" && paired() && state) await refresh(false, true);
+      else await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch {
+      // One answer that couldn't be drawn doesn't stop the next from coming.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   }
 }
 

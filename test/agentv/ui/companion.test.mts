@@ -341,6 +341,37 @@ test("S4.10 the remote follows the TV: the keyboard for a text field, playback w
   await hand.close();
 });
 
+// What the screen daemon says is in front, which the phone's remote follows.
+const front = (body: object) => fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Screen": "1" }, body: JSON.stringify(body) });
+
+test("a page that isn't the TV's, answering in its place once, doesn't stop the phone following the TV", async () => {
+  const hand = await phone();
+  // A network's own sign-in page, to the phone's next ask for what's on.
+  let answered = 0;
+  await hand.route(
+    "**/api/phone/state*",
+    (route) => {
+      answered++;
+      return route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>sign in to this wi-fi</body></html>" });
+    },
+    { times: 1 },
+  );
+  try {
+    // The ask that was already waiting brings this, and the next one gets
+    // the page.
+    await front({ front: "app", playing: true });
+    await hand.waitForSelector('[data-key="next"]', { timeout: 4000 });
+    await until(() => answered === 1, 4000);
+    // The TV's own answers come again, and the phone takes them.
+    await front({ front: "home", playing: false });
+    await hand.waitForSelector(".dpad", { timeout: 8000 });
+    assert.equal(await hand.locator("input.code").count(), 0, "it's still paired");
+  } finally {
+    await front({ front: "home", playing: false });
+  }
+  await hand.close();
+});
+
 test("S4.10 every press shows, clicks and buzzes, quick taps each count and never zoom, and Settings opens on the TV", async () => {
   const screen = await tv();
   await go(screen, "home");
