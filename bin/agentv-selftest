@@ -21,8 +21,9 @@
 #         What only a person can judge is listed on manual lines.
 #   S1.6  a new window stays out of sight, and the home screen comes back in
 #         front after a crash. It closes the home screen on purpose for that.
-#   S1.7  the services' Chromium has its own prompts off: saving passwords,
-#         address and card autofill, translate, notifications (ADR-032).
+#   S1.7  the services' Chromium and home's have their own prompts off:
+#         saving passwords, address and card autofill, translate,
+#         notifications (ADR-032).
 #
 # Stage 2, the home screen (S2 runs them all). Each also says, on manual
 # lines, what to watch or listen for:
@@ -533,13 +534,21 @@ s16() {
 
 s17() {
   local prefs="$AGENTV_STATE/chromium/Default/Preferences"
+  local home="$AGENTV_STATE/chromium-home/Default/Preferences"
+  local off='.credentials_enable_service == false and .credentials_enable_autosignin == false and .autofill.profile_enabled == false and .autofill.credit_card_enabled == false and .translate.enabled == false and .profile.default_content_setting_values.notifications == 2'
 
   if [[ ! -f $prefs ]]; then
     result fail S1.7 "the services' Chromium has no profile yet; open a page with agentv screen open <address> and run this again"
-  elif [[ $(jq -r '.credentials_enable_service == false and .credentials_enable_autosignin == false and .autofill.profile_enabled == false and .autofill.credit_card_enabled == false and .translate.enabled == false and .profile.default_content_setting_values.notifications == 2' "$prefs" 2>/dev/null) == "true" ]]; then
+  elif [[ $(jq -r "$off" "$prefs" 2>/dev/null) == "true" ]]; then
     result pass S1.7 "the services' Chromium has saving passwords, address and card autofill, translate and site notifications off"
   else
     result fail S1.7 "the services' Chromium still has some of its own prompts on; agentv update and a reboot turn them off"
+  fi
+  # Home has password fields too: a key, the Wi-Fi's password.
+  if [[ $(jq -r "$off" "$home" 2>/dev/null) == "true" ]]; then
+    result pass S1.7 "home's Chromium has them off too, so it never offers to save a key or a password typed on home"
+  else
+    result fail S1.7 "home's Chromium still has some of its own prompts on; agentv update and a reboot turn them off"
   fi
   result manual S1.7 "sign in to a streaming service again, with a keyboard on the box: no Save password, Translate or notification bubble shows on the TV, and you stay signed in after a reboot"
 }

@@ -2358,6 +2358,16 @@ function chromium(): string {
   return existsSync("/usr/lib/chromium/chromium") ? "/usr/lib/chromium/chromium" : "chromium";
 }
 
+// Chromium's own prompts off in a profile, before a Chromium starts on it:
+// no Save password, autofill, translate or site notifications over the TV
+// (ADR-032). Every Chromium the TV shows gets this, home's too. A Chromium
+// writes its settings back when it ends, so they're set here, at each
+// start, and not once by a migration.
+function promptsOff(profile: string, whose: string): void {
+  const prefs = spawnSync("agentv-chromium-prefs", [profile], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
+  if (prefs.status !== 0) console.log(`couldn't turn off ${whose} prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
+}
+
 // Whether an audio or video element in a page plays.
 
 const CHROMIUM_FLAGS = [
@@ -2466,16 +2476,16 @@ export const launcher: Launcher = {
   },
 
   home() {
+    // Home has password fields of its own (a key, the Wi-Fi's password), so
+    // its Chromium never offers to save one either.
+    promptsOff(HOME_PROFILE, "home's Chromium's");
     const child = spawn(chromium(), homeArguments(), { stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"] });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
     return track("home", child, false, cdp);
   },
 
   web(url) {
-    // Chromium's own prompts off in this profile: no Save password, autofill,
-    // translate or site notifications over the TV (ADR-032).
-    const prefs = spawnSync("agentv-chromium-prefs", [SERVICES_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
-    if (prefs.status !== 0) console.log(`couldn't turn off the services' Chromium's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
+    promptsOff(SERVICES_PROFILE, "the services' Chromium's");
     // Arrows the page doesn't take move its focus (daemon/remote-page.ts).
     const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
@@ -2485,9 +2495,7 @@ export const launcher: Launcher = {
   },
 
   shareBrowser(url) {
-    // Its own prompts off too, as in the services' profile.
-    const prefs = spawnSync("agentv-chromium-prefs", [SHARE_PROFILE], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
-    if (prefs.status !== 0) console.log(`couldn't turn off the share browser's prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
+    promptsOff(SHARE_PROFILE, "the share browser's");
     // The d-pad moves through a shared page as through an app's.
     const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],

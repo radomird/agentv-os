@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Guards ADR-032's settings for the services' Chromium (S1.7): its own
-# prompts for saving passwords, autofill, translate and site notifications
-# go off in its profile, before it starts and once on a box installed
-# before, and the rest of the profile stays as it was. Nothing reaches the
-# Chromium on Omarchy's desktop.
+# Guards ADR-032's settings for a TV Chromium (S1.7): its own prompts for
+# saving passwords, autofill, translate and site notifications go off in its
+# profile, before it starts and once on a box installed before, and the rest
+# of the profile stays as it was. What home's Chromium saved before it had
+# them goes. Nothing reaches the Chromium on Omarchy's desktop.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -60,12 +60,24 @@ printf '#!/bin/bash\nexit 1\n' >"$SCRATCH/bin/pgrep"
 pass "a running Chromium's profile is left alone until its next start"
 
 # A box installed before gets them from a migration.
-migration=$(grep -l "agentv-chromium-prefs" "$ROOT"/migrations/agentv/*.sh)
+migration=$(grep -l "prompts go off in the services' profile" "$ROOT"/migrations/agentv/*.sh)
 rm -rf "$profile"
 mkdir -p "$profile"
 PATH="$ROOT/bin:$PATH" AGENTV_CHROMIUM_STATE="$profile" bash "$migration" >/dev/null || fail "the migration runs"
 prompts_off || fail "the migration turns the prompts off" "$(cat "$prefs" 2>/dev/null)"
 pass "S1.7 a box installed before gets the prompts off from a migration"
+
+# Home's Chromium ran without these settings at first, so a migration throws
+# away what it saved then, and nothing else of home's.
+forget=$(grep -l "Login Data" "$ROOT"/migrations/agentv/*.sh)
+home="$SCRATCH/chromium-home"
+mkdir -p "$home/Default"
+touch "$home/Default/Login Data" "$home/Default/Login Data-journal" "$home/Default/Login Data For Account" "$home/Default/Preferences" "$home/Default/Cookies"
+AGENTV_CHROMIUM_HOME_STATE="$home" bash "$forget" >/dev/null || fail "the migration for home's saved passwords runs"
+left=$(find "$home/Default" -type f -printf '%f\n' | sort | tr '\n' ' ')
+[[ $left == "Cookies Preferences " ]] || fail "home's saved passwords go, and the rest of its profile stays" "$left"
+AGENTV_CHROMIUM_HOME_STATE="$SCRATCH/no-home-yet" bash "$forget" >/dev/null || fail "it runs on a box whose home has no profile yet"
+pass "what home's Chromium saved before its prompts went off is thrown away, once"
 
 # The desktop's Chromium keeps its prompts: nothing of AgenTV's sets a
 # Chromium policy for the whole system.
