@@ -22,7 +22,7 @@ import { arrange } from "./arrange.ts";
 import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild, pushBanner, pushPage } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { pair as pairWith } from "./channel.ts";
-import { api, avatar, forget, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
+import { api, avatar, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, pinIs, withPin, withPinWords } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { Remote2 } from "./remote2.ts";
@@ -129,7 +129,7 @@ const remote2 = new Remote2(app, {
 
 const failed = (error: unknown) => {
   if (error instanceof Unpaired) {
-    forget();
+    // The phone keeps its key until a new pairing works: see channel.ts.
     state = null;
     pairView();
     return;
@@ -918,10 +918,7 @@ async function main(): Promise<void> {
       try {
         await api("GET", "/api/phone/state");
       } catch (error) {
-        if (error instanceof Unpaired) {
-          forget();
-          await pair(how);
-        }
+        if (error instanceof Unpaired) await pair(how);
       }
     }
   }

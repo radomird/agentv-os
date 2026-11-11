@@ -185,7 +185,53 @@ test("a phone the TV forgot goes back to pairing, and one that's paired stays pa
   for (const p of phones) await fetch(`${url}/api/phones/${p.id}`, { method: "DELETE" });
   // Its ask for the state, waiting on the box, hears at once.
   await hand.waitForSelector(".field.code", { timeout: 1500 });
+  // It still holds its old key, and a new code pairs it again with a new one.
+  const old = await hand.evaluate(() => JSON.parse(localStorage.getItem("agentv-phone-key") ?? "null")?.id as string | undefined);
+  assert.equal(old, phones[phones.length - 1].id);
+  const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
+  await hand.locator(".field.code").fill(pairing.code);
+  await hand.locator("button.primary").click();
+  await hand.waitForSelector(".dpad");
+  const now = await hand.evaluate(() => JSON.parse(localStorage.getItem("agentv-phone-key")!).id as string);
+  assert.notEqual(now, old);
+  remote.length = 0;
+  await hand.locator('[data-key="up"]').tap();
+  const wait = Date.now() + 3000;
+  while (remote.length < 1 && Date.now() < wait) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(remote, ['{"key":"up"}']);
+  // Opened again, it's the new one.
+  await hand.goto(`${phoneUrl}/`);
+  await hand.waitForSelector(".dpad");
   await hand.close();
+  await fetch(`${url}/api/phones/${now}`, { method: "DELETE" });
+});
+
+test("an answer nobody sealed doesn't take the phone's key: after a made-up \"pair again\" the phone is still paired", async () => {
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
+  const hand = await phone(`/#pair=${daemon.phones.secret()}`);
+  await hand.waitForSelector(".dpad");
+  const key = await hand.evaluate(() => localStorage.getItem("agentv-phone-key"));
+  assert.ok(key);
+  // Someone on the network answers in the box's place, hellos too.
+  const again = JSON.stringify({ ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
+  await hand.route("**/api/phone/**", (route) => route.fulfill({ status: 401, contentType: "application/json", body: again }));
+  remote.length = 0;
+  await hand.locator('[data-key="down"]').tap();
+  // The page has nothing better to show than the pairing page.
+  await hand.waitForSelector(".field.code");
+  assert.equal(await hand.evaluate(() => localStorage.getItem("agentv-phone-key")), key, "the key is still kept");
+  assert.deepEqual(remote, []);
+  // Once the box answers for itself again, the phone is who it was.
+  await hand.unroute("**/api/phone/**");
+  await hand.goto(`${phoneUrl}/`);
+  await hand.waitForSelector(".dpad");
+  assert.equal(await hand.evaluate(() => localStorage.getItem("agentv-phone-key")), key);
+  await hand.locator('[data-key="down"]').tap();
+  const wait = Date.now() + 3000;
+  while (remote.length < 1 && Date.now() < wait) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(remote, ['{"key":"down"}']);
+  await hand.close();
+  await fetch(`${url}/api/phones/${JSON.parse(key).id}`, { method: "DELETE" });
 });
 
 test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Settings has, and Back leaves things as they were", async () => {
