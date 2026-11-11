@@ -96,6 +96,8 @@ const STEP_ID = /^[a-z][a-z0-9-]{0,30}$/;
 const PAGE = /^[a-z0-9][a-z0-9_-]{0,30}$/;
 // A language or a country at the front of a path, like /en or /en-gb.
 const LOCALE = /^[a-z]{2}([-_][a-z]{2})?$/;
+// Two letters that look like one, but name a person's own page.
+const OWN_PAGES = ["me", "my", "id"];
 
 // Whether stage B may look at this address while signed in: the service's
 // start page, or a path whose first part the recipe names. A language at
@@ -104,25 +106,45 @@ const LOCALE = /^[a-z]{2}([-_][a-z]{2})?$/;
 //
 // Some sites keep the page in the part after the #, like /#/search or
 // /#!/search, and their path is always /. That part is held to the same
-// rule, so /#/account is no more the start page than /account is.
+// rule, so /#/account is no more the start page than /account is. A plain
+// anchor, like /browse#row-3, is left alone, whatever is written in it.
 export function signedInPage(pages: string[] | undefined, address: URL): boolean {
   let parts: string[];
-  let route: string[] = [];
   try {
     parts = address.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part).toLowerCase());
-    const hash = decodeURIComponent(address.hash);
-    if (/^#[/!]/.test(hash)) route = hash.slice(1).replace(/^!/, "").replace(/\?.*$/, "").split("/").filter(Boolean).map((part) => part.toLowerCase());
   } catch {
     return false;
   }
+  let hash = address.hash;
+  try {
+    hash = decodeURIComponent(hash);
+  } catch {
+    // It won't decode. Written as a route, it's refused as a path would be.
+    // Anything else is an anchor with a stray % in it.
+    if (/^#(\/|!|%2f|%21)/i.test(hash)) return false;
+  }
+  const route = /^#[/!]/.test(hash) ? hash.slice(1).replace(/^!/, "").replace(/\?.*$/, "").split("/").filter(Boolean).map((part) => part.toLowerCase()) : [];
   return named(pages, parts) && named(pages, route);
 }
 
+// Whether the parts of a path are the start page or a page the recipe
+// names. Two things at the front are skipped, but only with a page after
+// them to name: a language, and index with or without a file ending, as in
+// /index.php/search. Alone, each is the start page: /en, /index.html. So
+// /index.php/account is "account". A lone /me, /my or /id isn't taken for a
+// language, since each is as likely the person's own page.
 function named(pages: string[] | undefined, parts: string[]): boolean {
-  if (parts.length && LOCALE.test(parts[0])) parts = parts.slice(1);
+  if (parts.length && LOCALE.test(parts[0])) {
+    if (parts.length === 1) return !OWN_PAGES.includes(parts[0]);
+    parts = parts.slice(1);
+  }
   if (parts.length === 0) return true;
-  const first = parts[0].replace(/\.[a-z0-9]{1,5}$/, "");
-  return first === "index" || (pages ?? []).includes(first);
+  const bare = (part: string) => part.replace(/\.[a-z0-9]{1,5}$/, "");
+  if (bare(parts[0]) === "index") {
+    if (parts.length === 1) return true;
+    parts = parts.slice(1);
+  }
+  return (pages ?? []).includes(bare(parts[0]));
 }
 const MAX_STEPS = 12;
 
