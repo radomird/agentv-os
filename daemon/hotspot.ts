@@ -184,12 +184,21 @@ export class Hotspot {
   // Setup's pages join through the hotspot, so only while it's on. Settings
   // joins with it closed too (closed).
   join(ssid: unknown, password: unknown, options: { closed?: boolean } = {}): string | null {
+    const why = this.refuses(ssid, password, options);
+    if (why) return why;
+    const seen = this.networks().find((n) => n.ssid === ssid);
+    this.asked = this.drop({ join: { ssid, password, hidden: !seen } });
+    return null;
+  }
+
+  // Why a join wouldn't be handed to root, or null when it would. Nothing
+  // is asked of root here.
+  refuses(ssid: unknown, password: unknown, options: { closed?: boolean } = {}): string | null {
     if (!options.closed && !this.status().on) return "the setup hotspot isn't on";
     if (!validSsid(ssid)) return "that isn't a wi-fi network's name";
     if (!validPassword(password)) return "a wi-fi password is 8 to 63 characters";
     const seen = this.networks().find((n) => n.ssid === ssid);
     if (seen?.secure && password === "") return `${ssid} needs its password`;
-    this.asked = this.drop({ join: { ssid, password, hidden: !seen } });
     return null;
   }
 

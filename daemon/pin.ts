@@ -127,6 +127,13 @@ export class Pin {
   // one who made them. The right PIN clears that one's count, and the TV's
   // too, since an adult is here.
   check(pin: unknown, phone?: string): Checked {
+    const right = this.right(pin, phone);
+    return right.ok ? this.grant() : right;
+  }
+
+  // The same check with no grant, for one that only needs to know an adult
+  // is there and has no page to hold a grant, as the hotspot's page.
+  right(pin: unknown, phone?: string): { ok: true } | (Checked & { ok: false }) {
     const stored = this.read();
     if (!stored.hash) return { ok: false, error: "there's no pin yet" };
     const mine = phone === undefined ? stored : (stored.phones?.[phone] ?? {});
@@ -144,7 +151,7 @@ export class Pin {
       return { ok: false, error: left <= 2 ? `that's not the pin. ${left} more ${left === 1 ? "try" : "tries"} before a wait` : "that's not the pin" };
     }
     this.write({ hash: stored.hash, unlockedBoot: this.boot(), ...(Object.keys(others).length ? { phones: others } : {}) });
-    return this.grant();
+    return { ok: true };
   }
 
   private grant(): Checked & { ok: true } {

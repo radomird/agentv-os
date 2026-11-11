@@ -328,6 +328,24 @@ test("with the right PIN the hotspot's page joins, and the PIN goes no further",
   assert.ok(!lines.some((line) => line.includes("4826")), "nor into a log line");
 });
 
+test("a join the hotspot's page can't make is refused before the PIN is looked at, so the right PIN with it changes nothing", async () => {
+  // The TV is locked, and its pad has a wrong try on it.
+  assert.equal((await send(tv, "POST", "/api/pin/lock", {})).data.locked, true);
+  assert.equal((await send(tv, "POST", "/api/pin/check", { pin: "0000" })).status, 403);
+  const pinFile = join(state, "pin.json");
+  const before = readFileSync(pinFile, "utf8");
+  assert.equal(JSON.parse(before).fails, 1);
+  const bad = await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "short", pin: "4826" });
+  assert.equal(bad.status, 400);
+  assert.equal(readFileSync(pinFile, "utf8"), before, "the pad's wrong tries stand");
+  assert.equal((await send(tv, "GET", "/api/pin")).data.locked, true, "and the TV is still locked");
+  assert.ok(!existsSync(drop));
+  // A wrong PIN with it isn't counted either: the join is what's wrong.
+  assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "short", pin: "0000" })).status, 400);
+  assert.equal(readFileSync(pinFile, "utf8"), before);
+  assert.equal((await send(tv, "POST", "/api/pin/check", { pin: "4826" })).status, 200);
+});
+
 test("during setup the hotspot's page is as it was: no PIN asked, even with one set", async () => {
   assert.equal((await send(tv, "GET", "/api/pin")).data.set, true);
   writeFileSync(join(state, "setup.json"), JSON.stringify({ done: false }));

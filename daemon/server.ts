@@ -1350,13 +1350,21 @@ export class Daemon {
     // The home Wi-Fi to join. Its password goes to root and nowhere else.
     if (method === "POST" && path === "/api/setup/wifi") {
       const body = (await this.body(request)) as { ssid?: unknown; password?: unknown; pin?: unknown } | undefined;
+      // A join that can't go ahead is refused before the PIN is looked at,
+      // so the right PIN with it changes nothing on the TV.
+      const refused = this.hotspot.refuses(body?.ssid, body?.password ?? "");
+      if (refused) {
+        this.json(response, 400, { ok: false, error: refused });
+        return;
+      }
       // After setup, changing the TV's Wi-Fi is an adult's: with a PIN set,
       // the page sends it too. Wrong tries from the hotspot's page count on
       // their own, and wait as the TV's pad's do. The PIN goes no further
-      // than this check.
+      // than this check, and no grant comes of it, since the page has
+      // nothing else to ask.
       if ((await this.setup()).done && this.pin.status().set) {
         const locked = (await this.pinStatus()).locked;
-        const checked = this.pin.check(body?.pin, "hotspot");
+        const checked = this.pin.right(body?.pin, "hotspot");
         if (!checked.ok) {
           this.log(checked.wait ? "a wrong pin on the hotspot's page; the next try waits" : "a wrong pin on the hotspot's page");
           this.json(response, 403, { ok: false, error: checked.error, pin: true, ...(checked.wait ? { wait: checked.wait } : {}) });
