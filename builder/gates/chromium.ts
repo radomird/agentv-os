@@ -36,8 +36,12 @@ export function headless(chromium: string, o: { proxy?: string; url?: string; fl
     ...(o.proxy ? [`--proxy-server=${o.proxy}`, "--proxy-bypass-list=localhost;*.localhost;127.0.0.1"] : []),
     o.url ?? "about:blank",
   ];
+  // Chromium keeps a few things of its own under ~/.config whatever profile
+  // it's given, and stops at once when it can't make them. In a build that
+  // folder is read-only, so it gets one in its throwaway profile.
+  const env = { ...process.env, XDG_CONFIG_HOME: join(profile, "config") };
   // In a process group of its own, so all of Chromium goes when it's done.
-  const browser = spawn(chromium, flags, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], detached: true });
+  const browser = spawn(chromium, flags, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], detached: true, env });
   const cdp = new CdpPipe(browser.stdio[3] as Writable, browser.stdio[4] as Readable);
   return {
     cdp,

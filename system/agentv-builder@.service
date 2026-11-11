@@ -52,6 +52,20 @@ ProtectSystem=strict
 ProtectHome=yes
 TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
 BindPaths=/var/lib/agentv/build/%I /var/lib/agentv/builder
+# In its home, a build can't change what the next build or the voice router
+# runs: the provider's CLI in ~/.local/bin, mise's tree and settings the CLI
+# was fetched with, and the CLI's own settings file, where a hook would be
+# code that runs on every start. Those are read-only here, and none can be
+# moved aside for another, since each folder on the way is a mount of its
+# own. What a CLI writes as it runs stays writable: its sign-in and sessions
+# (~/.claude, ~/.codex, ~/.grok, ~/.gemini-agentv), its data in
+# ~/.local/share and ~/.local/state, and muse's settings, which the builder
+# writes for each step. tmpfiles makes each folder, so every line counts
+# (tmpfiles/agentv-builder.conf). On a plan, the CLI in here does read the
+# plan's sign-in: it has to, to run. What runs a build's own code doesn't
+# (builder/contract-run.ts, builder/packages.ts).
+ReadOnlyPaths=-/var/lib/agentv/builder/.local -/var/lib/agentv/builder/.config -/var/lib/agentv/builder/.local/share/mise -/var/lib/agentv/builder/.local/state/mise -/var/lib/agentv/builder/.claude/settings.json
+ReadWritePaths=-/var/lib/agentv/builder/.claude -/var/lib/agentv/builder/.local/share -/var/lib/agentv/builder/.local/state -/var/lib/agentv/builder/.config/muse
 InaccessiblePaths=-/etc/agentv -/mnt -/media -/srv
 PrivateDevices=yes
 PrivateIPC=yes
