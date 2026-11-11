@@ -50,8 +50,8 @@ permissions:
   contents: write
   issues: write
   # The edge leg's checks are shared out across jobs (image.yml), and its
-  # last job deletes the run's box from the cache, or the ISO when a check
-  # failed.
+  # last job deletes the run's box, or the ISO when a check failed, and the
+  # night's box and root image the cache no longer needs.
   actions: write
 
 concurrency:
