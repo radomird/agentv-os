@@ -28,6 +28,7 @@ const SEALED = "application/agentv-sealed";
 // answer is the box's, so the phone keeps its key all the same: only a new
 // pairing that worked puts another in its place.
 export class Unpaired extends Error {}
+const UNPAIRED = "this phone isn't paired: pair it from the tv";
 
 const KEPT = "agentv-phone-key";
 // What a phone paired before requests were signed still holds. Nothing takes
@@ -104,7 +105,9 @@ async function hello(): Promise<Session> {
   if (!mine || !key) throw new Unpaired("this phone isn't paired");
   const nonce = random(16);
   const { status, data } = await plain("/api/phone/hello", { id: mine.id, nonce: encode(nonce) });
-  if (status === 401) throw new Unpaired(typeof data.error === "string" ? data.error : "this phone isn't paired");
+  // Anyone on the network can write this answer, so its own words aren't
+  // shown: the phone says what the box does.
+  if (status === 401) throw new Unpaired(UNPAIRED);
   const boxNonce = typeof data.nonce === "string" ? decode(data.nonce) : null;
   const proof = typeof data.proof === "string" ? decode(data.proof) : null;
   // The proof says the answer is from the box that holds this phone's key.
