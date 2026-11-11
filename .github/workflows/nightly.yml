@@ -32,9 +32,12 @@ name: Nightly
 # pull request's are (image.yml). The release's run signs tested.json and
 # checks its update with tonight's agentv-iso, so it stays in one job.
 #
-# Started by hand, it can take another agentv-iso ref for edge's checks and
-# the update's (checks), so a fix to the checks can be seen in a full night
-# before it merges. The release keeps its own.
+# Started by hand, it can take another agentv-iso ref for edge's checks
+# (checks), so a fix to the checks can be seen in a full night before it
+# merges. The release keeps its own. That ref isn't merged yet, so such a
+# run never gets AgenTV's own key: it signs no tested.json, checks no
+# update (a channel's box takes one signed with that key alone) and keeps no
+# ISO.
 
 on:
   schedule:
@@ -42,7 +45,7 @@ on:
   workflow_dispatch:
     inputs:
       checks:
-        description: "agentv-iso ref for edge's checks and the update's (empty: agentv)"
+        description: "agentv-iso ref for edge's checks, in a run that signs nothing, checks no update and keeps no ISO (empty: agentv)"
         type: string
         default: ""
 
@@ -88,6 +91,9 @@ jobs:
             runs=$(jq -cn --arg next "$next" '[{packages: "edge", tested: true, iso: true, checks: $next, update: "", lanes: 2}]')
             echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $next, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
+          if [[ -n $CHECKS ]]; then
+            echo "Started by hand with agentv-iso $CHECKS, so this run has no signing key: it signs no tested.json, checks no update and keeps no ISO." >>"$GITHUB_STEP_SUMMARY"
+          fi
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
 
   image:
@@ -102,19 +108,23 @@ jobs:
       ref: agentv
       iso-ref: ${{ matrix.checks }}
       packages: ${{ matrix.packages }}
-      update-test: true
+      # A run started by hand with its own agentv-iso ref (checks) has no
+      # key, so it has nothing to sign an update or tested.json with, and
+      # its ISO isn't one to keep.
+      update-test: ${{ inputs.checks == '' }}
       update-checks: ${{ matrix.update }}
-      nightly: ${{ matrix.tested }}
-      keep-iso: ${{ matrix.iso }}
+      nightly: ${{ matrix.tested && inputs.checks == '' }}
+      keep-iso: ${{ matrix.iso && inputs.checks == '' }}
       keep-disk: ${{ matrix.iso }}
       lanes: ${{ matrix.lanes }}
       # The one caller that signs with AgenTV's own key: what a channel's
       # box updates to, and tested.json. image.yml reads it through the
       # "release" environment, which only agentv may use. Handed over here
-      # too for as long as the key is still a secret of the repo.
-      release-key: true
+      # too for as long as the key is still a secret of the repo. Never
+      # beside an agentv-iso ref someone typed in.
+      release-key: ${{ inputs.checks == '' }}
     secrets:
-      AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
+      AGENTV_SIGNING_KEY: ${{ inputs.checks == '' && secrets.AGENTV_SIGNING_KEY || '' }}
 
   # The issue names each failed leg's failed checks and the line that says
   # why, from the legs' logs (.github/scripts/nightly-broke).
