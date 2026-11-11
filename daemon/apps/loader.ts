@@ -275,7 +275,7 @@ export class AppHost {
 
     return new Promise((resolveStart, rejectStart) => {
       const timer = setTimeout(() => {
-        child.kill("SIGKILL");
+        letGo(child);
         rejectStart(new AppError("timeout", `${this.manifest.name} didn't start in time`));
       }, START_MS);
       // No sandbox, no app: it never runs outside one instead.
@@ -299,7 +299,7 @@ export class AppHost {
           clearTimeout(timer);
           const problem = this.checkModule(String(message.id), message.capabilities as string[]);
           if (problem) {
-            child.kill("SIGKILL");
+            letGo(child);
             rejectStart(new AppError("refused", problem));
           } else {
             resolveStart();
@@ -460,7 +460,7 @@ export class AppHost {
   private checkAlive(child: ChildProcess): void {
     const timer = setTimeout(() => {
       this.log(`${this.manifest.id}: stuck, so it's stopped`);
-      child.kill("SIGKILL");
+      letGo(child);
     }, PING_MS);
     const pong = (message: Record<string, unknown>) => {
       if (message.type !== "pong") return;
@@ -479,8 +479,26 @@ export class AppHost {
   // whoever needs the app again makes a new host for it.
   stop(): void {
     this.stopped = true;
-    this.child?.kill("SIGKILL");
+    const child = this.child;
     this.child = undefined;
     this.starting = undefined;
+    if (child) letGo(child);
   }
+}
+
+// Ends a worker and everything under it. Killing bubblewrap alone isn't
+// enough: caught as it starts, the sandbox it had already forked lives on
+// with the worker in it, holding this end's pipes open, and the daemon
+// can't end while it does. So the channel and the pipes are closed from
+// this side first, which is the worker's sign to go (worker.ts), and then
+// bubblewrap is killed.
+function letGo(child: ChildProcess): void {
+  try {
+    if (child.connected) child.disconnect();
+  } catch {
+    // gone already
+  }
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.kill("SIGKILL");
 }
