@@ -329,6 +329,20 @@ test("an app that fails to load leaves no worker behind, whatever its own code d
   assert.equal(now, "0", "no worker of this app is still running");
 });
 
+test("a worker that ends by itself after a call timed out isn't stopped again as stuck", async () => {
+  // The call takes too long, the worker is asked whether it's alive, and it
+  // ends before it answers. Its exit is the answer: the one second wait used
+  // to run on, say it was stuck and signal a process that was gone.
+  const lines: string[] = [];
+  const dir = app(tileApp("const end = Date.now() + 400; while (Date.now() < end); process.exit(0);"));
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  const h = new AppHost({ dir, manifest, settings: { serverUrl }, limits: { tile: 100 }, harness, log: (line) => lines.push(line) });
+  hosts.push(h);
+  await fails(h.call(viewer, "tile", "s"), "timeout");
+  await new Promise((done) => setTimeout(done, 1300));
+  assert.deepEqual(lines.filter((line) => /stuck/.test(line)), []);
+});
+
 test("an answer that comes for an app already stopped isn't logged as its sandbox not starting", async () => {
   // The app's request is still out when the app is stopped, and its answer
   // comes after. There's no worker to hand it to, which says nothing about

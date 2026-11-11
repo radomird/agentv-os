@@ -480,17 +480,24 @@ export class AppHost {
   // After a call times out: a worker that doesn't answer a ping within a second
   // is stuck, so it's stopped and the next call starts a new one.
   private checkAlive(child: ChildProcess): void {
+    const done = () => {
+      clearTimeout(timer);
+      child.off("message", pong);
+      child.off("exit", done);
+    };
     const timer = setTimeout(() => {
+      done();
       this.log(`${this.manifest.id}: stuck, so it's stopped`);
       letGo(child);
     }, PING_MS);
     const pong = (message: Record<string, unknown>) => {
-      if (message.type !== "pong") return;
-      clearTimeout(timer);
-      child.off("message", pong);
+      if (message.type === "pong") done();
     };
     child.on("message", pong);
-    child.send({ type: "ping" });
+    // A worker that ended by itself meanwhile isn't stuck, and there's
+    // nothing left to stop.
+    child.on("exit", done);
+    tell(child, { type: "ping" });
   }
 
   setSettings(settings: Record<string, string>): void {
