@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { after, before, test } from "node:test";
 import { gzipSync } from "node:zlib";
-import { boxAddress, boxHost } from "../../../apps/contract/address.ts";
-import { appHeaders, reach } from "../../../daemon/apps/reach.ts";
+import { boxAddress, boxHost, linkLocalElsewhere } from "../../../apps/contract/address.ts";
+import { appHeaders, checked, reach } from "../../../daemon/apps/reach.ts";
 
 let server: Server;
 let port = 0;
@@ -79,6 +79,57 @@ test("F2 the connection goes to the address that was checked, and the name is lo
   assert.equal(lookups, 1);
   assert.equal(seen.at(-1)!.headers.host, `media.example:${port}`);
   assert.deepEqual(response.headers.getSetCookie(), ["a=1", "b=2"]);
+});
+
+// The box here has 192.168.1.50 and fe80::50 on its network. The stand-in
+// server is on 127.0.0.1, which plays the server's address on the home
+// network, so it alone isn't the box in these.
+const box = ["192.168.1.50", "fe80::50%eth0"];
+const home = { own: () => box, forbid: (address: string) => address !== "127.0.0.1" && boxAddress(address, box) };
+
+test("a server that also answers by a link-local address is reached, by its other address only", async () => {
+  const before = seen.length;
+  for (const beside of ["fe80::1234", "fe80::1234%eth0", "169.254.7.7", "::ffff:169.254.7.7"]) {
+    const options = { ...home, resolve: async () => [beside, "127.0.0.1"] };
+    assert.deepEqual(await checked("nas.local", options), [{ address: "127.0.0.1", family: 4 }], beside);
+    const response = await reach(options)(`http://nas.local:${port}/`);
+    assert.equal(await response.text(), "from the app's own server", beside);
+  }
+  assert.equal(seen.length, before + 4);
+});
+
+test("a name with only link-local addresses is refused, since nothing is left to go to", async () => {
+  const before = seen.length;
+  for (const only of [["fe80::1234"], ["169.254.7.7", "fe80::1234"]]) {
+    await assert.rejects(reach({ ...home, resolve: async () => only })(`http://nas.local:${port}/`), /is this tv itself/, only.join(" "));
+  }
+  assert.equal(seen.length, before);
+});
+
+test("F2 a name that points at this box by any address stays refused, with a server's address beside it or not", async () => {
+  const before = seen.length;
+  // The box's own link-local address, with and without its zone and written
+  // out in full, then loopback, the box's address on the network and nowhere.
+  for (const mine of ["fe80::50", "fe80::50%wlan0", "fe80:0:0:0:0:0:0:50", "127.0.0.1", "::1", "192.168.1.50", "::ffff:192.168.1.50", "0.0.0.0"]) {
+    for (const addresses of [["192.168.1.20", mine], [mine, "192.168.1.20"], ["fe80::1234", mine, "192.168.1.20"]]) {
+      const options = { own: () => box, resolve: async () => addresses };
+      await assert.rejects(reach(options)(`http://nas.local:${port}/`), /is this tv itself/, addresses.join(" "));
+      await assert.rejects(checked("nas.local", options), /is this tv itself/, addresses.join(" "));
+    }
+  }
+  // A link-local address typed as the host is refused as before, a
+  // neighbour's too.
+  for (const typed of ["http://[fe80::1234]/", "http://169.254.7.7/", "http://[fe80::50]/"]) await assert.rejects(reach({ own: () => box })(typed), /is this tv itself/, typed);
+  assert.equal(seen.length, before);
+});
+
+test("a link-local address is someone else's only when the box doesn't have it", () => {
+  for (const address of ["fe80::1234", "fe80::1234%eth0", "[fe80::1234]", "febf::1", "169.254.7.7", "::ffff:169.254.7.7"]) assert.ok(linkLocalElsewhere(address, box), address);
+  for (const address of ["fe80::50", "fe80::50%wlan0", "fe80:0000::0050", "127.0.0.1", "::1", "::", "0.0.0.0", "192.168.1.20", "192.168.1.50", "2001:db8::20", "fec0::1", "nas.local", ""]) assert.ok(!linkLocalElsewhere(address, box), address);
+  assert.ok(!linkLocalElsewhere("169.254.7.7", ["169.254.7.7"]));
+  assert.ok(!linkLocalElsewhere("::ffff:169.254.7.7", ["169.254.7.7"]));
+  // boxAddress means what it did: link-local is the box, whoever has it.
+  for (const address of ["fe80::1234", "169.254.7.7", "fe80::50"]) assert.ok(boxAddress(address, box), address);
 });
 
 test("F2 an app's headers go along, but never the box's own or the connection's", async () => {
