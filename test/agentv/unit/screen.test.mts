@@ -1904,6 +1904,48 @@ test("T16.2 a game made on this TV in front of home stays in front with the TV o
   t.screen.stop();
 });
 
+test("the TV off for two minutes closes an app that's a page on home, and a game that's one stays open; back on sooner, neither closes", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150, tvSettleMs: 100 });
+  await t.screen.home();
+  // Home's pages, as the launcher keeps them: a notes app behind home and a
+  // game in front. Home knows which is the game and closes the other when
+  // it's asked.
+  let pages = [
+    { id: "someone.notes", game: false },
+    { id: "someone.blocks", game: true },
+  ];
+  t.launcher.homeBrowser.answer = (expression) => {
+    if (expression.includes("agentvPagesClose")) {
+      const closed = pages.filter((p) => !p.game).map((p) => p.id);
+      pages = pages.filter((p) => p.game);
+      return { closed };
+    }
+    return expression.includes("agentvGame") ? { game: pages.find((p) => p.game)?.id ?? null } : undefined;
+  };
+  const asked = () => t.launcher.homeBrowser.evaluated.filter((e) => e.includes("agentvPagesClose")).length;
+  // Off and back on within the two minutes: nothing is asked to close.
+  on = false;
+  await sleep(60);
+  on = true;
+  await sleep(250);
+  await t.screen.idle();
+  assert.equal(asked(), 0);
+  assert.deepEqual(pages.map((p) => p.id), ["someone.notes", "someone.blocks"]);
+  // Off for the two minutes: the notes app is closed, and the game is
+  // still open and still in front.
+  on = false;
+  await sleep(350);
+  await t.screen.idle();
+  assert.equal(asked(), 1);
+  assert.deepEqual(pages.map((p) => p.id), ["someone.blocks"]);
+  assert.ok(t.lines.includes("home closed someone.notes"), t.lines.join("\n"));
+  assert.ok(t.lines.includes("someone.blocks stays in front"), t.lines.join("\n"));
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.hypr.dpms, false);
+  t.screen.stop();
+});
+
 test("S2.8 a TV back on within two minutes keeps the paused app open", async () => {
   let on = true;
   const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 300 });
