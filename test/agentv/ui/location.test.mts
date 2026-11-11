@@ -188,11 +188,11 @@ test("T7.1 the captive page and the companion send the phone's own time zone, an
     await captivePhone.close();
   }
   // A phone in Amsterdam pairs with the companion: it sends its own.
-  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, timezoneId: "Europe/Amsterdam", hasTouch: true });
   phone.on("pageerror", (error) => errors.push(error.message));
   try {
-    await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+    await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
     for (let i = 0; i < 50 && (await (await fetch(`${url}/api/setup/location`)).json()).phoneZone !== "Europe/Amsterdam"; i++) await phone.waitForTimeout(100);
     assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the netherlands");
   } finally {

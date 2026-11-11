@@ -3,7 +3,7 @@
 
 import { call, Unpaired } from "./channel.ts";
 
-export { call, forget, paired, Unpaired } from "./channel.ts";
+export { call, paired, Unpaired } from "./channel.ts";
 
 export type Child = Node | string | null | undefined | false;
 
