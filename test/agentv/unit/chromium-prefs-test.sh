@@ -60,7 +60,7 @@ printf '#!/bin/bash\nexit 1\n' >"$SCRATCH/bin/pgrep"
 pass "a running Chromium's profile is left alone until its next start"
 
 # A box installed before gets them from a migration.
-migration=$(grep -l 'agentv-chromium-prefs "$profile"' "$ROOT"/migrations/agentv/*.sh)
+migration=$(grep -l "prompts go off in the services' profile" "$ROOT"/migrations/agentv/*.sh)
 rm -rf "$profile"
 mkdir -p "$profile"
 PATH="$ROOT/bin:$PATH" AGENTV_CHROMIUM_STATE="$profile" bash "$migration" >/dev/null || fail "the migration runs"
@@ -74,7 +74,8 @@ home="$SCRATCH/chromium-home"
 mkdir -p "$home/Default"
 touch "$home/Default/Login Data" "$home/Default/Login Data-journal" "$home/Default/Login Data For Account" "$home/Default/Preferences" "$home/Default/Cookies"
 AGENTV_CHROMIUM_HOME_STATE="$home" bash "$forget" >/dev/null || fail "the migration for home's saved passwords runs"
-[[ $(ls "$home/Default" | sort | tr '\n' ' ') == "Cookies Preferences " ]] || fail "home's saved passwords go, and the rest of its profile stays" "$(ls "$home/Default")"
+left=$(find "$home/Default" -type f -printf '%f\n' | sort | tr '\n' ' ')
+[[ $left == "Cookies Preferences " ]] || fail "home's saved passwords go, and the rest of its profile stays" "$left"
 AGENTV_CHROMIUM_HOME_STATE="$SCRATCH/no-home-yet" bash "$forget" >/dev/null || fail "it runs on a box whose home has no profile yet"
 pass "what home's Chromium saved before its prompts went off is thrown away, once"
 
