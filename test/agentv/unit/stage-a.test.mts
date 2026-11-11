@@ -5,14 +5,20 @@
 // layer 4's (test/agentv/ui/stage-a.test.mts).
 
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { AppHost, systemPaths, workerJail } from "../../../daemon/apps/loader.ts";
 import { Build } from "../../../builder/build.ts";
+import { checkApp } from "../../../builder/contract-run.ts";
 import { Fixtures } from "../../../builder/fixtures.ts";
+import { headless } from "../../../builder/gates/chromium.ts";
 import { extraTools } from "../../../builder/harness/extra.ts";
 import { loadRecipes } from "../../../builder/recipe.ts";
+import { SANDBOX_PROBLEM } from "../harness.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-stage-a-unit-"));
@@ -88,4 +94,98 @@ test("on the box, a fixture names files in the build and nowhere else", () => {
   // CI's own fixtures may share a recording with another app's.
   const shared = new Fixtures(join(work, "fixtures"), { routes: [{ url: "https://stand-in.test/", file: "../fixtures/page.html" }], checks: [] });
   assert.equal(shared.answer("GET", "https://stand-in.test/")!.status, 200);
+});
+
+// --- The app's own code, under bubblewrap (H3) --------------------------------
+
+// A build with an app in it, a page it saved, and a builder's home with a
+// CLI and a plan's sign-in, as on the box.
+function jailed() {
+  const base = join(scratch, `jail${++count}`);
+  const home = join(base, "home");
+  const dir = join(base, "build", "1.0.0");
+  const app = join(dir, "work", "app");
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  mkdirSync(join(home, ".local", "bin"), { recursive: true });
+  writeFileSync(join(home, ".claude", ".credentials.json"), "a plan's sign-in");
+  writeFileSync(join(home, ".local", "bin", "claude"), "#!/bin/sh\n");
+  mkdirSync(join(dir, "work", "fixtures", "pages"), { recursive: true });
+  writeFileSync(join(dir, "work", "fixtures", "pages", "page.html"), "a saved page");
+  writeFileSync(join(dir, "state.json"), "{}");
+  cpSync(join(ROOT, "test/agentv/fixtures/apps/sample"), app, { recursive: true });
+  const node = realpathSync(process.execPath);
+  return { home, dir, app, node, jail: workerJail({ dir: app, node, read: [], system: systemPaths() }) };
+}
+
+test("H3 the builder's contract_tests starts the app's worker in its sandbox, with nothing switched off", async () => {
+  // A stand-in for bubblewrap says what it was started with.
+  const { home, dir, app } = jailed();
+  const seen = join(scratch, `seen${count}.txt`);
+  const fake = join(scratch, `fake-bwrap${count}`);
+  writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$@" >${seen}\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n`);
+  chmodSync(fake, 0o755);
+  const manifest = JSON.parse(readFileSync(join(app, "manifest.json"), "utf8"));
+  const host = new AppHost({ dir: app, manifest, settings: { serverUrl: "https://sample.test" }, bwrap: fake });
+  try {
+    assert.equal(await host.call({ id: "contract", role: "adult" }, "signIn.isSignedIn"), true);
+  } finally {
+    host.stop();
+  }
+  const started = readFileSync(seen, "utf8").split("\n");
+  const before = started.slice(0, started.indexOf("--"));
+  assert.ok(before.includes("--unshare-all"), "no network at all, and namespaces of its own");
+  assert.ok(!before.includes("--bind") && !before.includes("--share-net"), "nothing writable, nothing shared");
+  assert.ok(!before.includes("/") && !before.includes(home) && !before.includes(dir), "the builder's home and the rest of the build aren't put in it");
+  assert.ok(started.slice(started.indexOf("--") + 1).includes("--permission"), "Node's permission flag is still the second layer");
+  // And the harness asks for it that way: no harness option, so no way to
+  // leave the sandbox off.
+  assert.match(readFileSync(join(ROOT, "builder/harness/extra.ts"), "utf8"), /contractTests\(build, build\.recipe\(\), \{ chromium: CHROMIUM, stage \}\)/);
+});
+
+test("H3 inside that sandbox the sign-in, the CLI and the saved pages aren't there, nothing is written, and the worker still answers", { skip: SANDBOX_PROBLEM !== null && "bubblewrap can't start here" }, async () => {
+  const { home, dir, app, node, jail } = jailed();
+  const look = (script: string) => spawnSync("bwrap", [...jail, node, "-e", script], { env: {}, encoding: "utf8" });
+  const reads = (path: string) => look(`require("node:fs").readFileSync(${JSON.stringify(path)})`).status === 0;
+  assert.equal(reads(join(app, "manifest.json")), true, "its own package is there");
+  assert.equal(reads(join(home, ".claude", ".credentials.json")), false, "the plan's sign-in");
+  assert.equal(reads(join(home, ".local", "bin", "claude")), false, "the CLI");
+  assert.equal(reads(join(dir, "work", "fixtures", "pages", "page.html")), false, "a page the build saved");
+  assert.equal(reads(join(dir, "state.json")), false);
+  assert.notEqual(look(`require("node:fs").writeFileSync(${JSON.stringify(join(app, "added"))}, "")`).status, 0, "read-only");
+  assert.ok(!existsSync(join(app, "added")));
+  // No network of any kind: not even this machine's own loopback, where
+  // the sandbox's way out listens.
+  const server = createServer(() => {});
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  try {
+    const reach = `require("node:net").connect(${(server.address() as { port: number }).port}, "127.0.0.1").on("connect", () => process.exit(0)).on("error", () => process.exit(1))`;
+    assert.equal(spawnSync(process.execPath, ["-e", reach]).status, 0, "it's there from outside");
+    assert.equal(look(reach).status, 1, "and not from inside");
+  } finally {
+    server.close();
+  }
+
+  // And the real worker, under the real thing, starts and answers the
+  // contract's checks.
+  const manifest = JSON.parse(readFileSync(join(app, "manifest.json"), "utf8"));
+  const results = await checkApp({ dir: app, manifest, contract: { checks: [{ name: "it's signed in", call: "signIn.isSignedIn", expect: true }] } as never, served: new Fixtures(join(dir, "work", "fixtures"), { checks: [] } as never, Date.now(), join(dir, "work")), openPage: async () => assert.fail("no page") });
+  assert.deepEqual(results.map((r) => [r.name, r.ok, r.why]), [["its module starts in a worker of its own", true, []], ["it's signed in", true, []]]);
+});
+
+test("H3 a build's Chromium keeps its own files in its throwaway profile, not in the builder's read-only ~/.config", async () => {
+  // A stand-in for Chromium says where it was told to keep them.
+  const seen = join(scratch, `xdg${++count}.txt`);
+  const fake = join(scratch, `fake-chromium${count}`);
+  writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$XDG_CONFIG_HOME" >${seen}\nfor arg in "$@"; do printf '%s\\n' "$arg" >>${seen}; done\nsleep 30\n`);
+  chmodSync(fake, 0o755);
+  const browser = headless(fake);
+  try {
+    for (let i = 0; i < 100 && !(existsSync(seen) && readFileSync(seen, "utf8").includes("about:blank")); i++) await new Promise((done) => setTimeout(done, 50));
+    const said = readFileSync(seen, "utf8").split("\n");
+    const profile = said.find((line) => line.startsWith("--user-data-dir="))!.slice("--user-data-dir=".length);
+    assert.equal(said[0], join(profile, "config"));
+    assert.ok(!said[0].startsWith(process.env.HOME ?? "/nowhere") || profile.startsWith(process.env.HOME ?? "/nowhere"), "not the home's own ~/.config");
+  } finally {
+    await browser.close();
+  }
 });

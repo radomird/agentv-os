@@ -1252,11 +1252,18 @@ export class Screen {
   // Home, from any input (ADR-031): the app in front pauses and goes out of
   // sight, and the home screen comes to the front. With the home screen
   // already there, it goes back to its own home page. A game's guide button
-  // is the game's own.
+  // is the game's own: a press stays Steam's, and holding it for a second
+  // goes home (ADR-084). daemon/input.py times the hold, for each gamepad,
+  // and says "guide-hold" while the button is still down. Anywhere else the
+  // press has gone home already, so the hold has nothing left to do.
   home(from = ""): Promise<object> {
     return this.queue(async () => {
       const front = this.front();
       if (from === "guide" && front?.role === "steam") return;
+      if (from === "guide-hold") {
+        if (front?.role !== "steam") return;
+        this.log("the guide button held with a game in front: home");
+      }
       if (this.signingIn) await this.endSignIn("home");
       const entry = front && this.opens.find((o) => o.address === front.address);
       if (entry) {

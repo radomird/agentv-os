@@ -128,6 +128,131 @@ os.close(writer)
 assert guides == [1, 1], f"the guide button went down twice, not {guides}"
 assert not watcher.is_alive(), "the watcher stops"
 print("ok - a gamepad's guide button is Home, and its other buttons aren't")
+
+# The guide button's hold (ADR-084): pads stands for the gamepads there,
+# each a FIFO, and said is what the screen daemon would hear, with when.
+import shutil
+folder = tempfile.mkdtemp()
+pads = {}
+def pad(name):
+    path = os.path.join(folder, f"{name}-event-joystick")
+    os.mkfifo(path)
+    pads[path] = os.open(path, os.O_RDWR)
+    return path
+def press(path, code, value):
+    os.write(pads[path], agentv_input.event(1, code, value) + agentv_input.event(0, 0, 0))
+said = []
+began = time.monotonic()
+stop = threading.Event()
+HOLD = 0.3
+watcher = threading.Thread(
+    target=agentv_input.watch_guide,
+    args=(lambda: list(pads), lambda: said.append(("guide", time.monotonic() - began)), stop, 0.05),
+    kwargs={"on_hold": lambda: said.append(("guide-hold", time.monotonic() - began)), "hold": HOLD},
+)
+watcher.start()
+one = pad("one")
+time.sleep(0.2)
+def heard():
+    out = [what for what, _ in said]
+    said.clear()
+    return out
+
+# A tap: down, and up well inside the hold.
+press(one, 0x13C, 1)
+time.sleep(0.1)
+press(one, 0x13C, 0)
+time.sleep(HOLD * 2)
+assert heard() == ["guide"], "a tap is a press and nothing more"
+print("ok - a tap on the guide button is one press, and no hold")
+
+# Held: the hold is said once, at about the hold's length, while the button
+# is still down, and its release adds nothing.
+at = time.monotonic() - began
+press(one, 0x13C, 1)
+time.sleep(HOLD * 3)
+assert [what for what, _ in said] == ["guide", "guide-hold"], said
+late = said[1][1] - at
+assert HOLD <= late < HOLD + 0.25, f"the hold was said {late:.2f} s after the press"
+said.clear()
+press(one, 0x13C, 0)
+time.sleep(HOLD * 2)
+assert heard() == [], "the release of a hold says nothing"
+print("ok - held for the full time, it's said once, while still down")
+
+# Other buttons in between don't end a hold or start one.
+press(one, 0x13C, 1)
+press(one, 0x130, 1)
+press(one, 0x130, 0)
+time.sleep(HOLD * 2)
+press(one, 0x13C, 0)
+assert heard() == ["guide", "guide-hold"]
+press(one, 0x130, 1)
+time.sleep(HOLD * 2)
+press(one, 0x130, 0)
+assert heard() == [], "holding another button isn't the guide button's hold"
+print("ok - a gamepad's other buttons neither end the hold nor start one")
+
+# Two gamepads: a tap on the second doesn't end the first one's hold.
+two = pad("two")
+time.sleep(0.2)
+press(one, 0x13C, 1)
+time.sleep(0.05)
+press(two, 0x13C, 1)
+press(two, 0x13C, 0)
+time.sleep(HOLD * 2)
+assert heard() == ["guide", "guide", "guide-hold"], "the first gamepad's hold stands"
+press(one, 0x13C, 0)
+print("ok - each gamepad's hold is its own")
+
+# The kernel dropped events (SYN_DROPPED): the release can be among them,
+# so the hold is off.
+press(one, 0x13C, 1)
+os.write(pads[one], agentv_input.event(0, 3, 0))
+time.sleep(HOLD * 2)
+assert heard() == ["guide"], "a hold with dropped events doesn't go home"
+press(one, 0x13C, 0)
+print("ok - a hold whose events the kernel dropped is off")
+
+# A gamepad that goes away mid-hold takes its hold with it: nothing is said
+# later. A FIFO with no writer left reads as empty, as an unplugged device.
+press(two, 0x13C, 1)
+time.sleep(0.1)
+gone = pads.pop(two)
+os.close(gone)
+os.unlink(two)
+time.sleep(HOLD * 3)
+assert heard() == ["guide"], "a gamepad that went away mid-hold says nothing later"
+print("ok - a gamepad that goes away mid-hold leaves nothing to go home later")
+
+stop.set()
+watcher.join(2)
+assert not watcher.is_alive(), "the watcher stops"
+for fd in pads.values():
+    os.close(fd)
+shutil.rmtree(folder)
+
+# Which devices are gamepads: the ones udev marked as joysticks, a
+# Bluetooth one too, which has no link in /dev/input/by-id.
+root = tempfile.mkdtemp()
+for name, number, joystick in (("event3", "13:67", True), ("event4", "13:68", False), ("event7", "13:71", True)):
+    os.makedirs(os.path.join(root, "sys/class/input", name))
+    with open(os.path.join(root, "sys/class/input", name, "dev"), "w") as file:
+        file.write(number + "\n")
+    os.makedirs(os.path.join(root, "run/udev/data"), exist_ok=True)
+    with open(os.path.join(root, "run/udev/data", f"c{number}"), "w") as file:
+        file.write("E:ID_INPUT=1\n" + ("E:ID_INPUT_JOYSTICK=1\n" if joystick else "E:ID_INPUT_KEY=1\n"))
+os.makedirs(os.path.join(root, "dev/input/by-id"))
+for name in ("event3", "event4", "event7", "event9"):
+    open(os.path.join(root, "dev/input", name), "w").close()
+# A USB one has a link too, and counts once. One udev hasn't written down
+# yet still counts by its link.
+os.symlink("../event3", os.path.join(root, "dev/input/by-id/usb-Pad-event-joystick"))
+os.symlink("../event9", os.path.join(root, "dev/input/by-id/usb-Other-event-joystick"))
+found = [os.path.relpath(path, os.path.realpath(root)) for path in map(os.path.realpath, agentv_input.gamepads(root))]
+assert found == ["dev/input/event3", "dev/input/event7", "dev/input/event9"], found
+shutil.rmtree(root)
+print("ok - the gamepads are the devices udev marked as joysticks, each once")
 PY
 }
 
