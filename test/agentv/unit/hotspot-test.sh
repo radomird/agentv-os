@@ -424,6 +424,19 @@ AGENTV_HOTSPOT_LOST_AFTER=5 hotspot watch-tick
 opened || fail "the wait can be shortened for a check"
 pass "the watch opens the hotspot after a minute with no network, not before, and the wait can be shortened"
 
+# A TV that slept: the network went just before, and the first look after it
+# wakes is hours later. That isn't a minute with no network, so the count
+# starts again and NetworkManager gets its minute to join the Wi-Fi.
+echo "$(ago 7205) $(ago 7200)" >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "a TV just awake doesn't open the hotspot for the time it slept" "$(cat "$FAKE/calls")"; fi
+read -r since _ <"$AGENTV_HOTSPOT_RUN/lost-since"
+(( $(date +%s) - since < 30 )) || fail "the count starts again from the wake" "$(cat "$AGENTV_HOTSPOT_RUN/lost-since")"
+echo "$(ago 61) $(ago 5)" >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+opened || fail "a minute with no network, looked at all the way through, still opens it" "$(cat "$FAKE/calls")"
+pass "time asleep doesn't count as time with no network"
+
 # With the hotspot open: the network back by any route closes it.
 hotspot run >/dev/null || true
 set_state '.watch = true'
@@ -487,6 +500,7 @@ printf '%s\n' "$no_network" >"$FAKE/links"
 ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone"; fi
+[[ ! -e $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "and the count starts again after it"
 unset AGENTV_HOTSPOT_LOST_AFTER AGENTV_HOTSPOT_RETRY_AFTER AGENTV_HOTSPOT_REJOIN_WAIT FAKE_KNOWN
 pass "the watch leaves a join that's under way alone"
 

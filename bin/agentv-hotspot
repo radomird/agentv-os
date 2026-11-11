@@ -66,6 +66,9 @@ LOST_AFTER=${AGENTV_HOTSPOT_LOST_AFTER:-60}
 RETRY_AFTER=${AGENTV_HOTSPOT_RETRY_AFTER:-300}
 REJOIN_WAIT=${AGENTV_HOTSPOT_REJOIN_WAIT:-30}
 WATCH_SKIP=${AGENTV_HOTSPOT_WATCH_SKIP:-}
+# With no network the watch looks every 5 seconds. Two looks further apart
+# than this had a sleep or a clock change between them.
+LOOK_GAP=30
 
 # The first Wi-Fi device NetworkManager knows, or nothing. The awk calls here
 # read to the end, so the command before them never writes into a closed pipe.
@@ -498,12 +501,14 @@ knows_wifi() {
 # the hotspot closes, the TV looks for the networks it knows, and the hotspot
 # opens again only if none of them is there.
 watch_tick() {
-  local now since ours=false
+  local now since seen ours=false
 
   PAUSE=300
   setup_done || return 0
-  # A join is root's own doing, and says how it went itself.
+  # A join is root's own doing, and says how it went itself. The count of
+  # how long the network has been gone starts again after it.
   if [[ -n $(state_get .joining) ]]; then
+    rm -f "$RUN/lost-since"
     PAUSE=5
     return 0
   fi
@@ -555,10 +560,21 @@ watch_tick() {
   # One that's opening says so itself in a moment.
   systemctl is-active --quiet agentv-hotspot.service && return 0
   install -d -m 755 "$RUN"
-  if [[ ! -s $RUN/lost-since ]]; then
-    echo "$now" >"$RUN/lost-since"
+  # lost-since has when the network went, and when the watch last looked.
+  # While it's gone the watch looks every few seconds, so a long gap between
+  # two looks is time the TV was asleep, or the clock was set, and the count
+  # starts again. Else a TV that wakes after hours would open the hotspot at
+  # once, while NetworkManager is still getting back on the Wi-Fi.
+  since="" seen=""
+  if [[ -s $RUN/lost-since ]]; then
+    read -r since seen <"$RUN/lost-since" || true
   fi
-  since=$(cat "$RUN/lost-since")
+  [[ ${since:-} =~ ^[0-9]+$ ]] || since=$now
+  [[ ${seen:-} =~ ^[0-9]+$ ]] || seen=$now
+  if (( now - seen > LOOK_GAP || now < seen )); then
+    since=$now
+  fi
+  echo "$since $now" >"$RUN/lost-since"
   (( now - since >= LOST_AFTER )) || return 0
   echo "agentv-hotspot: no network for $(( now - since )) s, so the hotspot opens for a phone to pick one"
   rm -f "$RUN/lost-since"
