@@ -47,9 +47,6 @@
 #   audio volume <0-100>  Settings → Sound's volume for the output playing
 #   idle-after <s|off>  the ambient screen after s seconds with no input,
 #                  instead of Settings' time, until the session ends
-#   screensaver-after <s|off>  the terminal screensaver hands over to the
-#                  slideshow after s seconds, not 10 minutes, until the
-#                  session ends
 #   sleep-after <s|off>  with Settings → Power's sleep on, the box sleeps
 #                  once the TV's been off s seconds, not an hour, until the
 #                  session ends
@@ -147,14 +144,6 @@ case "$command" in
       request='{"cmd":"sleep-after","seconds":null}'
     else
       request=$(jq -cn --argjson seconds "$1" '{cmd: "sleep-after", seconds: $seconds}')
-    fi
-    ;;
-  screensaver-after)
-    (( $# == 1 )) && [[ $1 =~ ^([0-9]+|off)$ ]] || { usage >&2; exit 2; }
-    if [[ $1 == "off" ]]; then
-      request='{"cmd":"screensaver-after","seconds":null}'
-    else
-      request=$(jq -cn --argjson seconds "$1" '{cmd: "screensaver-after", seconds: $seconds}')
     fi
     ;;
   open)

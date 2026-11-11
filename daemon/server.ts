@@ -69,6 +69,7 @@ import { AiIcons, type PROVIDER_SITES } from "./ai-icons.ts";
 import { PlanSignIn } from "./plan-sign-in.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
+import { ControllerRoutes } from "./routes/controllers.ts";
 import { currentLook, lookRoute } from "./routes/look.ts";
 import { desktopPasswordRoute } from "./routes/desktop-password.ts";
 import { DesktopPassword } from "./desktop-password.ts";
@@ -288,6 +289,8 @@ export class Daemon {
   readonly box: Box;
   // The TV's size (ADR-062): /api/display and the screen daemon's asks.
   readonly displayRoutes: DisplayRoutes;
+  // Settings, controllers (ADR-084): Bluetooth game controllers.
+  readonly controllerRoutes: ControllerRoutes;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -508,6 +511,7 @@ export class Daemon {
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.features = new Features({ state: options.state, channel: () => this.channel() });
     this.box = new Box({ state: options.state, ...options.box });
+    this.controllerRoutes = new ControllerRoutes({ pads: () => this.box.pads(), json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), broadcast: (event, data) => this.boxKit().broadcast(event, data), log: (line) => this.log(line), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) });
     this.displayRoutes = new DisplayRoutes({
       state: options.state,
       sizes: () => this.features.on("sizes"),
@@ -661,6 +665,7 @@ export class Daemon {
     this.themeAsks.close();
     this.displayRoutes.close();
     this.network.close();
+    this.controllerRoutes.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -2304,6 +2309,7 @@ export class Daemon {
     if (await boxRoute(this.boxKit(), method, path, request, response)) return;
     if (await networkRoute({ network: this.network, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: this.log, child: async () => (await this.profiles.active()).role === "child", guarded: (q, s, what) => this.guarded(q, s, what) }, method, path, request, response)) return;
     if (await this.displayRoutes.handle(method ?? "", path, request, response)) return;
+    if (await this.controllerRoutes.handle(method, path, request, response)) return;
     if (await backgroundVideoRoutes({ backgrounds: this.backgrounds, body: (q) => this.body(q), json: (q, status, data) => this.json(q, status, data) }, request, response, path)) return;
 
     if (method === "GET" && path === "/health") {
