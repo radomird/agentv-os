@@ -414,6 +414,7 @@ async function tv(
     tvPollMs?: number;
     tvOffCloseMs?: number;
     tvSettleMs?: number;
+    outputAgainMs?: number;
     tvHotplug?: (changed: () => void) => () => void;
     sleep?: Sleep;
     inhibitor?: (why: string) => { set(on: boolean): void };
