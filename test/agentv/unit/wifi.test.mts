@@ -315,17 +315,34 @@ test("the hotspot's page, after setup, asks for the adult PIN when one is set, a
   assert.ok(!lines.some((line) => /4826|0000/.test(line)), "no PIN in a log line");
 });
 
-test("with the right PIN the hotspot's page joins, and the PIN goes no further", async () => {
+test("with the right PIN the hotspot's page joins, and that's all the PIN does there", async () => {
   // The wait from the test before, taken off, as if it had run out.
   const pinFile = join(state, "pin.json");
   const stored = JSON.parse(readFileSync(pinFile, "utf8"));
   delete stored.phones;
   writeFileSync(pinFile, JSON.stringify(stored));
+  // The TV is locked by hand, its pad has a wrong try on it, and so has the
+  // hotspot's page.
+  assert.equal((await send(tv, "POST", "/api/pin/lock", {})).data.locked, true);
+  assert.equal((await send(tv, "POST", "/api/pin/check", { pin: "0000" })).status, 403);
+  assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse", pin: "0000" })).status, 403);
+  assert.equal(JSON.parse(readFileSync(pinFile, "utf8")).phones.hotspot.fails, 1);
   const right = await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse", pin: "4826" });
   assert.equal(right.status, 200);
+  assert.deepEqual(right.data, { ok: true, joining: "Home" }, "no grant comes back");
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } }, "the PIN goes no further than the daemon's check");
   rootTakes();
+  assert.equal((await send(tv, "GET", "/api/pin")).data.locked, true, "the TV is still locked");
+  const after = JSON.parse(readFileSync(pinFile, "utf8"));
+  assert.equal(after.fails, 1, "the pad's wrong try stands");
+  assert.equal(after.byHand, true);
+  assert.equal(after.phones, undefined, "the page's own wrong try is cleared");
+  // Nothing guarded opens for it: saying setup isn't done still needs the PIN.
+  assert.equal((await send(tv, "POST", "/api/setup", { done: false })).status, 403);
   assert.ok(!lines.some((line) => line.includes("4826")), "nor into a log line");
+  // The pad's own right PIN unlocks, as ever.
+  assert.equal((await send(tv, "POST", "/api/pin/check", { pin: "4826" })).status, 200);
+  assert.equal((await send(tv, "GET", "/api/pin")).data.locked, false);
 });
 
 test("a join the hotspot's page can't make is refused before the PIN is looked at, so the right PIN with it changes nothing", async () => {

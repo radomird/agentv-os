@@ -1361,18 +1361,16 @@ export class Daemon {
       }
       // After setup, changing the TV's Wi-Fi is an adult's: with a PIN set,
       // the page sends it too. Wrong tries from the hotspot's page count on
-      // their own, and wait as the TV's pad's do. The PIN goes no further
-      // than this check, and no grant comes of it, since the page has
-      // nothing else to ask.
+      // their own, and wait as the TV's pad's do. The PIN there allows the
+      // Wi-Fi change and nothing else: a locked TV stays locked, the pad's
+      // own wrong tries stand and no grant comes of it.
       if ((await this.setup()).done && this.pin.status().set) {
-        const locked = (await this.pinStatus()).locked;
         const checked = this.pin.right(body?.pin, "hotspot");
         if (!checked.ok) {
           this.log(checked.wait ? "a wrong pin on the hotspot's page; the next try waits" : "a wrong pin on the hotspot's page");
           this.json(response, 403, { ok: false, error: checked.error, pin: true, ...(checked.wait ? { wait: checked.wait } : {}) });
           return;
         }
-        await this.lockChanged(locked);
       }
       const why = this.hotspot.join(body?.ssid, body?.password ?? "");
       if (why) {
