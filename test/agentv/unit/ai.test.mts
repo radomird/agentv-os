@@ -81,9 +81,28 @@ test("ADR-047 Grok's terms are xAI's consumer terms for a plan and its enterpris
   assert.match(OFFERS.muse.plan.note ?? "", /meta managed account can only use a key/);
   // xAI's as read in a browser (Q133); the others' readings, and so their
   // acceptances, stand.
-  assert.deepEqual([TERMS_READ.grok, TERMS_READ.muse, TERMS_READ.claude], ["2026-10-28", "2026-10-27", "2026-10-26"]);
-  // Google's were read again, with the terms of the CLI its plans moved to.
-  assert.equal(TERMS_READ.gemini, "2026-11-10");
+  assert.deepEqual([TERMS_READ.grok.key, TERMS_READ.muse.key, TERMS_READ.claude.key], ["2026-10-28", "2026-10-27", "2026-10-26"]);
+  // Google's plan was read again, with the terms of the CLI its plans moved
+  // to. The terms for its key are as they were, and so is their reading.
+  assert.deepEqual(TERMS_READ.gemini, { plan: "2026-11-10", key: "2026-10-26" });
+});
+
+test("an acceptance of a key's terms from before the plan's were read again still counts, and one of the plan's doesn't", async () => {
+  // A household set up with a Gemini key on 2026-10-30, as its terms.json
+  // has it. Only the plan's terms were read again since.
+  const dir = join(scratch, "before");
+  mkdirSync(dir, { recursive: true });
+  const before = (path: "plan" | "key") => ({ provider: "gemini", path, terms: OFFERS.gemini.terms[path], read: "2026-10-26", by: { phone: "iphone", viewer: "radomir" }, at: "2026-10-30T19:00:00+00:00" });
+  writeFileSync(join(dir, "terms.json"), JSON.stringify([before("key"), before("plan")]));
+  writeFileSync(join(dir, "ai.json"), JSON.stringify({ provider: "gemini", path: "key" }));
+  const ai = new Ai({ state: dir });
+  const state = await ai.read();
+  assert.deepEqual([state.provider, state.path, state.accepted?.read, state.accepted?.at], ["gemini", "key", "2026-10-26", "2026-10-30T19:00:00+00:00"]);
+  assert.ok(await ai.acceptance("gemini", "key"), "the key's terms are still accepted");
+  assert.equal(await ai.acceptance("gemini", "plan"), null, "the plan's terms were read again, so that acceptance is of an older reading");
+  // And a new acceptance is of each path's own reading.
+  const again = (await ai.record("gemini", "key", { phone: "iphone", viewer: "radomir" })).acceptance!;
+  assert.equal(again.read, TERMS_READ.gemini.key);
 });
 
 test("a plan is only where it's offered, and none clears the choice", async () => {
@@ -159,7 +178,7 @@ test("S5.5 an acceptance is for the terms the TV shows, kept with who, on which 
   assert.match((await ai.accept("claude", "plan", { phone: "iphone", viewer: "radomir" })).error ?? "", /aren't the terms the tv shows/);
   assert.match((await ai.accept("claude", "key", { phone: "iphone", viewer: "<script>" })).error ?? "", /who accepted/);
   const accepted = (await ai.accept("claude", "key", { phone: "iphone", viewer: "radomir" })).state!.accepted!;
-  assert.deepEqual([accepted.provider, accepted.path, accepted.read, accepted.by], ["claude", "key", TERMS_READ.claude, { phone: "iphone", viewer: "radomir" }]);
+  assert.deepEqual([accepted.provider, accepted.path, accepted.read, accepted.by], ["claude", "key", TERMS_READ.claude.key, { phone: "iphone", viewer: "radomir" }]);
   assert.equal(accepted.terms[0].id, "anthropic-commercial-terms");
   assert.match(accepted.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$/);
   // Picking a plan needs its own terms; back to the key, they're still accepted.
@@ -279,7 +298,7 @@ test("Q104 Settings → AI: a key for a provider whose terms nobody here accepte
   assert.equal((await phone("/api/phone/terms", { provider: "gemini", path: "key" }, grant)).status, 400);
   assert.equal((await phone("/api/phone/terms", { provider: "chatgpt", path: "key" }, grant)).status, 200);
   const record = kept().at(-1);
-  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ.chatgpt, "iphone", "openai-services-agreement"]);
+  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ.chatgpt.key, "iphone", "openai-services-agreement"]);
   assert.equal((await phoneState()).ai, null);
   await withRoot(async () => assert.equal((await put("chatgpt", `sk-proj-${"n".repeat(40)}`)).status, 200));
   assert.doesNotMatch(JSON.stringify(kept()), /sk-proj/, "no key in the record");
@@ -311,7 +330,7 @@ test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own term
     assert.equal(kept().length, before, "nothing is recorded before an adult accepts");
     assert.equal((await phone("/api/phone/terms", { provider, path: "key" }, grant)).status, 200);
     const record = kept().at(-1);
-    assert.deepEqual([record.provider, record.path, record.read, record.by.phone], [provider, "key", TERMS_READ[provider as "grok" | "muse"], "iphone"]);
+    assert.deepEqual([record.provider, record.path, record.read, record.by.phone], [provider, "key", TERMS_READ[provider as "grok" | "muse"].key, "iphone"]);
     await withRoot(async () => assert.equal((await put(provider, key)).status, 200, `${provider}'s key is kept`));
     await withRoot(async () => assert.equal((await put(provider, `${key}2`)).status, 200, `a second ${provider} key just saves`));
     assert.equal(kept().length, before + 1, "with no new acceptance");
@@ -352,7 +371,7 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
     assert.equal((await phone("/api/phone/terms", { provider: "grok", path: "plan" })).status, 403, "past the PIN on the phone too");
     assert.equal((await phone("/api/phone/terms", { provider: "grok", path: "plan" }, grant)).status, 200);
     const record = kept().at(-1);
-    assert.deepEqual([kept().length, record.provider, record.path, record.read, record.terms[0].id], [before + 1, "grok", "plan", TERMS_READ.grok, "xai-consumer-terms"]);
+    assert.deepEqual([kept().length, record.provider, record.path, record.read, record.terms[0].id], [before + 1, "grok", "plan", TERMS_READ.grok.plan, "xai-consumer-terms"]);
     assert.equal((await phoneState()).ai, null);
     assert.equal((await usePlan("grok")).status, 200, "the TV asks again, and now it's used");
     assert.deepEqual(await using(), { provider: "grok", path: "plan", accepted: true });

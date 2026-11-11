@@ -1,16 +1,14 @@
 // A quiet TV when nobody's watching, in a real Chromium (ADR-019, layer 4;
-// ADR-072, T13.1). The screen daemon itself runs on a stand-in Hyprland and
-// drives home's real page, the way it does on the box over home's DevTools
-// pipe. The terminal screensaver draws 30 frames a second and hands over to
-// the slideshow after its time (shortened here). With the TV reported off,
-// the screensaver gives way and never starts again, home hears it, and once
-// the apps close the output is off. The TV's own power is the NUC's.
+// ADR-072, T13.1, T17.1). The screen daemon itself runs on a stand-in
+// Hyprland and drives home's real page, the way it does on the box over
+// home's DevTools pipe. Idle shows home's own ambient screen, the one idle
+// screen, with nothing else in front of it. With the TV reported off, home
+// hears it, and once the apps close the output is off. The TV's own power
+// is the NUC's.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
@@ -30,7 +28,6 @@ let daemon: Daemon;
 let url = "";
 let appsDir = "";
 const errors: string[] = [];
-const scratch = mkdtempSync(join(tmpdir(), "agentv-quiet-"));
 
 before(async () => {
   ({ daemon, url, apps: appsDir } = await startBox());
@@ -40,7 +37,6 @@ before(async () => {
 after(async () => {
   await browser?.close();
   await daemon?.close();
-  rmSync(scratch, { recursive: true, force: true });
 });
 
 // Hyprland as far as the screen daemon uses it here: windows moving to the
@@ -144,30 +140,31 @@ async function home(): Promise<Page> {
   return page;
 }
 
-// The screen daemon on that page, with the terminal screensaver picked in
-// Settings and the TV's power as the test says.
+// The screen daemon on that page, with the TV's power as the test says.
+// Anything the daemon asks its launcher to start besides home is noted.
 async function tv(page: Page, tvOn: () => boolean, more: Partial<Launcher> = {}) {
   const hypr = new StandInHyprland();
   const homeApp = new StandInApp("home", 100, pipe(page));
-  const savers: StandInApp[] = [];
+  const started: string[] = [];
   const parts: Partial<Launcher> = {
     home: () => homeApp,
-    screensaver: () => {
-      const app = new StandInApp("screensaver", 200 + savers.length);
-      savers.push(app);
-      return app;
-    },
     idleMinutes: async () => 10,
-    ambientStyle: async () => "terminal",
     parent: () => null,
     profile: () => null,
     updating: async () => false,
     nightUpdates: async () => null,
     ...more,
   };
-  // Everything else the launcher does is a quiet yes.
+  // Everything else the launcher does is a quiet yes, noted by name.
   const launcher = new Proxy(parts, {
-    get: (target, name) => (name in target ? target[name as keyof Launcher] : name === "then" ? undefined : async () => undefined),
+    get: (target, name) =>
+      name in target
+        ? target[name as keyof Launcher]
+        : name === "then"
+          ? undefined
+          : async () => {
+              started.push(String(name));
+            },
   }) as Launcher;
   const lines: string[] = [];
   const screen = new Screen({
@@ -187,57 +184,50 @@ async function tv(page: Page, tvOn: () => boolean, more: Partial<Launcher> = {})
   await sleep(0);
   hypr.open("0xa", homeApp.pid, "chromium");
   await screen.idle();
-  return { hypr, screen, savers, lines };
+  return { hypr, screen, started, lines };
 }
 
-test("T13.1 the terminal screensaver draws 30 frames a second, as the ambient screen runs it", async () => {
-  // Omarchy as far as the screensaver uses it, with a ttfx that notes how
-  // it was asked to draw.
-  const omarchy = join(scratch, "omarchy");
-  mkdirSync(join(omarchy, "bin"), { recursive: true });
-  writeFileSync(join(omarchy, "bin", "omarchy-theme-osc"), "#!/bin/bash\n");
-  writeFileSync(join(omarchy, "bin", "ttfx"), `#!/bin/bash\necho "$*" >>"${scratch}/ttfx.log"\nsleep 0.2\n`);
-  chmodSync(join(omarchy, "bin", "omarchy-theme-osc"), 0o755);
-  chmodSync(join(omarchy, "bin", "ttfx"), 0o755);
-  writeFileSync(join(omarchy, "logo.txt"), "AGENTV\n");
-  const saver = spawn(join(ROOT, "bin", "agentv-screensaver"), { env: { ...process.env, HOME: scratch, OMARCHY_PATH: omarchy }, stdio: ["pipe", "ignore", "ignore"] });
-  await sleep(600);
-  saver.stdin.write("x");
-  await new Promise((resolve) => saver.on("exit", resolve));
-  const runs = readFileSync(join(scratch, "ttfx.log"), "utf8").trim().split("\n");
-  assert.ok(runs.length >= 2, "one effect after another");
-  for (const run of runs) assert.match(run, /--frame-rate 30 /);
-});
-
-test("T13.1 after its time the screensaver hands over to the slideshow, and home stays on its ambient screen", async () => {
+test("T17.1 idle shows home's ambient screen with its pictures, and nothing else comes in front of it", async () => {
   const page = await home();
   const t = await tv(page, () => true);
-  await t.screen.handle({ cmd: "screensaver-after", seconds: 0.5 });
   await t.screen.handle({ cmd: "idle-after", seconds: 0.1 });
   t.screen.seatIdle(true);
   await page.waitForSelector("#ambient.on .ambient-drift", { timeout: 5000 });
-  await sleep(100);
-  await t.screen.idle();
-  assert.equal(t.savers.length, 1, "the terminal screensaver starts, as Settings picked");
-  const saver = t.savers[0];
-  t.hypr.open("0xc", saver.pid, "org.agentv.screensaver");
-  await t.screen.idle();
-  assert.equal(t.screen.front()?.role, "screensaver");
   await sleep(700);
   await t.screen.idle();
-  assert.equal(saver.stopped, true, "it's stopped after its time");
-  t.hypr.close("0xc");
-  saver.exit();
-  await t.screen.idle();
-  assert.equal(t.screen.front()?.role, "home", "home is in front, with its slideshow");
   assert.equal(t.screen.ambient, true);
-  assert.equal(await page.locator("#ambient.on").count(), 1, "the ambient screen is still up");
-  assert.ok(t.lines.some((line) => line.startsWith("the terminal screensaver hands over to the slideshow")), t.lines.join("\n"));
+  assert.equal(t.screen.front()?.role, "home", "home is in front, on its ambient screen");
+  assert.equal(await page.locator("#ambient.on").count(), 1);
+  // No terminal, no effect: the daemon asked its launcher for no window.
+  assert.deepEqual(t.started.filter((name) => /screensaver|ambientStyle/.test(name)), []);
+  assert.ok(!t.lines.some((line) => /screensaver/.test(line)), t.lines.join("\n"));
+  // A key ends it.
+  t.screen.seatIdle(false);
+  await page.waitForFunction(() => !document.querySelector("#ambient.on"), null, { timeout: 5000 });
+  assert.equal(t.screen.ambient, false);
   t.screen.stop();
   await page.close();
 });
 
-test("T13.1 with the TV reported off the screensaver gives way and never starts, home hears it, and the output goes off", async () => {
+test("T17.1 Settings, themes and backgrounds has no screensaver row, only how long the TV waits", async () => {
+  const page = await home();
+  try {
+    await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/look"));
+    await page.waitForSelector('[data-action="idle"]');
+    assert.equal(await page.locator('[data-action="ambient-style"]').count(), 0);
+    // "terminal" is still a look's name here. What's gone is the row that
+    // picked what the idle screen shows.
+    const rows = await page.locator(".settings-panel .button > span:first-child").allInnerTexts();
+    assert.ok(rows.includes("ambient screen after"), rows.join(", "));
+    assert.ok(!rows.includes("ambient screen"), rows.join(", "));
+    assert.doesNotMatch(await page.locator(".settings-panel").innerText(), /screensaver/i);
+    assert.equal(await page.evaluate(async () => "ambient" in (await (await fetch("/api/home")).json()).settings), false);
+  } finally {
+    await page.close();
+  }
+});
+
+test("T13.1 with the TV reported off home hears it, the output goes off, and home waits on its ambient screen", async () => {
   const page = await home();
   let on = true;
   const t = await tv(page, () => on);
@@ -246,16 +236,9 @@ test("T13.1 with the TV reported off the screensaver gives way and never starts,
   await page.waitForSelector("#ambient.on", { timeout: 5000 });
   await sleep(100);
   await t.screen.idle();
-  const saver = t.savers[0];
-  t.hypr.open("0xc", saver.pid, "org.agentv.screensaver");
-  await t.screen.idle();
 
   on = false;
   await page.waitForFunction(() => (window as unknown as { tvHeard: string[] }).tvHeard.includes("off"), null, { timeout: 5000 });
-  await t.screen.idle();
-  assert.equal(saver.stopped, true, "the screensaver gives way at once");
-  t.hypr.close("0xc");
-  saver.exit();
   await t.screen.idle();
   assert.equal(t.screen.front()?.role, "home");
   // Once the apps close, nothing draws.
@@ -264,13 +247,6 @@ test("T13.1 with the TV reported off the screensaver gives way and never starts,
   assert.equal(t.hypr.dpms, false, "the output is off");
   assert.equal(((await t.screen.handle({ cmd: "status" })) as { output: string }).output, "off");
   assert.equal(await page.locator("#ambient.on").count(), 1, "home waits on its ambient screen");
-  // Idle again with the TV off: still no screensaver.
-  await t.screen.handle({ cmd: "ambient" });
-  t.screen.seatIdle(true);
-  await sleep(300);
-  await t.screen.idle();
-  assert.equal(t.savers.length, 1, "no screensaver for a TV that's off");
-
   // The TV back on: the output, then home hears it.
   on = true;
   await page.waitForFunction(() => (window as unknown as { tvHeard: string[] }).tvHeard.includes("on"), null, { timeout: 5000 });

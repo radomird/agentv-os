@@ -28,8 +28,8 @@
 // TV goes off, playback pauses at once; after 2 minutes every app closes, the
 // home screen waits on its ambient screen, where any key goes home, and the
 // TV's output goes off in Hyprland, so nothing draws for a TV that's off. The
-// terminal screensaver, when Settings picks it, hands over to the slideshow
-// after 10 minutes, and never starts with the TV off (ADR-072).
+// ambient screen is the one idle screen: home's own pictures, with nothing
+// else in front of them.
 //
 // An update asked for tonight, or any with "update overnight on its own" on,
 // installs between 02:00 and 05:00 once nothing has played for 30 minutes
@@ -52,6 +52,7 @@ import { NO_WEBRTC } from "../apps/contract/page.ts";
 import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { AskWatch } from "./asks.ts";
+import { Controllers, type ControllerAnswer, type ControllerAsk } from "./controllers.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
@@ -84,7 +85,7 @@ import { tvOn, watchHotplug } from "./tv-power.ts";
 import { Inhibitor } from "./inhibit.ts";
 import { Sleep, logindSleep } from "./sleep.ts";
 
-export type Role = "home" | "web" | "steam" | "screensaver" | "share";
+export type Role = "home" | "web" | "steam" | "share";
 
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:agentv-held";
@@ -210,11 +211,6 @@ export interface Launcher {
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
-  // What the ambient screen shows, from Settings: the backgrounds, or the
-  // terminal screensaver (ADR-049).
-  ambientStyle(): Promise<"pictures" | "terminal">;
-  // The terminal screensaver, Omarchy's effect in a foot of its own.
-  screensaver(): App;
   // Tells AgenTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037), and the field with the focus in
   // the app in front, when there is one (ADR-065).
@@ -346,8 +342,6 @@ interface Options {
   // TV still off, before it goes off again. Also how long a TV that's off as
   // the session starts waits before it counts as off.
   tvSettleMs?: number;
-  // How long the terminal screensaver runs before the slideshow takes over.
-  screensaverMs?: number;
   // Sleep as a setting (daemon/sleep.ts), told when the TV goes off and on.
   sleep?: Sleep;
   // Keeps the box awake while something it starts mustn't be cut off, such
@@ -433,12 +427,6 @@ export class Screen {
   private hotplugStop: (() => void) | null = null;
   private tvSettleMs: number;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
-  // The terminal screensaver's 10 minutes, and the one it stopped to hand
-  // over to the slideshow, whose window closing isn't a key.
-  private screensaverMs: number;
-  private saverAfter: number | null = null;
-  private saverTimer: ReturnType<typeof setTimeout> | null = null;
-  private handedOver = 0;
   private sleep?: Sleep;
   private fetching?: { set(on: boolean): void };
   private contextWatch: ReturnType<typeof setInterval> | null = null;
@@ -484,7 +472,6 @@ export class Screen {
     this.tvOffCloseMs = options.tvOffCloseMs ?? 120_000;
     this.tvHotplug = options.tvHotplug;
     this.tvSettleMs = options.tvSettleMs ?? 10_000;
-    this.screensaverMs = options.screensaverMs ?? 10 * 60_000;
     this.sleep = options.sleep;
     this.fetching = options.inhibitor?.("fetching the AI's command-line tool");
     this.idleReportMs = options.idleReportMs ?? 30_000;
@@ -606,7 +593,6 @@ export class Screen {
       const home = this.apps.get("home")?.cdp;
       return home ? { kind: "page", id: "home", overlay: false, evaluate: (expression) => home.evaluate(HOME_URL, expression) } : null;
     }
-    if (front.role === "screensaver") return null;
     const web = this.apps.get("web")?.cdp;
     const entry = this.opens.find((o) => o.address === front.address && o.target);
     if (front.role === "web" && web && entry?.target) {
@@ -647,7 +633,7 @@ export class Screen {
   // Stops the timers, for the tests.
   stop(): void {
     this.idleGeneration++;
-    for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer, this.settleTimer, this.saverTimer]) if (timer) clearTimeout(timer);
+    for (const timer of [this.backTimer, this.idleTimer, this.tvTimer, this.homeTimer, this.settleTimer]) if (timer) clearTimeout(timer);
     if (this.tvWatch) clearInterval(this.tvWatch);
     this.hotplugStop?.();
     if (this.nightWatch) clearInterval(this.nightWatch);
@@ -792,13 +778,6 @@ export class Screen {
       }
       this.opens = this.opens.filter((o) => o.address !== address);
       this.running();
-    }
-    // The terminal screensaver ended on a key: back to what was there. One
-    // the daemon stopped for the slideshow leaves the ambient screen up.
-    if (window?.role === "screensaver") {
-      if (window.pid === this.handedOver) this.handedOver = 0;
-      else if (this.ambient) await this.endAmbient("a key on the terminal screensaver");
-      return;
     }
     if (!window || !wasFront || this.ending) return;
 
@@ -1603,11 +1582,10 @@ export class Screen {
     });
   }
 
-  // The home screen in front on its ambient screen. What was in front stays
-  // open behind it, unless the TV went off and it closed. With the terminal
-  // screensaver chosen in Settings, it comes in front of that, except once
-  // the TV is off, when there's no one to see it (ADR-049).
-  showAmbient(terminal = true): Promise<object> {
+  // The home screen in front on its ambient screen, the one idle screen.
+  // What was in front stays open behind it, unless the TV went off and it
+  // closed.
+  showAmbient(): Promise<object> {
     return this.queue(async () => {
       if (this.ambient) return;
       const front = this.front();
@@ -1618,61 +1596,7 @@ export class Screen {
       this.ambientAt = this.now();
       this.log(`the ambient screen${this.ambientFrom ? `, over ${this.ambientFrom}` : ""}`);
       await this.inHome("window.agentvAmbient?.(true)");
-      if (terminal && !this.tvOff && (await this.launcher.ambientStyle().catch(() => "pictures" as const)) === "terminal") this.startScreensaver();
     }).then(() => ({ ok: true }));
-  }
-
-  // Omarchy's terminal screensaver, in front once its window opens. It ends
-  // on a key, and its window closing ends the ambient screen.
-  private startScreensaver(): void {
-    if (this.apps.has("screensaver")) return;
-    try {
-      const app = this.launcher.screensaver();
-      this.apps.set("screensaver", app);
-      app.onExit(() => {
-        if (this.apps.get("screensaver") === app) this.apps.delete("screensaver");
-      });
-      this.want = { role: "screensaver", until: this.now() + 15_000 };
-      this.log(`the terminal screensaver (pid ${app.pid})`);
-      // After its 10 minutes, the slideshow under it takes over (ADR-072).
-      if (this.saverTimer) clearTimeout(this.saverTimer);
-      const ms = this.saverAfter !== null ? this.saverAfter * 1000 : this.screensaverMs;
-      this.saverTimer = setTimeout(() => {
-        this.saverTimer = null;
-        if (this.apps.get("screensaver") === app) void this.handOver(`${Math.round(ms / 60_000)} min of the terminal screensaver`);
-      }, ms);
-    } catch (error) {
-      this.log(`no terminal screensaver: ${(error as Error).message}`);
-    }
-  }
-
-  // The terminal screensaver gives way to the slideshow under it, which is
-  // mostly still and changes picture now and then, so nothing sits on an
-  // OLED for hours (ADR-072). The ambient screen stays, and a key still goes
-  // back to what was there.
-  private handOver(why: string): Promise<void> {
-    return this.queue(() => this.handOverNow(why));
-  }
-
-  private async handOverNow(why: string): Promise<void> {
-    if (this.saverTimer) clearTimeout(this.saverTimer);
-    this.saverTimer = null;
-    const saver = this.apps.get("screensaver");
-    if (!saver) return;
-    this.log(`the terminal screensaver hands over to the slideshow: ${why}`);
-    this.handedOver = saver.pid;
-    this.apps.delete("screensaver");
-    if (this.want?.role === "screensaver") this.want = null;
-    saver.stop();
-    const home = this.homeWindow();
-    if (home && this.front()?.address !== home.address) await this.toFront(home.address);
-  }
-
-  // For the checks: the slideshow takes over after this many seconds, not
-  // 10 minutes.
-  screensaverAfterSeconds(seconds: number | null): object {
-    this.saverAfter = seconds;
-    return { ok: true };
   }
 
   // A key on the ambient screen: back to what was in front, or home.
@@ -1686,16 +1610,8 @@ export class Screen {
     this.log(`the ambient screen ends: ${why}`);
     const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
     this.ambientFrom = null;
-    if (this.want?.role === "screensaver") this.want = null;
-    if (this.saverTimer) clearTimeout(this.saverTimer);
-    this.saverTimer = null;
-    this.apps.get("screensaver")?.stop();
     await this.inHome("window.agentvAmbient?.(false)");
     if (back) await this.toFront(back);
-    else if (this.front()?.role === "screensaver") {
-      const home = this.homeWindow();
-      if (home) await this.toFront(home.address);
-    }
   }
 
   private pollTv(): void {
@@ -1715,10 +1631,8 @@ export class Screen {
         this.tvOff = true;
         this.sleep?.tv(false);
         this.log("the TV went off; pausing");
-        // Home's moving background stops too, and the terminal screensaver
-        // gives way to the still ambient screen (ADR-072).
+        // Home's moving background stops too (ADR-072).
         void this.inHome(`window.agentvTv?.("off")`);
-        await this.handOverNow("the TV went off");
         for (const entry of this.opens.filter((o) => o.role === "web")) {
           if ((await this.media(entry, PAUSE)) > 0) entry.paused = true;
         }
@@ -1778,7 +1692,7 @@ export class Screen {
           // A game that stayed in front stays there (ADR-084).
           if (!this.dark || !this.tvOff || this.ambient) return;
           void this.gameInFront().then((game) => {
-            if (!game && this.dark && this.tvOff) void this.showAmbient(false);
+            if (!game && this.dark && this.tvOff) void this.showAmbient();
           });
         });
       }, this.tvSettleMs);
@@ -1820,7 +1734,7 @@ export class Screen {
         this.log(`${game} stays in front`);
       }
     })
-      .then(() => (stays ? undefined : this.showAmbient(false)))
+      .then(() => (stays ? undefined : this.showAmbient()))
       .then(() =>
         this.queue(async () => {
           // Then nothing draws until the TV is back (ADR-072).
@@ -2320,8 +2234,6 @@ export class Screen {
         return this.seatIdle(request.idle === true);
       case "idle-after":
         return this.idleAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
-      case "screensaver-after":
-        return this.screensaverAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
       case "sleep-after":
         if (!this.sleep) return { ok: false, error: "sleep isn't here" };
         return this.sleep.afterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
@@ -2841,22 +2753,6 @@ export const launcher: Launcher = {
     return typeof minutes === "number" && minutes > 0 ? minutes : 10;
   },
 
-  async ambientStyle() {
-    const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
-    return (await response.json())?.settings?.ambient === "terminal" ? "terminal" : "pictures";
-  },
-
-  screensaver() {
-    // In foot, with Omarchy's own settings for its screensaver, as a window
-    // the screen daemon knows by the process it started.
-    const omarchy = process.env.OMARCHY_PATH || "/usr/share/omarchy";
-    const child = spawn("foot", [`--config=${join(omarchy, "default", "foot", "screensaver.ini")}`, "--app-id=org.agentv.screensaver", "agentv-screensaver"], {
-      stdio: ["ignore", "ignore", "inherit"],
-      env: { ...process.env, OMARCHY_PATH: omarchy },
-    });
-    return track("screensaver", child);
-  },
-
   // Each kill stops one instance and returns once it's gone, as Omarchy's
   // own restart does it; its launcher takes the clean exit as a deliberate
   // stop and doesn't start it again. AgenTV's toasts are a Quickshell of
@@ -3154,6 +3050,16 @@ async function main(): Promise<void> {
     what: "a sentence",
     handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ
+  // lets pair a Bluetooth game controller, so the daemon's asks come here.
+  const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`) });
+  new AskWatch<ControllerAsk, ControllerAnswer>({
+    url: HOME_URL,
+    path: "api/controllers/ask",
+    what: "controllers",
+    handle: (ask) => controllers.handle(ask),
+    failed: (error) => ({ ok: false, bluetooth: "none", looking: false, controllers: [], why: "failed", error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.
