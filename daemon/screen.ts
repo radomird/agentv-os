@@ -124,6 +124,9 @@ const MISE_PACKAGES: Record<Cli, string> = {
 };
 // How far before its press a tap's release can read the clock (see back).
 const BACK_SLACK_MS = 50;
+// How many times the output is asked to go off after a look, with the TV
+// still off, before the next key or hotplug has to start a new look.
+const OUTPUT_OFF_TRIES = 6;
 
 // A process the daemon started.
 export interface App {
@@ -342,6 +345,9 @@ interface Options {
   // TV still off, before it goes off again. Also how long a TV that's off as
   // the session starts waits before it counts as off.
   tvSettleMs?: number;
+  // How long before the output is asked to go off again, when Hyprland
+  // refused: 5 s.
+  outputAgainMs?: number;
   // Sleep as a setting (daemon/sleep.ts), told when the TV goes off and on.
   sleep?: Sleep;
   // Keeps the box awake while something it starts mustn't be cut off, such
@@ -426,6 +432,7 @@ export class Screen {
   private tvHotplug?: (changed: () => void) => () => void;
   private hotplugStop: (() => void) | null = null;
   private tvSettleMs: number;
+  private outputAgainMs: number;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private sleep?: Sleep;
   private fetching?: { set(on: boolean): void };
@@ -472,6 +479,7 @@ export class Screen {
     this.tvOffCloseMs = options.tvOffCloseMs ?? 120_000;
     this.tvHotplug = options.tvHotplug;
     this.tvSettleMs = options.tvSettleMs ?? 10_000;
+    this.outputAgainMs = options.outputAgainMs ?? 5_000;
     this.sleep = options.sleep;
     this.fetching = options.inhibitor?.("fetching the AI's command-line tool");
     this.idleReportMs = options.idleReportMs ?? 30_000;
@@ -1681,21 +1689,29 @@ export class Screen {
       if (this.outputOff) await this.output(true, `${why}; looking for the TV`);
       else this.log(`${why}; looking for the TV`);
       if (this.settleTimer) clearTimeout(this.settleTimer);
-      this.settleTimer = setTimeout(() => {
-        this.settleTimer = null;
-        void this.queue(async () => {
-          if (this.dark && this.tvOff) await this.output(false, "the TV is still off");
-        }).then(() => {
-          // A key, or a mouse that moved as the box woke, took home off its
-          // ambient screen, but the TV is still off: back to it, so the TV
-          // comes on to the ambient screen, where any key goes home.
-          // A game that stayed in front stays there (ADR-084).
-          if (!this.dark || !this.tvOff || this.ambient) return;
-          void this.gameInFront().then((game) => {
-            if (!game && this.dark && this.tvOff) void this.showAmbient();
-          });
-        });
-      }, this.tvSettleMs);
+      this.settleTimer = setTimeout(() => void this.settle(OUTPUT_OFF_TRIES), this.tvSettleMs);
+    });
+  }
+
+  // The look is over. With the TV still off the output goes off again. Just
+  // after a wake Hyprland can refuse for a few seconds, and an output left on
+  // has the box drawing for a TV that's off, so it's asked again.
+  private settle(tries: number): Promise<void> {
+    this.settleTimer = null;
+    return this.queue(async () => {
+      if (this.dark && this.tvOff) await this.output(false, "the TV is still off");
+      if (this.dark && this.tvOff && !this.outputOff && tries > 1 && !this.settleTimer) {
+        this.settleTimer = setTimeout(() => void this.settle(tries - 1), this.outputAgainMs);
+      }
+    }).then(() => {
+      // A key, or a mouse that moved as the box woke, took home off its
+      // ambient screen, but the TV is still off: back to it, so the TV
+      // comes on to the ambient screen, where any key goes home.
+      // A game that stayed in front stays there (ADR-084).
+      if (!this.dark || !this.tvOff || this.ambient) return;
+      void this.gameInFront().then((game) => {
+        if (!game && this.dark && this.tvOff) void this.showAmbient();
+      });
     });
   }
 
