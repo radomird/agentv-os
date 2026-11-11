@@ -39,6 +39,9 @@ class FakeHyprland implements Hyprland {
   exited = false;
   // The output's power, as hl.dsp.dpms leaves it.
   dpms = true;
+  // How many times turning the output off is refused, as Hyprland does just
+  // after a wake.
+  refuseOff = 0;
   private handler: (name: string, data: string) => void = () => {};
 
   async clients() {
@@ -63,6 +66,10 @@ class FakeHyprland implements Hyprland {
   async dispatch(expression: string) {
     this.dispatched.push(expression);
     let m;
+    if (/^hl\.dsp\.dpms\(\{ action = "disable"/.test(expression) && this.refuseOff > 0) {
+      this.refuseOff--;
+      throw new Error("hyprctl dispatch: Command failed");
+    }
     if ((m = expression.match(/^hl\.dsp\.window\.move\(\{ window = "address:(0x\w+)", workspace = "([^"]+)"/))) {
       const window = this.get(m[1]);
       window.workspace = { id: m[2] === "1" ? 1 : -98, name: m[2] };
@@ -407,6 +414,7 @@ async function tv(
     tvPollMs?: number;
     tvOffCloseMs?: number;
     tvSettleMs?: number;
+    outputAgainMs?: number;
     tvHotplug?: (changed: () => void) => () => void;
     sleep?: Sleep;
     inhibitor?: (why: string) => { set(on: boolean): void };
@@ -1846,6 +1854,37 @@ test("T13.1 a key with the output off lights it to look for the TV, and it goes 
   await t.screen.idle();
   assert.equal(t.hypr.dpms, true);
   assert.equal(((await t.screen.handle({ cmd: "status" })) as any).tv, "on");
+  t.screen.stop();
+});
+
+test("an output Hyprland won't turn off after a look is asked again, until it's off", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 50, tvSettleMs: 100, outputAgainMs: 60 });
+  on = false;
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  // A key lights the output to look, and Hyprland refuses twice to turn it
+  // off again.
+  t.hypr.refuseOff = 2;
+  t.screen.seatIdle(false);
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true, "still on after the first try");
+  assert.ok(t.lines.some((line) => line.includes("the TV's output couldn't go off")), t.lines.join("\n"));
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false, "off once Hyprland takes it");
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).output, "off");
+  // And it stops asking once the TV is back.
+  t.hypr.refuseOff = 99;
+  t.screen.seatIdle(false);
+  await sleep(30);
+  on = true;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true);
+  assert.equal(t.hypr.refuseOff, 99, "nothing asked the output to go off with the TV on");
   t.screen.stop();
 });
 
