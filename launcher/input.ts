@@ -46,7 +46,7 @@ const FIELD_KEYS = ["ArrowUp", "ArrowDown", "Enter", "NumpadEnter", "Escape", "H
 // details says which app's details a hold on OK would open: the focused
 // tile's, or nothing when the focus isn't on one. Only there does OK wait
 // for the key to come up, so a short press opens the app and a held one
-// opens its details. Everywhere else OK acts as the key goes down, as ever.
+// opens its details. Everywhere else OK acts as the key goes down, once.
 export function listen(act: (action: Action) => void, details: () => string | undefined = () => undefined): void {
   // The press of OK under way on a tile, and whether the hold has already
   // opened details, so the key's repeats and its release do nothing more.
@@ -69,9 +69,11 @@ export function listen(act: (action: Action) => void, details: () => string | un
     if (event.target instanceof HTMLInputElement && !FIELD_KEYS.includes(event.key)) return;
     event.preventDefault();
     if (action === "ok") {
-      // A held key repeats: the press is already counted.
-      if (press || spent) return;
-      const on = event.repeat ? undefined : details();
+      // A held key repeats, about 40 times a second on the TV, and OK
+      // counts once for as long as it's down, wherever the focus is: on
+      // Play, on a button or on the PIN pad's digit as much as on a tile.
+      if (event.repeat || press || spent) return;
+      const on = details();
       if (on !== undefined) {
         const timer = window.setTimeout(() => {
           spent = true;

@@ -9,7 +9,8 @@
 // - a short OK on a tile opens the app, as the key comes up;
 // - a held one opens the app's details, once, and never the app, in each
 //   look's home and in Apps, from a keyboard and from the phone's remote;
-// - OK anywhere else still acts as the key goes down;
+// - OK anywhere else still acts as the key goes down, and once, however
+//   long it's held;
 // - a gamepad's Y still opens details;
 // - details has Quit only while the app is open, and no tile names a key
 //   for it.
@@ -292,6 +293,54 @@ test("T16.1 holding OK on an app in Apps opens its details, and OK anywhere else
   await page.waitForSelector(`#page [data-id="${APP}"][data-details]`);
   await page.keyboard.press("e");
   await page.waitForSelector(`#page [data-id="${APP}"]:not([data-details])`);
+  await page.close();
+});
+
+test("T16.1 OK held on something that isn't a tile is one OK, however long the key repeats: Cinema's Play, a button, and a digit on the PIN pad", async () => {
+  // Cinema's home starts on Play, not on a tile.
+  await useLook("cinema");
+  const page = await tv();
+  await page.waitForSelector('#page [data-action="cinema-play"].focused');
+  const opened = () => page.evaluate(() => (window as unknown as Tv).screenRequests.filter((r) => r.cmd.startsWith("open")).length);
+  await holdEnter(page, 700);
+  await sleep(200);
+  assert.equal(await opened(), 1, "a key held on Play opens once");
+  // And from the phone, whose hold the TV keeps down for 700 ms.
+  const hand = await phone();
+  sent.length = 0;
+  await touchOk(hand, 900);
+  await until(() => sent.length === 1);
+  await sleep(900);
+  assert.deepEqual(sent, [{ hold: "enter", ms: 700 }]);
+  assert.equal(await opened(), 2, "a finger held on the phone's OK opens once more");
+  assert.equal(await page.locator(".details-head").count(), 0);
+  await hand.close();
+
+  // A button on a page.
+  await go(page, `details/${APP}`);
+  await page.waitForSelector(".details-head");
+  const before = (await asked(page, "open-app")).length;
+  await holdEnter(page, 700);
+  await sleep(200);
+  assert.equal((await asked(page, "open-app")).length, before + 1, "a key held on Open opens once");
+
+  // The PIN pad: one digit.
+  const send = async (method: string, path: string, body?: unknown, grant?: string) =>
+    (await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
+  await send("PUT", "/api/pin", { pin: "4826" });
+  try {
+    await go(page, "settings/phones");
+    await page.locator('[data-action="pair"]').click();
+    await page.waitForSelector(".pin-pad .pin-key.focused");
+    await holdEnter(page, 700);
+    await sleep(200);
+    assert.equal(await page.locator(".pin-box.filled").count(), 1, "a key held on a digit enters it once");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".pin-pad", { state: "detached" });
+  } finally {
+    const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).grant;
+    await send("DELETE", "/api/pin", undefined, grant);
+  }
   await page.close();
 });
 
