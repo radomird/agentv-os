@@ -76,16 +76,18 @@ function root(): void {
   const drop = join(state, "hotspot-drop", "request.json");
   rootTimer = setInterval(() => {
     let request: { scan?: boolean; join?: { ssid: string; password: string; hidden: boolean } };
+    let id = "";
     try {
-      request = JSON.parse(readFileSync(drop, "utf8"));
+      ({ id, ...request } = JSON.parse(readFileSync(drop, "utf8")));
     } catch {
       return;
     }
     rmSync(drop, { force: true });
     asked.push(request);
+    // Its answer names the ask, as agentv-hotspot's does.
     if (request.scan) {
       writeFileSync(join(hotspot, "networks.json"), JSON.stringify(NETWORKS));
-      rootSays({ ...said, scanned: new Date().toISOString() });
+      rootSays({ ...said, scanned: new Date().toISOString(), answered: id });
       return;
     }
     const join_ = request.join;
@@ -93,8 +95,8 @@ function root(): void {
     const before = said;
     rootSays({ ...before, on: false, joining: join_.ssid, error: null, why: null });
     setTimeout(() => {
-      if (join_.password === WRONG) rootSays({ ...before, joining: null, error: `that password didn't work for ${join_.ssid}`, why: "password" });
-      else rootSays({ ...before, on: false, joining: null, wifi: join_.ssid, joined: { ssid: join_.ssid, address: "192.168.1.20" }, error: null, why: null });
+      if (join_.password === WRONG) rootSays({ ...before, joining: null, error: `that password didn't work for ${join_.ssid}`, why: "password", answered: id });
+      else rootSays({ ...before, on: false, joining: null, wifi: join_.ssid, joined: { ssid: join_.ssid, address: "192.168.1.20" }, error: null, why: null, answered: id });
     }, 500);
   }, 30);
 }
