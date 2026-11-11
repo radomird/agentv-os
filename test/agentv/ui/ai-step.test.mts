@@ -221,6 +221,57 @@ test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, s
   }
 });
 
+test("setup run again with a PIN set: a key typed on the TV asks for the PIN and is kept, and Back with nothing picked asks for nothing", async () => {
+  atAi();
+  const send = async (method: string, path: string, body?: unknown, grant?: string) =>
+    fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const granted = async () => (await (await send("POST", "/api/pin/check", { pin: "2468" })).json()).grant as string;
+  assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
+  const page = await tv();
+  try {
+    // Into a provider and back out: nothing was picked, so there's nothing
+    // to undo and no PIN to ask for.
+    await page.waitForSelector(".ai-cards");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".ai-options");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".ai-cards", { timeout: 5000 });
+    assert.equal(await page.locator(".pin-pad").count(), 0);
+
+    // A key for Claude: picking it is past the PIN, then its terms on the phone.
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".ai-options");
+    await page.locator('.ai-options [data-path="key"]').click();
+    await page.waitForSelector(".pin-pad");
+    await page.keyboard.type("2468");
+    await page.waitForSelector(".terms-list");
+    const code = (await (await send("POST", "/api/phones/pair", {}, await granted())).json()).pairing.code;
+    const phone = await pairPhone(lan, code, "pixel");
+    const onPhone = (await (await phone.fetch("/api/phone/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
+    assert.equal((await phone.fetch("/api/phone/terms", { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onPhone }, body: JSON.stringify({ provider: "claude", path: "key" }) })).status, 200);
+    await page.waitForSelector(".key-field");
+
+    // Setup opened again later holds no PIN. The key typed here asks for it,
+    // as picking did, and is kept. It used to be refused with no pad to
+    // enter the PIN on.
+    await page.reload();
+    await page.waitForSelector(".key-field");
+    await page.fill(".key-field", `sk-ant-${"e".repeat(40)}`);
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".pin-pad", { timeout: 5000 });
+    assert.equal(await page.locator(".key-field").inputValue(), `sk-ant-${"e".repeat(40)}`, "the key waits in its field while the PIN is asked for");
+    await page.keyboard.type("2468");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "all set.");
+    assert.deepEqual((await (await fetch(`${url}/api/ai`)).json()).key, { set: true, provider: "claude" });
+    assert.equal(await page.locator(".toast.fail").count(), 0);
+  } finally {
+    await page.close();
+    const grant = await granted();
+    await send("DELETE", "/api/key", undefined, grant);
+    await send("DELETE", "/api/pin", undefined, grant);
+  }
+});
+
 test("ADR-070 a sign-in that fails says why and tries again, and later leaves it for Settings with the plan kept", async () => {
   atAi();
   writeFileSync(join(state, "ai.json"), JSON.stringify({ provider: "claude", path: "plan" }));
