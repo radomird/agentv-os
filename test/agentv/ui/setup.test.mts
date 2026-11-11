@@ -111,7 +111,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   await page.locator('input[type="password"]').fill("correct horse");
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
-  assert.match(await page.locator(".page").innerText(), /scan the new code on the tv/);
+  assert.match(await page.locator(".page").innerText(), /scan the new code on your TV$/);
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")), { join: { ssid: "home wi-fi", password: "correct horse", hidden: false } });
   rmSync(drop());
 
