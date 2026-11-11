@@ -115,7 +115,22 @@ export function home(ctx: Ctx): View {
       if (target.closest(".glass-rows")) feature(target);
     },
     act(action) {
-      const id = ctx.focus.get()?.dataset.id;
+      // Up and down go a row at a time, to the tile nearest across. A short
+      // row would lose to a full one further down, or to the bar, if only
+      // the distance counted. Up from the first row is still the bar.
+      const from = ctx.focus.get();
+      const row = from?.closest(".glass-row");
+      const next = action === "down" ? row?.nextElementSibling : action === "up" ? row?.previousElementSibling : null;
+      if (from && next) {
+        const middle = (el: Element) => el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2;
+        const at = middle(from);
+        const [nearest] = [...next.querySelectorAll<HTMLElement>("[data-focus]")].sort((a, b) => Math.abs(middle(a) - at) - Math.abs(middle(b) - at));
+        if (nearest) {
+          ctx.focus.set(nearest);
+          return true;
+        }
+      }
+      const id = from?.dataset.id;
       if (action === "info" && id && apps.some((app) => app.id === id)) {
         ctx.go(`details/${id}`);
         return true;

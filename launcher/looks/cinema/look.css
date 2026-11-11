@@ -337,6 +337,12 @@ body.with-backdrop {
   scroll-margin: 100px var(--safe-x) 102px;
 }
 
+/* The row right under the featured title is all on the screen as home
+   opens, so the first step down from Play scrolls nothing, at any size. */
+.cinema-hero + .cinema-section + .cinema-row .tile {
+  scroll-margin-bottom: 14px;
+}
+
 .cinema-play {
   scroll-margin-top: 1200px;
 }

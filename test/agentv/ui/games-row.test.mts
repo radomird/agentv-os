@@ -39,7 +39,9 @@ const made = (id: string, name: string): Fixture => ({
   edit: (m) => ((m.author = "you"), (m.tv.capabilities = ["launch"]), delete m.tv.tiles, (m.tv.homeUrl = "https://games.example/"), (m.tv.origins = ["https://games.example"]), (m.tv.setup = [])),
 });
 const MORE = ["Pong", "Maze", "Cards", "Quiz", "Golf"].map((name) => made(`local.${name.toLowerCase()}`, name));
-const BOX: Fixture[] = [...FIXTURES.map((fixture) => (fixture.id === STEAM ? { ...fixture, name: "Steam" } : fixture)), made(SNAKE, "Snake"), ...MORE];
+// Four more apps that aren't games, for a home with more apps than one row.
+const EXTRA = ["Notes", "Photos", "News", "Maps"].map((name): Fixture => ({ ...made(`local.${name.toLowerCase()}`, name), category: "media" }));
+const BOX: Fixture[] = [...FIXTURES.map((fixture) => (fixture.id === STEAM ? { ...fixture, name: "Steam" } : fixture)), made(SNAKE, "Snake"), ...MORE, ...EXTRA];
 
 const SIZES = { larger: 1600, standard: 1920, more: 2400 } as const;
 type Size = keyof typeof SIZES;
@@ -332,6 +334,94 @@ for (const look of ROWS) {
       assert.deepEqual(problems, [], `${look} at ${size}:\n${problems.join("\n")}`);
     });
   }
+}
+
+// Puts the focus on a tile, as the arrows would have.
+async function focusOn(page: Page, id: string): Promise<void> {
+  await page.evaluate((id) => {
+    const launcher = (window as unknown as { agentvLauncher: { focus: { set(el: HTMLElement): void } } }).agentvLauncher;
+    launcher.focus.set(document.querySelector<HTMLElement>(`#page [data-id="${id}"]`)!);
+  }, id);
+  await page.waitForTimeout(150);
+}
+
+const APPS = ["agentv.sample", "agentv.tube", "someone.radio", "local.mytv", ...EXTRA.map((app) => app.id)];
+const SIX = [STEAM, SNAKE, ...MORE.slice(0, 4).map((game) => game.id)];
+
+for (const count of [2, 3, 5]) {
+  test(`glass: with ${count} apps over six games, up from a game past the last app goes to the last app, not the bar`, async () => {
+    await useLook("glass");
+    const apps = APPS.slice(0, count);
+    await onHome([...apps, ...SIX]);
+    const page = await tv();
+    try {
+      for (const game of SIX) {
+        const column = SIX.indexOf(game);
+        await focusOn(page, game);
+        await page.keyboard.press("ArrowUp");
+        await page.waitForTimeout(150);
+        assert.equal(await focused(page), apps[Math.min(column, count - 1)], `up from game ${column + 1} of 6`);
+      }
+      // From the apps, up is still the bar.
+      await page.keyboard.press("ArrowUp");
+      await page.waitForTimeout(150);
+      assert.equal(await page.locator(".bar .focused").count(), 1, "up from the apps is the bar");
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test("glass: with eight apps over four games, down from the first row goes to the second row, then to Games, and up comes back the same way", async () => {
+  await useLook("glass");
+  const apps = APPS.slice(0, 8);
+  // Twelve tiles: all a home holds at this size.
+  await onHome([...apps, ...SIX.slice(0, 4)]);
+  const page = await tv();
+  try {
+    for (const column of [0, 1, 2, 5]) {
+      await focusOn(page, apps[column]);
+      await page.keyboard.press("ArrowDown");
+      await page.waitForTimeout(150);
+      assert.equal(await focused(page), apps[6 + Math.min(column, 1)], `down from app ${column + 1} is the second row`);
+      await page.keyboard.press("ArrowDown");
+      await page.waitForTimeout(150);
+      assert.equal(await focused(page), SIX[Math.min(column, 1)], "then Games");
+      await page.keyboard.press("ArrowUp");
+      await page.waitForTimeout(150);
+      assert.equal(await focused(page), apps[6 + Math.min(column, 1)], "and up is the second row again");
+    }
+    // The last row's tile is in sight once it has the focus.
+    await focusOn(page, apps[2]);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.waitForTimeout(300);
+    assert.deepEqual(await offScreen(page, "glass"), []);
+  } finally {
+    await page.close();
+  }
+});
+
+for (const size of Object.keys(SIZES) as Size[]) {
+  test(`cinema at ${size}: the first down from Play lands on the apps with the featured title still showing`, async () => {
+    await useLook("cinema");
+    await onHome(MIXED);
+    const page = await tv(size);
+    try {
+      assert.equal(await focused(page), "cinema-play");
+      await page.keyboard.press("ArrowDown");
+      await page.waitForTimeout(300);
+      assert.equal(await focused(page), "agentv.sample");
+      const seen = await page.evaluate(() => {
+        const box = document.querySelector("#page .focused")!.getBoundingClientRect();
+        return { scrolled: document.querySelector(".cinema-body")!.scrollTop, hero: getComputedStyle(document.querySelector(".cinema-hero")!).visibility, bottom: Math.round(box.bottom), height: innerHeight };
+      });
+      assert.ok(seen.bottom <= seen.height, `the app's card is all on the screen: ${JSON.stringify(seen)}`);
+      assert.deepEqual([seen.scrolled, seen.hero], [0, "visible"], `nothing had to scroll: ${JSON.stringify(seen)}`);
+    } finally {
+      await page.close();
+    }
+  });
 }
 
 // What Terminal's grid and phase 1's show: each app a tile in its place,
