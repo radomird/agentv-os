@@ -666,6 +666,9 @@ jobs:
       attempt: ${{ github.run_attempt }}
       pieces: ${{ steps.pieces.outputs.count }}
       iso: ${{ steps.commits.outputs.iso }}
+      # The name the ISO was kept under, when it was: the last job takes
+      # back exactly that one if a check fails.
+      iso-name: ${{ steps.name.outputs.name }}
       night: ${{ steps.night.outputs.key }}
       plan: ${{ steps.plan.outputs.parts }}
       ready: ${{ steps.ready.outputs.ready }}
@@ -1465,18 +1468,34 @@ jobs:
               [[ $key == "$KEEP" ]] || gh cache delete "$key" -R "$GITHUB_REPOSITORY" || echo "::warning::couldn't delete $key"
             done
 
-      # Only an ISO that went through every check is kept.
+      # Only an ISO that went through every check is kept. The box's job
+      # says what it kept the ISO as, and exactly that and its checksum go:
+      # the name is the package's version for edge, so it can't be guessed
+      # from the channel. agentv-iso's publish asks whether the checks
+      # passed as well, and doesn't lean on this.
       - name: Take back the ISO
         if: always() && steps.passed.outputs.passed != 'true' && inputs.keep-iso
         env:
-          PACKAGES: ${{ inputs.packages }}
+          ISO_NAME: ${{ needs.box.outputs.iso-name }}
         run: |
+          if [[ -z $ISO_NAME ]]; then
+            echo "The box's job kept no ISO, so there's none to take back."
+            exit 0
+          fi
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate \
-            --jq ".artifacts[] | select(.name | startswith(\"agentv-$PACKAGES-\")) | .id" |
-            while read -r id; do
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
-              echo "A check failed, so the ISO isn't kept (artifact $id deleted)." | tee -a "$GITHUB_STEP_SUMMARY"
-            done
+            --jq '.artifacts[] | [.id, .name] | @tsv' >artifacts.tsv
+          taken=0
+          while IFS=$'\t' read -r id name; do
+            [[ $name == "$ISO_NAME" || $name == "$ISO_NAME.sha256" ]] || continue
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            echo "A check failed, so the ISO isn't kept ($name deleted)." | tee -a "$GITHUB_STEP_SUMMARY"
+            taken=$((taken + 1))
+          done <artifacts.tsv
+          # Kept and not found is a failure to say out loud, not a quiet pass.
+          if (( taken == 0 )); then
+            echo "::error::a check failed and the ISO was kept as $ISO_NAME, but no artifact of that name was found to take back"
+            exit 1
+          fi
 
       # The run's box goes once every check passed. When one failed, it stays
       # for the day its artifact lasts, so "Re-run failed jobs" can run the
