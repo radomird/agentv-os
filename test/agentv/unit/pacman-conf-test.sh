@@ -99,3 +99,20 @@ AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
 [[ $(sed -n '/^\[agentv\]$/,$p' "$conf" | grep -c 'DatabaseOptional') == 0 ]] || fail "L4 an older box's section is rewritten" "$(cat "$conf")"
 grep -qx 'SigLevel = Required DatabaseOptional' "$conf" || fail "L4 Omarchy's own SigLevel line is left alone" "$(cat "$conf")"
 pass "L4 an older box's section is rewritten to need the signature, and Omarchy's lines stay"
+
+# A list with no signature beside it, as a box could have from before the
+# signature was needed: pacman would refuse it and every install with it.
+# It goes, a signed one stays, and --check touches nothing.
+export AGENTV_PACMAN_SYNC="$SCRATCH/sync"
+mkdir -p "$AGENTV_PACMAN_SYNC"
+touch "$AGENTV_PACMAN_SYNC/agentv.db" "$AGENTV_PACMAN_SYNC/agentv.files" "$AGENTV_PACMAN_SYNC/core.db"
+AGENTV_PATH="$SCRATCH/stable" "$cmd" --check --file "$conf" >/dev/null
+[[ -e $AGENTV_PACMAN_SYNC/agentv.db ]] || fail "--check leaves the lists alone"
+AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
+[[ ! -e $AGENTV_PACMAN_SYNC/agentv.db && ! -e $AGENTV_PACMAN_SYNC/agentv.files && -e $AGENTV_PACMAN_SYNC/core.db ]] ||
+  fail "an unsigned list of AgenTV's goes, and only it" "$(ls "$AGENTV_PACMAN_SYNC")"
+touch "$AGENTV_PACMAN_SYNC/agentv.db"
+echo signature >"$AGENTV_PACMAN_SYNC/agentv.db.sig"
+AGENTV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
+[[ -e $AGENTV_PACMAN_SYNC/agentv.db && -e $AGENTV_PACMAN_SYNC/agentv.db.sig ]] || fail "a signed list stays" "$(ls "$AGENTV_PACMAN_SYNC")"
+pass "a list with no signature goes so the next update fetches both, a signed one stays, and --check touches nothing"
