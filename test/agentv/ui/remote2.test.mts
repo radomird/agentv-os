@@ -237,6 +237,90 @@ test("T8.3 a tap on Back goes back, and held, the phone sends the hold that goes
   await hand.close();
 });
 
+// A finger on the d-pad's OK, and off it again: real touches.
+async function fingers(hand: Page): Promise<{ down(count?: number): Promise<void>; up(): Promise<void> }> {
+  const box = (await hand.locator('.r2 [data-key="enter"]').boundingBox())!;
+  const point = (dx: number) => ({ x: Math.round(box.x + box.width / 2 + dx), y: Math.round(box.y + box.height / 2), id: dx });
+  const cdp = await hand.context().newCDPSession(hand);
+  return {
+    down: async (count = 1) => void (await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(0), point(20)].slice(0, count) })),
+    up: async () => void (await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })),
+  };
+}
+
+const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+test("the d-pad's OK sends its hold only while home is in front: with an app or the screen saver there, a long press is one OK as the finger lifts", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  await hand.locator('[data-action="dpad"]').click();
+  await hand.waitForSelector('.r2-dpad [data-key="enter"]');
+  const ok = await fingers(hand);
+  const long = async () => {
+    const from = b.keys.length;
+    await ok.down();
+    await wait(800);
+    const while_ = b.keys.slice(from);
+    const filling = await hand.locator(".r2-ok.holding").count();
+    await ok.up();
+    await wait(300);
+    return { down: while_, all: b.keys.slice(from), filling };
+  };
+  // Home in front: the hold, as the finger is still down, and the button
+  // shows it's being held.
+  await context(b, { front: "home", screen: "home" });
+  assert.deepEqual(await long(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], filling: 1 });
+  await context(b, { screen: "menu" });
+  assert.deepEqual((await long()).all, [{ hold: "enter", ms: 700 }], "Apps and Settings are home's too");
+  // Anything else in front: nothing while the finger is down, and one OK
+  // as it lifts.
+  const others: [string, object, object][] = [
+    ["an app", { front: "app", playing: false }, { front: "home" }],
+    ["the screen saver", { screen: "ambient" }, { screen: "home" }],
+  ];
+  for (const [what, there, gone] of others) {
+    await context(b, there);
+    await wait(150);
+    assert.deepEqual(await long(), { down: [], all: [{ key: "enter" }], filling: 0 }, `with ${what} in front`);
+    await context(b, gone);
+    await wait(150);
+  }
+  assert.deepEqual((await long()).all, [{ hold: "enter", ms: 700 }], "and with home back, the hold again");
+  await hand.close();
+});
+
+test("the d-pad's OK counts one press: a redraw under a quick tap still sends the tap and no hold after it, and a second finger adds nothing", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  await hand.locator('[data-action="dpad"]').click();
+  await hand.waitForSelector('.r2-dpad [data-key="enter"]');
+  const ok = await fingers(hand);
+  // Something starts playing while the finger is down, so the remote
+  // draws itself again with what's playing, and the button is a new one.
+  await fetch(`${b.url}/api/ledger`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: "local.mytv", state: { title: "Sintel", position: 480, duration: 888, playing: true } }) });
+  let from = b.keys.length;
+  await hand.evaluate(() => document.querySelector('.r2 [data-key="enter"]')!.setAttribute("data-first", ""));
+  await ok.down();
+  await context(b, { playing: true });
+  await hand.waitForSelector(".r2-card");
+  assert.equal(await hand.locator("[data-first]").count(), 0, "the button was drawn again");
+  await ok.up();
+  await wait(900);
+  assert.deepEqual(b.keys.slice(from), [{ key: "enter" }]);
+
+  // Two fingers on OK, held: one hold.
+  from = b.keys.length;
+  const two = await fingers(hand);
+  await two.down(1);
+  await wait(100);
+  await two.down(2);
+  await wait(1000);
+  await two.up();
+  await wait(300);
+  assert.deepEqual(b.keys.slice(from), [{ hold: "enter", ms: 700 }]);
+  await hand.close();
+});
+
 test("T8.3 play asks the box, and the notice line says why when nothing plays; what's playing shows with next", async () => {
   const b = await box(true);
   const hand = await phone(b);

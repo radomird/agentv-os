@@ -11,6 +11,7 @@
 
 import { h } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
+import { toastsAsWritten } from "../looks/words.ts";
 import type { Ctx } from "../main.ts";
 
 export interface ControllerInfo {
@@ -74,6 +75,8 @@ export const controllersLabel = () => words("Controllers");
 export const controllersValue = () => String(count() ?? "");
 
 export function controllersPanel(ctx: Ctx): HTMLElement[] {
+  // This page's toasts are written for the look, and a controller's name in one keeps its own capitals.
+  ctx = toastsAsWritten(ctx);
   const me = {};
   live = me;
   let els: HTMLElement[] = [];
