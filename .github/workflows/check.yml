@@ -382,7 +382,7 @@ jobs:
     if: needs.changes.outputs.image == 'true'
     # image.yml asks for contents: write, for the nightly run's tested.json.
     # A pull request's run never publishes it. actions: write lets its last
-    # job delete the run's box from the cache once the checks are done.
+    # job delete the run's box once the checks are done.
     permissions:
       contents: write
       actions: write
