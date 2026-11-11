@@ -267,6 +267,10 @@ test("M5 a recipe names the pages stage B looks at while signed in, and an accou
   for (const path of ["/account", "/account/payment", "/settings", "/en-gb/account", "/billing", "/membership", "/YourAccount", "/profile/edit", "/orders", "/%zz"]) assert.ok(!at(path), path);
   assert.ok(!signedInPage(undefined, new URL("https://stand-in.test/search")), "with no list, only the start page");
   assert.ok(signedInPage(undefined, new URL("https://stand-in.test/")));
+  // A site that keeps the page after the #: that part is held to the same rule.
+  for (const path of ["/#/", "/#/browse", "/#!/search?q=heat", "/#/en-gb/watch/1", "/browse#/title/80123", "/browse#row-3", "/#"]) assert.ok(at(path), path);
+  for (const path of ["/#/account", "/#!/account/payment", "/#!account", "/#/en-gb/settings", "/browse#/account", "/#%2Faccount", "/#/Account?tab=billing", "/#/%zz"]) assert.ok(!at(path), path);
+  assert.ok(!signedInPage(undefined, new URL("https://stand-in.test/#/search")), "with no list, only the start page");
 
   const data = JSON.parse(readFileSync(join(streaming.dir, "recipe.json"), "utf8"));
   assert.deepEqual(recipeProblems(data, streaming.dir), []);

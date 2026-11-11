@@ -231,7 +231,9 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
     // A plan, its terms accepted on the phone past the PIN.
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
     const grant = (await (await phone("POST", "/api/phone/pin", { pin: "2468" })).json()).grant;
-    await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant);
+    // The TV's own pages hold a grant of their own: a phone's is no use to them.
+    const onTv = (await (await send("POST", "/api/pin/check", { pin: "2468" })).json()).grant;
+    await send("POST", "/api/ai", { provider: "claude", path: "plan" }, onTv);
     assert.equal((await phone("POST", "/api/phone/terms", { provider: "claude", path: "plan" }, grant)).status, 200);
 
     // The router's what is the builder's sentence, so this app's id is local.blocks.
@@ -274,7 +276,7 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
     assert.equal((await (await send("GET", "/api/say")).json()).said.outcome.say, "building blocks");
 
     // A child's profile: ask a grown-up, and the routes say so too.
-    const child = (await (await send("POST", "/api/viewers", { name: "mia", role: "child" }, grant)).json()).profile;
+    const child = (await (await send("POST", "/api/viewers", { name: "mia", role: "child" }, onTv)).json()).profile;
     await send("POST", "/api/viewer", { id: child.id });
     assert.deepEqual((await say("make me a game with unicorns", make("a game with unicorns"))).outcome, { kind: "none", why: "child", say: "ask a grown-up to make apps" });
     assert.deepEqual(await (await phone("GET", "/api/phone/ask")).json(), { ok: true, ask: null });

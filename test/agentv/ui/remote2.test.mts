@@ -99,10 +99,10 @@ const context = (b: Box, body: object) => fetch(`${b.url}/api/tv/context`, { met
 
 // A paired phone, through the QR code's address.
 async function phone(b: Box, ready = ".r2"): Promise<Page> {
-  const { pairing } = await (await fetch(`${b.url}/api/phones/pair`, { method: "POST" })).json();
+  await fetch(`${b.url}/api/phones/pair`, { method: "POST" });
   const page = await browser.newPage({ viewport: PHONE, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${b.phoneUrl}/?code=${pairing.code}`);
+  await page.goto(`${b.phoneUrl}/#pair=${b.daemon.phones.secret()}`);
   await page.waitForSelector(ready);
   return page;
 }

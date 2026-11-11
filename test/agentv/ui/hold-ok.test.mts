@@ -157,7 +157,7 @@ async function holdEnter(page: Page, ms: number, key = "Enter"): Promise<void> {
 // A paired phone with the d-pad on, which has the remote's OK button. Its
 // buzz is kept, since a headless phone has none.
 async function phone(): Promise<Page> {
-  const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
+  await fetch(`${url}/api/phones/pair`, { method: "POST" });
   const page = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(`${page.url()}: ${error.message}`));
   await page.addInitScript(() => {
@@ -169,7 +169,7 @@ async function phone(): Promise<Page> {
       return true;
     };
   });
-  await page.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${pairing.code}`);
+  await page.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await page.waitForSelector('.r2 [data-key="enter"]');
   return page;
 }
