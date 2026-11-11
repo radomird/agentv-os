@@ -257,7 +257,8 @@ export class AppHost {
     } else {
       const node = realpathSync(process.execPath);
       const jail = workerJail({ dir: this.dir, node, read: [WORKER, join(dirname(dirname(WORKER)), "package.json")], system: systemPaths(), localtime: timeZoneLink() });
-      child = spawn(this.bwrap, [...jail, node, ...execArgv, WORKER, entry], { env: {}, cwd: this.dir, serialization: "advanced", stdio: [...stdio] });
+      // Its own process group, so letGo can end all of it at once.
+      child = spawn(this.bwrap, [...jail, node, ...execArgv, WORKER, entry], { env: {}, cwd: this.dir, serialization: "advanced", stdio: [...stdio], detached: true });
     }
     this.child = child;
     // What bubblewrap itself says, which is why the sandbox didn't start.
@@ -491,7 +492,9 @@ export class AppHost {
 // with the worker in it, holding this end's pipes open, and the daemon
 // can't end while it does. So the channel and the pipes are closed from
 // this side first, which is the worker's sign to go (worker.ts), and then
-// bubblewrap is killed.
+// bubblewrap is killed with its whole process group. The group reaches a
+// sandbox still being set up, which has no worker yet to see the channel
+// close. The worker itself is in a session of its own by then.
 function letGo(child: ChildProcess): void {
   try {
     if (child.connected) child.disconnect();
@@ -500,5 +503,10 @@ function letGo(child: ChildProcess): void {
   }
   child.stdout?.destroy();
   child.stderr?.destroy();
+  try {
+    if (child.pid) process.kill(-child.pid, "SIGKILL");
+  } catch {
+    // no group of its own: a worker started without the sandbox
+  }
   child.kill("SIGKILL");
 }

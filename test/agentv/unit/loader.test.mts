@@ -295,7 +295,7 @@ test("an app stopped at any moment of its start leaves no worker behind", { skip
   // end, and neither could a test run.
   const dir = app();
   const left = () => spawnSync("pgrep", ["-fc", `apps/worker\\.ts ${dir}/`], { encoding: "utf8" }).stdout.trim();
-  for (const wait of [0, 0, 3, 10, 40]) {
+  for (const wait of [0, 0, 1, 2, 3, 5, 8, 12, 20, 40]) {
     const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
     const h = new AppHost({ dir, manifest, settings: { serverUrl }, harness: { thisBox: true } });
     const starting = h.start().catch(() => {});

@@ -157,6 +157,8 @@ try {
 // gone. Nothing is left to answer, so the worker ends, whatever became of
 // the process that started it.
 process.on("disconnect", () => process.exit(0));
+// The channel may have closed before this file was read.
+if (!process.connected) process.exit(0);
 
 process.on("message", async (message: Request) => {
   if (message.type === "ping") {
