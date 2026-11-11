@@ -906,11 +906,9 @@ async function start(): Promise<void> {
 
 async function main(): Promise<void> {
   // The secret in the TV's QR code pairs this phone, once. It comes after
-  // the # in the address, which the browser keeps to itself. A code in the
-  // address does too, as typing it would.
+  // the # in the address, which the browser keeps to itself.
   const secret = new URLSearchParams(location.hash.slice(1)).get("pair");
-  const code = new URLSearchParams(location.search).get("code");
-  const how = secret ? { secret } : code ? { code } : null;
+  const how = secret ? { secret } : null;
   if (how) {
     history.replaceState(null, "", "/");
     if (!paired()) await pair(how);

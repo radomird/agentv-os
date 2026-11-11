@@ -73,8 +73,11 @@ test("pairing: the TV shows a code, the phone types it, and the TV says the phon
   const code = await screen.locator(".pair-code").innerText();
   assert.match(await screen.locator(".page.pair").innerText(), new RegExp(`open http://127\\.0\\.0\\.1:${daemon.lanPort}/ and type the code[\\s\\S]*the code lasts 10 more minutes`));
 
-  const hand = await phone();
+  // The code is typed. One in the address pairs nothing: it would go over
+  // the network as it is.
+  const hand = await phone(`/?code=${code}`);
   await hand.waitForSelector(".field.code");
+  assert.deepEqual((await (await fetch(`${url}/api/phones`)).json()).phones, []);
   assert.match(await hand.locator(".page").innerText(), /pair with the tv[\s\S]*settings → phones → pair a phone/);
   await hand.locator(".field.code").fill(code.toLowerCase());
   await hand.locator("button.primary").click();
@@ -254,7 +257,9 @@ test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Set
   for (const digit of "4826") await screen.keyboard.press(digit);
   await screen.waitForFunction(() => /^[A-HJKMNP-Z2-9]{6}$/.test(document.querySelector(".pair-code")?.textContent ?? ""));
   const code = await screen.locator(".pair-code").innerText();
-  const hand = await phone(`/?code=${code}`);
+  const hand = await phone();
+  await hand.locator(".field.code").fill(code);
+  await hand.locator("button.primary").click();
   await hand.waitForSelector(".dpad");
   await screen.waitForFunction(() => /is paired/.test(document.body.textContent ?? ""));
 

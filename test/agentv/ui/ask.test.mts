@@ -209,10 +209,10 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
 test("T11.2 on the phone's remote, Ask is the same box, and a make your agent read waits there for an ok", async () => {
   const { daemon, url, state, builds, lan } = await box({ features: { askbuilds: true, remote2: true } });
   try {
-    const { pairing } = await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json();
+    await fetch(`${url}/api/phones/pair`, { method: "POST" });
     const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
     hand.on("pageerror", (error) => errors.push(error.message));
-    await hand.goto(`${lan}/?code=${pairing.code}`);
+    await hand.goto(`${lan}/#pair=${daemon.phones.secret()}`);
     await hand.waitForSelector(".r2");
     await hand.locator(".r2-ask").first().tap();
     await hand.waitForSelector("#r2-sheet .ask-chips");
