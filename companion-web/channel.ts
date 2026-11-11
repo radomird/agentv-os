@@ -24,7 +24,9 @@ const INFO = {
 };
 const SEALED = "application/agentv-sealed";
 
-// The box said this phone isn't paired, or not any more.
+// The box said this phone isn't paired, or not any more. Nothing proves that
+// answer is the box's, so the phone keeps its key all the same: only a new
+// pairing that worked puts another in its place.
 export class Unpaired extends Error {}
 
 const KEPT = "agentv-phone-key";
@@ -61,7 +63,6 @@ function keep(value: Kept | null): void {
 }
 
 export const paired = (): boolean => kept() !== null;
-export const forget = (): void => keep(null);
 
 async function plain(path: string, body: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
   const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -134,14 +135,26 @@ export interface Signed {
   body?: Bytes;
   // The answer's status, content type and bytes, opened: its JSON, or {}
   // for a picture or a file. Null when the box wants a hello first, and
-  // the request should be signed and sent again.
+  // the request should be signed and sent again. It throws for an answer
+  // that should have come sealed and didn't.
   answer(status: number, type: string, bytes: Bytes): Record<string, any> | null;
 }
+
+// The address as the browser puts it on the wire. It escapes a few
+// characters the caller may have left as they are, an apostrophe in a file's
+// name for one, and the box checks the signature against what arrived.
+function sent(path: string): string {
+  const url = new URL(path, location.origin);
+  return url.pathname + url.search;
+}
+
+const isJson = (type: string): boolean => type.startsWith("application/json");
 
 // One request's headers, and its body sealed when it's JSON. An upload
 // gives its content type and its length in place of a body: it goes as it
 // is, and the signature covers how long it is.
-export async function sign(method: string, path: string, body: { json: unknown } | { type: string; length: number } | undefined, grant = ""): Promise<Signed> {
+export async function sign(method: string, address: string, body: { json: unknown } | { type: string; length: number } | undefined, grant = ""): Promise<Signed> {
+  const path = sent(address);
   const now = await current();
   const counter = ++now.counter;
   const headers: Record<string, string> = { "X-AgenTV-Session": now.id, "X-AgenTV-Counter": String(counter) };
@@ -164,25 +177,37 @@ export async function sign(method: string, path: string, body: { json: unknown }
     headers,
     body: sealed,
     answer(status, type, bytes) {
-      let opened: Bytes | null = bytes;
       if (type === SEALED) {
-        opened = bytes.length < 28 ? null : open(now.down, bytes.subarray(0, 12), bytes.subarray(12), utf8(`${method}\n${path}\n${counter}\n${status}`));
+        const opened = bytes.length < 28 ? null : open(now.down, bytes.subarray(0, 12), bytes.subarray(12), utf8(`${method}\n${path}\n${counter}\n${status}`));
         if (!opened) throw new Error("the tv didn't answer");
-      }
-      let data: Record<string, any> = {};
-      try {
-        data = JSON.parse(text(opened));
-      } catch {}
-      // These two come unsealed: the box may have no key to seal them with.
-      if (status === 401 && type !== SEALED) {
-        if (data.pair === true) throw new Unpaired(typeof data.error === "string" ? data.error : "this phone isn't paired");
-        if (live === now) {
-          session = null;
-          live = null;
+        try {
+          return JSON.parse(text(opened));
+        } catch {
+          return {};
         }
-        return null;
       }
-      return data;
+      // Anyone on the network can write an answer that isn't sealed, so the
+      // phone takes only two of them. One is the box wanting a hello first,
+      // which it can't seal: it may have no key to seal with. All that does
+      // is start a new session, and the hello says whether the box still
+      // knows this phone.
+      if (status === 401 && isJson(type)) {
+        let data: Record<string, any> = {};
+        try {
+          data = JSON.parse(text(bytes));
+        } catch {}
+        if (data.session === true || data.pair === true) {
+          if (live === now) {
+            session = null;
+            live = null;
+          }
+          return null;
+        }
+      }
+      // The other is a picture or a file the phone asked for, which goes as
+      // it is. It's never read as JSON.
+      if (method === "GET" && status === 200 && !isJson(type)) return {};
+      throw new Error("the tv didn't answer");
     },
   };
 }

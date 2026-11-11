@@ -124,10 +124,10 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   assert.ok(!(await page.content()).includes(KEY), "the key isn't on the page while it waits");
 
   // An adult on a paired phone reads them and accepts.
-  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json()).pairing.code;
+  await fetch(`${url}/api/phones/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   phone.on("pageerror", (error) => errors.push(error.message));
-  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector("#tv-ask");
   assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
   await phone.locator('[data-action="accept"]').tap();
@@ -171,10 +171,10 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   await page.waitForFunction(() => /claude's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
   assert.deepEqual(await page.locator(".profile-form [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-consumer-terms", "anthropic-usage-policy", "claude-code-legal"]);
   assert.match(await page.locator(".page").innerText(), /an adult accepts them on a paired phone\. builds use the plan once they do\./);
-  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json()).pairing.code;
+  await fetch(`${url}/api/phones/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   phone.on("pageerror", (error) => errors.push(error.message));
-  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${code}`);
+  await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector("#tv-ask");
   assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
   await phone.locator('[data-action="accept"]').tap();

@@ -166,8 +166,10 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const choose = async (how: "plan" | "key") => {
     const ai = ctx.ai!;
     if (ai.provider !== provider || ai.path !== how) {
+      const grant = await ctx.grant("the ai");
+      if (grant === null) return;
       try {
-        ctx.ai = await setup.choose(provider, how);
+        ctx.ai = await setup.choose(provider, how, grant || undefined);
       } catch (error) {
         ctx.toast((error as Error).message, "fail");
         ctx.sounds.play("failure");

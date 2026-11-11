@@ -301,6 +301,8 @@ export class Daemon {
   readonly phones: Phones;
   // The paired phones' sessions: what checks and opens their requests.
   private phoneChannel: PhoneChannel<Phone>;
+  // The phone whose session signed each request on the phone's port.
+  private signedBy = new WeakMap<IncomingMessage, string>();
   readonly hotspot: Hotspot;
   // Settings, network: the Wi-Fi nearby and joining one (ADR-084).
   readonly network: TvNetwork;
@@ -1449,6 +1451,7 @@ export class Daemon {
     if (!opened) return;
     request = opened.request;
     const phone = opened.phone;
+    this.signedBy.set(request, phone.id);
     this.phones.saw(phone.id);
     if (await this.phoneRemote.phone(method ?? "", path, request, response)) return;
 
@@ -2037,9 +2040,11 @@ export class Daemon {
     return typeof grant === "string" ? grant : undefined;
   }
 
-  // A guarded request without a good grant gets this, and false.
+  // A guarded request without a good grant gets this, and false. The grant
+  // has to be the asker's own: a phone's request needs the grant that phone
+  // got for the PIN, and the TV's pages need one the TV got.
   private guarded(request: IncomingMessage, response: ServerResponse, what: string): boolean {
-    if (this.pin.allows(this.grant(request))) return true;
+    if (this.pin.allows(this.grant(request), this.signedBy.get(request))) return true;
     this.log(`refused ${what}: it needs the pin`);
     this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
     return false;
@@ -2936,10 +2941,10 @@ export class Daemon {
       return;
     }
 
-    // The provider and path picked on the TV, or none, to pick again. A
-    // child's profile can't, past the PIN.
+    // The provider and path picked on the TV, or none, to pick again. Past
+    // the PIN, once there is one, and a child's profile can't.
     if (method === "POST" && path === "/api/ai") {
-      if (!(await this.adult(request, response, "the ai provider"))) return;
+      if (!this.guarded(request, response, "the ai provider") || !(await this.adult(request, response, "the ai provider"))) return;
       const body = (await this.body(request)) as { provider?: unknown; path?: unknown } | undefined;
       const result = await this.ai.choose(body?.provider ?? null, body?.path);
       if (!result.state) {

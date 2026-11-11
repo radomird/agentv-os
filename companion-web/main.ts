@@ -22,7 +22,7 @@ import { arrange } from "./arrange.ts";
 import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type PhoneBuild, pushBanner, pushPage } from "./builds.ts";
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { pair as pairWith } from "./channel.ts";
-import { api, avatar, forget, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
+import { api, avatar, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
 import { askPin, pinIs, withPin, withPinWords } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { Remote2 } from "./remote2.ts";
@@ -129,7 +129,7 @@ const remote2 = new Remote2(app, {
 
 const failed = (error: unknown) => {
   if (error instanceof Unpaired) {
-    forget();
+    // The phone keeps its key until a new pairing works: see channel.ts.
     state = null;
     pairView();
     return;
@@ -906,11 +906,9 @@ async function start(): Promise<void> {
 
 async function main(): Promise<void> {
   // The secret in the TV's QR code pairs this phone, once. It comes after
-  // the # in the address, which the browser keeps to itself. A code in the
-  // address does too, as typing it would.
+  // the # in the address, which the browser keeps to itself.
   const secret = new URLSearchParams(location.hash.slice(1)).get("pair");
-  const code = new URLSearchParams(location.search).get("code");
-  const how = secret ? { secret } : code ? { code } : null;
+  const how = secret ? { secret } : null;
   if (how) {
     history.replaceState(null, "", "/");
     if (!paired()) await pair(how);
@@ -918,10 +916,7 @@ async function main(): Promise<void> {
       try {
         await api("GET", "/api/phone/state");
       } catch (error) {
-        if (error instanceof Unpaired) {
-          forget();
-          await pair(how);
-        }
+        if (error instanceof Unpaired) await pair(how);
       }
     }
   }

@@ -31,7 +31,12 @@ function hotspotIs(fields: Record<string, unknown>): void {
   writeFileSync(join(run, "state.json"), JSON.stringify({ on: false, ...fields }));
 }
 
-const readDrop = () => JSON.parse(readFileSync(drop, "utf8"));
+// Each drop carries an id of its own, which root's answer names.
+const readDrop = () => {
+  const { id, ...request } = JSON.parse(readFileSync(drop, "utf8"));
+  assert.match(id, /^[0-9a-f]{16}$/);
+  return request;
+};
 
 test("it reads what agentv-hotspot says, and the networks the box saw, strongest first", () => {
   const hotspot = new Hotspot({ state, run });

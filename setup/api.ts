@@ -173,7 +173,7 @@ export const setup = {
   networks: async () => (await call<{ networks: Network[] }>("GET", "/api/setup/networks")).networks,
   wifi: (ssid: string, password: string) => call<{ joining: string }>("POST", "/api/setup/wifi", { ssid, password }),
   ai: () => call<AiInfo>("GET", "/api/ai"),
-  choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
+  choose: (provider: Provider | null, path?: Path, grant?: string) => call<AiInfo>("POST", "/api/ai", { provider, path }, grant),
   // The plan's sign-in, started from the AI step, and a code its page gave.
   signIn: () => call<{ signIn: PlanSignIn | null }>("GET", "/api/ai/sign-in"),
   startSignIn: (grant?: string) => call<{ signIn: PlanSignIn | null }>("POST", "/api/ai/sign-in", {}, grant),

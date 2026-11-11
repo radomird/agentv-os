@@ -344,7 +344,7 @@ test("S4.10 the remote follows the TV: the keyboard for a text field, playback w
 test("S4.10 every press shows, clicks and buzzes, quick taps each count and never zoom, and Settings opens on the TV", async () => {
   const screen = await tv();
   await go(screen, "home");
-  const pairing = await pairCode();
+  await pairCode();
   const handheld = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   const hand = await handheld.newPage();
   hand.on("pageerror", (error) => errors.push(error.message));
@@ -358,7 +358,7 @@ test("S4.10 every press shows, clicks and buzzes, quick taps each count and neve
       for (const change of changes) if ((change.target as Element).classList?.contains("pressed")) w.pressedSeen += 1;
     }).observe(document, { subtree: true, attributes: true, attributeFilter: ["class"] });
   });
-  await hand.goto(`${phoneUrl}/?code=${pairing.code}`);
+  await hand.goto(`${phoneUrl}/#pair=${daemon.phones.secret()}`);
   await hand.waitForSelector(".dpad");
   assert.match((await hand.getAttribute('meta[name="viewport"]', "content")) ?? "", /user-scalable=no/);
   assert.equal(await hand.evaluate(() => getComputedStyle(document.body).touchAction), "manipulation");
@@ -405,14 +405,14 @@ test("S5.10 the phone shares a link, a photo and a video to the TV, each with wh
     // A photo, drawn again first, with who took it.
     await hand.locator("#share-photo").setInputFiles({ name: "red.png", mimeType: "image/png", buffer: RED_PNG });
     await hand.waitForSelector(".share-page .photo-preview:not(.hidden)");
-    await hand.locator("#share-credit").fill("photo by ana");
+    await hand.locator("#share-credit").fill("ana's photo, día 1");
     await hand.locator('[data-action="share-photo"]').tap();
     await toastSays(/the tv is asking about the photo now/);
     // A video, as it is, while something plays on the TV: it waits.
     await post("/api/tv/context", { front: "app", playing: true });
     const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(4), Buffer.from("isomiso2"), Buffer.alloc(2000, 7)]);
-    await hand.locator("#share-video").setInputFiles({ name: "beach.mp4", mimeType: "video/mp4", buffer: MP4 });
-    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /beach\.mp4, 1 mb/);
+    await hand.locator("#share-video").setInputFiles({ name: "ana's día.mp4", mimeType: "video/mp4", buffer: MP4 });
+    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /ana's día\.mp4, 1 mb/);
     await hand.locator('[data-action="share-video"]').tap();
     await toastSays(/the tv has the video\. it'll ask once nothing's playing\./);
     await post("/api/tv/context", { front: "home", playing: false });
@@ -420,8 +420,8 @@ test("S5.10 the phone shares a link, a photo and a video to the TV, each with wh
     const shared = await (await fetch(`${url}/api/shared`)).json();
     assert.deepEqual(shared.shares.slice(0, 3).map((one: { kind: string }) => one.kind), ["video", "photo", "link"]);
     assert.match(shared.shares[0].from, / on (iphone|android phone|phone)$/);
-    assert.equal(shared.shares[0].title, "beach.mp4");
-    assert.equal(shared.shares[1].credit, "photo by ana");
+    assert.equal(shared.shares[0].title, "ana's día.mp4");
+    assert.equal(shared.shares[1].credit, "ana's photo, día 1", "an apostrophe, a space and an accent in the address all arrive");
     assert.equal(shared.shares[1].type, "image/jpeg", "the phone drew the photo again, so nothing else of the file went along");
     assert.equal(shared.shares[2].url, "https://www.example.org/watch?v=1");
     // The oldest it hasn't had an answer for is the one it asks about.
@@ -441,13 +441,13 @@ test("S5.3 a photo shared from the phone becomes the TV's background, with its c
   assert.equal(await hand.locator('[data-action="send-photo"]').isDisabled(), true, "nothing to send before a photo is picked");
   await hand.locator("#photo-file").setInputFiles({ name: "red.png", mimeType: "image/png", buffer: RED_PNG });
   await hand.waitForSelector(".photo-preview:not(.hidden)");
-  await hand.locator("#photo-credit").fill("photo by the layer 4 test");
+  await hand.locator("#photo-credit").fill("the layer 4 test's photo, día 2");
   await hand.locator('[data-action="send-photo"]').tap();
   await hand.waitForFunction(() => /background now/.test(document.getElementById("toast")?.textContent ?? ""));
 
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "photos");
-  assert.equal(now.items[0].credit.text, "photo by the layer 4 test");
+  assert.equal(now.items[0].credit.text, "the layer 4 test's photo, día 2");
   assert.match(now.items[0].credit.from, / on iphone$|on phone$/);
   assert.equal(now.items[0].type, "image/jpeg", "the phone drew it again as a JPEG, so nothing else of the file went along");
 
@@ -456,7 +456,7 @@ test("S5.3 a photo shared from the phone becomes the TV's background, with its c
   await screen.waitForSelector(`#backdrop img[data-id="${now.current}"]`, { timeout: 5000 });
   await screen.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(true));
   await screen.waitForSelector("#ambient.on.photos .ambient-picture.on", { timeout: 5000 });
-  assert.equal(await screen.locator(".ambient-credit").innerText(), "photo by the layer 4 test");
+  assert.equal(await screen.locator(".ambient-credit").innerText(), "the layer 4 test's photo, día 2");
   await screen.evaluate(() => (window as unknown as { agentvAmbient: (on: boolean) => void }).agentvAmbient(false));
 
   // Back to the pixel field: no backdrop, and the ambient screen draws the field.
