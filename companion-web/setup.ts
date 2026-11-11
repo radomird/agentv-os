@@ -90,7 +90,7 @@ function form(network: Network | null): void {
     const ssid = network?.ssid ?? name!.value.trim();
     const typed = password?.value ?? "";
     if (!ssid) return toast("type the network's name");
-    if (password && network?.secure && typed.length < 8) return toast("a wi-fi password is at least 8 characters");
+    if (password && network?.secure && typed.length < 8) return toast("Wi-Fi passwords have at least 8 characters");
     if (pin && !/^\d{4}$/.test(pin.value)) return toast("The adult PIN has 4 digits");
     try {
       await call("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) });
@@ -98,7 +98,7 @@ function form(network: Network | null): void {
       const refused = error as Error & { pin?: boolean; wait?: number };
       if (!refused.pin) return toast(refused.message);
       pin!.value = "";
-      return toast(refused.wait ? `Too many tries. Try again in ${refused.wait} s.` : "Wrong PIN");
+      return toast(refused.wait ? `Too many tries. Try again in ${refused.wait} ${refused.wait === 1 ? "second" : "seconds"}.` : "Wrong PIN");
     }
     joining(ssid);
   };
@@ -133,7 +133,7 @@ function joining(ssid: string): void {
       h("div", { class: "pair-icons" }, glyph("tv", 40), glyph("right", 24), glyph("wifi", 40)),
       prompt("tv wi-fi"),
       h("h1", {}, `joining ${ssid}`),
-      h("p", { class: "note" }, after ? "once it's on, go back to that wi-fi." : "once it's on, go back to that wi-fi and scan the new code on the tv."),
+      h("p", { class: "note" }, after ? "Once it's on, go back to that Wi-Fi" : "Once it's on, go back to that Wi-Fi and scan the new code on your TV"),
     ),
   );
   clearInterval(watching);

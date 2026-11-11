@@ -13,6 +13,7 @@
 // Terminal's words are never touched. Addresses, codes and anything typed in
 // a field stay exactly as they are.
 
+import { h } from "../dom.ts";
 import { icon } from "./icons.ts";
 
 const CAPS = /\b(ai|pin|tv|tmdb|usb|nas|met|ui|ok|hdmi|id|url)\b/g;
@@ -32,6 +33,19 @@ export function sentenceCase(text: string): string {
 // The elements whose words are never changed: what someone typed, a code to
 // type, and an address.
 const UNTOUCHED = "input, textarea, code, .pair-code, [data-own-case], svg";
+
+// Words a page wrote for the look itself, with a name in them: a network
+// called "tv-room" or a controller called "tv pad" is never "TV-room" or
+// "TV pad". For a toast, which is otherwise gone over like any other text.
+export function asWritten(text: string): HTMLElement {
+  return h("span", { "data-own-case": true }, text);
+}
+
+// For a page whose every toast is written for the look already: each one
+// shows as written.
+export function toastsAsWritten<T extends { toast(text: string | Node, kind?: "ok" | "fail"): void }>(ctx: T): T {
+  return Object.create(ctx, { toast: { value: (text: string | Node, kind?: "ok" | "fail") => ctx.toast(typeof text === "string" ? asWritten(text) : text, kind) } });
+}
 
 function fix(node: Text): void {
   const parent = node.parentElement;
