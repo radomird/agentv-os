@@ -19,6 +19,11 @@ export interface StandInDevice {
   nearby?: boolean;
   // Wants a code typed, which nobody is there to do.
   wantsCode?: boolean;
+  // What the kernel makes of it once it's connected, whatever it said
+  // before: a gamepad unless this says a keyboard or a mouse comes with it.
+  presents?: "keyboard" | "mouse";
+  // Says something else about itself once it's connected.
+  becomes?: { icon?: string; appearance?: number };
 }
 
 // What the devices in these tests say about themselves, as BlueZ reads it.
@@ -146,9 +151,27 @@ export class StandInBluez {
     if (verb === "call" && member === "Connect") {
       if (!device.paired) return failed("Not Ready");
       device.connected = true;
+      Object.assign(device, device.becomes ?? {});
       return ok();
     }
     return failed("Unknown method");
+  };
+
+  // /proc/bus/input/devices: the input devices the kernel made for what's
+  // connected, each with the device's address as its Uniq, in lower case as
+  // the kernel has it. A gamepad's keys are its buttons. A keyboard has the
+  // typing keys, and a mouse moves on two axes.
+  inputs = async (): Promise<string> => {
+    const one = (device: StandInDevice, name: string, more: string[]) =>
+      [`I: Bus=0005 Vendor=045e Product=0b13 Version=0001`, `N: Name="${name}"`, `P: Phys=a4:6b:b6:00:00:01`, `S: Sysfs=/devices/virtual/misc/uhid/0005:045E:0B13.0001/input/input1`, `U: Uniq=${device.address.toLowerCase()}`, ...more, ""].join("\n");
+    const all = [`I: Bus=0019 Vendor=0000 Product=0001 Version=0000\nN: Name="Power Button"\nP: Phys=PNP0C0C/button/input0\nS: Sysfs=/devices/x\nU: Uniq=\nH: Handlers=kbd event0\nB: PROP=0\nB: EV=3\nB: KEY=10000000000000 0\n`];
+    for (const device of this.devices.filter((d) => d.connected)) {
+      const name = device.name ?? "Device";
+      all.push(one(device, name, ["H: Handlers=event20 js0", "B: PROP=0", "B: EV=20001b", "B: KEY=7fdb000000000000 0 100040000000 0 0", "B: ABS=3003f", "B: MSC=10"]));
+      if (device.presents === "keyboard") all.push(one(device, `${name} Keyboard`, ["H: Handlers=sysrq kbd event21 leds", "B: PROP=0", "B: EV=120013", "B: KEY=1000000000007 ff9f207ac14057ff febeffdfffefffff fffffffffffffffe", "B: MSC=10", "B: LED=1f"]));
+      if (device.presents === "mouse") all.push(one(device, `${name} Mouse`, ["H: Handlers=mouse1 event22", "B: PROP=0", "B: EV=17", "B: KEY=1f0000 0 0 0 0", "B: REL=1943", "B: MSC=10"]));
+    }
+    return all.join("\n");
   };
 
   // bluetoothctl scan on, for as long as it's left running.

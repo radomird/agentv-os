@@ -65,6 +65,12 @@ export function gameInFront(ctx: Ctx): string | null {
   return ctx.state.apps.some((app) => app.id === front!.id && app.category === "games") ? front.id : null;
 }
 
+// Whether a game is open at all, in front or behind home, for the screen
+// daemon: the night's update waits for it.
+export function gameOpen(ctx: Ctx): boolean {
+  return [...open.keys()].some((id) => ctx.state.apps.some((app) => app.id === id && app.category === "games"));
+}
+
 function close(ctx: Ctx, entry: Open): void {
   entry.host.close();
   entry.wrap.remove();
