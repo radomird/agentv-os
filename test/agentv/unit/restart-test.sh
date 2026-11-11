@@ -37,8 +37,8 @@ run() {
 }
 
 run || fail "a box after an update restarts AgenTV's services" "$(cat "$SCRATCH/out")"
-[[ $(cat "$CALLS") == $'sudo systemctl restart agentv-daemon.service\nsystemctl restart agentv-daemon.service (XDG_RUNTIME_DIR=)\nsystemctl --user restart agentv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)' ]] ||
-  fail "the daemon, then the TV session's units, in the TV session's systemd" "$(cat "$CALLS")"
+[[ $(cat "$CALLS") == $'sudo systemctl restart agentv-daemon.service\nsystemctl restart agentv-daemon.service (XDG_RUNTIME_DIR=)\nsudo systemctl try-restart agentv-hotspot-watch.service\nsystemctl try-restart agentv-hotspot-watch.service (XDG_RUNTIME_DIR=)\nsystemctl --user restart agentv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)' ]] ||
+  fail "the daemon, the watch for a lost network if it's running, then the TV session's units, in the TV session's systemd" "$(cat "$CALLS")"
 pass "after an update, the daemon restarts, then the TV session's units, in the session's own systemd"
 
 touch "$STATE/no-tv"
@@ -80,7 +80,7 @@ half() {
     "$BASH" "$cmd" "$@" >"$SCRATCH/out" 2>&1
 }
 FAKE_UID=0 half --system || fail "root restarts the daemon alone" "$(cat "$SCRATCH/out")"
-[[ $(cat "$CALLS") == "systemctl restart agentv-daemon.service (XDG_RUNTIME_DIR=)" ]] || fail "H1 as root, the daemon restarts without sudo, and nothing of the session's" "$(cat "$CALLS")"
+[[ $(cat "$CALLS") == $'systemctl restart agentv-daemon.service (XDG_RUNTIME_DIR=)\nsystemctl try-restart agentv-hotspot-watch.service (XDG_RUNTIME_DIR=)' ]] || fail "H1 as root, the daemon and the watch restart without sudo, and nothing of the session's" "$(cat "$CALLS")"
 half --session || fail "the owner restarts the TV session's units alone" "$(cat "$SCRATCH/out")"
 [[ $(cat "$CALLS") == "systemctl --user restart agentv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)" ]] || fail "H1 as the owner, only the TV session's units restart, without sudo" "$(cat "$CALLS")"
 ! half --everything || fail "an option it doesn't know is refused"
