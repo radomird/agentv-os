@@ -7,8 +7,12 @@
 // NetworkManager, so the home Wi-Fi's name and password go the way the
 // provider key goes: a drop in its own private state, which
 // agentv-hotspot.path hands to root.
+//
+// After setup, Settings changes the Wi-Fi through the same drop, with the
+// hotspot closed (daemon/network.ts): a look at the networks nearby, and a
+// join. Root says which network the TV is on and how the last join went.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The box's own address on its hotspot, where the captive page is.
@@ -29,6 +33,20 @@ export interface Network {
   ssid: string;
   signal: number;
   secure: boolean;
+}
+
+// Why a join didn't work: the password, a network out of reach, or anything
+// else.
+export type JoinProblem = "password" | "missing" | "failed";
+
+// What root says about the TV's own Wi-Fi, for Settings.
+export interface RadioState {
+  // The network the TV is on, when root last looked or joined.
+  wifi: string | null;
+  // Whether the TV has Wi-Fi at all, or null before root has looked.
+  has: boolean | null;
+  // Why the last join didn't work.
+  why: JoinProblem | null;
 }
 
 export interface HotspotOptions {
@@ -91,9 +109,42 @@ export class Hotspot {
     }
   }
 
+  radio(): RadioState {
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(readFileSync(join(this.run, "state.json"), "utf8"));
+    } catch {
+      // Root hasn't looked this boot.
+    }
+    const why = text(data.why) ?? (text(data.error) ? "failed" : null);
+    return {
+      wifi: text(data.wifi),
+      has: typeof data.radio === "boolean" ? data.radio : null,
+      why: why === "password" || why === "missing" ? why : why ? "failed" : null,
+    };
+  }
+
+  // Whether root has answered what was asked at that time (Date.now()): the
+  // drop is taken, and state.json was written since.
+  answered(since: number): boolean {
+    if (existsSync(join(this.dropDir, "request.json"))) return false;
+    try {
+      return statSync(join(this.run, "state.json")).mtimeMs > since;
+    } catch {
+      return false;
+    }
+  }
+
+  // Asks root to look at the networks nearby, with the hotspot closed.
+  scan(): void {
+    this.drop({ scan: true });
+  }
+
   // Asks root to join the home Wi-Fi. Null once it's asked, or why not.
-  join(ssid: unknown, password: unknown): string | null {
-    if (!this.status().on) return "the setup hotspot isn't on";
+  // Setup's pages join through the hotspot, so only while it's on. Settings
+  // joins with it closed too (closed).
+  join(ssid: unknown, password: unknown, options: { closed?: boolean } = {}): string | null {
+    if (!options.closed && !this.status().on) return "the setup hotspot isn't on";
     if (!validSsid(ssid)) return "that isn't a wi-fi network's name";
     if (!validPassword(password)) return "a wi-fi password is 8 to 63 characters";
     const seen = this.networks().find((n) => n.ssid === ssid);

@@ -87,6 +87,8 @@ async function phone(): Promise<Page> {
 }
 
 test("stage 4 the captive page lists the networks the box saw, and the one picked goes to the box with its password", async () => {
+  // Setup isn't done: after it, the page says no more about a new code.
+  await post("/api/setup", { done: false });
   hotspotIs({ on: true });
   const page = await phone();
   await page.waitForSelector("button.network");

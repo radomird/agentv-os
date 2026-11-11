@@ -15,6 +15,7 @@ import { glyph } from "../glyphs.ts";
 import { aiPanel, aiValue, setKeyState } from "./key.ts";
 import { controllersLabel, controllersPanel, controllersValue } from "./controllers.ts";
 import { loadPhones, phones, phonesPanel } from "./phones.ts";
+import { networkPanel, networkValue } from "./wifi.ts";
 import { profilesPanel } from "./profiles.ts";
 import { release, updatesPanel } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageValue } from "./usage.ts";
@@ -568,7 +569,7 @@ export function settings(ctx: Ctx, open?: string): View {
       value: () => (release(ctx.updates) ? `● ${release(ctx.updates)}` : ctx.state.version.replace(/\.r\d+\.g[0-9a-f]+$/, "")),
       panel: () => updatesPanel(ctx),
     },
-    { key: "network", label: "network", value: () => "soon", panel: () => soon("wi-fi and the network come with tv setup.") },
+    { key: "network", label: "network", value: networkValue, panel: () => networkPanel(ctx) },
     {
       key: "desktop",
       label: "omarchy desktop",
