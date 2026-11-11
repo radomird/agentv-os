@@ -259,7 +259,11 @@ test("the home network gets only the phone companion: its page, its requests, an
   const state = await send(phone, "GET", "/api/phone/state", { token });
   assert.equal(state.data.phone.name, "android phone");
   assert.equal(state.data.viewer.role, "adult");
-  assert.equal((await send(phone, "POST", "/api/phone/remote", { token, body: { key: "up" }, origin: "https://evil.example" })).status, 403, "not from another site");
+  // The box says no before it reads the signature, so that answer isn't
+  // sealed, and the phone's own client wouldn't take it.
+  const signed = token.sign("POST", "/api/phone/remote", { key: "up" });
+  const elsewhere = await fetch(`${phone}/api/phone/remote`, { method: "POST", headers: { ...signed.headers, Origin: "https://evil.example" }, body: new Uint8Array(signed.body!) });
+  assert.equal(elsewhere.status, 403, "not from another site");
 });
 
 test("the phone's keys and text reach the screen daemon's stream, and what's typed is never logged", async () => {
@@ -291,7 +295,8 @@ test("the PIN on the phone gives a grant, which switching from a child to an adu
   const wrong = await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "0000" } });
   assert.equal(wrong.status, 403);
   const grant = (await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).data.grant;
-  const child = (await send(tv, "POST", "/api/viewers", { body: { name: "mila", role: "child" }, grant })).data.profile;
+  const onTv = (await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).data.grant;
+  const child = (await send(tv, "POST", "/api/viewers", { body: { name: "mila", role: "child" }, grant: onTv })).data.profile;
   assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: child.id } })).status, 200);
   assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.viewer.id, child.id);
   const owner = (await send(phone, "GET", "/api/phone/state", { token })).data.viewers.find((v: any) => v.role === "adult");
@@ -313,6 +318,36 @@ test("F9 a phone's wrong PINs make only that phone wait, not the TV or another p
   assert.equal((await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).status, 200, "the tv's pad doesn't");
   assert.equal((await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).status, 200, "and neither does another phone");
   assert.equal((await send(tv, "DELETE", `/api/phones/${other.kept.id}`, { grant })).status, 200);
+});
+
+test("a PIN's grant is for whoever entered it: another phone can't use it, a phone can't use the TV's, and the TV can't use a phone's", async () => {
+  const mine = (await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).data.grant;
+  const onTv = (await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).data.grant;
+  const code = (await send(tv, "POST", "/api/phones/pair", { grant: onTv })).data.pairing.code;
+  const other = await pairPhone(phone, code, "second phone");
+  const state = (await send(phone, "GET", "/api/phone/state", { token })).data;
+  const child = state.viewers.find((v: any) => v.role === "child");
+  const adult = state.viewers.find((v: any) => v.role === "adult");
+  const toChild = async () => assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: child.id } })).status, 200);
+  const needsPin = (answer: { status: number; data: Record<string, any> }, what: string) => assert.deepEqual([answer.status, answer.data.error, answer.data.pin], [403, "that needs the pin", true], what);
+
+  // Back to the adult takes the PIN, on the phone and on the TV.
+  await toChild();
+  needsPin(await send(phone, "POST", "/api/phone/viewer", { token: other, body: { id: adult.id }, grant: mine }), "another phone, with the first one's grant");
+  needsPin(await send(phone, "POST", "/api/phone/viewer", { token: other, body: { id: adult.id }, grant: onTv }), "a phone, with the TV's grant");
+  needsPin(await send(phone, "POST", "/api/phone/viewer", { token, body: { id: adult.id }, grant: onTv }), "the first phone, with the TV's grant");
+  needsPin(await send(tv, "POST", "/api/viewer", { body: { id: adult.id }, grant: mine }), "the TV, with a phone's grant");
+  assert.equal((await send(tv, "POST", "/api/pin/allows", { body: { grant: mine } })).status, 403, "nor for the TV's own checks");
+  assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.viewer.id, child.id, "nothing changed");
+
+  assert.equal((await send(phone, "POST", "/api/phone/viewer", { token, body: { id: adult.id }, grant: mine })).status, 200, "the phone that entered it");
+  await toChild();
+  const theirs = (await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "4826" } })).data.grant;
+  assert.equal((await send(phone, "POST", "/api/phone/viewer", { token: other, body: { id: adult.id }, grant: theirs })).status, 200, "the other phone, with its own");
+  await toChild();
+  assert.equal((await send(tv, "POST", "/api/viewer", { body: { id: adult.id }, grant: onTv })).status, 200, "the TV's pages, with the TV's");
+  assert.equal((await send(tv, "POST", "/api/pin/allows", { body: { grant: onTv } })).status, 200);
+  assert.equal((await send(tv, "DELETE", `/api/phones/${other.kept.id}`, { grant: onTv })).status, 200);
 });
 
 test("ADR-037 S4.10 the phone hears what's on the TV within a second: its ask waits for a change, and the remote's view follows", async () => {

@@ -175,12 +175,13 @@ pass "the home Wi-Fi goes in from a file only root can read, the hotspot closes,
 rm -f "$AGENTV_NM_CONNECTIONS"/*
 hotspot run >/dev/null || true
 : >"$FAKE/calls"
-printf '%s' '{"join":{"ssid":"new:net","password":"wrong password","hidden":false}}' >"$AGENTV_HOTSPOT_DROP"
+printf '%s' '{"join":{"ssid":"new:net","password":"wrong password","hidden":false},"id":"0a1b2c3d4e5f6071"}' >"$AGENTV_HOTSPOT_DROP"
 if FAKE_UP_FAILS="Error: Connection activation failed: Secrets were required, but not provided." hotspot drop; then fail "a wrong password doesn't join"; fi
 [[ -z $(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*') ]] || fail "and leaves no connection behind"
 grep -q "^nmcli connection delete uuid " "$FAKE/calls" || fail "NetworkManager forgets it"
 grep -qx "systemctl start agentv-hotspot.service" "$FAKE/calls" || fail "the hotspot opens again"
 [[ $(state .error) == "that password didn't work for new:net" && $(state .joining) == "null" ]] || fail "state.json says why" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+[[ $(state .answered) == "0a1b2c3d4e5f6071" ]] || fail "and names the ask it answers" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 printf '%s' '{"join":{"ssid":"far away","password":"long enough","hidden":true}}' >"$AGENTV_HOTSPOT_DROP"
 FAKE_UP_FAILS="Error: Connection activation failed: The Wi-Fi network could not be found." hotspot drop || true
 [[ $(state .error) == "the tv can't see far away from here" ]] || fail "and a network out of reach says so" "$(state .error)"
@@ -261,8 +262,9 @@ pass "a handed-over file that isn't AgenTV's own network is ignored"
 rm -rf "${AGENTV_HOTSPOT_RUN:?}" "${AGENTV_NM_CONNECTIONS:?}"
 : >"$FAKE/calls"
 printf '%s\n' 'no:cafe' 'yes:new\:net' 'no:neighbours' >"$FAKE/on-wifi"
-printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
+printf '%s' '{"scan":true,"id":"aa11bb22cc33dd44"}' >"$AGENTV_HOTSPOT_DROP"
 hotspot drop || fail "a look at the networks works with the hotspot closed" "$(cat "$SCRATCH/out")"
+[[ $(state .answered) == "aa11bb22cc33dd44" ]] || fail "a look's answer names the ask" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 [[ ! -e $AGENTV_HOTSPOT_DROP ]] || fail "the drop is gone"
 jq -e 'map(.ssid) == ["home wi-fi", "cafe", "new:net", "neighbours"]' "$AGENTV_HOTSPOT_RUN/networks.json" >/dev/null || fail "it lists what's nearby" "$(cat "$AGENTV_HOTSPOT_RUN/networks.json")"
 jq -e '.wifi == "new:net" and .radio == true and (.scanned | type) == "string" and .on != true' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
