@@ -480,7 +480,7 @@ test("the hotspot's page after setup: the same page as setup's, with the adult P
   await page.locator('[data-field="pin"]').fill("4826");
   await page.locator('[data-action="join"]').tap();
   await page.waitForFunction(() => /joining Home/.test(document.querySelector("h1")?.textContent ?? ""));
-  assert.match(await page.locator(".page").innerText(), /once it's on, go back to that wi-fi\.$/);
+  assert.match(await page.locator(".page").innerText(), /Once it's on, go back to that Wi-Fi$/);
   assert.doesNotMatch(await page.locator(".page").innerText(), /new code|setup/);
   await until(() => asked.filter((request) => request.join).length === sent + 1);
   assert.deepEqual(await joinAsked("Home"), { join: { ssid: "Home", password: PASSWORD, hidden: false } }, "the PIN goes no further than the daemon");

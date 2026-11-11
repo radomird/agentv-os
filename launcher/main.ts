@@ -75,7 +75,9 @@ export interface Ctx {
   // Notes where the page is now, such as a section of Settings, so Back to
   // it comes back there.
   remember(route: string): void;
-  toast(text: string, kind?: "ok" | "fail"): void;
+  // A toast's words, or an element with them, such as one that keeps a
+  // name's own capitals (looks/words.ts).
+  toast(text: string | Node, kind?: "ok" | "fail"): void;
   // The ambient screen, as the built-in Clock opens it.
   ambient(): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
