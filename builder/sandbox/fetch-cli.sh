@@ -11,6 +11,11 @@
 
 set -euo pipefail
 
+# mise reads a config from the folder it's started in and the ones above
+# it. Started from /, it reads none from the builder's home but its own
+# global one, which a build can't write (agentv-builder@.service).
+cd /
+
 cli=${1:-}
 case "$cli" in
   claude | codex | gemini) package=$cli ;;
