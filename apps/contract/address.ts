@@ -21,6 +21,12 @@ FIXED.addAddress("::1", "ipv6");
 FIXED.addAddress("::", "ipv6");
 FIXED.addSubnet("fe80::", 10, "ipv6");
 
+// Link-local alone. Every box has addresses here, so one of them is this
+// box only when the box has it (linkLocalElsewhere).
+const LINK_LOCAL = new BlockList();
+LINK_LOCAL.addSubnet("169.254.0.0", 16, "ipv4");
+LINK_LOCAL.addSubnet("fe80::", 10, "ipv6");
+
 // An address as net.isIP takes it: no brackets, no zone such as %eth0.
 function bare(address: string): string {
   return address.replace(/^\[|\]$/g, "").replace(/%.*$/, "");
@@ -43,13 +49,33 @@ export function boxAddress(address: string, own: Iterable<string> = []): boolean
   if (!family) return false;
   const kind = family === 4 ? "ipv4" : "ipv6";
   if (FIXED.check(value, kind)) return true;
+  return listed(own).check(value, kind);
+}
+
+// Whether an IP address is link-local on some other machine: in the
+// link-local ranges, and not one of own, the box's addresses on its
+// networks. A server on the home network can answer by such an address
+// beside its usual one (nas.local often does). boxAddress still counts it
+// as the box, since by itself it says nothing about whose it is. This is
+// for a caller that leaves the address out and goes to the server's others
+// (daemon/apps/reach.ts). Zones are dropped and bytes compared, as above.
+export function linkLocalElsewhere(address: string, own: Iterable<string> = []): boolean {
+  const value = bare(address);
+  const family = isIP(value);
+  if (!family) return false;
+  const kind = family === 4 ? "ipv4" : "ipv6";
+  return LINK_LOCAL.check(value, kind) && !listed(own).check(value, kind);
+}
+
+// own as a list to check an address against.
+function listed(own: Iterable<string>): BlockList {
   const mine = new BlockList();
   for (const one of own) {
     const its = bare(one);
     const is = isIP(its);
     if (is) mine.addAddress(its, is === 4 ? "ipv4" : "ipv6");
   }
-  return mine.check(value, kind);
+  return mine;
 }
 
 // Whether a URL's host is this box by how it's written: localhost, a name
