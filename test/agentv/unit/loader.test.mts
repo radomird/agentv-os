@@ -289,15 +289,19 @@ test("an app that exits mid-call has crashed, and comes back on the next call", 
   assert.deepEqual(await h.call(viewer, "tile", "s"), {});
 });
 
-test("a call that arrives as the app is stopped has crashed, and the next call starts it again", async () => {
+test("a call that arrives as the app is stopped has crashed, and so does one after: a stopped app doesn't start again", async () => {
   // An app is stopped when it's updated or removed, and as the daemon closes.
-  // A tile asked for at that moment gets an answer, not a daemon error.
+  // A tile asked for at that moment gets an answer, not a daemon error. One
+  // asked for later, by a timer still running as the daemon closes, mustn't
+  // start a worker: nothing would stop it, and it kept the daemon's process
+  // from ending. Whoever needs the app again makes a new host for it.
   const h = host(app(tileApp("return {};")));
   await h.start();
   const call = h.call(viewer, "tile", "s");
   h.stop();
   await fails(call, "crashed", /Sample stopped/);
-  assert.deepEqual(await h.call(viewer, "tile", "s"), {});
+  await fails(h.call(viewer, "tile", "s"), "crashed", /Sample stopped/);
+  await fails(h.start(), "crashed", /Sample stopped/);
 });
 
 test("a failing call says what failed", async () => {
