@@ -13,7 +13,8 @@ export interface PhoneInit {
 
 export class TestPhone extends PhoneClient {
   // A request to a path on the phone port. A JSON body is sealed, any other
-  // body goes as an upload, and the answer comes back opened.
+  // body goes as an upload, and the answer comes back opened. Like the real
+  // fetch it stands in for, it takes a picture or a file as it is.
   async fetch(path: string, init: PhoneInit = {}): Promise<Response> {
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries(init.headers ?? {})) headers[name.toLowerCase()] = value;
@@ -21,7 +22,7 @@ export class TestPhone extends PhoneClient {
     const method = init.method ?? "GET";
     const body = init.body === undefined ? undefined : typeof init.body === "string" ? Buffer.from(init.body) : init.body;
     const json = type === undefined || type.startsWith("application/json");
-    const answer = await this.call(method, path, body, { grant, headers: rest, type: body !== undefined && !json ? type : undefined });
+    const answer = await this.call(method, path, body, { grant, headers: rest, type: body !== undefined && !json ? type : undefined, file: true });
     return new Response(answer.body.length || ![204, 304].includes(answer.status) ? new Uint8Array(answer.body) : null, { status: answer.status, headers: { ...answer.headers, "content-type": answer.type, "content-length": String(answer.body.length) } });
   }
 

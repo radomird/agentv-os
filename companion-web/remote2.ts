@@ -1,6 +1,8 @@
 // The new phone remote (ADR-065, design page D4), behind the remote2 switch.
 // One screen:
-// - a big surface: swipe to move, tap for OK, hold for the pointer. A
+// - a big surface: swipe to move, tap for OK, and a hold opens the
+//   focused app's details on home and Apps (ADR-089) and gives the pointer
+//   over an app. A
 //   switch in the top bar puts a d-pad on it instead, for people who want
 //   buttons. On Omarchy's desktop it's the pointer by itself;
 // - Back, Home and play or pause in one row, always in the same place.
@@ -205,6 +207,8 @@ export class Remote2 {
   private notice: HTMLElement | null = null;
   private playKey: HTMLButtonElement | null = null;
   private card: HTMLElement | null = null;
+  // The surface's line for what a hold does, which follows what's in front.
+  private holdHint: { area: HTMLElement; line: HTMLElement } | null = null;
   private about: string | null = null;
   // The press on the d-pad's OK that's under way, if one is.
   private okPress: { finger: number; held: boolean; filling: boolean; left: boolean; timer: number } | null = null;
@@ -253,6 +257,7 @@ export class Remote2 {
     this.notice = null;
     this.playKey = null;
     this.card = null;
+    this.holdHint = null;
     let children: (HTMLElement | null)[];
     if (this.page !== "remote") children = this.subPage(state);
     else if (this.keyboardFor(state)) children = this.keyboard(state);
@@ -276,6 +281,7 @@ export class Remote2 {
       this.notice = fresh;
     }
     if (this.playKey) this.setPlay(this.playKey, state.tv.playing);
+    this.sayHold();
     if (this.card && state.nowPlaying) {
       const fresh = this.playing(state);
       if (fresh) {
@@ -334,16 +340,27 @@ export class Remote2 {
     );
   }
 
-  // The surface: swipes move the focus, a tap is OK and a hold gives the
-  // pointer. With the switch on, a d-pad; on the desktop, the pointer.
+  // What a hold on the surface does, in its hint: details with home or Apps
+  // in front, the pointer over an app. Only the words change, so a finger
+  // that's on the surface stays on it.
+  private sayHold(): void {
+    if (!this.holdHint) return;
+    const what = this.holds() ? "hold for details" : "hold for the pointer";
+    if (this.holdHint.line.textContent !== what) this.holdHint.line.textContent = what;
+    this.holdHint.area.setAttribute("aria-label", `swipe to move, tap for ok, ${what}`);
+  }
+
+  // The surface: swipes move the focus and a tap is OK. A hold with home or
+  // Apps in front is a hold on OK, which opens the focused app's details
+  // (ADR-089), and over an app it gives the pointer. With the switch on, a
+  // d-pad; on the desktop, the pointer.
   private surface(state: Phone): HTMLElement {
     if (state.tv.view === "trackpad" || this.pointer) return this.pointerPad(state.tv.view !== "trackpad");
     if (dpadOn()) return this.dpad();
-    const area = h(
-      "div",
-      { class: "r2-surface", role: "application", "aria-label": "swipe to move, tap for ok, hold for the pointer", "data-action": "surface" },
-      h("span", { class: "r2-hint" }, h("span", {}, "swipe to move"), h("span", {}, "tap for OK"), h("span", {}, "hold for the pointer")),
-    );
+    const line = h("span", {});
+    const area = h("div", { class: "r2-surface", role: "application", "data-action": "surface" }, h("span", { class: "r2-hint" }, h("span", {}, "swipe to move"), h("span", {}, "tap for OK"), line));
+    this.holdHint = { area, line };
+    this.sayHold();
     let from: { x: number; y: number; at: number } | null = null;
     let moved = false;
     let hold = 0;
@@ -358,8 +375,15 @@ export class Remote2 {
       moved = false;
       hold = window.setTimeout(() => {
         from = null;
-        this.pointer = true;
         if (feelOn()) navigator.vibrate?.(20);
+        // What the TV says is in front as the hold lands, the same way the
+        // d-pad's OK asks.
+        if (this.holds()) {
+          this.send({ hold: "enter", ms: OK_HOLD_MS });
+          flash();
+          return;
+        }
+        this.pointer = true;
         this.draw(true);
       }, HOLD_MS);
     });
@@ -392,8 +416,8 @@ export class Remote2 {
     return area;
   }
 
-  // Whether a hold on OK has anything to open: only on home's own screens,
-  // where a tile's details are. With an app or the screen saver in front,
+  // Whether a hold on OK, or on the surface, has anything to open: only on
+  // home's own screens, where a tile's details are. With an app or the screen saver in front,
   // the TV would only get Enter held down. (For the PIN pad the phone shows
   // its own digits, and no OK.)
   private holds(): boolean {

@@ -271,6 +271,15 @@ test("M5 a recipe names the pages stage B looks at while signed in, and an accou
   for (const path of ["/#/", "/#/browse", "/#!/search?q=heat", "/#/en-gb/watch/1", "/browse#/title/80123", "/browse#row-3", "/#"]) assert.ok(at(path), path);
   for (const path of ["/#/account", "/#!/account/payment", "/#!account", "/#/en-gb/settings", "/browse#/account", "/#%2Faccount", "/#/Account?tab=billing", "/#/%zz"]) assert.ok(!at(path), path);
   assert.ok(!signedInPage(undefined, new URL("https://stand-in.test/#/search")), "with no list, only the start page");
+  // A language at the front is skipped only with a page after it. Alone
+  // it's the start page in that language, but /me, /my and /id are as
+  // likely the person's own page, in the path or after the #.
+  for (const path of ["/en", "/en/", "/de", "/pt-br", "/index.html", "/index", "/en/index.html", "/#/en", "/#/index", "/my/watch/1", "/id/browse", "/index.php/search", "/en/index.php/watch/1", "/#/index/browse"]) assert.ok(at(path), path);
+  for (const path of ["/me", "/my", "/id", "/me/", "/ME", "/#/me", "/#!/my", "/browse#/id", "/en/me", "/me/account", "/index.php/account", "/index.html/settings", "/#/index/account", "/en/index.php/account", "/index/en/account", "/index/index/account"]) assert.ok(!at(path), path);
+  // A plain anchor is left alone, even one that doesn't decode. A route
+  // that doesn't decode is still a route.
+  for (const path of ["/browse#50%", "/#100%", "/watch/1#t=5%"]) assert.ok(at(path), path);
+  for (const path of ["/browse#/account%", "/#!account%", "/#%2Faccount%", "/#%2faccount%zz", "/#%21/account%", "/#/browse/%zz"]) assert.ok(!at(path), path);
 
   const data = JSON.parse(readFileSync(join(streaming.dir, "recipe.json"), "utf8"));
   assert.deepEqual(recipeProblems(data, streaming.dir), []);

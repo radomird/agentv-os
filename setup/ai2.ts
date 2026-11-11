@@ -157,7 +157,9 @@ export function ways(ctx: Ctx, provider: Provider): View {
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      void sendCode();
+      // Once this Enter is done with, as for a typed key (ai.ts): the PIN's
+      // pad may open, and the same press mustn't reach it.
+      setTimeout(() => void sendCode(), 0);
     }
   });
 

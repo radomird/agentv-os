@@ -172,3 +172,76 @@ grep -q 'pkgs/bin/test-key' <<<"$body" || fail "M3 a run without release-key mak
 [[ $(grep -c 'AGENTV_TEST_KEY=/test-key/public.asc' <<<"$body") == 4 ]] ||
   fail "M3 every build of a run with a throwaway key gets its public half"
 pass "M3 a run without release-key makes a throwaway key, and each of its builds trusts it"
+
+# A night with a failed check keeps no ISO: agentv-iso publishes the newest
+# night's as edge. Edge's ISO goes by its package's version, so the last
+# job takes back the exact name the box's job kept it under, with its
+# checksum, and nothing else of the run.
+take_back=$(awk '
+  /^      - name: Take back the ISO$/ { found = 1; next }
+  found && /^      - name: / { exit }
+  found && /^        run: \|$/ { running = 1; next }
+  running { sub(/^          /, ""); print }
+' "$image")
+[[ -n $take_back ]] || fail "image.yml has a step that takes back the ISO"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
+grep -q 'ISO_NAME: \${{ needs.box.outputs.iso-name }}' "$image" || fail "the take-back is told the name the box's job kept the ISO under"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
+grep -q '^      iso-name: \${{ steps.name.outputs.name }}$' "$image" || fail "the box's job says what it kept the ISO as"
+fake="$SCRATCH/take-back"
+mkdir -p "$fake/bin"
+cat >"$fake/bin/gh" <<'GH'
+#!/bin/bash
+if [[ $2 == "-X" ]]; then
+  echo "${4##*/}" >>"$TAKEN"
+else
+  cat "$ARTIFACTS"
+fi
+GH
+chmod +x "$fake/bin/gh"
+printf '%s\t%s\n' 11 image-box-7-1-0 12 agentv-0.2.0.r456.g40edb94c6-x86_64 13 agentv-0.2.0.r456.g40edb94c6-x86_64.sha256 \
+  14 agentv-0.2.0.r456.g40edb94c6-x86_64-old 15 image-edge-7-1 >"$fake/artifacts"
+taken() {
+  : >"$fake/taken"
+  (cd "$fake" && PATH="$fake/bin:$PATH" ARTIFACTS="$fake/artifacts" TAKEN="$fake/taken" GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=7 \
+    GITHUB_STEP_SUMMARY=/dev/null ISO_NAME="$1" bash -euo pipefail -c "$take_back") >"$fake/out" 2>&1
+}
+taken agentv-0.2.0.r456.g40edb94c6-x86_64 || fail "the take-back runs" "$(cat "$fake/out")"
+[[ $(sort "$fake/taken" | paste -sd' ') == "12 13" ]] ||
+  fail "a failed night's ISO and its checksum are taken back by the name they were kept under, and nothing else" "$(cat "$fake/taken" "$fake/out")"
+taken "" || fail "with no ISO kept there's nothing to take back" "$(cat "$fake/out")"
+[[ ! -s $fake/taken ]] || fail "with no ISO kept nothing is deleted" "$(cat "$fake/taken")"
+taken agentv-0.2.0.r999.gabcdef012-x86_64 && fail "an ISO that was kept and can't be found fails the job out loud" "$(cat "$fake/out")"
+[[ ! -s $fake/taken ]] || fail "an ISO that can't be found deletes nothing" "$(cat "$fake/taken")"
+pass "a failed night's ISO is taken back by the exact name it was kept under, with its checksum and nothing else, and one that can't be found fails out loud"
+
+# A run that's refused the key is refused before any job in the release
+# environment starts: a job of its own, which names no environment, checks
+# nothing out and runs nothing of the repo, does the same check first, and
+# both jobs that can hold the key wait for it.
+refs=$(awk '/^  refs:$/ { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image")
+[[ -n $refs ]] || fail "image.yml checks the refs in a job of its own"
+refs_code=$(code "$refs")
+for word in "environment:" "uses:" "secrets."; do
+  grep -qF -- "$word" <<<"$refs_code" && fail "the job that checks the refs has no environment, no checkout and nothing of the repo to run" "$word"
+done
+grep -qE '(^|[ "(])(os|iso|pkgs)/' <<<"$refs_code" && fail "the job that checks the refs runs nothing from a checkout" "$refs_code"
+for job in image box; do
+  # Read whole first: grep -q stops at the first match, and awk would be cut
+  # off mid-print, which this shell counts as a failure of the pipe.
+  body_of=$(awk -v job="  $job:" '$0 == job { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image")
+  grep -qx '    needs: refs' <<<"$body_of" ||
+    fail "the $job job, which can be in the release environment, waits for the refs to be checked"
+done
+script=$SCRATCH/refs.sh
+awk '/^        run: \|$/ { on = 1; next } on { sub(/^          /, ""); print }' <<<"$refs" >"$script"
+guard agentv agentv "" || fail "the night's own refs pass the job that checks them" "$(cat "$SCRATCH/guard.log")"
+guard agentv "$on" agentv || fail "a commit agentv has passes the job that checks the refs" "$(cat "$SCRATCH/guard.log")"
+for refs_tried in "agentv fix/checks ''" "fix/os agentv ''" "agentv agentv $ahead" "agentv $ahead agentv"; do
+  eval "set -- $refs_tried"
+  guard "$@" && fail "an unmerged ref stops the run before a job that can hold the key starts" "passed with agentv-os $1, agentv-iso $2, update checks ${3:-none}"
+done
+guard agentv agentv "" PKGS_REF=fix/pkgs && fail "the job that checks the refs wants agentv-pkgs' main"
+guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "the job that checks the refs wants the run on agentv"
+guard fix/os fix/checks "" RELEASE_KEY=false || fail "a run that doesn't ask for the key isn't held up" "$(cat "$SCRATCH/guard.log")"
+pass "a run that asks for AgenTV's key has its refs checked in a job with no environment and no checkout, before the jobs that can hold the key"
