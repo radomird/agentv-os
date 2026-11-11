@@ -149,6 +149,20 @@ SERVICE_RESULT=exit-code "$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1
 [[ $(state .error) == "the setup hotspot stopped" ]] || fail "when it failed, state.json says so" "$(state .error)"
 pass "closing it takes its network and holes out, however it stopped"
 
+# Two of root's processes change state.json at once: the second waits for
+# the first, so neither puts back a copy from before the other's change.
+hotspot run >/dev/null || true
+flock "$AGENTV_HOTSPOT_RUN/.state.lock" sleep 1.5 &
+holder=$!
+sleep 0.3
+"$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1 &
+closer=$!
+sleep 0.5
+[[ $(state .on) == "true" ]] || fail "a change waits while another of root's processes is changing state.json"
+wait "$holder" "$closer"
+[[ $(state .on) == "false" ]] || fail "and goes in once that one is done" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+pass "state.json is changed by one of root's processes at a time"
+
 # Joining the home Wi-Fi.
 hotspot run >/dev/null || true
 : >"$FAKE/calls"

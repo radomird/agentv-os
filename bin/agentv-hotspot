@@ -80,14 +80,22 @@ state_get() {
 # the TV read. It's written whole, and anyone may read it: it has the
 # hotspot's own password, which the TV shows anyway, and never the home
 # Wi-Fi's.
+#
+# The hotspot's unit, the hand-over and the watch each change it, and each
+# reads it, changes one thing and writes it back. So one at a time, behind a
+# lock: without it, one that read before another wrote puts the older copy
+# back, and a hotspot that's up reads as closed.
 state_set() {
-  local filter=$1 current='{}' next="$RUN/.state.json.next"
+  local filter=$1 current='{}' next="$RUN/.state.json.next" lock
   shift
   install -d -m 755 "$RUN"
+  exec {lock}>"$RUN/.state.lock"
+  flock "$lock"
   [[ -s $RUN/state.json ]] && current=$(cat "$RUN/state.json")
   jq -c "$@" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg asked "$ASKED" "$filter | .at = \$at" <<<"$current" >"$next"
   chmod 644 "$next"
   mv -f "$next" "$RUN/state.json"
+  exec {lock}>&-
 }
 
 # random <characters> <length>
