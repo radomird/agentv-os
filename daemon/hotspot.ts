@@ -12,7 +12,8 @@
 // hotspot closed (daemon/network.ts): a look at the networks nearby, and a
 // join. Root says which network the TV is on and how the last join went.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The box's own address on its hotspot, where the captive page is.
@@ -70,6 +71,8 @@ export function validPassword(password: unknown): password is string {
 export class Hotspot {
   private run: string;
   private dropDir: string;
+  // The id of the last join handed to root.
+  asked = "";
 
   constructor(options: HotspotOptions) {
     this.run = options.run ?? "/run/agentv-hotspot";
@@ -124,23 +127,28 @@ export class Hotspot {
     };
   }
 
-  // Whether root has answered what was asked at that time (Date.now()): the
-  // drop is taken, and state.json was written since.
-  answered(since: number): boolean {
-    if (existsSync(join(this.dropDir, "request.json"))) return false;
+  // Whether root has answered the ask with that id (what scan and join gave
+  // back): the drop is taken, and root's last word in state.json names it.
+  // Root writes the id with the write that finishes the ask, so nothing here
+  // compares a time: a write from just before the ask, or one that finishes
+  // an earlier ask, isn't this one's answer.
+  answered(id: string): boolean {
+    if (id === "" || existsSync(join(this.dropDir, "request.json"))) return false;
     try {
-      return statSync(join(this.run, "state.json")).mtimeMs > since;
+      return JSON.parse(readFileSync(join(this.run, "state.json"), "utf8")).answered === id;
     } catch {
       return false;
     }
   }
 
   // Asks root to look at the networks nearby, with the hotspot closed.
-  scan(): void {
-    this.drop({ scan: true });
+  // The id it gives back is what answered() takes.
+  scan(): string {
+    return this.drop({ scan: true });
   }
 
-  // Asks root to join the home Wi-Fi. Null once it's asked, or why not.
+  // Asks root to join the home Wi-Fi. Null once it's asked, or why not. The
+  // id of the last ask is in asked, for answered().
   // Setup's pages join through the hotspot, so only while it's on. Settings
   // joins with it closed too (closed).
   join(ssid: unknown, password: unknown, options: { closed?: boolean } = {}): string | null {
@@ -149,7 +157,7 @@ export class Hotspot {
     if (!validPassword(password)) return "a wi-fi password is 8 to 63 characters";
     const seen = this.networks().find((n) => n.ssid === ssid);
     if (seen?.secure && password === "") return `${ssid} needs its password`;
-    this.drop({ join: { ssid, password, hidden: !seen } });
+    this.asked = this.drop({ join: { ssid, password, hidden: !seen } });
     return null;
   }
 
@@ -158,11 +166,13 @@ export class Hotspot {
     this.drop({ stop: true });
   }
 
-  private drop(request: object): void {
+  private drop(request: object): string {
+    const id = randomBytes(8).toString("hex");
     mkdirSync(this.dropDir, { recursive: true, mode: 0o700 });
     const file = join(this.dropDir, "request.json");
-    writeFileSync(`${file}.next`, JSON.stringify(request), { mode: 0o600 });
+    writeFileSync(`${file}.next`, JSON.stringify({ ...request, id }), { mode: 0o600 });
     renameSync(`${file}.next`, file);
+    return id;
   }
 }
 

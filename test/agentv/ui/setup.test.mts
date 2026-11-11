@@ -112,7 +112,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.match(await page.locator(".page").innerText(), /scan the new code on the tv/);
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")), { join: { ssid: "home wi-fi", password: "correct horse", hidden: false } });
+  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
   rmSync(drop());
 
   // The password was wrong: the hotspot comes back, and so does the reason.
@@ -131,7 +131,7 @@ test("stage 4 an open network needs no password, and one that hides its name is 
   assert.equal(await page.locator('input[type="password"]').count(), 0);
   await page.locator('[data-action="join"]').tap();
   await page.waitForFunction(() => /joining cafe/.test(document.querySelector("h1")?.textContent ?? ""));
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")), { join: { ssid: "cafe", password: "", hidden: false } });
+  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "cafe", password: "", hidden: false });
   rmSync(drop());
 
   await page.goto(`${captive}/`);
@@ -143,7 +143,7 @@ test("stage 4 an open network needs no password, and one that hides its name is 
   await page.locator('input[type="password"]').fill("upstairs1");
   await page.locator('[data-action="join"]').tap();
   await page.waitForFunction(() => /joining attic/.test(document.querySelector("h1")?.textContent ?? ""));
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")), { join: { ssid: "attic", password: "upstairs1", hidden: true } });
+  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "attic", password: "upstairs1", hidden: true });
   rmSync(drop());
   await page.close();
 });
@@ -249,7 +249,7 @@ test("the keyboard's way: Enter with no network lists the Wi-Fi the box saw, and
   await page.keyboard.type("correct horse");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".welcome");
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")), { join: { ssid: "home wi-fi", password: "correct horse", hidden: false } });
+  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
   rmSync(drop());
   // Esc from the list goes back to the welcome screen.
   await page.keyboard.press("Enter");
