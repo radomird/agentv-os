@@ -15,6 +15,7 @@
 
 import { h } from "../dom.ts";
 import { named } from "../looks/looks.ts";
+import { asWritten } from "../looks/words.ts";
 import type { Ctx, View } from "../main.ts";
 import { showOffline } from "../offline.ts";
 import { joinFields, networkRow, type Listed, type Picked } from "../wifi-parts.ts";
@@ -30,7 +31,7 @@ interface Status {
   looking: boolean;
   joining: string | null;
   problem: { ssid: string; why: Why } | null;
-  hotspot: { ssid: string; password: string | null; problem: boolean } | null;
+  hotspot: { ssid: string; problem: boolean } | null;
   // Whether who's watching may change it.
   change?: boolean;
 }
@@ -93,8 +94,11 @@ function setValue(): void {
   value.textContent = networkValue();
 }
 
+// The list of networks is for whoever may pick one, so a child's profile
+// isn't given it and doesn't ask.
 async function load(): Promise<void> {
-  const [now, found] = await Promise.all([call<Status>("GET", "/api/network"), call<{ networks: Listed[] }>("GET", "/api/network/networks")]);
+  const now = await call<Status>("GET", "/api/network");
+  const found = now.change ? await call<{ networks: Listed[] }>("GET", "/api/network/networks") : { networks: [] };
   status = now;
   networks = found.networks;
 }
@@ -134,7 +138,7 @@ async function join(ctx: Ctx, ssid: string, password: string): Promise<string | 
 
 // What the page says when the daemon wouldn't start a join.
 function refusedLine(why: string, ssid: string): string {
-  if (why === "password") return named("Wi-Fi passwords have 8 to 63 characters");
+  if (why === "password") return named("Wi-Fi passwords have at least 8 characters");
   if (why === "name") return named("Check the network name");
   return withName("Couldn't join %s. Try again.", ssid);
 }
@@ -159,7 +163,7 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
     if (why === "pin") return;
     if (why) {
       ctx.sounds.play("failure");
-      ctx.toast(refusedLine(why, network.ssid), "fail");
+      ctx.toast(asWritten(refusedLine(why, network.ssid)), "fail");
       return;
     }
     ctx.sounds.play("confirm");
@@ -186,7 +190,7 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
     const was = box.contains(focused ?? null) ? (focused?.dataset.action ?? `ssid:${focused?.dataset.ssid ?? ""}`) : null;
     const parts: (HTMLElement | null)[] = [h("div", { class: "panel-title", "data-own-case": true, "data-line": "online" }, online(now))];
     if (now?.problem && !now.joining) parts.push(h("p", { class: "panel-note", "data-own-case": true, "data-line": "problem" }, problemLine(now.problem)));
-    if (now?.wifi === false) parts.push(h("p", { class: "panel-note" }, named("This TV has no Wi-Fi")));
+    if (now?.wifi === false) parts.push(h("p", { class: "panel-note" }, named("Your TV has no Wi-Fi")));
     else if (now?.change) {
       const row = (network: Listed | null) => networkRow(network, { other: named("Another network"), class: "button wide network", pick: (one) => void pick(one) });
       if (networks.length === 0 && !now.looking) parts.push(h("p", { class: "panel-note" }, named("No Wi-Fi found nearby")));

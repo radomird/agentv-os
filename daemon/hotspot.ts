@@ -13,7 +13,7 @@
 // join. Root says which network the TV is on and how the last join went.
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The box's own address on its hotspot, where the captive page is.
@@ -68,15 +68,34 @@ export function validPassword(password: unknown): password is string {
   return typeof password === "string" && (password === "" || /^[\x20-\x7e]{8,63}$/.test(password) || /^[0-9a-fA-F]{64}$/.test(password));
 }
 
+// How often a request to the hotspot's page is noted, at most.
+const USED_EVERY_MS = 10_000;
+
 export class Hotspot {
   private run: string;
   private dropDir: string;
+  private usedFile: string;
+  private usedAt = 0;
   // The id of the last join handed to root.
   asked = "";
 
   constructor(options: HotspotOptions) {
     this.run = options.run ?? "/run/agentv-hotspot";
     this.dropDir = join(options.state, "hotspot-drop");
+    this.usedFile = join(options.state, "hotspot-page");
+  }
+
+  // Notes that someone is using the hotspot's page, for root's watch: while
+  // they are, it doesn't close the hotspot to look for the home Wi-Fi
+  // (bin/agentv-hotspot, page_in_use). The file's time is all it says.
+  used(now = Date.now()): void {
+    if (now - this.usedAt < USED_EVERY_MS) return;
+    this.usedAt = now;
+    try {
+      writeFileSync(this.usedFile, "", { mode: 0o600 });
+    } catch {
+      // The watch then takes it that nobody is.
+    }
   }
 
   status(): HotspotState {
@@ -141,6 +160,19 @@ export class Hotspot {
     }
   }
 
+  // Takes back the ask with that id, if root never took it: after root's
+  // time is up, a join still lying there would be joined whenever root next
+  // came by, even at the next start, and it has a password in it. Another
+  // ask's drop stays.
+  takeBack(id: string): void {
+    const file = join(this.dropDir, "request.json");
+    try {
+      if (id !== "" && JSON.parse(readFileSync(file, "utf8")).id === id) rmSync(file);
+    } catch {
+      // Root took it, or there was none.
+    }
+  }
+
   // Asks root to look at the networks nearby, with the hotspot closed.
   // The id it gives back is what answered() takes.
   scan(): string {
@@ -152,12 +184,21 @@ export class Hotspot {
   // Setup's pages join through the hotspot, so only while it's on. Settings
   // joins with it closed too (closed).
   join(ssid: unknown, password: unknown, options: { closed?: boolean } = {}): string | null {
+    const why = this.refuses(ssid, password, options);
+    if (why) return why;
+    const seen = this.networks().find((n) => n.ssid === ssid);
+    this.asked = this.drop({ join: { ssid, password, hidden: !seen } });
+    return null;
+  }
+
+  // Why a join wouldn't be handed to root, or null when it would. Nothing
+  // is asked of root here.
+  refuses(ssid: unknown, password: unknown, options: { closed?: boolean } = {}): string | null {
     if (!options.closed && !this.status().on) return "the setup hotspot isn't on";
     if (!validSsid(ssid)) return "that isn't a wi-fi network's name";
     if (!validPassword(password)) return "a wi-fi password is 8 to 63 characters";
     const seen = this.networks().find((n) => n.ssid === ssid);
     if (seen?.secure && password === "") return `${ssid} needs its password`;
-    this.asked = this.drop({ join: { ssid, password, hidden: !seen } });
     return null;
   }
 

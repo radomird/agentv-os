@@ -303,6 +303,8 @@ tv() {
   mkdir -p "$SCRATCH/var/chromium/Default"
   echo '{"credentials_enable_service": false, "credentials_enable_autosignin": false, "autofill": {"profile_enabled": false, "credit_card_enabled": false},
     "translate": {"enabled": false}, "profile": {"default_content_setting_values": {"notifications": 2}}}' >"$SCRATCH/var/chromium/Default/Preferences"
+  mkdir -p "$SCRATCH/var/chromium-home/Default"
+  cp "$SCRATCH/var/chromium/Default/Preferences" "$SCRATCH/var/chromium-home/Default/Preferences"
   mkdir -p "$SCRATCH/var/chromium/WidevineCdm/4.10.2891.0"
   echo '{"version": "4.10.2891.0"}' >"$SCRATCH/var/chromium/WidevineCdm/4.10.2891.0/manifest.json"
 }
@@ -330,6 +332,7 @@ for line in \
   "pass S1.6 a new window stayed out of sight, and the home screen stayed in front" \
   "pass S1.6 the home screen came back in front" \
   "pass S1.7 the services' Chromium has saving passwords, address and card autofill, translate and site notifications off" \
+  "pass S1.7 home's Chromium has them off too" \
   "manual S1.7 sign in to a streaming service again" \
   "pass S2.8 the box reads the TV as on" \
   "manual S2.8 play an episode, then turn the TV off" \
@@ -399,6 +402,8 @@ pass "S2.19 says the output and its volume, and fails below the level it should 
 
 tv
 echo '{"credentials_enable_service": true}' >"$SCRATCH/var/chromium/Default/Preferences"
+# Home's Chromium started before it had any settings of AgenTV's.
+rm "$SCRATCH/var/chromium-home/Default/Preferences"
 jq '.tv = "off"' "$state/screen.json" >"$state/screen.json.new" && mv "$state/screen.json.new" "$state/screen.json"
 echo '{"ok": true, "keys": []}' >"$state/keys.json"
 echo '{"ok": true, "fps": 52.3, "slow_frames": 4, "worst_ms": 48}' >"$state/frames.json"
@@ -406,6 +411,7 @@ echo '{"ok": true, "on": true, "keys": 30, "played": ["move"], "worst_ms": 40.2,
 ! run1 S1.7 S2.8 S2.9 S2.10 S2.11 || fail "prompts on, a TV read as off, lost keys, dropped frames and slow sounds fail"
 for line in \
   "fail S1.7 the services' Chromium still has some of its own prompts on; agentv update and a reboot turn them off" \
+  "fail S1.7 home's Chromium still has some of its own prompts on; agentv update and a reboot turn them off" \
   "fail S2.8 the box reads the TV as off while it's on" \
   "fail S2.9 the home screen didn't get the keys sent" \
   "fail S2.10 with the focus gliding, tiles lifting and a page sliding, the home screen drew at 52.3 fps on a 60 Hz screen, with 4 frames over 25 ms (worst 48 ms)" \

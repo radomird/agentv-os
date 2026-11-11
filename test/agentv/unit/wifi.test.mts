@@ -64,7 +64,7 @@ test("it says how the TV is online, and marks the network it's on", () => {
   assert.deepEqual(network.state(), { online: true, via: "cable", name: null, wifi: false, looking: false, joining: null, problem: null, hotspot: null });
   interfaces = {};
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
-  assert.deepEqual(network.state(), { online: false, via: null, name: null, wifi: true, looking: false, joining: null, problem: null, hotspot: { ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", problem: false } });
+  assert.deepEqual(network.state(), { online: false, via: null, name: null, wifi: true, looking: false, joining: null, problem: null, hotspot: { ssid: "AgenTV-3f9a", problem: false } });
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true, error: "that password didn't work for Home", why: "password" });
   assert.equal(network.state().hotspot?.problem, true, "a join from the hotspot's page that didn't work shows on the notice");
   interfaces = { wlan0: [nic("192.168.1.20")] };
@@ -120,7 +120,15 @@ test("a look and a join go to root with the hotspot closed, and it says how each
   assert.equal(network.join("cafe", ""), null);
   clock += 101_000;
   assert.deepEqual(network.state().problem, { ssid: "cafe", why: "failed" });
+  assert.ok(!existsSync(drop), "and the join it never took is taken back, not left to be joined some day");
+  // Only its own: a later ask's drop stays where root will find it.
+  clock = Date.now();
+  assert.equal(network.join("cafe", ""), null);
+  hotspot.takeBack("an ask from before");
+  assert.deepEqual(readDrop(), { join: { ssid: "cafe", password: "", hidden: false } });
   rootTakes();
+  rootSays({ wifi: "cafe", radio: true });
+  assert.equal(network.state().joining, null);
   // With the hotspot open the radio can't look.
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true });
   assert.equal(network.look(), "hotspot");
@@ -260,12 +268,34 @@ test("with a PIN set a join needs its grant, and a child's profile can't look or
   const seen = await send(tv, "GET", "/api/network");
   assert.equal(seen.data.name, "cafe", "a child's profile sees how the TV is online");
   assert.equal(seen.data.change, false);
+  const list = await send(tv, "GET", "/api/network/networks");
+  assert.deepEqual([list.status, list.data], [403, { ok: false, error: "child" }], "but not the networks nearby");
   assert.deepEqual((await send(tv, "POST", "/api/network/scan", undefined, grant)).data, { ok: false, error: "child" });
   const join = await send(tv, "POST", "/api/network/join", { ssid: "Home", password: "correct horse" }, grant);
   assert.equal(join.status, 403);
   assert.deepEqual(join.data, { ok: false, error: "child" });
   assert.ok(!existsSync(drop));
   assert.equal((await send(tv, "POST", "/api/viewer", { id: adult }, grant)).status, 200);
+});
+
+test("after setup, setup's own Wi-Fi routes on the TV are closed: a lost network isn't a way round Settings' guards", async () => {
+  // The hotspot is open, as on a TV that lost its network, a PIN is set, and
+  // nothing here has its grant.
+  rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
+  // What the TV's pages are told has the hotspot's name and not its password.
+  const now = await send(tv, "GET", "/api/network");
+  assert.deepEqual(now.data.hotspot, { ssid: "AgenTV-3f9a", problem: false });
+  assert.ok(!JSON.stringify(now.data).includes("k7m2xpqr4n"));
+  const join = await send(tv, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" });
+  assert.equal(join.status, 403);
+  assert.equal((await send(tv, "GET", "/api/setup/networks")).status, 403);
+  assert.ok(!existsSync(drop), "and nothing was handed to root");
+  // Nor is saying setup isn't done: that needs the PIN's grant too.
+  const reset = await send(tv, "POST", "/api/setup", { done: false });
+  assert.equal(reset.status, 403);
+  assert.equal(reset.data.pin, true);
+  assert.equal((await send(tv, "GET", "/api/setup")).data.setup.done, true);
+  rootSays({ wifi: "cafe", radio: true });
 });
 
 test("the hotspot's page, after setup, asks for the adult PIN when one is set, and its wrong tries are its own", async () => {
@@ -296,6 +326,24 @@ test("with the right PIN the hotspot's page joins, and the PIN goes no further",
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } }, "the PIN goes no further than the daemon's check");
   rootTakes();
   assert.ok(!lines.some((line) => line.includes("4826")), "nor into a log line");
+});
+
+test("a join the hotspot's page can't make is refused before the PIN is looked at, so the right PIN with it changes nothing", async () => {
+  // The TV is locked, and its pad has a wrong try on it.
+  assert.equal((await send(tv, "POST", "/api/pin/lock", {})).data.locked, true);
+  assert.equal((await send(tv, "POST", "/api/pin/check", { pin: "0000" })).status, 403);
+  const pinFile = join(state, "pin.json");
+  const before = readFileSync(pinFile, "utf8");
+  assert.equal(JSON.parse(before).fails, 1);
+  const bad = await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "short", pin: "4826" });
+  assert.equal(bad.status, 400);
+  assert.equal(readFileSync(pinFile, "utf8"), before, "the pad's wrong tries stand");
+  assert.equal((await send(tv, "GET", "/api/pin")).data.locked, true, "and the TV is still locked");
+  assert.ok(!existsSync(drop));
+  // A wrong PIN with it isn't counted either: the join is what's wrong.
+  assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "short", pin: "0000" })).status, 400);
+  assert.equal(readFileSync(pinFile, "utf8"), before);
+  assert.equal((await send(tv, "POST", "/api/pin/check", { pin: "4826" })).status, 200);
 });
 
 test("during setup the hotspot's page is as it was: no PIN asked, even with one set", async () => {

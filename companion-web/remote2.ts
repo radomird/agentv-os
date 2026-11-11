@@ -42,7 +42,9 @@ export interface Phone {
   pin: { set: boolean; locked: boolean };
   signIn: { name: string } | null;
   update: { version: string; later: boolean } | null;
-  tv: { view: string; field: Field | null; playing: boolean };
+  // What's on the TV: front is home or an app, and screen is home, a menu
+  // or the screen saver.
+  tv: { view: string; field: Field | null; playing: boolean; front?: string; screen?: string };
   setup: { step: string; part: string; muted: boolean } | null;
   notices?: { app: string; name: string; text: string; at: string }[];
   builds?: PhoneBuild[];
@@ -204,6 +206,8 @@ export class Remote2 {
   private playKey: HTMLButtonElement | null = null;
   private card: HTMLElement | null = null;
   private about: string | null = null;
+  // The press on the d-pad's OK that's under way, if one is.
+  private okPress: { finger: number; held: boolean; filling: boolean; left: boolean; timer: number } | null = null;
 
   constructor(root: HTMLElement, kit: Kit) {
     this.root = root;
@@ -388,30 +392,56 @@ export class Remote2 {
     return area;
   }
 
-  // The d-pad's OK. A tap is OK. Held, the phone sends the hold, and on a
-  // tile the TV opens that app's details (ADR-084), as Back's hold goes home.
+  // Whether a hold on OK has anything to open: only on home's own screens,
+  // where a tile's details are. With an app or the screen saver in front,
+  // the TV would only get Enter held down. (For the PIN pad the phone shows
+  // its own digits, and no OK.)
+  private holds(): boolean {
+    const tv = this.kit.state()?.tv;
+    return tv?.front === "home" && tv.screen !== "ambient";
+  }
+
+  // The d-pad's OK. A tap is OK. Held with home in front, the phone sends
+  // the hold, and on a tile the TV opens that app's details (ADR-084), as
+  // Back's hold goes home. Anywhere else a long press is OK as it lifts.
+  // The press is the remote's and not the button's, since the remote can
+  // draw itself again under a finger: one press at a time, which ends when
+  // its own finger lifts, whichever button is there by then.
   private ok(): HTMLElement {
     const ok = h("button", { type: "button", class: "r2-ok", "aria-label": "ok", "data-key": "enter" }, "OK");
-    let timer = 0;
-    let held = false;
-    ok.addEventListener("pointerdown", () => {
-      held = false;
-      ok.classList.add("holding");
-      timer = window.setTimeout(() => {
-        held = true;
+    if (this.okPress?.filling) ok.classList.add("holding");
+    ok.addEventListener("pointerdown", (event) => {
+      if (this.okPress) return;
+      const press: NonNullable<Remote2["okPress"]> = { finger: event.pointerId, held: false, filling: this.holds(), left: false, timer: 0 };
+      this.okPress = press;
+      // It fills while it's held, when a hold does something.
+      if (press.filling) ok.classList.add("holding");
+      press.timer = window.setTimeout(() => {
+        if (!this.holds()) return;
+        press.held = true;
         if (feelOn()) navigator.vibrate?.(20);
         this.send({ hold: "enter", ms: OK_HOLD_MS });
       }, HOLD_MS);
+      const release = (lifted: PointerEvent) => {
+        if (lifted.pointerId !== press.finger) return;
+        window.removeEventListener("pointerup", release, true);
+        window.removeEventListener("pointercancel", release, true);
+        clearTimeout(press.timer);
+        this.okPress = null;
+        this.root.querySelector(".r2-ok")?.classList.remove("holding");
+        if (!press.held && !press.left && lifted.type === "pointerup") this.send({ key: "enter" });
+      };
+      window.addEventListener("pointerup", release, true);
+      window.addEventListener("pointercancel", release, true);
     });
-    const release = (event: Event) => {
-      clearTimeout(timer);
+    // A finger that slides off the button takes the press back.
+    ok.addEventListener("pointerleave", (event) => {
+      const press = this.okPress;
+      if (!press || press.finger !== event.pointerId) return;
+      press.left = true;
+      clearTimeout(press.timer);
       ok.classList.remove("holding");
-      if (!held && event.type === "pointerup") this.send({ key: "enter" });
-      held = false;
-    };
-    ok.addEventListener("pointerup", release);
-    ok.addEventListener("pointercancel", release);
-    ok.addEventListener("pointerleave", (event) => ok.classList.contains("holding") && release(event));
+    });
     // A keyboard's Enter on the button, which has no pointer.
     ok.addEventListener("click", (event) => event.detail === 0 && this.send({ key: "enter" }));
     // A long press is the hold, not the phone's own menu.

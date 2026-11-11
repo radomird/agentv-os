@@ -67,6 +67,7 @@ cat >"$SCRATCH/bin/systemctl" <<'EOF'
 #!/bin/bash
 echo "systemctl $*" >>"$FAKE/calls"
 [[ $1 == "is-active" ]] && exit "${FAKE_ACTIVE:-3}"
+[[ $1 == "stop" && -n ${FAKE_STOP_FAILS:-} ]] && exit 1
 exit 0
 EOF
 cat >"$SCRATCH/bin/iw" <<'EOF'
@@ -149,6 +150,20 @@ SERVICE_RESULT=exit-code "$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1
 [[ $(state .error) == "the setup hotspot stopped" ]] || fail "when it failed, state.json says so" "$(state .error)"
 pass "closing it takes its network and holes out, however it stopped"
 
+# Two of root's processes change state.json at once: the second waits for
+# the first, so neither puts back a copy from before the other's change.
+hotspot run >/dev/null || true
+flock "$AGENTV_HOTSPOT_RUN/.state.lock" sleep 1.5 &
+holder=$!
+sleep 0.3
+"$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1 &
+closer=$!
+sleep 0.5
+[[ $(state .on) == "true" ]] || fail "a change waits while another of root's processes is changing state.json"
+wait "$holder" "$closer"
+[[ $(state .on) == "false" ]] || fail "and goes in once that one is done" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+pass "state.json is changed by one of root's processes at a time"
+
 # Joining the home Wi-Fi.
 hotspot run >/dev/null || true
 : >"$FAKE/calls"
@@ -186,6 +201,17 @@ printf '%s' '{"join":{"ssid":"far away","password":"long enough","hidden":true}}
 FAKE_UP_FAILS="Error: Connection activation failed: The Wi-Fi network could not be found." hotspot drop || true
 [[ $(state .error) == "the tv can't see far away from here" ]] || fail "and a network out of reach says so" "$(state .error)"
 pass "a wrong password opens the hotspot again, with the reason, and nothing of it stays"
+
+# A join cut short, as when one of its commands fails: it doesn't stay
+# "joining", which would keep the watch out and every later join waiting.
+hotspot run >/dev/null || true
+: >"$FAKE/calls"
+printf '%s' '{"join":{"ssid":"home wi-fi","password":"correct horse","hidden":false},"id":"1122334455667788"}' >"$AGENTV_HOTSPOT_DROP"
+if FAKE_STOP_FAILS=1 hotspot drop; then fail "a join whose command fails doesn't pass for joined"; fi
+jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi" and .answered == "1122334455667788"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join cut short says it didn't work, and answers its ask" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "and the hotspot it was closing opens again" "$(cat "$FAKE/calls")"
+pass "a join cut short says so, and leaves nothing reading as still joining"
 
 # WPA3 and hidden networks, and drops that aren't right.
 : >"$FAKE/calls"
@@ -246,6 +272,21 @@ printf '%s' '{"stop":true}' >"$AGENTV_HOTSPOT_DROP"
 hotspot drop || fail "setup ending closes it"
 [[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the handed-over network goes with it"
 pass "a box set up from the phone opens the USB stick's network again at first boot, even online, until setup ends"
+
+# Setup ended with the file still there, as on a TV set up before the file
+# went with setup: a hotspot opened later has a name and password of its
+# own, and the file goes then, or at the next start.
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
+rm -f "$AGENTV_HOTSPOT_RUN/state.json"
+hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) != "AgenTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "after setup, a hotspot never has the installer's name and password" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+[[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the installer's file goes"
+printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
+hotspot boot || fail "boot does nothing once setup is done"
+[[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "a start after setup takes the installer's file away too"
+echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+pass "once setup is done, the installer's network is gone: no later hotspot has its name and password"
 
 printf '%s\n' '{"ssid":"not ours","password":"x"}' >"$AGENTV_HOTSPOT_HANDED"
 rm -f "$AGENTV_HOTSPOT_RUN/state.json"
@@ -383,6 +424,19 @@ AGENTV_HOTSPOT_LOST_AFTER=5 hotspot watch-tick
 opened || fail "the wait can be shortened for a check"
 pass "the watch opens the hotspot after a minute with no network, not before, and the wait can be shortened"
 
+# A TV that slept: the network went just before, and the first look after it
+# wakes is hours later. That isn't a minute with no network, so the count
+# starts again and NetworkManager gets its minute to join the Wi-Fi.
+echo "$(ago 7205) $(ago 7200)" >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "a TV just awake doesn't open the hotspot for the time it slept" "$(cat "$FAKE/calls")"; fi
+read -r since _ <"$AGENTV_HOTSPOT_RUN/lost-since"
+(( $(date +%s) - since < 30 )) || fail "the count starts again from the wake" "$(cat "$AGENTV_HOTSPOT_RUN/lost-since")"
+echo "$(ago 61) $(ago 5)" >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+opened || fail "a minute with no network, looked at all the way through, still opens it" "$(cat "$FAKE/calls")"
+pass "time asleep doesn't count as time with no network"
+
 # With the hotspot open: the network back by any route closes it.
 hotspot run >/dev/null || true
 set_state '.watch = true'
@@ -399,8 +453,8 @@ tick
 if grep -q "systemctl stop" "$FAKE/calls"; then fail "a hotspot someone opened by hand isn't the watch's to close"; fi
 pass "the network coming back closes the hotspot the watch opened, and only that one"
 
-# The router that restarts: with nobody on the hotspot, it closes now and
-# then to look for the Wi-Fi the TV knows.
+# The router that restarts: with nobody using the hotspot's page, it closes
+# now and then to look for the Wi-Fi the TV knows.
 set_state '.on = true | .watch = true'
 printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
 printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:home wi-fi' >"$FAKE/links-back"
@@ -409,10 +463,18 @@ ago 100 >"$AGENTV_HOTSPOT_RUN/opened-at"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "it doesn't look again before the wait is over"; fi
 ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
-echo "Station 02:00:00:00:01:00 (on wlan0)" >"$FAKE/stations"
+touch "$AGENTV_DAEMON_PRIVATE/hotspot-page"
 tick
-if grep -q "systemctl" "$FAKE/calls"; then fail "nor while a phone is on it" "$(cat "$FAKE/calls")"; fi
+if grep -q "systemctl" "$FAKE/calls"; then fail "nor while someone is using the hotspot's page" "$(cat "$FAKE/calls")"; fi
+# A phone that's joined and asks for nothing, as the one that set the TV up
+# does from a pocket, doesn't hold the TV on the hotspot.
+touch -d "10 minutes ago" "$AGENTV_DAEMON_PRIVATE/hotspot-page"
+echo "Station 02:00:00:00:01:00 (on wlan0)" >"$FAKE/stations"
+ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
+tick
+grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a phone that's only joined doesn't stop the look for the home Wi-Fi" "$(cat "$FAKE/calls")"
 : >"$FAKE/stations"
+set_state '.on = true'
 ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
 : >"$FAKE/calls"
 FAKE_KNOWN="" hotspot watch-tick
@@ -421,7 +483,7 @@ ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
 tick
 order=$(grep -nE "^(systemctl stop agentv-hotspot.service|nmcli .*device wifi list --rescan yes ifname wlan0|nmcli --wait 0 device connect wlan0|systemctl start --no-block agentv-hotspot.service)" "$FAKE/calls" | cut -d: -f2- | sed 's/nmcli .*device wifi list.*/look/')
 [[ $order == $'systemctl stop agentv-hotspot.service\nlook\nnmcli --wait 0 device connect wlan0\nsystemctl start --no-block agentv-hotspot.service' ]] ||
-  fail "with nobody on it, it closes, looks for the Wi-Fi the TV knows, and opens again when it isn't there" "$(cat "$FAKE/calls")"
+  fail "with nobody using it, it closes, looks for the Wi-Fi the TV knows, and opens again when it isn't there" "$(cat "$FAKE/calls")"
 [[ $(state .watch) == "true" ]] || fail "and it's still the watch's"
 set_state '.on = true'
 ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
@@ -430,7 +492,7 @@ FAKE_REJOINS=1 hotspot watch-tick || fail "the watch looks" "$(cat "$SCRATCH/out
 grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "it closes to look"
 if opened; then fail "the home Wi-Fi came back, so the hotspot stays closed" "$(cat "$FAKE/calls")"; fi
 [[ $(state .watch) == "null" ]] || fail "and it's no longer the watch's"
-pass "with nobody on the hotspot it closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
+pass "with nobody using its page the hotspot closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
 
 # While root joins a network, the watch keeps out of it.
 set_state '.joining = "home wi-fi" | .on = false'
@@ -438,6 +500,7 @@ printf '%s\n' "$no_network" >"$FAKE/links"
 ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone"; fi
+[[ ! -e $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "and the count starts again after it"
 unset AGENTV_HOTSPOT_LOST_AFTER AGENTV_HOTSPOT_RETRY_AFTER AGENTV_HOTSPOT_REJOIN_WAIT FAKE_KNOWN
 pass "the watch leaves a join that's under way alone"
 
@@ -445,6 +508,7 @@ grep -qx "ExecStart=/usr/bin/agentv-hotspot watch" "$ROOT/system/agentv-hotspot-
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-watch.service" || fail "which starts with the box"
 if grep -qE "^(User|Environment)=" "$ROOT/system/agentv-hotspot-watch.service"; then fail "as root, with the waits it ships with"; fi
 grep -qx "PathExists=/var/lib/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
+grep -qx "StartLimitIntervalSec=0" "$ROOT/system/agentv-hotspot-drop.service" || fail "quick hand-overs in a row never hit a start limit, which would stop the hand-over until a restart"
 grep -qx "ExecStopPost=/usr/bin/agentv-hotspot down" "$ROOT/system/agentv-hotspot.service" || fail "the hotspot's unit cleans up however it stops"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-boot.service" || fail "the first-boot check runs at boot"
 grep -qx "Type=exec" "$ROOT/system/agentv-hotspot-boot.service" || fail "without holding up the TV"
