@@ -22,7 +22,8 @@
 # USB stick's first screen opened AgenTV-<4 characters> for the phone, and
 # hands its name and password over in /etc/agentv/hotspot.json. At first
 # boot this opens that same network, even on Ethernet, so the phone joins
-# it again by itself and carries on. The file goes once setup ends.
+# it again by itself and carries on. The file goes once setup ends, and a
+# hotspot opened after that never has its name and password.
 #
 # After setup, Settings changes the Wi-Fi the same way, with the hotspot
 # closed: the daemon hands over a look at the networks nearby, or one to
@@ -37,9 +38,9 @@
 # NetworkManager reads it from a file only root can read.
 #
 # The watch waits a minute with no network before it opens the hotspot, and
-# every five minutes with nobody on it, it closes it for a moment to look
-# for the Wi-Fi the TV knows. Its unit's environment can shorten both, for
-# checks: AGENTV_HOTSPOT_LOST_AFTER, AGENTV_HOTSPOT_RETRY_AFTER and
+# every five minutes with nobody using its page, it closes it for a moment
+# to look for the Wi-Fi the TV knows. Its unit's environment can shorten
+# both, for checks: AGENTV_HOTSPOT_LOST_AFTER, AGENTV_HOTSPOT_RETRY_AFTER and
 # AGENTV_HOTSPOT_REJOIN_WAIT, in seconds. AGENTV_HOTSPOT_WATCH_SKIP names
 # devices it doesn't count, such as the cable a test reaches a VM through.
 
@@ -65,6 +66,9 @@ LOST_AFTER=${AGENTV_HOTSPOT_LOST_AFTER:-60}
 RETRY_AFTER=${AGENTV_HOTSPOT_RETRY_AFTER:-300}
 REJOIN_WAIT=${AGENTV_HOTSPOT_REJOIN_WAIT:-30}
 WATCH_SKIP=${AGENTV_HOTSPOT_WATCH_SKIP:-}
+# With no network the watch looks every 5 seconds. Two looks further apart
+# than this had a sleep or a clock change between them.
+LOOK_GAP=30
 
 # The first Wi-Fi device NetworkManager knows, or nothing. The awk calls here
 # read to the end, so the command before them never writes into a closed pipe.
@@ -80,14 +84,22 @@ state_get() {
 # the TV read. It's written whole, and anyone may read it: it has the
 # hotspot's own password, which the TV shows anyway, and never the home
 # Wi-Fi's.
+#
+# The hotspot's unit, the hand-over and the watch each change it, and each
+# reads it, changes one thing and writes it back. So one at a time, behind a
+# lock: without it, one that read before another wrote puts the older copy
+# back, and a hotspot that's up reads as closed.
 state_set() {
-  local filter=$1 current='{}' next="$RUN/.state.json.next"
+  local filter=$1 current='{}' next="$RUN/.state.json.next" lock
   shift
   install -d -m 755 "$RUN"
+  exec {lock}>"$RUN/.state.lock"
+  flock "$lock"
   [[ -s $RUN/state.json ]] && current=$(cat "$RUN/state.json")
   jq -c "$@" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg asked "$ASKED" "$filter | .at = \$at" <<<"$current" >"$next"
   chmod 644 "$next"
   mv -f "$next" "$RUN/state.json"
+  exec {lock}>&-
 }
 
 # random <characters> <length>
@@ -97,11 +109,21 @@ random() {
   printf '%s' "${out:0:$2}"
 }
 
+setup_done() {
+  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]]
+}
+
 # The network the USB stick's first screen opened for a phone, as "<ssid>
-# <password>", or nothing.
+# <password>", or nothing. It's for setup only: once setup is done the file
+# goes, so the hotspot a TV that lost its network opens doesn't have the
+# name and password a phone was given back at the installer.
 handed() {
   local ssid password
   [[ -f $HANDED ]] || return 0
+  if setup_done; then
+    rm -f "$HANDED"
+    return 0
+  fi
   ssid=$(jq -r '.ssid // empty' "$HANDED" 2>/dev/null || true)
   password=$(jq -r '.password // empty' "$HANDED" 2>/dev/null || true)
   if [[ $ssid =~ ^AgenTV-[0-9a-f]{4}$ && $password =~ ^[a-z0-9]{8,63}$ ]]; then
@@ -261,7 +283,10 @@ down() {
 # set up in the installer, goes straight to pairing, unless a phone is
 # waiting on the network the USB stick handed over.
 boot() {
-  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]] && return 0
+  if setup_done; then
+    rm -f "$HANDED"
+    return 0
+  fi
   nm-online -q -s -t 60 || true
   [[ -n $(wifi_device) ]] || return 0
   if [[ -n $(handed) ]]; then
@@ -297,6 +322,23 @@ valid_password() {
   [[ -z $1 || $1 =~ ^[\ -~]{8,63}$ || $1 =~ ^[0-9a-fA-F]{64}$ ]]
 }
 
+# A join that ended before it said how it went, as when one of its commands
+# failed: it says so now, and the hotspot it closed opens again. Left as
+# "joining", the watch would keep out for good, every later join would be
+# told the TV is busy, and Settings would say "Joining" until a restart.
+JOIN_CLOSED_HOTSPOT=""
+join_ended() {
+  local ssid
+
+  ssid=$(state_get .joining)
+  [[ -n $ssid ]] || return 0
+  echo "agentv-hotspot: the join of $ssid ended before it was done" >&2
+  state_set '.joining = null | .error = $error | .why = "failed" | .answered = $asked' --arg error "the tv couldn't join $ssid" || true
+  if [[ $JOIN_CLOSED_HOTSPOT == "true" ]]; then
+    systemctl start --no-block agentv-hotspot.service || true
+  fi
+}
+
 # join <ssid> <password> <hidden>: the home Wi-Fi, in place of the hotspot,
 # or of the network the TV is on. When it doesn't work, the TV goes back to
 # what it had: the hotspot if that was open, or else the network from before.
@@ -307,6 +349,8 @@ join() {
   [[ -n $device ]] || device=$(wifi_device)
   was_on=$(state_get .on)
   [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1)
+  JOIN_CLOSED_HOTSPOT=$was_on
+  trap join_ended EXIT
   state_set '.joining = $ssid | .error = null | .why = null' --arg ssid "$ssid"
   systemctl stop agentv-hotspot.service
 
@@ -429,21 +473,22 @@ links() {
   return 0
 }
 
-# Whether a phone is on the hotspot: the radio says who's joined, or without
-# iw, dnsmasq's list of the addresses it handed out says who was.
-phone_on() {
-  local device
+# Whether someone is using the hotspot's page: the daemon notes each request
+# its page gets (daemon/hotspot.ts), and one since the last look counts. A
+# phone that's only joined doesn't. The phone that set the TV up knows the
+# hotspot and joins it by itself, from a pocket, and it would hold the TV
+# on the hotspot long after the router is back.
+page_in_use() {
+  local seen
 
-  device=$(state_get .device)
-  if [[ -n $device ]] && type -P iw >/dev/null; then
-    iw dev "$device" station dump 2>/dev/null | grep -q "^Station"
-  else
-    [[ -s $RUN/dnsmasq.leases ]]
-  fi
+  seen=$(stat -c %Y "$DAEMON_STATE/hotspot-page" 2>/dev/null) || return 1
+  (( $(date +%s) - seen < RETRY_AFTER ))
 }
 
+# awk reads to the end here too, so nmcli never writes into a closed pipe.
 knows_wifi() {
-  nmcli -t -f TYPE,NAME connection show 2>/dev/null | grep -v ":$CONNECTION\$" | grep -q "^802-11-wireless:"
+  nmcli -t -f TYPE,NAME connection show 2>/dev/null |
+    awk -F: -v ours="$CONNECTION" '$1 == "802-11-wireless" && $2 != ours { found = 1 } END { exit !found }'
 }
 
 # One look at how things stand, and what to do about it. PAUSE is how long
@@ -452,16 +497,18 @@ knows_wifi() {
 # Only once setup is done, on a TV with Wi-Fi and no cable in. A minute with
 # no network opens the hotspot, and the network coming back closes it. With
 # the hotspot open, the radio can't see the home Wi-Fi come back, as it does
-# after a router restarts. So every few minutes with no phone on it, the
-# hotspot closes, the TV looks for the networks it knows, and the hotspot
+# after a router restarts. So every few minutes with nobody using its page,
+# the hotspot closes, the TV looks for the networks it knows, and the hotspot
 # opens again only if none of them is there.
 watch_tick() {
-  local now since ours=false
+  local now since seen ours=false
 
   PAUSE=300
-  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]] || return 0
-  # A join is root's own doing, and says how it went itself.
+  setup_done || return 0
+  # A join is root's own doing, and says how it went itself. The count of
+  # how long the network has been gone starts again after it.
   if [[ -n $(state_get .joining) ]]; then
+    rm -f "$RUN/lost-since"
     PAUSE=5
     return 0
   fi
@@ -486,10 +533,10 @@ watch_tick() {
     since=$(cat "$RUN/opened-at")
     (( now - since >= RETRY_AFTER )) || return 0
     echo "$now" >"$RUN/opened-at"
-    if phone_on || ! knows_wifi; then
+    if page_in_use || ! knows_wifi; then
       return 0
     fi
-    echo "agentv-hotspot: nobody's on the hotspot, so it closes for a moment to look for the Wi-Fi this TV knows"
+    echo "agentv-hotspot: nobody's using the hotspot's page, so it closes for a moment to look for the Wi-Fi this TV knows"
     systemctl stop agentv-hotspot.service
     nmcli -t -f SSID device wifi list --rescan yes ifname "$(state_get .device)" >/dev/null 2>&1 || true
     nmcli --wait "$REJOIN_WAIT" device connect "$(state_get .device)" >/dev/null 2>&1 || true
@@ -513,10 +560,21 @@ watch_tick() {
   # One that's opening says so itself in a moment.
   systemctl is-active --quiet agentv-hotspot.service && return 0
   install -d -m 755 "$RUN"
-  if [[ ! -s $RUN/lost-since ]]; then
-    echo "$now" >"$RUN/lost-since"
+  # lost-since has when the network went, and when the watch last looked.
+  # While it's gone the watch looks every few seconds, so a long gap between
+  # two looks is time the TV was asleep, or the clock was set, and the count
+  # starts again. Else a TV that wakes after hours would open the hotspot at
+  # once, while NetworkManager is still getting back on the Wi-Fi.
+  since="" seen=""
+  if [[ -s $RUN/lost-since ]]; then
+    read -r since seen <"$RUN/lost-since" || true
   fi
-  since=$(cat "$RUN/lost-since")
+  [[ ${since:-} =~ ^[0-9]+$ ]] || since=$now
+  [[ ${seen:-} =~ ^[0-9]+$ ]] || seen=$now
+  if (( now - seen > LOOK_GAP || now < seen )); then
+    since=$now
+  fi
+  echo "$since $now" >"$RUN/lost-since"
   (( now - since >= LOST_AFTER )) || return 0
   echo "agentv-hotspot: no network for $(( now - since )) s, so the hotspot opens for a phone to pick one"
   rm -f "$RUN/lost-since"
