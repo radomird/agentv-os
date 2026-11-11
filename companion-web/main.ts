@@ -915,9 +915,15 @@ async function follow(): Promise<void> {
   }
 }
 
+// The first state, and the page following the TV from then on, whichever way
+// the phone got paired: the QR code, or the code typed on the pairing page.
+let following = false;
 async function start(): Promise<void> {
   await refresh(true);
-  if (!state) pairView();
+  if (!state) return pairView();
+  if (following) return;
+  following = true;
+  void follow();
 }
 
 async function main(): Promise<void> {
@@ -938,7 +944,6 @@ async function main(): Promise<void> {
   }
   if (!paired()) return pairView();
   await start();
-  void follow();
 }
 
 listenFeel();
