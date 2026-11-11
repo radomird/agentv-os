@@ -68,15 +68,34 @@ export function validPassword(password: unknown): password is string {
   return typeof password === "string" && (password === "" || /^[\x20-\x7e]{8,63}$/.test(password) || /^[0-9a-fA-F]{64}$/.test(password));
 }
 
+// How often a request to the hotspot's page is noted, at most.
+const USED_EVERY_MS = 10_000;
+
 export class Hotspot {
   private run: string;
   private dropDir: string;
+  private usedFile: string;
+  private usedAt = 0;
   // The id of the last join handed to root.
   asked = "";
 
   constructor(options: HotspotOptions) {
     this.run = options.run ?? "/run/agentv-hotspot";
     this.dropDir = join(options.state, "hotspot-drop");
+    this.usedFile = join(options.state, "hotspot-page");
+  }
+
+  // Notes that someone is using the hotspot's page, for root's watch: while
+  // they are, it doesn't close the hotspot to look for the home Wi-Fi
+  // (bin/agentv-hotspot, page_in_use). The file's time is all it says.
+  used(now = Date.now()): void {
+    if (now - this.usedAt < USED_EVERY_MS) return;
+    this.usedAt = now;
+    try {
+      writeFileSync(this.usedFile, "", { mode: 0o600 });
+    } catch {
+      // The watch then takes it that nobody is.
+    }
   }
 
   status(): HotspotState {

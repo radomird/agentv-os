@@ -1311,6 +1311,9 @@ export class Daemon {
       this.json(response, 403, { ok: false, error: "not from the setup page" });
       return;
     }
+    // Someone has the page open. A phone asking whether it's online, above,
+    // doesn't count: it does that by itself, from a pocket.
+    this.hotspot.used();
 
     if (method === "GET" && (path === "/" || path === "/index.html")) {
       await this.file(response, join("companion-web", "setup.html"));

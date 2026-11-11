@@ -166,6 +166,15 @@ test("a phone asking whether it's online, for any name, is sent to the captive p
   }
 });
 
+test("a request to the page is noted for root's watch, and a phone asking whether it's online isn't", async () => {
+  const noted = join(state, "hotspot-page");
+  rmSync(noted, { force: true });
+  await phone("/generate_204", "connectivitycheck.gstatic.com");
+  assert.ok(!existsSync(noted), "a phone that only joined isn't someone using the page");
+  await phone("/", "127.0.0.1");
+  assert.ok(existsSync(noted), "the page opened is");
+});
+
 test("on its own address it serves the captive page and what it needs, and nothing else", async () => {
   const host = `127.0.0.1:${port}`;
   const page = await phone("/", host);

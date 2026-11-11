@@ -440,8 +440,8 @@ tick
 if grep -q "systemctl stop" "$FAKE/calls"; then fail "a hotspot someone opened by hand isn't the watch's to close"; fi
 pass "the network coming back closes the hotspot the watch opened, and only that one"
 
-# The router that restarts: with nobody on the hotspot, it closes now and
-# then to look for the Wi-Fi the TV knows.
+# The router that restarts: with nobody using the hotspot's page, it closes
+# now and then to look for the Wi-Fi the TV knows.
 set_state '.on = true | .watch = true'
 printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
 printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:home wi-fi' >"$FAKE/links-back"
@@ -450,10 +450,18 @@ ago 100 >"$AGENTV_HOTSPOT_RUN/opened-at"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "it doesn't look again before the wait is over"; fi
 ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
-echo "Station 02:00:00:00:01:00 (on wlan0)" >"$FAKE/stations"
+touch "$AGENTV_DAEMON_PRIVATE/hotspot-page"
 tick
-if grep -q "systemctl" "$FAKE/calls"; then fail "nor while a phone is on it" "$(cat "$FAKE/calls")"; fi
+if grep -q "systemctl" "$FAKE/calls"; then fail "nor while someone is using the hotspot's page" "$(cat "$FAKE/calls")"; fi
+# A phone that's joined and asks for nothing, as the one that set the TV up
+# does from a pocket, doesn't hold the TV on the hotspot.
+touch -d "10 minutes ago" "$AGENTV_DAEMON_PRIVATE/hotspot-page"
+echo "Station 02:00:00:00:01:00 (on wlan0)" >"$FAKE/stations"
+ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
+tick
+grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a phone that's only joined doesn't stop the look for the home Wi-Fi" "$(cat "$FAKE/calls")"
 : >"$FAKE/stations"
+set_state '.on = true'
 ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
 : >"$FAKE/calls"
 FAKE_KNOWN="" hotspot watch-tick
@@ -462,7 +470,7 @@ ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
 tick
 order=$(grep -nE "^(systemctl stop agentv-hotspot.service|nmcli .*device wifi list --rescan yes ifname wlan0|nmcli --wait 0 device connect wlan0|systemctl start --no-block agentv-hotspot.service)" "$FAKE/calls" | cut -d: -f2- | sed 's/nmcli .*device wifi list.*/look/')
 [[ $order == $'systemctl stop agentv-hotspot.service\nlook\nnmcli --wait 0 device connect wlan0\nsystemctl start --no-block agentv-hotspot.service' ]] ||
-  fail "with nobody on it, it closes, looks for the Wi-Fi the TV knows, and opens again when it isn't there" "$(cat "$FAKE/calls")"
+  fail "with nobody using it, it closes, looks for the Wi-Fi the TV knows, and opens again when it isn't there" "$(cat "$FAKE/calls")"
 [[ $(state .watch) == "true" ]] || fail "and it's still the watch's"
 set_state '.on = true'
 ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
@@ -471,7 +479,7 @@ FAKE_REJOINS=1 hotspot watch-tick || fail "the watch looks" "$(cat "$SCRATCH/out
 grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "it closes to look"
 if opened; then fail "the home Wi-Fi came back, so the hotspot stays closed" "$(cat "$FAKE/calls")"; fi
 [[ $(state .watch) == "null" ]] || fail "and it's no longer the watch's"
-pass "with nobody on the hotspot it closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
+pass "with nobody using its page the hotspot closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
 
 # While root joins a network, the watch keeps out of it.
 set_state '.joining = "home wi-fi" | .on = false'
