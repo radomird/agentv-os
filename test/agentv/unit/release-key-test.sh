@@ -184,7 +184,9 @@ take_back=$(awk '
   running { sub(/^          /, ""); print }
 ' "$image")
 [[ -n $take_back ]] || fail "image.yml has a step that takes back the ISO"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
 grep -q 'ISO_NAME: \${{ needs.box.outputs.iso-name }}' "$image" || fail "the take-back is told the name the box's job kept the ISO under"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
 grep -q '^      iso-name: \${{ steps.name.outputs.name }}$' "$image" || fail "the box's job says what it kept the ISO as"
 fake="$SCRATCH/take-back"
 mkdir -p "$fake/bin"
