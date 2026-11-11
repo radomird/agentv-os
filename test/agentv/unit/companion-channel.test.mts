@@ -46,7 +46,8 @@ const code = async (): Promise<string> => (await local("POST", "/api/phones/pair
 const json = (status: number, data: unknown) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
 before(async () => {
-  daemon = new Daemon({ root: ROOT, state: join(dir, "state"), builtins: null, port: 0, log: () => {}, running: "0.3.0-1", lanPort: 0, lanHost: "127.0.0.1", address: () => "192.168.1.20", phoneWaitMs: 300 });
+  // Shares and photos go in the test's own folder, not the box's.
+  daemon = new Daemon({ root: ROOT, state: join(dir, "state"), shared: join(dir, "shared"), backgrounds: join(dir, "backgrounds"), builtins: null, port: 0, log: () => {}, running: "0.3.0-1", lanPort: 0, lanHost: "127.0.0.1", address: () => "192.168.1.20", phoneWaitMs: 300 });
   tv = `http://127.0.0.1:${await daemon.listen()}`;
   lan = `http://127.0.0.1:${daemon.lanPort}`;
   Object.defineProperty(globalThis, "location", { value: { origin: lan }, configurable: true });
