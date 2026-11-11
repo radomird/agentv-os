@@ -38,7 +38,11 @@ export async function aiStep(ctx: Ctx): Promise<View> {
 
 // Back from any of the provider's pages picks again.
 export function again(ctx: Ctx): boolean {
-  void setup.choose(null).then(() => ctx.open("ai", "back"), () => {});
+  void (async () => {
+    const grant = await ctx.grant("the ai");
+    if (grant === null) return;
+    await setup.choose(null, undefined, grant || undefined).then(() => ctx.open("ai", "back"), () => {});
+  })();
   return true;
 }
 
@@ -68,8 +72,10 @@ function pick(ctx: Ctx): View {
 export function path(ctx: Ctx, provider: Provider): View {
   const offer = ctx.ai!.offers[provider];
   const choose = async (how: Path) => {
+    const grant = await ctx.grant("the ai");
+    if (grant === null) return;
     try {
-      ctx.ai = await setup.choose(provider, how);
+      ctx.ai = await setup.choose(provider, how, grant || undefined);
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");

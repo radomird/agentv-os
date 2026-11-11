@@ -5,6 +5,10 @@
 // the check and the connection. The net filter does the same for home's
 // Chromium (daemon/net-filter.ts).
 //
+// A server on the home network can answer by a link-local address beside its
+// usual one, as nas.local often does. That address isn't this box's, so it's
+// left out and never connected to, and the request goes to the others.
+//
 // It answers like fetch with redirect "manual": a redirect comes back as it
 // is, so the address it names is checked too when the app follows it.
 
@@ -14,13 +18,16 @@ import { request as httpsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { promisify } from "node:util";
 import { brotliDecompress, gunzip, inflate, inflateRaw } from "node:zlib";
-import { boxAddress, ownAddresses } from "../../apps/contract/address.ts";
+import { boxAddress, linkLocalElsewhere, ownAddresses } from "../../apps/contract/address.ts";
 
 export interface ReachOptions {
   // A name's addresses, and which addresses are this box. The defaults are
-  // the system's resolver and the box's own addresses.
+  // the system's resolver and the box's own addresses. own is the box's
+  // addresses on its networks, which tell its own link-local address from a
+  // neighbour's.
   resolve?: (host: string) => Promise<string[]>;
   forbid?: (address: string) => boolean;
+  own?: () => Iterable<string>;
   maxBytes?: number;
 }
 
@@ -48,14 +55,29 @@ const decoders: Record<string, (body: Buffer, options: { maxOutputLength: number
 };
 
 // The addresses to connect to for host, each checked, or an error that says
-// why not.
-async function checked(host: string, options: ReachOptions): Promise<{ address: string; family: number }[]> {
-  const forbid = options.forbid ?? ((address: string) => boxAddress(address, ownAddresses()));
+// why not. The tests read it too.
+export async function checked(host: string, options: ReachOptions = {}): Promise<{ address: string; family: number }[]> {
+  const own = [...(options.own ?? ownAddresses)()];
+  const forbid = options.forbid ?? ((address: string) => boxAddress(address, own));
   const resolve = options.resolve ?? (async (name: string) => (await dnsLookup(name, { all: true })).map((found) => found.address));
   const addresses = isIP(host) ? [host] : await resolve(host).catch(() => []);
   if (!addresses.length) throw new Error(`${host} doesn't resolve`);
-  for (const address of addresses) if (forbid(address)) throw new Error(`${host} is this tv itself, which an app never reaches`);
-  return addresses.map((address) => ({ address, family: isIP(address) }));
+  const refused = new Error(`${host} is this tv itself, which an app never reaches`);
+  // An address typed as the host is taken as it is.
+  if (isIP(host)) {
+    if (forbid(host)) throw refused;
+    return [{ address: host, family: isIP(host) }];
+  }
+  // A name: any address that's this box refuses the whole name. A link-local
+  // address that isn't the box's own is some other machine's, so only that
+  // address goes, and the name is refused when nothing else is left.
+  const kept: string[] = [];
+  for (const address of addresses) {
+    if (!forbid(address)) kept.push(address);
+    else if (!linkLocalElsewhere(address, own)) throw refused;
+  }
+  if (!kept.length) throw refused;
+  return kept.map((address) => ({ address, family: isIP(address) }));
 }
 
 // A fetch that goes only where reach allows. It takes what the loader gives
