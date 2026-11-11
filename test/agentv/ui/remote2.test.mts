@@ -95,6 +95,8 @@ async function until(check: () => Promise<boolean> | boolean, ms = 3000): Promis
   }
 }
 
+const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
 const context = (b: Box, body: object) => fetch(`${b.url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // A paired phone, through the QR code's address.
@@ -181,9 +183,11 @@ test("T8.3 a password's field is the phone's password field, for its password ma
   await hand.close();
 });
 
-test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold gives the pointer, which moves and clicks", async () => {
+test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens details on home and gives the pointer over an app, which moves and clicks", async () => {
   const b = await box(true);
   const hand = await phone(b);
+  const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
+  const label = () => hand.locator(".r2-surface").getAttribute("aria-label");
   const area = (await hand.locator(".r2-surface").boundingBox())!;
   const cx = area.x + area.width / 2;
   const cy = area.y + area.height / 2;
@@ -199,11 +203,37 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold gives t
   await hand.mouse.click(cx, cy);
   await until(() => b.keys.length >= from + 4);
   assert.deepEqual(b.keys.slice(from), [{ key: "right" }, { key: "down" }, { key: "down" }, { key: "enter" }]);
-  // A hold: the pointer.
+  // A hold with home in front: the held OK that opens the focused app's
+  // details, sent while the finger is still down, and no pointer and no tap
+  // as it lifts. The hint says so.
+  const held = async () => {
+    const at = b.keys.length;
+    await hand.mouse.move(cx, cy);
+    await hand.mouse.down();
+    await wait(800);
+    const down = b.keys.slice(at);
+    await hand.mouse.up();
+    await wait(300);
+    return { down, all: b.keys.slice(at), pointer: await hand.locator(".r2-pointer").count() };
+  };
+  await context(b, { front: "home", screen: "home" });
+  await until(async () => (await hint()) === "hold for details");
+  assert.equal(await label(), "swipe to move, tap for ok, hold for details");
+  assert.deepEqual(await held(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], pointer: 0 });
+  await context(b, { screen: "menu" });
+  await wait(150);
+  assert.equal(await hint(), "hold for details");
+  assert.deepEqual(await held(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], pointer: 0 }, "Apps is home's too");
+  // A hold with an app in front: the pointer, as it was, and nothing sent.
+  await context(b, { front: "app", screen: "home", playing: false });
+  await until(async () => (await hint()) === "hold for the pointer");
+  assert.equal(await label(), "swipe to move, tap for ok, hold for the pointer");
+  const sent = b.keys.length;
   await hand.mouse.move(cx, cy);
   await hand.mouse.down();
   await hand.waitForSelector(".r2-pointer", { timeout: 1500 });
   await hand.mouse.up();
+  assert.equal(b.keys.length, sent, "the TV gets no held OK over an app");
   const pad = (await hand.locator(".r2-pointer").boundingBox())!;
   await hand.mouse.move(pad.x + 100, pad.y + 200);
   await hand.mouse.down();
@@ -247,8 +277,6 @@ async function fingers(hand: Page): Promise<{ down(count?: number): Promise<void
     up: async () => void (await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })),
   };
 }
-
-const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 test("the d-pad's OK sends its hold only while home is in front: with an app or the screen saver there, a long press is one OK as the finger lifts", async () => {
   const b = await box(true);

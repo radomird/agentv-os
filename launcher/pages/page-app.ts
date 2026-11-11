@@ -68,7 +68,11 @@ export function gameInFront(ctx: Ctx): string | null {
 // Whether a game is open at all, in front or behind home, for the screen
 // daemon: the night's update waits for it.
 export function gameOpen(ctx: Ctx): boolean {
-  return [...open.keys()].some((id) => ctx.state.apps.some((app) => app.id === id && app.category === "games"));
+  return [...open.keys()].some((id) => isGame(ctx, id));
+}
+
+function isGame(ctx: Ctx, id: string): boolean {
+  return ctx.state.apps.some((app) => app.id === id && app.category === "games");
 }
 
 function close(ctx: Ctx, entry: Open): void {
@@ -149,6 +153,15 @@ function leave(ctx: Ctx, entry: Open): void {
   const wasFront = front === entry;
   close(ctx, entry);
   if (wasFront) ctx.back();
+}
+
+// The TV has been off for a while, says the screen daemon: every page app
+// closes but a game, in front or behind home, as every other app does
+// (ADR-072, ADR-084). Which ones closed.
+export function closePagesButGames(ctx: Ctx): string[] {
+  const closing = [...open.values()].filter((entry) => !isGame(ctx, entry.id));
+  for (const entry of closing) leave(ctx, entry);
+  return closing.map((entry) => entry.id);
 }
 
 // Home, or another page, is in front now: the app in front pauses, and its

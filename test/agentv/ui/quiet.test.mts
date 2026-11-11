@@ -260,12 +260,18 @@ test("T13.1 with the TV reported off home hears it, the output goes off, and hom
 
 // The TV going off leaves a game where it is (ADR-084, T16.2). A web app,
 // Steam's stand-in and Blocks, a game as this TV makes them (a page on home,
-// category games), are open. Home's page is the real one, so what it shows
-// when the TV is back is what the couch sees.
-test("T16.2 with the TV off for a while a web app closes, and Steam and a game made on this TV stay open: the TV comes back on to the game, not the ambient screen", async () => {
+// category games), are open, and so is Notes, a page on home that isn't a
+// game. Home's page is the real one, so what it shows when the TV is back is
+// what the couch sees.
+test("T16.2 with the TV off for a while a web app and a page app that isn't a game close, and Steam and a game made on this TV stay open: the TV comes back on to the game, not the ambient screen", async () => {
   cpSync(join(ROOT, "test/agentv/fixtures/apps/blocks"), join(appsDir, "agentv.blocks"), { recursive: true });
+  // Notes: the same page under another name, and not a game.
+  cpSync(join(ROOT, "test/agentv/fixtures/apps/blocks"), join(appsDir, "agentv.notes"), { recursive: true });
+  const notes = JSON.parse(readFileSync(join(appsDir, "agentv.notes/manifest.json"), "utf8"));
+  writeFileSync(join(appsDir, "agentv.notes/manifest.json"), JSON.stringify({ ...notes, id: "agentv.notes", name: "Notes", tv: { ...notes.tv, category: "utility" } }));
   const installed = JSON.parse(readFileSync(join(appsDir, "installed.json"), "utf8"));
   installed["agentv.blocks"] = { id: "agentv.blocks", name: "Blocks", version: "1.0.0", tier: "official", installedAt: "2026-10-27T12:00:00Z" };
+  installed["agentv.notes"] = { id: "agentv.notes", name: "Notes", version: "1.0.0", tier: "official", installedAt: "2026-10-27T12:00:00Z" };
   writeFileSync(join(appsDir, "installed.json"), JSON.stringify(installed, null, 2));
   const page = await home();
   // The services' Chromium, as far as opening and closing a page goes.
@@ -308,6 +314,11 @@ test("T16.2 with the TV off for a while a web app closes, and Steam and a game m
   await t.screen.idle();
   assert.equal(t.screen.front()?.role, "steam");
   await t.screen.home();
+  // Notes, from its tile, and then home again: it waits behind home.
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.notes" }), { ok: true });
+  await page.waitForSelector('.page-app.on[data-app="agentv.notes"]:not(.loading)', { timeout: 10_000 });
+  await t.screen.home();
+  await page.waitForSelector('.page-app[data-app="agentv.notes"]:not(.on)', { state: "attached" });
   // The game, from its tile: home's own frame, in front.
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "agentv.blocks" }), { ok: true });
   await page.waitForSelector('.page-app.on[data-app="agentv.blocks"]:not(.loading)', { timeout: 10_000 });
@@ -328,6 +339,8 @@ test("T16.2 with the TV off for a while a web app closes, and Steam and a game m
   assert.equal(t.hypr.dpms, false, "the output is off");
   assert.equal(await page.locator("#ambient.on").count(), 0, "no ambient screen over the game");
   assert.equal(await page.locator('.page-app.on[data-app="agentv.blocks"]').count(), 1, "the game is still in front");
+  assert.equal(await page.locator('.page-app[data-app="agentv.notes"]').count(), 0, "the page app that isn't a game closed");
+  assert.equal(page.frames().some((f) => f.url().includes("agentv.notes.app.localhost")), false, "with its page");
 
   on = true;
   await page.waitForFunction(() => (window as unknown as { tvHeard: string[] }).tvHeard.includes("on"), null, { timeout: 5000 });

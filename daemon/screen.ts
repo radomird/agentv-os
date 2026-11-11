@@ -1739,7 +1739,8 @@ export class Screen {
 
   // The TV has been off for tvOffCloseMs. Every app closes but a game: Steam
   // with whatever it runs, and a game made on this TV, which is a page in
-  // home's own window (ADR-084). A game that was in front stays in front, so
+  // home's own window (ADR-084). The other apps that are pages on home close
+  // too, and home closes those, since it knows which of them is a game. A game that was in front stays in front, so
   // the TV comes back on to it and not to the ambient screen. A profile that
   // locks comes back on home's PIN pad instead, with the game open behind it.
   private offTooLong(): Promise<void> {
@@ -1752,6 +1753,9 @@ export class Screen {
       for (const entry of this.opens.filter((o) => o.role !== "steam")) await this.closeOpen(entry);
       // And a shared link's page.
       this.apps.get("share")?.stop();
+      // And the apps that are pages on home, all but a game.
+      const home = (await Promise.race([this.inHome("({ closed: window.agentvPagesClose?.() ?? [] })"), sleep(500).then(() => ({}))])) as { closed?: unknown };
+      if (Array.isArray(home.closed) && home.closed.length) this.log(`home closed ${home.closed.join(", ")}`);
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
       // No answer counts as locked: a game in front of a pad that should be

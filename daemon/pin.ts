@@ -133,11 +133,17 @@ export class Pin {
   // too, since an adult is here.
   check(pin: unknown, phone?: string): Checked {
     const right = this.right(pin, phone);
-    return right.ok ? this.grant(phone) : right;
+    if (!right.ok) return right;
+    const stored = this.read();
+    this.write({ hash: stored.hash, unlockedBoot: this.boot(), ...(stored.phones ? { phones: stored.phones } : {}) });
+    return this.grant(phone);
   }
 
-  // The same check with no grant, for one that only needs to know an adult
-  // is there and has no page to hold a grant, as the hotspot's page.
+  // Only whether the PIN is right, for one that needs to know an adult is
+  // there and nothing more, as the hotspot's page. It gives no grant, leaves
+  // a locked TV locked and leaves everyone else's wrong tries alone. Wrong
+  // tries count for the one who made them, and the right PIN clears only
+  // that one's count.
   right(pin: unknown, phone?: string): { ok: true } | (Checked & { ok: false }) {
     const stored = this.read();
     if (!stored.hash) return { ok: false, error: "there's no pin yet" };
@@ -155,7 +161,12 @@ export class Pin {
       const left = TRIES - fails;
       return { ok: false, error: left <= 2 ? `that's not the pin. ${left} more ${left === 1 ? "try" : "tries"} before a wait` : "that's not the pin" };
     }
-    this.write({ hash: stored.hash, unlockedBoot: this.boot(), ...(Object.keys(others).length ? { phones: others } : {}) });
+    if (phone === undefined) {
+      if (stored.fails !== undefined || stored.waitUntil !== undefined) this.write({ ...stored, fails: undefined, waitUntil: undefined });
+    } else if (stored.phones?.[phone]) {
+      const { phones: _phones, ...rest } = stored;
+      this.write({ ...rest, ...(Object.keys(others).length ? { phones: others } : {}) });
+    }
     return { ok: true };
   }
 
