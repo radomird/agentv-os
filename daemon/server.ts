@@ -2360,10 +2360,13 @@ export class Daemon {
         this.json(response, 400, { ok: false, error: 'send {"done": true} or {"done": false} as JSON' });
         return;
       }
+      const was = (await this.setup()).done;
       const setup = await this.setupState.mark(body.done);
       this.log(body.done ? "setup marked done" : "setup reset");
-      // The setup hotspot closes as setup ends.
-      if (body.done && this.hotspot.status().on) this.hotspot.stop();
+      // The setup hotspot closes as setup ends. Root is asked even when it's
+      // closed already, as after a join, because root also takes away the
+      // network the installer handed over, which is for setup only.
+      if (body.done && (!was || this.hotspot.status().on)) this.hotspot.stop();
       this.broadcast("setup", setup);
       this.json(response, 200, { ok: true, setup });
       return;

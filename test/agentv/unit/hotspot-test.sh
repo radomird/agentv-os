@@ -273,6 +273,21 @@ hotspot drop || fail "setup ending closes it"
 [[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the handed-over network goes with it"
 pass "a box set up from the phone opens the USB stick's network again at first boot, even online, until setup ends"
 
+# Setup ended with the file still there, as on a TV set up before the file
+# went with setup: a hotspot opened later has a name and password of its
+# own, and the file goes then, or at the next start.
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
+rm -f "$AGENTV_HOTSPOT_RUN/state.json"
+hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) != "AgenTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "after setup, a hotspot never has the installer's name and password" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+[[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the installer's file goes"
+printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
+hotspot boot || fail "boot does nothing once setup is done"
+[[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "a start after setup takes the installer's file away too"
+echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+pass "once setup is done, the installer's network is gone: no later hotspot has its name and password"
+
 printf '%s\n' '{"ssid":"not ours","password":"x"}' >"$AGENTV_HOTSPOT_HANDED"
 rm -f "$AGENTV_HOTSPOT_RUN/state.json"
 : >"$FAKE/calls"

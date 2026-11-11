@@ -22,7 +22,8 @@
 # USB stick's first screen opened AgenTV-<4 characters> for the phone, and
 # hands its name and password over in /etc/agentv/hotspot.json. At first
 # boot this opens that same network, even on Ethernet, so the phone joins
-# it again by itself and carries on. The file goes once setup ends.
+# it again by itself and carries on. The file goes once setup ends, and a
+# hotspot opened after that never has its name and password.
 #
 # After setup, Settings changes the Wi-Fi the same way, with the hotspot
 # closed: the daemon hands over a look at the networks nearby, or one to
@@ -105,11 +106,21 @@ random() {
   printf '%s' "${out:0:$2}"
 }
 
+setup_done() {
+  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]]
+}
+
 # The network the USB stick's first screen opened for a phone, as "<ssid>
-# <password>", or nothing.
+# <password>", or nothing. It's for setup only: once setup is done the file
+# goes, so the hotspot a TV that lost its network opens doesn't have the
+# name and password a phone was given back at the installer.
 handed() {
   local ssid password
   [[ -f $HANDED ]] || return 0
+  if setup_done; then
+    rm -f "$HANDED"
+    return 0
+  fi
   ssid=$(jq -r '.ssid // empty' "$HANDED" 2>/dev/null || true)
   password=$(jq -r '.password // empty' "$HANDED" 2>/dev/null || true)
   if [[ $ssid =~ ^AgenTV-[0-9a-f]{4}$ && $password =~ ^[a-z0-9]{8,63}$ ]]; then
@@ -269,7 +280,10 @@ down() {
 # set up in the installer, goes straight to pairing, unless a phone is
 # waiting on the network the USB stick handed over.
 boot() {
-  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]] && return 0
+  if setup_done; then
+    rm -f "$HANDED"
+    return 0
+  fi
   nm-online -q -s -t 60 || true
   [[ -n $(wifi_device) ]] || return 0
   if [[ -n $(handed) ]]; then
@@ -486,7 +500,7 @@ watch_tick() {
   local now since ours=false
 
   PAUSE=300
-  [[ $(jq -r '.done // false' "$DAEMON_STATE/setup.json" 2>/dev/null) == "true" ]] || return 0
+  setup_done || return 0
   # A join is root's own doing, and says how it went itself.
   if [[ -n $(state_get .joining) ]]; then
     PAUSE=5

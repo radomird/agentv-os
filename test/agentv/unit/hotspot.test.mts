@@ -234,7 +234,14 @@ test("the TV gets the hotspot's name, password and QR code, and setup ending clo
   assert.equal((await fetch(`${tv}/api/hotspot/qr`)).status, 404);
   assert.deepEqual((await (await fetch(`${tv}/api/hotspot`)).json()).joined, { ssid: "home wi-fi", address: "192.168.1.20" });
   await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) });
-  assert.ok(!existsSync(drop), "a hotspot that's off isn't asked to close");
+  assert.ok(!existsSync(drop), "a hotspot that's off isn't asked to close again once setup is done");
+
+  // Setup ending with the hotspot closed already, as after a join: root is
+  // still told, since it takes the installer's network away then.
+  await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: false }) });
+  await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) });
+  assert.deepEqual(readDrop(), { stop: true });
+  rmSync(drop);
 });
 
 test("once the hotspot joined the home Wi-Fi, phones pair at the box's address there", async () => {
