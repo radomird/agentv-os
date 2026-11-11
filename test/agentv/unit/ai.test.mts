@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { Ai, OFFERS, offersOn, TERMS_READ } from "../../../daemon/ai.ts";
+import { Ai, OFFERS, planRefused, TERMS_READ } from "../../../daemon/ai.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { pairPhone, type TestPhone } from "./phone-client.mts";
 
@@ -61,8 +61,8 @@ test("S5.5 Claude's terms are Anthropic's consumer terms for a plan and its comm
   ]);
   assert.equal(OFFERS.claude.cli, "claude");
   assert.equal(OFFERS.claude.plan.offered, true);
-  assert.equal(OFFERS.chatgpt.plan.offered, false, "ChatGPT's plan waits for stage 6 to show a build runs on it");
-  assert.equal(OFFERS.gemini.plan.offered, false, "Google's plan waits for its new CLI to run headless");
+  assert.equal(OFFERS.chatgpt.plan.offered, true, "ChatGPT's plan is offered on every TV");
+  assert.equal(OFFERS.gemini.plan.offered, false, "Google keeps its plan to its own apps");
   for (const offer of Object.values(OFFERS)) for (const terms of Object.values(offer.terms)) for (const t of terms) assert.match(t.url, /^https:\/\//);
 });
 
@@ -76,69 +76,89 @@ test("ADR-047 Grok's terms are xAI's consumer terms for a plan and its enterpris
   ]);
   assert.deepEqual(OFFERS.muse.terms.key.map((t) => t.url), ["https://dev.meta.ai/legal/terms-of-service", "https://dev.meta.ai/legal/acceptable-use-policy"]);
   assert.deepEqual([OFFERS.grok.cli, OFFERS.grok.cliName, OFFERS.muse.cli, OFFERS.muse.cliName], ["grok", "grok build", "muse", "muse code"]);
-  assert.equal(OFFERS.grok.plan.offered, false, "on stable, a plan waits for a build to run on it headless on the NUC (ADR-053)");
+  assert.equal(OFFERS.grok.plan.offered, true, "Grok's plan is offered on every TV");
   assert.equal(OFFERS.muse.plan.offered, false);
   assert.match(OFFERS.muse.plan.note ?? "", /meta managed account can only use a key/);
   // xAI's as read in a browser (Q133); the others' readings, and so their
   // acceptances, stand.
-  assert.deepEqual([TERMS_READ.grok, TERMS_READ.muse, TERMS_READ.claude], ["2026-10-28", "2026-10-27", "2026-10-26"]);
+  assert.deepEqual([TERMS_READ.grok.key, TERMS_READ.muse.key, TERMS_READ.claude.key], ["2026-10-28", "2026-10-27", "2026-10-26"]);
+  // Google's plan was read again, with the terms of the CLI its plans moved
+  // to. The terms for its key are as they were, and so is their reading.
+  assert.deepEqual(TERMS_READ.gemini, { plan: "2026-11-10", key: "2026-10-26" });
+});
+
+test("an acceptance of a key's terms from before the plan's were read again still counts, and one of the plan's doesn't", async () => {
+  // A household set up with a Gemini key on 2026-10-30, as its terms.json
+  // has it. Only the plan's terms were read again since.
+  const dir = join(scratch, "before");
+  mkdirSync(dir, { recursive: true });
+  const before = (path: "plan" | "key") => ({ provider: "gemini", path, terms: OFFERS.gemini.terms[path], read: "2026-10-26", by: { phone: "iphone", viewer: "radomir" }, at: "2026-10-30T19:00:00+00:00" });
+  writeFileSync(join(dir, "terms.json"), JSON.stringify([before("key"), before("plan")]));
+  writeFileSync(join(dir, "ai.json"), JSON.stringify({ provider: "gemini", path: "key" }));
+  const ai = new Ai({ state: dir });
+  const state = await ai.read();
+  assert.deepEqual([state.provider, state.path, state.accepted?.read, state.accepted?.at], ["gemini", "key", "2026-10-26", "2026-10-30T19:00:00+00:00"]);
+  assert.ok(await ai.acceptance("gemini", "key"), "the key's terms are still accepted");
+  assert.equal(await ai.acceptance("gemini", "plan"), null, "the plan's terms were read again, so that acceptance is of an older reading");
+  // And a new acceptance is of each path's own reading.
+  const again = (await ai.record("gemini", "key", { phone: "iphone", viewer: "radomir" })).acceptance!;
+  assert.equal(again.read, TERMS_READ.gemini.key);
 });
 
 test("a plan is only where it's offered, and none clears the choice", async () => {
-  // A box with no channel is on stable.
   const ai = new Ai({ state: join(scratch, "store") });
-  assert.match((await ai.choose("chatgpt", "plan")).error ?? "", /coming soon/);
-  assert.match((await ai.choose("grok", "plan")).error ?? "", /supergrok or x premium\+ is coming soon/);
-  assert.match((await ai.choose("muse", "plan")).error ?? "", /coming soon/);
+  assert.match((await ai.choose("muse", "plan")).error ?? "", /a muse code subscription is coming soon/);
+  assert.match((await ai.choose("gemini", "plan")).error ?? "", /google keeps its plan to its own apps/);
   assert.match((await ai.choose("copilot", "key")).error ?? "", /claude, chatgpt, gemini, grok or muse/);
   assert.match((await ai.choose("claude", "both")).error ?? "", /a plan or a key/);
   assert.deepEqual((await ai.choose("claude", "plan")).state, { provider: "claude", path: "plan", accepted: null, cli: null });
   assert.deepEqual((await ai.choose(null, undefined)).state, { provider: null, path: null, accepted: null, cli: null });
 });
 
-test("ADR-053 on edge, ChatGPT's and grok's plans are offered as best effort; on stable they're coming soon, and Muse's and Google's are on neither", async () => {
+test("T17.1 Claude's, ChatGPT's and Grok's plans are offered on every channel, Muse's is coming soon, and Google's is key only", async () => {
   for (const channel of ["stable", "dev", "edge"]) {
-    const offers = offersOn(channel);
-    const edge = channel === "edge";
-    assert.deepEqual([offers.claude.plan.offered, offers.claude.plan.bestEffort], [true, undefined], `claude's plan, on ${channel}`);
-    for (const provider of ["chatgpt", "grok"] as const) {
-      assert.deepEqual([offers[provider].plan.offered, offers[provider].plan.bestEffort], edge ? [true, true] : [false, undefined], `${provider}'s plan, on ${channel}`);
+    const ai = new Ai({ state: join(scratch, `offers-${channel}`), channel: async () => channel });
+    const offers = await ai.offers();
+    for (const provider of ["claude", "chatgpt", "grok"] as const) {
+      assert.equal(offers[provider].plan.offered, true, `${provider}'s plan, on ${channel}`);
+      assert.deepEqual((await ai.choose(provider, "plan")).state, { provider, path: "plan", accepted: null, cli: null }, `${provider}'s plan can be picked on ${channel}`);
     }
     for (const provider of ["gemini", "muse"] as const) assert.equal(offers[provider].plan.offered, false, `${provider}'s plan, on ${channel}`);
+    // A refused pick changes nothing.
+    assert.match((await ai.choose("gemini", "plan")).error ?? "", /key works now/);
+    assert.deepEqual([(await ai.read()).provider, (await ai.read()).path], ["grok", "plan"]);
   }
-  assert.equal(OFFERS.chatgpt.plan.offered, false, "the offers themselves stay as stable has them");
-  let channel = "edge";
-  const ai = new Ai({ state: join(scratch, "edge-store"), channel: async () => channel });
-  assert.match((await ai.choose("muse", "plan")).error ?? "", /a muse code subscription is coming soon/);
-  assert.match((await ai.choose("gemini", "plan")).error ?? "", /google ai pro or ultra is coming soon/);
-  assert.deepEqual((await ai.choose("chatgpt", "plan")).state, { provider: "chatgpt", path: "plan", accepted: null, cli: null });
-  assert.deepEqual((await ai.choose("grok", "plan")).state, { provider: "grok", path: "plan", accepted: null, cli: null });
-  // Back on stable, the plan picked on edge stays: it's the household's.
-  // Stable only keeps it from being picked anew.
-  channel = "stable";
-  assert.deepEqual([(await ai.read()).provider, (await ai.read()).path], ["grok", "plan"]);
-  assert.match((await ai.choose("chatgpt", "plan")).error ?? "", /chatgpt plus or pro is coming soon/);
-  assert.deepEqual([(await ai.read()).provider, (await ai.read()).path], ["grok", "plan"], "a refused pick changes nothing");
+  // Nothing is marked as a lesser offer any more.
+  for (const offer of Object.values(OFFERS)) assert.equal("bestEffort" in offer.plan || "edge" in offer.plan, false, offer.provider);
+  // The one line each unoffered plan gets: Meta has been asked, so Muse's
+  // is coming soon. Google's own terms keep its plan to its own apps, so
+  // it never says soon.
+  assert.equal(planRefused(OFFERS.muse), "a muse code subscription is coming soon. use an api key for now");
+  assert.equal(planRefused(OFFERS.gemini), "google keeps its plan to its own apps. a key works now");
+  assert.doesNotMatch(planRefused(OFFERS.gemini), /soon/);
+  assert.equal(OFFERS.gemini.plan.keyOnly, true);
+  assert.equal(OFFERS.muse.plan.keyOnly, undefined);
 });
 
-test("ADR-053 the daemon goes by the channel agentv channel keeps, or else the one its package was built for, and says which plans it offers", async () => {
+test("the daemon says which channel it's on and which plans it offers, the same on each", async () => {
   const ai = async () => (await fetch(`${url}/api/ai`)).json();
   const plans = async () => (await (await fetch(`${url}/api/key`)).json()).plans;
+  const three = [
+    { provider: "claude", name: "claude pro or max" },
+    { provider: "chatgpt", name: "chatgpt plus or pro" },
+    { provider: "grok", name: "supergrok or x premium+" },
+  ];
   try {
     let now = await ai();
     assert.equal(now.channel, "stable", "a checkout with no channel is on stable");
-    assert.deepEqual([now.offers.chatgpt.plan.offered, now.offers.grok.plan.offered], [false, false]);
-    assert.deepEqual(await plans(), [{ provider: "claude", name: "claude pro or max", bestEffort: false }]);
-    assert.match((await (await post("/api/ai", { provider: "chatgpt", path: "plan" })).json()).error, /coming soon/);
+    assert.deepEqual([now.offers.chatgpt.plan.offered, now.offers.grok.plan.offered, now.offers.gemini.plan.offered, now.offers.muse.plan.offered], [true, true, false, false]);
+    assert.deepEqual(await plans(), three);
+    assert.match((await (await post("/api/ai", { provider: "gemini", path: "plan" })).json()).error, /google keeps its plan to its own apps/);
     writeFileSync(channelFile, "edge\n");
     now = await ai();
     assert.equal(now.channel, "edge");
-    assert.deepEqual([now.offers.chatgpt.plan.bestEffort, now.offers.grok.plan.bestEffort, now.offers.muse.plan.offered], [true, true, false]);
-    assert.deepEqual(await plans(), [
-      { provider: "claude", name: "claude pro or max", bestEffort: false },
-      { provider: "chatgpt", name: "chatgpt plus or pro", bestEffort: true },
-      { provider: "grok", name: "supergrok or x premium+", bestEffort: true },
-    ]);
+    assert.deepEqual([now.offers.chatgpt.plan.offered, now.offers.grok.plan.offered, now.offers.gemini.plan.offered, now.offers.muse.plan.offered], [true, true, false, false]);
+    assert.deepEqual(await plans(), three);
     // Its package's channel, when agentv channel hasn't set one.
     rmSync(channelFile);
     writeFileSync(join(scratch, "root", "settings"), "AGENTV_VERSION=0.1.3\nAGENTV_CHANNEL=edge\n");
@@ -158,7 +178,7 @@ test("S5.5 an acceptance is for the terms the TV shows, kept with who, on which 
   assert.match((await ai.accept("claude", "plan", { phone: "iphone", viewer: "radomir" })).error ?? "", /aren't the terms the tv shows/);
   assert.match((await ai.accept("claude", "key", { phone: "iphone", viewer: "<script>" })).error ?? "", /who accepted/);
   const accepted = (await ai.accept("claude", "key", { phone: "iphone", viewer: "radomir" })).state!.accepted!;
-  assert.deepEqual([accepted.provider, accepted.path, accepted.read, accepted.by], ["claude", "key", TERMS_READ.claude, { phone: "iphone", viewer: "radomir" }]);
+  assert.deepEqual([accepted.provider, accepted.path, accepted.read, accepted.by], ["claude", "key", TERMS_READ.claude.key, { phone: "iphone", viewer: "radomir" }]);
   assert.equal(accepted.terms[0].id, "anthropic-commercial-terms");
   assert.match(accepted.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00$/);
   // Picking a plan needs its own terms; back to the key, they're still accepted.
@@ -278,7 +298,7 @@ test("Q104 Settings → AI: a key for a provider whose terms nobody here accepte
   assert.equal((await phone("/api/phone/terms", { provider: "gemini", path: "key" }, grant)).status, 400);
   assert.equal((await phone("/api/phone/terms", { provider: "chatgpt", path: "key" }, grant)).status, 200);
   const record = kept().at(-1);
-  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ.chatgpt, "iphone", "openai-services-agreement"]);
+  assert.deepEqual([record.provider, record.path, record.read, record.by.phone, record.terms[0].id], ["chatgpt", "key", TERMS_READ.chatgpt.key, "iphone", "openai-services-agreement"]);
   assert.equal((await phoneState()).ai, null);
   await withRoot(async () => assert.equal((await put("chatgpt", `sk-proj-${"n".repeat(40)}`)).status, 200));
   assert.doesNotMatch(JSON.stringify(kept()), /sk-proj/, "no key in the record");
@@ -310,7 +330,7 @@ test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own term
     assert.equal(kept().length, before, "nothing is recorded before an adult accepts");
     assert.equal((await phone("/api/phone/terms", { provider, path: "key" }, grant)).status, 200);
     const record = kept().at(-1);
-    assert.deepEqual([record.provider, record.path, record.read, record.by.phone], [provider, "key", TERMS_READ[provider as "grok" | "muse"], "iphone"]);
+    assert.deepEqual([record.provider, record.path, record.read, record.by.phone], [provider, "key", TERMS_READ[provider as "grok" | "muse"].key, "iphone"]);
     await withRoot(async () => assert.equal((await put(provider, key)).status, 200, `${provider}'s key is kept`));
     await withRoot(async () => assert.equal((await put(provider, `${key}2`)).status, 200, `a second ${provider} key just saves`));
     assert.equal(kept().length, before + 1, "with no new acceptance");
@@ -327,19 +347,18 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
   try {
     assert.equal((await usePlan("claude", false)).status, 403, "past the PIN");
     assert.match((await (await usePlan("copilot")).json()).error, /claude, chatgpt, gemini, grok or muse/);
-    // On stable, Claude's is the only plan.
-    assert.match((await (await usePlan("chatgpt")).json()).error, /chatgpt plus or pro is coming soon/);
+    // Muse's plan waits for Meta, and Google keeps its plan to its own apps.
     assert.match((await (await usePlan("muse")).json()).error, /a muse code subscription is coming soon/);
+    assert.match((await (await usePlan("gemini")).json()).error, /google keeps its plan to its own apps/);
 
     // Claude's terms for a plan were accepted in setup: it's used at once.
     const claude = await usePlan("claude");
     assert.equal(claude.status, 200);
     assert.deepEqual(await using(), { provider: "claude", path: "plan", accepted: true });
 
-    // On edge, grok's plan, whose terms nobody here has accepted, waits for
-    // them: the phone shows xAI's consumer terms, and builds keep Claude's
-    // plan until an adult accepts.
-    writeFileSync(channelFile, "edge\n");
+    // On stable too, grok's plan, whose terms nobody here has accepted,
+    // waits for them: the phone shows xAI's consumer terms, and builds keep
+    // Claude's plan until an adult accepts.
     const before = kept().length;
     const waiting = await usePlan("grok");
     assert.equal(waiting.status, 409);
@@ -352,7 +371,7 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
     assert.equal((await phone("/api/phone/terms", { provider: "grok", path: "plan" })).status, 403, "past the PIN on the phone too");
     assert.equal((await phone("/api/phone/terms", { provider: "grok", path: "plan" }, grant)).status, 200);
     const record = kept().at(-1);
-    assert.deepEqual([kept().length, record.provider, record.path, record.read, record.terms[0].id], [before + 1, "grok", "plan", TERMS_READ.grok, "xai-consumer-terms"]);
+    assert.deepEqual([kept().length, record.provider, record.path, record.read, record.terms[0].id], [before + 1, "grok", "plan", TERMS_READ.grok.plan, "xai-consumer-terms"]);
     assert.equal((await phoneState()).ai, null);
     assert.equal((await usePlan("grok")).status, 200, "the TV asks again, and now it's used");
     assert.deepEqual(await using(), { provider: "grok", path: "plan", accepted: true });

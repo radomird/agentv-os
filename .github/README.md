@@ -37,7 +37,7 @@ New in 0.1.4:
 - **"Play" and a title,** said into your phone, across every app you have. Claude, ChatGPT, Gemini, Grok and Muse Code all work.
 - **The TV answers out loud** when your AI has a voice of its own and you've given AgenTV a key. Otherwise the answer shows on the TV.
 - **What's new this week** on the services you have, and whether there's a new episode of your show yet. The list comes from TMDB, with a key from your own TMDB account. You add the key in _Settings > New this week_.
-- **Every Omarchy theme on the TV,** with the theme's own backgrounds, or your photos and open art archives instead. Omarchy's terminal screensaver comes along too.
+- **Every Omarchy theme on the TV,** with the theme's own backgrounds, or your photos and open art archives instead. When the TV's idle, it shows them one after another.
 - **Share to the TV** from your phone: a link, a photo or a video.
 - **Web apps made for a desktop** work with your phone's arrows too.
 

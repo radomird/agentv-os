@@ -23,7 +23,7 @@
 set -euo pipefail
 
 AGENTV_ETC=${AGENTV_ETC:-/etc/agentv}
-DROP=${AGENTV_KEY_DROP:-/var/lib/private/agentv/daemon/key-drop/key.json}
+DROP=${AGENTV_KEY_DROP:-/var/lib/agentv/daemon/key-drop/key.json}
 TMDB_DROP=${AGENTV_TMDB_DROP:-$(dirname -- "$DROP")/tmdb.json}
 VARS=(ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY XAI_API_KEY META_API_KEY)
 # A key goes in the env file as it is, so it can't hold anything the file

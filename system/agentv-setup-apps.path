@@ -6,7 +6,7 @@
 Description=AgenTV setup's apps hand-over
 
 [Path]
-PathExists=/var/lib/private/agentv/daemon/apps-drop/install.json
+PathExists=/var/lib/agentv/daemon/apps-drop/install.json
 Unit=agentv-setup-apps.service
 
 [Install]

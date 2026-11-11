@@ -11,6 +11,7 @@
 import { daemon, screen, type App, type Item, type TileData, type TileEntry } from "../api.ts";
 import { clock, h, monogram, tint } from "../dom.ts";
 import { GRID_MORE, span, type Placed } from "../layout.ts";
+import { keepAsking, showLoading, SHOWN_MS } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
 import { buildNotice, homeBuildTile } from "./build.ts";
@@ -46,20 +47,22 @@ export function logo(app: App, big = false): HTMLElement {
 }
 
 // What a small tile says about its app: open behind home, setup or a
-// sign-in still needed, or what it's for. A game still running has Quit
-// (ADR-031). A look's preview shows each app as it is once it's set up, so
+// sign-in still needed, or what it's for. Quit is in its details (ADR-084).
+// A look's preview shows each app as it is once it's set up, so
 // only what it's for.
 function state(ctx: Ctx, app: App): HTMLElement {
   if (preview()) return h("span", { class: "tile-label" }, app.category);
   const open = ctx.running.get(app.id);
-  if (open?.game) return h("span", { class: "tile-state" }, "running ", h("span", { class: "tile-quit" }, "· q quit"));
+  if (open?.game) return h("span", { class: "tile-state" }, "running");
   if (open) return h("span", { class: "tile-state" }, open.paused ? "paused" : "open");
   if (app.needsSetup) return h("span", { class: "tile-state" }, "set up");
   if (app.signIn === "needed") return h("span", { class: "tile-state tile-sign-in" }, "sign in");
   return h("span", { class: "tile-label" }, app.category);
 }
 
-async function quit(ctx: Ctx, app: App): Promise<void> {
+// Closes an app open behind home, from its details, or with q or a
+// gamepad's X on its tile.
+export async function quit(ctx: Ctx, app: App): Promise<void> {
   const reply = await screen.quit(app.id);
   if (reply.ok) {
     ctx.sounds.play("confirm");
@@ -240,20 +243,30 @@ async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promi
   );
 }
 
-// Fills a tile with what its app's tile() sent.
+// Fills a tile with what its app's tile() sent. A tile whose content isn't
+// there yet says it's loading and asks again (loading.ts), so Weather has
+// its forecast soon after a start without home being left and come back to.
 async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
-  let data: TileData | null = null;
-  try {
-    data = await daemon.tile(app.id, placed.size);
-  } catch {
-    if (app.id !== CLOCK) return;
-  }
-  if (!el.isConnected) return;
-  // A tile that says Sign in keeps saying so, with its logo.
-  if (app.signIn === "needed" && app.tier !== "built-in") return;
-  if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
-  else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
-  else drawTile(el, app, placed.size, data);
+  const draw = async (data: TileData | null) => {
+    // A tile that says Sign in keeps saying so, with its logo.
+    if (app.signIn === "needed" && app.tier !== "built-in") return;
+    if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
+    else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
+    else drawTile(el, app, placed.size, data);
+  };
+  // Clock keeps its own time, so it's drawn at once and never waits.
+  const clockTile = app.id === CLOCK && app.tier === "built-in";
+  const loaded = preview() || clockTile ? () => {} : showLoading(el, `${app.id}:${placed.size}`);
+  const started = Date.now();
+  const ask = async (): Promise<boolean> => {
+    const answer = await daemon.tileAnswer(app.id, placed.size).catch(() => ({ tile: null, waiting: !clockTile }));
+    if (!el.isConnected) return false;
+    if (!answer.waiting) loaded();
+    // What a waiting tile has to say for now shows once the mark has gone.
+    if (!answer.waiting || Date.now() - started >= SHOWN_MS) await draw(answer.tile);
+    return answer.waiting;
+  };
+  if (await ask()) keepAsking(ask, () => el.isConnected);
 }
 
 // What choosing a built-in does (ADR-015): they open here, not in a window.
@@ -319,15 +332,12 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
       class: `tile size-${placed.size}`,
       "data-focus": true,
       "data-id": app.id,
+      // Holding OK opens its details (input.ts), but not while editing home.
+      "data-details": editing ? undefined : app.id,
       "aria-label": app.name,
       onclick: editing
         ? undefined
         : async (event: MouseEvent) => {
-            // A click on a game's "q quit" quits it.
-            if ((event.target as Element).closest(".tile-quit")) {
-              await quit(ctx, app);
-              return;
-            }
             // A click on an entry that carries an item opens it there.
             const chosen = (event.target as Element).closest<HTMLElement>("[data-entry]");
             const item = chosen ? (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems?.[Number(chosen.dataset.entry)]?.item : undefined;
@@ -395,7 +405,8 @@ export function home(ctx: Ctx): View {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,
     act(action) {
-      // i on a focused tile opens its app's details (ADR-018), and e edits
+      // i, a gamepad's Y or holding OK on a focused tile opens its app's
+      // details (ADR-018, ADR-084), and e edits
       // home (ADR-015).
       const id = ctx.focus.get()?.dataset.id;
       if (action === "info" && id && byId.has(id)) {

@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { tryApp } from "../../../builder/gates/testtv.ts";
@@ -45,7 +45,8 @@ test("ADR-043 the Blocks game passes AgenTV's checks and the game recipe's tests
   const report = await tryApp({ app: dir, tests: recipeTests("game"), checks: true, root: ROOT, chromium, storage: join(scratch, "blocks-storage"), shot });
   assert.deepEqual(report.problems, [], JSON.stringify(report, null, 2));
   assert.ok(report.ready);
-  assert.deepEqual(report.checks.map((c) => c.id), ["ready", "remote", "gamepad", "frames", "held", "memory", "requests", "errors", "back"]);
+  assert.deepEqual(report.checks.map((c) => c.id), ["ready", "remote", "gamepad", "frames", "held", "memory", "requests", "errors", "webrtc", "back"]);
+  assert.equal(report.checks.find((c) => c.id === "webrtc")!.says, "it reaches nothing over webrtc");
   assert.equal(report.tests.length, 4);
   assert.ok(report.tests.every((t) => t.ok));
   assert.ok(existsSync(shot) && readFileSync(shot).subarray(1, 4).toString() === "PNG", "a PNG screenshot for the approval");
@@ -74,6 +75,42 @@ test("ADR-043 an app that asks for an undeclared site, throws, never says it's d
   assert.ok(failed("errors"));
   assert.match(report.checks.find((c) => c.id === "errors")!.says, /ok broke it/);
   assert.ok(failed("back"), "Back has to leave it by the fourth press");
+});
+
+test("M2 a page app's peer connection finds no way out, and a browser that gives it one is caught", async () => {
+  // An app that opens a peer connection of its own and counts its ways out.
+  const dir = app(
+    "peer",
+    {
+      "index.html": `<!doctype html><html><head><meta charset="utf-8"><title>peer</title></head><body><script src="/_agentv/kit.js"></script><script src="game.js"></script></body></html>`,
+      "game.js": `
+        agentv.input.on(() => {});
+        window.ways = 0;
+        try {
+          const peer = new RTCPeerConnection();
+          peer.onicecandidate = (event) => { if (event.candidate) window.ways++; };
+          peer.createDataChannel("out");
+          peer.createOffer().then((offer) => peer.setLocalDescription(offer));
+        } catch {}
+        agentv.ready();
+      `,
+    },
+    { tv: { contract: 2, category: "games", runtime: "page", capabilities: ["launch"], icon: "icon.svg", tiles: { s: "logo" } } },
+  );
+  const ways = [{ name: "peer.test.js", code: `test("its own peer connection", async (t) => { await t.wait(1500); t.equal(window.ways, 0, "ways out"); });` }];
+  // As on the TV: nothing gets out.
+  const held = await tryApp({ app: dir, tests: ways, checks: true, root: ROOT, chromium, storage: join(scratch, "peer-storage") });
+  assert.equal(held.checks.find((c) => c.id === "webrtc")?.ok, true, JSON.stringify(held, null, 2));
+  assert.deepEqual(held.tests.map((t) => t.ok), [true], JSON.stringify(held.tests));
+  // A Chromium without the switches hands out a way, where the machine has
+  // a network at all, and the check says so.
+  const loose = await tryApp({ app: dir, tests: ways, checks: true, root: ROOT, chromium, storage: join(scratch, "peer-storage-2"), webrtc: [] });
+  const check = loose.checks.find((c) => c.id === "webrtc")!;
+  if (Object.values(networkInterfaces()).flat().some((one) => one && !one.internal)) {
+    assert.equal(check.ok, false, JSON.stringify(loose, null, 2));
+    assert.match(check.says, /gave it a way out over webrtc/);
+    assert.ok(loose.problems.includes(check.says));
+  }
 });
 
 test("a test that fails says why, and the agent's own tests run beside the recipe's", async () => {

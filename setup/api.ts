@@ -96,8 +96,8 @@ export interface Offer {
   maker: string;
   cli: string;
   cliName: string;
-  // bestEffort: offered on edge before a build has run on it (ADR-053).
-  plan: { offered: boolean; name: string; note?: string; bestEffort?: boolean };
+  // keyOnly: its maker keeps the plan to its own apps, and note says so.
+  plan: { offered: boolean; name: string; note?: string; keyOnly?: boolean };
   keyUrl: string;
   terms: Record<Path, Terms[]>;
   summary: Record<Path, string>;
@@ -173,7 +173,7 @@ export const setup = {
   networks: async () => (await call<{ networks: Network[] }>("GET", "/api/setup/networks")).networks,
   wifi: (ssid: string, password: string) => call<{ joining: string }>("POST", "/api/setup/wifi", { ssid, password }),
   ai: () => call<AiInfo>("GET", "/api/ai"),
-  choose: (provider: Provider | null, path?: Path) => call<AiInfo>("POST", "/api/ai", { provider, path }),
+  choose: (provider: Provider | null, path?: Path, grant?: string) => call<AiInfo>("POST", "/api/ai", { provider, path }, grant),
   // The plan's sign-in, started from the AI step, and a code its page gave.
   signIn: () => call<{ signIn: PlanSignIn | null }>("GET", "/api/ai/sign-in"),
   startSignIn: (grant?: string) => call<{ signIn: PlanSignIn | null }>("POST", "/api/ai/sign-in", {}, grant),

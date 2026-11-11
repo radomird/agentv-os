@@ -93,11 +93,11 @@ export async function answerSay(ask: SayAsk, deps: SayDeps): Promise<SayAnswer> 
 export function sayHosts(home: string, userAgent: string, log: (line: string) => void): (id: string) => Promise<AppHost | null> {
   return async (id) => {
     const response = await fetch(`${home}api/apps/${encodeURIComponent(id)}/package`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
-    const found = response?.ok ? ((await response.json()) as { dir?: string; tier?: string; settings?: Record<string, string> }) : null;
+    const found = response?.ok ? ((await response.json()) as { dir?: string; tier?: string; settings?: Record<string, string>; thisBox?: boolean }) : null;
     if (!found?.dir) return null;
     const tier = (found.tier === "built-in" ? "official" : found.tier) as Tier;
-    const { manifest } = validatePackage(found.dir, tier);
+    const { manifest } = validatePackage(found.dir, tier, { thisBox: found.thisBox === true });
     if (!manifest?.tv.capabilities.includes("search")) return null;
-    return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent, log });
+    return new AppHost({ dir: found.dir, manifest, settings: found.settings ?? {}, userAgent, log, harness: { thisBox: found.thisBox === true } });
   };
 }

@@ -57,8 +57,6 @@ export interface Settings {
   sound: { on: boolean; volume: number };
   reduceMotion: boolean;
   idleMinutes: number;
-  // Your backgrounds or Omarchy's terminal screensaver (ADR-049).
-  ambient: "pictures" | "terminal";
   // Install tested updates between 02:00 and 05:00 without asking (Q79).
   updateOvernight: boolean;
   // The TV says its answers aloud (stage 8).
@@ -170,9 +168,8 @@ export interface TileEntry {
 export interface KeyState {
   set: boolean;
   provider: string | null;
-  // The plans setup and Settings → AI offer on this box's channel, and which
-  // of them only as best effort, on edge (ADR-053).
-  plans?: { provider: string; name?: string; bestEffort: boolean }[];
+  // The plans setup and Settings → AI offer (ADR-087).
+  plans?: { provider: string; name?: string }[];
   // What builds use now: the AI picked, by plan or key, and whether its terms
   // are accepted (Q143).
   ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
@@ -240,6 +237,12 @@ export interface AudioState {
   output?: string | null;
   outputs?: AudioOutput[];
   volume?: number | null;
+}
+
+// A tile's content, and whether it's still waiting for it.
+export interface TileAnswer {
+  tile: TileData | null;
+  waiting: boolean;
 }
 
 export interface TileData {
@@ -439,9 +442,13 @@ export const daemon = {
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   // A look's preview fills New this week with stand-ins while it has no
   // posters of its own (looks/showcase.ts).
-  tile: async (id: string, size: Size) => {
-    const tile = (await call<{ tile: TileData | null }>("GET", `/api/tile/${id}/${size}`)).tile;
-    return preview() && id === SHOWCASE_APP ? showcaseTile(tile, size) : tile;
+  tile: async (id: string, size: Size) => (await daemon.tileAnswer(id, size)).tile,
+  // The same, with whether the tile is still waiting for its content, as
+  // Weather is before the TV is online (loading.ts). A preview never waits.
+  tileAnswer: async (id: string, size: Size): Promise<TileAnswer> => {
+    const answer = await call<{ tile: TileData | null; waiting?: boolean }>("GET", `/api/tile/${id}/${size}`);
+    if (preview()) return { tile: id === SHOWCASE_APP ? showcaseTile(answer.tile, size) : answer.tile, waiting: false };
+    return { tile: answer.tile, waiting: answer.waiting === true };
   },
   updates: () => call<Updates>("GET", "/api/updates"),
   toasted: (version: string) => call<{ ok: boolean }>("POST", "/api/updates/toasted", { version }),

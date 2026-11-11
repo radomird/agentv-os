@@ -2368,3 +2368,31 @@ body.with-backdrop.on-home {
   height: 108px;
   object-fit: cover;
 }
+
+/* Something that's loading says so (loading.ts): three blocks that light up
+   one after another, in a tile's corner while its content is on the way and
+   on a page where its list will be. It shows after a moment, so what's
+   there at once never flickers. Each look draws the blocks its own way. */
+.loading-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.loading-mark i {
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--accent);
+}
+
+.tile > .loading-mark {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+}
+
+/* On a page, where its list will be, it's drawn larger. */
+.forecast-week > .loading-mark,
+.poster-row > .loading-mark {
+  font-size: 44px;
+}

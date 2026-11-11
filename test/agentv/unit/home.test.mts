@@ -18,9 +18,10 @@ let daemon: Daemon;
 let url = "";
 let updates = "";
 let appsDir = "";
+let state = "";
 
 before(async () => {
-  ({ daemon, url, updates, apps: appsDir } = await startBox());
+  ({ daemon, url, updates, apps: appsDir, state } = await startBox());
 });
 
 after(() => daemon.close());
@@ -78,19 +79,38 @@ test("a layout is kept only when the grid can draw it", async () => {
 test("the TV's settings change only to values they can take", async () => {
   // Updating overnight on its own is off until someone turns it on (Q79).
   assert.equal((await get("/api/home")).settings.updateOvernight, false);
-  // The ambient screen shows the backgrounds until someone picks Omarchy's
-  // terminal screensaver (ADR-049).
-  assert.equal((await get("/api/home")).settings.ambient, "pictures");
+  // T17.1: the ambient screen is the one idle screen, so there's nothing
+  // to pick.
+  assert.equal("ambient" in (await get("/api/home")).settings, false);
   // The TV says its answers aloud until someone turns it off (stage 8).
   assert.equal((await get("/api/home")).settings.spoken, true);
   // T13.2: sleep is off until someone turns it on.
   assert.equal((await get("/api/home")).settings.sleepWhenOff, false);
+  // A pick of the terminal screensaver, from an older phone page or a box
+  // that had one, is taken without a word and kept nowhere.
   assert.equal((await send("POST", "/api/settings", { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal", spoken: false, sleepWhenOff: true })).status, 200);
   const settings = (await get("/api/home")).settings;
-  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, ambient: "terminal", spoken: false, sleepWhenOff: true });
+  assert.deepEqual(settings, { sound: { on: false, volume: 0.3 }, reduceMotion: true, idleMinutes: 15, updateOvernight: true, spoken: false, sleepWhenOff: true });
   await send("POST", "/api/settings", { sound: { volume: 7 }, idleMinutes: 3, reduceMotion: "yes", updateOvernight: "on", ambient: "fireworks", spoken: "loud", sleepWhenOff: "on" });
   assert.deepEqual((await get("/api/home")).settings, settings);
-  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false, ambient: "pictures", spoken: true, sleepWhenOff: false });
+  await send("POST", "/api/settings", { sound: { on: true, volume: 0.6 }, reduceMotion: false, idleMinutes: 10, updateOvernight: false, spoken: true, sleepWhenOff: false });
+});
+
+test("T17.1 a TV that had picked the terminal screensaver forgets the pick", async () => {
+  // settings.json as a box from before has it.
+  const path = join(state, "settings.json");
+  const before = JSON.parse(readFileSync(path, "utf8"));
+  writeFileSync(path, JSON.stringify({ ...before, ambient: "terminal", idleMinutes: 30 }));
+  try {
+    const read = (await get("/api/home")).settings;
+    assert.equal("ambient" in read, false, "home never hears of it");
+    assert.equal(read.idleMinutes, 30, "the rest of its settings stay");
+    // The next save writes the file without it.
+    assert.equal((await send("POST", "/api/settings", { idleMinutes: 10 })).status, 200);
+    assert.equal("ambient" in JSON.parse(readFileSync(path, "utf8")), false);
+  } finally {
+    writeFileSync(path, JSON.stringify(before));
+  }
 });
 
 test("a tile's content comes from its app's tile(), in its own worker", async () => {
@@ -275,6 +295,15 @@ test("a server's address is made whole, or turned down", () => {
   for (const typed of ["ftp://media.example", "file:///etc/passwd", "javascript:alert(1)", "http://me:secret@media.example", "http://media.example/?x=1", "http://", "two words"]) {
     assert.equal(asAddress(typed), null, typed);
   }
+});
+
+test("F2 a server's address is never this box itself", () => {
+  const own = ["192.168.1.50", "2001:db8::50"];
+  for (const typed of ["127.0.0.1:3000", "localhost:3000", "http://LOCALHOST:3000/", "tv.localhost", "[::1]:3000", "http://[::ffff:7f00:1]:3000", "0.0.0.0:3000", "2130706433:3000", "192.168.1.50:3001", "http://[2001:db8::50]:3001"]) {
+    assert.equal(asAddress(typed, own), null, typed);
+  }
+  // The server next to the box on the home network is fine.
+  assert.equal(asAddress("192.168.1.20:8096", own), "http://192.168.1.20:8096");
 });
 
 test("an app's own setup, from its tile: its fields, then the sign-in, past the PIN once there is one", async () => {

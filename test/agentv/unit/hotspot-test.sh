@@ -6,12 +6,17 @@
 # network, opens it with addresses and every name pointing at the box, makes
 # holes in the firewall on that interface only and takes them out again,
 # joins the home Wi-Fi from a file only root can read, and opens the hotspot
-# again with the reason when the password is wrong.
+# again with the reason when the password is wrong. After setup, Settings
+# looks at the networks nearby and joins one with the hotspot closed, and a
+# join that doesn't work puts the TV back on the network it was on. And the
+# watch: a TV with no network for a while opens the hotspot by itself, and
+# closes it when the network is back.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
 node_test "$ROOT/test/agentv/unit/hotspot.test.mts"
+node_test "$ROOT/test/agentv/unit/wifi.test.mts"
 
 export AGENTV_HOTSPOT_RUN="$SCRATCH/run" AGENTV_DAEMON_PRIVATE="$SCRATCH/daemon" AGENTV_NM_CONNECTIONS="$SCRATCH/connections"
 export AGENTV_HOTSPOT_DROP="$AGENTV_DAEMON_PRIVATE/hotspot-drop/request.json"
@@ -24,7 +29,13 @@ cat >"$SCRATCH/bin/nmcli" <<'EOF'
 #!/bin/bash
 echo "nmcli $*" >>"$FAKE/calls"
 case "$*" in
-  "-t -f DEVICE,TYPE device status") printf 'enp1s0:ethernet\nwlan0:wifi\nlo:loopback\n' ;;
+  "-t -f DEVICE,TYPE device status")
+    if [[ -n ${FAKE_NO_WIFI:-} ]]; then printf 'enp1s0:ethernet\nlo:loopback\n'; else printf 'enp1s0:ethernet\nwlan0:wifi\nlo:loopback\n'; fi ;;
+  "-t -f DEVICE,TYPE,STATE,CONNECTION device status") cat "$FAKE/links" ;;
+  "-t -f ACTIVE,SSID device wifi list --rescan no ifname wlan0") cat "$FAKE/on-wifi" 2>/dev/null ;;
+  "-g GENERAL.CON-UUID device show wlan0") echo "${FAKE_PREVIOUS:-}" ;;
+  "-t -f TYPE,NAME connection show") printf '802-3-ethernet:Wired connection 1\n802-11-wireless:agentv-setup\n%s\n' "${FAKE_KNOWN:-}" ;;
+  *"device connect wlan0") [[ -z ${FAKE_REJOINS:-} ]] || cp "$FAKE/links-back" "$FAKE/links" ;;
   *"device wifi list --rescan yes ifname wlan0")
     printf '%s\n' '82:WPA2:home wi-fi' '40:WPA2:home wi-fi' '61::cafe' '55:WPA3:new\:net' '30:WPA1 WPA2:neighbours' '90:WPA2:AgenTV-0000' '70:WPA2:' ;;
   *"connection up uuid "*)
@@ -55,6 +66,12 @@ EOF
 cat >"$SCRATCH/bin/systemctl" <<'EOF'
 #!/bin/bash
 echo "systemctl $*" >>"$FAKE/calls"
+[[ $1 == "is-active" ]] && exit "${FAKE_ACTIVE:-3}"
+exit 0
+EOF
+cat >"$SCRATCH/bin/iw" <<'EOF'
+#!/bin/bash
+cat "$FAKE/stations" 2>/dev/null
 EOF
 cat >"$SCRATCH/bin/nm-online" <<'EOF'
 #!/bin/bash
@@ -156,6 +173,7 @@ pass "the home Wi-Fi goes in from a file only root can read, the hotspot closes,
 
 # A wrong password: the hotspot comes back with the reason.
 rm -f "$AGENTV_NM_CONNECTIONS"/*
+hotspot run >/dev/null || true
 : >"$FAKE/calls"
 printf '%s' '{"join":{"ssid":"new:net","password":"wrong password","hidden":false}}' >"$AGENTV_HOTSPOT_DROP"
 if FAKE_UP_FAILS="Error: Connection activation failed: Secrets were required, but not provided." hotspot drop; then fail "a wrong password doesn't join"; fi
@@ -238,7 +256,193 @@ hotspot run >/dev/null || true
 rm -f "$AGENTV_HOTSPOT_HANDED"
 pass "a handed-over file that isn't AgenTV's own network is ignored"
 
-grep -qx "PathExists=/var/lib/private/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
+# Settings, after setup: a look at the networks nearby with the hotspot
+# closed, and which one the TV is on.
+rm -rf "${AGENTV_HOTSPOT_RUN:?}" "${AGENTV_NM_CONNECTIONS:?}"
+: >"$FAKE/calls"
+printf '%s\n' 'no:cafe' 'yes:new\:net' 'no:neighbours' >"$FAKE/on-wifi"
+printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
+hotspot drop || fail "a look at the networks works with the hotspot closed" "$(cat "$SCRATCH/out")"
+[[ ! -e $AGENTV_HOTSPOT_DROP ]] || fail "the drop is gone"
+jq -e 'map(.ssid) == ["home wi-fi", "cafe", "new:net", "neighbours"]' "$AGENTV_HOTSPOT_RUN/networks.json" >/dev/null || fail "it lists what's nearby" "$(cat "$AGENTV_HOTSPOT_RUN/networks.json")"
+jq -e '.wifi == "new:net" and .radio == true and (.scanned | type) == "string" and .on != true' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "state.json says which network the TV is on, and when it looked" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+if grep -qE "connection add|connection up|systemctl start" "$FAKE/calls"; then fail "and opens no hotspot to do it" "$(cat "$FAKE/calls")"; fi
+: >"$FAKE/on-wifi"
+printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
+hotspot drop
+[[ $(state .wifi) == "null" ]] || fail "on a cable, it's on no Wi-Fi" "$(state .wifi)"
+printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
+FAKE_NO_WIFI=1 hotspot drop || fail "a box with no Wi-Fi says so and doesn't fail" "$(cat "$SCRATCH/out")"
+[[ $(state .radio) == "false" ]] || fail "state.json says the box has no Wi-Fi" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+pass "Settings' look lists the networks nearby and the one the TV is on, with the hotspot closed"
+
+# A join with the hotspot closed.
+printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
+hotspot drop
+: >"$FAKE/calls"
+printf '%s' '{"join":{"ssid":"cafe","password":"","hidden":false}}' >"$AGENTV_HOTSPOT_DROP"
+FAKE_PREVIOUS=1111-old hotspot drop || fail "an open network joins with the hotspot closed" "$(cat "$SCRATCH/out")"
+jq -e '.on != true and .joining == null and .joined.ssid == "cafe" and .wifi == "cafe" and .error == null and .why == null' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "state.json says the TV is on it" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+if grep -q "wifi-security" "$FAKE/loaded"; then fail "an open network has no password"; fi
+if grep -qE "systemctl start|connection add" "$FAKE/calls"; then fail "and no hotspot opened" "$(cat "$FAKE/calls")"; fi
+first=$(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*.nmconnection')
+: >"$FAKE/calls"
+printf '%s' '{"join":{"ssid":"cafe","password":"now it has one","hidden":false}}' >"$AGENTV_HOTSPOT_DROP"
+hotspot drop || fail "the same network joins again with a new password"
+[[ ! -e $first && $(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*.nmconnection' | wc -l) == 1 ]] || fail "and what was kept for it before is gone" "$(ls "$AGENTV_NM_CONNECTIONS")"
+grep -q "^nmcli connection delete uuid " "$FAKE/calls" || fail "from NetworkManager too"
+pass "a join with the hotspot closed leaves it closed, and a network joined again replaces what was kept for it"
+
+# One that doesn't work: back on the network from before, and no hotspot.
+kept=$(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*.nmconnection')
+: >"$FAKE/calls"
+printf '%s\n' 'yes:cafe' >"$FAKE/on-wifi"
+printf '%s' '{"join":{"ssid":"home wi-fi","password":"not this one","hidden":false}}' >"$AGENTV_HOTSPOT_DROP"
+if FAKE_PREVIOUS=1111-old FAKE_UP_FAILS="Error: Connection activation failed: Secrets were required, but not provided." hotspot drop; then fail "a wrong password doesn't join"; fi
+jq -e '.joining == null and .why == "password" and .error == "that password didn'"'"'t work for home wi-fi" and .wifi == "cafe" and .on != true' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "state.json says why, and that the TV is back on the network from before" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+grep -qx "nmcli --wait 30 connection up uuid 1111-old ifname wlan0" "$FAKE/calls" || fail "it goes back to the network it was on" "$(cat "$FAKE/calls")"
+if grep -q "systemctl start" "$FAKE/calls"; then fail "a join from Settings that fails opens no hotspot" "$(cat "$FAKE/calls")"; fi
+[[ $(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*.nmconnection') == "$kept" ]] || fail "and the network it was on is still kept"
+if grep -qF "not this one" "$FAKE/calls" "$SCRATCH/out" "$AGENTV_HOTSPOT_RUN/state.json"; then fail "the password is on no command line, in no output and not in state.json"; fi
+printf '%s' '{"join":{"ssid":"far away","password":"long enough","hidden":true}}' >"$AGENTV_HOTSPOT_DROP"
+FAKE_UP_FAILS="Error: Connection activation failed: The Wi-Fi network could not be found." hotspot drop || true
+[[ $(state .why) == "missing" ]] || fail "a network out of reach says so" "$(state .why)"
+pass "a join from Settings that doesn't work puts the TV back on its network, says why, and opens no hotspot"
+
+# The watch.
+tick() {
+  : >"$FAKE/calls"
+  hotspot watch-tick || fail "the watch looks" "$(cat "$SCRATCH/out")"
+}
+opened() {
+  grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls"
+}
+ago() {
+  echo "$(( $(date +%s) - $1 ))"
+}
+set_state() {
+  jq "$1" "$AGENTV_HOTSPOT_RUN/state.json" >"$SCRATCH/state"
+  mv "$SCRATCH/state" "$AGENTV_HOTSPOT_RUN/state.json"
+}
+no_network='enp1s0:ethernet:unavailable:
+wlan0:wifi:disconnected:
+lo:loopback:connected (externally):lo'
+rm -rf "${AGENTV_HOTSPOT_RUN:?}"
+mkdir -p "$AGENTV_HOTSPOT_RUN"
+export AGENTV_HOTSPOT_LOST_AFTER=60 AGENTV_HOTSPOT_RETRY_AFTER=300 AGENTV_HOTSPOT_REJOIN_WAIT=0 FAKE_KNOWN="802-11-wireless:home wi-fi"
+printf '%s\n' "$no_network" >"$FAKE/links"
+
+echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "the watch never opens the hotspot while setup isn't done"; fi
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+
+printf '%s\n' 'enp1s0:ethernet:connecting (getting IP configuration):Wired connection 1' 'wlan0:wifi:disconnected:' >"$FAKE/links"
+ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "nor with a cable in, even one with no address yet"; fi
+[[ ! -e $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "and a cable ends the count"
+printf '%s\n' 'enp1s0:ethernet:connected:Wired connection 1' 'wlan0:wifi:disconnected:' >"$FAKE/links"
+tick
+if opened; then fail "nor on a cable that's up"; fi
+printf '%s\n' 'enp1s0:ethernet:unavailable:' >"$FAKE/links"
+ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "nor on a box with no Wi-Fi"; fi
+pass "the watch leaves the hotspot closed while setup isn't done, with a cable in, and on a box with no Wi-Fi"
+
+printf '%s\n' "$no_network" >"$FAKE/links"
+rm -f "$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "a network just lost doesn't open the hotspot"; fi
+[[ -s $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "it notes when the network went"
+ago 30 >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if opened; then fail "nor does one lost for less than the wait"; fi
+printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:home wi-fi' >"$FAKE/links"
+tick
+[[ ! -e $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "a network that came back in time ends the count"
+if grep -q "systemctl st" "$FAKE/calls"; then fail "and nothing was started or stopped" "$(cat "$FAKE/calls")"; fi
+printf '%s\n' "$no_network" >"$FAKE/links"
+ago 61 >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+opened || fail "no network for the whole wait opens the hotspot" "$(cat "$FAKE/calls")"
+[[ $(state .watch) == "true" ]] || fail "and state.json says the watch opened it"
+: >"$FAKE/calls"
+FAKE_ACTIVE=0 hotspot watch-tick
+if opened; then fail "while it's opening, it isn't started twice"; fi
+ago 6 >"$AGENTV_HOTSPOT_RUN/lost-since"
+: >"$FAKE/calls"
+AGENTV_HOTSPOT_LOST_AFTER=5 hotspot watch-tick
+opened || fail "the wait can be shortened for a check"
+pass "the watch opens the hotspot after a minute with no network, not before, and the wait can be shortened"
+
+# With the hotspot open: the network back by any route closes it.
+hotspot run >/dev/null || true
+set_state '.watch = true'
+printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+ago 0 >"$AGENTV_HOTSPOT_RUN/opened-at"
+tick
+if grep -q "systemctl" "$FAKE/calls"; then fail "its own hotspot isn't a network, and it stays open" "$(cat "$FAKE/calls")"; fi
+printf '%s\n' 'enp1s0:ethernet:connected:Wired connection 1' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+tick
+grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a cable that comes up closes the hotspot" "$(cat "$FAKE/calls")"
+[[ $(state .watch) == "null" ]] || fail "and it's no longer the watch's"
+set_state '.on = true | .watch = null'
+tick
+if grep -q "systemctl stop" "$FAKE/calls"; then fail "a hotspot someone opened by hand isn't the watch's to close"; fi
+pass "the network coming back closes the hotspot the watch opened, and only that one"
+
+# The router that restarts: with nobody on the hotspot, it closes now and
+# then to look for the Wi-Fi the TV knows.
+set_state '.on = true | .watch = true'
+printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:home wi-fi' >"$FAKE/links-back"
+: >"$FAKE/stations"
+ago 100 >"$AGENTV_HOTSPOT_RUN/opened-at"
+tick
+if grep -q "systemctl" "$FAKE/calls"; then fail "it doesn't look again before the wait is over"; fi
+ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
+echo "Station 02:00:00:00:01:00 (on wlan0)" >"$FAKE/stations"
+tick
+if grep -q "systemctl" "$FAKE/calls"; then fail "nor while a phone is on it" "$(cat "$FAKE/calls")"; fi
+: >"$FAKE/stations"
+ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
+: >"$FAKE/calls"
+FAKE_KNOWN="" hotspot watch-tick
+if grep -q "systemctl" "$FAKE/calls"; then fail "nor on a TV that knows no Wi-Fi to go back to" "$(cat "$FAKE/calls")"; fi
+ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
+tick
+order=$(grep -nE "^(systemctl stop agentv-hotspot.service|nmcli .*device wifi list --rescan yes ifname wlan0|nmcli --wait 0 device connect wlan0|systemctl start --no-block agentv-hotspot.service)" "$FAKE/calls" | cut -d: -f2- | sed 's/nmcli .*device wifi list.*/look/')
+[[ $order == $'systemctl stop agentv-hotspot.service\nlook\nnmcli --wait 0 device connect wlan0\nsystemctl start --no-block agentv-hotspot.service' ]] ||
+  fail "with nobody on it, it closes, looks for the Wi-Fi the TV knows, and opens again when it isn't there" "$(cat "$FAKE/calls")"
+[[ $(state .watch) == "true" ]] || fail "and it's still the watch's"
+set_state '.on = true'
+ago 301 >"$AGENTV_HOTSPOT_RUN/opened-at"
+: >"$FAKE/calls"
+FAKE_REJOINS=1 hotspot watch-tick || fail "the watch looks" "$(cat "$SCRATCH/out")"
+grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "it closes to look"
+if opened; then fail "the home Wi-Fi came back, so the hotspot stays closed" "$(cat "$FAKE/calls")"; fi
+[[ $(state .watch) == "null" ]] || fail "and it's no longer the watch's"
+pass "with nobody on the hotspot it closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
+
+# While root joins a network, the watch keeps out of it.
+set_state '.joining = "home wi-fi" | .on = false'
+printf '%s\n' "$no_network" >"$FAKE/links"
+ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
+tick
+if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone"; fi
+unset AGENTV_HOTSPOT_LOST_AFTER AGENTV_HOTSPOT_RETRY_AFTER AGENTV_HOTSPOT_REJOIN_WAIT FAKE_KNOWN
+pass "the watch leaves a join that's under way alone"
+
+grep -qx "ExecStart=/usr/bin/agentv-hotspot watch" "$ROOT/system/agentv-hotspot-watch.service" || fail "the watch has its unit"
+grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-watch.service" || fail "which starts with the box"
+if grep -qE "^(User|Environment)=" "$ROOT/system/agentv-hotspot-watch.service"; then fail "as root, with the waits it ships with"; fi
+grep -qx "PathExists=/var/lib/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
 grep -qx "ExecStopPost=/usr/bin/agentv-hotspot down" "$ROOT/system/agentv-hotspot.service" || fail "the hotspot's unit cleans up however it stops"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-boot.service" || fail "the first-boot check runs at boot"
 grep -qx "Type=exec" "$ROOT/system/agentv-hotspot-boot.service" || fail "without holding up the TV"

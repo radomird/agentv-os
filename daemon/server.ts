@@ -25,9 +25,9 @@ import { networkInterfaces } from "node:os";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { APPS_TILE, gridNamed, Home } from "./home.ts";
+import { APPS_TILE, gridNamed, Home, type TileAnswer } from "./home.ts";
 import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
-import { Ai, OFFERS, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
+import { Ai, OFFERS, planRefused, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
 import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts";
@@ -41,6 +41,8 @@ import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal,
 import { cleanTheme, madeThemes, type ThemeAnswer, type ThemeAsk, THEMES } from "./made-themes.ts";
 import { ANSWER_MAX, PageAsks } from "./page-asks.ts";
 import { HOTSPOT_ADDRESS, Hotspot, wifiQr } from "./hotspot.ts";
+import { TvNetwork } from "./network.ts";
+import { networkRoute } from "./routes/network.ts";
 import { ProviderKey } from "./key.ts";
 import { boxZone, cityOf, clockZone } from "./place.ts";
 import { News, ROUTER_GONE, tmdbViaRouter, type TmdbGet } from "./tmdb.ts";
@@ -67,6 +69,7 @@ import { AiIcons, type PROVIDER_SITES } from "./ai-icons.ts";
 import { PlanSignIn } from "./plan-sign-in.ts";
 import { SetupApps } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
+import { ControllerRoutes } from "./routes/controllers.ts";
 import { currentLook, lookRoute } from "./routes/look.ts";
 import { desktopPasswordRoute } from "./routes/desktop-password.ts";
 import { DesktopPassword } from "./desktop-password.ts";
@@ -93,6 +96,9 @@ export interface DaemonOptions {
   inhibitor?: (why: string) => { set(on: boolean): void };
   state: string; // the daemon's own state: /var/lib/agentv/daemon
   apps?: string; // the box's apps: /var/lib/agentv/apps
+  // Only for a test harness (daemon/apps/loader.ts): the box never sets it,
+  // and nothing reads it from a file or the environment.
+  harness?: { thisBox?: boolean; noSandbox?: boolean };
   updates?: string; // what the update check and an install write: /var/lib/agentv/update
   builtins?: string | null; // AgenTV's own apps: <root>/apps/builtin, or null for none
   ledger?: string; // the ledger's database: <state>/ledger.db
@@ -283,6 +289,8 @@ export class Daemon {
   readonly box: Box;
   // The TV's size (ADR-062): /api/display and the screen daemon's asks.
   readonly displayRoutes: DisplayRoutes;
+  // Settings, controllers (ADR-084): Bluetooth game controllers.
+  readonly controllerRoutes: ControllerRoutes;
   readonly news: News;
   // The TV's spoken answers (stage 8), and the last few clips, by number,
   // for the TV session to fetch and play.
@@ -294,6 +302,8 @@ export class Daemon {
   // The paired phones' sessions: what checks and opens their requests.
   private phoneChannel: PhoneChannel<Phone>;
   readonly hotspot: Hotspot;
+  // Settings, network: the Wi-Fi nearby and joining one (ADR-084).
+  readonly network: TvNetwork;
   readonly setupState: Setup;
   // Settings → Omarchy desktop's password (daemon/desktop-password.ts).
   readonly desktopPassword: DesktopPassword;
@@ -397,6 +407,7 @@ export class Daemon {
       ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
       userAgent: userAgent(options.root),
+      harness: options.harness,
       viewer: () => this.profiles.active(),
       goal: async () => (await this.setup()).goal,
       looks: () => this.features.on("looks"),
@@ -500,6 +511,7 @@ export class Daemon {
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.features = new Features({ state: options.state, channel: () => this.channel() });
     this.box = new Box({ state: options.state, ...options.box });
+    this.controllerRoutes = new ControllerRoutes({ pads: () => this.box.pads(), json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), broadcast: (event, data) => this.boxKit().broadcast(event, data), log: (line) => this.log(line), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) });
     this.displayRoutes = new DisplayRoutes({
       state: options.state,
       sizes: () => this.features.on("sizes"),
@@ -534,6 +546,7 @@ export class Daemon {
     this.phones = new Phones({ path: join(options.state, "phones.json") });
     this.phoneChannel = new PhoneChannel({ phone: (id) => this.phones.key(id) });
     this.hotspot = new Hotspot({ state: options.state, run: options.hotspotRun });
+    this.network = new TvNetwork({ hotspot: this.hotspot, run: options.hotspotRun, interfaces: options.interfaces, changed: (state) => this.toPages("network", state) });
     this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
@@ -545,7 +558,7 @@ export class Daemon {
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), screen: () => this.phonesChanged(), picked: (key) => this.toPages("discover-pick", { key }), ...options.discover });
-    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log });
+    this.serverPicks = new ServerPicks({ state: options.state, home: this.home, saved: () => this.broadcast("apps", {}), log: this.log, own: options.harness?.thisBox ? () => null : undefined });
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
@@ -651,6 +664,8 @@ export class Daemon {
     this.exportAsks.close();
     this.themeAsks.close();
     this.displayRoutes.close();
+    this.network.close();
+    this.controllerRoutes.close();
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -667,11 +682,11 @@ export class Daemon {
   }
 
   // Settings → AI's state: which provider has a key (never the key), the
-  // plans this box's channel offers (ADR-053), and what builds use now, by
+  // plans on offer (ADR-087), and what builds use now, by
   // plan or key, and whether its terms are accepted (Q143).
   private async keyState(): Promise<object> {
     const { set, provider } = this.key.status();
-    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name, bestEffort: offer.plan.bestEffort === true }));
+    const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name }));
     const ai = await this.ai.read();
     return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
   }
@@ -1311,10 +1326,13 @@ export class Daemon {
       return;
     }
 
-    // The networks the box could see before it opened its own.
+    // The networks the box could see before it opened its own. After
+    // setup, the hotspot is open because the TV lost its network, and the
+    // page says so and asks for the adult PIN when one is set.
     if (method === "GET" && path === "/api/setup/networks") {
       const hotspot = this.hotspot.status();
-      this.json(response, 200, { ok: true, hotspot: hotspot.ssid, networks: this.hotspot.networks() });
+      const after = (await this.setup()).done;
+      this.json(response, 200, { ok: true, hotspot: hotspot.ssid, networks: this.hotspot.networks(), ...(after ? { after: true, pin: this.pin.status().set } : {}) });
       return;
     }
 
@@ -1328,7 +1346,21 @@ export class Daemon {
 
     // The home Wi-Fi to join. Its password goes to root and nowhere else.
     if (method === "POST" && path === "/api/setup/wifi") {
-      const body = (await this.body(request)) as { ssid?: unknown; password?: unknown } | undefined;
+      const body = (await this.body(request)) as { ssid?: unknown; password?: unknown; pin?: unknown } | undefined;
+      // After setup, changing the TV's Wi-Fi is an adult's: with a PIN set,
+      // the page sends it too. Wrong tries from the hotspot's page count on
+      // their own, and wait as the TV's pad's do. The PIN goes no further
+      // than this check.
+      if ((await this.setup()).done && this.pin.status().set) {
+        const locked = (await this.pinStatus()).locked;
+        const checked = this.pin.check(body?.pin, "hotspot");
+        if (!checked.ok) {
+          this.log(checked.wait ? "a wrong pin on the hotspot's page; the next try waits" : "a wrong pin on the hotspot's page");
+          this.json(response, 403, { ok: false, error: checked.error, pin: true, ...(checked.wait ? { wait: checked.wait } : {}) });
+          return;
+        }
+        await this.lockChanged(locked);
+      }
       const why = this.hotspot.join(body?.ssid, body?.password ?? "");
       if (why) {
         this.json(response, 400, { ok: false, error: why });
@@ -2080,7 +2112,14 @@ export class Daemon {
   // New this week's tile (S8.1): this week's titles on the apps who's
   // watching can open, each with its poster, its app and its new season, or
   // what it needs first.
-  private async newTile(viewer: Viewer, size: Size): Promise<unknown> {
+  private async newTile(viewer: Viewer, size: Size): Promise<TileAnswer> {
+    const tile = await this.newTileContent(viewer, size);
+    // TMDB not answering, with nothing kept from this week, is a wait:
+    // home shows that it's loading and asks again.
+    return { tile: tile.content, waiting: tile.failed };
+  }
+
+  private async newTileContent(viewer: Viewer, size: Size): Promise<{ content: unknown; failed: boolean }> {
     const apps = await this.home.apps(viewer);
     const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
     const name = (id: string) => (apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
@@ -2091,13 +2130,13 @@ export class Daemon {
         "no-region": adult ? "pick a region in settings → new this week" : "an adult picks a region in settings",
         "no-services": `tmdb doesn't list your apps' services in ${(feed.region ?? "your region").toLowerCase()}`,
       };
-      return { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 };
+      return { content: { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 }, failed: feed.why === "failed" };
     }
     // The region on the right of the tile's head, as Weather has its city.
     const region = ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "").toLowerCase();
-    if (!feed.titles.length) return { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 };
-    if (size === "s") return { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 };
-    return {
+    if (!feed.titles.length) return { content: { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 }, failed: false };
+    if (size === "s") return { content: { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 }, failed: false };
+    const content = {
       headline: { label: region },
       entries: feed.titles.slice(0, 8).map((title) => ({
         label: title.title.toLowerCase(),
@@ -2107,6 +2146,7 @@ export class Daemon {
       })),
       refreshMins: 180,
     };
+    return { content, failed: false };
   }
 
   private async adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean> {
@@ -2267,7 +2307,9 @@ export class Daemon {
     if (await this.setupRoutes.handle("tv", request, response, url)) return;
     if (path.startsWith("/api/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
     if (await boxRoute(this.boxKit(), method, path, request, response)) return;
+    if (await networkRoute({ network: this.network, json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), log: this.log, child: async () => (await this.profiles.active()).role === "child", guarded: (q, s, what) => this.guarded(q, s, what) }, method, path, request, response)) return;
     if (await this.displayRoutes.handle(method ?? "", path, request, response)) return;
+    if (await this.controllerRoutes.handle(method, path, request, response)) return;
     if (await backgroundVideoRoutes({ backgrounds: this.backgrounds, body: (q) => this.body(q), json: (q, status, data) => this.json(q, status, data) }, request, response, path)) return;
 
     if (method === "GET" && path === "/health") {
@@ -2842,7 +2884,7 @@ export class Daemon {
     // Settings → AI: the household's plan for builds, in place of a key
     // (Q143). An adult's, past the PIN. A plan whose terms nobody here has
     // accepted waits for them, as a key does: the phones show them, an adult
-    // accepts, and the TV asks again. Only a plan this box's channel offers
+    // accepts, and the TV asks again. Only a plan that's on offer
     // (ADR-053).
     if (method === "PUT" && path === "/api/ai/plan") {
       if (!this.guarded(request, response, "the ai plan") || !(await this.adult(request, response, "the ai plan"))) return;
@@ -2854,7 +2896,7 @@ export class Daemon {
       }
       const offer = (await this.ai.offers())[provider as Provider];
       if (!offer.plan.offered) {
-        this.json(response, 400, { ok: false, error: `${offer.plan.name} is coming soon. use an api key for now` });
+        this.json(response, 400, { ok: false, error: planRefused(offer) });
         return;
       }
       if (!(await this.ai.acceptance(provider as Provider, "plan"))) {
@@ -2894,10 +2936,10 @@ export class Daemon {
       return;
     }
 
-    // The provider and path picked on the TV, or none, to pick again. A
-    // child's profile can't, past the PIN.
+    // The provider and path picked on the TV, or none, to pick again. Past
+    // the PIN, once there is one, and a child's profile can't.
     if (method === "POST" && path === "/api/ai") {
-      if (!(await this.adult(request, response, "the ai provider"))) return;
+      if (!this.guarded(request, response, "the ai provider") || !(await this.adult(request, response, "the ai provider"))) return;
       const body = (await this.body(request)) as { provider?: unknown; path?: unknown } | undefined;
       const result = await this.ai.choose(body?.provider ?? null, body?.path);
       if (!result.state) {
@@ -3180,8 +3222,8 @@ export class Daemon {
 
     const tile = /^\/api\/tile\/([a-z0-9.-]+)\/([sml])$/.exec(path);
     if (method === "GET" && tile) {
-      const content = await this.home.tile(tile[1], tile[2] as Size, await this.home.viewer(), url.searchParams.has("fresh"));
-      this.json(response, 200, { ok: true, tile: content });
+      const answer = await this.home.tileAnswer(tile[1], tile[2] as Size, await this.home.viewer(), url.searchParams.has("fresh"));
+      this.json(response, 200, { ok: true, tile: answer.tile, ...(answer.waiting ? { waiting: true } : {}) });
       return;
     }
 

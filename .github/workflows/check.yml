@@ -139,6 +139,12 @@ jobs:
         run: type -P lua5.4 >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq lua5.4; }
       - name: The daemon's TypeScript type-checks
         run: test/agentv/types
+      - name: bubblewrap, which each app's worker runs in
+        run: type -P bwrap >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq bubblewrap; }
+      - name: Can bubblewrap start a sandbox here?
+        # Only says which, so the log shows whether the sandbox's own tests
+        # ran or were skipped.
+        run: bwrap --unshare-all --ro-bind / / true && echo "bubblewrap works here" || echo "bubblewrap is refused here"
       - run: test/agentv/unit/run
 
   contract:
@@ -154,6 +160,12 @@ jobs:
       # Music's fixture folder is read with ffprobe and ffmpeg, as on the box.
       - name: ffmpeg, for Music's fixture folder
         uses: ./.github/actions/ffmpeg
+      - name: bubblewrap, which each app's worker runs in
+        run: type -P bwrap >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq bubblewrap; }
+      - name: Can bubblewrap start a sandbox here?
+        # Only says which, so the log shows whether the sandbox's own tests
+        # ran or were skipped.
+        run: bwrap --unshare-all --ro-bind / / true && echo "bubblewrap works here" || echo "bubblewrap is refused here"
       - name: The built-ins and the test apps, each in its own worker, with its page in Chromium
         run: test/agentv/contract/run
 
@@ -167,6 +179,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: bubblewrap, which each app's worker runs in
+        run: type -P bwrap >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq bubblewrap; }
+      - name: Can bubblewrap start a sandbox here?
+        # Only says which, so the log shows whether the sandbox's own tests
+        # ran or were skipped.
+        run: bwrap --unshare-all --ro-bind / / true && echo "bubblewrap works here" || echo "bubblewrap is refused here"
       - name: The launcher, in a headless Chromium at 1920 × 1080
         run: test/agentv/ui/run
 
@@ -364,7 +382,7 @@ jobs:
     if: needs.changes.outputs.image == 'true'
     # image.yml asks for contents: write, for the nightly run's tested.json.
     # A pull request's run never publishes it. actions: write lets its last
-    # job delete the run's box from the cache once the checks are done.
+    # job delete the run's box once the checks are done.
     permissions:
       contents: write
       actions: write

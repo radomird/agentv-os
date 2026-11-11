@@ -15,6 +15,7 @@ import { validatePackage, type Manifest } from "../../../apps/contract/manifest.
 import { tileFor } from "../../../apps/builtin/agentv.weather/app.ts";
 import { days, degrees, label, now, scene, steps, weekday, WINDY } from "../../../apps/builtin/agentv.weather/met.ts";
 import { AppHost } from "../../../daemon/apps/loader.ts";
+import { HARNESS } from "../harness.mts";
 import { parseZoneTab, placeSettings } from "../../../daemon/place.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -270,6 +271,7 @@ async function weatherHost(): Promise<AppHost> {
     dir,
     manifest,
     userAgent: "AgenTV/0.2.0 (+https://example.invalid/agentv-os)",
+    harness: HARNESS,
     settings: {
       place: "amsterdam",
       lat: "52.3666",

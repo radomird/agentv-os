@@ -545,6 +545,10 @@ function unit(name: string): Map<string, string[]> {
   return settings;
 }
 
+// Whether every path a unit lists is inside the builder's own home: the
+// writable folders it keeps there, between the read-only ones (H3).
+const insideHome = (lines: string[] | undefined) => (lines ?? []).join(" ").split(" ").filter(Boolean).every((path) => path.startsWith("-/var/lib/agentv/builder/"));
+
 test("S6.3 the builder's sandbox stays as tight as it is: no sudo, no key, no network of its own, no other service's state", () => {
   const u = unit("agentv-builder@.service");
   const one = (key: string) => u.get(key)?.join(" ");
@@ -562,7 +566,7 @@ test("S6.3 the builder's sandbox stays as tight as it is: no sudo, no key, no ne
   }
   assert.equal(one("BindPaths"), "/var/lib/agentv/build/%I /var/lib/agentv/builder", "it writes its build and its own home, nothing else");
   assert.ok(one("InaccessiblePaths")!.split(" ").includes("-/etc/agentv"), "the keys are out of its sight");
-  assert.ok(!u.has("ReadWritePaths") && !u.has("LoadCredential") && !u.has("EnvironmentFile"), "it's given nothing more to write, and no credential");
+  assert.ok(insideHome(u.get("ReadWritePaths")) && !u.has("LoadCredential") && !u.has("EnvironmentFile"), "it's given nothing more to write than its home, and no credential");
 
   // A plan's sign-in runs in the same sandbox, and writes only its own folder.
   const signIn = unit("agentv-builder-sign-in@.service");
@@ -612,7 +616,7 @@ test("S6.10 everything the builder can write is mounted nosuid and nodev: its bu
   // RestrictSUIDSGID= filters out openat2(), which bubblewrap needs, and the
   // mounts above do its work instead (ADR-052).
   assert.ok(!u.has("RestrictSUIDSGID"), "bubblewrap can open what it binds");
-  assert.ok(!u.has("ReadWritePaths") && !u.has("StateDirectory") && !u.has("CacheDirectory") && !u.has("RuntimeDirectory"), "it's given nothing else to write");
+  assert.ok(insideHome(u.get("ReadWritePaths")) && !u.has("StateDirectory") && !u.has("CacheDirectory") && !u.has("RuntimeDirectory"), "it's given nothing else to write");
 });
 
 test("M5 a build's folder and what's saved in it aren't for every user on the box: the builder and its group, which the readers are in", async () => {
@@ -652,4 +656,40 @@ test("M5 a build's folder and what's saved in it aren't for every user on the bo
   const migrations = join(ROOT, "migrations/agentv");
   const closes = readdirSync(migrations).filter((name) => /find \/var\/lib\/agentv\/build -mindepth 2 -maxdepth 2 -type d -exec chmod 0750/.test(readFileSync(join(migrations, name), "utf8")));
   assert.equal(closes.length, 1, "a migration closes the builds a box already has");
+});
+
+test("H3 a build can't change the CLI, mise's tree or the CLI's own settings in the builder's home, and nor can the voice router's run", () => {
+  const home = "/var/lib/agentv/builder";
+  const made = readFileSync(join(ROOT, "system/tmpfiles/agentv-builder.conf"), "utf8").split("\n");
+  for (const name of ["agentv-builder@.service", "agentv-router-cli.service"]) {
+    const u = unit(name);
+    const list = (key: string) => (u.get(key) ?? []).join(" ").split(" ").filter(Boolean);
+    const readOnly = list("ReadOnlyPaths");
+    const writable = list("ReadWritePaths");
+    // The CLI's binaries and mise's tree, and no way to move a folder on
+    // the way aside: ~/.local and ~/.config are read-only as a whole.
+    for (const path of [".local", ".config", ".local/share/mise", ".local/state/mise", ".claude/settings.json"]) assert.ok(readOnly.includes(`-${home}/${path}`), `${name}: ~/${path} is read-only`);
+    // Only what a CLI writes as it runs is writable again, each a mount of
+    // its own, so it can't be renamed either.
+    assert.deepEqual(writable.sort(), [".claude", ".config/muse", ".local/share", ".local/state"].map((path) => `-${home}/${path}`).sort(), name);
+    assert.ok(!writable.some((path) => /\/\.local\/bin|mise|settings\.json/.test(path)), `${name}: never the CLI, mise or the settings`);
+    assert.ok(u.get("BindPaths")!.join(" ").split(" ").includes(home), `${name}: its home is still the one it runs in`);
+    // Each of those is there before any build is, so no line is skipped.
+    for (const path of [...readOnly, ...writable].map((entry) => entry.slice(1))) {
+      const line = made.find((entry) => entry.split(/\s+/)[1] === path);
+      assert.ok(line, `tmpfiles makes ${path}`);
+      assert.equal(line!.split(/\s+/).slice(3, 5).join(":"), "agentv-builder:agentv-builder", path);
+    }
+  }
+  assert.ok(made.includes("f /var/lib/agentv/builder/.claude/settings.json 0600 agentv-builder agentv-builder - {}"), "the CLI's settings start empty");
+
+  // A sign-in writes the plan's sign-in and the fetch writes the CLI, so
+  // those two keep the home as it was. Neither runs anything of a build's.
+  for (const name of ["agentv-builder-sign-in@.service", "agentv-builder-cli@.service"]) assert.ok(!unit(name).has("ReadOnlyPaths"), name);
+  // The fetch starts mise from /, so it reads no config a build left in the home.
+  const fetch = readFileSync(join(ROOT, "builder/sandbox/fetch-cli.sh"), "utf8");
+  assert.ok(fetch.indexOf("\ncd /\n") > 0 && fetch.indexOf("\ncd /\n") < fetch.indexOf("mise use"), "fetch-cli.sh leaves the home before it runs mise");
+  // Boxes installed before get the folders too.
+  const migrations = join(ROOT, "migrations/agentv");
+  assert.ok(readdirSync(migrations).some((name) => readFileSync(join(migrations, name), "utf8").includes("systemd-tmpfiles --create agentv-builder.conf")));
 });

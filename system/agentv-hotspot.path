@@ -6,7 +6,7 @@
 Description=AgenTV setup hotspot hand-over
 
 [Path]
-PathExists=/var/lib/private/agentv/daemon/hotspot-drop/request.json
+PathExists=/var/lib/agentv/daemon/hotspot-drop/request.json
 Unit=agentv-hotspot-drop.service
 
 [Install]

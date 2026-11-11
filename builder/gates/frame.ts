@@ -85,6 +85,33 @@ interface Test {
     }).observe({ type: "longtask", buffered: false });
   } catch {}
 
+  // What a peer connection of the app's own could do: the ways out it
+  // gathers. None, or no peer connection at all, means it reaches nothing.
+  async function webrtc(): Promise<{ made: boolean; ways: number }> {
+    let ways = 0;
+    try {
+      const peer = new RTCPeerConnection({ iceServers: [] });
+      peer.onicecandidate = (event) => {
+        if (event.candidate) ways++;
+      };
+      peer.createDataChannel("agentv");
+      await peer.setLocalDescription(await peer.createOffer());
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2000);
+        peer.onicegatheringstatechange = () => {
+          if (peer.iceGatheringState !== "complete") return;
+          clearTimeout(timer);
+          resolve();
+        };
+        if (peer.iceGatheringState === "complete") peer.onicegatheringstatechange(new Event("x"));
+      });
+      peer.close();
+      return { made: true, ways };
+    } catch {
+      return { made: false, ways };
+    }
+  }
+
   // --- Talking to the host -------------------------------------------------
 
   let next = 0;
@@ -102,6 +129,9 @@ interface Test {
     if (typeof message.agentvTest === "number") {
       waiting.get(message.agentvTest)?.(message.value);
       waiting.delete(message.agentvTest);
+    } else if (typeof (message as { agentvWebrtc?: number }).agentvWebrtc === "number") {
+      // The host's check that WebRTC gets nowhere from here.
+      void webrtc().then((value) => host.postMessage({ agentvWebrtc: (message as { agentvWebrtc?: number }).agentvWebrtc, value }, "*"));
     } else if (typeof message.agentvProbe === "number") {
       // The host's checks: what's been seen, and the frames since a moment.
       const since = typeof message.since === "number" ? message.since : 0;

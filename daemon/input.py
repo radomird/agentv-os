@@ -28,8 +28,11 @@ A request is one JSON line: {"key": "up"}, {"hold": "back", "ms": 1200},
 The answer is "ok" or an error, on one line.
 
 It also watches the gamepads for their guide button, which is Home
-(ADR-031), and tells the screen daemon. A gamepad's other buttons reach
-the window in front as they are. Standard library only.
+(ADR-031), and tells the screen daemon: once when it goes down, and once
+more when it has stayed down for a second, which is Home from a game too
+(ADR-084). It only reads the gamepads and never grabs them, so the window
+in front gets every button as it is, the guide button too. Standard
+library only.
 """
 
 import fcntl
@@ -46,7 +49,7 @@ import time
 
 # linux/input-event-codes.h
 EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
-SYN_REPORT = 0
+SYN_REPORT, SYN_DROPPED = 0, 3
 REL_X, REL_Y, REL_WHEEL = 0x00, 0x01, 0x08
 BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
 BTN_MODE = 0x13C
@@ -70,6 +73,10 @@ NAME = b"AgenTV remote"
 # a busy box can fill that, the kernel drops what it holds, and the text
 # arrives with characters missing. 12 ms is xdotool's own delay.
 TYPE_GAP = 0.012
+
+# How long the guide button stays down before it's Home from a game too:
+# the same second as Back's hold (the screen daemon's backHoldMs).
+GUIDE_HOLD = 1.0
 
 KEYS = {
     "esc": 1, "back": 1, "backspace": 14, "tab": 15, "enter": 28, "space": 57,
@@ -218,17 +225,42 @@ def socket_path(name="input.sock"):
     return os.path.join(runtime, "agentv", name)
 
 
-def gamepads():
-    """The gamepads plugged in now. The seat's user can read them (udev's
-    uaccess), which is how a browser's gamepad support works too."""
-    return sorted(glob.glob("/dev/input/by-id/*-event-joystick"))
+def gamepads(root="/"):
+    """The gamepads there now: the input devices udev marked as joysticks,
+    which is how the box check counts them too (daemon/box.ts). That takes
+    in a Bluetooth one, which has no link in /dev/input/by-id. The seat's
+    user can read them (udev's uaccess), which is how a browser's gamepad
+    support works too."""
+    found = set()
+    for link in glob.glob(os.path.join(root, "dev/input/by-id/*-event-joystick")):
+        found.add(os.path.realpath(link))
+    for node in glob.glob(os.path.join(root, "sys/class/input/event*")):
+        try:
+            with open(os.path.join(node, "dev")) as file:
+                number = file.read().strip()
+            with open(os.path.join(root, "run/udev/data", f"c{number}")) as file:
+                marked = "E:ID_INPUT_JOYSTICK=1" in file.read().splitlines()
+        except OSError:
+            continue
+        if marked:
+            found.add(os.path.join(root, "dev/input", os.path.basename(node)))
+    return sorted(found)
 
 
-def watch_guide(find, on_guide, stop, rescan=3.0):
+def watch_guide(find, on_guide, stop, rescan=3.0, on_hold=None, hold=GUIDE_HOLD):
     """Calls on_guide each time a gamepad's guide button goes down, until
-    stop is set. find lists the devices; it's asked again every few seconds,
-    so a gamepad plugged in later counts too."""
+    stop is set, and on_hold once when it has stayed down for hold seconds,
+    while it's still down. find lists the devices; it's asked again every
+    few seconds, so a gamepad plugged in later counts too.
+
+    Each gamepad's hold is its own, so a tap on a second one doesn't end
+    the first one's. A gamepad that goes away takes its hold with it, and so
+    does one whose events the kernel dropped, since the release can be among
+    them: nothing is left to go home later."""
     fds = {}
+    # When each gamepad's guide button went down, while it's down and its
+    # hold hasn't been reported yet.
+    down = {}
     scanned = 0.0
     while not stop.is_set():
         if time.monotonic() - scanned >= rescan:
@@ -242,7 +274,10 @@ def watch_guide(find, on_guide, stop, rescan=3.0):
         if not fds:
             stop.wait(min(rescan, 0.5))
             continue
-        ready, _, _ = select.select(list(fds.values()), [], [], 0.5)
+        wait = 0.5
+        if down:
+            wait = max(0.0, min(wait, min(down.values()) + hold - time.monotonic()))
+        ready, _, _ = select.select(list(fds.values()), [], [], wait)
         for fd in ready:
             try:
                 data = os.read(fd, EVENT_SIZE * 64)
@@ -255,24 +290,40 @@ def watch_guide(find, on_guide, stop, rescan=3.0):
                 for path, open_fd in list(fds.items()):
                     if open_fd == fd:
                         del fds[path]
+                down.pop(fd, None)
                 os.close(fd)
                 continue
             for i in range(0, len(data) - EVENT_SIZE + 1, EVENT_SIZE):
                 _, _, kind, code, value = struct.unpack_from("llHHi", data, i)
-                if kind == EV_KEY and code == BTN_MODE and value == 1:
+                if kind == EV_SYN and code == SYN_DROPPED:
+                    down.pop(fd, None)
+                elif kind == EV_KEY and code == BTN_MODE and value == 1:
+                    # Before on_guide, which waits for the screen daemon.
+                    down[fd] = time.monotonic()
                     on_guide()
+                elif kind == EV_KEY and code == BTN_MODE and value == 0:
+                    down.pop(fd, None)
+        # A gamepad with something still to read waits a round: its release
+        # may be next.
+        for fd, since in list(down.items()):
+            if fd not in ready and time.monotonic() - since >= hold:
+                del down[fd]
+                if on_hold:
+                    on_hold()
     for fd in fds.values():
         os.close(fd)
 
 
-def screen_home():
-    """Asks the screen daemon for Home, as the guide button. In a game, the
-    guide button is the game's own, so the daemon leaves it."""
+def screen_home(source="guide"):
+    """Asks the screen daemon for Home, as the guide button: "guide" when
+    it goes down, "guide-hold" once it has stayed down. In a game, a press
+    of the guide button is the game's own, so the daemon leaves it, and the
+    hold goes home."""
     client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     client.settimeout(5)
     try:
         client.connect(socket_path("screen.sock"))
-        client.sendall(b'{"cmd":"home","from":"guide"}\n')
+        client.sendall(json.dumps({"cmd": "home", "from": source}, separators=(",", ":")).encode() + b"\n")
         client.recv(4096)
     except OSError as error:
         print(f"agentv input: Home didn't reach the screen daemon: {error}", flush=True)
@@ -302,7 +353,7 @@ def serve():
     server.listen(8)
     print(f"agentv input: {NAME.decode()} is ready on {path}", flush=True)
     stop = threading.Event()
-    threading.Thread(target=watch_guide, args=(gamepads, screen_home, stop), daemon=True).start()
+    threading.Thread(target=watch_guide, args=(gamepads, screen_home, stop), kwargs={"on_hold": lambda: screen_home("guide-hold")}, daemon=True).start()
     try:
         while True:
             conn, _ = server.accept()

@@ -313,16 +313,17 @@ test("S2.15 tiles show the apps open behind home, and q quits a game", async () 
     };
   });
   await page.goto(`${url}/`);
-  await page.waitForSelector('.grid [data-id="agentv.games"] .tile-quit');
+  await page.waitForSelector('.grid [data-id="agentv.games"] .tile-state');
   await rest(page);
-  assert.equal(await page.locator('.grid [data-id="agentv.games"] .tile-state').innerText(), "running · q quit");
+  // The tile names no key for it: Quit is in the app's details (ADR-084).
+  assert.equal(await page.locator('.grid [data-id="agentv.games"] .tile-state').innerText(), "running");
   assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-state').innerText(), "paused");
   await page.locator('.grid [data-id="agentv.games"]').hover();
   await page.keyboard.press("q");
   await page.waitForFunction(() => (window as unknown as { screenRequests: any[] }).screenRequests.some((r) => r.cmd === "quit" && r.app === "agentv.games"));
   // The screen daemon says it's gone.
   await page.evaluate(() => (window as unknown as { agentvRunning: (json: string) => void }).agentvRunning("[]"));
-  await page.waitForFunction(() => !document.querySelector(".tile-quit"));
+  await page.waitForFunction(() => !document.querySelector('.grid [data-id="agentv.games"] .tile-state'));
   assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-label').innerText(), "streaming");
   // Home from the screen daemon, with the home screen already in front,
   // goes back to the home page.
@@ -461,26 +462,18 @@ test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", as
   }
 });
 
-test("S5.9 Settings → Look picks what the ambient screen shows, the backgrounds or Omarchy's terminal screensaver", async () => {
+test("T17.1 Settings has no screensaver row: the ambient screen is the one idle screen, and only its wait is a setting", async () => {
   const page = await tv();
-  const ambient = () => page.evaluate(async () => (await (await fetch("/api/home")).json()).settings.ambient);
-  const shown = (value: string) => page.waitForFunction((v) => document.querySelector('[data-action="ambient-style"] .button-value')?.textContent === v, value);
   try {
     await page.locator('.bar-link:has-text("settings")').click();
     await page.locator('.menu-item[data-key="look"]').click();
-    await page.locator('[data-action="ambient-style"]').hover();
-    await shown("backgrounds");
-    // Right, left or Enter changes it, and the focus stays on it.
-    await page.keyboard.press("ArrowRight");
-    await shown("terminal");
-    assert.equal(await ambient(), "terminal");
-    assert.equal(await page.locator(".focused").getAttribute("data-action"), "ambient-style");
-    await page.keyboard.press("Enter");
-    await shown("backgrounds");
-    assert.equal(await ambient(), "pictures");
-    // Look can be longer than the screen: down to its last setting keeps the
-    // focus in sight, above the status bar.
-    await page.keyboard.press("ArrowDown");
+    await page.waitForSelector('[data-action="idle"]');
+    assert.equal(await page.locator('[data-action="ambient-style"]').count(), 0);
+    assert.doesNotMatch(await page.locator(".settings-panel").innerText(), /terminal|screensaver/i);
+    assert.equal(await page.evaluate(async () => "ambient" in (await (await fetch("/api/home")).json()).settings), false);
+    // Look can be longer than the screen: its last setting keeps the focus
+    // in sight, above the status bar.
+    await page.locator('[data-action="idle"]').hover();
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "idle");
     const sight = await page.evaluate(() => {
       const at = document.querySelector('[data-action="idle"]')!.getBoundingClientRect();

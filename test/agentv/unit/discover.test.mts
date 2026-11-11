@@ -278,6 +278,12 @@ test("a server picked in setup waits for its app to install, then fills in its a
     for (const [app, url] of [["", "http://a"], ["Jellyfin!", "http://a"], ["agentv.jellyfin", "ftp://nas"], ["agentv.jellyfin", 5], ["agentv.jellyfin", `http://${"a".repeat(500)}`]]) {
       assert.equal((await picks.pick(app, url)).ok, false, JSON.stringify([app, url]));
     }
+    // F2: a server is never this box itself.
+    const mine = new ServerPicks({ state, home, log: () => {}, own: () => ["192.168.50.2"] });
+    for (const url of ["http://127.0.0.1:3000", "http://localhost:3000", "http://[::ffff:7f00:1]:3000", "http://192.168.50.2:3001"]) {
+      assert.deepEqual(await mine.pick("agentv.jellyfin", url), { ok: false, status: 400, error: "the server's address, like http://192.168.1.20:8096" }, url);
+    }
+    assert.equal((await mine.pick("agentv.jellyfin", "http://192.168.50.11:8096")).ok, true);
   } finally {
     rmSync(state, { recursive: true, force: true });
   }
@@ -521,7 +527,7 @@ test("the TV's page says which list it shows, and a phone's pick needs pairing",
   // Only the TV's page says it, and only a paired phone picks.
   assert.equal((await fetch(`${lan}/api/phone/discover/screen`, { method: "POST", body: "{}" })).status, 401);
   assert.equal((await fetch(`${lan}/api/phone/discover/pick`, { method: "POST", body: JSON.stringify({ key: "typed" }) })).status, 401);
-  assert.equal((await fetch(`${url}/api/discover/pick`, { method: "POST", body: JSON.stringify({ app: "agentv.jellyfin", url: "http://127.0.0.1:8096" }) })).status, 200);
+  assert.equal((await fetch(`${url}/api/discover/pick`, { method: "POST", body: JSON.stringify({ app: "agentv.jellyfin", url: "http://192.168.50.10:8096" }) })).status, 200);
 });
 
 test("a paired phone asks the same, and kinds that aren't one are refused", async () => {

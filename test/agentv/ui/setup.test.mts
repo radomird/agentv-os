@@ -87,6 +87,8 @@ async function phone(): Promise<Page> {
 }
 
 test("stage 4 the captive page lists the networks the box saw, and the one picked goes to the box with its password", async () => {
+  // Setup isn't done: after it, the page says no more about a new code.
+  await post("/api/setup", { done: false });
   hotspotIs({ on: true });
   const page = await phone();
   await page.waitForSelector("button.network");
@@ -595,7 +597,7 @@ test("Q103 with Claude's plan, once its terms are accepted and the CLI is in, th
   await page.close();
 });
 
-test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's and Muse's plans are coming soon, a Meta Managed Account uses a key, and each key shows its maker's terms", async () => {
+test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's plan can be picked, Muse's is coming soon, a Meta Managed Account uses a key, and each key shows its maker's terms", async () => {
   await toAi();
   const page = await tv();
   await page.waitForSelector(".providers.many");
@@ -617,11 +619,12 @@ test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's
   assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "grok");
   await page.keyboard.press("Enter");
   await page.waitForSelector('[data-path="key"]');
-  assert.match(await textOf(page, '[data-path="plan"]'), /supergrok or x premium\+ · coming soon/);
-  assert.equal(await page.locator('[data-path="plan"][data-focus]').count(), 0, "it can't be picked");
+  assert.match(await textOf(page, '[data-path="plan"]'), /supergrok or x premium\+/);
+  assert.doesNotMatch(await textOf(page, '[data-path="plan"]'), /coming soon|best effort/);
+  assert.equal(await page.locator('[data-path="plan"][data-focus]').count(), 1, "it can be picked");
   assert.match(await textOf(page, '[data-path="key"]'), /from your xai account/);
   assert.equal(await page.locator('[data-note="plan"]').count(), 0);
-  await page.keyboard.press("Enter");
+  await page.locator('[data-path="key"]').click();
   await page.waitForSelector(".terms-list");
   assert.deepEqual(await terms(), ["xai-enterprise-terms", "xai-acceptable-use-policy"]);
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "the terms first.");
@@ -668,14 +671,15 @@ test("S5.6 a mouse left still doesn't take the focus as the page loads again: th
   await page.close();
 });
 
-test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on with none", async () => {
+test("T17.1 Google's plan is key only, with the line that says why, and setting the AI up later moves setup on with none", async () => {
   await toAi();
   const page = await tv();
   await page.waitForSelector(".providers");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Enter");
+  await page.locator('.provider[data-provider="gemini"]').click();
   await page.waitForSelector('[data-path="key"]');
-  assert.match(await textOf(page, '[data-path="plan"]'), /chatgpt plus or pro · coming soon/);
+  assert.match(await textOf(page, '[data-path="plan"]'), /google ai pro or ultra · key only/);
+  assert.doesNotMatch(await textOf(page, '[data-path="plan"]'), /coming soon/);
+  assert.equal(await textOf(page, '[data-note="plan"]'), "google keeps its plan to its own apps. a key works now");
   assert.equal(await page.locator('[data-path="plan"][data-focus]').count(), 0, "it can't be picked");
   assert.equal(await page.locator(".provider.focused").getAttribute("data-path"), "key");
   await page.keyboard.press("Escape");
@@ -687,10 +691,8 @@ test("ChatGPT's plan is coming soon, and setting the AI up later moves setup on 
   await page.close();
 });
 
-test("ADR-053 on edge, ChatGPT's and grok's plans are offered as best effort, and picking one goes on to its consumer terms", async () => {
-  const channel = join(state, "..", "channel");
-  writeFileSync(channel, "edge\n");
-  try {
+test("T17.1 on stable, ChatGPT's and Grok's plans are offered like Claude's, and picking one goes on to its consumer terms", async () => {
+  {
     await toAi();
     const page = await tv();
     await page.waitForSelector(".providers");
@@ -698,7 +700,8 @@ test("ADR-053 on edge, ChatGPT's and grok's plans are offered as best effort, an
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Enter");
     await page.waitForSelector('[data-path="plan"][data-focus]');
-    assert.match(await textOf(page, '[data-path="plan"]'), /chatgpt plus or pro · best effort/);
+    assert.match(await textOf(page, '[data-path="plan"]'), /chatgpt plus or pro/);
+    assert.doesNotMatch(await textOf(page, '[data-path="plan"]'), /best effort|coming soon/);
     assert.equal(await page.locator(".provider.focused").getAttribute("data-path"), "plan", "it's the first pick");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".terms-list");
@@ -713,14 +716,15 @@ test("ADR-053 on edge, ChatGPT's and grok's plans are offered as best effort, an
     assert.equal(await page.locator(".provider.focused").getAttribute("data-provider"), "grok");
     await page.keyboard.press("Enter");
     await page.waitForSelector('[data-path="plan"][data-focus]');
-    assert.match(await textOf(page, '[data-path="plan"]'), /supergrok or x premium\+ · best effort/);
+    assert.match(await textOf(page, '[data-path="plan"]'), /supergrok or x premium\+/);
+    assert.doesNotMatch(await textOf(page, '[data-path="plan"]'), /best effort|coming soon/);
     await page.keyboard.press("Enter");
     await page.waitForSelector(".terms-list");
     assert.deepEqual(await terms(), ["xai-consumer-terms", "xai-acceptable-use-policy"]);
     ai = await (await fetch(`${url}/api/ai`)).json();
     assert.deepEqual([ai.provider, ai.path], ["grok", "plan"]);
 
-    // Muse's plan waits for Meta on edge too.
+    // Muse's plan waits for Meta.
     await page.keyboard.press("Escape");
     await page.waitForSelector(".providers");
     await page.keyboard.press("ArrowDown");
@@ -730,8 +734,6 @@ test("ADR-053 on edge, ChatGPT's and grok's plans are offered as best effort, an
     await page.waitForSelector('[data-path="key"]');
     assert.match(await textOf(page, '[data-path="plan"]'), /a muse code subscription · coming soon/);
     await page.close();
-  } finally {
-    rmSync(channel, { force: true });
   }
 });
 

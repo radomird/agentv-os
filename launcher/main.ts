@@ -19,7 +19,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
-import { hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
+import { gameInFront, hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
@@ -29,6 +29,7 @@ import { countryPage, loadCountry } from "./pages/country.ts";
 import { desktopPasswordPage } from "./pages/desktop-password.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
+import { followNetwork, networkHeard, wifiPage } from "./pages/wifi.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
@@ -41,6 +42,8 @@ import { field } from "../setup/frame.ts";
 import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
 import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
+import { forgetTiles, onTileLanded } from "./looks/cards.ts";
+import { setWatching } from "./loading.ts";
 import { forecast } from "./pages/forecast.ts";
 import { newWeek } from "./pages/new-week.ts";
 import { checkWhileAmbient } from "./box.ts";
@@ -397,6 +400,8 @@ function viewFor(route: string): View {
   if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
   if (name === "desktop-password" && ctx.state.viewer.role === "adult") return desktopPasswordPage(ctx);
   if (name === "pair") return pairPage(ctx);
+  // Settings, network: a Wi-Fi network's password, for an adult (ADR-084).
+  if (name === "wifi" && ctx.state.viewer.role === "adult") return wifiPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
@@ -476,6 +481,9 @@ async function loadBackgrounds(): Promise<void> {
 // move ends it.
 const ambientEl = document.getElementById("ambient")!;
 let ambient = false;
+// Whether the TV is on, as the screen daemon says. With it off, or with the
+// ambient screen up, nobody's watching, and what's still loading waits.
+let tvOn = true;
 let ambientPointer: { x: number; y: number } | null = null;
 // How long each photo stays.
 const PHOTO_MS = 60_000;
@@ -483,6 +491,7 @@ const PHOTO_MS = 60_000;
 function setAmbient(on: boolean): void {
   if (on === ambient) return;
   ambient = on;
+  setWatching(!ambient && tvOn);
   backdrop.setAmbient(on);
   tell({ screen: on ? "ambient" : history[history.length - 1] === "home" ? "home" : "menu" });
   ambientPointer = null;
@@ -766,10 +775,25 @@ async function catchUp(): Promise<void> {
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void followNetwork();
   void askShared();
 }
 
 // The page again, in place, with the focus where it was.
+// When the TV last said a tile changed. A card in Glass or Cinema that was
+// waiting gets its content by asking again (cards.ts), and the TV says
+// "tiles" as it lands, which draws home again. A TV that restarted while
+// the card waited no longer knows it was waiting and says nothing, so home
+// draws again itself when the card's own ask lands and no word came.
+let tilesHeard = 0;
+onTileLanded(() => {
+  const landed = Date.now();
+  setTimeout(() => {
+    if (tilesHeard >= landed - 1000) return;
+    if (history[history.length - 1] === "home") redraw();
+  }, 300);
+});
+
 function redraw(): void {
   const current = focus.get();
   show(history[history.length - 1], undefined, current?.dataset.action ?? current?.dataset.id);
@@ -782,7 +806,9 @@ function setRunning(apps: Running[]): void {
   const next = new Map([...apps, ...pageRunning()].map((app) => [app.id, app]));
   if (JSON.stringify([...next]) === JSON.stringify([...ctx.running])) return;
   ctx.running = next;
-  if (history[history.length - 1] === "home") redraw();
+  // Details has Quit only while its app is open.
+  const top = history[history.length - 1];
+  if (top === "home" || top.startsWith("details/")) redraw();
 }
 
 // The look and the size (ADR-063, ADR-062): what the box has, or what a
@@ -826,7 +852,10 @@ async function start(): Promise<void> {
     },
     true,
   );
-  listenInput(act);
+  // Holding OK on a tile opens its app's details (ADR-084). A tile says it
+  // has them with data-details; nothing does while something else has the
+  // keys.
+  listenInput(act, () => (preview() || updatingShown || ambient || pinOpen || noticeOpen ? undefined : focus.get()?.dataset.details));
   listen({
     layout: () => void refresh(),
     // Another look was picked, in Settings or on the phone: the page again,
@@ -843,6 +872,7 @@ async function start(): Promise<void> {
     // The weather's city changed, or the ledger has a new row for a
     // continue tile: home's tiles ask again.
     weather: () => {
+      forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
     // A photo came from a phone, or another source was chosen.
@@ -855,12 +885,16 @@ async function start(): Promise<void> {
     // The phone's box opened, its words came, or it closed (ADR-054).
     listening: (data) => listeningHeard(data as Heard),
     ledger: () => {
+      forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
-    // A page app set its tile (ADR-043): home's tiles ask again.
+    // A page app set its tile (ADR-043), or a tile that was waiting has its
+    // content: home's tiles ask again.
     tiles: () => {
+      tilesHeard = Date.now();
+      forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
     // The box's country changed (ADR-055): Settings shows it, and New this
@@ -873,6 +907,7 @@ async function start(): Promise<void> {
     // and Settings shows it.
     "whats-new": () => {
       const route = history[history.length - 1];
+      forgetTiles();
       if (route === "home") redraw();
       else if (route.startsWith("settings")) void loadNews().then(redraw);
     },
@@ -903,6 +938,8 @@ async function start(): Promise<void> {
     terms: (data) => termsHeard(data),
     // What a phone is typing, as it's typed (ADR-065).
     typing: (data) => typingHeard(data),
+    // The Wi-Fi changed, or the TV lost its network and says so (ADR-084).
+    network: (data) => networkHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {
@@ -944,6 +981,7 @@ async function start(): Promise<void> {
     agentvFront: (app: boolean) => void;
     agentvTv: (state: "on" | "off") => void;
     agentvPage: (id: string) => void;
+    agentvGame: () => string | null;
     agentvLauncher: object;
   };
   w.agentvHome = () => act("home");
@@ -951,7 +989,11 @@ async function start(): Promise<void> {
   // An app came in front of home, or home is in front again.
   w.agentvFront = (app) => backdrop.setFront(!app);
   // The TV went off or came on again (ADR-072).
-  w.agentvTv = (state) => backdrop.setTv(state !== "off");
+  w.agentvTv = (state) => {
+    tvOn = state !== "off";
+    setWatching(!ambient && tvOn);
+    backdrop.setTv(tvOn);
+  };
   // A page app opened from elsewhere, such as Apps or the phone, through
   // the screen daemon, which put home in front first. One installed a moment
   // ago may not be in home's list yet, so home reads it again first.
@@ -959,6 +1001,9 @@ async function start(): Promise<void> {
     if (ctx.state.apps.some((app) => app.id === id)) openPage(ctx, id);
     else void refresh().then(() => openPage(ctx, id));
   };
+  // The game made on this TV that's in front, if one is: the TV going off
+  // leaves it there (ADR-084).
+  w.agentvGame = () => gameInFront(ctx);
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the

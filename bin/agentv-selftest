@@ -752,7 +752,7 @@ s215() {
 
 s216() {
   tv_on S2.16 || return 0
-  result manual S2.16 "over a playing app: the keyboard's Home key, a gamepad's guide button and the mouse pushed into the top left corner, then a click on Home there, each show the home screen. Back reaches the app, and holding Back for a second goes home. In a game, the guide button stays the game's."
+  result manual S2.16 "over a playing app: the keyboard's Home key, a gamepad's guide button and the mouse pushed into the top left corner, then a click on Home there, each show the home screen. Back reaches the app, and holding Back for a second goes home. In a game, a press of the guide button stays the game's, and holding it for a second goes home."
 }
 
 # How long a unit may take to stop, in milliseconds, from systemctl show's
@@ -1059,8 +1059,9 @@ export default {
 };
 APP
   # Installed the way an app built on this box is (ADR-039), so the PIN, when
-  # there is one, is asked for here in the terminal.
-  if ! agentv_app install --local "$work/app" --yes >/dev/null; then
+  # there is one, is asked for here in the terminal. It's served from this
+  # box, which no other app may reach, so the install says it's the stand-in.
+  if ! agentv_app install --local "$work/app" --yes --stand-in >/dev/null; then
     kill "$server" 2>/dev/null || true
     rm -rf "$work"
     wants S3.3 && result fail S3.3 "agentv app install --local didn't install the stand-in player"
