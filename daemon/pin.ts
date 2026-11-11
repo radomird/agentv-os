@@ -178,11 +178,14 @@ export class Pin {
   }
 
   // Sets the PIN, or changes it, which needs a grant from the one before.
-  // Null when it's done, or why not.
+  // A change ends every other grant, as they were earned with the PIN that's
+  // gone. The one that made the change stays: whoever holds it chose the new
+  // PIN. Null when it's done, or why not.
   set(pin: unknown, grant: unknown): string | null {
     if (typeof pin !== "string" || !FOUR_DIGITS.test(pin)) return "a pin is 4 digits";
     if (!this.allows(grant)) return "that needs the pin";
     this.write({ hash: hash(pin), unlockedBoot: this.boot() });
+    for (const token of this.grants.keys()) if (token !== grant) this.grants.delete(token);
     return null;
   }
 
