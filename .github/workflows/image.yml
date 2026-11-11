@@ -291,13 +291,19 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # What may be checked out beside AgenTV's own key: agentv, or a
-          # release's tag. Never a branch that isn't merged.
-          merged() { [[ $1 == "agentv" || $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
+          # What may be checked out beside AgenTV's own key: agentv, a
+          # release's tag, or a commit agentv already has (the nightly run
+          # checks edge's package with the agentv-iso that goes with it).
+          # Never a branch that isn't merged.
+          merged() {
+            [[ $2 == "agentv" || $2 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0
+            [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+          }
           if [[ $RELEASE_KEY == "true" ]]; then
             if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-              ! merged "$OS_REF" || ! merged "$ISO_REF" || ! merged "${UPDATE_CHECKS:-agentv}"; then
-              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a release's tag. This run gets a throwaway key when release-key is off."
+              ! merged agentv-os "$OS_REF" || ! merged agentv-iso "$ISO_REF" || ! merged agentv-iso "${UPDATE_CHECKS:-agentv}"; then
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv, a release's tag or a commit agentv has. This run gets a throwaway key when release-key is off."
               exit 1
             fi
             echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -572,11 +578,25 @@ jobs:
       # its own each night. The cache drops the ones no run has read for a
       # week, and the oldest first when it's full.
       - name: Keep the installed box
+        id: saved
         if: success() && inputs.keep-disk && inputs.checks == ''
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: iso/test-runs/installed-disk
           key: installed-disk-${{ github.run_id }}
+
+      # One night's box in the cache at a time, as the run shared out keeps
+      # it: edge's run is in one job on a night its update is checked with
+      # another agentv-iso.
+      - name: Only tonight's box
+        if: steps.saved.outcome == 'success'
+        env:
+          KEEP: installed-disk-${{ github.run_id }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key installed-disk- --limit 100 --json key --jq '.[].key' |
+            while read -r key; do
+              [[ $key == "$KEEP" ]] || gh cache delete "$key" -R "$GITHUB_REPOSITORY" || echo "::warning::couldn't delete $key"
+            done
 
       - name: Acceptance ids
         if: always()
@@ -705,13 +725,19 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # What may be checked out beside AgenTV's own key: agentv, or a
-          # release's tag. Never a branch that isn't merged.
-          merged() { [[ $1 == "agentv" || $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
+          # What may be checked out beside AgenTV's own key: agentv, a
+          # release's tag, or a commit agentv already has (the nightly run
+          # checks edge's package with the agentv-iso that goes with it).
+          # Never a branch that isn't merged.
+          merged() {
+            [[ $2 == "agentv" || $2 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0
+            [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+          }
           if [[ $RELEASE_KEY == "true" ]]; then
             if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-              ! merged "$OS_REF" || ! merged "$ISO_REF" || ! merged "${UPDATE_CHECKS:-agentv}"; then
-              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a release's tag. This run gets a throwaway key when release-key is off."
+              ! merged agentv-os "$OS_REF" || ! merged agentv-iso "$ISO_REF" || ! merged agentv-iso "${UPDATE_CHECKS:-agentv}"; then
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv, a release's tag or a commit agentv has. This run gets a throwaway key when release-key is off."
               exit 1
             fi
             echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
