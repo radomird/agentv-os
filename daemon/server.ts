@@ -2964,10 +2964,10 @@ export class Daemon {
       return;
     }
 
-    // The provider and path picked on the TV, or none, to pick again. A
-    // child's profile can't, past the PIN.
+    // The provider and path picked on the TV, or none, to pick again. Past
+    // the PIN, once there is one, and a child's profile can't.
     if (method === "POST" && path === "/api/ai") {
-      if (!(await this.adult(request, response, "the ai provider"))) return;
+      if (!this.guarded(request, response, "the ai provider") || !(await this.adult(request, response, "the ai provider"))) return;
       const body = (await this.body(request)) as { provider?: unknown; path?: unknown } | undefined;
       const result = await this.ai.choose(body?.provider ?? null, body?.path);
       if (!result.state) {
