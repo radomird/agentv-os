@@ -200,6 +200,21 @@ test("T17.1 the TV's own voice is the package's say program: the line on its inp
   assert.deepEqual(await sayOn(dir, 200)("hello"), { ok: false, error: "the tv's voice took too long" });
 });
 
+test("two answers close together each get their own audio", async () => {
+  const dir = mkdtempSync(join(scratch, "two-"));
+  // A say that writes its file at once and then, for the first line, takes
+  // its time to finish: the second line is made while the first still runs.
+  writeFileSync(join(dir, "say"), `#!/bin/bash\nread -r line\nprintf 'RIFF%s' "$line" >"$1"\n[[ $line != *first* ]] || sleep 0.8\n`);
+  chmodSync(join(dir, "say"), 0o755);
+  const v = new Voice({ dir, ...claudeKey });
+  const first = v.make("the first answer");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const second = v.make("the second answer");
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a?.wav.toString(), "RIFFthe first answer", "the slower answer isn't lost");
+  assert.equal(b?.wav.toString(), "RIFFthe second answer");
+});
+
 test("the package from before still speaks: Piper and its cori voice, with no say, until the package changes", async () => {
   const dir = mkdtempSync(join(scratch, "piper-"));
   mkdirSync(join(dir, "piper"));

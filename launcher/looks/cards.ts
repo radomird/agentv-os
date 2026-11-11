@@ -22,10 +22,16 @@ export interface Featured {
 
 // Each app's tile data, asked for once per home and kept for the visit. A
 // tile that's still waiting for its content isn't kept: it's asked for
-// again while home shows (loading.ts), and when it lands the TV says so and
-// home draws again with it.
+// again while home shows (loading.ts), and when it lands home draws again
+// with it, on the TV's word or, without one, on the ask's own answer.
 const asked = new Map<string, Promise<TileAnswer>>();
 const asking = new Set<string>();
+
+// Told when a card that was waiting has its content, from its own ask.
+let landed: () => void = () => {};
+export function onTileLanded(tell: () => void): void {
+  landed = tell;
+}
 
 export function tileAnswer(app: App, size: "s" | "m" | "l"): Promise<TileAnswer> {
   const key = `${app.id}:${size}`;
@@ -44,9 +50,15 @@ export function tileAnswer(app: App, size: "s" | "m" | "l"): Promise<TileAnswer>
       asking.add(key);
       keepAsking(
         async () => {
-          const waiting = (await ask()).waiting;
-          if (!waiting) asking.delete(key);
-          return waiting;
+          const answer = await ask();
+          if (answer.waiting) return true;
+          asking.delete(key);
+          // Kept for the draw that follows, so the card has it at once.
+          const kept = Promise.resolve(answer);
+          asked.set(key, kept);
+          setTimeout(() => asked.get(key) === kept && asked.delete(key), 60_000);
+          landed();
+          return false;
         },
         () => {
           // Only while home shows. Away from it, the asking stops, and
