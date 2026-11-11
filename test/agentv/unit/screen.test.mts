@@ -39,6 +39,9 @@ class FakeHyprland implements Hyprland {
   exited = false;
   // The output's power, as hl.dsp.dpms leaves it.
   dpms = true;
+  // How many times turning the output off is refused, as Hyprland does just
+  // after a wake.
+  refuseOff = 0;
   private handler: (name: string, data: string) => void = () => {};
 
   async clients() {
@@ -63,6 +66,10 @@ class FakeHyprland implements Hyprland {
   async dispatch(expression: string) {
     this.dispatched.push(expression);
     let m;
+    if (/^hl\.dsp\.dpms\(\{ action = "disable"/.test(expression) && this.refuseOff > 0) {
+      this.refuseOff--;
+      throw new Error("hyprctl dispatch: Command failed");
+    }
     if ((m = expression.match(/^hl\.dsp\.window\.move\(\{ window = "address:(0x\w+)", workspace = "([^"]+)"/))) {
       const window = this.get(m[1]);
       window.workspace = { id: m[2] === "1" ? 1 : -98, name: m[2] };
@@ -407,6 +414,7 @@ async function tv(
     tvPollMs?: number;
     tvOffCloseMs?: number;
     tvSettleMs?: number;
+    outputAgainMs?: number;
     tvHotplug?: (changed: () => void) => () => void;
     sleep?: Sleep;
     inhibitor?: (why: string) => { set(on: boolean): void };
@@ -1402,6 +1410,53 @@ test("S2.16 the guide button is a game's own; on the home screen Home goes to it
   assert.ok(t.launcher.homeBrowser.evaluated.includes("window.agentvHome?.()"));
 });
 
+test("T16.3 holding the guide button goes home from Steam, once, and Steam stays open behind it", async () => {
+  const t = await tv();
+  t.launcher.targets.set("agentv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" });
+  const steam = t.launcher.last("steam");
+  t.hypr.open("0xf", steam.pid, "gamescope");
+  await t.screen.idle();
+  // The press is Steam's own, and so is a tap, which is a press and no more.
+  await t.screen.handle({ cmd: "home", from: "guide" });
+  assert.equal(t.screen.front()?.role, "steam");
+  assert.ok(!t.lines.some((line) => line.includes("guide button held")), t.lines.join("\n"));
+  // input.py says the hold while the button is still down.
+  assert.deepEqual(await t.screen.handle({ cmd: "home", from: "guide-hold" }), { ok: true });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(steam.stopped, false, "Steam keeps running");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE, "out of sight");
+  assert.deepEqual(await t.screen.fromHome({ cmd: "running" }), { ok: true, apps: [{ id: "agentv.games", game: true, paused: false }] });
+  assert.equal(t.lines.filter((line) => line.includes("guide button held")).length, 1, t.lines.join("\n"));
+  // A second hold, from a second gamepad say, finds home in front and
+  // leaves it where it is: it doesn't send home back to its home page.
+  const asked = t.launcher.homeBrowser.evaluated.length;
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.launcher.homeBrowser.evaluated.length, asked);
+  assert.equal(t.lines.filter((line) => line.includes("guide button held")).length, 1);
+  // Its tile brings the same Steam back, where it was.
+  await t.screen.fromHome({ cmd: "open-app", app: "agentv.games" });
+  assert.equal(t.screen.front()?.address, "0xf");
+  assert.equal(t.launcher.last("steam"), steam, "no second Steam");
+});
+
+test("T16.3 with a web app in front the guide button goes home at once, and its hold adds nothing", async () => {
+  const t = await tv();
+  // A game made on this TV is a web app too, so this is its guide button.
+  await openApp(t, "agentv.tube", "0xb");
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.address, "0xb", "a hold alone isn't Home outside Steam");
+  await t.screen.handle({ cmd: "home", from: "guide" });
+  assert.equal(t.screen.front()?.role, "home", "the press went home");
+  // Still down a second later: home stays as it is.
+  const asked = t.launcher.homeBrowser.evaluated.length;
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.launcher.homeBrowser.evaluated.length, asked);
+  assert.ok(!t.lines.some((line) => line.includes("guide button held")), t.lines.join("\n"));
+});
+
 test("a page the daemon opened by address comes back the same way", async () => {
   const t = await tv();
   assert.deepEqual(await t.screen.handle({ cmd: "open", url: "data:text/html,hello" }), { ok: true });
@@ -1846,6 +1901,37 @@ test("T13.1 a key with the output off lights it to look for the TV, and it goes 
   await t.screen.idle();
   assert.equal(t.hypr.dpms, true);
   assert.equal(((await t.screen.handle({ cmd: "status" })) as any).tv, "on");
+  t.screen.stop();
+});
+
+test("an output Hyprland won't turn off after a look is asked again, until it's off", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 50, tvSettleMs: 100, outputAgainMs: 60 });
+  on = false;
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false);
+  // A key lights the output to look, and Hyprland refuses twice to turn it
+  // off again.
+  t.hypr.refuseOff = 2;
+  t.screen.seatIdle(false);
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true, "still on after the first try");
+  assert.ok(t.lines.some((line) => line.includes("the TV's output couldn't go off")), t.lines.join("\n"));
+  await sleep(200);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, false, "off once Hyprland takes it");
+  assert.equal(((await t.screen.handle({ cmd: "status" })) as any).output, "off");
+  // And it stops asking once the TV is back.
+  t.hypr.refuseOff = 99;
+  t.screen.seatIdle(false);
+  await sleep(30);
+  on = true;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.hypr.dpms, true);
+  assert.equal(t.hypr.refuseOff, 99, "nothing asked the output to go off with the TV on");
   t.screen.stop();
 });
 

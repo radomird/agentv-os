@@ -197,6 +197,7 @@ export class AppHost {
   private settings: Record<string, string>;
   private child?: ChildProcess;
   private starting?: Promise<void>;
+  private stopped = false;
   private pending = new Map<number, Pending>();
   private nextId = 0;
   private limits: Partial<Record<string, number>>;
@@ -224,8 +225,11 @@ export class AppHost {
     this.log = options.log ?? (() => {});
   }
 
-  // Starts the worker, and checks the module against the manifest.
+  // Starts the worker, and checks the module against the manifest. Not once
+  // the host is stopped: a call that comes after that, from a timer or an
+  // answer still on its way, would start a worker nothing stops.
   start(): Promise<void> {
+    if (this.stopped) return Promise.reject(new AppError("crashed", `${this.manifest.name} stopped`));
     this.starting ??= this.spawn().catch((error) => {
       this.starting = undefined;
       throw error;
@@ -471,7 +475,10 @@ export class AppHost {
     this.settings = { ...settings };
   }
 
+  // For good: the app was updated or removed, or the daemon is closing, and
+  // whoever needs the app again makes a new host for it.
   stop(): void {
+    this.stopped = true;
     this.child?.kill("SIGKILL");
     this.child = undefined;
     this.starting = undefined;

@@ -59,14 +59,16 @@ name: Image
 #
 # With shards above 1 (4 unless a caller says otherwise), the run is shared
 # out across jobs. One gets the box ready: it builds the ISO and installs
-# it, hands the box on through the Actions cache and runs the checks that
+# it, hands the box on in pieces, as artifacts of the run, and runs the checks that
 # look at the ISO itself, or it finds the night's box. Then up to that many
 # jobs each run a share of the other checks against that box, two VMs at a
 # time as before, with the checks that time the box against a bar on their
 # own after the lanes, so each still has a whole runner
 # (test/agentv/image/shards in agentv-iso shares them out). The last job
 # reads every job's log and gives the same report one job did, then throws
-# the run's box away. A night that signs tested.json, or whose update is
+# the run's box away once every check passed. When one failed, the box is
+# kept for a day, so "Re-run failed jobs" runs the parts that failed against
+# it. A night that signs tested.json, or whose update is
 # checked with another agentv-iso, still runs in one job: it checks with
 # the release's agentv-iso, which can't share its checks out.
 
@@ -195,8 +197,9 @@ on:
 
 permissions:
   contents: write
-  # The last job of a shared-out run deletes the run's box from the cache,
-  # and an ISO it kept before a check failed.
+  # The last job of a shared-out run deletes the run's box, an ISO it kept
+  # before a check failed, and the night's box and root image the Nightly no
+  # longer needs from the cache.
   actions: write
 
 jobs:
@@ -617,6 +620,10 @@ jobs:
       OWNER: ${{ github.repository_owner }}
       AGENTV_TEST_LANES: ${{ inputs.lanes || 2 }}
     outputs:
+      # A part run again by "Re-run failed jobs" fetches what this job made
+      # in the attempt it ran in, not the part's own.
+      attempt: ${{ github.run_attempt }}
+      pieces: ${{ steps.pieces.outputs.count }}
       iso: ${{ steps.commits.outputs.iso }}
       night: ${{ steps.night.outputs.key }}
       plan: ${{ steps.plan.outputs.parts }}
@@ -901,21 +908,146 @@ jobs:
           echo "Build: $(cat iso/test-runs/build-seconds 2>/dev/null || echo ?) s." | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the root image's slow part
+        id: root-saved
         if: steps.root.outputs.save == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: iso/release/root-cache
           key: agentv-root-image-${{ steps.root.outputs.key }}
 
-      # The installed box, under this run's own key: the cache hands a few GB
-      # back in about a minute, where an artifact took 20 (see "The night's
-      # installed box" above). The last job deletes it.
-      - name: Hand the box on
+      # One root image part in the cache at a time, as with the night's box:
+      # an older one is for packages that have moved on.
+      - name: Only this root image's part
+        if: steps.root-saved.outcome == 'success'
+        env:
+          KEEP: agentv-root-image-${{ steps.root.outputs.key }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key agentv-root-image- --limit 100 --json key --jq '.[].key' |
+            while read -r key; do
+              [[ $key == "$KEEP" ]] || gh cache delete "$key" -R "$GITHUB_REPOSITORY" || echo "::warning::couldn't delete $key"
+            done
+
+      # The installed box, as artifacts of this run that last a day. It went
+      # through the Actions cache before, but the cache holds 10 GB for every
+      # run, and with a few full runs going, other runs' boxes pushed this one
+      # out before the parts came for it. In one piece, its 4.7 GB took 4 to
+      # 7 minutes to come down. In ten, which each part fetches five at a
+      # time, they take about half a minute, and about 35 s to go up. The last
+      # job deletes them once every check passed.
+      - name: Cut the box into pieces
+        id: pieces
         if: steps.build.outcome == 'success'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        run: |
+          mkdir -p box-pieces
+          size=$(du -sb iso/test-runs/box | cut -f1)
+          # Ten pieces at most, with room for tar's own headers.
+          tar -cf - -C iso/test-runs box | split -d -a 2 -b $(( (size + 1048576) / 10 + 1 )) - box-pieces/box.tar.
+          ls -l box-pieces
+          echo "count=$(find box-pieces -name 'box.tar.*' | wc -l)" >>"$GITHUB_OUTPUT"
+
+      - name: Hand the box on, piece 1
+        if: steps.pieces.outputs.count > 0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: iso/test-runs/box
-          key: image-box-${{ github.run_id }}-${{ github.run_attempt }}
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-00
+          path: box-pieces/box.tar.00
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 2
+        if: steps.pieces.outputs.count > 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-01
+          path: box-pieces/box.tar.01
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 3
+        if: steps.pieces.outputs.count > 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-02
+          path: box-pieces/box.tar.02
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 4
+        if: steps.pieces.outputs.count > 3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-03
+          path: box-pieces/box.tar.03
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 5
+        if: steps.pieces.outputs.count > 4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-04
+          path: box-pieces/box.tar.04
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 6
+        if: steps.pieces.outputs.count > 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-05
+          path: box-pieces/box.tar.05
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 7
+        if: steps.pieces.outputs.count > 6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-06
+          path: box-pieces/box.tar.06
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 8
+        if: steps.pieces.outputs.count > 7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-07
+          path: box-pieces/box.tar.07
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 9
+        if: steps.pieces.outputs.count > 8
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-08
+          path: box-pieces/box.tar.08
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Hand the box on, piece 10
+        if: steps.pieces.outputs.count > 9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-box-${{ github.run_id }}-${{ github.run_attempt }}-09
+          path: box-pieces/box.tar.09
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+      - name: Room on the disk again
+        if: steps.pieces.outcome == 'success'
+        run: rm -r box-pieces
 
       # In one tar, so each folder lands where it was, whichever of them
       # this run has.
@@ -1041,9 +1173,10 @@ jobs:
           (( $(avail) >= 25 )) || { echo "::error::only $(avail) GB free, the box and its checks need about 25 GB"; exit 1; }
 
       - name: This run's packages
+        id: packages
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: box-packages-${{ github.run_id }}-${{ github.run_attempt }}
+          name: box-packages-${{ github.run_id }}-${{ needs.box.outputs.attempt }}
 
       # What the one job's steps set for its checks, from the same packages.
       - name: Point the checks at them
@@ -1066,6 +1199,7 @@ jobs:
           fi
 
       - name: The night's installed box
+        id: night
         if: needs.box.outputs.night != ''
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -1074,12 +1208,42 @@ jobs:
           fail-on-cache-miss: true
 
       - name: The box this run installed
+        id: box
         if: needs.box.outputs.night == ''
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: iso/test-runs/box
-          key: image-box-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
+          pattern: image-box-${{ github.run_id }}-${{ needs.box.outputs.attempt }}-*
+          merge-multiple: true
+          path: box-pieces
+
+      - name: Put the box together
+        id: together
+        if: needs.box.outputs.night == ''
+        env:
+          PIECES: ${{ needs.box.outputs.pieces }}
+        run: |
+          found=$(find box-pieces -name 'box.tar.*' 2>/dev/null | wc -l)
+          if (( found == 0 || found != PIECES )); then
+            echo "Found $found of the box's $PIECES pieces."
+            exit 1
+          fi
+          mkdir -p iso/test-runs
+          cat box-pieces/box.tar.* | tar -xf - -C iso/test-runs
+          rm -r box-pieces
+          du -sh iso/test-runs/box
+
+      # What a part needs and couldn't fetch, in words: the job's red either
+      # way, but "Unable to find" doesn't say what to do.
+      - name: Say what's gone
+        if: failure() && (steps.packages.outcome == 'failure' || steps.night.outcome == 'failure' || steps.box.outcome == 'failure' || steps.together.outcome == 'failure')
+        env:
+          NIGHT: ${{ steps.night.outcome }}
+        run: |
+          if [[ $NIGHT == "failure" ]]; then
+            echo "::error::The night's box this run started from isn't in the cache any more: a newer night replaced it. Run the whole workflow again (Re-run all jobs), not only this part."
+          else
+            echo "::error::This run's box and packages aren't there any more. A run keeps them for a day, and throws the box away once every check passed. Run the whole workflow again (Re-run all jobs), not only this part."
+          fi
 
       - name: Check it
         env:
@@ -1132,7 +1296,9 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
-          pattern: checks-${{ inputs.packages }}-*-${{ github.run_id }}-${{ github.run_attempt }}
+          # Every attempt's: a part that passed isn't run again with the ones
+          # that failed, so its log is the earlier attempt's.
+          pattern: checks-${{ inputs.packages }}-*-${{ github.run_id }}-*
           path: parts
 
       # One log, the box's first and then each part's, as one job would have
@@ -1140,12 +1306,13 @@ jobs:
       - name: One log for the run
         env:
           PACKAGES: ${{ inputs.packages }}
-          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+          RUN: ${{ github.run_id }}
         run: |
           : >image.log
           for (( part = 0; ; part++ )); do
-            dir="parts/checks-$PACKAGES-$part-$RUN"
-            if [[ ! -d $dir ]]; then
+            # The part's newest attempt.
+            dir=$(find parts -maxdepth 1 -type d -name "checks-$PACKAGES-$part-$RUN-*" | sort -V | tail -n 1)
+            if [[ -z $dir ]]; then
               (( part == 0 )) && continue
               break
             fi
@@ -1190,25 +1357,45 @@ jobs:
       - name: The box this run installed
         if: steps.passed.outputs.passed == 'true' && inputs.keep-disk && inputs.checks == '' && !inputs.own-repo && needs.box.outputs.night == ''
         id: kept
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: iso/test-runs/box
-          key: image-box-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
+          pattern: image-box-${{ github.run_id }}-${{ needs.box.outputs.attempt }}-*
+          merge-multiple: true
+          path: box-pieces
 
       - name: Name it the night's box
         if: steps.kept.outcome == 'success'
+        env:
+          PIECES: ${{ needs.box.outputs.pieces }}
         run: |
+          found=$(find box-pieces -name 'box.tar.*' | wc -l)
+          (( found > 0 && found == PIECES )) || { echo "::error::found $found of the box's $PIECES pieces"; exit 1; }
           mkdir -p iso/test-runs
+          cat box-pieces/box.tar.* | tar -xf - -C iso/test-runs
+          rm -r box-pieces
           mv iso/test-runs/box iso/test-runs/installed-disk
           du -sh iso/test-runs/installed-disk
 
       - name: Keep the installed box
+        id: saved
         if: steps.kept.outcome == 'success'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: iso/test-runs/installed-disk
           key: installed-disk-${{ github.run_id }}
+
+      # One night's box in the cache at a time. With the root image's part
+      # that's about 8.5 of its 10 GB, so neither is pushed out by the other
+      # night's.
+      - name: Only tonight's box
+        if: steps.saved.outcome == 'success'
+        env:
+          KEEP: installed-disk-${{ github.run_id }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key installed-disk- --limit 100 --json key --jq '.[].key' |
+            while read -r key; do
+              [[ $key == "$KEEP" ]] || gh cache delete "$key" -R "$GITHUB_REPOSITORY" || echo "::warning::couldn't delete $key"
+            done
 
       # Only an ISO that went through every check is kept.
       - name: Take back the ISO
@@ -1223,16 +1410,19 @@ jobs:
               echo "A check failed, so the ISO isn't kept (artifact $id deleted)." | tee -a "$GITHUB_STEP_SUMMARY"
             done
 
-      # The cache holds 10 GB, and every box is about 5, so the run's own
-      # goes as soon as the run is done.
+      # The run's box goes once every check passed. When one failed, it stays
+      # for the day its artifact lasts, so "Re-run failed jobs" can run the
+      # parts that failed against it.
       - name: Throw the run's box away
-        if: always() && needs.box.outputs.night == ''
+        if: always() && steps.passed.outputs.passed == 'true' && needs.box.outputs.night == ''
         env:
-          KEY: image-box-${{ github.run_id }}-${{ github.run_attempt }}
+          BOX: image-box-${{ github.run_id }}-${{ needs.box.outputs.attempt }}-
         run: |
-          if gh cache list -R "$GITHUB_REPOSITORY" --key "$KEY" --json key --jq '.[].key' | grep -qx "$KEY"; then
-            gh cache delete "$KEY" -R "$GITHUB_REPOSITORY" || echo "::warning::couldn't delete the run's box from the cache ($KEY)"
-          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate \
+            --jq ".artifacts[] | select(.name | startswith(\"$BOX\")) | .id" |
+            while read -r id; do
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || echo "::warning::couldn't delete a piece of the run's box (artifact $id). It goes in a day anyway."
+            done
 
       - name: Keep the log
         if: always()
