@@ -84,8 +84,28 @@ current=$(awk -v begin="$begin" -v end="$end" '
   printing && $0 == end { exit }
 ' "$conf")
 
+# A package list with no signature beside it is one pacman now refuses, and
+# with it every install that doesn't fetch the lists first. It goes, so the
+# box is back to having no list yet, and the update this runs ahead of
+# fetches the list and its signature together.
+drop_unsigned_list() {
+  # Only the box's own lists, or the folder a test names: never the real
+  # ones on behalf of some other pacman.conf.
+  local sync=${AGENTV_PACMAN_SYNC:-}
+  [[ -z $sync && $conf == "/etc/pacman.conf" ]] && sync=/var/lib/pacman/sync
+  [[ -n $sync ]] || return 0
+  if [[ -e $sync/agentv.db && ! -s $sync/agentv.db.sig ]]; then
+    rm -f "$sync/agentv.db" "$sync/agentv.db.sig" "$sync/agentv.files" || return 0
+    echo "AgenTV's package list had no signature, so it's gone until the next update fetches both"
+  fi
+}
+
 if [[ $current == "$section" ]]; then
-  (( check )) && echo "AgenTV's repository is in $conf"
+  if (( check )); then
+    echo "AgenTV's repository is in $conf"
+  else
+    drop_unsigned_list
+  fi
   exit 0
 fi
 
@@ -105,5 +125,6 @@ trap 'rm -f "$tmp"' EXIT
 chmod --reference="$conf" "$tmp" 2>/dev/null || chmod 644 "$tmp"
 mv -f "$tmp" "$conf"
 trap - EXIT
+drop_unsigned_list
 
 echo "AgenTV's repository in $conf is now $server"
