@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# Which agentv-iso commit checks the package the nightly run installs from
+# edge, so the night tests a package with the checks that go with it.
+#
+# Edge's package is what agentv-pkgs' Build last published, from agentv-os's
+# newest commit that passed its checks then. That Build runs on GitHub's
+# schedule, which can be hours late, so by night agentv-os can have merged
+# more, and agentv-iso the new checks that came with it. Those checks fail
+# on the older package, though nothing is wrong.
+#
+# A change that needs new image checks has a branch of the same name in
+# agentv-iso, and the two merge together. So the checks that go with the
+# package are agentv-iso as it was just before the first merge of a branch
+# that reached agentv-os after the package did. An agentv-iso merge counts as
+# that only within a day of its agentv-os merge, so a branch name used again
+# months later doesn't hold the checks back. When nothing came after the
+# package, it's agentv-iso's agentv.
+#
+# Usage: .github/scripts/nightly-checks <version> <agentv-os> <agentv-iso>
+#   version     the agentv package on edge, like 0.2.0.r389.g0bab19ed7
+#   agentv-os   and agentv-iso: anything git clones, each with an agentv branch
+#
+# Writes to $GITHUB_OUTPUT (or stdout): built (the agentv-os commit the
+# package came from), checks (an agentv-iso commit, or agentv) and newer (the
+# branches that came after the package, space-separated).
+
+set -euo pipefail
+
+version=${1:?the agentv package version on edge, like 0.2.0.r389.g0bab19ed7}
+os_url=${2:?agentv-os to clone}
+iso_url=${3:?agentv-iso to clone}
+out=${GITHUB_OUTPUT:-/dev/stdout}
+day=86400
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+say() {
+  printf '%s=%s\n' "$1" "$2" >>"$out"
+}
+
+# Commits only: the history is all this reads.
+clone() {
+  git clone --quiet --bare --filter=tree:0 --single-branch --branch agentv "$1" "$2" 2>/dev/null
+}
+
+# The agentv-os branch a first-parent commit on agentv merged, from GitHub's
+# own subject for a pull request's merge.
+branch() {
+  sed -nE 's/^Merge pull request #[0-9]+ from [^/]+\/(.+)$/\1/p' <<<"$1"
+}
+
+if [[ ! $version =~ \.g([0-9a-f]{7,})$ ]]; then
+  echo "nightly-checks: $version doesn't name the agentv-os commit it was built from" >&2
+  exit 1
+fi
+short=${BASH_REMATCH[1]}
+
+clone "$os_url" "$work/os"
+clone "$iso_url" "$work/iso"
+os=(git -C "$work/os")
+iso=(git -C "$work/iso")
+
+built=$("${os[@]}" rev-parse --verify --quiet "$short^{commit}" || true)
+if [[ -z $built ]] || ! "${os[@]}" merge-base --is-ancestor "$built" agentv; then
+  echo "nightly-checks: agentv-os's agentv has no commit $short, which edge's package $version was built from" >&2
+  exit 1
+fi
+say built "$built"
+
+# The branches agentv-os merged after the package's commit, with when, a
+# line each: "<branch> <time>".
+after="$work/after"
+: >"$after"
+while IFS=' ' read -r time subject; do
+  name=$(branch "$subject")
+  [[ -n $name ]] && printf '%s %s\n' "$name" "$time" >>"$after"
+done < <("${os[@]}" log --first-parent --format='%ct %s' "$built..agentv")
+
+# When agentv-os merged a branch after the package, or nothing.
+merged_at() {
+  awk -v name="$1" '$1 == name { print $2; exit }' "$after"
+}
+
+# agentv-iso's merges of those branches, newest first, so the last one found
+# is the first that came after the package.
+first=""
+newer=""
+while IFS=' ' read -r commit time subject; do
+  name=$(branch "$subject")
+  [[ -n $name ]] || continue
+  os_time=$(merged_at "$name")
+  [[ -n $os_time ]] || continue
+  (( time >= os_time - day )) || continue
+  first=$commit
+  newer="$name${newer:+ $newer}"
+done < <("${iso[@]}" log --first-parent --format='%H %ct %s' agentv)
+
+if [[ -z $first ]]; then
+  say checks agentv
+else
+  say checks "$("${iso[@]}" rev-parse "$first^1")"
+fi
+say newer "$newer"

@@ -17,8 +17,16 @@ name: Nightly
 # stable run doesn't hold a release to checks written for later work, such
 # as a stage it doesn't have yet. Its update in place goes to tonight's
 # agentv, so that update is checked with agentv-iso's agentv branch, the
-# checks that go with what it updates to. Edge is checked with agentv-iso's
-# agentv branch.
+# checks that go with what it updates to.
+#
+# Edge is checked the same way, with the agentv-iso that goes with its
+# package (.github/scripts/nightly-checks). agentv-pkgs' Build publishes
+# edge on GitHub's schedule, which can run hours late, so on a busy day
+# agentv-os has merged more by night, and agentv-iso the checks that came
+# with it, which fail on the older package. Then edge's ISO is built and
+# checked with agentv-iso as it was before those, and its update to
+# tonight's agentv with agentv-iso's agentv branch. When edge's package is
+# agentv-os's newest, that's agentv-iso's agentv branch for both.
 #
 # The release's checks run two VMs at a time, as edge's do. S1.3 times the
 # switch back to the TV against a 10 s bar, and beside another VM (from
@@ -30,11 +38,15 @@ name: Nightly
 #
 # Edge's checks are shared out across four jobs, two VMs each, the way a
 # pull request's are (image.yml). The release's run signs tested.json and
-# checks its update with tonight's agentv-iso, so it stays in one job.
+# checks its update with tonight's agentv-iso, so it stays in one job, and
+# so does edge's on a night its update is checked with tonight's agentv-iso.
 #
-# Started by hand, it can take another agentv-iso ref for edge's checks and
-# the update's (checks), so a fix to the checks can be seen in a full night
-# before it merges. The release keeps its own.
+# Started by hand, it can take another agentv-iso ref for edge's checks
+# (checks), so a fix to the checks can be seen in a full night before it
+# merges. The release keeps its own. That ref isn't merged yet, so such a
+# run never gets AgenTV's own key: it signs no tested.json, checks no
+# update (a channel's box takes one signed with that key alone) and keeps no
+# ISO.
 
 on:
   schedule:
@@ -42,7 +54,7 @@ on:
   workflow_dispatch:
     inputs:
       checks:
-        description: "agentv-iso ref for edge's checks and the update's (empty: agentv)"
+        description: "agentv-iso ref for edge's checks, in a run that signs nothing, checks no update and keeps no ISO (empty: agentv)"
         type: string
         default: ""
 
@@ -65,6 +77,11 @@ jobs:
     outputs:
       runs: ${{ steps.which.outputs.runs }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
       - id: which
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,8 +89,34 @@ jobs:
           CHECKS: ${{ inputs.checks }}
         run: |
           next=${CHECKS:-agentv}
-          stable=$(gh release view stable -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null |
-            sed -nE 's/^agentv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1)
+          newest() {
+            gh release view "$1" -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null |
+              sed -nE 's/^agentv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1
+          }
+          stable=$(newest stable)
+
+          # Edge's package, and the agentv-iso that goes with it. A run
+          # started with its own agentv-iso ref checks with that.
+          edge=$(newest edge)
+          edge_checks=$next
+          edge_update=""
+          if [[ -z $CHECKS ]]; then
+            repos=("https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-os.git" "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git")
+            if GITHUB_OUTPUT="$RUNNER_TEMP/edge" .github/scripts/nightly-checks "$edge" "${repos[@]}"; then
+              built=$(sed -n 's/^built=//p' "$RUNNER_TEMP/edge")
+              edge_checks=$(sed -n 's/^checks=//p' "$RUNNER_TEMP/edge")
+              newer=$(sed -n 's/^newer=//p' "$RUNNER_TEMP/edge")
+              if [[ $edge_checks == "agentv" ]]; then
+                echo "Edge's package is agentv $edge, from agentv-os ${built:0:9}, checked with agentv-iso agentv." >>"$GITHUB_STEP_SUMMARY"
+              else
+                edge_update=agentv
+                echo "Edge's package is agentv $edge, from agentv-os ${built:0:9}. Since then agentv-os has merged $newer, with checks of their own, so edge is checked with agentv-iso ${edge_checks:0:9}, from before those, and its update to tonight's agentv with agentv-iso agentv." >>"$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              echo "::warning::The agentv-iso that goes with edge's package $edge couldn't be found, so edge is checked with agentv-iso agentv, which can have checks the package doesn't."
+            fi
+          fi
+
           if [[ -n $stable ]]; then
             checks=$next
             if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" "refs/tags/v$stable" >/dev/null 2>&1; then
@@ -81,12 +124,15 @@ jobs:
             fi
             update=""
             [[ $checks == "$next" ]] || update=$next
-            runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg next "$next" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 2},
-              {packages: "edge", tested: false, iso: true, checks: $next, update: "", lanes: 2}]')
-            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, two VMs at a time with S1.3 on its own, and making the edge ISO with agentv-iso $next" >>"$GITHUB_STEP_SUMMARY"
+            runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 2},
+              {packages: "edge", tested: false, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
+            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, two VMs at a time with S1.3 on its own, and making the edge ISO with agentv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
           else
-            runs=$(jq -cn --arg next "$next" '[{packages: "edge", tested: true, iso: true, checks: $next, update: "", lanes: 2}]')
-            echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $next, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+            runs=$(jq -cn --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "edge", tested: true, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
+            echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $edge_checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -n $CHECKS ]]; then
+            echo "Started by hand with agentv-iso $CHECKS, so this run has no signing key: it signs no tested.json, checks no update and keeps no ISO." >>"$GITHUB_STEP_SUMMARY"
           fi
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
 
@@ -102,19 +148,23 @@ jobs:
       ref: agentv
       iso-ref: ${{ matrix.checks }}
       packages: ${{ matrix.packages }}
-      update-test: true
+      # A run started by hand with its own agentv-iso ref (checks) has no
+      # key, so it has nothing to sign an update or tested.json with, and
+      # its ISO isn't one to keep.
+      update-test: ${{ inputs.checks == '' }}
       update-checks: ${{ matrix.update }}
-      nightly: ${{ matrix.tested }}
-      keep-iso: ${{ matrix.iso }}
+      nightly: ${{ matrix.tested && inputs.checks == '' }}
+      keep-iso: ${{ matrix.iso && inputs.checks == '' }}
       keep-disk: ${{ matrix.iso }}
       lanes: ${{ matrix.lanes }}
       # The one caller that signs with AgenTV's own key: what a channel's
       # box updates to, and tested.json. image.yml reads it through the
       # "release" environment, which only agentv may use. Handed over here
-      # too for as long as the key is still a secret of the repo.
-      release-key: true
+      # too for as long as the key is still a secret of the repo. Never
+      # beside an agentv-iso ref someone typed in.
+      release-key: ${{ inputs.checks == '' }}
     secrets:
-      AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
+      AGENTV_SIGNING_KEY: ${{ inputs.checks == '' && secrets.AGENTV_SIGNING_KEY || '' }}
 
   # The issue names each failed leg's failed checks and the line that says
   # why, from the legs' logs (.github/scripts/nightly-broke).

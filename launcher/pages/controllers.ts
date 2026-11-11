@@ -40,7 +40,8 @@ const AGAIN_MS = 2000;
 function words(text: string, name?: string): string {
   const look = document.documentElement.dataset.look;
   const said = !look || look === "terminal" ? text.toLowerCase() : text;
-  return name === undefined ? said : said.replace("{name}", name);
+  // Put in as it is: a name may have "$&" in it, which a plain replace reads.
+  return name === undefined ? said : said.replace("{name}", () => name);
 }
 
 // Pairing and removing are an adult's: with a PIN set, they send its grant.
@@ -226,6 +227,8 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
   // Asks while this panel is the one on screen, and tells the TV to stop
   // looking once it's gone, unless a panel drawn since has taken over.
   const again = async () => {
+    // Whether the last round found an app in front of home.
+    let rested = false;
     await new Promise((done) => setTimeout(done, 0));
     for (;;) {
       if (live !== me) return;
@@ -234,9 +237,14 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
         void call("POST", "/api/controllers/look", { on: false }).catch(() => {});
         return;
       }
-      // Under the screen saver nobody is pairing anything, so the asking
-      // rests, and the TV stops looking a few seconds later.
-      if (!busy && !document.querySelector("#ambient.on")) {
+      // Under the screen saver nobody is pairing anything, and nor is
+      // anyone with an app in front of home, opened from a phone. So the
+      // asking rests: the TV stops looking a few seconds later under the
+      // screen saver, and at once under an app.
+      const behind = document.documentElement.hasAttribute("data-behind-app");
+      if (behind && !rested) void call("POST", "/api/controllers/look", { on: false }).catch(() => {});
+      rested = behind;
+      if (!busy && !behind && !document.querySelector("#ambient.on")) {
         const answer = await call("POST", "/api/controllers/look", { on: true }).catch(() => null);
         if (live !== me) return;
         if (answer && !busy) {
