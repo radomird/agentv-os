@@ -260,3 +260,25 @@ test("ADR-087 profiles on their own: with no PIN none is locked, and with one a 
   set = true;
   assert.equal((await profiles.list())[0].locked, false, "a new PIN starts with nothing locked");
 });
+
+test("with a PIN set, an adult picks or clears the household's AI only past the PIN, and with none it's as before", async () => {
+  assert.equal((await send("POST", "/api/viewer", { id: "radomir" })).status, 200);
+  // No PIN: picking and clearing go through, as setup needs before one exists.
+  assert.equal((await send("GET", "/api/pin")).data.set, false);
+  assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "key" })).status, 200);
+  assert.equal((await send("POST", "/api/ai", { provider: null })).status, 200);
+
+  assert.equal((await send("PUT", "/api/pin", { pin: PIN })).status, 200);
+  try {
+    for (const body of [{ provider: "claude", path: "key" }, { provider: null }]) {
+      const refused = await send("POST", "/api/ai", body);
+      assert.equal(refused.status, 403, JSON.stringify(refused.data));
+      assert.deepEqual(refused.data, { ok: false, error: "that needs the pin", pin: true });
+      // The same answer the plan's own route gives.
+      assert.deepEqual((await send("PUT", "/api/ai/plan", { provider: "claude" })).data, refused.data);
+      assert.equal((await send("POST", "/api/ai", body, { grant: await grant() })).status, 200);
+    }
+  } finally {
+    assert.equal((await send("DELETE", "/api/pin", undefined, { grant: await grant() })).status, 200);
+  }
+});
