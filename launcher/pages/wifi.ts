@@ -31,7 +31,7 @@ interface Status {
   looking: boolean;
   joining: string | null;
   problem: { ssid: string; why: Why } | null;
-  hotspot: { ssid: string; password: string | null; problem: boolean } | null;
+  hotspot: { ssid: string; problem: boolean } | null;
   // Whether who's watching may change it.
   change?: boolean;
 }
@@ -94,8 +94,11 @@ function setValue(): void {
   value.textContent = networkValue();
 }
 
+// The list of networks is for whoever may pick one, so a child's profile
+// isn't given it and doesn't ask.
 async function load(): Promise<void> {
-  const [now, found] = await Promise.all([call<Status>("GET", "/api/network"), call<{ networks: Listed[] }>("GET", "/api/network/networks")]);
+  const now = await call<Status>("GET", "/api/network");
+  const found = now.change ? await call<{ networks: Listed[] }>("GET", "/api/network/networks") : { networks: [] };
   status = now;
   networks = found.networks;
 }

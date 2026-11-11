@@ -8,7 +8,8 @@
 # this from Omarchy's post-update hook): AgenTV's daemon, then the TV
 # session's own units under agentv-tv.target, the screen daemon, the virtual
 # input device and the overlay, and with the screen daemon the home screen
-# and the services' Chromium, whose sign-ins are on disk. So an update needs
+# and the services' Chromium, whose sign-ins are on disk. The watch for a
+# lost network restarts too, when it's running. So an update needs
 # a restart of the box only for a new kernel, or when Omarchy's update says
 # it needs one, and then this leaves it to that restart. The TV goes black
 # for a moment, then shows home. The TV session itself and everything of
@@ -58,6 +59,18 @@ if [[ $part != "session" ]] && systemctl is-active --quiet agentv-daemon.service
     done
   else
     echo "AgenTV's daemon didn't restart" >&2
+    status=1
+  fi
+fi
+
+# The watch that opens the hotspot when the network goes
+# (agentv-hotspot-watch.service) is one long-running script, so without this
+# it would go on as the version from before until the next start. Only one
+# that's running: try-restart leaves a stopped one stopped. What it keeps is
+# in /run, so it picks up where the old one was.
+if [[ $part != "session" ]]; then
+  if ! ${as_root[@]+"${as_root[@]}"} systemctl try-restart agentv-hotspot-watch.service; then
+    echo "the watch for a lost network didn't restart" >&2
     status=1
   fi
 fi

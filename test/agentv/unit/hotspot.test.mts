@@ -166,6 +166,15 @@ test("a phone asking whether it's online, for any name, is sent to the captive p
   }
 });
 
+test("a request to the page is noted for root's watch, and a phone asking whether it's online isn't", async () => {
+  const noted = join(state, "hotspot-page");
+  rmSync(noted, { force: true });
+  await phone("/generate_204", "connectivitycheck.gstatic.com");
+  assert.ok(!existsSync(noted), "a phone that only joined isn't someone using the page");
+  await phone("/", "127.0.0.1");
+  assert.ok(existsSync(noted), "the page opened is");
+});
+
 test("on its own address it serves the captive page and what it needs, and nothing else", async () => {
   const host = `127.0.0.1:${port}`;
   const page = await phone("/", host);
@@ -234,7 +243,14 @@ test("the TV gets the hotspot's name, password and QR code, and setup ending clo
   assert.equal((await fetch(`${tv}/api/hotspot/qr`)).status, 404);
   assert.deepEqual((await (await fetch(`${tv}/api/hotspot`)).json()).joined, { ssid: "home wi-fi", address: "192.168.1.20" });
   await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) });
-  assert.ok(!existsSync(drop), "a hotspot that's off isn't asked to close");
+  assert.ok(!existsSync(drop), "a hotspot that's off isn't asked to close again once setup is done");
+
+  // Setup ending with the hotspot closed already, as after a join: root is
+  // still told, since it takes the installer's network away then.
+  await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: false }) });
+  await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) });
+  assert.deepEqual(readDrop(), { stop: true });
+  rmSync(drop);
 });
 
 test("once the hotspot joined the home Wi-Fi, phones pair at the box's address there", async () => {

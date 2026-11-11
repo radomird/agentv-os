@@ -4,12 +4,33 @@
 
 # Marks TV setup as not done, so the TV starts it again from the welcome
 # screen. Profiles, phones and the PIN stay as they are.
+#
+# On a TV with an adult PIN, starting setup again needs it, as Settings
+# does: AGENTV_PIN=<the PIN> agentv setup reset.
 
 set -euo pipefail
 
 port=${AGENTV_PORT:-3000}
-if ! curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
-  -d '{"done": false}' "http://127.0.0.1:$port/api/setup"; then
+url="http://127.0.0.1:$port"
+grant=()
+if [[ -n ${AGENTV_PIN:-} ]]; then
+  # The PIN goes in on stdin, so it's on no command line.
+  token=$(jq -nc --arg pin "$AGENTV_PIN" '{pin: $pin}' |
+    curl -sS --max-time 5 -H 'Content-Type: application/json' -d @- "$url/api/pin/check" | jq -r '.grant // empty') || token=""
+  if [[ -z $token ]]; then
+    echo "The TV didn't take the PIN in AGENTV_PIN." >&2
+    exit 1
+  fi
+  grant=(-H "X-AgenTV-Grant: $token")
+fi
+
+status=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' ${grant[@]+"${grant[@]}"} \
+  -d '{"done": false}' "$url/api/setup") || status=""
+if [[ $status == "403" ]]; then
+  echo "This TV has an adult PIN set. Run it again with the PIN: AGENTV_PIN=<the PIN> agentv setup reset" >&2
+  exit 1
+fi
+if [[ $status != "200" ]]; then
   echo "AgenTV's daemon isn't answering. Try: sudo systemctl restart agentv-daemon" >&2
   exit 1
 fi
