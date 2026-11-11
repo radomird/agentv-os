@@ -1,0 +1,74 @@
+/* Settings, network (pages/wifi.ts): the Wi-Fi nearby as Settings' own rows,
+   and the notice a TV that lost its network shows (offline.ts). Colours are
+   the theme's, and each look restyles .button and .toast as it does
+   everywhere. */
+
+/* The panel's parts sit in Settings' panel as if they were its own. */
+.wifi-panel {
+  display: contents;
+}
+
+.button.network {
+  justify-content: flex-start;
+  gap: 20px;
+}
+
+.button.network .network-name {
+  flex-grow: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button.network .network-bars {
+  color: var(--green-ink, var(--green));
+}
+
+/* A look that fills the focused row writes all of it in one colour. */
+.button.network.focused .network-bars {
+  color: inherit;
+}
+
+.wifi-join .panel-note {
+  min-height: 1.4em;
+  margin-top: 24px;
+}
+
+/* The notice: the hotspot's QR code, one headline and one line, under the
+   bar's corner and under a toast, on home only. */
+.toast.offline {
+  position: fixed;
+  top: 160px;
+  right: 40px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  width: 700px;
+  box-sizing: border-box;
+  z-index: 18;
+}
+
+body:not(.on-home) .toast.offline {
+  display: none;
+}
+
+.toast.offline .pair-qr {
+  width: 200px;
+  height: 200px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.offline-title {
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--bright-foreground);
+}
+
+.offline-line {
+  margin-top: 8px;
+  font-size: 29px;
+  color: var(--foreground);
+}

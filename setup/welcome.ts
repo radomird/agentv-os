@@ -10,9 +10,9 @@
 // no "use a keyboard instead": the phone is the way in. Enter still carries
 // on the same way, for a household with only a keyboard.
 
-import { glyph } from "../launcher/glyphs.ts";
 import { h } from "../launcher/dom.ts";
-import { setup, type Network, type SetupInfo } from "./api.ts";
+import { joinFields, networkRow, type Picked } from "../launcher/wifi-parts.ts";
+import { setup, type SetupInfo } from "./api.ts";
 import { heading, hi, prompt } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
@@ -151,19 +151,14 @@ export function welcome(ctx: Ctx, phase2 = false): View {
   };
 }
 
-// Signal bars for a network, out of four.
-function bars(signal: number): string {
-  const full = Math.max(1, Math.min(4, Math.ceil(signal / 25)));
-  return "▂▄▆█".slice(0, full);
-}
-
 // The Wi-Fi the box saw, picked and joined from the TV with a keyboard,
-// for a household with no phone at hand.
+// for a household with no phone at hand. The list and the fields are the
+// ones Settings, network uses (launcher/wifi-parts.ts).
 export function wifi(ctx: Ctx): View {
   const list = h("div", { class: "networks" });
   const form = h("div", { class: "network-form hidden" });
   const el = h("div", { class: "setup-page" }, ...heading("tv setup · wifi", "pick your wi-fi.", ctx.reduced()), h("div", { class: "wifi" }, list, form));
-  let picked: { ssid: string; secure: boolean; hidden: boolean } | null = null;
+  let picked: Picked | null = null;
 
   const join = async (ssid: string, password: string) => {
     try {
@@ -177,23 +172,9 @@ export function wifi(ctx: Ctx): View {
     ctx.back();
   };
 
-  const pick = (network: { ssid: string; secure: boolean; hidden: boolean }) => {
+  const pick = (network: Picked) => {
     picked = network;
-    const name = network.hidden ? (h("input", { class: "text-field", type: "text", "data-focus": true, "aria-label": "the network's name", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement) : null;
-    const password = network.secure ? (h("input", { class: "text-field", type: "password", "data-focus": true, "aria-label": `the password for ${network.ssid || "the network"}`, autocomplete: "off" }) as HTMLInputElement) : null;
-    const go = h(
-      "button",
-      { class: "button primary", "data-focus": true, "data-action": "join", onclick: () => void join(name ? name.value : network.ssid, password?.value ?? "") },
-      "↵ join",
-    );
-    for (const input of [name, password]) {
-      input?.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          go.click();
-        }
-      });
-    }
+    const { name, password, go } = joinFields(network, { name: "the network's name", password: `the password for ${network.ssid || "the network"}`, join: "↵ join" }, (ssid, typed) => void join(ssid, typed));
     const parts: (HTMLElement | null)[] = [
       h("div", { class: "panel-title" }, network.hidden ? "another network" : network.ssid),
       name ? h("label", { class: "field-label" }, "name") : null,
@@ -207,19 +188,7 @@ export function wifi(ctx: Ctx): View {
     ctx.focus.set(name ?? password ?? go);
   };
 
-  const row = (network: Network | null) =>
-    h(
-      "button",
-      {
-        class: "network",
-        "data-focus": true,
-        "data-ssid": network?.ssid ?? "",
-        onclick: () => pick(network ? { ssid: network.ssid, secure: network.secure, hidden: false } : { ssid: "", secure: true, hidden: true }),
-      },
-      h("span", { class: "network-name" }, network?.ssid ?? "another network"),
-      network?.secure ? glyph("lock", 24) : null,
-      h("span", { class: "network-bars" }, network ? bars(network.signal) : ""),
-    );
+  const row = (network: Parameters<typeof networkRow>[0]) => networkRow(network, { other: "another network", pick });
 
   void setup.networks().then(
     (networks) => {

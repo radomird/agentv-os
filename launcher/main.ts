@@ -29,6 +29,7 @@ import { countryPage, loadCountry } from "./pages/country.ts";
 import { desktopPasswordPage } from "./pages/desktop-password.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
+import { followNetwork, networkHeard, wifiPage } from "./pages/wifi.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
@@ -399,6 +400,8 @@ function viewFor(route: string): View {
   if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
   if (name === "desktop-password" && ctx.state.viewer.role === "adult") return desktopPasswordPage(ctx);
   if (name === "pair") return pairPage(ctx);
+  // Settings, network: a Wi-Fi network's password, for an adult (ADR-084).
+  if (name === "wifi" && ctx.state.viewer.role === "adult") return wifiPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
@@ -772,6 +775,7 @@ async function catchUp(): Promise<void> {
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void followNetwork();
   void askShared();
 }
 
@@ -929,6 +933,8 @@ async function start(): Promise<void> {
     terms: (data) => termsHeard(data),
     // What a phone is typing, as it's typed (ADR-065).
     typing: (data) => typingHeard(data),
+    // The Wi-Fi changed, or the TV lost its network and says so (ADR-084).
+    network: (data) => networkHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {

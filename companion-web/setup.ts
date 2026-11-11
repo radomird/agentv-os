@@ -5,6 +5,10 @@
 // loses this page then and goes back to the home Wi-Fi, where the TV shows a
 // code to pair it with. If the password was wrong, the hotspot comes back,
 // and so does the phone, to this page and the reason.
+//
+// After setup it's the same page, for a TV that lost its network and opened
+// the hotspot again by itself (ADR-084). Then changing the Wi-Fi is an
+// adult's, so with an adult PIN set the page asks for it with the password.
 
 import { glyph } from "../launcher/glyphs.ts";
 import { h, prompt, toast } from "./lib.ts";
@@ -25,6 +29,10 @@ interface Joining {
 
 let networks: Network[] = [];
 let watching = 0;
+// After setup: the TV lost its network. And whether it has an adult PIN,
+// which a join then needs.
+let after = false;
+let needsPin = false;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -34,7 +42,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? "the tv didn't answer");
+  if (!response.ok || data.ok === false) throw Object.assign(new Error(data.error ?? "the tv didn't answer"), { pin: data.pin === true, wait: Number(data.wait) || 0 });
   return data as T;
 }
 
@@ -57,7 +65,7 @@ function list(note?: string): void {
     h(
       "div",
       { class: "page" },
-      prompt("tv setup wi-fi"),
+      prompt("tv wi-fi"),
       h("h1", {}, "pick your wi-fi"),
       h("p", { class: `note${note ? " bad" : ""}` }, note ?? "the tv joins it, and your phone goes back to it after."),
       ...rows,
@@ -75,19 +83,26 @@ function form(network: Network | null): void {
     network && !network.secure
       ? null
       : (h("input", { class: "field", type: "password", autocapitalize: "none", autocomplete: "off", spellcheck: "false", maxlength: "64", placeholder: "its password", "aria-label": "the wi-fi password" }) as HTMLInputElement);
+  const pin = needsPin
+    ? (h("input", { class: "field", type: "password", inputmode: "numeric", autocomplete: "off", maxlength: "4", placeholder: "Adult PIN", "aria-label": "Adult PIN", "data-field": "pin" }) as HTMLInputElement)
+    : null;
   const join = async () => {
     const ssid = network?.ssid ?? name!.value.trim();
     const typed = password?.value ?? "";
     if (!ssid) return toast("type the network's name");
     if (password && network?.secure && typed.length < 8) return toast("a wi-fi password is at least 8 characters");
+    if (pin && !/^\d{4}$/.test(pin.value)) return toast("The adult PIN has 4 digits");
     try {
-      await call("POST", "/api/setup/wifi", { ssid, password: typed });
+      await call("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) });
     } catch (error) {
-      return toast((error as Error).message);
+      const refused = error as Error & { pin?: boolean; wait?: number };
+      if (!refused.pin) return toast(refused.message);
+      pin!.value = "";
+      return toast(refused.wait ? `Too many tries. Try again in ${refused.wait} s.` : "Wrong PIN");
     }
     joining(ssid);
   };
-  for (const field of [name, password]) {
+  for (const field of [name, password, pin]) {
     field?.addEventListener("keydown", (event) => {
       if (event.key === "Enter") void join();
     });
@@ -96,11 +111,12 @@ function form(network: Network | null): void {
     h(
       "div",
       { class: "page" },
-      prompt("tv setup wi-fi"),
+      prompt("tv wi-fi"),
       h("h1", { class: "with-icon" }, glyph("wifi", 26), h("span", {}, network?.ssid ?? "another network")),
       h("p", { class: "note" }, "your phone leaves this network while the tv joins."),
       name,
       password,
+      pin,
       h("button", { class: "button primary", type: "button", "data-action": "join", onclick: () => void join() }, "join"),
       h("button", { class: "button", type: "button", onclick: () => list() }, glyph("back", 20), h("span", {}, "back")),
     ),
@@ -115,9 +131,9 @@ function joining(ssid: string): void {
       "div",
       { class: "page" },
       h("div", { class: "pair-icons" }, glyph("tv", 40), glyph("right", 24), glyph("wifi", 40)),
-      prompt("tv setup wi-fi"),
+      prompt("tv wi-fi"),
       h("h1", {}, `joining ${ssid}`),
-      h("p", { class: "note" }, "once it's on, go back to that wi-fi and scan the new code on the tv."),
+      h("p", { class: "note" }, after ? "once it's on, go back to that wi-fi." : "once it's on, go back to that wi-fi and scan the new code on the tv."),
     ),
   );
   clearInterval(watching);
@@ -138,14 +154,16 @@ async function start(): Promise<void> {
   void call("POST", "/api/setup/zone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
   try {
     const [found, state] = await Promise.all([
-      call<{ networks: Network[] }>("GET", "/api/setup/networks"),
+      call<{ networks: Network[]; after?: boolean; pin?: boolean }>("GET", "/api/setup/networks"),
       call<Joining>("GET", "/api/setup/state"),
     ]);
     networks = found.networks;
+    after = found.after === true;
+    needsPin = found.pin === true;
     if (state.joining) joining(state.joining);
     else list(state.error ?? undefined);
   } catch (error) {
-    app.replaceChildren(h("div", { class: "page" }, prompt("tv setup wi-fi"), h("h1", {}, "the tv isn't answering"), h("p", { class: "note bad" }, (error as Error).message)));
+    app.replaceChildren(h("div", { class: "page" }, prompt("tv wi-fi"), h("h1", {}, "the tv isn't answering"), h("p", { class: "note bad" }, (error as Error).message)));
   }
 }
 
