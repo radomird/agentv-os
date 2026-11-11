@@ -18,6 +18,8 @@ grep -qF 'hl.monitor({ output = kept.output, mode = kept.mode, position = "auto"
 
 lua=$(type -P lua5.4 || type -P lua || true)
 if [[ -z $lua ]]; then
+  # CI installs Lua for this, so there it's a failure, not a skip.
+  [[ -n ${CI:-} ]] && fail "Lua is installed" "the TV session's monitor lines need lua5.4 to run"
   pass "the TV session's monitor lines are there (no Lua here to run them)"
   exit 0
 fi
