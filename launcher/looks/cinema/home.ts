@@ -39,7 +39,7 @@ function appCard(ctx: Ctx, app: App, size: string): HTMLElement {
   const words = state(ctx, app);
   return h(
     "button",
-    { class: `tile cinema-card size-${size}`, "data-focus": true, "data-id": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
+    { class: `tile cinema-card size-${size}`, "data-focus": true, "data-id": app.id, "data-details": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
     cardContent(app, logo(app), true),
     h("span", { class: "cinema-card-name" }, named(app.name)),
     words ? h("span", { class: "cinema-card-state" }, words) : null,

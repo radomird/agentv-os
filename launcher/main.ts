@@ -29,6 +29,7 @@ import { countryPage, loadCountry } from "./pages/country.ts";
 import { desktopPasswordPage } from "./pages/desktop-password.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
+import { followNetwork, networkHeard, wifiPage } from "./pages/wifi.ts";
 import { profile } from "./pages/profiles.ts";
 import { loadShared, openShare, shareWhat, sharedView } from "./pages/shared.ts";
 import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.ts";
@@ -399,6 +400,8 @@ function viewFor(route: string): View {
   if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
   if (name === "desktop-password" && ctx.state.viewer.role === "adult") return desktopPasswordPage(ctx);
   if (name === "pair") return pairPage(ctx);
+  // Settings, network: a Wi-Fi network's password, for an adult (ADR-084).
+  if (name === "wifi" && ctx.state.viewer.role === "adult") return wifiPage(ctx);
   // Settings → Power's questions, for an adult only (ADR-033, ADR-060).
   if (name === "power" && ctx.state.viewer.role === "adult") return power(ctx, arg === "restart" || arg === "bootmenu" ? arg : "shutdown");
   if (name === "music") return music(ctx, arg);
@@ -772,6 +775,7 @@ async function catchUp(): Promise<void> {
   await refresh();
   setLock(ctx.state.pin?.locked === true);
   void daemon.updates().then(setUpdates).catch(() => {});
+  void followNetwork();
   void askShared();
 }
 
@@ -802,7 +806,9 @@ function setRunning(apps: Running[]): void {
   const next = new Map([...apps, ...pageRunning()].map((app) => [app.id, app]));
   if (JSON.stringify([...next]) === JSON.stringify([...ctx.running])) return;
   ctx.running = next;
-  if (history[history.length - 1] === "home") redraw();
+  // Details has Quit only while its app is open.
+  const top = history[history.length - 1];
+  if (top === "home" || top.startsWith("details/")) redraw();
 }
 
 // The look and the size (ADR-063, ADR-062): what the box has, or what a
@@ -846,7 +852,10 @@ async function start(): Promise<void> {
     },
     true,
   );
-  listenInput(act);
+  // Holding OK on a tile opens its app's details (ADR-084). A tile says it
+  // has them with data-details; nothing does while something else has the
+  // keys.
+  listenInput(act, () => (preview() || updatingShown || ambient || pinOpen || noticeOpen ? undefined : focus.get()?.dataset.details));
   listen({
     layout: () => void refresh(),
     // Another look was picked, in Settings or on the phone: the page again,
@@ -929,6 +938,8 @@ async function start(): Promise<void> {
     terms: (data) => termsHeard(data),
     // What a phone is typing, as it's typed (ADR-065).
     typing: (data) => typingHeard(data),
+    // The Wi-Fi changed, or the TV lost its network and says so (ADR-084).
+    network: (data) => networkHeard(data),
     phones: (data) => {
       const paired = (data as { paired?: string }).paired;
       if (paired) {

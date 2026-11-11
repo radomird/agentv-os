@@ -313,16 +313,17 @@ test("S2.15 tiles show the apps open behind home, and q quits a game", async () 
     };
   });
   await page.goto(`${url}/`);
-  await page.waitForSelector('.grid [data-id="agentv.games"] .tile-quit');
+  await page.waitForSelector('.grid [data-id="agentv.games"] .tile-state');
   await rest(page);
-  assert.equal(await page.locator('.grid [data-id="agentv.games"] .tile-state').innerText(), "running · q quit");
+  // The tile names no key for it: Quit is in the app's details (ADR-084).
+  assert.equal(await page.locator('.grid [data-id="agentv.games"] .tile-state').innerText(), "running");
   assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-state').innerText(), "paused");
   await page.locator('.grid [data-id="agentv.games"]').hover();
   await page.keyboard.press("q");
   await page.waitForFunction(() => (window as unknown as { screenRequests: any[] }).screenRequests.some((r) => r.cmd === "quit" && r.app === "agentv.games"));
   // The screen daemon says it's gone.
   await page.evaluate(() => (window as unknown as { agentvRunning: (json: string) => void }).agentvRunning("[]"));
-  await page.waitForFunction(() => !document.querySelector(".tile-quit"));
+  await page.waitForFunction(() => !document.querySelector('.grid [data-id="agentv.games"] .tile-state'));
   assert.equal(await page.locator('.grid [data-id="agentv.tube"] .tile-label').innerText(), "streaming");
   // Home from the screen daemon, with the home screen already in front,
   // goes back to the home page.

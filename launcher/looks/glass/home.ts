@@ -34,7 +34,7 @@ export function ordered(ctx: Ctx): App[] {
 function glassTile(ctx: Ctx, app: App): HTMLElement {
   return h(
     "button",
-    { class: "tile glass-tile", "data-focus": true, "data-id": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
+    { class: "tile glass-tile", "data-focus": true, "data-id": app.id, "data-details": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
     cardContent(app, logo(app, true), false),
     h("span", { class: "glass-label" }, named(app.name)),
   );

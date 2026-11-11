@@ -80,6 +80,9 @@ const STEP_PX = 44;
 const HOLD_MS = 600;
 // How long Back is held before the phone sends the hold that goes home.
 const BACK_HOLD_MS = 700;
+// How long the TV holds OK for a hold on the phone's OK: longer than the
+// TV waits on a tile before it opens the app's details (launcher/input.ts).
+const OK_HOLD_MS = 700;
 
 // A request whose answer says how it went, whether or not it worked.
 async function post<T extends object>(path: string, body: unknown): Promise<T & { ok: boolean; why?: string; error?: string }> {
@@ -385,6 +388,37 @@ export class Remote2 {
     return area;
   }
 
+  // The d-pad's OK. A tap is OK. Held, the phone sends the hold, and on a
+  // tile the TV opens that app's details (ADR-084), as Back's hold goes home.
+  private ok(): HTMLElement {
+    const ok = h("button", { type: "button", class: "r2-ok", "aria-label": "ok", "data-key": "enter" }, "OK");
+    let timer = 0;
+    let held = false;
+    ok.addEventListener("pointerdown", () => {
+      held = false;
+      ok.classList.add("holding");
+      timer = window.setTimeout(() => {
+        held = true;
+        if (feelOn()) navigator.vibrate?.(20);
+        this.send({ hold: "enter", ms: OK_HOLD_MS });
+      }, HOLD_MS);
+    });
+    const release = (event: Event) => {
+      clearTimeout(timer);
+      ok.classList.remove("holding");
+      if (!held && event.type === "pointerup") this.send({ key: "enter" });
+      held = false;
+    };
+    ok.addEventListener("pointerup", release);
+    ok.addEventListener("pointercancel", release);
+    ok.addEventListener("pointerleave", (event) => ok.classList.contains("holding") && release(event));
+    // A keyboard's Enter on the button, which has no pointer.
+    ok.addEventListener("click", (event) => event.detail === 0 && this.send({ key: "enter" }));
+    // A long press is the hold, not the phone's own menu.
+    ok.addEventListener("contextmenu", (event) => event.preventDefault());
+    return ok;
+  }
+
   private dpad(): HTMLElement {
     const arrow = (name: "up" | "down" | "left" | "right") => this.iconButton(name, "", { class: `r2-arrow r2-${name}`, "aria-label": name, "data-key": name, onclick: () => this.send({ key: name }) }, 36);
     return h(
@@ -392,7 +426,7 @@ export class Remote2 {
       { class: "r2-surface r2-dpad", "data-action": "dpad-pad" },
       arrow("up"),
       arrow("left"),
-      h("button", { type: "button", class: "r2-ok", "aria-label": "ok", "data-key": "enter", onclick: () => this.send({ key: "enter" }) }, "OK"),
+      this.ok(),
       arrow("right"),
       arrow("down"),
     );
