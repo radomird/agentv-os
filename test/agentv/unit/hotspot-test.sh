@@ -67,6 +67,7 @@ cat >"$SCRATCH/bin/systemctl" <<'EOF'
 #!/bin/bash
 echo "systemctl $*" >>"$FAKE/calls"
 [[ $1 == "is-active" ]] && exit "${FAKE_ACTIVE:-3}"
+[[ $1 == "stop" && -n ${FAKE_STOP_FAILS:-} ]] && exit 1
 exit 0
 EOF
 cat >"$SCRATCH/bin/iw" <<'EOF'
@@ -200,6 +201,17 @@ printf '%s' '{"join":{"ssid":"far away","password":"long enough","hidden":true}}
 FAKE_UP_FAILS="Error: Connection activation failed: The Wi-Fi network could not be found." hotspot drop || true
 [[ $(state .error) == "the tv can't see far away from here" ]] || fail "and a network out of reach says so" "$(state .error)"
 pass "a wrong password opens the hotspot again, with the reason, and nothing of it stays"
+
+# A join cut short, as when one of its commands fails: it doesn't stay
+# "joining", which would keep the watch out and every later join waiting.
+hotspot run >/dev/null || true
+: >"$FAKE/calls"
+printf '%s' '{"join":{"ssid":"home wi-fi","password":"correct horse","hidden":false},"id":"1122334455667788"}' >"$AGENTV_HOTSPOT_DROP"
+if FAKE_STOP_FAILS=1 hotspot drop; then fail "a join whose command fails doesn't pass for joined"; fi
+jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi" and .answered == "1122334455667788"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join cut short says it didn't work, and answers its ask" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "and the hotspot it was closing opens again" "$(cat "$FAKE/calls")"
+pass "a join cut short says so, and leaves nothing reading as still joining"
 
 # WPA3 and hidden networks, and drops that aren't right.
 : >"$FAKE/calls"

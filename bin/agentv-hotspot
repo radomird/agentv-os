@@ -305,6 +305,23 @@ valid_password() {
   [[ -z $1 || $1 =~ ^[\ -~]{8,63}$ || $1 =~ ^[0-9a-fA-F]{64}$ ]]
 }
 
+# A join that ended before it said how it went, as when one of its commands
+# failed: it says so now, and the hotspot it closed opens again. Left as
+# "joining", the watch would keep out for good, every later join would be
+# told the TV is busy, and Settings would say "Joining" until a restart.
+JOIN_CLOSED_HOTSPOT=""
+join_ended() {
+  local ssid
+
+  ssid=$(state_get .joining)
+  [[ -n $ssid ]] || return 0
+  echo "agentv-hotspot: the join of $ssid ended before it was done" >&2
+  state_set '.joining = null | .error = $error | .why = "failed" | .answered = $asked' --arg error "the tv couldn't join $ssid" || true
+  if [[ $JOIN_CLOSED_HOTSPOT == "true" ]]; then
+    systemctl start --no-block agentv-hotspot.service || true
+  fi
+}
+
 # join <ssid> <password> <hidden>: the home Wi-Fi, in place of the hotspot,
 # or of the network the TV is on. When it doesn't work, the TV goes back to
 # what it had: the hotspot if that was open, or else the network from before.
@@ -315,6 +332,8 @@ join() {
   [[ -n $device ]] || device=$(wifi_device)
   was_on=$(state_get .on)
   [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1)
+  JOIN_CLOSED_HOTSPOT=$was_on
+  trap join_ended EXIT
   state_set '.joining = $ssid | .error = null | .why = null' --arg ssid "$ssid"
   systemctl stop agentv-hotspot.service
 
