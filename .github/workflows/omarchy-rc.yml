@@ -19,10 +19,9 @@ name: Omarchy release candidate
 # run opens an issue, or adds to the one that candidate has, and a run that
 # passes closes it.
 #
-# The image workflow builds the newer agentv the box updates to, and signs
-# it, so this run hands it the signing key, as every image run does today.
-# It's the only secret it passes. Once the image workflow takes a test key
-# for runs that publish nothing, this one should use that instead.
+# It passes no secrets. The image workflow signs what it builds here with a
+# throwaway key it makes in the run, as it does for every run that
+# publishes nothing.
 
 on:
   schedule:
@@ -84,8 +83,6 @@ jobs:
       shards: 1
       omarchy-channel: rc
       omarchy-version: ${{ needs.find.outputs.version }}
-    secrets:
-      AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
 
   # One issue per candidate. A later run that fails on the same one adds a
   # comment instead of opening another.

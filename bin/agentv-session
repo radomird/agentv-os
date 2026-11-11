@@ -78,6 +78,13 @@ tv() {
   # session has agentv-tv.target instead.
   export HYPRLAND_NO_SD_TARGET=1
 
+  # Omarchy's Bluetooth pairing agent says yes to every pairing. It starts
+  # with Omarchy's desktop and nothing stops it when the desktop ends, so
+  # after a visit there it would still be answering on the TV, where only
+  # Settings pairs, and only game controllers. It starts again with the
+  # desktop.
+  systemctl --user stop bt-agent.service 2>/dev/null
+
   if omarchy-cmd-present start-hyprland; then
     start-hyprland -- --config "$AGENTV_PATH/session/hypr.lua"
   else

@@ -101,13 +101,24 @@ const LOCALE = /^[a-z]{2}([-_][a-z]{2})?$/;
 // start page, or a path whose first part the recipe names. A language at
 // the front and a file ending don't count: /en-gb/search and /search.html
 // are both "search".
+//
+// Some sites keep the page in the part after the #, like /#/search or
+// /#!/search, and their path is always /. That part is held to the same
+// rule, so /#/account is no more the start page than /account is.
 export function signedInPage(pages: string[] | undefined, address: URL): boolean {
   let parts: string[];
+  let route: string[] = [];
   try {
     parts = address.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part).toLowerCase());
+    const hash = decodeURIComponent(address.hash);
+    if (/^#[/!]/.test(hash)) route = hash.slice(1).replace(/^!/, "").replace(/\?.*$/, "").split("/").filter(Boolean).map((part) => part.toLowerCase());
   } catch {
     return false;
   }
+  return named(pages, parts) && named(pages, route);
+}
+
+function named(pages: string[] | undefined, parts: string[]): boolean {
   if (parts.length && LOCALE.test(parts[0])) parts = parts.slice(1);
   if (parts.length === 0) return true;
   const first = parts[0].replace(/\.[a-z0-9]{1,5}$/, "");

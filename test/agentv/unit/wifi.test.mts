@@ -8,7 +8,7 @@
 // the drop and nowhere else. Root is stood in for by what it writes.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -32,12 +32,23 @@ const NETWORKS = [
 const nic = (address: string) => ({ address, netmask: "255.255.255.0", family: "IPv4" as const, mac: "00:00:00:00:00:00", internal: false, cidr: `${address}/24` });
 let interfaces: Record<string, ReturnType<typeof nic>[]> = { wlan0: [nic("192.168.1.20")] };
 
-// Root's side: what agentv-hotspot writes, and the drop it takes.
+// Root's side: what agentv-hotspot writes, and the drop it takes. It writes a
+// new file over state.json each time, and its answer to an ask carries the
+// ask's id, as agentv-hotspot's does.
+let taken = "";
 function rootSays(fields: Record<string, unknown>): void {
-  writeFileSync(join(run, "state.json"), JSON.stringify({ on: false, ...fields }));
+  const next = join(run, ".state.json.next");
+  writeFileSync(next, JSON.stringify({ on: false, answered: taken, ...fields }));
+  renameSync(next, join(run, "state.json"));
 }
-const readDrop = () => JSON.parse(readFileSync(drop, "utf8"));
-const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
+function rootTakes(): void {
+  taken = JSON.parse(readFileSync(drop, "utf8")).id;
+  rmSync(drop);
+}
+const readDrop = () => {
+  const { id: _id, ...request } = JSON.parse(readFileSync(drop, "utf8"));
+  return request;
+};
 
 test("it says how the TV is online, and marks the network it's on", () => {
   writeFileSync(join(run, "networks.json"), JSON.stringify(NETWORKS));
@@ -64,16 +75,17 @@ test("a look and a join go to root with the hotspot closed, and it says how each
   const heard: unknown[] = [];
   rootSays({ wifi: "Home", radio: true });
   const hotspot = new Hotspot({ state, run });
-  // Root's answer counts once state.json is written after the ask.
+  // Root's answer counts once it names the ask, whatever the clocks say.
   const network = new TvNetwork({ hotspot, run, interfaces: () => interfaces, now: () => clock, changed: (now) => heard.push(now) });
   clock = Date.now();
   assert.equal(network.look(), null);
   assert.deepEqual(readDrop(), { scan: true });
   assert.equal(network.state().looking, true);
   assert.equal(network.look(), null, "asked twice, it's one look");
-  rmSync(drop);
+  rootTakes();
   assert.equal(network.state().looking, true, "root took it, and hasn't said yet");
-  await pause(20);
+  rootSays({ wifi: "Home", radio: true, answered: "an ask from before" });
+  assert.equal(network.state().looking, true, "a write that isn't this look's answer doesn't end it");
   rootSays({ wifi: "Home", radio: true, scanned: "now" });
   assert.equal(network.state().looking, false);
 
@@ -86,11 +98,9 @@ test("a look and a join go to root with the hotspot closed, and it says how each
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } });
   assert.equal(network.state().joining, "Home");
   assert.equal(network.look(), "busy");
-  rmSync(drop);
-  await pause(20);
+  rootTakes();
   rootSays({ wifi: "Home", radio: true, joining: "Home" });
   assert.equal(network.state().joining, "Home");
-  await pause(20);
   rootSays({ wifi: "cafe", radio: true, joining: null, error: "that password didn't work for Home", why: "password" });
   assert.deepEqual(network.state().problem, { ssid: "Home", why: "password" });
   assert.equal(network.state().joining, null);
@@ -101,8 +111,7 @@ test("a look and a join go to root with the hotspot closed, and it says how each
   assert.equal(network.join("attic", "upstairs1"), null);
   assert.deepEqual(readDrop(), { join: { ssid: "attic", password: "upstairs1", hidden: true } });
   assert.equal(network.state().problem, null, "a new try clears the last one's reason");
-  rmSync(drop);
-  await pause(20);
+  rootTakes();
   rootSays({ wifi: "attic", radio: true, joined: { ssid: "attic", address: "192.168.1.20" } });
   assert.deepEqual([network.state().joining, network.state().problem, network.state().name], [null, null, "attic"]);
 
@@ -111,7 +120,7 @@ test("a look and a join go to root with the hotspot closed, and it says how each
   assert.equal(network.join("cafe", ""), null);
   clock += 101_000;
   assert.deepEqual(network.state().problem, { ssid: "cafe", why: "failed" });
-  rmSync(drop);
+  rootTakes();
   // With the hotspot open the radio can't look.
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true });
   assert.equal(network.look(), "hotspot");
@@ -125,6 +134,23 @@ let daemon: Daemon;
 let tv = "";
 let captive = "";
 let lan = "";
+test("a join asked while a look is still running waits for its own answer", () => {
+  rootSays({ wifi: "Home", radio: true });
+  const network = new TvNetwork({ hotspot: new Hotspot({ state, run }), run, interfaces: () => interfaces });
+  assert.equal(network.look(), null);
+  rootTakes();
+  assert.equal(network.join("cafe", ""), null, "a look doesn't hold a join back");
+  // Root finishes the look, then takes the join, and hasn't said it's joining yet.
+  rootSays({ wifi: "Home", radio: true, scanned: "now" });
+  rootTakes();
+  const mid = network.state();
+  assert.equal(mid.joining, "cafe", "the look's answer isn't the join's");
+  rootSays({ wifi: "Home", radio: true, joining: null, error: "the tv couldn't join cafe", why: "failed" });
+  assert.deepEqual(network.state().problem, { ssid: "cafe", why: "failed" });
+  assert.equal(network.state().joining, null);
+  network.close();
+});
+
 const lines: string[] = [];
 
 async function send(base: string, method: string, path: string, body?: unknown, grant?: string): Promise<{ status: number; data: any }> {
@@ -172,8 +198,7 @@ test("the TV's page gets how it's online and the networks, and with no PIN set a
   assert.deepEqual(listed.data.networks[0], { ssid: "Home", signal: 82, secure: true, current: true });
   assert.equal((await send(tv, "POST", "/api/network/scan")).status, 200);
   assert.deepEqual(readDrop(), { scan: true });
-  rmSync(drop);
-  await pause(20);
+  rootTakes();
   rootSays({ wifi: "Home", radio: true });
   assert.equal((await send(tv, "GET", "/api/network")).data.looking, false);
 
@@ -185,8 +210,7 @@ test("the TV's page gets how it's online and the networks, and with no PIN set a
   assert.ok(lines.some((line) => line.includes("settings asked to join Home")));
   assert.ok(!lines.some((line) => line.includes("correct horse")), "the password is in no log line");
   assert.ok(!JSON.stringify(joined.data).includes("correct horse"), "nor in the answer");
-  rmSync(drop);
-  await pause(20);
+  rootTakes();
   rootSays({ wifi: "Home", radio: true, joined: { ssid: "Home", address: "192.168.1.20" } });
   assert.equal((await send(tv, "GET", "/api/network")).data.joining, null);
 
@@ -196,7 +220,7 @@ test("the TV's page gets how it's online and the networks, and with no PIN set a
   assert.deepEqual([listedOnPage.data.after, listedOnPage.data.pin], [true, false]);
   assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" })).status, 200);
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } });
-  rmSync(drop);
+  rootTakes();
   rootSays({ wifi: "Home", radio: true });
 });
 
@@ -221,14 +245,12 @@ test("with a PIN set a join needs its grant, and a child's profile can't look or
   assert.equal(refused.data.pin, true);
   assert.ok(!existsSync(drop));
   assert.equal((await send(tv, "POST", "/api/network/scan")).status, 200, "a look is an adult's with no PIN to type");
-  rmSync(drop);
-  await pause(20);
+  rootTakes();
   rootSays({ wifi: "Home", radio: true });
   const grant = (await send(tv, "POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
   assert.equal((await send(tv, "POST", "/api/network/join", { ssid: "cafe", password: "" }, grant)).status, 200);
   assert.deepEqual(readDrop(), { join: { ssid: "cafe", password: "", hidden: false } });
-  rmSync(drop);
-  await pause(20);
+  rootTakes();
   rootSays({ wifi: "cafe", radio: true });
   assert.equal((await send(tv, "GET", "/api/network")).data.joining, null);
 
@@ -272,7 +294,7 @@ test("with the right PIN the hotspot's page joins, and the PIN goes no further",
   const right = await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse", pin: "4826" });
   assert.equal(right.status, 200);
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } }, "the PIN goes no further than the daemon's check");
-  rmSync(drop);
+  rootTakes();
   assert.ok(!lines.some((line) => line.includes("4826")), "nor into a log line");
 });
 
@@ -283,5 +305,5 @@ test("during setup the hotspot's page is as it was: no PIN asked, even with one 
   assert.deepEqual([listed.data.after, listed.data.pin], [undefined, undefined]);
   assert.equal((await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" })).status, 200);
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } });
-  rmSync(drop);
+  rootTakes();
 });

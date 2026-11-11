@@ -222,7 +222,7 @@ test("the keyboard's Wi-Fi at the welcome screen goes the captive page's way, an
   assert.deepEqual((await (await fetch(`${url}/api/setup/networks`)).json()).networks, [{ ssid: "home wi-fi", signal: 82, secure: true }]);
   assert.match((await (await post("/api/setup/wifi", { ssid: "home wi-fi", password: "" })).json()).error, /needs its password/);
   assert.equal((await post("/api/setup/wifi", { ssid: "home wi-fi", password: "correct horse" })).status, 200);
-  assert.deepEqual(JSON.parse(readFileSync(join(state, "hotspot-drop", "request.json"), "utf8")), { join: { ssid: "home wi-fi", password: "correct horse", hidden: false } });
+  assert.deepEqual(JSON.parse(readFileSync(join(state, "hotspot-drop", "request.json"), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
 });
 
 test("with music as the goal, Music is on home from the start", async () => {

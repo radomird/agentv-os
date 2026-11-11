@@ -282,15 +282,22 @@ jobs:
       # from agentv-pkgs' main. Anything else gets a key made here, good for
       # a day, that only this run's box trusts.
       - name: The key this run's packages are signed with
-        if: inputs.packages == 'build' || inputs.update-test
+        if: inputs.packages == 'build' || inputs.update-test || inputs.release-key
         env:
           RELEASE_KEY: ${{ inputs.release-key }}
           PACKAGES: ${{ inputs.packages }}
           PKGS_REF: ${{ inputs.pkgs-ref }}
+          OS_REF: ${{ inputs.ref }}
+          ISO_REF: ${{ inputs.iso-ref }}
+          UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
+          # What may be checked out beside AgenTV's own key: agentv, or a
+          # release's tag. Never a branch that isn't merged.
+          merged() { [[ $1 == "agentv" || $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
           if [[ $RELEASE_KEY == "true" ]]; then
-            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]]; then
-              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel and agentv-pkgs' main. This run gets a throwaway key when release-key is off."
+            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
+              ! merged "$OS_REF" || ! merged "$ISO_REF" || ! merged "${UPDATE_CHECKS:-agentv}"; then
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a release's tag. This run gets a throwaway key when release-key is off."
               exit 1
             fi
             echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -309,7 +316,9 @@ jobs:
           echo "This run signs its packages with a throwaway key, $(cat "$RUNNER_TEMP/test-key/fingerprint"), which only its own box trusts." | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Built with no key around (agentv-pkgs' bin/build). A run with a
-      # throwaway key gets an agentv-keyring that trusts it too.
+      # throwaway key gets an agentv-keyring that trusts it too. The build's
+      # container can read agentv-pkgs and not change it, since bin/sign
+      # runs from there afterwards.
       - name: AgenTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
@@ -318,7 +327,7 @@ jobs:
           if [[ $PACKAGES == "build" ]]; then
             sha=$(git -C os rev-parse HEAD)
             mkdir -p repo
-            docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/repo:/repo" \
+            docker run --rm -v "$PWD/pkgs:/src:ro" -v "$PWD/repo:/repo" \
               -v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc \
               -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" \
               -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
@@ -368,7 +377,7 @@ jobs:
           if [[ $RELEASE_KEY != "true" ]]; then
             test_key=(-v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc)
           fi
-          docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/$update:/repo" ${test_key[@]+"${test_key[@]}"} \
+          docker run --rm -v "$PWD/pkgs:/src:ro" -v "$PWD/$update:/repo" ${test_key[@]+"${test_key[@]}"} \
             -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" -e AGENTV_PKGREL=99 \
             -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
             -e AGENTV_REPO_URL="https://github.com/$OWNER/agentv-pkgs/releases/download" \
@@ -687,15 +696,22 @@ jobs:
       # from agentv-pkgs' main. Anything else gets a key made here, good for
       # a day, that only this run's box trusts.
       - name: The key this run's packages are signed with
-        if: inputs.packages == 'build' || inputs.update-test
+        if: inputs.packages == 'build' || inputs.update-test || inputs.release-key
         env:
           RELEASE_KEY: ${{ inputs.release-key }}
           PACKAGES: ${{ inputs.packages }}
           PKGS_REF: ${{ inputs.pkgs-ref }}
+          OS_REF: ${{ inputs.ref }}
+          ISO_REF: ${{ inputs.iso-ref }}
+          UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
+          # What may be checked out beside AgenTV's own key: agentv, or a
+          # release's tag. Never a branch that isn't merged.
+          merged() { [[ $1 == "agentv" || $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
           if [[ $RELEASE_KEY == "true" ]]; then
-            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]]; then
-              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel and agentv-pkgs' main. This run gets a throwaway key when release-key is off."
+            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
+              ! merged "$OS_REF" || ! merged "$ISO_REF" || ! merged "${UPDATE_CHECKS:-agentv}"; then
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a release's tag. This run gets a throwaway key when release-key is off."
               exit 1
             fi
             echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -714,7 +730,9 @@ jobs:
           echo "This run signs its packages with a throwaway key, $(cat "$RUNNER_TEMP/test-key/fingerprint"), which only its own box trusts." | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Built with no key around (agentv-pkgs' bin/build). A run with a
-      # throwaway key gets an agentv-keyring that trusts it too.
+      # throwaway key gets an agentv-keyring that trusts it too. The build's
+      # container can read agentv-pkgs and not change it, since bin/sign
+      # runs from there afterwards.
       - name: AgenTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
@@ -723,7 +741,7 @@ jobs:
           if [[ $PACKAGES == "build" ]]; then
             sha=$(git -C os rev-parse HEAD)
             mkdir -p repo
-            docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/repo:/repo" \
+            docker run --rm -v "$PWD/pkgs:/src:ro" -v "$PWD/repo:/repo" \
               -v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc \
               -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" \
               -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
@@ -773,7 +791,7 @@ jobs:
           if [[ $RELEASE_KEY != "true" ]]; then
             test_key=(-v "$PWD/iso/test-runs/test-key:/test-key:ro" -e AGENTV_TEST_KEY=/test-key/public.asc)
           fi
-          docker run --rm -v "$PWD/pkgs:/src" -v "$PWD/$update:/repo" ${test_key[@]+"${test_key[@]}"} \
+          docker run --rm -v "$PWD/pkgs:/src:ro" -v "$PWD/$update:/repo" ${test_key[@]+"${test_key[@]}"} \
             -e AGENTV_CHANNEL=edge -e AGENTV_REF="commit=$sha" -e AGENTV_PKGREL=99 \
             -e AGENTV_SOURCE="https://github.com/$OWNER/agentv-os.git" \
             -e AGENTV_REPO_URL="https://github.com/$OWNER/agentv-pkgs/releases/download" \
