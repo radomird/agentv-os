@@ -242,6 +242,11 @@
   color: var(--r2-on-accent);
   font-size: 22px;
   font-weight: 800;
+  /* Held, it opens an app's details on the TV, so a long press selects
+     nothing and brings up no menu on the phone. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .r2-pointer {
