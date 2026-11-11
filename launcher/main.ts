@@ -19,7 +19,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
-import { gameInFront, hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
+import { gameInFront, gameOpen, hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
@@ -982,6 +982,7 @@ async function start(): Promise<void> {
     agentvTv: (state: "on" | "off") => void;
     agentvPage: (id: string) => void;
     agentvGame: () => string | null;
+    agentvGameOpen: () => boolean;
     agentvLauncher: object;
   };
   w.agentvHome = () => act("home");
@@ -1004,6 +1005,7 @@ async function start(): Promise<void> {
   // The game made on this TV that's in front, if one is: the TV going off
   // leaves it there (ADR-084).
   w.agentvGame = () => gameInFront(ctx);
+  w.agentvGameOpen = () => gameOpen(ctx);
   w.agentvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
   // For the UI checks and agentv selftest: the sounds that played, the

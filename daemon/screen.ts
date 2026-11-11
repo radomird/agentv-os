@@ -1469,9 +1469,11 @@ export class Screen {
   // Tonight, or every night with "update overnight on its own" on, an update
   // installs between 02:00 and 05:00, once nothing has played for 30
   // minutes. The first look each night checks for updates; a later one
-  // installs. Runs every minute, and notes when something last played.
+  // installs. Runs every minute, and notes when something last played. An
+  // open game counts as playing: it stays open with the TV off (ADR-084),
+  // and the update's restart would end it.
   async night(): Promise<void> {
-    if (await this.playing()) this.lastPlayed = this.now();
+    if ((await this.playing()) || (await this.gameOpen())) this.lastPlayed = this.now();
     const at = new Date(this.now());
     if (at.getHours() < 2 || at.getHours() >= 5) return;
     const updates = await this.launcher.nightUpdates().catch(() => null);
@@ -1525,6 +1527,15 @@ export class Screen {
       if (home.playing === true) return true;
     }
     return false;
+  }
+
+  // Whether a game is open, in front or not: Steam with whatever it runs, or
+  // a game made on this TV, which home knows.
+  private async gameOpen(): Promise<boolean> {
+    if (this.opens.some((o) => o.role === "steam")) return true;
+    if (!this.apps.has("home")) return false;
+    const home = (await Promise.race([this.inHome("({ open: window.agentvGameOpen?.() ?? false })"), sleep(500).then(() => ({}))])) as { open?: unknown };
+    return home.open === true;
   }
 
   // --- Shared to the TV (ADR-050, S5.10) ------------------------------------
