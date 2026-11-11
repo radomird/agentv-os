@@ -13,7 +13,7 @@
 // join. Root says which network the TV is on and how the last join went.
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The box's own address on its hotspot, where the captive page is.
@@ -157,6 +157,19 @@ export class Hotspot {
       return JSON.parse(readFileSync(join(this.run, "state.json"), "utf8")).answered === id;
     } catch {
       return false;
+    }
+  }
+
+  // Takes back the ask with that id, if root never took it: after root's
+  // time is up, a join still lying there would be joined whenever root next
+  // came by, even at the next start, and it has a password in it. Another
+  // ask's drop stays.
+  takeBack(id: string): void {
+    const file = join(this.dropDir, "request.json");
+    try {
+      if (id !== "" && JSON.parse(readFileSync(file, "utf8")).id === id) rmSync(file);
+    } catch {
+      // Root took it, or there was none.
     }
   }
 

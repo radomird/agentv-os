@@ -120,7 +120,15 @@ test("a look and a join go to root with the hotspot closed, and it says how each
   assert.equal(network.join("cafe", ""), null);
   clock += 101_000;
   assert.deepEqual(network.state().problem, { ssid: "cafe", why: "failed" });
+  assert.ok(!existsSync(drop), "and the join it never took is taken back, not left to be joined some day");
+  // Only its own: a later ask's drop stays where root will find it.
+  clock = Date.now();
+  assert.equal(network.join("cafe", ""), null);
+  hotspot.takeBack("an ask from before");
+  assert.deepEqual(readDrop(), { join: { ssid: "cafe", password: "", hidden: false } });
   rootTakes();
+  rootSays({ wifi: "cafe", radio: true });
+  assert.equal(network.state().joining, null);
   // With the hotspot open the radio can't look.
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true });
   assert.equal(network.look(), "hotspot");

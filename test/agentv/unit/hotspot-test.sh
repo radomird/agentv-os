@@ -508,6 +508,7 @@ grep -qx "ExecStart=/usr/bin/agentv-hotspot watch" "$ROOT/system/agentv-hotspot-
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-watch.service" || fail "which starts with the box"
 if grep -qE "^(User|Environment)=" "$ROOT/system/agentv-hotspot-watch.service"; then fail "as root, with the waits it ships with"; fi
 grep -qx "PathExists=/var/lib/agentv/daemon/hotspot-drop/request.json" "$ROOT/system/agentv-hotspot.path" || fail "agentv-hotspot.path watches the daemon's drop"
+grep -qx "StartLimitIntervalSec=0" "$ROOT/system/agentv-hotspot-drop.service" || fail "quick hand-overs in a row never hit a start limit, which would stop the hand-over until a restart"
 grep -qx "ExecStopPost=/usr/bin/agentv-hotspot down" "$ROOT/system/agentv-hotspot.service" || fail "the hotspot's unit cleans up however it stops"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-boot.service" || fail "the first-boot check runs at boot"
 grep -qx "Type=exec" "$ROOT/system/agentv-hotspot-boot.service" || fail "without holding up the TV"

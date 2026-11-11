@@ -103,6 +103,8 @@ export class TvNetwork {
     const late = this.now() - asked.at > (asked.kind === "join" ? JOIN_MS : LOOK_MS);
     if (!answered && !late) return;
     this.asked = null;
+    // Given up on: what root never took isn't left for it to find later.
+    if (!answered) this.hotspot.takeBack(asked.id);
     if (asked.kind !== "join") return;
     const why = answered ? this.hotspot.radio().why : "failed";
     this.problem = why ? { ssid: asked.ssid, why } : null;
