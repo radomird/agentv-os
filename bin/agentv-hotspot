@@ -50,6 +50,11 @@ set -euo pipefail
 RUN=${AGENTV_HOTSPOT_RUN:-/run/agentv-hotspot}
 DAEMON_STATE=${AGENTV_DAEMON_PRIVATE:-/var/lib/agentv/daemon}
 DROP=${AGENTV_HOTSPOT_DROP:-$DAEMON_STATE/hotspot-drop/request.json}
+# The id the daemon gave the ask this run is answering, if it gave one. It's
+# written back as .answered with the write that finishes the ask, so the
+# daemon knows that answer is this ask's, and not a write from before it or
+# from another ask.
+ASKED=""
 CONNECTIONS=${AGENTV_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 HANDED=${AGENTV_HOTSPOT_HANDED:-/etc/agentv/hotspot.json}
 PORT=${AGENTV_SETUP_PORT:-3002}
@@ -80,7 +85,7 @@ state_set() {
   shift
   install -d -m 755 "$RUN"
   [[ -s $RUN/state.json ]] && current=$(cat "$RUN/state.json")
-  jq -c "$@" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$filter | .at = \$at" <<<"$current" >"$next"
+  jq -c "$@" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg asked "$ASKED" "$filter | .at = \$at" <<<"$current" >"$next"
   chmod 644 "$next"
   mv -f "$next" "$RUN/state.json"
 }
@@ -147,16 +152,16 @@ look() {
 
   device=$(wifi_device)
   if [[ -z $device ]]; then
-    state_set '.radio = false | .wifi = null | .scanned = $at'
+    state_set '.radio = false | .wifi = null | .scanned = $at | .answered = $asked'
     return 0
   fi
   if [[ $(state_get .on) == "true" ]]; then
-    state_set '.radio = true | .wifi = null | .scanned = $at'
+    state_set '.radio = true | .wifi = null | .scanned = $at | .answered = $asked'
     return 0
   fi
   nmcli radio wifi on >/dev/null 2>&1 || true
   write_networks "$(scan "$device")"
-  state_set '.radio = true | .wifi = (if $wifi == "" then null else $wifi end) | .scanned = $at' --arg wifi "$(current_wifi "$device")"
+  state_set '.radio = true | .wifi = (if $wifi == "" then null else $wifi end) | .scanned = $at | .answered = $asked' --arg wifi "$(current_wifi "$device")"
 }
 
 # The holes the hotspot needs in Omarchy's firewall, on its own interface
@@ -332,7 +337,7 @@ join() {
       rm -f "$old"
     done
     address=$(nmcli -g IP4.ADDRESS device show "$device" 2>/dev/null | awk -F/ 'NR == 1 { print $1 }')
-    state_set '.on = false | .joining = null | .joined = {ssid: $ssid, address: (if $address == "" then null else $address end)} | .wifi = $ssid | .error = null | .why = null | .watch = null' \
+    state_set '.on = false | .joining = null | .joined = {ssid: $ssid, address: (if $address == "" then null else $address end)} | .wifi = $ssid | .error = null | .why = null | .watch = null | .answered = $asked' \
       --arg ssid "$ssid" --arg address "$address"
     echo "agentv-hotspot: the box is on $ssid${address:+ at $address}, and the setup hotspot is closed"
     return 0
@@ -356,7 +361,7 @@ join() {
       ;;
   esac
   echo "agentv-hotspot: couldn't join $ssid: $output" >&2
-  state_set '.joining = null | .error = $error | .why = $why' --arg error "$error" --arg why "$why"
+  state_set '.joining = null | .error = $error | .why = $why | .answered = $asked' --arg error "$error" --arg why "$why"
   if [[ $was_on == "true" ]]; then
     systemctl start agentv-hotspot.service
   else
@@ -378,6 +383,8 @@ drop() {
   [[ -f $DROP ]] || return 0
   request=$(cat "$DROP")
   rm -f "$DROP"
+  ASKED=$(jq -r '.id // empty' <<<"$request" 2>/dev/null || true)
+  [[ $ASKED =~ ^[0-9a-f]{1,32}$ ]] || ASKED=""
   if [[ $(jq -r '.scan // false' <<<"$request" 2>/dev/null) == "true" ]]; then
     look
     return 0
@@ -392,7 +399,7 @@ drop() {
   password=$(jq -r '.join.password // empty' <<<"$request" 2>/dev/null || true)
   hidden=$(jq -r '.join.hidden // false' <<<"$request" 2>/dev/null || true)
   if ! valid_ssid "$ssid" || ! valid_password "$password"; then
-    state_set '.error = "that isn'"'"'t a wi-fi network and password"'
+    state_set '.error = "that isn'"'"'t a wi-fi network and password" | .answered = $asked'
     echo "agentv-hotspot: that isn't a Wi-Fi network's name and password; nothing changed" >&2
     return 1
   fi

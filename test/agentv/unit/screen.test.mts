@@ -1807,6 +1807,53 @@ test("T16.2 a profile that locks: the TV comes back on home's PIN pad, with Stea
   t.screen.stop();
 });
 
+test("T16.2 a profile that locks, and the TV back on as its apps were closing: a key still doesn't go past the pad to the game", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  await withSteam(t);
+  // The TV comes back while the lock is being asked for, at the two-minute
+  // mark, so it's on again before the screen saver is up.
+  t.launcher.lock = async () => {
+    t.launcher.locks++;
+    on = true;
+    void t.screen.tv(true);
+    return true;
+  };
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.launcher.locks, 1);
+  assert.equal(t.screen.tvOff, false, "the TV is back");
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home");
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home", "a key on the ambient screen goes to the pad, not to the game");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE);
+  t.screen.stop();
+});
+
+test("T16.2 no answer about the lock counts as locked: the game doesn't stay in front", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  const { steam } = await withSteam(t);
+  t.launcher.lock = async () => {
+    throw new Error("fetch failed");
+  };
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(steam.stopped, false, "the game stays open");
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home", "home is in front, where the pad would be");
+  assert.ok(t.lines.includes("couldn't ask whether the TV locks, so it counts as locked: fetch failed"), t.lines.join("\n"));
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.stop();
+});
+
 test("T16.2 the ambient screen that idling put over Steam stays with the TV off, and a key on it goes back to the game", async () => {
   let on = true;
   const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
@@ -2168,6 +2215,34 @@ test("S2.12 something playing holds the night's update off, and so do the hours 
   clock = at(5, 0);
   await t.screen.night();
   assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "05:00 is too late");
+});
+
+test("T16.2 an open game holds the night's update off, Steam or a game made on this TV, until it's closed", async () => {
+  let clock = at(2, 0);
+  const t = await tv({ now: () => clock });
+  t.launcher.night = { status: { ...READY }, progress: null, tonight: null, overnight: true };
+  await withSteam(t);
+  await t.screen.home();
+  await t.screen.night();
+  clock = at(2, 40);
+  t.launcher.night!.status.checked_at = new Date(at(2, 1)).toISOString();
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "Steam open behind home at 02:40 holds it off");
+  // Steam is closed, and a game made on this TV is open on home.
+  await t.screen.quit("agentv.games");
+  let open = true;
+  t.launcher.homeBrowser.answer = (expression) => (expression.includes("agentvGameOpen") ? { open } : undefined);
+  clock = at(3, 20);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "so does that one");
+  open = false;
+  clock = at(3, 45);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "only 25 minutes since it closed");
+  clock = at(3, 51);
+  await t.screen.night();
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service", "agentv-update-tv.service"]);
+  t.screen.stop();
 });
 
 test("S2.12 at night, nothing installs without Tonight or overnight, while waiting for the nightly run, or with nothing new", async () => {

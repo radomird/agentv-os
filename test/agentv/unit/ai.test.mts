@@ -219,6 +219,8 @@ test("S5.5 setup's AI step: the phone hears the terms to accept, an adult accept
   assert.equal((await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
   assert.equal((await phone("/api/phone/terms", { provider: "claude", path: "plan" })).status, 403);
   const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  // The TV's own pages hold a grant of their own: a phone's is no use to them.
+  const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   const accepted = await phone("/api/phone/terms", { provider: "claude", path: "plan" }, grant);
   assert.equal(accepted.status, 200);
   const record = (await (await fetch(`${url}/api/ai`)).json()).accepted;
@@ -227,7 +229,7 @@ test("S5.5 setup's AI step: the phone hears the terms to accept, an adult accept
   assert.equal((await phoneState()).ai, null, "a plan has no key to ask for");
 
   // A key, then: its own terms first, then the key, root's alone.
-  await post("/api/ai", { provider: "claude", path: "key" }, grant);
+  await post("/api/ai", { provider: "claude", path: "key" }, onTv);
   assert.equal((await phoneState()).ai.ask, "terms");
   await phone("/api/phone/terms", { provider: "claude", path: "key" }, grant);
   assert.equal((await phoneState()).ai.ask, "key");
@@ -272,9 +274,11 @@ async function withRoot(fn: () => Promise<void>): Promise<void> {
 
 test("Q104 Settings → AI: a key for a provider whose terms nobody here accepted waits for an adult to accept them on a phone; one for a provider accepted just saves", async () => {
   const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  // The TV's own pages hold a grant of their own: a phone's is no use to them.
+  const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   await post("/api/setup", { done: true });
   const put = (provider: string, key: string) =>
-    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ provider, key }) });
+    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onTv }, body: JSON.stringify({ provider, key }) });
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
 
   // Claude's terms for a key were accepted in setup: a new key just saves.
@@ -314,8 +318,10 @@ test("Q104 Settings → AI: a key for a provider whose terms nobody here accepte
 
 test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own terms for a key, accepted on a phone, then its key is kept, and a second one just saves", async () => {
   const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  // The TV's own pages hold a grant of their own: a phone's is no use to them.
+  const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   const put = (provider: string, key: string) =>
-    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ provider, key }) });
+    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onTv }, body: JSON.stringify({ provider, key }) });
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
   for (const [provider, key, first] of [
     ["grok", `xai-${"g".repeat(40)}`, "xai-enterprise-terms"],
@@ -340,8 +346,10 @@ test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own term
 
 test("Q143 Settings → AI: an adult picks the household's plan past the PIN, its terms accepted on a phone first, and a key kept there after is what builds use", async () => {
   const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
+  // The TV's own pages hold a grant of their own: a phone's is no use to them.
+  const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   const usePlan = (provider: string, withGrant = true) =>
-    fetch(`${url}/api/ai/plan`, { method: "PUT", headers: { "Content-Type": "application/json", ...(withGrant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+    fetch(`${url}/api/ai/plan`, { method: "PUT", headers: { "Content-Type": "application/json", ...(withGrant ? { "X-AgenTV-Grant": onTv } : {}) }, body: JSON.stringify({ provider }) });
   const using = async () => (await (await fetch(`${url}/api/key`)).json()).ai;
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
   try {
@@ -385,7 +393,7 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
 
     // A key kept from Settings → AI is what builds use after.
     await withRoot(async () => {
-      const put = await fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ provider: "claude", key: `sk-ant-${"q".repeat(40)}` }) });
+      const put = await fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onTv }, body: JSON.stringify({ provider: "claude", key: `sk-ant-${"q".repeat(40)}` }) });
       assert.equal(put.status, 200);
       assert.deepEqual((await put.json()).ai, { provider: "claude", path: "key", accepted: true });
     });
@@ -397,8 +405,10 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
 
 test("a child's profile can't accept the terms or give the key from a phone", async () => {
   const grant = (await (await phone("/api/phone/pin", { pin: "2468" })).json()).grant;
-  const child = (await (await post("/api/viewers", { name: "mia", role: "child" }, grant)).json()).profile;
-  await post("/api/viewer", { id: child.id }, grant);
+  // The TV's own pages hold a grant of their own: a phone's is no use to them.
+  const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
+  const child = (await (await post("/api/viewers", { name: "mia", role: "child" }, onTv)).json()).profile;
+  await post("/api/viewer", { id: child.id }, onTv);
   assert.equal((await phone("/api/phone/terms", { provider: "claude", path: "key" }, grant)).status, 403);
   assert.equal((await phone("/api/phone/key", { key: `sk-ant-${"k".repeat(40)}` }, grant)).status, 403);
   assert.equal((await post("/api/ai", { provider: "gemini", path: "key" })).status, 403, "nor pick the provider without the PIN");
