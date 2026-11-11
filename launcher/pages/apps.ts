@@ -22,6 +22,7 @@ function appTile(ctx: Ctx, app: App): HTMLElement {
       class: "tile size-s",
       "data-focus": true,
       "data-id": app.id,
+      "data-details": app.id,
       "aria-label": app.name,
       onclick: async () => {
         // Its setup first, when a field it needs isn't filled in.

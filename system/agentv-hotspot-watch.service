@@ -1,0 +1,25 @@
+# A TV that loses its network opens the hotspot again by itself, so a phone
+# can reach it and pick another Wi-Fi (bin/agentv-hotspot watch). Only once
+# setup is done, on a TV with Wi-Fi and no cable in, after a minute with no
+# network. It closes the hotspot when the network is back. It runs as root
+# because it starts and stops agentv-hotspot.service, and nothing hands it
+# anything: it reads NetworkManager and whether setup is done.
+#
+# For a check that can't wait a minute, a drop-in shortens it:
+#   Environment=AGENTV_HOTSPOT_LOST_AFTER=10
+
+[Unit]
+Description=AgenTV hotspot for a TV that lost its network
+Wants=NetworkManager.service
+After=NetworkManager.service agentv-daemon.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/agentv-hotspot watch
+Restart=on-failure
+RestartSec=10
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
