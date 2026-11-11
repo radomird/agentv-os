@@ -308,6 +308,15 @@ export class AppHost {
         } else if (message.type === "failed") {
           ready = true;
           clearTimeout(timer);
+          // The worker ends itself after saying so, but the app's own code
+          // ran first and can have replaced what it ends with. So it's let
+          // go from here too, and forgotten, before a next start makes
+          // another over it.
+          if (this.child === child) {
+            this.child = undefined;
+            this.starting = undefined;
+          }
+          letGo(child);
           rejectStart(new AppError("failed", `${this.manifest.name} couldn't load: ${String(message.message)}`));
         } else {
           this.onMessage(child, message);
