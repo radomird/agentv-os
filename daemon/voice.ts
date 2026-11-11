@@ -215,6 +215,10 @@ export class Voice {
   private o: VoiceOptions;
   private dir: string;
   private missingSaid = false;
+  // The package's program, started once per kind and kept: each line it's
+  // given gets a WAV file of its own, so two answers close together never
+  // write to the same one.
+  private runners: Partial<Record<"say" | "piper", (text: string) => Promise<Voiced>>> = {};
 
   constructor(options: VoiceOptions) {
     this.o = options;
@@ -262,7 +266,7 @@ export class Voice {
       this.missingSaid = true;
       return null;
     }
-    const said = await (this.o.own ?? (kind === "say" ? sayOn(this.dir) : piperOn(this.dir)))(text);
+    const said = await (this.o.own ?? (this.runners[kind] ??= kind === "say" ? sayOn(this.dir) : piperOn(this.dir)))(text);
     if (!said.ok) {
       this.o.log?.(`the tv's own voice didn't say it: ${said.error}`);
       return null;
