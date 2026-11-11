@@ -50,7 +50,7 @@ async function box(look: string, theme: string, down: boolean) {
     await daemon.close();
     met.close();
   };
-  return { met, url, page, errors, close };
+  return { met, url, page, errors, close, daemon };
 }
 
 async function home(page: Page, url: string): Promise<void> {
@@ -153,6 +153,79 @@ test("T17.1 a look's preview never says it's loading, and reduce motion keeps th
     await home(page, url);
     await page.waitForSelector(`${WEATHER} .loading-mark i`);
     assert.equal(await page.locator(`${WEATHER} .loading-mark i`).first().evaluate((el) => getComputedStyle(el).animationName), "none");
+  } finally {
+    await close();
+  }
+});
+
+test("in Glass, a card that was waiting when the TV's daemon started over still gets its forecast", async () => {
+  const { met, url, page, errors, close, daemon } = await box("glass", "tokyo-night", true);
+  try {
+    await home(page, url);
+    await mark(page);
+    // Past the draw home does about two seconds after it loads, which would
+    // ask for the card again whatever happened to it.
+    await page.waitForTimeout(2500);
+    // A daemon that started over while the card waited no longer knows the
+    // card was waiting, so it won't say "tiles" when the forecast comes.
+    // Here it forgets what waits, which comes to the same for home.
+    (daemon.home as unknown as { waiting: Pick<Set<string>, "add" | "delete"> }).waiting = { add: () => new Set<string>(), delete: () => false };
+    met.down(false);
+    await page.waitForFunction((selector) => /12°/.test(document.querySelector<HTMLElement>(selector)?.innerText ?? ""), WEATHER, { timeout: 12_000 });
+    assert.ok(await page.evaluate(() => document.body.classList.contains("on-home")), "home is still what's on");
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("nothing is asked for again while the idle screen is up or the TV is off, and it's asked for at once when someone's back", async () => {
+  const { url, page, errors, close } = await box("terminal", "tokyo-night", true);
+  try {
+    const asks: number[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/api/tile/agentv.weather/")) asks.push(Date.now());
+    });
+    await home(page, url);
+    await mark(page);
+    // Home draws once more about two seconds after it loads, and a draw
+    // asks for each tile once. This is about the asking again, so it waits
+    // for that draw to be over.
+    await page.waitForTimeout(2500);
+    const since = (at: number) => asks.filter((asked) => asked >= at).length;
+    const tell = (name: "agentvAmbient" | "agentvTv", value: boolean | string) =>
+      page.evaluate(([fn, arg]) => (window as unknown as Record<string, (value: unknown) => void>)[fn as string](arg), [name, value] as const);
+
+    // An ask lands within a second of someone being back, whatever the
+    // loop's next wait was.
+    const asked = async (at: number) => {
+      for (const end = Date.now() + 1500; Date.now() < end && since(at) === 0; ) await page.waitForTimeout(50);
+      return since(at);
+    };
+
+    // The idle screen: the asking stops. Left running, it would ask again
+    // within four seconds this early.
+    await tell("agentvAmbient", true);
+    await page.waitForTimeout(500);
+    let quiet = Date.now();
+    await page.waitForTimeout(5000);
+    assert.equal(since(quiet), 0, "nothing is asked for behind the idle screen");
+    // A key ends it: asked for at once.
+    let back = Date.now();
+    await tell("agentvAmbient", false);
+    assert.ok((await asked(back)) >= 1, "asked for as the idle screen ends");
+
+    // The TV off, right away, with the loop's next ask still seconds off:
+    // the same.
+    await tell("agentvTv", "off");
+    await page.waitForTimeout(500);
+    quiet = Date.now();
+    await page.waitForTimeout(5000);
+    assert.equal(since(quiet), 0, "nothing is asked for with the TV off");
+    back = Date.now();
+    await tell("agentvTv", "on");
+    assert.ok((await asked(back)) >= 1, "asked for as the TV comes back on");
+    assert.deepEqual(errors, []);
   } finally {
     await close();
   }

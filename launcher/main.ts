@@ -42,7 +42,8 @@ import { field } from "../setup/frame.ts";
 import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
 import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
-import { forgetTiles } from "./looks/cards.ts";
+import { forgetTiles, onTileLanded } from "./looks/cards.ts";
+import { setWatching } from "./loading.ts";
 import { forecast } from "./pages/forecast.ts";
 import { newWeek } from "./pages/new-week.ts";
 import { checkWhileAmbient } from "./box.ts";
@@ -480,6 +481,9 @@ async function loadBackgrounds(): Promise<void> {
 // move ends it.
 const ambientEl = document.getElementById("ambient")!;
 let ambient = false;
+// Whether the TV is on, as the screen daemon says. With it off, or with the
+// ambient screen up, nobody's watching, and what's still loading waits.
+let tvOn = true;
 let ambientPointer: { x: number; y: number } | null = null;
 // How long each photo stays.
 const PHOTO_MS = 60_000;
@@ -487,6 +491,7 @@ const PHOTO_MS = 60_000;
 function setAmbient(on: boolean): void {
   if (on === ambient) return;
   ambient = on;
+  setWatching(!ambient && tvOn);
   backdrop.setAmbient(on);
   tell({ screen: on ? "ambient" : history[history.length - 1] === "home" ? "home" : "menu" });
   ambientPointer = null;
@@ -775,6 +780,20 @@ async function catchUp(): Promise<void> {
 }
 
 // The page again, in place, with the focus where it was.
+// When the TV last said a tile changed. A card in Glass or Cinema that was
+// waiting gets its content by asking again (cards.ts), and the TV says
+// "tiles" as it lands, which draws home again. A TV that restarted while
+// the card waited no longer knows it was waiting and says nothing, so home
+// draws again itself when the card's own ask lands and no word came.
+let tilesHeard = 0;
+onTileLanded(() => {
+  const landed = Date.now();
+  setTimeout(() => {
+    if (tilesHeard >= landed - 1000) return;
+    if (history[history.length - 1] === "home") redraw();
+  }, 300);
+});
+
 function redraw(): void {
   const current = focus.get();
   show(history[history.length - 1], undefined, current?.dataset.action ?? current?.dataset.id);
@@ -866,8 +885,10 @@ async function start(): Promise<void> {
     },
     // An app signed in or out, or a site's icon came: the apps again.
     apps: () => void refresh(),
-    // A page app set its tile (ADR-043): home's tiles ask again.
+    // A page app set its tile (ADR-043), or a tile that was waiting has its
+    // content: home's tiles ask again.
     tiles: () => {
+      tilesHeard = Date.now();
       forgetTiles();
       if (history[history.length - 1] === "home") redraw();
     },
@@ -963,7 +984,11 @@ async function start(): Promise<void> {
   // An app came in front of home, or home is in front again.
   w.agentvFront = (app) => backdrop.setFront(!app);
   // The TV went off or came on again (ADR-072).
-  w.agentvTv = (state) => backdrop.setTv(state !== "off");
+  w.agentvTv = (state) => {
+    tvOn = state !== "off";
+    setWatching(!ambient && tvOn);
+    backdrop.setTv(tvOn);
+  };
   // A page app opened from elsewhere, such as Apps or the phone, through
   // the screen daemon, which put home in front first. One installed a moment
   // ago may not be in home's list yet, so home reads it again first.
