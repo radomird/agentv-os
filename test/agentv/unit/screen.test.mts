@@ -1781,6 +1781,53 @@ test("T16.2 a profile that locks: the TV comes back on home's PIN pad, with Stea
   t.screen.stop();
 });
 
+test("T16.2 a profile that locks, and the TV back on as its apps were closing: a key still doesn't go past the pad to the game", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  await withSteam(t);
+  // The TV comes back while the lock is being asked for, at the two-minute
+  // mark, so it's on again before the screen saver is up.
+  t.launcher.lock = async () => {
+    t.launcher.locks++;
+    on = true;
+    void t.screen.tv(true);
+    return true;
+  };
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.launcher.locks, 1);
+  assert.equal(t.screen.tvOff, false, "the TV is back");
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home");
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home", "a key on the ambient screen goes to the pad, not to the game");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE);
+  t.screen.stop();
+});
+
+test("T16.2 no answer about the lock counts as locked: the game doesn't stay in front", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  const { steam } = await withSteam(t);
+  t.launcher.lock = async () => {
+    throw new Error("fetch failed");
+  };
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(steam.stopped, false, "the game stays open");
+  assert.equal(t.screen.ambient, true);
+  assert.equal(t.screen.front()?.role, "home", "home is in front, where the pad would be");
+  assert.ok(t.lines.includes("couldn't ask whether the TV locks, so it counts as locked: fetch failed"), t.lines.join("\n"));
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.stop();
+});
+
 test("T16.2 the ambient screen that idling put over Steam stays with the TV off, and a key on it goes back to the game", async () => {
   let on = true;
   const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
