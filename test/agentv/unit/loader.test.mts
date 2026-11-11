@@ -311,6 +311,70 @@ test("an app stopped at any moment of its start leaves no worker behind", { skip
   assert.equal(now, "0", "no worker of this app is still running");
 });
 
+test("an app that fails to load leaves no worker behind, whatever its own code did first", { skip: noSandbox !== null && "bubblewrap can't start here" }, async () => {
+  // The worker ends itself once it has said the app didn't load. The app's
+  // top-level code ran before that, and here it has replaced what the worker
+  // ends with. The loader used to count on that ending alone: the worker
+  // stayed, and the next start made another over it that nothing stopped.
+  const dir = app('process.exit = () => {};\nthrow new Error("not today");\n');
+  const left = () => spawnSync("pgrep", ["-fc", `apps/worker\\.ts ${dir}/`], { encoding: "utf8" }).stdout.trim();
+  const h = host(dir);
+  await fails(h.start(), "failed", /Sample couldn't load: not today/);
+  await fails(h.call(viewer, "tile", "s"), "failed", /Sample couldn't load: not today/);
+  let now = left();
+  for (let i = 0; i < 40 && now !== "0"; i++) {
+    await new Promise((done) => setTimeout(done, 100));
+    now = left();
+  }
+  assert.equal(now, "0", "no worker of this app is still running");
+});
+
+test("a worker that ends by itself after a call timed out isn't stopped again as stuck", async () => {
+  // The call takes too long, the worker is asked whether it's alive, and it
+  // ends before it answers. Its exit is the answer: the one second wait used
+  // to run on, say it was stuck and signal a process that was gone.
+  const lines: string[] = [];
+  const dir = app(tileApp("const end = Date.now() + 400; while (Date.now() < end); process.exit(0);"));
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  const h = new AppHost({ dir, manifest, settings: { serverUrl }, limits: { tile: 100 }, harness, log: (line) => lines.push(line) });
+  hosts.push(h);
+  await fails(h.call(viewer, "tile", "s"), "timeout");
+  await new Promise((done) => setTimeout(done, 1300));
+  assert.deepEqual(lines.filter((line) => /stuck/.test(line)), []);
+});
+
+test("an answer that comes for an app already stopped isn't logged as its sandbox not starting", async () => {
+  // The app's request is still out when the app is stopped, and its answer
+  // comes after. There's no worker to hand it to, which says nothing about
+  // the sandbox.
+  const lines: string[] = [];
+  let asked = () => {};
+  const waiting = new Promise<void>((resolve) => (asked = resolve));
+  let answer = () => {};
+  const slow = createServer((_request, response) => {
+    answer = () => response.end("late");
+    asked();
+  });
+  await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+  try {
+    const slowUrl = `http://127.0.0.1:${(slow.address() as { port: number }).port}`;
+    const dir = app(tileApp("await fetch(ctx.settings.serverUrl + '/slow'); return {};"));
+    const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    const h = new AppHost({ dir, manifest, settings: { serverUrl: slowUrl }, harness, log: (line) => lines.push(line) });
+    hosts.push(h);
+    const call = h.call(viewer, "tile", "s");
+    await waiting;
+    h.stop();
+    await fails(call, "crashed", /Sample stopped/);
+    answer();
+    await new Promise((done) => setTimeout(done, 300));
+    assert.deepEqual(lines.filter((line) => /sandbox/.test(line)), []);
+  } finally {
+    slow.closeAllConnections();
+    slow.close();
+  }
+});
+
 test("a call that arrives as the app is stopped has crashed, and so does one after: a stopped app doesn't start again", async () => {
   // An app is stopped when it's updated or removed, and as the daemon closes.
   // A tile asked for at that moment gets an answer, not a daemon error. One

@@ -3,7 +3,7 @@
 
 import { call, Unpaired } from "./channel.ts";
 
-export { call, paired, Unpaired } from "./channel.ts";
+export { call, file, paired, Unpaired } from "./channel.ts";
 
 export type Child = Node | string | null | undefined | false;
 
@@ -37,6 +37,7 @@ export function toast(text: string, ok = false): void {
 export class NeedsPin extends Error {}
 
 // A request to the box, signed and sealed (channel.ts), and its JSON answer.
+// The answer is the box's own: call takes none that didn't come sealed.
 export async function api<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const { status, ok, data } = await call(method, path, body === undefined ? undefined : { json: body }, grant);
   if (status === 401) throw new Unpaired(data.error ?? "this phone isn't paired");

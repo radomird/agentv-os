@@ -30,6 +30,8 @@ export interface CallOptions {
   // A body that goes as it is, with this content type: an upload.
   type?: string;
   headers?: Record<string, string>;
+  // The answer may be a picture or a file, which comes as it is.
+  file?: boolean;
 }
 
 // The code as the box holds it: upper case, with no spaces or dashes.
@@ -127,8 +129,8 @@ export class PhoneClient {
   //
   // Anyone on the network can write an answer that isn't sealed, so only two
   // of them are taken: the box wanting a hello first, which it can't seal,
-  // and a picture or a file that was asked for, which is never read as JSON.
-  // Anything else throws. A phone the box doesn't know gets a 401 with
+  // and a picture or a file, which is never read as JSON and only the one
+  // who asked for a file (options.file) takes. Anything else throws. A phone the box doesn't know gets a 401 with
   // `pair` from here, once its hello has failed.
   async call(method: string, path: string, body?: unknown, options: CallOptions = {}): Promise<Answer> {
     const address = this.sent(path);
@@ -164,7 +166,7 @@ export class PhoneClient {
           continue;
         }
       }
-      if (method === "GET" && response.status === 200 && !json) return { status: 200, ok: true, type, headers, body: raw, sealed: false, data: {} };
+      if (options.file && method === "GET" && response.status === 200 && !json) return { status: 200, ok: true, type, headers, body: raw, sealed: false, data: {} };
       throw new Error("the box's answer wasn't sealed");
     }
   }

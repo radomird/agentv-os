@@ -285,7 +285,19 @@ export class AppHost {
         return new AppError("failed", `${this.manifest.name} couldn't load: this tv couldn't start it safely`);
       };
       let ready = false;
+      // Whether the process started at all. An error before that is
+      // bubblewrap not running. One after it is something else, such as an
+      // answer that came for a worker already stopped, and its exit says the
+      // rest.
+      let started = false;
+      child.on("spawn", () => {
+        started = true;
+      });
       child.on("error", (error) => {
+        if (started) {
+          this.log(`${this.manifest.id}: ${error.message}`.slice(0, 500));
+          return;
+        }
         clearTimeout(timer);
         if (this.child === child) {
           this.child = undefined;
@@ -308,6 +320,15 @@ export class AppHost {
         } else if (message.type === "failed") {
           ready = true;
           clearTimeout(timer);
+          // The worker ends itself after saying so, but the app's own code
+          // ran first and can have replaced what it ends with. So it's let
+          // go from here too, and forgotten, before a next start makes
+          // another over it.
+          if (this.child === child) {
+            this.child = undefined;
+            this.starting = undefined;
+          }
+          letGo(child);
           rejectStart(new AppError("failed", `${this.manifest.name} couldn't load: ${String(message.message)}`));
         } else {
           this.onMessage(child, message);
@@ -348,13 +369,13 @@ export class AppHost {
       else call.reject(new AppError("failed", `${this.manifest.name}: ${String(message.message)}`));
     } else if (message.type === "fetch") {
       this.fetchFor(message).then(
-        (response) => child.send({ type: "fetched", id: message.id, response }),
-        (error: Error) => child.send({ type: "fetched", id: message.id, error: error.message }),
+        (response) => tell(child, { type: "fetched", id: message.id, response }),
+        (error: Error) => tell(child, { type: "fetched", id: message.id, error: error.message }),
       );
     } else if (message.type === "page") {
       this.pageFor(message).then(
-        (reply) => child.send({ type: "paged", id: message.id, ...reply }),
-        (error: Error) => child.send({ type: "paged", id: message.id, error: error.message }),
+        (reply) => tell(child, { type: "paged", id: message.id, ...reply }),
+        (error: Error) => tell(child, { type: "paged", id: message.id, error: error.message }),
       );
     }
   }
@@ -405,7 +426,7 @@ export class AppHost {
       redirect: "manual",
       signal: AbortSignal.timeout(FETCH_MS),
     }).catch((error: Error) => {
-      if (/is this tv itself/.test(error.message)) this.log(`${this.manifest.id}: refused a fetch to ${url.origin}: ${error.message}`);
+      if (/is this tv itself|only by link-local/.test(error.message)) this.log(`${this.manifest.id}: refused a fetch to ${url.origin}: ${error.message}`);
       throw error;
     });
     const body = new Uint8Array(await response.arrayBuffer());
@@ -459,17 +480,24 @@ export class AppHost {
   // After a call times out: a worker that doesn't answer a ping within a second
   // is stuck, so it's stopped and the next call starts a new one.
   private checkAlive(child: ChildProcess): void {
+    const done = () => {
+      clearTimeout(timer);
+      child.off("message", pong);
+      child.off("exit", done);
+    };
     const timer = setTimeout(() => {
+      done();
       this.log(`${this.manifest.id}: stuck, so it's stopped`);
       letGo(child);
     }, PING_MS);
     const pong = (message: Record<string, unknown>) => {
-      if (message.type !== "pong") return;
-      clearTimeout(timer);
-      child.off("message", pong);
+      if (message.type === "pong") done();
     };
     child.on("message", pong);
-    child.send({ type: "ping" });
+    // A worker that ended by itself meanwhile isn't stuck, and there's
+    // nothing left to stop.
+    child.on("exit", done);
+    tell(child, { type: "ping" });
   }
 
   setSettings(settings: Record<string, string>): void {
@@ -485,6 +513,12 @@ export class AppHost {
     this.starting = undefined;
     if (child) letGo(child);
   }
+}
+
+// An answer for a worker, unless it's gone meanwhile: stopped, or ended by
+// itself, with the answer still on its way.
+function tell(child: ChildProcess, message: Record<string, unknown>): void {
+  if (child.connected) child.send(message, () => {});
 }
 
 // Ends a worker and everything under it. Killing bubblewrap alone isn't

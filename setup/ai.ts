@@ -36,9 +36,15 @@ export async function aiStep(ctx: Ctx): Promise<View> {
   return done(ctx, ai);
 }
 
-// Back from any of the provider's pages picks again.
+// Back from any of the provider's pages picks again. With nothing picked
+// yet there's nothing to undo, so nothing is asked of the daemon, and no
+// PIN either.
 export function again(ctx: Ctx): boolean {
   void (async () => {
+    if (!ctx.ai?.provider && !ctx.ai?.path) {
+      ctx.open("ai", "back");
+      return;
+    }
     const grant = await ctx.grant("the ai");
     if (grant === null) return;
     await setup.choose(null, undefined, grant || undefined).then(() => ctx.open("ai", "back"), () => {});
@@ -167,12 +173,19 @@ export function terms(ctx: Ctx, ai: AiInfo): View {
 export function key(ctx: Ctx, ai: AiInfo): View {
   const offer = ai.offers[ai.provider!];
   const field = h("input", { class: "text-field key-field", type: "password", "data-focus": true, "aria-label": `the ${offer.name} api key`, autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  let asking = false;
   const save = async () => {
-    if (!field.value) return;
+    // Enter reaches this twice, from the field and from the button.
+    if (!field.value || asking) return;
+    // Keeping a key is past the PIN, once there is one, as picking the
+    // provider is. The key stays in the field if the PIN isn't given.
+    asking = true;
+    const grant = await ctx.grant("the ai").finally(() => (asking = false));
+    if (grant === null || !field.value) return;
     const typed = field.value;
     field.value = "";
     try {
-      await setup.key(ai.provider!, typed);
+      await setup.key(ai.provider!, typed, grant || undefined);
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
@@ -182,7 +195,9 @@ export function key(ctx: Ctx, ai: AiInfo): View {
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      void save();
+      // Once this Enter is done with: the PIN's pad may open, and the same
+      // press mustn't reach it as a press on its first digit.
+      setTimeout(() => void save(), 0);
     }
   });
   const go = h("button", { class: "button primary", "data-focus": true, "data-action": "save-key", onclick: () => void save() }, "↵ save");
