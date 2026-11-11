@@ -61,7 +61,7 @@ before(async () => {
   await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "field" }) });
   bluez = new StandInBluez();
   around();
-  driver = new Controllers({ run: bluez.run, look: bluez.look, log: () => {}, settleMs: 60 });
+  driver = new Controllers({ run: bluez.run, look: bluez.look, inputs: bluez.inputs, log: () => {}, settleMs: 60 });
   watch = new AskWatch<ControllerAsk, ControllerAnswer>({
     url: `${url}/`,
     path: "api/controllers/ask",
