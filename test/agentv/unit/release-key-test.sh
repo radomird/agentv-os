@@ -227,7 +227,10 @@ for word in "environment:" "uses:" "secrets."; do
 done
 grep -qE '(^|[ "(])(os|iso|pkgs)/' <<<"$refs_code" && fail "the job that checks the refs runs nothing from a checkout" "$refs_code"
 for job in image box; do
-  awk -v job="  $job:" '$0 == job { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image" | grep -qx '    needs: refs' ||
+  # Read whole first: grep -q stops at the first match, and awk would be cut
+  # off mid-print, which this shell counts as a failure of the pipe.
+  body_of=$(awk -v job="  $job:" '$0 == job { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image")
+  grep -qx '    needs: refs' <<<"$body_of" ||
     fail "the $job job, which can be in the release environment, waits for the refs to be checked"
 done
 script=$SCRATCH/refs.sh
