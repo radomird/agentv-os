@@ -204,10 +204,10 @@ test("ADR-046 what setup's + add your own kept is asked from here with one press
 async function phone(): Promise<Page> {
   // As Settings → Phones asks for a code: with the PIN's grant once one is set.
   const first = await send("POST", "/api/phones/pair", {});
-  const pairing = first.pin ? (await send("POST", "/api/phones/pair", {}, (await send("POST", "/api/pin/check", { pin: "2468" })).grant)).pairing : first.pairing;
+  if (first.pin) await send("POST", "/api/phones/pair", {}, (await send("POST", "/api/pin/check", { pin: "2468" })).grant);
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${daemon.lanPort}/?code=${pairing.code}`);
+  await page.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await page.waitForSelector(".dpad");
   return page;
 }
@@ -412,7 +412,7 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
     assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
     const accepted = await phoneToken.fetch("/api/phone/terms", {
       method: "POST",
-      headers: { "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      headers: { "X-AgenTV-Grant": (await phoneToken.json("POST", "/api/phone/pin", { pin: "2468" })).grant, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", path: "plan" }),
     });
     assert.equal(accepted.status, 200);
@@ -478,7 +478,7 @@ test("ADR-040 a plan whose sign-in ran out asks for it again on the TV and the p
     assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
     const accepted = await phoneToken.fetch("/api/phone/terms", {
       method: "POST",
-      headers: { "X-AgenTV-Grant": (await send("POST", "/api/pin/check", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      headers: { "X-AgenTV-Grant": (await phoneToken.json("POST", "/api/phone/pin", { pin: "2468" })).grant, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", path: "plan" }),
     });
     assert.equal(accepted.status, 200);
