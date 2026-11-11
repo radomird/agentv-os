@@ -289,6 +289,28 @@ test("an app that exits mid-call has crashed, and comes back on the next call", 
   assert.deepEqual(await h.call(viewer, "tile", "s"), {});
 });
 
+test("an app stopped at any moment of its start leaves no worker behind", { skip: noSandbox !== null && "bubblewrap can't start here" }, async () => {
+  // Bubblewrap killed as it starts used to leave the sandbox it had forked,
+  // with the worker in it, holding the loader's pipes: the daemon couldn't
+  // end, and neither could a test run.
+  const dir = app();
+  const left = () => spawnSync("pgrep", ["-fc", `apps/worker\\.ts ${dir}/`], { encoding: "utf8" }).stdout.trim();
+  for (const wait of [0, 0, 1, 2, 3, 5, 8, 12, 20, 40]) {
+    const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    const h = new AppHost({ dir, manifest, settings: { serverUrl }, harness: { thisBox: true } });
+    const starting = h.start().catch(() => {});
+    await new Promise((done) => setTimeout(done, wait));
+    h.stop();
+    await starting;
+  }
+  let now = left();
+  for (let i = 0; i < 40 && now !== "0"; i++) {
+    await new Promise((done) => setTimeout(done, 100));
+    now = left();
+  }
+  assert.equal(now, "0", "no worker of this app is still running");
+});
+
 test("a call that arrives as the app is stopped has crashed, and so does one after: a stopped app doesn't start again", async () => {
   // An app is stopped when it's updated or removed, and as the daemon closes.
   // A tile asked for at that moment gets an answer, not a daemon error. One
