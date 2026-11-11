@@ -247,6 +247,27 @@ for (const look of LOOKS) {
       bluez.adapter = true;
       await page.waitForSelector(row(XBOX.address));
 
+      // One that says it's a game controller and turns out to type is
+      // removed again, with one plain line. Its name is shown as it is.
+      const odd = { address: "C8:3F:26:0A:0B:0C", name: "Pad $& Pro", icon: "input-gaming", appearance: 0x03c4, nearby: true, presents: "keyboard" as const };
+      bluez.devices.push(odd);
+      bluez.seen.add(odd.address);
+      await page.waitForSelector(row(odd.address));
+      await page.locator(row(odd.address)).click();
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), said("Couldn't pair {name}. Only game controllers pair here.").replace("{name}", () => odd.name));
+      assert.equal(bluez.devices.find((device) => device.address === odd.address)?.paired, false, "it isn't left paired");
+      assert.equal(bluez.devices.find((device) => device.address === odd.address)?.trusted, false);
+      bluez.devices = bluez.devices.filter((device) => device.address !== odd.address);
+
+      // An app opened in front of home, as from a phone: the looking rests
+      // until home is in front again.
+      const front = (app: boolean) => page.evaluate((on) => (window as unknown as { agentvFront: (app: boolean) => void }).agentvFront(on), app);
+      assert.equal(bluez.scanning, true);
+      await front(true);
+      await until(() => !bluez.scanning, "the looking stops while an app is in front");
+      await front(false);
+      await until(() => bluez.scanning, "and starts again when home is back");
+
       // The looking stops when the page closes.
       assert.equal(bluez.scanning, true);
       await go(page, "home");

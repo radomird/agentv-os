@@ -988,7 +988,11 @@ async function start(): Promise<void> {
   w.agentvHome = () => act("home");
   w.agentvAmbient = (on) => setAmbient(on);
   // An app came in front of home, or home is in front again.
-  w.agentvFront = (app) => backdrop.setFront(!app);
+  // Settings, controllers reads the mark: it stops looking under an app.
+  w.agentvFront = (app) => {
+    document.documentElement.toggleAttribute("data-behind-app", app);
+    backdrop.setFront(!app);
+  };
   // The TV went off or came on again (ADR-072).
   w.agentvTv = (state) => {
     tvOn = state !== "off";
