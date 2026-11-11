@@ -6,7 +6,8 @@
 //   problem, hotspot, change }, how the TV is online. `change` says whether
 //   who's watching may change it. Anyone watching may ask.
 // GET /api/network/networks → { ok, networks }, the Wi-Fi nearby, strongest
-//   first, as root last saw it, with the one the TV is on marked.
+//   first, as root last saw it, with the one the TV is on marked. Not for a
+//   child's profile, which can't pick one.
 // POST /api/network/scan has root look again.
 // POST /api/network/join with { ssid, password } joins one. The password
 //   goes to root's drop and nowhere else.
@@ -47,7 +48,8 @@ export async function networkRoute(kit: NetworkKit, method: string | undefined, 
     return true;
   }
   if (method === "GET" && path === "/api/network/networks") {
-    kit.json(response, 200, { ok: true, networks: network.networks() });
+    if (await kit.child()) kit.json(response, 403, { ok: false, error: "child" });
+    else kit.json(response, 200, { ok: true, networks: network.networks() });
     return true;
   }
   const scan = method === "POST" && path === "/api/network/scan";

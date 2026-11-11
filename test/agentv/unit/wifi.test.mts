@@ -64,7 +64,7 @@ test("it says how the TV is online, and marks the network it's on", () => {
   assert.deepEqual(network.state(), { online: true, via: "cable", name: null, wifi: false, looking: false, joining: null, problem: null, hotspot: null });
   interfaces = {};
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
-  assert.deepEqual(network.state(), { online: false, via: null, name: null, wifi: true, looking: false, joining: null, problem: null, hotspot: { ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", problem: false } });
+  assert.deepEqual(network.state(), { online: false, via: null, name: null, wifi: true, looking: false, joining: null, problem: null, hotspot: { ssid: "AgenTV-3f9a", problem: false } });
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true, error: "that password didn't work for Home", why: "password" });
   assert.equal(network.state().hotspot?.problem, true, "a join from the hotspot's page that didn't work shows on the notice");
   interfaces = { wlan0: [nic("192.168.1.20")] };
@@ -268,6 +268,8 @@ test("with a PIN set a join needs its grant, and a child's profile can't look or
   const seen = await send(tv, "GET", "/api/network");
   assert.equal(seen.data.name, "cafe", "a child's profile sees how the TV is online");
   assert.equal(seen.data.change, false);
+  const list = await send(tv, "GET", "/api/network/networks");
+  assert.deepEqual([list.status, list.data], [403, { ok: false, error: "child" }], "but not the networks nearby");
   assert.deepEqual((await send(tv, "POST", "/api/network/scan", undefined, grant)).data, { ok: false, error: "child" });
   const join = await send(tv, "POST", "/api/network/join", { ssid: "Home", password: "correct horse" }, grant);
   assert.equal(join.status, 403);
@@ -280,6 +282,10 @@ test("after setup, setup's own Wi-Fi routes on the TV are closed: a lost network
   // The hotspot is open, as on a TV that lost its network, a PIN is set, and
   // nothing here has its grant.
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
+  // What the TV's pages are told has the hotspot's name and not its password.
+  const now = await send(tv, "GET", "/api/network");
+  assert.deepEqual(now.data.hotspot, { ssid: "AgenTV-3f9a", problem: false });
+  assert.ok(!JSON.stringify(now.data).includes("k7m2xpqr4n"));
   const join = await send(tv, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" });
   assert.equal(join.status, 403);
   assert.equal((await send(tv, "GET", "/api/setup/networks")).status, 403);

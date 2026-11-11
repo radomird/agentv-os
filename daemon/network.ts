@@ -32,9 +32,10 @@ export interface NetworkState {
   // The network being joined, and why the last join from here didn't work.
   joining: string | null;
   problem: { ssid: string; why: JoinProblem } | null;
-  // The hotspot, while it's open: what a phone joins it with, as the TV's
-  // screen shows it. After setup it's open because the TV lost its network.
-  hotspot: { ssid: string; password: string | null; problem: boolean } | null;
+  // The hotspot, while it's open, by name. After setup it's open because
+  // the TV lost its network. Its password isn't here: the notice shows a QR
+  // code (/api/hotspot/qr), and this goes to every page of the TV's.
+  hotspot: { ssid: string; problem: boolean } | null;
 }
 
 export interface ListedNetwork extends Found {
@@ -124,7 +125,7 @@ export class TvNetwork {
       looking: this.asked?.kind === "look",
       joining: this.asked?.kind === "join" ? this.asked.ssid : hotspot.joining,
       problem: this.problem,
-      hotspot: hotspot.on && hotspot.ssid ? { ssid: hotspot.ssid, password: hotspot.password, problem: radio.why !== null } : null,
+      hotspot: hotspot.on && hotspot.ssid ? { ssid: hotspot.ssid, problem: radio.why !== null } : null,
     };
   }
 
