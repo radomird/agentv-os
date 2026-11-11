@@ -540,7 +540,19 @@ jobs:
         env:
           PACKAGES: ${{ inputs.packages }}
         run: |
+          # Edge's ISO goes by the version of the agentv package on it, which
+          # is what "agentv version" says on a box installed from it. The
+          # packages came from edge's channel, so it's read off the file,
+          # not worked out from this checkout, which can be a commit ahead.
           name="agentv-$PACKAGES-$(date -u +%Y.%m.%d)-$(git -C os rev-parse --short=7 HEAD)-x86_64"
+          if [[ $PACKAGES == "edge" ]]; then
+            package=$(find iso/configs/airootfs/usr/share/agentv-iso/packages -maxdepth 1 -name 'agentv-[0-9]*-any.pkg.tar.zst' | head -n 1)
+            version=${package##*/agentv-}
+            version=${version%-*-any.pkg.tar.zst}
+            if [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+\.r[0-9]+\.g[0-9a-f]+$ ]]; then
+              name="agentv-$version-x86_64"
+            fi
+          fi
           mv iso/release/*.iso "iso/release/$name.iso"
           (cd iso/release && sha256sum "$name.iso" >"$name.iso.sha256")
           echo "name=$name" >>"$GITHUB_OUTPUT"
@@ -1108,7 +1120,19 @@ jobs:
         env:
           PACKAGES: ${{ inputs.packages }}
         run: |
+          # Edge's ISO goes by the version of the agentv package on it, which
+          # is what "agentv version" says on a box installed from it. The
+          # packages came from edge's channel, so it's read off the file,
+          # not worked out from this checkout, which can be a commit ahead.
           name="agentv-$PACKAGES-$(date -u +%Y.%m.%d)-$(git -C os rev-parse --short=7 HEAD)-x86_64"
+          if [[ $PACKAGES == "edge" ]]; then
+            package=$(find iso/configs/airootfs/usr/share/agentv-iso/packages -maxdepth 1 -name 'agentv-[0-9]*-any.pkg.tar.zst' | head -n 1)
+            version=${package##*/agentv-}
+            version=${version%-*-any.pkg.tar.zst}
+            if [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+\.r[0-9]+\.g[0-9a-f]+$ ]]; then
+              name="agentv-$version-x86_64"
+            fi
+          fi
           mv iso/release/*.iso "iso/release/$name.iso"
           (cd iso/release && sha256sum "$name.iso" >"$name.iso.sha256")
           echo "name=$name" >>"$GITHUB_OUTPUT"
