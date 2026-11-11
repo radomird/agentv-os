@@ -58,32 +58,50 @@ export function showLoading(el: HTMLElement, name?: string): () => void {
 }
 
 // Whether anyone's watching: not while the idle screen is up, and not with
-// the TV off. What's waiting then holds its next ask until someone is.
+// the TV off. What's waiting then stops asking, and asks at once when
+// someone's back, however long its next ask was still away.
 let watching = true;
-const held = new Set<() => void>();
+const loops = new Set<{ wake(): void; sleep(): void }>();
 
 export function setWatching(on: boolean): void {
   if (on === watching) return;
   watching = on;
-  if (!on) return;
-  const asks = [...held];
-  held.clear();
-  for (const ask of asks) ask();
+  for (const loop of [...loops]) {
+    if (on) loop.wake();
+    else loop.sleep();
+  }
 }
 
 // Asks again until what was asked for is there. ask() says whether it's
 // still waiting, and alive() says whether anyone still wants it.
 export function keepAsking(ask: () => Promise<boolean>, alive: () => boolean): void {
   let tries = 0;
-  const once = async () => {
-    if (!alive()) return;
-    if (!watching) {
-      held.add(once);
-      return;
-    }
-    const waiting = await ask().catch(() => true);
-    if (waiting && alive()) again();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let asking = false;
+  const stop = () => {
+    clearTimeout(timer);
+    loops.delete(loop);
   };
-  const again = () => setTimeout(() => void once(), WAITS[tries++] ?? LATER);
+  const once = async () => {
+    if (!alive()) return stop();
+    if (!watching || asking) return;
+    asking = true;
+    const waiting = await ask().catch(() => true);
+    asking = false;
+    if (!waiting || !alive()) return stop();
+    if (watching) again();
+  };
+  const again = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => void once(), WAITS[tries++] ?? LATER);
+  };
+  const loop = {
+    wake: () => {
+      clearTimeout(timer);
+      void once();
+    },
+    sleep: () => clearTimeout(timer),
+  };
+  loops.add(loop);
   again();
 }

@@ -196,8 +196,15 @@ test("nothing is asked for again while the idle screen is up or the TV is off, a
     const tell = (name: "agentvAmbient" | "agentvTv", value: boolean | string) =>
       page.evaluate(([fn, arg]) => (window as unknown as Record<string, (value: unknown) => void>)[fn as string](arg), [name, value] as const);
 
-    // The idle screen: the asking stops, though it would come every second
-    // or two this early.
+    // An ask lands within a second of someone being back, whatever the
+    // loop's next wait was.
+    const asked = async (at: number) => {
+      for (const end = Date.now() + 1500; Date.now() < end && since(at) === 0; ) await page.waitForTimeout(50);
+      return since(at);
+    };
+
+    // The idle screen: the asking stops. Left running, it would ask again
+    // within four seconds this early.
     await tell("agentvAmbient", true);
     await page.waitForTimeout(500);
     let quiet = Date.now();
@@ -206,10 +213,10 @@ test("nothing is asked for again while the idle screen is up or the TV is off, a
     // A key ends it: asked for at once.
     let back = Date.now();
     await tell("agentvAmbient", false);
-    await page.waitForTimeout(600);
-    assert.ok(since(back) >= 1, "asked for as the idle screen ends");
+    assert.ok((await asked(back)) >= 1, "asked for as the idle screen ends");
 
-    // The TV off: the same.
+    // The TV off, right away, with the loop's next ask still seconds off:
+    // the same.
     await tell("agentvTv", "off");
     await page.waitForTimeout(500);
     quiet = Date.now();
@@ -217,8 +224,7 @@ test("nothing is asked for again while the idle screen is up or the TV is off, a
     assert.equal(since(quiet), 0, "nothing is asked for with the TV off");
     back = Date.now();
     await tell("agentvTv", "on");
-    await page.waitForTimeout(600);
-    assert.ok(since(back) >= 1, "asked for as the TV comes back on");
+    assert.ok((await asked(back)) >= 1, "asked for as the TV comes back on");
     assert.deepEqual(errors, []);
   } finally {
     await close();

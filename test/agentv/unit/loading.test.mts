@@ -128,6 +128,13 @@ test("something that never loads is asked for less and less, and not at all whil
     assert.equal(asks, before + 1, "asked for at once when someone's back");
     await pass(LATER);
     assert.equal(asks, before + 2);
+    // Away for a moment, with the next ask still minutes off: it's asked for
+    // as they come back all the same.
+    setWatching(false);
+    await pass(2000);
+    setWatching(true);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    assert.equal(asks, before + 3, "asked for at once, however far off the next ask was");
   } finally {
     setWatching(true);
     mock.timers.reset();
