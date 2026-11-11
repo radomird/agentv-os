@@ -87,13 +87,28 @@ awk -v dir="$SCRATCH" '
   /^      - / { script = 0 }
 ' "$image"
 [[ -s $SCRATCH/guard-2.sh && ! -e $SCRATCH/guard-3.sh ]] || fail "M3 each of the two jobs that sign says which key it gets"
+# GitHub's answer to whether a commit is on agentv-iso's agentv, for two
+# made-up commits: one agentv has, and one that's ahead of it on a branch.
+on=1111111111111111111111111111111111111111
+ahead=2222222222222222222222222222222222222222
+mkdir -p "$SCRATCH/bin"
+cat >"$SCRATCH/bin/gh" <<GH
+#!/bin/bash
+case "\$*" in
+  "api repos/owner/agentv-iso/compare/$on...agentv --jq .status") echo ahead ;;
+  "api repos/owner/agentv-iso/compare/$ahead...agentv --jq .status") echo behind ;;
+  *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+esac
+GH
+chmod +x "$SCRATCH/bin/gh"
 # guard <os ref> <iso ref> <update checks> [NAME=value...]: a nightly run on
 # agentv with the key, with those refs.
 guard() {
   local os=$1 iso=$2 update=$3
   shift 3
   env RELEASE_KEY=true PACKAGES=stable PKGS_REF=main GITHUB_REF=refs/heads/agentv GITHUB_STEP_SUMMARY=/dev/null \
-    RUNNER_TEMP="$SCRATCH/none" OS_REF="$os" ISO_REF="$iso" UPDATE_CHECKS="$update" "$@" \
+    RUNNER_TEMP="$SCRATCH/none" OS_REF="$os" ISO_REF="$iso" UPDATE_CHECKS="$update" \
+    OWNER=owner GH_TOKEN=token PATH="$SCRATCH/bin:$PATH" "$@" \
     bash -euo pipefail "$script" >"$SCRATCH/guard.log" 2>&1
 }
 for n in 1 2; do
@@ -104,11 +119,16 @@ for n in 1 2; do
     grep -qF "$line" <<<"$step" || fail "M3 the step that picks the key is told every ref the run checks out" "$step"
   done
   grep -q '^ *if: .*inputs\.release-key' <<<"$step" || fail "M3 a run with release-key never skips the step that checks it" "$step"
+  # shellcheck disable=SC2016 # the workflow's own expression, not the shell's
+  grep -qxF "          GH_TOKEN: \${{ inputs.release-key && github.token || '' }}" <<<"$step" ||
+    fail "M3 the step that picks the key has a token only in a run that asks for the key" "$step"
 
   guard agentv agentv "" || fail "M3 the night's own refs get AgenTV's key" "$(cat "$SCRATCH/guard.log")"
   guard agentv v0.2.0 agentv || fail "M3 a release's tag, updated to agentv, gets AgenTV's key" "$(cat "$SCRATCH/guard.log")"
+  guard agentv "$on" agentv || fail "M3 a commit agentv-iso's agentv has, updated to agentv, gets AgenTV's key" "$(cat "$SCRATCH/guard.log")"
   for refs in "agentv fix/checks ''" "agentv v0.2.0 fix/checks" "fix/os agentv ''" "agentv v0.2.0-rc1 ''" \
-    "agentv 0123456789abcdef0123456789abcdef01234567 ''" "agentv 'agentv x' ''"; do
+    "agentv 0123456789abcdef0123456789abcdef01234567 ''" "agentv 'agentv x' ''" \
+    "agentv $ahead agentv" "agentv agentv $ahead" "$on agentv ''" "agentv ${on:0:9} agentv"; do
     eval "set -- $refs"
     guard "$@" && fail "M3 AgenTV's key is never beside an unmerged ref" "passed with agentv-os $1, agentv-iso $2, update checks ${3:-none}"
     grep -q "AgenTV's own key signs only" "$SCRATCH/guard.log" ||
@@ -118,7 +138,7 @@ for n in 1 2; do
   guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "M3 AgenTV's key signs only on agentv"
   guard agentv agentv "" PACKAGES=build && fail "M3 AgenTV's key never signs packages built in the run"
 done
-pass "M3 AgenTV's key is only ever beside agentv or a release's tag, in agentv-os and agentv-iso"
+pass "M3 AgenTV's key is only ever beside agentv, a release's tag or a commit agentv has, in agentv-os and agentv-iso"
 
 grep -q 'required: true' <<<"$(sed -n '/^    secrets:$/,/^$/p' "$image")" &&
   fail "M3 a caller doesn't have to hand image.yml the key"
