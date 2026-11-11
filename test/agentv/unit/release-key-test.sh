@@ -214,3 +214,31 @@ taken "" || fail "with no ISO kept there's nothing to take back" "$(cat "$fake/o
 taken agentv-0.2.0.r999.gabcdef012-x86_64 && fail "an ISO that was kept and can't be found fails the job out loud" "$(cat "$fake/out")"
 [[ ! -s $fake/taken ]] || fail "an ISO that can't be found deletes nothing" "$(cat "$fake/taken")"
 pass "a failed night's ISO is taken back by the exact name it was kept under, with its checksum and nothing else, and one that can't be found fails out loud"
+
+# A run that's refused the key is refused before any job in the release
+# environment starts: a job of its own, which names no environment, checks
+# nothing out and runs nothing of the repo, does the same check first, and
+# both jobs that can hold the key wait for it.
+refs=$(awk '/^  refs:$/ { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image")
+[[ -n $refs ]] || fail "image.yml checks the refs in a job of its own"
+refs_code=$(code "$refs")
+for word in "environment:" "uses:" "secrets."; do
+  grep -qF -- "$word" <<<"$refs_code" && fail "the job that checks the refs has no environment, no checkout and nothing of the repo to run" "$word"
+done
+grep -qE '(^|[ "(])(os|iso|pkgs)/' <<<"$refs_code" && fail "the job that checks the refs runs nothing from a checkout" "$refs_code"
+for job in image box; do
+  awk -v job="  $job:" '$0 == job { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image" | grep -qx '    needs: refs' ||
+    fail "the $job job, which can be in the release environment, waits for the refs to be checked"
+done
+script=$SCRATCH/refs.sh
+awk '/^        run: \|$/ { on = 1; next } on { sub(/^          /, ""); print }' <<<"$refs" >"$script"
+guard agentv agentv "" || fail "the night's own refs pass the job that checks them" "$(cat "$SCRATCH/guard.log")"
+guard agentv "$on" agentv || fail "a commit agentv has passes the job that checks the refs" "$(cat "$SCRATCH/guard.log")"
+for refs_tried in "agentv fix/checks ''" "fix/os agentv ''" "agentv agentv $ahead" "agentv $ahead agentv"; do
+  eval "set -- $refs_tried"
+  guard "$@" && fail "an unmerged ref stops the run before a job that can hold the key starts" "passed with agentv-os $1, agentv-iso $2, update checks ${3:-none}"
+done
+guard agentv agentv "" PKGS_REF=fix/pkgs && fail "the job that checks the refs wants agentv-pkgs' main"
+guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "the job that checks the refs wants the run on agentv"
+guard fix/os fix/checks "" RELEASE_KEY=false || fail "a run that doesn't ask for the key isn't held up" "$(cat "$SCRATCH/guard.log")"
+pass "a run that asks for AgenTV's key has its refs checked in a job with no environment and no checkout, before the jobs that can hold the key"

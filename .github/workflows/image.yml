@@ -203,8 +203,49 @@ permissions:
   actions: write
 
 jobs:
+  # A run that asks for AgenTV's own key is checked here first, in a job
+  # that names no environment and checks nothing out: the jobs below are in
+  # the "release" environment when release-key is set, and one that's
+  # refused shouldn't get as far as running a step there. Each of them
+  # checks the same thing again before it reads the key.
+  refs:
+    name: "May this run have AgenTV's key?"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Only beside merged code
+        env:
+          RELEASE_KEY: ${{ inputs.release-key }}
+          PACKAGES: ${{ inputs.packages }}
+          PKGS_REF: ${{ inputs.pkgs-ref }}
+          OS_REF: ${{ inputs.ref }}
+          ISO_REF: ${{ inputs.iso-ref }}
+          UPDATE_CHECKS: ${{ inputs.update-checks }}
+        run: |
+          if [[ $RELEASE_KEY != "true" ]]; then
+            echo "This run doesn't ask for AgenTV's own key."
+            exit 0
+          fi
+          # agentv, a release's tag, or a commit agentv already has. Never a
+          # branch that isn't merged.
+          merged() {
+            [[ $2 == "agentv" || $2 =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && return 0
+            [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+          }
+          if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
+            ! merged agentv-os "$OS_REF" || ! merged agentv-iso "$ISO_REF" || ! merged agentv-iso "${UPDATE_CHECKS:-agentv}"; then
+            echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv, a release's tag or a commit agentv has. This run gets a throwaway key when release-key is off."
+            exit 1
+          fi
+          echo "This run may sign with AgenTV's own key: everything it checks out is merged."
+
   image:
     name: "Build the ISO, install it, boot it, check it"
+    needs: refs
     if: ${{ !(inputs.shards > 1 && !inputs.nightly && inputs.update-checks == '') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 240
@@ -651,6 +692,7 @@ jobs:
   # instead of the one above.
   box:
     name: "Get the box ready"
+    needs: refs
     if: inputs.shards > 1 && !inputs.nightly && inputs.update-checks == ''
     runs-on: ubuntu-26.04
     timeout-minutes: 150
