@@ -172,3 +172,45 @@ grep -q 'pkgs/bin/test-key' <<<"$body" || fail "M3 a run without release-key mak
 [[ $(grep -c 'AGENTV_TEST_KEY=/test-key/public.asc' <<<"$body") == 4 ]] ||
   fail "M3 every build of a run with a throwaway key gets its public half"
 pass "M3 a run without release-key makes a throwaway key, and each of its builds trusts it"
+
+# A night with a failed check keeps no ISO: agentv-iso publishes the newest
+# night's as edge. Edge's ISO goes by its package's version, so the last
+# job takes back the exact name the box's job kept it under, with its
+# checksum, and nothing else of the run.
+take_back=$(awk '
+  /^      - name: Take back the ISO$/ { found = 1; next }
+  found && /^      - name: / { exit }
+  found && /^        run: \|$/ { running = 1; next }
+  running { sub(/^          /, ""); print }
+' "$image")
+[[ -n $take_back ]] || fail "image.yml has a step that takes back the ISO"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
+grep -q 'ISO_NAME: \${{ needs.box.outputs.iso-name }}' "$image" || fail "the take-back is told the name the box's job kept the ISO under"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
+grep -q '^      iso-name: \${{ steps.name.outputs.name }}$' "$image" || fail "the box's job says what it kept the ISO as"
+fake="$SCRATCH/take-back"
+mkdir -p "$fake/bin"
+cat >"$fake/bin/gh" <<'GH'
+#!/bin/bash
+if [[ $2 == "-X" ]]; then
+  echo "${4##*/}" >>"$TAKEN"
+else
+  cat "$ARTIFACTS"
+fi
+GH
+chmod +x "$fake/bin/gh"
+printf '%s\t%s\n' 11 image-box-7-1-0 12 agentv-0.2.0.r456.g40edb94c6-x86_64 13 agentv-0.2.0.r456.g40edb94c6-x86_64.sha256 \
+  14 agentv-0.2.0.r456.g40edb94c6-x86_64-old 15 image-edge-7-1 >"$fake/artifacts"
+taken() {
+  : >"$fake/taken"
+  (cd "$fake" && PATH="$fake/bin:$PATH" ARTIFACTS="$fake/artifacts" TAKEN="$fake/taken" GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=7 \
+    GITHUB_STEP_SUMMARY=/dev/null ISO_NAME="$1" bash -euo pipefail -c "$take_back") >"$fake/out" 2>&1
+}
+taken agentv-0.2.0.r456.g40edb94c6-x86_64 || fail "the take-back runs" "$(cat "$fake/out")"
+[[ $(sort "$fake/taken" | paste -sd' ') == "12 13" ]] ||
+  fail "a failed night's ISO and its checksum are taken back by the name they were kept under, and nothing else" "$(cat "$fake/taken" "$fake/out")"
+taken "" || fail "with no ISO kept there's nothing to take back" "$(cat "$fake/out")"
+[[ ! -s $fake/taken ]] || fail "with no ISO kept nothing is deleted" "$(cat "$fake/taken")"
+taken agentv-0.2.0.r999.gabcdef012-x86_64 && fail "an ISO that was kept and can't be found fails the job out loud" "$(cat "$fake/out")"
+[[ ! -s $fake/taken ]] || fail "an ISO that can't be found deletes nothing" "$(cat "$fake/taken")"
+pass "a failed night's ISO is taken back by the exact name it was kept under, with its checksum and nothing else, and one that can't be found fails out loud"
