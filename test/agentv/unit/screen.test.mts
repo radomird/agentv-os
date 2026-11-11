@@ -3,7 +3,7 @@
 // Run by screen-test.sh with Node's own test runner.
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -16,7 +16,7 @@ import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { Sleep } from "../../../daemon/sleep.ts";
 import { NO_WEBRTC } from "../../../apps/contract/page.ts";
-import { homeArguments, HELD_WORKSPACE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { homeArguments, HELD_WORKSPACE, HOME_PROFILE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,6 +29,32 @@ test("M2 home's Chromium goes out only through the filter, WebRTC too", () => {
   assert.deepEqual(NO_WEBRTC, ["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]);
   for (const flag of NO_WEBRTC) assert.ok(args.includes(flag), flag);
   assert.ok(args.includes("--user-data-dir=/var/lib/agentv/chromium-home") && args.includes("--app=http://127.0.0.1:3000/"));
+});
+
+// Home has password fields of its own (a key, the Wi-Fi's password), and a
+// Chromium that isn't told otherwise offers to save what's typed in one.
+test("every Chromium the TV shows has its own prompts set off before it starts, home's too", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentv-prompts-"));
+  const log = join(dir, "started");
+  const stand = (name: string, line: string) => writeFileSync(join(dir, name), `#!/bin/bash\necho "${line}" >>"${log}"\n`, { mode: 0o755 });
+  stand("agentv-chromium-prefs", "prefs $1");
+  stand("chromium", "chromium $(printf '%s\\n' \"$@\" | grep -- --user-data-dir=)");
+  const before = { path: process.env.PATH, chromium: process.env.AGENTV_CHROMIUM };
+  process.env.PATH = `${dir}:${before.path}`;
+  process.env.AGENTV_CHROMIUM = join(dir, "chromium");
+  try {
+    for (const start of [() => launcher.home(), () => launcher.web("http://127.0.0.1:9/"), () => launcher.shareBrowser("http://127.0.0.1:9/")]) {
+      const app = start();
+      await new Promise<void>((done) => app.onExit(done));
+    }
+  } finally {
+    process.env.PATH = before.path;
+    if (before.chromium === undefined) delete process.env.AGENTV_CHROMIUM;
+    else process.env.AGENTV_CHROMIUM = before.chromium;
+  }
+  const started = readFileSync(log, "utf8").trim().split("\n");
+  rmSync(dir, { recursive: true, force: true });
+  assert.deepEqual(started, [HOME_PROFILE, SERVICES_PROFILE, SHARE_PROFILE].flatMap((profile) => [`prefs ${profile}`, `chromium --user-data-dir=${profile}`]));
 });
 
 class FakeHyprland implements Hyprland {
