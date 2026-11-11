@@ -5,14 +5,19 @@
 //
 // It also holds the asking again. Home draws within seconds of a start,
 // often before the TV is online, so the first ask for a forecast can fail.
-// What's waiting is asked for again, soon at first and then once a minute,
-// for as long as it's on screen.
+// What's waiting is asked for again, soon at first, then once a minute for
+// a few minutes, then every five, for as long as it's on screen. Nothing
+// is asked for while the idle screen is up or the TV is off, and it's asked
+// for at once when someone's back.
 
 import { h } from "./dom.ts";
 
-// How long to wait before each ask, then once a minute.
-const WAITS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
-const LATER = 60_000;
+// How long to wait before each ask: a minute in all, three more at one a
+// minute, and every five minutes after that. Something that never comes (a
+// server that's switched off, a key that's refused) costs twelve asks an
+// hour, not sixty.
+export const WAITS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 60_000, 60_000];
+export const LATER = 300_000;
 
 // How long the mark shows. After that, what's waiting rests as it is, and
 // the asking goes on quietly.
@@ -52,16 +57,51 @@ export function showLoading(el: HTMLElement, name?: string): () => void {
   };
 }
 
+// Whether anyone's watching: not while the idle screen is up, and not with
+// the TV off. What's waiting then stops asking, and asks at once when
+// someone's back, however long its next ask was still away.
+let watching = true;
+const loops = new Set<{ wake(): void; sleep(): void }>();
+
+export function setWatching(on: boolean): void {
+  if (on === watching) return;
+  watching = on;
+  for (const loop of [...loops]) {
+    if (on) loop.wake();
+    else loop.sleep();
+  }
+}
+
 // Asks again until what was asked for is there. ask() says whether it's
 // still waiting, and alive() says whether anyone still wants it.
 export function keepAsking(ask: () => Promise<boolean>, alive: () => boolean): void {
   let tries = 0;
-  const again = () => {
-    setTimeout(async () => {
-      if (!alive()) return;
-      const waiting = await ask().catch(() => true);
-      if (waiting && alive()) again();
-    }, WAITS[tries++] ?? LATER);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let asking = false;
+  const stop = () => {
+    clearTimeout(timer);
+    loops.delete(loop);
   };
+  const once = async () => {
+    if (!alive()) return stop();
+    if (!watching || asking) return;
+    asking = true;
+    const waiting = await ask().catch(() => true);
+    asking = false;
+    if (!waiting || !alive()) return stop();
+    if (watching) again();
+  };
+  const again = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => void once(), WAITS[tries++] ?? LATER);
+  };
+  const loop = {
+    wake: () => {
+      clearTimeout(timer);
+      void once();
+    },
+    sleep: () => clearTimeout(timer),
+  };
+  loops.add(loop);
   again();
 }

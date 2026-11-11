@@ -20,16 +20,19 @@ export interface Terms {
   url: string;
 }
 
-// The day each provider's terms were last read on its own pages. A new
-// reading is a new acceptance. xAI's pages turn away a script, so they were
-// read in a browser (Q133). Google's were read again on 2026-11-10, with
-// the terms of the CLI its plans moved to.
-export const TERMS_READ: Record<Provider, string> = {
-  claude: "2026-10-26",
-  chatgpt: "2026-10-26",
-  gemini: "2026-11-10",
-  grok: "2026-10-28",
-  muse: "2026-10-27",
+// The day each provider's terms were last read on its own pages, for a plan
+// and for a key. A new reading is a new acceptance, of that path's terms
+// only: an acceptance of a key's terms stays good when only the plan's were
+// read again. xAI's pages turn away a script, so they were read in a
+// browser (Q133). Google's plan was read again on 2026-11-10, with the
+// terms of the CLI its plans moved to. The terms for its key are as they
+// were.
+export const TERMS_READ: Record<Provider, Record<Path, string>> = {
+  claude: { plan: "2026-10-26", key: "2026-10-26" },
+  chatgpt: { plan: "2026-10-26", key: "2026-10-26" },
+  gemini: { plan: "2026-11-10", key: "2026-10-26" },
+  grok: { plan: "2026-10-28", key: "2026-10-28" },
+  muse: { plan: "2026-10-27", key: "2026-10-27" },
 };
 
 // The providers, as an error message names them.
@@ -165,7 +168,7 @@ export interface Acceptance {
   provider: Provider;
   path: Path;
   terms: Terms[];
-  read: string; // the provider's TERMS_READ, when they were accepted
+  read: string; // TERMS_READ for the provider and the path, when they were accepted
   by: { phone: string; viewer: string };
   at: string;
 }
@@ -235,7 +238,7 @@ export class Ai {
   // The latest acceptance of a provider's terms for a path, as they read
   // now, or null.
   async acceptance(provider: Provider, path: Path): Promise<Acceptance | null> {
-    return [...(await this.history())].reverse().find((a) => a.provider === provider && a.path === path && a.read === TERMS_READ[provider]) ?? null;
+    return [...(await this.history())].reverse().find((a) => a.provider === provider && a.path === path && a.read === TERMS_READ[provider][path]) ?? null;
   }
 
   async read(): Promise<AiState> {
@@ -278,7 +281,7 @@ export class Ai {
   // (Q104).
   async record(provider: Provider, path: Path, by: { phone: unknown; viewer: unknown }): Promise<{ acceptance?: Acceptance; error?: string }> {
     if (typeof by.phone !== "string" || !NAME.test(by.phone) || typeof by.viewer !== "string" || !NAME.test(by.viewer)) return { error: "who accepted them" };
-    const acceptance: Acceptance = { provider, path, terms: OFFERS[provider].terms[path], read: TERMS_READ[provider], by: { phone: by.phone, viewer: by.viewer }, at: now() };
+    const acceptance: Acceptance = { provider, path, terms: OFFERS[provider].terms[path], read: TERMS_READ[provider][path], by: { phone: by.phone, viewer: by.viewer }, at: now() };
     await mkdir(this.state, { recursive: true });
     await writeJson(this.historyPath, [...(await this.history()), acceptance]);
     return { acceptance };
