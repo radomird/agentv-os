@@ -69,8 +69,13 @@ test("S4.5 changing or taking off the PIN needs a grant, and a child's profile k
   assert.equal(pin.set("1111", undefined), "that needs the pin");
   assert.equal(pin.remove("made-up"), "that needs the pin");
   const grant = granted(pin.check("4826"));
+  // Grants earned with the PIN before, the TV's and a phone's.
+  const other = granted(pin.check("4826"));
+  const phones = granted(pin.check("4826", "phone-1"));
   assert.equal(pin.set("1111", grant), null);
   assert.equal(pin.check("4826").ok, false, "the old one is gone");
+  assert.deepEqual([pin.allows(other), pin.allows(phones, "phone-1")], [false, false], "and so are the grants it gave");
+  assert.equal(pin.allows(grant), true, "the one that changed it holds");
   children = true;
   assert.equal(pin.remove(grant), "a child's profile needs the pin, so it stays");
   children = false;
