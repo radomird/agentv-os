@@ -47,20 +47,22 @@ export function logo(app: App, big = false): HTMLElement {
 }
 
 // What a small tile says about its app: open behind home, setup or a
-// sign-in still needed, or what it's for. A game still running has Quit
-// (ADR-031). A look's preview shows each app as it is once it's set up, so
+// sign-in still needed, or what it's for. Quit is in its details (ADR-084).
+// A look's preview shows each app as it is once it's set up, so
 // only what it's for.
 function state(ctx: Ctx, app: App): HTMLElement {
   if (preview()) return h("span", { class: "tile-label" }, app.category);
   const open = ctx.running.get(app.id);
-  if (open?.game) return h("span", { class: "tile-state" }, "running ", h("span", { class: "tile-quit" }, "· q quit"));
+  if (open?.game) return h("span", { class: "tile-state" }, "running");
   if (open) return h("span", { class: "tile-state" }, open.paused ? "paused" : "open");
   if (app.needsSetup) return h("span", { class: "tile-state" }, "set up");
   if (app.signIn === "needed") return h("span", { class: "tile-state tile-sign-in" }, "sign in");
   return h("span", { class: "tile-label" }, app.category);
 }
 
-async function quit(ctx: Ctx, app: App): Promise<void> {
+// Closes an app open behind home, from its details, or with q or a
+// gamepad's X on its tile.
+export async function quit(ctx: Ctx, app: App): Promise<void> {
   const reply = await screen.quit(app.id);
   if (reply.ok) {
     ctx.sounds.play("confirm");
@@ -330,15 +332,12 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
       class: `tile size-${placed.size}`,
       "data-focus": true,
       "data-id": app.id,
+      // Holding OK opens its details (input.ts), but not while editing home.
+      "data-details": editing ? undefined : app.id,
       "aria-label": app.name,
       onclick: editing
         ? undefined
         : async (event: MouseEvent) => {
-            // A click on a game's "q quit" quits it.
-            if ((event.target as Element).closest(".tile-quit")) {
-              await quit(ctx, app);
-              return;
-            }
             // A click on an entry that carries an item opens it there.
             const chosen = (event.target as Element).closest<HTMLElement>("[data-entry]");
             const item = chosen ? (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems?.[Number(chosen.dataset.entry)]?.item : undefined;
@@ -406,7 +405,8 @@ export function home(ctx: Ctx): View {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,
     act(action) {
-      // i on a focused tile opens its app's details (ADR-018), and e edits
+      // i, a gamepad's Y or holding OK on a focused tile opens its app's
+      // details (ADR-018, ADR-084), and e edits
       // home (ADR-015).
       const id = ctx.focus.get()?.dataset.id;
       if (action === "info" && id && byId.has(id)) {

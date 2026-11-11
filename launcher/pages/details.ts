@@ -1,13 +1,14 @@
 // An app's details (ADR-018): the one place that says who made it, what it can
 // reach and which tile sizes it has, with the brand owner's note for an app
 // named after someone else's brand. An adult ticks it for children here too
-// (ADR-009).
+// (ADR-009). You get here with i, a gamepad's Y or by holding OK on its tile,
+// and while the app is open, Quit closes it (ADR-084).
 
 import { daemon, screen } from "../api.ts";
-import { named } from "../looks/looks.ts";
+import { named, said } from "../looks/looks.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
-import { logo, openBuiltin } from "./home.ts";
+import { logo, openBuiltin, quit } from "./home.ts";
 import { builtActions } from "./build.ts";
 import { bar, childProfileButton, togglePin } from "./parts.ts";
 
@@ -80,6 +81,10 @@ export function details(ctx: Ctx, id: string): View {
     "↵ open",
   );
 
+  // Only while it's open behind home. The page is drawn again once it has
+  // closed, and the button goes.
+  const close = ctx.running.has(id) ? h("button", { class: "button", "data-focus": true, "data-action": "quit", onclick: () => void quit(ctx, app) }, said("quit")) : null;
+
   const sizes = app.sizes.map((choice) => `${choice.size} ${choice.label}`).join(" · ");
   const el = h(
     "div",
@@ -118,7 +123,7 @@ export function details(ctx: Ctx, id: string): View {
           app.credit ? h("dt", {}, "data") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
-        h("div", { class: "actions" }, open, toggle, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),
+        h("div", { class: "actions" }, open, close, toggle, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),
       ),
       app.owner ? h("p", { class: "owner" }, app.owner) : null,
     ),
