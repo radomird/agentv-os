@@ -547,7 +547,10 @@ test("agentv-phone-call pairs with a code, sends a request as that phone, and fa
     assert.equal(withPin.code, 0, withPin.err);
     assert.equal(JSON.parse((await run(withPin.out, "GET", "/api/phone/state")).out).phone.name, "a check with the pin");
     rmSync(dirname(withPin.out), { recursive: true, force: true });
-    await local("POST", "/api/setup", { done: false });
+    // Starting setup again needs the PIN's grant, now that one is set.
+    const { grant } = await local("POST", "/api/pin/check", { pin: "4826" });
+    const reset = await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": grant }, body: JSON.stringify({ done: false }) });
+    assert.equal(reset.status, 200);
     assert.equal((await run(file, "POST", "/api/phone/background", `@${picture}`)).code, 2);
   } finally {
     rmSync(dirname(file), { recursive: true, force: true });

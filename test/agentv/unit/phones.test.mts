@@ -472,12 +472,15 @@ test("a phone Settings forgets can't do anything any more", async () => {
   assert.equal((await send(tv, "POST", "/api/phones/pair")).status, 403);
   assert.equal((await send(tv, "GET", "/api/phones")).data.pairing, null, "and no code came on show");
   // Setup shows a code on its own screens, so until it's done a code comes
-  // without the PIN. Forgetting isn't part of setup.
-  assert.equal((await send(tv, "POST", "/api/setup", { body: { done: false } })).status, 200);
+  // without the PIN. Forgetting isn't part of setup. And starting setup
+  // again needs the PIN itself, or it would be a way round it.
+  assert.equal((await send(tv, "POST", "/api/setup", { body: { done: false } })).status, 403);
+  assert.equal((await send(tv, "POST", "/api/phones/pair")).status, 403, "so still no code without the PIN");
+  const grant = (await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).data.grant;
+  assert.equal((await send(tv, "POST", "/api/setup", { body: { done: false }, grant })).status, 200);
   assert.equal((await send(tv, "POST", "/api/phones/pair")).status, 200);
   assert.equal((await send(tv, "DELETE", `/api/phones/${id}`)).status, 403);
   assert.equal((await send(tv, "POST", "/api/setup", { body: { done: true } })).status, 200);
-  const grant = (await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).data.grant;
   assert.equal((await send(tv, "POST", "/api/phones/pair", { grant })).status, 200);
   assert.equal((await send(tv, "DELETE", `/api/phones/${id}`, { grant })).status, 200);
   assert.equal((await send(phone, "GET", "/api/phone/state", { token })).status, 401);

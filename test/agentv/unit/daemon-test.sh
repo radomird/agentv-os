@@ -44,6 +44,20 @@ out=$(AGENTV_PORT=$port "$ROOT/bin/agentv-setup-reset") || fail "agentv setup re
 [[ $(curl -fsS "$url/health" | jq -r '.screen') == "welcome" ]] || fail "after agentv setup reset, the TV is on the welcome page"
 pass "agentv setup skip and reset move the TV between the welcome page and home"
 
+# With an adult PIN set, starting setup again needs it.
+AGENTV_PORT=$port "$ROOT/bin/agentv-setup-skip" >/dev/null || fail "agentv setup skip works"
+curl -fsS -o /dev/null -X PUT -H 'Content-Type: application/json' -d '{"pin": "4826"}' "$url/api/pin" || fail "a PIN is set"
+status=0
+out=$(AGENTV_PORT=$port "$ROOT/bin/agentv-setup-reset" 2>&1) || status=$?
+if (( status != 1 )) || [[ $out != *"AGENTV_PIN"* ]]; then fail "agentv setup reset says it needs the PIN" "$out"; fi
+[[ $(curl -fsS "$url/health" | jq -r '.screen') == "home" ]] || fail "and setup stays done"
+status=0
+out=$(AGENTV_PORT=$port AGENTV_PIN=0000 "$ROOT/bin/agentv-setup-reset" 2>&1) || status=$?
+if (( status != 1 )) || [[ $out != *"didn't take the PIN"* ]]; then fail "a wrong PIN is refused" "$out"; fi
+out=$(AGENTV_PORT=$port AGENTV_PIN=4826 "$ROOT/bin/agentv-setup-reset") || fail "agentv setup reset works with the PIN" "$out"
+[[ $(curl -fsS "$url/health" | jq -r '.screen') == "welcome" ]] || fail "with the PIN, the TV is on the welcome page"
+pass "with an adult PIN set, agentv setup reset needs it"
+
 kill "$pid"
 wait "$pid" 2>/dev/null || true
 status=0
@@ -62,3 +76,12 @@ PATH="$SCRATCH/bin:$PATH" bash "$migration"
 [[ $(cat "$SCRATCH/calls") == "sudo systemctl try-restart agentv-daemon.service" ]] ||
   fail "the migration restarts the daemon" "$(cat "$SCRATCH/calls")"
 pass "an update restarts the daemon, so a box runs the new one without waiting for a reboot"
+
+# And they get the watch for a lost network started, which otherwise waits
+# for a restart of the box.
+: >"$SCRATCH/calls"
+migration=$(grep -l "agentv-hotspot-watch.service" "$ROOT"/migrations/agentv/*.sh)
+PATH="$SCRATCH/bin:$PATH" bash "$migration"
+[[ $(cat "$SCRATCH/calls") == "sudo systemctl start agentv-hotspot-watch.service" ]] ||
+  fail "the migration starts the watch for a lost network" "$(cat "$SCRATCH/calls")"
+pass "an update starts the watch for a lost network on a box installed before it"

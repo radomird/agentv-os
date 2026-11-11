@@ -276,6 +276,22 @@ test("with a PIN set a join needs its grant, and a child's profile can't look or
   assert.equal((await send(tv, "POST", "/api/viewer", { id: adult }, grant)).status, 200);
 });
 
+test("after setup, setup's own Wi-Fi routes on the TV are closed: a lost network isn't a way round Settings' guards", async () => {
+  // The hotspot is open, as on a TV that lost its network, a PIN is set, and
+  // nothing here has its grant.
+  rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
+  const join = await send(tv, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse" });
+  assert.equal(join.status, 403);
+  assert.equal((await send(tv, "GET", "/api/setup/networks")).status, 403);
+  assert.ok(!existsSync(drop), "and nothing was handed to root");
+  // Nor is saying setup isn't done: that needs the PIN's grant too.
+  const reset = await send(tv, "POST", "/api/setup", { done: false });
+  assert.equal(reset.status, 403);
+  assert.equal(reset.data.pin, true);
+  assert.equal((await send(tv, "GET", "/api/setup")).data.setup.done, true);
+  rootSays({ wifi: "cafe", radio: true });
+});
+
 test("the hotspot's page, after setup, asks for the adult PIN when one is set, and its wrong tries are its own", async () => {
   rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
   const listed = await send(captive, "GET", "/api/setup/networks");

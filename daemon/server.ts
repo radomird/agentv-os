@@ -2364,6 +2364,11 @@ export class Daemon {
         return;
       }
       const was = (await this.setup()).done;
+      // Starting setup again is an adult's, past the PIN when one is set,
+      // because a TV in setup asks for less: its pages pair a phone and
+      // change the Wi-Fi with no PIN. Without this, "not done" would be a
+      // way round the PIN for anything on the TV that can ask.
+      if (was && !body.done && (!this.guarded(request, response, "starting setup again") || !(await this.adult(request, response, "starting setup again")))) return;
       const setup = await this.setupState.mark(body.done);
       this.log(body.done ? "setup marked done" : "setup reset");
       // The setup hotspot closes as setup ends. Root is asked even when it's
@@ -2484,7 +2489,16 @@ export class Daemon {
 
     // The keyboard's way onto the home Wi-Fi at the welcome screen, with no
     // phone: the networks the setup hotspot saw, and the one picked, which
-    // goes to root as the captive page's does.
+    // goes to root as the captive page's does. They're setup's alone. Once
+    // setup is done the hotspot is open because the TV lost its network,
+    // and the TV changes its Wi-Fi in Settings, where a child's profile
+    // can't and a join needs the PIN (/api/network).
+    if ((path === "/api/setup/networks" || path === "/api/setup/wifi") && (await this.setup()).done) {
+      this.log(`refused ${method} ${path}: setup is done`);
+      this.json(response, 403, { ok: false, error: "setup is done. the wi-fi changes in settings" });
+      return;
+    }
+
     if (method === "GET" && path === "/api/setup/networks") {
       this.json(response, 200, { ok: true, hotspot: this.hotspot.status().ssid, networks: this.hotspot.networks() });
       return;
