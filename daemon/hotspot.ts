@@ -124,15 +124,25 @@ export class Hotspot {
     };
   }
 
-  // Whether root has answered what was asked at that time (Date.now()): the
-  // drop is taken, and state.json was written since.
-  answered(since: number): boolean {
-    if (existsSync(join(this.dropDir, "request.json"))) return false;
+  // state.json as it is now, to tell later whether root wrote it again. Root
+  // writes a new file over it each time, so it's the file that's compared and
+  // not a time: a clock in whole milliseconds can't order a write and an ask
+  // that land in the same one.
+  written(): string {
     try {
-      return statSync(join(this.run, "state.json")).mtimeMs > since;
+      const file = statSync(join(this.run, "state.json"), { bigint: true });
+      return `${file.ino}:${file.size}:${file.mtimeNs}`;
     } catch {
-      return false;
+      return "";
     }
+  }
+
+  // Whether root has answered what was asked when state.json was as given
+  // (written() at the ask): the drop is taken, and state.json is another one.
+  answered(before: string): boolean {
+    if (existsSync(join(this.dropDir, "request.json"))) return false;
+    const now = this.written();
+    return now !== "" && now !== before;
   }
 
   // Asks root to look at the networks nearby, with the hotspot closed.

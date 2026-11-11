@@ -56,7 +56,7 @@ export class TvNetwork {
   private now: () => number;
   private file: string;
   // What root was asked last, and when, until it has answered.
-  private asked: { kind: "look" | "join"; ssid: string; at: number } | null = null;
+  private asked: { kind: "look" | "join"; ssid: string; at: number; before: string } | null = null;
   private problem: NetworkState["problem"] = null;
   private said = "";
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -99,7 +99,7 @@ export class TvNetwork {
   private settle(): void {
     const asked = this.asked;
     if (!asked) return;
-    const answered = this.hotspot.answered(asked.at) && !this.hotspot.status().joining;
+    const answered = this.hotspot.answered(asked.before) && !this.hotspot.status().joining;
     const late = this.now() - asked.at > (asked.kind === "join" ? JOIN_MS : LOOK_MS);
     if (!answered && !late) return;
     this.asked = null;
@@ -140,7 +140,7 @@ export class TvNetwork {
     this.settle();
     if (this.asked) return this.asked.kind === "look" ? null : "busy";
     if (this.hotspot.status().on) return "hotspot";
-    this.asked = { kind: "look", ssid: "", at: this.now() };
+    this.asked = { kind: "look", ssid: "", at: this.now(), before: this.hotspot.written() };
     // A fresh look, and the last join's reason has been read.
     this.problem = null;
     this.hotspot.scan();
@@ -157,9 +157,10 @@ export class TvNetwork {
     if (!validSsid(ssid)) return "name";
     if (!validPassword(password)) return "password";
     const at = this.now();
+    const before = this.hotspot.written();
     const why = this.hotspot.join(ssid, password, { closed: true });
     if (why) return "password";
-    this.asked = { kind: "join", ssid, at };
+    this.asked = { kind: "join", ssid, at, before };
     this.problem = null;
     this.follow();
     this.tell();
