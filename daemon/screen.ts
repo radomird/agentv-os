@@ -52,6 +52,7 @@ import { NO_WEBRTC } from "../apps/contract/page.ts";
 import type { Cli } from "./ai.ts";
 import { AppHost, type PageBroker } from "./apps/loader.ts";
 import { AskWatch } from "./asks.ts";
+import { Controllers, type ControllerAnswer, type ControllerAsk } from "./controllers.ts";
 import { Audio, Pactl } from "./audio.ts";
 import { CdpPipe, type DevTools } from "./cdp.ts";
 import { answerGitHub, type GitHubAnswer, type GitHubAsk } from "./github.ts";
@@ -3154,6 +3155,16 @@ async function main(): Promise<void> {
     what: "a sentence",
     handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
+  }).start();
+  // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ
+  // lets pair a Bluetooth game controller, so the daemon's asks come here.
+  const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`) });
+  new AskWatch<ControllerAsk, ControllerAnswer>({
+    url: HOME_URL,
+    path: "api/controllers/ask",
+    what: "controllers",
+    handle: (ask) => controllers.handle(ask),
+    failed: (error) => ({ ok: false, bluetooth: "none", looking: false, controllers: [], why: "failed", error: error.message }),
   }).start();
   // The library is read again a little after the session starts, once the
   // USB drives and shares have had a moment.

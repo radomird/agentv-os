@@ -666,19 +666,31 @@ async function readNetwork(root: string, run: Exec, interfaces: () => ReturnType
   return { kind: "wifi", speed: speed?.trim() || null };
 }
 
-// Gamepads: the input devices udev marked as joysticks.
-async function readGamepads(root: string): Promise<string[]> {
+// Gamepads: the input devices udev marked as joysticks, each with how it's
+// connected, which the kernel keeps as the device's bus (3 is USB, 5 is
+// Bluetooth).
+export interface Pad {
+  name: string;
+  bus: "usb" | "bluetooth" | "other";
+}
+
+export async function readPads(root: string): Promise<Pad[]> {
   const input = join(root, "sys/class/input");
-  const names: string[] = [];
+  const pads: Pad[] = [];
   for (const event of await list(input)) {
     if (!/^event\d+$/.test(event)) continue;
     const dev = await text(join(input, event, "dev"));
     if (!dev) continue;
     const db = await text(join(root, "run/udev/data", `c${dev}`));
     if (!/^E:ID_INPUT_JOYSTICK=1$/m.test(db)) continue;
-    names.push((await text(join(input, event, "device/name"))) || event);
+    const bus = Number.parseInt(await text(join(input, event, "device/id/bustype")), 16);
+    pads.push({ name: (await text(join(input, event, "device/name"))) || event, bus: bus === 3 ? "usb" : bus === 5 ? "bluetooth" : "other" });
   }
-  return names;
+  return pads;
+}
+
+async function readGamepads(root: string): Promise<string[]> {
+  return (await readPads(root)).map((pad) => pad.name);
 }
 
 async function readMemoryBlocks(root: string): Promise<Readings["memoryBlocks"]> {
@@ -807,6 +819,14 @@ export class Box {
       this.saved(),
     ]);
     return { ...fixed, gpus: gpu.gpus, vulkaninfo: gpu.vulkaninfo, icds: gpu.icds, connectors, storage, network, bluetooth, gamepads, widevine: saved.widevine };
+  }
+
+  // The game controllers the box has right now, for Settings, controllers.
+  // Read each time, like the count in the report, so one that was just
+  // paired or removed shows without a restart.
+  async pads(): Promise<Pad[]> {
+    if (this.options.machine) return this.options.machine.gamepads.map((name) => ({ name, bus: "usb" as const }));
+    return readPads(this.root);
   }
 
   async report(): Promise<BoxReport> {
