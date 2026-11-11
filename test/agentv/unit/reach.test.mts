@@ -101,7 +101,9 @@ test("a server that also answers by a link-local address is reached, by its othe
 test("a name with only link-local addresses is refused, since nothing is left to go to", async () => {
   const before = seen.length;
   for (const only of [["fe80::1234"], ["169.254.7.7", "fe80::1234"]]) {
-    await assert.rejects(reach({ ...home, resolve: async () => only })(`http://nas.local:${port}/`), /is this tv itself/, only.join(" "));
+    // And the reason says so: it isn't this tv, it's a neighbour with no
+    // address an app goes to.
+    await assert.rejects(reach({ ...home, resolve: async () => only })(`http://nas.local:${port}/`), /^Error: nas\.local answers only by link-local addresses, which an app doesn't reach$/, only.join(" "));
   }
   assert.equal(seen.length, before);
 });

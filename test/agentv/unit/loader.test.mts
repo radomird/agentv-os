@@ -329,6 +329,38 @@ test("an app that fails to load leaves no worker behind, whatever its own code d
   assert.equal(now, "0", "no worker of this app is still running");
 });
 
+test("an answer that comes for an app already stopped isn't logged as its sandbox not starting", async () => {
+  // The app's request is still out when the app is stopped, and its answer
+  // comes after. There's no worker to hand it to, which says nothing about
+  // the sandbox.
+  const lines: string[] = [];
+  let asked = () => {};
+  const waiting = new Promise<void>((resolve) => (asked = resolve));
+  let answer = () => {};
+  const slow = createServer((_request, response) => {
+    answer = () => response.end("late");
+    asked();
+  });
+  await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+  try {
+    const slowUrl = `http://127.0.0.1:${(slow.address() as { port: number }).port}`;
+    const dir = app(tileApp("await fetch(ctx.settings.serverUrl + '/slow'); return {};"));
+    const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    const h = new AppHost({ dir, manifest, settings: { serverUrl: slowUrl }, harness, log: (line) => lines.push(line) });
+    hosts.push(h);
+    const call = h.call(viewer, "tile", "s");
+    await waiting;
+    h.stop();
+    await fails(call, "crashed", /Sample stopped/);
+    answer();
+    await new Promise((done) => setTimeout(done, 300));
+    assert.deepEqual(lines.filter((line) => /sandbox/.test(line)), []);
+  } finally {
+    slow.closeAllConnections();
+    slow.close();
+  }
+});
+
 test("a call that arrives as the app is stopped has crashed, and so does one after: a stopped app doesn't start again", async () => {
   // An app is stopped when it's updated or removed, and as the daemon closes.
   // A tile asked for at that moment gets an answer, not a daemon error. One

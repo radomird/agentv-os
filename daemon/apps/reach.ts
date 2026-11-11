@@ -2,12 +2,15 @@
 // to the app's declared origins. Here its host is looked up once, refused if
 // any of its addresses is this box, and the connection goes to the very
 // addresses that were checked, so a name can't point somewhere else between
-// the check and the connection. The net filter does the same for home's
-// Chromium (daemon/net-filter.ts).
+// the check and the connection. The net filter (daemon/net-filter.ts) also
+// connects to the address it checked, for home's Chromium, but it asks for
+// one address of a name and refuses a link-local one whoever has it.
 //
 // A server on the home network can answer by a link-local address beside its
 // usual one, as nas.local often does. That address isn't this box's, so it's
-// left out and never connected to, and the request goes to the others.
+// left out and never connected to, and the request goes to the others. A
+// name with nothing but such addresses is refused, and the reason says that,
+// not that it's this box.
 //
 // It answers like fetch with redirect "manual": a redirect comes back as it
 // is, so the address it names is checked too when the app follows it.
@@ -70,13 +73,14 @@ export async function checked(host: string, options: ReachOptions = {}): Promise
   }
   // A name: any address that's this box refuses the whole name. A link-local
   // address that isn't the box's own is some other machine's, so only that
-  // address goes, and the name is refused when nothing else is left.
+  // address goes. With nothing else left the name is refused too, but not
+  // as this box, which it isn't.
   const kept: string[] = [];
   for (const address of addresses) {
     if (!forbid(address)) kept.push(address);
     else if (!linkLocalElsewhere(address, own)) throw refused;
   }
-  if (!kept.length) throw refused;
+  if (!kept.length) throw new Error(`${host} answers only by link-local addresses, which an app doesn't reach`);
   return kept.map((address) => ({ address, family: isIP(address) }));
 }
 
