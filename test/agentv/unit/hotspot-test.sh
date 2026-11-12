@@ -221,6 +221,26 @@ jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t 
 grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "and the hotspot it was closing opens again" "$(cat "$FAKE/calls")"
 pass "a join cut short says so, and leaves nothing reading as still joining"
 
+# An ask that lands just as root reads the one before it isn't lost. The
+# stand-in for cat is the daemon here, writing the next ask at that moment.
+cat >"$SCRATCH/bin/cat" <<'EOF'
+#!/bin/bash
+/usr/bin/cat "$@"
+status=$?
+if [[ -n ${FAKE_NEXT_ASK:-} && ${1:-} == "$(dirname "$AGENTV_HOTSPOT_DROP")"/* ]]; then
+  printf '%s' "$FAKE_NEXT_ASK" >"$AGENTV_HOTSPOT_DROP"
+fi
+exit "$status"
+EOF
+chmod +x "$SCRATCH/bin/cat"
+printf '%s' '{"scan":true,"id":"aaaa000000000001"}' >"$AGENTV_HOTSPOT_DROP"
+FAKE_NEXT_ASK='{"scan":true,"id":"aaaa000000000002"}' hotspot drop || fail "a look works" "$(cat "$SCRATCH/out")"
+[[ $(state .answered) == "aaaa000000000001" ]] || fail "the first ask is answered" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+[[ $(jq -r .id "$AGENTV_HOTSPOT_DROP" 2>/dev/null) == "aaaa000000000002" ]] || fail "an ask written while root reads the one before it stays for root's next run"
+[[ -z $(find "$(dirname "$AGENTV_HOTSPOT_DROP")" -name '.taken*') ]] || fail "and nothing of the one root took is left"
+rm -f "${SCRATCH:?}/bin/cat" "${AGENTV_HOTSPOT_DROP:?}"
+pass "root takes an ask by moving it aside, so one written at that moment is still there for its next run"
+
 # WPA3 and hidden networks, and drops that aren't right.
 : >"$FAKE/calls"
 printf '%s' '{"join":{"ssid":"attic","password":"upstairs1","hidden":true}}' >"$AGENTV_HOTSPOT_DROP"

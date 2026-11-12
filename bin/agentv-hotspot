@@ -455,11 +455,16 @@ join() {
 # What the daemon handed over: the home Wi-Fi to join, a look at the
 # networks nearby, or to close the hotspot as setup ends.
 drop() {
-  local request ssid password hidden
+  local request ssid password hidden taken
 
-  [[ -f $DROP ]] || return 0
-  request=$(cat "$DROP")
-  rm -f "$DROP"
+  # Taken by moving it aside, then read: the daemon writes the next ask
+  # under the same name, and one that landed between a read and a removal
+  # by name would be removed unread, and never answered.
+  taken="$(dirname "$DROP")/.taken.json"
+  rm -f "$taken"
+  mv -f "$DROP" "$taken" 2>/dev/null || return 0
+  request=$(cat "$taken")
+  rm -f "$taken"
   ASKED=$(jq -r '.id // empty' <<<"$request" 2>/dev/null || true)
   [[ $ASKED =~ ^[0-9a-f]{1,32}$ ]] || ASKED=""
   if [[ $(jq -r '.scan // false' <<<"$request" 2>/dev/null) == "true" ]]; then
