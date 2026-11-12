@@ -92,7 +92,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   hotspotIs({ on: true });
   const page = await phone();
   await page.waitForSelector("button.network");
-  assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+  assert.equal(await page.locator("h1").innerText(), "Pick your Wi-Fi");
   assert.deepEqual(await page.locator("button.network").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-ssid"))), ["home wi-fi", "cafe", "neighbours"]);
   assert.match(await page.locator('button.network[data-ssid="home wi-fi"]').innerText(), /home wi-fi[\s\S]*█/);
   assert.equal(await page.locator('button.network[data-ssid="home wi-fi"] .glyph-lock').count(), 1, "a network with a password shows the lock");
@@ -110,7 +110,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
 
   await page.locator('input[type="password"]').fill("correct horse");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining home wi-fi$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.match(await page.locator(".page").innerText(), /scan the new code on your TV$/);
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
   rmSync(drop());
@@ -118,7 +118,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   // The password was wrong: the hotspot comes back, and so does the reason.
   hotspotIs({ on: true, error: "that password didn't work for home wi-fi" });
   await page.waitForFunction(() => /that password didn't work for home wi-fi/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
-  assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+  assert.equal(await page.locator("h1").innerText(), "Pick your Wi-Fi");
   await page.close();
 });
 
@@ -130,19 +130,19 @@ test("stage 4 an open network needs no password, and one that hides its name is 
   await page.waitForSelector('[data-action="join"]');
   assert.equal(await page.locator('input[type="password"]').count(), 0);
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /joining cafe/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining cafe$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "cafe", password: "", hidden: false });
   rmSync(drop());
 
   await page.goto(`${captive}/`);
   await page.waitForSelector("button.network");
   await page.locator('button[data-ssid=""]').tap();
-  await page.waitForSelector('input[aria-label="the network\'s name"]');
-  assert.equal(await page.locator("h1").innerText(), "another network");
-  await page.locator('input[aria-label="the network\'s name"]').fill("attic");
+  await page.waitForSelector('input[aria-label="Network name"]');
+  assert.equal(await page.locator("h1").innerText(), "Another network");
+  await page.locator('input[aria-label="Network name"]').fill("attic");
   await page.locator('input[type="password"]').fill("upstairs1");
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /joining attic/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining attic$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "attic", password: "upstairs1", hidden: true });
   rmSync(drop());
   await page.close();
