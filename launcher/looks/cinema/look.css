@@ -869,6 +869,83 @@ body.with-backdrop {
   text-transform: uppercase;
 }
 
+/* --- Updating (updates.ts) ------------------------------------------------- */
+
+/* Centred on the theme's background, in Cinema's bold type, as the PIN pad is: the
+   headline, a slim rounded bar, one line, and the steps as a short list.
+   Each step's mark is drawn here rather than written: a filled tick when
+   it's done, a dot for the one that's going, and a faint ring for those to
+   come. */
+.updating-box {
+  width: min(1100px, calc(100% - 2 * var(--safe-x)));
+  align-items: center;
+  gap: 32px;
+  text-align: center;
+}
+
+.updating-title {
+  font-size: 68px;
+  font-weight: 700;
+  letter-spacing: -2.5px;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.updating-bar {
+  width: min(760px, 100%);
+  height: 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.updating-fill {
+  border-radius: 6px;
+  background: var(--bright-foreground);
+}
+
+.updating-steps {
+  align-self: center;
+  gap: 16px;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.updating-step {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.updating-step > b {
+  display: none;
+}
+
+.updating-step::before {
+  content: "";
+  flex: none;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 3px solid var(--card-lit);
+  border-radius: 50%;
+}
+
+.updating-step.now::before {
+  border: 9px solid var(--bright-foreground);
+}
+
+.updating-step:has(~ .now)::before {
+  border: none;
+  background: var(--bright-foreground);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cmask id='m'%3E%3Ccircle cx='12' cy='12' r='12' fill='white'/%3E%3Cpath d='M6.5 12.5l3.5 3.5 7.5-8' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/mask%3E%3Crect width='24' height='24' mask='url(%23m)'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.updating-step.now {
+  color: var(--bright-foreground);
+  font-weight: 700;
+}
+
 /* --- Larger --------------------------------------------------------------- */
 
 :root[data-size="larger"] {
