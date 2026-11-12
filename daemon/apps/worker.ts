@@ -142,12 +142,27 @@ function capabilities(app: Record<string, unknown>): string[] {
   return found;
 }
 
+// The contract's optional calls the module has, and any it names that isn't
+// a function, which the loader refuses.
+const OPTIONAL = [["playback", "show"]];
+function optional(app: Record<string, unknown>): { has: string[]; broken: string[] } {
+  const has: string[] = [];
+  const broken: string[] = [];
+  for (const path of OPTIONAL) {
+    const owner = path.slice(0, -1).reduce<unknown>((at, key) => (at && typeof at === "object" ? (at as Record<string, unknown>)[key] : undefined), app);
+    const value = owner && typeof owner === "object" ? (owner as Record<string, unknown>)[path[path.length - 1]] : undefined;
+    if (typeof value === "function") has.push(path.join("."));
+    else if (value !== undefined) broken.push(path.join("."));
+  }
+  return { has, broken };
+}
+
 let app: Record<string, unknown>;
 try {
   const module = await import(entry);
   app = module.default;
   if (!app || typeof app !== "object") throw new Error("its module has no default export");
-  send({ type: "ready", id: String(app.id), capabilities: capabilities(app) });
+  send({ type: "ready", id: String(app.id), capabilities: capabilities(app), optional: optional(app) });
 } catch (error) {
   send({ type: "failed", message: (error as Error).message ?? String(error) });
   process.exit(1);

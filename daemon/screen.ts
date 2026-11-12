@@ -1254,6 +1254,32 @@ export class Screen {
     return entry ? this.pageOf(entry) : undefined;
   }
 
+  // A web app a sentence or New this week just opened, so its search or its
+  // playback.show can use its page: the page once it's loaded somewhere
+  // other than a blank page, and once the service's profile for who's
+  // watching has settled, so the app doesn't race it. Undefined if that
+  // doesn't happen within ms.
+  async sayReady(id: string, ms = 20_000): Promise<PageBroker | undefined> {
+    const until = Date.now() + ms;
+    for (;;) {
+      const entry = this.opens.find((o) => o.id === id && o.role === "web");
+      const cdp = this.apps.get("web")?.cdp;
+      if (!entry) return undefined;
+      if (entry.target && cdp) {
+        const [at, state] = (await cdp.evaluateIn(entry.target, "[location.href, document.readyState]").catch(() => ["about:blank", ""])) as [string, string];
+        if (at !== "about:blank" && state === "complete") {
+          await Promise.race([Promise.resolve(entry.ready).catch(() => {}), sleep(Math.max(0, until - Date.now()))]);
+          return this.pageOf(entry);
+        }
+      }
+      if (Date.now() >= until) {
+        this.log(`${id}'s page didn't load in time for its search`);
+        return undefined;
+      }
+      await sleep(250);
+    }
+  }
+
   // A page app (ADR-043): home in front, then its frame there.
   async openPage(id: string): Promise<object> {
     await this.home("a page app");
@@ -3191,7 +3217,7 @@ async function main(): Promise<void> {
     url: HOME_URL,
     path: "api/say/ask",
     what: "a sentence",
-    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
+    handle: (ask) => answerSay(ask, { screen: { open: (app, item) => screen.sayOpen(app, item), tell: (text) => screen.sayTell(text), live: (state, text) => screen.sayLive(state, text), speak: (clip) => voice.play(clip), page: (app) => screen.pageFor(app), ready: (app) => screen.sayReady(app) }, music, host: sayHosts(HOME_URL, userAgent(), console.log) }),
     failed: (error) => ({ ok: false, error: error.message }),
   }).start();
   // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ

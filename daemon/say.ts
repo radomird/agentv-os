@@ -18,12 +18,12 @@
 
 import type { Item } from "../apps/contract/contract.ts";
 import type { Viewer } from "./apps/loader.ts";
-import { execute, run, type ExecApp, type ExecContext, type ExecNews, type Opened, type Outcome } from "./executors/index.ts";
+import { execute, openNew, run, type ExecApp, type ExecContext, type ExecNews, type Opened, type Outcome, type Shown } from "./executors/index.ts";
 import type { ExecBuilds } from "./executors/make.ts";
 import type { Found } from "./executors/play.ts";
 import { fromWhatsNew } from "./executors/whatsNew.ts";
 import type { WatchRow } from "./ledger.ts";
-import { cleanSentence, NONE, type Route, type Routed, type RouterApp } from "./router.ts";
+import { cleanSentence, type Route, type Routed, type RouterApp } from "./router.ts";
 
 // What the daemon asks of the screen daemon for a sentence: X looked up,
 // what was chosen opened, or a line shown over the app in front, since
@@ -36,6 +36,7 @@ export type LiveState = "open" | "words" | "closed" | "thinking" | "said";
 export type SayAsk =
   | { kind: "search"; query: string; apps: string[]; viewer: Viewer }
   | { kind: "open"; app: string; item?: Item }
+  | { kind: "show"; app: string; item: Item; viewer: Viewer }
   | { kind: "tell"; text: string }
   | { kind: "live"; state: LiveState; text: string }
   | { kind: "speak"; clip: number };
@@ -44,6 +45,9 @@ export interface SayAnswer {
   ok: boolean;
   error?: string;
   found?: Found[];
+  // What a title's own page in its app came to (a show ask): its page, the
+  // app's own search for it, or an app with no way to show one.
+  shown?: Shown;
 }
 
 const line = (value: unknown, max = 160) => (typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, max) : undefined);
@@ -59,6 +63,7 @@ export function cleanItem(value: unknown): Item | null {
   const item: Item = { id: v.id.slice(0, 200), kind: v.kind as Item["kind"], title: line(v.title, 200)! };
   if (n(v.season) !== undefined) item.season = n(v.season);
   if (n(v.episode) !== undefined) item.episode = n(v.episode);
+  if (n(v.year) !== undefined) item.year = n(v.year);
   if (line(v.subtitle)) item.subtitle = line(v.subtitle);
   if (url(v.poster)) item.poster = url(v.poster);
   if (url(v.still)) item.still = url(v.still);
@@ -70,11 +75,12 @@ export function cleanSayAnswer(said: unknown): SayAnswer {
   const s = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
   const answer: SayAnswer = { ok: s.ok === true };
   if (line(s.error)) answer.error = line(s.error);
+  if (s.shown === "title" || s.shown === "search" || s.shown === "unsupported") answer.shown = s.shown;
   if (Array.isArray(s.found)) {
     answer.found = s.found.slice(0, 50).flatMap((f): Found[] => {
       if (typeof f !== "object" || f === null || typeof (f as Found).app !== "string") return [];
       const items = Array.isArray((f as Found).items) ? (f as Found).items.slice(0, 20).map(cleanItem).filter((i): i is Item => i !== null) : [];
-      return [{ app: (f as Found).app, items, ...(line((f as Found).error) ? { error: line((f as Found).error) } : {}) }];
+      return [{ app: (f as Found).app, items, ...(line((f as Found).error) ? { error: line((f as Found).error) } : {}), ...((f as Found).opened === true ? { opened: true } : {}) }];
     });
   }
   return answer;
@@ -117,9 +123,13 @@ export interface SayOptions {
 }
 
 // How long the TV session has: an app's search takes up to 10 s, and its
-// playback.open up to 30 s.
+// playback.open up to 30 s. An app asked alone may open first, for a search
+// that needs its page, and wait for it.
 const SEARCH_MS = 15_000;
 const OPEN_MS = 40_000;
+// And a title's own page: the app opens, its page loads, and its
+// playback.show has up to 30 s.
+const SHOW_MS = 60_000;
 
 export class Say {
   private o: SayOptions;
@@ -142,7 +152,7 @@ export class Say {
   }
 
   private async search(query: string, apps: string[], viewer: Viewer): Promise<Found[]> {
-    const answer = await this.o.ask({ kind: "search", query, apps, viewer }, SEARCH_MS);
+    const answer = await this.o.ask({ kind: "search", query, apps, viewer }, apps.length === 1 ? OPEN_MS : SEARCH_MS);
     if (!answer.ok) return apps.map((app) => ({ app, items: [], error: answer.error ?? "Couldn't search" }));
     return answer.found ?? [];
   }
@@ -150,6 +160,11 @@ export class Say {
   private async open(app: string, item?: Item): Promise<Opened> {
     const answer = await this.o.ask({ kind: "open", app, ...(item ? { item } : {}) }, OPEN_MS);
     return answer.ok ? { ok: true } : { ok: false, error: answer.error };
+  }
+
+  private async showTitle(app: string, item: Item, viewer: Viewer): Promise<{ ok: true; shown: Shown } | { ok: false; error?: string }> {
+    const answer = await this.o.ask({ kind: "show", app, item, viewer }, SHOW_MS);
+    return answer.ok ? { ok: true, shown: answer.shown ?? "unsupported" } : { ok: false, error: answer.error };
   }
 
   // A sentence, routed and done. It answers once it's done, and the TV and
@@ -180,13 +195,17 @@ export class Say {
 
   // A route the TV chose itself, such as a title on New this week (S8.1):
   // done as a sentence's would be, with nothing routed, and the TV and the
-  // phones hear how it went. words is what they see as heard.
-  async act(route: Route, from: string, words: string): Promise<Said> {
+  // phones hear how it went. words is what they see as heard. A title from
+  // New this week opens on its own page in its app (ADR-097).
+  async act(route: Route, from: string, words: string, item?: Item): Promise<Said> {
     const viewer = await this.o.viewer();
     const said: Said = { n: this.next++, sentence: cleanSentence(words), from, viewer: viewer.id, state: "routing", route, at: this.now() };
     this.current = said;
     this.show(said);
-    said.outcome = this.plain(await run(route, this.context(viewer, await this.o.apps(viewer))));
+    const apps = await this.o.apps(viewer);
+    const app = route.app ? apps.find((a) => a.id === route.app) : undefined;
+    const ctx = this.context(viewer, apps);
+    said.outcome = this.plain(item && app && fromWhatsNew(item) ? await openNew(item, app, ctx) : await run(route, ctx));
     said.state = "done";
     said.at = this.now();
     this.show(said);
@@ -211,6 +230,7 @@ export class Say {
       rows: () => this.o.rows(viewer.id),
       search: (query, ids) => this.search(query, ids, viewer),
       open: (app, item) => this.open(app, item),
+      show: (app, item) => this.showTitle(app, item, viewer),
       ...(this.o.news ? { news: this.o.news(viewer, apps) } : {}),
       ...(builds ? { builds } : {}),
     };
@@ -256,12 +276,10 @@ export class Say {
     const apps = await this.o.apps(viewer);
     const app = apps.find((a) => a.id === candidate.app);
     if (!app || viewer.id !== said.viewer) return { error: "Someone else is watching now" };
-    // A title from what's new is TMDB's, not the app's: it's looked up in
-    // its app and played, as "play it on that app" would.
+    // A title from what's new is TMDB's, not the app's: its app opens on
+    // the title's own page (ADR-097).
     if (fromWhatsNew(candidate.item)) {
-      const item = candidate.item;
-      const route: Route = { ...NONE, intent: "play", query: item.title, kind: item.kind === "film" ? "film" : "series", app: app.id, season: item.season ?? null };
-      said.outcome = this.plain(await run(route, this.context(viewer, apps)));
+      said.outcome = this.plain(await openNew(candidate.item, app, this.context(viewer, apps)));
       said.at = this.now();
       this.show(said);
       this.o.speak?.(said.outcome.say);

@@ -431,6 +431,19 @@ test("the phone's pause and resume reach an app's own player, and an app without
   await fails(host(app(tileApp("return {};"))).call(viewer, "playback.pause"), "failed", /has no playback\.pause/);
 });
 
+test("playback.show is optional, and when an app has it, it's a function under playback that gets the title as it was given", async () => {
+  const without = host(app(tileApp("return {};")));
+  assert.equal(await without.has("playback.show"), false);
+  const shows = tileApp("return {};").replace("async readPlaybackState() { return null; } },", "async readPlaybackState() { return null; }, async show(ctx, item) { return item.year === 2019 && item.kind === 'film'; } },");
+  const h = host(app(shows));
+  assert.equal(await h.has("playback.show"), true);
+  assert.equal(await h.call(viewer, "playback.show", { id: "tmdb:film:7", kind: "film", title: "Sintel", year: 2019 }), true);
+  assert.equal(await h.call(viewer, "playback.show", { id: "tmdb:film:8", kind: "film", title: "Sintel", year: 1999 }), false);
+  await fails(host(app(tileApp("return {};").replace("async readPlaybackState() { return null; } },", 'async readPlaybackState() { return null; }, show: "the film page" },'))).start(), "refused", /playback\.show isn't a function/);
+  // An app that doesn't say it plays can't show a title's page either.
+  await fails(host(app(shows, (m) => (m.tv.capabilities = ["launch", "signIn", "search", "tile"]))).start(), "refused", /has playback\.show, but its manifest doesn't list playback/);
+});
+
 test("a module that doesn't load says so", async () => {
   await fails(host(app("export default 1;")).start(), "failed", /no default export/);
   await fails(host(app("throw new Error('broken');")).start(), "failed", /broken/);
