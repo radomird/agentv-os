@@ -221,11 +221,24 @@ test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, s
   }
 });
 
+// A request to the TV as the tests make it, and a grant for the tests' PIN.
+const send = async (method: string, path: string, body?: unknown, grant?: string) =>
+  fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+const granted = async () => (await (await send("POST", "/api/pin/check", { pin: "2468" })).json()).grant as string;
+
+// An adult on a paired phone accepts the terms, on a TV with a PIN.
+async function acceptPastPin(provider: string, way: string): Promise<void> {
+  const code = (await (await send("POST", "/api/phones/pair", {}, await granted())).json()).pairing.code;
+  const phone = await pairPhone(lan, code, "pixel");
+  const onPhone = (await (await phone.fetch("/api/phone/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
+  assert.equal((await phone.fetch("/api/phone/terms", { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onPhone }, body: JSON.stringify({ provider, path: way }) })).status, 200);
+}
+
+// The TV ends every grant, as when it has been off for a while.
+const endGrants = async () => assert.equal((await send("POST", "/api/pin/lock", { reason: "tv-off" })).status, 200);
+
 test("setup run again with a PIN set: a key typed on the TV asks for the PIN and is kept, and Back with nothing picked asks for nothing", async () => {
   atAi();
-  const send = async (method: string, path: string, body?: unknown, grant?: string) =>
-    fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const granted = async () => (await (await send("POST", "/api/pin/check", { pin: "2468" })).json()).grant as string;
   assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
   const page = await tv();
   try {
@@ -245,10 +258,7 @@ test("setup run again with a PIN set: a key typed on the TV asks for the PIN and
     await page.waitForSelector(".pin-pad");
     await page.keyboard.type("2468");
     await page.waitForSelector(".terms-list");
-    const code = (await (await send("POST", "/api/phones/pair", {}, await granted())).json()).pairing.code;
-    const phone = await pairPhone(lan, code, "pixel");
-    const onPhone = (await (await phone.fetch("/api/phone/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
-    assert.equal((await phone.fetch("/api/phone/terms", { method: "POST", headers: { "Content-Type": "application/json", "X-AgenTV-Grant": onPhone }, body: JSON.stringify({ provider: "claude", path: "key" }) })).status, 200);
+    await acceptPastPin("claude", "key");
     await page.waitForSelector(".key-field");
 
     // Setup opened again later holds no PIN. The key typed here asks for it,
@@ -268,6 +278,113 @@ test("setup run again with a PIN set: a key typed on the TV asks for the PIN and
     await page.close();
     const grant = await granted();
     await send("DELETE", "/api/key", undefined, grant);
+    await send("DELETE", "/api/pin", undefined, grant);
+  }
+});
+
+test("a PIN the TV stopped honouring is asked for again at the key, which stays typed through a cancelled pad and a wrong PIN", async () => {
+  atAi();
+  assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
+  const page = await tv();
+  const key = `sk-ant-${"f".repeat(40)}`;
+  try {
+    // Picking the provider is past the PIN, and setup holds on to it.
+    await page.waitForSelector(".ai-cards");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".ai-options");
+    await page.locator('.ai-options [data-path="key"]').click();
+    await page.waitForSelector(".pin-pad");
+    await page.keyboard.type("2468");
+    // Its terms, unless an earlier test's phone accepted them already.
+    await page.waitForSelector(".terms-list, .key-field");
+    if (await page.locator(".terms-list").count()) await acceptPastPin("claude", "key");
+    await page.waitForSelector(".key-field");
+
+    // The TV drops it, and setup doesn't know. The key typed next used to be
+    // refused and cleared, with no pad, on every try.
+    await endGrants();
+    await page.fill(".key-field", key);
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".pin-pad", { timeout: 5000 });
+    assert.equal(await page.locator(".key-field").inputValue(), key);
+    assert.equal(await page.locator(".toast.fail").count(), 0);
+
+    // Back on the pad: nothing kept, nothing said, and the key still typed.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".pin-pad", { state: "detached" });
+    assert.equal(await page.locator(".key-field").inputValue(), key);
+    assert.equal(await page.locator(".toast.fail").count(), 0);
+    assert.equal((await (await fetch(`${url}/api/ai`)).json()).key.set, false);
+
+    // A wrong PIN stays on the pad, then the right one keeps the key.
+    await page.locator('[data-action="save-key"]').click();
+    await page.waitForSelector(".pin-pad");
+    await page.keyboard.type("1111");
+    await page.waitForSelector(".pin-pad .pin-message.bad");
+    assert.equal(await page.locator(".key-field").inputValue(), key);
+    assert.equal((await (await fetch(`${url}/api/ai`)).json()).key.set, false);
+    await page.keyboard.type("2468");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "all set.");
+    assert.deepEqual((await (await fetch(`${url}/api/ai`)).json()).key, { set: true, provider: "claude" });
+    assert.equal(await page.locator(".toast.fail").count(), 0);
+  } finally {
+    await page.close();
+    const grant = await granted();
+    await send("DELETE", "/api/key", undefined, grant);
+    await send("DELETE", "/api/pin", undefined, grant);
+  }
+});
+
+test("a PIN the TV stopped honouring is asked for again at the plan's sign-in code, which stays typed until it's sent", async () => {
+  atAi();
+  assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
+  const page = await tv();
+  const sent = join(state, "build-drop", "sign-in-code.json");
+  try {
+    await page.waitForSelector(".ai-cards");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".ai-options");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".pin-pad");
+    await page.keyboard.type("2468");
+    await page.waitForSelector(".pin-pad", { state: "detached" });
+    await page.waitForSelector(".terms-list, .ai-options");
+    if (await page.locator(".terms-list").count()) await acceptPastPin("claude", "plan");
+    await page.waitForSelector(".ai-options");
+    for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
+    assert.ok(existsSync(join(state, "build-drop", "sign-in.json")), "the sign-in started with the PIN entered for the plan");
+    signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
+    await page.waitForSelector(".ai-paste:not(.hidden)");
+
+    // The TV drops the PIN it was given. The code used to be cleared and
+    // refused, with no pad.
+    await endGrants();
+    await page.fill('[data-action="sign-in-code"]', "good-code#s7Q");
+    await page.locator('[data-action="send-code"]').click();
+    await page.waitForSelector(".pin-pad", { timeout: 5000 });
+    assert.equal(await page.locator('[data-action="sign-in-code"]').inputValue(), "good-code#s7Q");
+
+    // Back on the pad: the code is still typed, and nothing was sent.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".pin-pad", { state: "detached" });
+    assert.equal(await page.locator('[data-action="sign-in-code"]').inputValue(), "good-code#s7Q");
+    assert.equal(existsSync(sent), false);
+    assert.equal(await page.locator(".toast.fail").count(), 0);
+
+    // A wrong PIN, then the right one: the code goes, and the field empties.
+    await page.locator('[data-action="send-code"]').click();
+    await page.waitForSelector(".pin-pad");
+    await page.keyboard.type("1111");
+    await page.waitForSelector(".pin-pad .pin-message.bad");
+    assert.equal(existsSync(sent), false);
+    await page.keyboard.type("2468");
+    for (let i = 0; i < 50 && !existsSync(sent); i++) await page.waitForTimeout(100);
+    assert.deepEqual(JSON.parse(readFileSync(sent, "utf8")), { code: "good-code#s7Q" });
+    await page.waitForFunction(() => (document.querySelector('[data-action="sign-in-code"]') as HTMLInputElement).value === "");
+    assert.equal(await page.locator(".toast.fail").count(), 0);
+  } finally {
+    await page.close();
+    const grant = await granted();
     await send("DELETE", "/api/pin", undefined, grant);
   }
 });

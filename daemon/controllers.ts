@@ -13,7 +13,9 @@
 //
 // What a device says before it's paired is only its word. So once one has
 // connected, the input devices the kernel made for it are read, and one
-// that can type or move a pointer is removed again. And whatever this page
+// that can type or move a pointer is removed again. That's read again every
+// time the kernel makes an input device, for as long as it's paired, since
+// one can come back later as something else. And whatever this page
 // paired it can show and remove, even when the device has changed what it
 // says it is since.
 //
@@ -27,6 +29,7 @@
 // stops asking, so does the looking.
 
 import { spawn } from "node:child_process";
+import { watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -41,8 +44,9 @@ export interface Controller {
 export type Bluetooth = "on" | "off" | "none";
 
 // Why an ask didn't do what it was for, for the page's one line.
-export type Why = "none" | "off" | "not-a-controller" | "gone" | "code" | "failed";
-export const WHYS: Why[] = ["none", "off", "not-a-controller", "gone", "code", "failed"];
+// "not-removed": it turned out to type or point, and is still paired.
+export type Why = "none" | "off" | "not-a-controller" | "not-removed" | "gone" | "code" | "failed";
+export const WHYS: Why[] = ["none", "off", "not-a-controller", "not-removed", "gone", "code", "failed"];
 
 export type ControllerAsk = { kind: "list" } | { kind: "look"; on: boolean } | { kind: "pair"; id: string } | { kind: "remove"; id: string } | { kind: "power" };
 
@@ -280,9 +284,31 @@ export interface ControllersOptions {
   settleMs?: number;
   // The kernel's input devices, as /proc/bus/input/devices has them.
   inputs?: () => Promise<string>;
+  // Tells when the kernel's input devices changed. Returns how to stop.
+  changes?: (changed: () => void) => () => void;
+  // How long after a change the input devices are read.
+  checkMs?: number;
   // Where the addresses this page paired are kept. With none, they're kept
   // until the session ends.
   store?: string;
+}
+
+// The kernel's input devices come and go as nodes in /dev/input.
+const changes = (changed: () => void) => {
+  try {
+    const watcher = watch("/dev/input", () => changed());
+    watcher.on("error", () => {});
+    return () => watcher.close();
+  } catch {
+    return () => {};
+  }
+};
+
+// What BlueZ has, and whether that was read at all (known).
+interface Found {
+  adapter: Adapter | null;
+  devices: Device[];
+  known: boolean;
 }
 
 const inputs = () => readFile("/proc/bus/input/devices", "utf8").catch(() => "");
@@ -297,9 +323,67 @@ export class Controllers {
   private looking: Looking | null = null;
   private until = 0;
   private timer?: ReturnType<typeof setTimeout>;
+  private unwatch?: () => void;
+  private checkTimer?: ReturnType<typeof setTimeout>;
+  private checking: Promise<void> = Promise.resolve();
 
   constructor(options: ControllersOptions = {}) {
-    this.o = { run, look, log: (line) => console.log(line), keepMs: 10_000, settleMs: 6000, inputs, ...options };
+    this.o = { run, look, log: (line) => console.log(line), keepMs: 10_000, settleMs: 6000, inputs, changes, checkMs: 300, ...options };
+  }
+
+  // Reads what the kernel made of each controller paired here, now and each
+  // time its input devices change: when one connects, and when one that's
+  // connected opens something more.
+  watch(): void {
+    this.unwatch?.();
+    const soon = () => {
+      clearTimeout(this.checkTimer);
+      this.checkTimer = setTimeout(() => void this.check(), this.o.checkMs);
+      this.checkTimer.unref?.();
+    };
+    this.unwatch = this.o.changes(soon);
+    soon();
+  }
+
+  // One paired here that can type or move a pointer goes, whenever that's
+  // seen. One the kernel shows nothing for isn't connected, and is read
+  // again when it is.
+  check(): Promise<void> {
+    this.checking = this.checking
+      .then(async () => {
+        const mine = await this.paired();
+        if (!mine.size) return;
+        const made = await this.o.inputs();
+        const bad = [...mine].filter((address) => typesOrPoints(made, address) === true);
+        if (!bad.length) return;
+        const found = await this.read();
+        for (const address of bad) {
+          const device = found.devices.find((d) => d.address === address);
+          if (device) await this.drop(device);
+          else this.o.log("a controller paired here can type or point, and BlueZ didn't say where it is; it's read again when the input devices change");
+        }
+      })
+      .catch((error: Error) => this.o.log(`couldn't check the controllers paired here: ${error.message}`));
+    return this.checking;
+  }
+
+  // Removes a device that can type or point. When BlueZ won't, it's at
+  // least not trusted and not connected, and stays on the page to remove.
+  private async drop(device: Device): Promise<{ found: Found; gone: boolean }> {
+    const removed = await this.bus(["call", "org.bluez", device.adapter, "org.bluez.Adapter1", "RemoveDevice", "o", device.path], 10_000);
+    let found = await this.read();
+    const gone = found.known ? !found.devices.some((d) => d.path === device.path && d.paired) : removed.code === 0;
+    if (gone) {
+      this.o.log("removed a bluetooth device that paired as a game controller and can type or point");
+      await this.note(found, device.address, false);
+      return { found, gone };
+    }
+    this.o.log(`a bluetooth device that can type or point wasn't removed: ${removed.code === null ? "no answer in time" : removed.err.trim().slice(0, 200)}`);
+    await this.bus(["set-property", "org.bluez", device.path, "org.bluez.Device1", "Trusted", "b", "false"]);
+    await this.bus(["call", "org.bluez", device.path, "org.bluez.Device1", "Disconnect"], 10_000);
+    found = await this.read();
+    await this.note(found, device.address, true);
+    return { found, gone };
   }
 
   private async paired(): Promise<Set<string>> {
@@ -312,11 +396,12 @@ export class Controllers {
 
   // Notes a controller this page paired, or one it removed, and lets go of
   // any BlueZ no longer has paired.
-  private async note(found: { devices: Device[] }, id: string, paired: boolean): Promise<void> {
+  // A read of BlueZ that failed says nothing about the others, so they stay.
+  private async note(found: Found, id: string, paired: boolean): Promise<void> {
     const mine = await this.paired();
     if (paired) mine.add(id);
     else mine.delete(id);
-    for (const address of [...mine]) if (address !== id && !found.devices.some((d) => d.address === address && d.paired)) mine.delete(address);
+    if (found.known) for (const address of [...mine]) if (address !== id && !found.devices.some((d) => d.address === address && d.paired)) mine.delete(address);
     if (!this.o.store) return;
     try {
       await mkdir(dirname(this.o.store), { recursive: true });
@@ -344,6 +429,7 @@ export class Controllers {
     }
   }
 
+  // The page stopped looking. The watch on what's paired goes on.
   stop(): void {
     clearTimeout(this.timer);
     this.looking?.stop();
@@ -355,18 +441,19 @@ export class Controllers {
     return this.o.run("busctl", [...BUS, ...args], ms);
   }
 
-  private async read(): Promise<{ adapter: Adapter | null; devices: Device[] }> {
+  private async read(): Promise<Found> {
     await this.paired();
     const ran = await this.bus(["--json=short", "call", "org.bluez", "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"]);
     const { adapters, devices } = ran.code === 0 ? parseObjects(ran.out) : { adapters: [], devices: [] };
-    return { adapter: adapters.find((adapter) => adapter.powered) ?? adapters[0] ?? null, devices };
+    // With no adapter in the answer, BlueZ has said nothing about devices.
+    return { adapter: adapters.find((adapter) => adapter.powered) ?? adapters[0] ?? null, devices, known: ran.code === 0 && adapters.length > 0 };
   }
 
   private isLooking(): boolean {
     return this.looking !== null && Date.now() < this.until;
   }
 
-  private answer(found: { adapter: Adapter | null; devices: Device[] }, more: Partial<ControllerAnswer> = {}): ControllerAnswer {
+  private answer(found: Found, more: Partial<ControllerAnswer> = {}): ControllerAnswer {
     const bluetooth: Bluetooth = !found.adapter ? "none" : found.adapter.powered ? "on" : "off";
     const looking = bluetooth === "on" && this.isLooking();
     return { ok: true, bluetooth, looking, controllers: found.adapter ? listed(found.devices, found.adapter.path, looking, this.mine ?? undefined) : [], ...more };
@@ -421,7 +508,7 @@ export class Controllers {
   // The device an ask names, when it's a game controller on the TV's
   // adapter. Anything else is refused here, whatever the page showed. To
   // remove one, having been paired from this page is enough.
-  private find(found: { adapter: Adapter | null; devices: Device[] }, id: string, removing = false): { device?: Device; refused?: ControllerAnswer } {
+  private find(found: Found, id: string, removing = false): { device?: Device; refused?: ControllerAnswer } {
     if (!found.adapter) return { refused: this.answer(found, { ok: false, why: "none", error: "there's no bluetooth here" }) };
     if (!found.adapter.powered) return { refused: this.answer(found, { ok: false, why: "off", error: "bluetooth is off" }) };
     const device = ADDRESS.test(id) ? found.devices.find((d) => d.address === id && d.adapter === found.adapter!.path) : undefined;
@@ -478,14 +565,14 @@ export class Controllers {
       presents = typesOrPoints(await this.o.inputs(), device.address);
     }
     if (presents) {
-      this.o.log("removed a bluetooth device that paired as a game controller and can type or point");
-      await this.bus(["call", "org.bluez", device.adapter, "org.bluez.Adapter1", "RemoveDevice", "o", device.path], 10_000);
-      found = await this.read();
-      await this.note(found, device.address, false);
-      return this.answer(found, { ok: false, why: "not-a-controller", error: "it can type or point, so it isn't only a game controller" });
+      const dropped = await this.drop(device);
+      if (!dropped.gone) return this.answer(dropped.found, { ok: false, why: "not-removed", error: "it can type or point, and it wasn't removed" });
+      return this.answer(dropped.found, { ok: false, why: "not-a-controller", error: "it can type or point, so it isn't only a game controller" });
     }
+    // Paired here, so it's read again each time the kernel makes an input
+    // device (watch). Nothing seen yet is not a controller that passed.
     await this.note(found, device.address, true);
-    this.o.log("paired a game controller");
+    this.o.log(presents === null ? "paired a game controller; the kernel hasn't shown it yet, so it's checked when it connects" : "paired a game controller");
     return this.answer(found);
   }
 

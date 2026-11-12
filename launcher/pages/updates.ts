@@ -7,6 +7,7 @@
 
 import { daemon, screen, type AfterCheck, type GoBack, type UpdateProgress, type Updates, type UpdateStatus } from "../api.ts";
 import { h } from "../dom.ts";
+import { named } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -135,6 +136,13 @@ function choices(ctx: Ctx, route: string): HTMLElement[] {
   return parts.filter((part): part is HTMLElement => part !== null);
 }
 
+// The night's update waited because a game was being played. It installs
+// the night after, whatever is open.
+function heldNote(ctx: Ctx): HTMLElement | null {
+  if (!ctx.updates.held || !ready(ctx.updates.status) || !(tonight(ctx.updates) || ctx.state.settings.updateOvernight)) return null;
+  return h("div", { class: "panel-note held-note" }, named("Waited for your game. Updates tonight."));
+}
+
 function tonightNote(ctx: Ctx): HTMLElement | null {
   if (!tonight(ctx.updates)) return null;
   return h("div", { class: "panel-note tonight-note" }, "it installs tonight, between 2 and 5, once nothing has played for half an hour. later takes that back.");
@@ -209,6 +217,7 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
         ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "what's new ›")
         : null,
     ),
+    heldNote(ctx),
     tonightNote(ctx),
     status.waiting && pending(status)
       ? h("div", { class: "panel-note" }, "it waits until agentv's nightly run has tested it. the box looks again tomorrow.")

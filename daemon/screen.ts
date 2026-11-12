@@ -147,6 +147,8 @@ export interface NightUpdates {
   progress: any;
   tonight: { version: string } | null;
   overnight: boolean;
+  // The night an update last waited for a game, if it hasn't installed since.
+  held?: { at: string } | null;
 }
 
 export interface MonitorMode {
@@ -212,6 +214,8 @@ export interface Launcher {
   // answer, and the install asked for tonight is done with.
   nightUpdates(): Promise<NightUpdates | null>;
   clearTonight(): Promise<void>;
+  // Notes that tonight's update waited for a game, or that it's over.
+  holdNight(on: boolean): Promise<void>;
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
@@ -365,6 +369,9 @@ interface Options {
   // have played before one installs.
   nightTickMs?: number;
   nightQuietMs?: number;
+  // How long after a game was last in front it still holds the night's
+  // update off.
+  nightGameMs?: number;
   // How often it looks at what's in front and what plays, for the phone's
   // remote (ADR-037).
   contextMs?: number;
@@ -458,6 +465,10 @@ export class Screen {
   private nightCheckAt = 0;
   private nightTickMs: number;
   private nightQuietMs: number;
+  private nightGameMs: number;
+  // When a game was last in front, and the last input the seat saw.
+  private gameAt = -Infinity;
+  private inputAt = -Infinity;
   private nightWatch: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: Options) {
@@ -488,6 +499,7 @@ export class Screen {
     this.homeCheckMs = options.homeCheckMs ?? 30_000;
     this.nightTickMs = options.nightTickMs ?? 60_000;
     this.nightQuietMs = options.nightQuietMs ?? 30 * 60_000;
+    this.nightGameMs = options.nightGameMs ?? 2 * 60 * 60_000;
     this.contextMs = options.contextMs ?? 1000;
     this.lastPlayed = this.now();
     this.runningPackage = options.running ?? installedPackage();
@@ -1430,6 +1442,7 @@ export class Screen {
     this.idleTimer = null;
     // Each report starts over; anything still waiting from an older one stops.
     const generation = ++this.idleGeneration;
+    if (!idle) this.inputAt = this.now();
     // Input again: the ambient screen ends, as with a key on the home screen.
     // Bringing home to the front for it counts as input on the seat too, at
     // once, so a report that soon after it came up is that, and it stays. A
@@ -1470,15 +1483,24 @@ export class Screen {
   // Tonight, or every night with "update overnight on its own" on, an update
   // installs between 02:00 and 05:00, once nothing has played for 30
   // minutes. The first look each night checks for updates; a later one
-  // installs. Runs every minute, and notes when something last played. An
-  // open game counts as playing: it stays open with the TV off (ADR-084),
-  // and the update's restart would end it.
+  // installs. Runs every minute, and notes when something last played.
+  //
+  // A game holds the update off too, since the update's restart would end
+  // it, but only one that's being played, and for one night at most: a game
+  // in front (not under the screen saver or the PIN pad) as this looks, or
+  // one that was in the last two hours. Steam idling behind home doesn't
+  // count, nor a game made on this TV that's paused behind it. The night
+  // after one waited, the update installs whatever is open.
   async night(): Promise<void> {
-    if ((await this.playing()) || (await this.gameOpen())) this.lastPlayed = this.now();
+    if (await this.playing()) this.lastPlayed = this.now();
+    if (await this.gameInFront()) this.gameAt = this.now();
     const at = new Date(this.now());
     if (at.getHours() < 2 || at.getHours() >= 5) return;
     const updates = await this.launcher.nightUpdates().catch(() => null);
-    if (!updates || (!updates.tonight && !updates.overnight)) return;
+    if (!updates) return;
+    const heldAt = Date.parse(updates.held?.at ?? "") || 0;
+    const over = async () => void (heldAt && (await this.launcher.holdNight(false).catch(() => {})));
+    if (!updates.tonight && !updates.overnight) return over();
     const night = at.toDateString();
     if (this.nightChecked !== night) {
       this.nightChecked = night;
@@ -1497,15 +1519,26 @@ export class Screen {
     const pending = Boolean(status && (status.agentv?.available || status.omarchy?.available || status.packages > 0));
     if (!pending) {
       if (updates.tonight) await this.launcher.clearTonight().catch(() => {});
-      return;
+      return over();
     }
     // On stable, one the nightly run hasn't passed waits for another night.
     if (status.waiting) return;
     const quiet = this.now() - this.lastPlayed;
     if (quiet < this.nightQuietMs) return;
-    this.log(`night: installing the update, nothing has played for ${Math.round(quiet / 60_000)} min`);
+    const heldTonight = heldAt > 0 && new Date(heldAt).toDateString() === night;
+    if (this.now() - this.gameAt < this.nightGameMs && (!heldAt || heldTonight)) {
+      if (!heldTonight) {
+        this.log("night: a game is being played, so the update waits for tomorrow night");
+        await this.launcher.holdNight(true).catch((error: Error) => this.log(`night: couldn't note that the update waited: ${error.message}`));
+      }
+      // A box the wake alarm woke has nothing more to do tonight.
+      this.sleep?.nothingTonight(this.inputAt);
+      return;
+    }
+    this.log(`night: installing the update, nothing has played for ${Math.round(quiet / 60_000)} min${heldAt && !heldTonight ? ", and it waited for a game last night" : ""}`);
     if (await this.launcher.startUnit("agentv-update-tv.service")) {
       if (updates.tonight) await this.launcher.clearTonight().catch(() => {});
+      await over();
     }
   }
 
@@ -1528,15 +1561,6 @@ export class Screen {
       if (home.playing === true) return true;
     }
     return false;
-  }
-
-  // Whether a game is open, in front or not: Steam with whatever it runs, or
-  // a game made on this TV, which home knows.
-  private async gameOpen(): Promise<boolean> {
-    if (this.opens.some((o) => o.role === "steam")) return true;
-    if (!this.apps.has("home")) return false;
-    const home = (await Promise.race([this.inHome("({ open: window.agentvGameOpen?.() ?? false })"), sleep(500).then(() => ({}))])) as { open?: unknown };
-    return home.open === true;
   }
 
   // --- Shared to the TV (ADR-050, S5.10) ------------------------------------
@@ -1612,11 +1636,14 @@ export class Screen {
   // The home screen in front on its ambient screen, the one idle screen.
   // What was in front stays open behind it, unless the TV went off and it
   // closed.
-  showAmbient(): Promise<object> {
+  // On a locked TV nothing is kept to go back to (behind is false): a key on
+  // the ambient screen goes to the PIN pad.
+  showAmbient(behind = true): Promise<object> {
     return this.queue(async () => {
+      if (!behind) this.ambientFrom = null;
       if (this.ambient) return;
       const front = this.front();
-      this.ambientFrom = front && front.role !== "home" ? front.address : null;
+      this.ambientFrom = behind && front && front.role !== "home" ? front.address : null;
       const home = this.homeWindow();
       if (home && front?.address !== home.address) await this.toFront(home.address);
       this.ambient = true;
@@ -1780,19 +1807,49 @@ export class Screen {
         this.log(`${game} stays in front`);
       }
     })
-      .then(() => (stays ? undefined : this.showAmbient()))
+      // A locked TV comes back on home's PIN pad, not on the game that was
+      // in front: a key on the ambient screen doesn't go back to it. That
+      // holds for a TV that came back on while the apps closed too.
+      .then(() => (stays ? undefined : this.showAmbient(!locked)))
       .then(() =>
         this.queue(async () => {
-          // A locked TV comes back on home's PIN pad, not on the game that
-          // was in front: a key on the ambient screen doesn't go back to it.
-          // That holds for a TV that came back on while the apps closed too.
-          if (locked && this.ambientFrom && this.windows.get(this.ambientFrom)?.role === "steam") this.ambientFrom = null;
+          if (locked) await this.gameOutOfReach();
           // Then nothing draws until the TV is back (ADR-072).
           if (!this.tvOff) return;
           this.dark = true;
           await this.output(false, "the TV is off");
         }),
       );
+  }
+
+  // On a locked TV the game ends out of reach, whatever happened on the way
+  // to home: a compositor call that failed, or home with no window just
+  // then. Steam's windows go out of sight, home is asked for once more, and
+  // a game that can't be put out of sight closes.
+  private async gameOutOfReach(): Promise<void> {
+    const games = [...this.windows.values()].filter((w) => w.role === "steam").map((w) => w.address);
+    if (!games.length) return;
+    const onTv = async () => (await this.hypr.clients()).filter((c) => c.workspace.name === TV_WORKSPACE).map((c) => c.address);
+    let seen: string[] = [];
+    try {
+      seen = await onTv();
+      if (games.some((a) => seen.includes(a))) {
+        this.log("the TV is locked and the game was still on it; out of sight");
+        for (const address of games.filter((a) => seen.includes(a))) await this.hold(address);
+        seen = await onTv();
+        if (games.some((a) => seen.includes(a))) throw new Error("it's still on the TV");
+      }
+    } catch (error) {
+      this.log(`the TV is locked and the game couldn't be put out of sight, so it closes: ${(error as Error).message}`);
+      this.opens = this.opens.filter((o) => o.role !== "steam");
+      this.apps.get("steam")?.stop();
+      this.running();
+    }
+    this.stack = this.stack.filter((a) => !games.includes(a));
+    const home = this.homeWindow();
+    // Home's new window comes in front when it opens.
+    if (!home) this.want = { role: "home", until: Infinity };
+    else if (!seen.includes(home.address)) await this.toFront(home.address).catch((error: Error) => this.log(`home couldn't be put in front: ${error.message}`));
   }
 
   // The game in front, if one is: Steam's window, or a game made on this TV
@@ -2635,7 +2692,17 @@ export const launcher: Launcher = {
       progress: updates?.progress ?? null,
       tonight: updates?.tonight ?? null,
       overnight: home?.settings?.updateOvernight === true,
+      held: updates?.held ?? null,
     };
+  },
+
+  async holdNight(on) {
+    await fetch(`${HOME_URL}api/updates/held`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ held: on }),
+      signal: AbortSignal.timeout(5000),
+    });
   },
 
   async clearTonight() {
@@ -3112,6 +3179,7 @@ async function main(): Promise<void> {
   // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ
   // lets pair a Bluetooth game controller, so the daemon's asks come here.
   const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`), store: join(homedir(), ".local", "state", "agentv", "controllers.json") });
+  controllers.watch();
   new AskWatch<ControllerAsk, ControllerAnswer>({
     url: HOME_URL,
     path: "api/controllers/ask",

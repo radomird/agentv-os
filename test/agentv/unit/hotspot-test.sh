@@ -34,7 +34,11 @@ case "$*" in
   "-t -f DEVICE,TYPE,STATE,CONNECTION device status") cat "$FAKE/links" ;;
   "-t -f ACTIVE,SSID device wifi list --rescan no ifname wlan0") cat "$FAKE/on-wifi" 2>/dev/null ;;
   "-g GENERAL.CON-UUID device show wlan0") echo "${FAKE_PREVIOUS:-}" ;;
-  "-t -f TYPE,NAME connection show") printf '802-3-ethernet:Wired connection 1\n802-11-wireless:agentv-setup\n%s\n' "${FAKE_KNOWN:-}" ;;
+  "-t -f TYPE,NAME connection show") printf '802-3-ethernet:Wired connection 1\n802-11-wireless:agentv-hotspot-this-tv-opens-itself\n%s\n' "${FAKE_KNOWN:-}" ;;
+  "-t -f UUID,TYPE,NAME connection show") cat "$FAKE/profiles" 2>/dev/null ;;
+  "-g 802-11-wireless.mode connection show uuid "*) if [[ $6 == "old-hotspot" ]]; then echo ap; else echo infrastructure; fi ;;
+  # With no device to show, the real one fails.
+  *"device show ") exit 10 ;;
   *"device connect wlan0") [[ -z ${FAKE_REJOINS:-} ]] || cp "$FAKE/links-back" "$FAKE/links" ;;
   *"device wifi list --rescan yes ifname wlan0")
     printf '%s\n' '82:WPA2:home wi-fi' '40:WPA2:home wi-fi' '61::cafe' '55:WPA3:new\:net' '30:WPA1 WPA2:neighbours' '90:WPA2:AgenTV-0000' '70:WPA2:' ;;
@@ -95,6 +99,9 @@ state() {
   jq -r "$1" "$AGENTV_HOTSPOT_RUN/state.json"
 }
 
+# The hotspot's own connection in NetworkManager.
+own=agentv-hotspot-this-tv-opens-itself
+
 # Opening it.
 hotspot run || fail "the hotspot opens" "$(cat "$SCRATCH/out")"
 jq -e '. == [
@@ -110,11 +117,12 @@ password=$(state .password)
 [[ $(state .on) == "true" && $(state .device) == "wlan0" && $(state .address) == "10.42.0.1" ]] || fail "state.json says it's on, where" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 [[ $(stat -c %a "$AGENTV_HOTSPOT_RUN/state.json") == 644 ]] || fail "and the daemon can read it"
 add=$(grep "^nmcli connection add" "$FAKE/calls")
-for word in "save no" "ifname wlan0" "con-name agentv-setup" "autoconnect no" "ssid $ssid" "802-11-wireless.mode ap" "wifi-sec.key-mgmt wpa-psk" \
+for word in "save no" "ifname wlan0" "con-name $own" "autoconnect no" "ssid $ssid" "802-11-wireless.mode ap" "wifi-sec.key-mgmt wpa-psk" \
   "ipv4.method manual ipv4.addresses 10.42.0.1/24 ipv6.method disabled"; do
   [[ $add == *"$word"* ]] || fail "the access point has $word" "$add"
 done
-grep -qx "nmcli --wait 45 connection up agentv-setup" "$FAKE/calls" || fail "and comes up"
+grep -qx "nmcli --wait 45 connection up $own" "$FAKE/calls" || fail "and comes up"
+(( ${#own} > 32 )) || fail "its connection has a name no network can have: a network's is 32 bytes at most" "$own"
 pass "it looks first, then opens AgenTV's own WPA2 network, kept in memory only, at 10.42.0.1"
 
 expected=$(printf '%s\n' \
@@ -144,7 +152,7 @@ pass "opened again in the same boot, it keeps its name and password, and its hol
 
 hotspot down || fail "it closes" "$(cat "$SCRATCH/out")"
 [[ ! -s $FAKE/rules ]] || fail "and takes every hole out" "$(cat "$FAKE/rules")"
-grep -qx "nmcli connection delete agentv-setup" "$FAKE/calls" || fail "and its network goes"
+grep -qx "nmcli connection delete $own" "$FAKE/calls" || fail "and its network goes"
 [[ $(state .on) == "false" && $(state .ssid) == "$ssid" ]] || fail "state.json says it's off"
 SERVICE_RESULT=exit-code "$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1
 [[ $(state .error) == "The setup Wi-Fi stopped" ]] || fail "when it failed, state.json says so" "$(state .error)"
@@ -213,6 +221,26 @@ jq -e '.joining == null and .why == "failed" and .error == "Couldn'"'"'t join ho
 grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "and the hotspot it was closing opens again" "$(cat "$FAKE/calls")"
 pass "a join cut short says so, and leaves nothing reading as still joining"
 
+# An ask that lands just as root reads the one before it isn't lost. The
+# stand-in for cat is the daemon here, writing the next ask at that moment.
+cat >"$SCRATCH/bin/cat" <<'EOF'
+#!/bin/bash
+/usr/bin/cat "$@"
+status=$?
+if [[ -n ${FAKE_NEXT_ASK:-} && ${1:-} == "$(dirname "$AGENTV_HOTSPOT_DROP")"/* ]]; then
+  printf '%s' "$FAKE_NEXT_ASK" >"$AGENTV_HOTSPOT_DROP"
+fi
+exit "$status"
+EOF
+chmod +x "$SCRATCH/bin/cat"
+printf '%s' '{"scan":true,"id":"aaaa000000000001"}' >"$AGENTV_HOTSPOT_DROP"
+FAKE_NEXT_ASK='{"scan":true,"id":"aaaa000000000002"}' hotspot drop || fail "a look works" "$(cat "$SCRATCH/out")"
+[[ $(state .answered) == "aaaa000000000001" ]] || fail "the first ask is answered" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+[[ $(jq -r .id "$AGENTV_HOTSPOT_DROP" 2>/dev/null) == "aaaa000000000002" ]] || fail "an ask written while root reads the one before it stays for root's next run"
+[[ -z $(find "$(dirname "$AGENTV_HOTSPOT_DROP")" -name '.taken*') ]] || fail "and nothing of the one root took is left"
+rm -f "${SCRATCH:?}/bin/cat" "${AGENTV_HOTSPOT_DROP:?}"
+pass "root takes an ask by moving it aside, so one written at that moment is still there for its next run"
+
 # WPA3 and hidden networks, and drops that aren't right.
 : >"$FAKE/calls"
 printf '%s' '{"join":{"ssid":"attic","password":"upstairs1","hidden":true}}' >"$AGENTV_HOTSPOT_DROP"
@@ -253,7 +281,7 @@ hotspot run >/dev/null || true
 jq '.error = "Wrong password for new:net"' "$AGENTV_HOTSPOT_RUN/state.json" >"$SCRATCH/state"
 mv "$SCRATCH/state" "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot status
-[[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $ssid, password $password. Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: Wrong password for new:net." ]] ||
+[[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $(state .ssid), password $(state .password). Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: Wrong password for new:net." ]] ||
   fail "and while it's on, its name, password and the last try's reason" "$(cat "$SCRATCH/out")"
 pass "status says how it stands"
 
@@ -268,15 +296,32 @@ rm -f "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot run || fail "it opens" "$(cat "$SCRATCH/out")"
 [[ $(state .ssid) == "AgenTV-1a2b" && $(state .password) == "abcdefghjk" ]] || fail "with the name and password the USB stick handed over" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 grep -q "ssid AgenTV-1a2b .*wifi-sec.psk abcdefghjk" "$FAKE/calls" || fail "as the access point's own" "$(grep "connection add" "$FAKE/calls")"
+hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) == "AgenTV-1a2b" ]] || fail "and while setup isn't done it's that network each time, as after a wrong password"
+cp "$AGENTV_HOTSPOT_RUN/state.json" "$SCRATCH/first-boot-state.json"
 printf '%s' '{"stop":true}' >"$AGENTV_HOTSPOT_DROP"
 hotspot drop || fail "setup ending closes it"
 [[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the handed-over network goes with it"
 pass "a box set up from the phone opens the USB stick's network again at first boot, even online, until setup ends"
 
+# The same boot, with setup done: the TV loses its network and the watch
+# opens the hotspot. state.json is still there from the first hotspot, and
+# the name and password in it were the installer's.
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) =~ ^AgenTV-[0-9a-f]{4}$ && $(state .ssid) != "AgenTV-1a2b" && $(state .password) != "abcdefghjk" ]] ||
+  fail "in the boot setup ended in, a hotspot opened later doesn't have the installer's name and password" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+later=$(state .ssid)
+hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) == "$later" ]] || fail "and it keeps its own for the rest of the boot"
+# Setup ended some other way, and root was never told to close the hotspot.
+cp "$SCRATCH/first-boot-state.json" "$AGENTV_HOTSPOT_RUN/state.json"
+hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) != "AgenTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "nor when root never heard setup end" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+
 # Setup ended with the file still there, as on a TV set up before the file
 # went with setup: a hotspot opened later has a name and password of its
 # own, and the file goes then, or at the next start.
-echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
 printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
 rm -f "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
@@ -318,7 +363,11 @@ hotspot drop
 printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
 FAKE_NO_WIFI=1 hotspot drop || fail "a box with no Wi-Fi says so and doesn't fail" "$(cat "$SCRATCH/out")"
 [[ $(state .radio) == "false" ]] || fail "state.json says the box has no Wi-Fi" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
-pass "Settings' look lists the networks nearby and the one the TV is on, with the hotspot closed"
+printf '%s' '{"join":{"ssid":"cafe","password":"","hidden":false},"id":"bb22cc33dd44ee55"}' >"$AGENTV_HOTSPOT_DROP"
+if FAKE_NO_WIFI=1 hotspot drop; then fail "a box with no Wi-Fi joins nothing"; fi
+jq -e '.answered == "bb22cc33dd44ee55" and .joining == null and .why == "failed" and .radio == false' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join on a box with no Wi-Fi is answered, with a reason" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+pass "Settings' look lists the networks nearby and the one the TV is on, with the hotspot closed, and a TV with no Wi-Fi answers a join"
 
 # A join with the hotspot closed.
 printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
@@ -440,11 +489,11 @@ pass "time asleep doesn't count as time with no network"
 # With the hotspot open: the network back by any route closes it.
 hotspot run >/dev/null || true
 set_state '.watch = true'
-printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:unavailable:' "wlan0:wifi:connected:$own" >"$FAKE/links"
 ago 0 >"$AGENTV_HOTSPOT_RUN/opened-at"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "its own hotspot isn't a network, and it stays open" "$(cat "$FAKE/calls")"; fi
-printf '%s\n' 'enp1s0:ethernet:connected:Wired connection 1' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:connected:Wired connection 1' "wlan0:wifi:connected:$own" >"$FAKE/links"
 tick
 grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a cable that comes up closes the hotspot" "$(cat "$FAKE/calls")"
 [[ $(state .watch) == "null" ]] || fail "and it's no longer the watch's"
@@ -453,10 +502,25 @@ tick
 if grep -q "systemctl stop" "$FAKE/calls"; then fail "a hotspot someone opened by hand isn't the watch's to close"; fi
 pass "the network coming back closes the hotspot the watch opened, and only that one"
 
+# A home network called agentv-setup, the name the hotspot's own connection
+# had before: it's a network like any other, and what's kept for it stays.
+set_state '.on = true | .watch = true'
+printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+tick
+grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a TV on a home network called agentv-setup is online, and the hotspot closes" "$(cat "$FAKE/calls")"
+printf '%s\n' 'home-network:802-11-wireless:agentv-setup' 'old-hotspot:802-11-wireless:agentv-setup' 'cable:802-3-ethernet:agentv-setup' >"$FAKE/profiles"
+: >"$FAKE/calls"
+hotspot run || fail "the hotspot opens" "$(cat "$SCRATCH/out")"
+hotspot down || fail "and closes" "$(cat "$SCRATCH/out")"
+grep -qx "nmcli connection delete uuid old-hotspot" "$FAKE/calls" || fail "a hotspot left open under the old name, as over an update, is taken away" "$(cat "$FAKE/calls")"
+if grep -qE "nmcli connection (delete|down) (agentv-setup|uuid (home-network|cable))$" "$FAKE/calls"; then fail "what's kept for a home network called agentv-setup stays" "$(grep "connection d" "$FAKE/calls")"; fi
+rm -f "$FAKE/profiles"
+pass "a home network called agentv-setup counts as online, and opening or closing the hotspot leaves it alone"
+
 # The router that restarts: with nobody using the hotspot's page, it closes
 # now and then to look for the Wi-Fi the TV knows.
 set_state '.on = true | .watch = true'
-printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:unavailable:' "wlan0:wifi:connected:$own" >"$FAKE/links"
 printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:home wi-fi' >"$FAKE/links-back"
 : >"$FAKE/stations"
 ago 100 >"$AGENTV_HOTSPOT_RUN/opened-at"
@@ -495,14 +559,27 @@ if opened; then fail "the home Wi-Fi came back, so the hotspot stays closed" "$(
 pass "with nobody using its page the hotspot closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
 
 # While root joins a network, the watch keeps out of it.
-set_state '.joining = "home wi-fi" | .on = false'
+set_state '.joining = "home wi-fi" | .joining_since = (now | floor) | .joining_reopens = true | .on = false'
 printf '%s\n' "$no_network" >"$FAKE/links"
 ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone"; fi
 [[ ! -e $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "and the count starts again after it"
+# A join that was killed outright never said how it went. It doesn't read as
+# under way for the rest of the boot.
+set_state '.joining_since = (now | floor) - 600'
+tick
+jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join that's older than any join can be is over, and says it didn't work" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+opened || fail "and the hotspot it had closed opens again" "$(cat "$FAKE/calls")"
+echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+set_state '.joining = "home wi-fi" | .joining_since = (now | floor) - 600 | .joining_reopens = false'
+tick
+[[ $(state .joining) == "null" ]] || fail "during setup too"
+if opened; then fail "a join from Settings that was killed opens no hotspot by that alone"; fi
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
 unset AGENTV_HOTSPOT_LOST_AFTER AGENTV_HOTSPOT_RETRY_AFTER AGENTV_HOTSPOT_REJOIN_WAIT FAKE_KNOWN
-pass "the watch leaves a join that's under way alone"
+pass "the watch leaves a join that's under way alone, and ends one that was killed before it said how it went"
 
 grep -qx "ExecStart=/usr/bin/agentv-hotspot watch" "$ROOT/system/agentv-hotspot-watch.service" || fail "the watch has its unit"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-watch.service" || fail "which starts with the box"

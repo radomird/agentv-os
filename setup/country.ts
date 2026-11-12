@@ -23,10 +23,8 @@ async function load(): Promise<NonNullable<typeof known>> {
 
 // The country confirmed or picked, then on to the next step.
 async function choose(ctx: Ctx, code: string): Promise<void> {
-  const grant = await ctx.grant("the country");
-  if (grant === null) return;
   try {
-    await setup.setCountry(code, grant || undefined);
+    if (!(await ctx.guarded("the country", (grant) => setup.setCountry(code, grant)))) return;
   } catch (error) {
     ctx.toast((error as Error).message, "fail");
     ctx.sounds.play("failure");

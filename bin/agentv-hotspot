@@ -22,8 +22,9 @@
 # USB stick's first screen opened AgenTV-<4 characters> for the phone, and
 # hands its name and password over in /etc/agentv/hotspot.json. At first
 # boot this opens that same network, even on Ethernet, so the phone joins
-# it again by itself and carries on. The file goes once setup ends, and a
-# hotspot opened after that never has its name and password.
+# it again by itself and carries on. The file goes once setup ends, and so
+# do the name and password this boot's hotspot had from it, so a hotspot
+# opened after that never has them.
 #
 # After setup, Settings changes the Wi-Fi the same way, with the hotspot
 # closed: the daemon hands over a look at the networks nearby, or one to
@@ -60,11 +61,19 @@ CONNECTIONS=${AGENTV_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 HANDED=${AGENTV_HOTSPOT_HANDED:-/etc/agentv/hotspot.json}
 PORT=${AGENTV_SETUP_PORT:-3002}
 ADDRESS=10.42.0.1
-CONNECTION=agentv-setup
+# The hotspot's own connection in NetworkManager. A network's name is 32
+# bytes at most and this is longer, so no network the TV joins can have it:
+# a join names its connection after the network. It was agentv-setup once,
+# which a home network can be called too (forget_old).
+CONNECTION=agentv-hotspot-this-tv-opens-itself
+OLD_CONNECTION=agentv-setup
 TAG=agentv-setup-hotspot
 LOST_AFTER=${AGENTV_HOTSPOT_LOST_AFTER:-60}
 RETRY_AFTER=${AGENTV_HOTSPOT_RETRY_AFTER:-300}
 REJOIN_WAIT=${AGENTV_HOTSPOT_REJOIN_WAIT:-30}
+# A join is done in under two minutes, however it goes. One that still reads
+# as under way after this was killed before it could say how it went.
+JOIN_STALE=180
 WATCH_SKIP=${AGENTV_HOTSPOT_WATCH_SKIP:-}
 # With no network the watch looks every 5 seconds. Two looks further apart
 # than this had a sleep or a clock change between them.
@@ -210,8 +219,21 @@ firewall_close() {
   done
 }
 
+# Takes away the hotspot an AgenTV from before the name changed left open,
+# as on a TV updated with its hotspot up. That one was an access point named
+# agentv-setup. A home network of that name isn't one, and stays.
+forget_old() {
+  local uuid type name
+
+  while IFS=: read -r uuid type name; do
+    [[ $type == "802-11-wireless" && $name == "$OLD_CONNECTION" ]] || continue
+    [[ $(nmcli -g 802-11-wireless.mode connection show uuid "$uuid" 2>/dev/null) == "ap" ]] || continue
+    nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
+  done < <(nmcli -t -f UUID,TYPE,NAME connection show 2>/dev/null || true)
+}
+
 run() {
-  local device ssid password networks
+  local device ssid password networks handed=false
 
   device=$(wifi_device)
   if [[ -z $device ]]; then
@@ -222,6 +244,7 @@ run() {
   nmcli radio wifi on >/dev/null 2>&1 || true
   firewall_close
   nmcli connection delete "$CONNECTION" >/dev/null 2>&1 || true
+  forget_old
 
   networks=$(scan "$device")
   write_networks "$networks"
@@ -229,11 +252,17 @@ run() {
   # One name and password for the whole boot, so a phone that joined once
   # still knows it when the hotspot comes back after a wrong password. The
   # first time, the one the USB stick handed over, so the phone that set
-  # the box up from there is already on it.
+  # the box up from there is already on it. That one is for setup only: once
+  # setup is done it isn't used again, in the same boot either.
   ssid=$(state_get .ssid)
   password=$(state_get .password)
+  [[ $(state_get .handed) == "true" ]] && handed=true
+  if [[ $handed == "true" ]] && setup_done; then
+    ssid="" password="" handed=false
+  fi
   if [[ $ssid != AgenTV-* || -z $password ]]; then
     read -r ssid password <<<"$(handed)" || true
+    [[ $ssid == AgenTV-* && -n $password ]] && handed=true
   fi
   if [[ $ssid != AgenTV-* || -z $password ]]; then
     ssid="AgenTV-$(random 0123456789abcdef 4)"
@@ -252,8 +281,8 @@ run() {
     exit 1
   fi
   firewall_open "$device"
-  state_set '.on = true | .ssid = $ssid | .password = $password | .device = $device | .address = $address | .joining = null | .joined = null | .wifi = null' \
-    --arg ssid "$ssid" --arg password "$password" --arg device "$device" --arg address "$ADDRESS"
+  state_set '.on = true | .ssid = $ssid | .password = $password | .handed = $handed | .device = $device | .address = $address | .joining = null | .joined = null | .wifi = null' \
+    --arg ssid "$ssid" --arg password "$password" --argjson handed "$handed" --arg device "$device" --arg address "$ADDRESS"
   echo "agentv-hotspot: $ssid is on, with the setup page at http://$ADDRESS/"
 
   # Addresses for phones, and every name pointing at the box, which is how
@@ -269,6 +298,7 @@ run() {
 down() {
   nmcli connection down "$CONNECTION" >/dev/null 2>&1 || true
   nmcli connection delete "$CONNECTION" >/dev/null 2>&1 || true
+  forget_old
   firewall_close
   [[ -f $RUN/state.json ]] || return 0
   if [[ ${SERVICE_RESULT:-success} == "success" ]]; then
@@ -347,11 +377,19 @@ join() {
 
   device=$(state_get .device)
   [[ -n $device ]] || device=$(wifi_device)
+  # A TV with no Wi-Fi says so, and the ask has its answer.
+  if [[ -z $device ]]; then
+    state_set '.radio = false | .joining = null | .error = "this tv has no wi-fi" | .why = "failed" | .answered = $asked'
+    echo "agentv-hotspot: NetworkManager has no Wi-Fi device, so there's nothing to join $ssid with" >&2
+    return 1
+  fi
   was_on=$(state_get .on)
-  [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1)
+  [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1 || true)
   JOIN_CLOSED_HOTSPOT=$was_on
   trap join_ended EXIT
-  state_set '.joining = $ssid | .error = null | .why = null' --arg ssid "$ssid"
+  # When it started and whether it closed the hotspot, for the watch: a join
+  # killed outright never says how it went (join_stale).
+  state_set '.joining = $ssid | .joining_since = (now | floor) | .joining_reopens = ($reopens == "true") | .error = null | .why = null' --arg ssid "$ssid" --arg reopens "$was_on"
   systemctl stop agentv-hotspot.service
 
   [[ $(jq -r --arg ssid "$ssid" 'map(select(.ssid == $ssid))[0].sae // false' "$RUN/networks.json" 2>/dev/null) == "true" ]] && keymgmt=sae
@@ -422,11 +460,16 @@ join() {
 # What the daemon handed over: the home Wi-Fi to join, a look at the
 # networks nearby, or to close the hotspot as setup ends.
 drop() {
-  local request ssid password hidden
+  local request ssid password hidden taken
 
-  [[ -f $DROP ]] || return 0
-  request=$(cat "$DROP")
-  rm -f "$DROP"
+  # Taken by moving it aside, then read: the daemon writes the next ask
+  # under the same name, and one that landed between a read and a removal
+  # by name would be removed unread, and never answered.
+  taken="$(dirname "$DROP")/.taken.json"
+  rm -f "$taken"
+  mv -f "$DROP" "$taken" 2>/dev/null || return 0
+  request=$(cat "$taken")
+  rm -f "$taken"
   ASKED=$(jq -r '.id // empty' <<<"$request" 2>/dev/null || true)
   [[ $ASKED =~ ^[0-9a-f]{1,32}$ ]] || ASKED=""
   if [[ $(jq -r '.scan // false' <<<"$request" 2>/dev/null) == "true" ]]; then
@@ -436,6 +479,11 @@ drop() {
   if [[ $(jq -r '.stop // false' <<<"$request" 2>/dev/null) == "true" ]]; then
     rm -f "$HANDED"
     systemctl stop agentv-hotspot.service
+    # The installer's name and password go with setup. A hotspot opened
+    # later in this boot, as when the network is lost, gets its own.
+    if [[ -f $RUN/state.json ]]; then
+      state_set '.ssid = null | .password = null | .handed = null'
+    fi
     echo "agentv-hotspot: closed, as setup ended"
     return 0
   fi
@@ -485,6 +533,28 @@ page_in_use() {
   (( $(date +%s) - seen < RETRY_AFTER ))
 }
 
+# A join that was killed outright, as by the kernel when memory runs out,
+# never got to say how it went, and nothing else takes its "joining" away.
+# The watch does once it's older than any join can be, so Settings stops
+# saying "Joining" and the next join isn't told the TV is busy. If the join
+# had closed the hotspot and the TV isn't online, the hotspot opens again.
+join_stale() {
+  local ssid since reopens
+
+  ssid=$(state_get .joining)
+  [[ -n $ssid ]] || return 0
+  since=$(state_get .joining_since)
+  [[ $since =~ ^[0-9]+$ ]] || since=0
+  (( $(date +%s) - since > JOIN_STALE )) || return 0
+  reopens=$(state_get .joining_reopens)
+  echo "agentv-hotspot: the join of $ssid never said how it went" >&2
+  state_set '.joining = null | .joining_since = null | .joining_reopens = null | .error = $error | .why = "failed"' --arg error "the tv couldn't join $ssid"
+  links
+  if [[ $reopens == "true" ]] && (( ! ONLINE )); then
+    systemctl start --no-block agentv-hotspot.service || true
+  fi
+}
+
 # awk reads to the end here too, so nmcli never writes into a closed pipe.
 knows_wifi() {
   nmcli -t -f TYPE,NAME connection show 2>/dev/null |
@@ -504,6 +574,7 @@ watch_tick() {
   local now since seen ours=false
 
   PAUSE=300
+  join_stale
   setup_done || return 0
   # A join is root's own doing, and says how it went itself. The count of
   # how long the network has been gone starts again after it.

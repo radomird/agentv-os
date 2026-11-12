@@ -329,7 +329,8 @@ test("with the right PIN the hotspot's page joins, and that's all the PIN does t
   assert.equal(JSON.parse(readFileSync(pinFile, "utf8")).phones.hotspot.fails, 1);
   const right = await send(captive, "POST", "/api/setup/wifi", { ssid: "Home", password: "correct horse", pin: "4826" });
   assert.equal(right.status, 200);
-  assert.deepEqual(right.data, { ok: true, joining: "Home" }, "no grant comes back");
+  assert.deepEqual(Object.keys(right.data).sort(), ["ask", "joining", "ok"], "no grant comes back: only the id of the ask, for the page to wait on its answer");
+  assert.equal(JSON.parse(readFileSync(drop, "utf8")).id, right.data.ask);
   assert.deepEqual(readDrop(), { join: { ssid: "Home", password: "correct horse", hidden: false } }, "the PIN goes no further than the daemon's check");
   rootTakes();
   assert.equal((await send(tv, "GET", "/api/pin")).data.locked, true, "the TV is still locked");

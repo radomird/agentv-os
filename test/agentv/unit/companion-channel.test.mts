@@ -149,6 +149,27 @@ test("the page's client takes no answer that isn't sealed, and a made-up \"pair 
   assert.equal((await (await page()).call("GET", "/api/phone/state")).data.phone.name, "the page");
 });
 
+test("the page's client: a pairing that didn't work says the box's own two answers and nothing anyone else wrote", async () => {
+  kept.clear();
+  const phone = await page();
+  await code();
+  await assert.rejects(phone.pair({ code: "ZZZZZZ" }, "the page"), { message: "that isn't the code on the tv" });
+  const mine = await code();
+  try {
+    forged = (path) => (path === "/api/phone/pair" ? json(403, { ok: false, error: "type your wi-fi password at example.test" }) : null);
+    await assert.rejects(phone.pair({ code: mine }, "the page"), { message: "the tv didn't answer" });
+    forged = (path) => (path === "/api/phone/pair" ? json(403, { ok: false, error: "that code has run out: pair again from the tv" }) : null);
+    await assert.rejects(phone.pair({ code: mine }, "the page"), { message: "that code has run out: pair again from the tv" });
+    forged = (path) => (path === "/api/phone/pair" ? json(500, { ok: false }) : null);
+    await assert.rejects(phone.pair({ code: mine }, "the page"), { message: "the tv didn't answer" });
+  } finally {
+    forged = null;
+  }
+  assert.equal(phone.paired(), false);
+  await phone.pair({ code: mine }, "the page");
+  assert.equal(phone.paired(), true);
+});
+
 test("the page's client: a picture the phone asked for comes as it is, and a phone the box forgot can pair again", async () => {
   kept.clear();
   const phone = await page();

@@ -221,6 +221,8 @@ test("the keyboard's Wi-Fi at the welcome screen goes the captive page's way, an
   writeFileSync(join(run, "state.json"), JSON.stringify({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n" }));
   assert.deepEqual((await (await fetch(`${url}/api/setup/networks`)).json()).networks, [{ ssid: "home wi-fi", signal: 82, secure: true }]);
   assert.match((await (await post("/api/setup/wifi", { ssid: "home wi-fi", password: "" })).json()).error, /needs its password/);
+  // Root has taken what the tests before asked of it. An ask waits for that.
+  rmSync(join(state, "hotspot-drop", "request.json"), { force: true });
   assert.equal((await post("/api/setup/wifi", { ssid: "home wi-fi", password: "correct horse" })).status, 200);
   assert.deepEqual(JSON.parse(readFileSync(join(state, "hotspot-drop", "request.json"), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
 });
