@@ -233,12 +233,13 @@ export function notesPanel(ctx: Ctx): HTMLElement[] {
   const status = ctx.updates.status;
   const next = status?.agentv.available;
   const date = status?.notes.agentv_date ? ` · ${new Date(status.notes.agentv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` : "";
-  return [
+  const parts: (HTMLElement | null)[] = [
     h("div", { class: "panel-title" }, "What's new"),
     next ? h("div", { class: "section" }, `AgenTV ${shown(next)}${date}`) : null,
     status?.notes.agentv.length ? h("ul", { class: "notes" }, ...status.notes.agentv.map((item) => h("li", {}, h("b", {}, "+ "), item))) : h("div", { class: "empty" }, "No notes for this one"),
     ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "settings/whats-new"), tonightNote(ctx)) : null,
-  ].filter((part): part is HTMLElement => part !== null);
+  ];
+  return parts.filter((part): part is HTMLElement => part !== null);
 }
 
 async function overnight(ctx: Ctx): Promise<void> {
