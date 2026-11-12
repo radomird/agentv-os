@@ -189,8 +189,11 @@ on:
       release-key:
         type: boolean
         default: false
-    # Only a caller that sets release-key hands it over, and only until the
-    # key lives in the "release" environment, where the jobs read it from.
+    # AgenTV's key, which the nightly run passes by name. Its value only
+    # ever comes from the "release" environment, in the jobs that set it
+    # (when release-key is on): GitHub hands a called workflow an
+    # environment secret only when the caller passes it. Never required, so
+    # every other caller hands over nothing.
     secrets:
       AGENTV_SIGNING_KEY:
         required: false
@@ -503,6 +506,11 @@ jobs:
           fi
           echo "found=true" >>"$GITHUB_OUTPUT"
           echo "This run starts from the box a night's run installed ($(cat iso/test-runs/installed-disk/iso-name), kept as $KEPT), with this commit's packages put on it." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Arch's container as agentv-iso's agentv pins it, also for a leg that
+      # checks with an agentv-iso from before the pin, as a stable release's
+      # does (.github/actions/arch-pin).
+      - uses: ./os/.github/actions/arch-pin
 
       - name: Build, install, boot, check
         env:
@@ -1007,6 +1015,11 @@ jobs:
           key: agentv-root-image-none
           restore-keys: agentv-root-image-
 
+      # Arch's container as agentv-iso's agentv pins it, also for a leg that
+      # checks with an agentv-iso from before the pin, as a stable release's
+      # does (.github/actions/arch-pin).
+      - uses: ./os/.github/actions/arch-pin
+
       - name: Build the ISO and install it
         id: build
         if: steps.night.outputs.key == ''
@@ -1305,6 +1318,14 @@ jobs:
           path: iso
           persist-credentials: false
 
+      # Only for .github/actions/arch-pin.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          path: os
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
       - name: Make room on the disk
         run: |
           avail() { df -BG --output=avail / | tail -1 | tr -dc 0-9; }
@@ -1388,6 +1409,11 @@ jobs:
           else
             echo "::error::This run's box and packages aren't there any more. A run keeps them for a day, and throws the box away once every check passed. Run the whole workflow again (Re-run all jobs), not only this part."
           fi
+
+      # Arch's container as agentv-iso's agentv pins it, also for a leg that
+      # checks with an agentv-iso from before the pin, as a stable release's
+      # does (.github/actions/arch-pin).
+      - uses: ./os/.github/actions/arch-pin
 
       - name: Check it
         env:
