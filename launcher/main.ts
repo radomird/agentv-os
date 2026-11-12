@@ -76,7 +76,7 @@ export interface Ctx {
   // it comes back there.
   remember(route: string): void;
   // A toast's words, or an element with them, such as one that keeps a
-  // name's own capitals (looks/words.ts).
+  // name's own capitals in Terminal (asWritten, in dom.ts).
   toast(text: string | Node, kind?: "ok" | "fail"): void;
   // The ambient screen, as the built-in Clock opens it.
   ambient(): void;

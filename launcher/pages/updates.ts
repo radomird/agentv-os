@@ -7,6 +7,7 @@
 
 import { daemon, screen, type AfterCheck, type GoBack, type UpdateProgress, type Updates, type UpdateStatus } from "../api.ts";
 import { asWritten, h } from "../dom.ts";
+import { mark } from "../looks/words.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
@@ -313,7 +314,7 @@ export function checkView(ctx: Ctx): View {
         "div",
         { class: "check-rows" },
         ...(after?.checks ?? []).map((check) =>
-          h("div", { class: `check-row${check.ok ? "" : " bad"}` }, h("b", {}, check.ok ? "[x]" : "[!]"), ` ${check.ok ? check.name : check.detail || check.name}`),
+          h("div", { class: `check-row${check.ok ? "" : " bad"}` }, h("b", {}, mark(check.ok ? "[x]" : "[!]")), ` ${check.ok ? check.name : check.detail || check.name}`),
         ),
       ),
       h(
@@ -386,8 +387,8 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
             "div",
             { class: "updating-steps" },
             ...STEPS.map((s, i) => {
-              const mark = i < at || progress.state === "done" ? "[x]" : i === at ? "[>]" : "[ ]";
-              return h("div", { class: `updating-step${i === at ? " now" : ""}` }, h("b", {}, mark), ` ${s.label(progress)}`);
+              const box = i < at || progress.state === "done" ? "[x]" : i === at ? "[>]" : "[ ]";
+              return h("div", { class: `updating-step${i === at ? " now" : ""}` }, h("b", {}, mark(box)), ` ${s.label(progress)}`);
             }),
           ),
     ),
