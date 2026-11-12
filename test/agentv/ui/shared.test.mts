@@ -292,15 +292,15 @@ test("S5.10 a child's profile takes what phones share only once an adult allows 
   try {
     await go(page, `profile/${mila.id}`);
     await page.waitForSelector('[data-action="shares"]');
-    assert.match(await page.locator('[data-action="shares"]').innerText(), /take what phones share\s*‹ no ›/);
+    assert.match(await page.locator('[data-action="shares"]').innerText(), /accept what phones send\s*off/);
     await page.locator('[data-action="shares"]').hover();
     await page.keyboard.press("ArrowRight");
-    assert.match(await page.locator('[data-action="shares"]').innerText(), /‹ yes ›/);
+    assert.match(await page.locator('[data-action="shares"]').innerText(), /accept what phones send\s*on$/);
     await page.locator('[data-action="save"]').click();
     // Saving a profile takes the PIN.
     await page.waitForSelector("#pin.on");
     for (const digit of PIN) await page.keyboard.press(digit);
-    await page.waitForFunction(() => /mila is saved/.test(document.getElementById("toasts")?.textContent ?? ""));
+    await page.waitForFunction(() => /Saved/.test(document.getElementById("toasts")?.textContent ?? ""));
     assert.deepEqual((await (await fetch(`${url}/api/shared`)).json()).allowed, [mila.id]);
     // An adult's profile isn't asked.
     await go(page, "profile/radomir");

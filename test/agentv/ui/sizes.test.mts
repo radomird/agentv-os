@@ -226,8 +226,9 @@ test("T4.1 home and the built-in apps at 1600, 1920 and 2400 in every look, with
           await go(page, "settings");
           await rest(page);
           const sections = await page.$$eval(".menu [data-key]", (items) => items.map((item) => (item as HTMLElement).dataset.key!));
-          assert.ok(sections.length > 5, "settings has its sections");
-          for (const key of sections) {
+          assert.equal(sections.length, 8, "settings has its eight sections");
+          // Each section's rows, then each page a row opens in the panel.
+          for (const key of [...sections, "looks", "theme", "weather", "tmdb", "pin", "controllers", "wifi", "your-ai", "usage", "updates", "desktop", "about"]) {
             await go(page, `settings/${key}`);
             await check(`settings → ${key}`);
           }

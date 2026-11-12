@@ -1,17 +1,17 @@
-// Controllers on the TV (ADR-084): Settings, controllers lists the game
-// controllers paired over Bluetooth, the ones nearby and the ones on a cable,
-// pairs one with OK and removes one. Only game controllers ever show: the TV
-// checks that itself, so a keyboard nearby is never offered. The TV looks
-// for controllers only while this section is on screen: the page asks every
-// couple of seconds, and the looking stops soon after it stops asking.
+// Controllers on the TV (ADR-084): Settings, Phones and controllers has a
+// row for each game controller the TV has, paired over Bluetooth or on a
+// cable, and "Pair a controller" opens this page, which lists them with the
+// ones nearby, pairs one with OK and removes one. Only game controllers ever
+// show: the TV checks that itself, so a keyboard nearby is never offered.
+// The TV looks for controllers only while this page is on screen: it asks
+// every couple of seconds, and the looking stops soon after it stops asking.
 //
-// The words here are written in sentence case with real names, as D8 has
-// them. Terminal shows lower case, so they're lowered as they're drawn
-// there, and a controller's own name is left as it is in every look.
+// The words are written in sentence case with real names, as D8 has them.
+// Terminal shows them in lower case with its own CSS rule, and a
+// controller's own name is marked so it's left as it is in every look.
 
-import { h } from "../dom.ts";
+import { asWritten, h } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
-import { toastsAsWritten } from "../looks/words.ts";
 import type { Ctx } from "../main.ts";
 
 export interface ControllerInfo {
@@ -36,13 +36,10 @@ interface State {
 // How often the open page asks again, which keeps the TV looking.
 const AGAIN_MS = 2000;
 
-// Terminal's words are lower case, as part of its look. A name put in for
-// {name} keeps its own capitals.
-function words(text: string, name?: string): string {
-  const look = document.documentElement.dataset.look;
-  const said = !look || look === "terminal" ? text.toLowerCase() : text;
-  // Put in as it is: a name may have "$&" in it, which a plain replace reads.
-  return name === undefined ? said : said.replace("{name}", () => name);
+// A line with a controller's name in it, which keeps its own capitals.
+function withName(text: string, name: string): Node {
+  const [before, after = ""] = text.split("{name}");
+  return h("span", {}, before, asWritten(name), after);
 }
 
 // Pairing and removing are an adult's: with a PIN set, they send its grant.
@@ -61,29 +58,52 @@ let state: State | null = null;
 // The panel on screen. A panel drawn since takes over the asking.
 let live: object | null = null;
 
-const count = () => (state ? state.controllers.filter((one) => one.connected).length + state.usb.length : null);
+// One ask at a time: with the TV's own session away, an answer takes a few
+// seconds, and Settings draws itself again in the meantime.
+let asking: Promise<void> | null = null;
 
-function showCount(): void {
-  const item = document.querySelector<HTMLElement>('.menu-item[data-key="controllers"] .menu-value');
-  if (item) item.textContent = String(count() ?? "");
+// Which controllers the TV has, without looking for more, for the rows in
+// Settings. Settings never waits on the TV's Bluetooth to draw itself.
+export function loadControllers(): Promise<void> {
+  asking ??= call("GET", "/api/controllers")
+    .then((answer) => {
+      // The page, while it's open, knows better.
+      if (!live && Array.isArray(answer.controllers)) state = answer;
+    })
+    .catch(() => {})
+    .finally(() => (asking = null));
+  return asking;
 }
 
-export const controllersLabel = () => words("Controllers");
+const named = (name: string) => h("span", { class: "with-icon" }, glyph("gamepad", 32), h("span", { "data-own-case": true }, name));
 
-// How many are connected, for Settings' list, once the section has been
-// opened. Settings never waits on the TV's Bluetooth to draw itself.
-export const controllersValue = () => String(count() ?? "");
+// Settings' rows: one for each controller that's paired, which opens the
+// page on it, and one for each on a cable.
+export function controllerRows(open?: (action: string) => void): HTMLElement[] {
+  if (!state || state.bluetooth === "away") return [];
+  return [
+    ...state.controllers
+      .filter((one) => one.paired)
+      .map((one) =>
+        h(
+          "button",
+          { class: "button wide", "data-focus": true, "data-action": `controller-${one.id}`, "data-controller": "paired", onclick: () => open?.(`controller-${one.id}`) },
+          named(one.name),
+          h("span", { class: "button-value" }, one.connected ? "Connected" : "Not connected"),
+        ),
+      ),
+    ...state.usb.map((name) => h("div", { class: "button wide", "data-controller": "usb" }, named(name), h("span", { class: "button-value" }, "Plugged in"))),
+  ];
+}
 
 export function controllersPanel(ctx: Ctx): HTMLElement[] {
-  // This page's toasts are written for the look, and a controller's name in one keeps its own capitals.
-  ctx = toastsAsWritten(ctx);
   const me = {};
   live = me;
   let els: HTMLElement[] = [];
   let busy: string | null = null; // the controller pairing or going, or "power"
   let drawn = "";
 
-  const failed = (text: string) => {
+  const failed = (text: string | Node) => {
     ctx.sounds.play("failure");
     ctx.toast(text, "fail");
   };
@@ -91,12 +111,11 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
   const refused = (answer: State): boolean => {
     if (!answer.pin) return false;
     ctx.forgetGrant();
-    failed(words("That needs the PIN. Try again."));
+    failed("That needs the PIN. Try again.");
     return true;
   };
   const take = (answer: State) => {
     if (Array.isArray(answer.controllers)) state = answer;
-    showCount();
   };
 
   // One adult action: the grant, the call, and the list as it is after.
@@ -113,7 +132,7 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
       answer = null;
     }
     busy = null;
-    if (!answer) failed(words("Your TV isn't ready yet. Try again in a moment."));
+    if (!answer) failed("Your TV isn't ready yet. Try again in a moment.");
     else if (!refused(answer)) {
       take(answer);
       done(answer);
@@ -128,12 +147,14 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
       (answer) => {
         if (answer.ok) {
           ctx.sounds.play("confirm");
-          ctx.toast(words("Paired {name}", one.name), "ok");
-        } else if (answer.why === "code") failed(words("Couldn't pair {name}. If it asks for a code, use a cable instead.", one.name));
-        else if (answer.why === "not-a-controller") failed(words("Couldn't pair {name}. Only game controllers pair here.", one.name));
-        else if (answer.why === "not-removed") failed(words("Couldn't remove {name}. Try again.", one.name));
-        else if (answer.bluetooth === "away") failed(words("Your TV isn't ready yet. Try again in a moment."));
-        else failed(words("Couldn't pair {name}. Put it in pairing mode and try again.", one.name));
+          ctx.toast(withName("Paired {name}", one.name), "ok");
+        } else if (answer.why === "code") failed(withName("Couldn't pair {name}. If it asks for a code, use a cable instead.", one.name));
+        // A device that turned out to type or point is taken off again. If
+        // that didn't work either, it's still the pairing that failed, as
+        // far as anyone on the couch knows.
+        else if (answer.why === "not-a-controller" || answer.why === "not-removed") failed(withName("Couldn't pair {name}. Only game controllers pair here.", one.name));
+        else if (answer.bluetooth === "away") failed("Your TV isn't ready yet. Try again in a moment.");
+        else failed(withName("Couldn't pair {name}. Put it in pairing mode and try again.", one.name));
       },
     );
   const remove = (one: ControllerInfo) =>
@@ -143,8 +164,8 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
       (answer) => {
         if (answer.ok) {
           ctx.sounds.play("confirm");
-          ctx.toast(words("Removed {name}", one.name), "ok");
-        } else failed(words("Couldn't remove {name}. Try again.", one.name));
+          ctx.toast(withName("Removed {name}", one.name), "ok");
+        } else failed(withName("Couldn't remove {name}. Try again.", one.name));
       },
     );
   const power = () =>
@@ -153,18 +174,17 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
       (grant) => call("POST", "/api/controllers/power", {}, grant),
       (answer) => {
         if (answer.ok) ctx.sounds.play("confirm");
-        else failed(words("Couldn't turn on Bluetooth. Try again."));
+        else failed("Couldn't turn on Bluetooth. Try again.");
       },
     );
 
-  const named = (name: string) => h("span", { class: "with-icon" }, glyph("gamepad", 32), h("span", { "data-own-case": true }, name));
-  const note = (text: string) => h("p", { class: "panel-note", "data-note": "controllers" }, words(text));
+  const note = (text: string) => h("p", { class: "panel-note", "data-note": "controllers" }, text);
 
   function build(): HTMLElement[] {
-    const parts: HTMLElement[] = [h("div", { class: "panel-title" }, words("Controllers"))];
+    const parts: HTMLElement[] = [h("div", { class: "panel-title" }, "Controllers")];
     if (!state) return parts;
     if (state.bluetooth === "away") return [...parts, note("Your TV isn't ready yet. Try again in a moment.")];
-    const usb = state.usb.map((name) => h("div", { class: "button wide", "data-controller": "usb" }, named(name), h("span", { class: "button-value" }, words("Plugged in"))));
+    const usb = state.usb.map((name) => h("div", { class: "button wide", "data-controller": "usb" }, named(name), h("span", { class: "button-value" }, "Plugged in")));
     if (state.bluetooth === "none") return [...parts, ...usb, note("Your TV has no Bluetooth. Plug a controller in with a cable.")];
     if (state.bluetooth === "off") {
       return [
@@ -173,8 +193,8 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
         h(
           "button",
           { class: "button primary", "data-focus": true, "data-action": "bluetooth-on", onclick: () => void power() },
-          h("span", {}, words("Turn on Bluetooth")),
-          h("span", { class: "button-value" }, busy === "power" ? words("Turning on…") : ""),
+          h("span", {}, "Turn on Bluetooth"),
+          h("span", { class: "button-value" }, busy === "power" ? "Turning on…" : ""),
         ),
       ];
     }
@@ -186,7 +206,7 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
           "button",
           { class: "button wide", "data-focus": true, "data-action": `controller-${one.id}`, "data-controller": "paired", onclick: () => void remove(one) },
           named(one.name),
-          h("span", { class: "button-value" }, busy === one.id ? words("Removing…") : words(one.connected ? "Connected · Remove" : "Not connected · Remove")),
+          h("span", { class: "button-value" }, busy === one.id ? "Removing…" : one.connected ? "Connected · Remove" : "Not connected · Remove"),
         ),
       ),
       ...usb,
@@ -195,7 +215,7 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
           "button",
           { class: "button wide", "data-focus": true, "data-action": `controller-${one.id}`, "data-controller": "nearby", onclick: () => void pair(one) },
           named(one.name),
-          h("span", { class: "button-value" }, busy === one.id ? words("Pairing…") : words("Pair")),
+          h("span", { class: "button-value" }, busy === one.id ? "Pairing…" : "Pair"),
         ),
       ),
       note("To add one, hold its pairing button until it blinks"),
@@ -224,7 +244,7 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
     parent.replaceChildren(...els);
     if (inside < 0) return;
     const rows = els.filter((el) => el.hasAttribute("data-focus"));
-    const to = rows.find((el) => el.getAttribute("data-action") === action) ?? rows[0] ?? document.querySelector<HTMLElement>('.menu-item[data-key="controllers"]');
+    const to = rows.find((el) => el.getAttribute("data-action") === action) ?? rows[0] ?? document.querySelector<HTMLElement>(".menu-item.open");
     if (to) ctx.focus.set(to, false);
   }
 

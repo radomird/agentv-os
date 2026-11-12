@@ -151,14 +151,17 @@ test("ADR-055 Settings → country shows where the TV is and changes the same se
   try {
     await page.waitForSelector(".grid .tile.focused");
     await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/country"));
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("this tv is in"));
-    assert.match((await page.locator(".settings-panel").textContent()) ?? "", /this tv is innorway[\s\S]*the time is oslo's, and new this week comes from here/);
+    // It's the Location row in This TV, with where the TV is as its value.
+    await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="country"]')?.textContent === "LocationNorway");
+    assert.equal(await page.locator(".menu-item.open").textContent(), "This TV");
     await page.click('[data-action="country"]');
     await page.waitForSelector(".country-picker");
+    assert.equal(await page.locator(".page .headline").textContent(), "Pick your location");
+    assert.equal(await page.locator(".page > .panel-note").textContent(), "It sets your clock and what's new");
     await page.fill('[data-action="country-field"]', "port");
     await page.click('.country-list [data-code="PT"]');
-    await page.locator(".toast.ok", { hasText: "this tv is in portugal now" }).waitFor();
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("portugal"));
+    await page.locator(".toast.ok", { hasText: "Location set to Portugal" }).waitFor();
+    await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="country"]')?.textContent === "LocationPortugal");
     assert.deepEqual([(await country()).code, zone()], ["PT", "Europe/Lisbon"]);
   } finally {
     await page.close();

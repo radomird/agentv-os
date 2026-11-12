@@ -163,14 +163,18 @@ test("choosing Weather opens Settings → Weather, where left and right pick ano
   const page = await tv();
   await page.locator(tile).hover();
   await page.keyboard.press("Enter");
-  await page.waitForSelector('.menu-item.open[data-key="weather"]');
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Amsterdam");
+  // It's the Weather row's page, in Home and apps.
+  await page.waitForSelector('.settings-panel[data-page="weather"]');
+  assert.equal(await page.locator(".menu-item.open").innerText(), "home and apps");
+  const city = (name: string) => page.waitForFunction((want) => document.querySelector('[data-action="city"] .button-value')?.textContent === want, name);
+  await city("Amsterdam");
   await page.locator('[data-action="city"]').hover();
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Belgrade");
+  await city("Belgrade");
   assert.equal((await (await fetch(`${url}/api/tile/agentv.weather/s`)).json()).tile.headline.label, "Belgrade");
   await page.locator('[data-action="own-city"]').click();
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Amsterdam");
+  await city("Amsterdam");
+  assert.equal(await page.locator(".settings-panel .panel-note").count(), 1, "one line, and only one");
   await page.close();
 });
 
