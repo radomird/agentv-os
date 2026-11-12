@@ -49,7 +49,7 @@ export function appSetup(ctx: Ctx, id: string): View {
         else showForm();
       },
     });
-    network.replaceChildren(h("div", { class: "panel-note" }, "Found on your network"), list.el, typed);
+    network.replaceChildren(h("div", { class: "panel-title" }, "Found on your network"), list.el, typed);
     headline.textContent = `Pick your ${name}`;
     shown(form, false);
     shown(note, false);

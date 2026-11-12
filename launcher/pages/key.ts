@@ -281,7 +281,9 @@ export function planPage(ctx: Ctx): View {
     about,
     h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void use() }, "Use this plan")),
   );
-  const note = h("p", { class: "panel-note" }, "Building then uses your plan");
+  // Empty until it waits for the plan's terms: the plan's line above is the
+  // page's one line.
+  const note = h("p", { class: "panel-note" }, "");
   let waiting = false;
   const stopWaiting = () => {
     if (!waiting) return;
