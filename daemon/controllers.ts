@@ -396,6 +396,9 @@ export class Controllers {
     }
     this.o.log(`a bluetooth device that can type or point wasn't removed: ${removed.code === null ? "no answer in time" : removed.err.trim().slice(0, 200)}`);
     await this.bus(["set-property", "org.bluez", device.path, "org.bluez.Device1", "Trusted", "b", "false"]);
+    // Blocked too, or another Bluetooth agent on the TV, as the desktop's,
+    // would let it connect again.
+    await this.bus(["set-property", "org.bluez", device.path, "org.bluez.Device1", "Blocked", "b", "true"]);
     await this.bus(["call", "org.bluez", device.path, "org.bluez.Device1", "Disconnect"], 10_000);
     found = await this.read();
     await this.note(found, device.address, true);

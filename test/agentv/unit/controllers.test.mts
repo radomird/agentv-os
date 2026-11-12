@@ -280,6 +280,7 @@ test("T16.1 a device that types and can't be removed is said to be still there, 
   assert.deepEqual(answer.controllers.map((one) => [one.id, one.paired]), [[XBOX.address, true]], "it shows, so it can be removed by hand");
   assert.equal(bluez.devices[0].trusted, false);
   assert.equal(bluez.devices[0].connected, false);
+  assert.equal(bluez.devices[0].blocked, true, "blocked, so no other Bluetooth agent takes it back");
   controllers.stop();
 });
 

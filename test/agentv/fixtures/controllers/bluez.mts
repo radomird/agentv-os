@@ -26,6 +26,8 @@ export interface StandInDevice {
   becomes?: { icon?: string; appearance?: number };
   // BlueZ won't remove it.
   stays?: boolean;
+  // BlueZ's Blocked: it can't connect.
+  blocked?: boolean;
 }
 
 // What the devices in these tests say about themselves, as BlueZ reads it.
@@ -145,6 +147,11 @@ export class StandInBluez {
       device.trusted = rest[1] === "true";
       return ok();
     }
+    if (verb === "set-property" && member === "Blocked") {
+      device.blocked = rest[1] === "true";
+      if (device.blocked) device.connected = false;
+      return ok();
+    }
     if (verb === "call" && member === "Pair") {
       await this.hold;
       if (device.wantsCode) return failed("Authentication Failed");
@@ -156,7 +163,7 @@ export class StandInBluez {
       return ok();
     }
     if (verb === "call" && member === "Connect") {
-      if (!device.paired) return failed("Not Ready");
+      if (!device.paired || device.blocked) return failed("Not Ready");
       device.connected = true;
       Object.assign(device, device.becomes ?? {});
       return ok();
