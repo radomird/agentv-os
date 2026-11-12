@@ -149,8 +149,10 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
           ctx.sounds.play("confirm");
           ctx.toast(withName("Paired {name}", one.name), "ok");
         } else if (answer.why === "code") failed(withName("Couldn't pair {name}. If it asks for a code, use a cable instead.", one.name));
-        else if (answer.why === "not-a-controller") failed(withName("Couldn't pair {name}. Only game controllers pair here.", one.name));
-        else if (answer.why === "not-removed") failed(withName("Couldn't remove {name}. Try again.", one.name));
+        // A device that turned out to type or point is taken off again. If
+        // that didn't work either, it's still the pairing that failed, as
+        // far as anyone on the couch knows.
+        else if (answer.why === "not-a-controller" || answer.why === "not-removed") failed(withName("Couldn't pair {name}. Only game controllers pair here.", one.name));
         else if (answer.bluetooth === "away") failed("Your TV isn't ready yet. Try again in a moment.");
         else failed(withName("Couldn't pair {name}. Put it in pairing mode and try again.", one.name));
       },
