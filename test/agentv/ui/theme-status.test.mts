@@ -1,4 +1,4 @@
-// A theme's status in Settings, in a real Chromium (ADR-019, layer 4): once
+// Themes in Settings, in a real Chromium (ADR-019, layer 4). A theme's status: once
 // a theme is set, its row says it's on. Omarchy setting the theme takes a few
 // seconds, and the TV draws Settings again meanwhile as its home state
 // changes, so the row that says "Setting…" isn't the one on the screen when
@@ -78,6 +78,32 @@ for (const where of ["theme", "look"] as const) {
       } else {
         await page.waitForFunction(() => /nord/i.test(document.querySelector('.settings-panel [data-action="theme"] .button-value')?.textContent ?? ""), null, { timeout: 5000 });
       }
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+// Themes a level deeper (ADR-094): Appearance has a Theme row, and OK on it
+// opens the list of themes. The background's rows are in Appearance itself,
+// a few presses down, never behind the list. In each look.
+for (const look of ["terminal", "glass", "cinema"]) {
+  test(`${look}: the themes are a level under Appearance, and the background is in Appearance, not behind them`, async () => {
+    await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
+    const page = await tv();
+    try {
+      await go(page, "settings/look");
+      await page.waitForSelector('.settings-panel[data-page="look"] [data-action="theme"]');
+      assert.equal(await page.locator(".settings-panel .look-item").count(), 0, "no theme list in Appearance");
+      const rows = await page.locator(".settings-panel [data-focus]").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.action));
+      assert.ok(rows.includes("background"), `Appearance has the background: ${rows.join(", ")}`);
+      assert.ok(rows.indexOf("background") - rows.indexOf("theme") <= 3, `the background is a few rows past Theme: ${rows.join(", ")}`);
+      await page.locator('.settings-panel [data-action="theme"]').hover();
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('.settings-panel[data-page="theme"] .look-item');
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('.settings-panel[data-page="look"]');
+      await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "theme");
     } finally {
       await page.close();
     }
