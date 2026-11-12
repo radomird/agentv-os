@@ -1,18 +1,17 @@
-// Apps (ADR-015): everything on the box, on the home screen or not. Enter
-// opens an app, i shows its details, p puts it on home or takes it off, and e
-// edits home. An adult adds AgenTV's official apps from here (ADR-042), and
-// asks their agent for one of their own, whose builds show here until
-// they're on home (ADR-043 to ADR-046). What a phone shared waits under
-// Shared until someone takes it off, with Delete (ADR-050).
+// Apps (ADR-015): everything on the TV, on the home screen or not. OK opens
+// an app, and holding OK shows its details, where it goes on home or comes
+// off. An adult adds more from the one "Add an app" tile, which opens the
+// app library (ADR-042, D11), and the apps being made show here until
+// they're on home (ADR-043 to ADR-046). What a phone sent waits under "From
+// your phones" until someone removes it (ADR-050).
 
 import { screen, type App } from "../api.ts";
 import { h } from "../dom.ts";
-import { lookId, named } from "../looks/looks.ts";
+import { lookId } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { buildTile, underway } from "./build.ts";
-import { askBuilds, askWith, EXAMPLES } from "./ask.ts";
 import { logo } from "./home.ts";
-import { bar, heading, togglePin } from "./parts.ts";
+import { bar, heading, HOLD_HINT, section, togglePin } from "./parts.ts";
 import { removeShare, shares, sharedTile } from "./shared.ts";
 
 function appTile(ctx: Ctx, app: App): HTMLElement {
@@ -31,11 +30,11 @@ function appTile(ctx: Ctx, app: App): HTMLElement {
           return;
         }
         const reply = await screen.open(app.id);
-        if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
+        if (!reply.ok) ctx.toast(reply.error ?? `Couldn't open ${app.name}`, "fail");
       },
     },
     h("div", { class: "tile-top" }, logo(app)),
-    h("span", { class: "tile-name" }, named(app.name)),
+    h("span", { class: "tile-name" }, app.name),
   );
 }
 
@@ -44,60 +43,43 @@ export function apps(ctx: Ctx): View {
   const on = ctx.state.apps.filter((app) => pinned.has(app.id));
   const off = ctx.state.apps.filter((app) => !pinned.has(app.id));
 
-  // AgenTV's official apps that aren't here yet, for an adult (ADR-042).
-  const official =
-    ctx.state.viewer.role === "adult"
-      ? h(
-          "button",
-          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "add-app", onclick: () => ctx.go("add-app") },
-          h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, "more apps")),
-          h("span", { class: "tile-name" }, "+ add an app"),
-        )
-      : null;
-
-  // Your agent makes one from what you say (ADR-043 to ADR-046), for an adult.
+  // The one way in to more apps, for an adult (D11): the app library, where
+  // building your own is the last tile. A plus is its icon, where an app has
+  // its logo, drawn in CSS so it's never in the words.
   const add =
     ctx.state.viewer.role === "adult"
       ? h(
           "button",
-          // With the Ask box on, it's the Ask box, ready for "make ..." (ADR-068).
-          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "build", onclick: () => (askBuilds() ? askWith(ctx, "make ") : ctx.go("build")) },
-          h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, "make one")),
-          h("span", { class: "tile-name" }, "+ add your own"),
+          { class: "tile size-s tile-apps", "data-focus": true, "data-action": "add-app", "aria-label": "Add an app", onclick: () => ctx.go("add-app") },
+          h("div", { class: "tile-top" }, h("span", { class: "logo logo-plus mono-1", "aria-hidden": "true" })),
+          h("span", { class: "tile-name" }, "Add an app"),
         )
       : null;
   const building = underway();
   const shared = shares();
-  // What to make, while your agent hasn't made anything (ADR-068): each
-  // opens the Ask box with it, for one press of OK.
-  const examples =
-    askBuilds() && ctx.state.viewer.role === "adult" && !ctx.state.apps.some((app) => app.tier === "local") && !building.length
-      ? [h("div", { class: "section" }, "# ask your agent to make one"), h("div", { class: "check-actions ask-examples" }, ...EXAMPLES.map((example) => h("button", { class: "button", "data-focus": true, "data-example": example, onclick: () => askWith(ctx, example) }, example)))]
-      : [];
 
   const el = h(
     "div",
     { class: "screen" },
     h(
       "div",
-      // Longer than the screen with a few shares, it scrolls with the focus.
+      // Longer than the screen with a few things from phones, it scrolls with the focus.
       { class: "page apps-page", "data-scroll": true },
       h(
         "div",
         { class: "page-head" },
-        h("div", {}, ...heading("tv apps", "apps.")),
+        h("div", {}, ...heading("tv apps", "Apps")),
         // With the looks, Settings is in every look's bar (D7).
-        lookId() ? null : h("button", { class: "button", "data-focus": true, onclick: () => ctx.go("settings") }, "settings →"),
+        lookId() ? null : h("button", { class: "button", "data-focus": true, onclick: () => ctx.go("settings") }, "Settings"),
       ),
-      h("div", { class: "section" }, "# on your home"),
-      on.length ? h("div", { class: "row" }, ...on.map((app) => appTile(ctx, app))) : h("div", { class: "empty" }, "nothing yet"),
-      ...(building.length ? [h("div", { class: "section" }, "# your agent's builds"), h("div", { class: "row" }, ...building.map((b) => buildTile(ctx, b)))] : []),
-      h("div", { class: "section" }, lookId() ? "# more on this tv" : "# not on your home"),
-      h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(official ? [official] : []), ...(add ? [add] : [])),
-      ...(shared.length ? [h("div", { class: "section" }, "# shared"), h("div", { class: "row" }, ...shared.map((share) => sharedTile(ctx, share)))] : []),
-      ...examples,
+      section("On home"),
+      on.length ? h("div", { class: "row" }, ...on.map((app) => appTile(ctx, app))) : h("div", { class: "empty" }, "Nothing on home yet"),
+      ...(building.length ? [section("Your own"), h("div", { class: "row" }, ...building.map((b) => buildTile(ctx, b)))] : []),
+      section("Not on home"),
+      h("div", { class: "row" }, ...off.map((app) => appTile(ctx, app)), ...(add ? [add] : [])),
+      ...(shared.length ? [section("From your phones"), h("div", { class: "row" }, ...shared.map((share) => sharedTile(ctx, share)))] : []),
     ),
-    bar(ctx, "apps", shared.length ? "↵ open · i details · p pin to home · e edit home · del takes a share off" : "↵ open · i details · p pin to home · e edit home"),
+    bar(ctx, "apps", "", undefined, HOLD_HINT),
   );
   el.querySelector(".apps-page")!.addEventListener("scroll", () => ctx.focus.refresh(), { passive: true });
   const installed = new Set(ctx.state.apps.map((app) => app.id));

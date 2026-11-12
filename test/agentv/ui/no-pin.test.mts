@@ -411,7 +411,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await go(screen, "add-app");
   await screen.waitForSelector('.add-tile[data-id="agentv.steam"]');
   await screen.locator('.add-tile[data-id="agentv.steam"]').click();
-  await screen.waitForFunction(() => /installed/.test(document.querySelector('.add-tile[data-id="agentv.steam"] .add-state')?.textContent ?? ""), null, { timeout: 10_000 });
+  await screen.waitForFunction(() => /Installed/.test(document.querySelector('.add-tile[data-id="agentv.steam"] .add-state')?.textContent ?? ""), null, { timeout: 10_000 });
   await say("adding an app");
 
   // A build: the TV says to approve it on the phone, and the phone does.

@@ -9,12 +9,12 @@ import { clock, h } from "../dom.ts";
 import { CLOCK, MUSIC, NEW, WEATHER } from "../pages/home.ts";
 import { hasIcon, icon } from "./icons.ts";
 import { keepAsking, showLoading } from "../loading.ts";
-import { named, preview, said } from "./looks.ts";
+import { preview } from "./looks.ts";
 
 export interface Featured {
   app: App;
   title: string; // the title's own name, or the app's
-  line: string; // "continue on Jellyfin", "new on Jellyfin"
+  line: string; // "Continue on Jellyfin", "New on Jellyfin"
   image: string | null; // a picture to draw it with
   item?: TileEntry["item"];
   meta?: string; // under the title, as Cinema has it
@@ -109,14 +109,19 @@ export async function featured(app: App): Promise<Featured[]> {
     const where = onNew ? (entry.caption ?? "").split(" · ")[0] : app.name;
     found.push({
       app,
-      title: named(title),
-      line: said(typeof entry.progress === "number" ? `continue on ${named(where)}` : `new on ${named(where)}`),
+      title,
+      line: typeof entry.progress === "number" ? `Continue on ${where}` : `New on ${where}`,
       image: daemon.image(app.id, entry.image),
       item: entry.item,
-      meta: onNew ? said(entry.caption ?? "") : undefined,
+      meta: onNew ? (entry.caption ?? "") : undefined,
     });
   }
   return found;
+}
+
+// A city's name with its capitals, for one that arrives without them.
+export function placeName(place: string): string {
+  return place.replace(/(^|[\s-])(\p{Ll})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
 }
 
 function weatherIcon(name: string | undefined, size: number): SVGSVGElement {
@@ -146,10 +151,9 @@ export function cardContent(app: App, logo: HTMLElement, wide: boolean): HTMLEle
       const now = data?.headline;
       if (!now?.value) return;
       const words = (now.caption ?? "").split("\n")[0];
-      // A city's name, with its capitals in these looks.
-      const place = (now.label ?? "").replace(/ · offline$/, "").replace(/(^|[\s-])(\p{Ll})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
+      const place = placeName((now.label ?? "").replace(/ · offline$/i, ""));
       const top = h("span", { class: "card-weather" }, weatherIcon(now.icon, wide ? 52 : 44), h("span", { class: "card-temp" }, now.value));
-      if (wide) box.replaceChildren(top, h("span", { class: "card-words" }, said(place ? `${words} in ${place}` : words)));
+      if (wide) box.replaceChildren(top, h("span", { class: "card-words" }, place ? `${words} in ${place}` : words));
       else box.replaceChildren(top);
       box.classList.add("card-weather-on");
     });
@@ -163,7 +167,7 @@ export function cardContent(app: App, logo: HTMLElement, wide: boolean): HTMLEle
       if (now.albumId) void screen.music("cover", { key: now.albumId }).then((found) => typeof found.cover === "string" && cover.replaceChildren(h("img", { src: found.cover, alt: "" })));
       box.replaceChildren(
         cover,
-        wide ? h("span", { class: "card-music" }, h("span", { class: "card-title" }, named(now.title)), h("span", { class: "card-words" }, named(now.artist))) : icon(now.playing ? "pause" : "play", 40),
+        wide ? h("span", { class: "card-music" }, h("span", { class: "card-title" }, now.title), h("span", { class: "card-words" }, now.artist)) : icon(now.playing ? "pause" : "play", 40),
       );
       box.classList.add("card-music-on");
     });

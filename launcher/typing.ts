@@ -23,7 +23,8 @@ let done: ReturnType<typeof setTimeout> | undefined;
 function ensure(): HTMLElement {
   if (el) return el;
   who = h("span", { class: "typing-who" });
-  text = h("span", { class: "typing-text" });
+  // What someone types keeps its capitals in every look.
+  text = h("span", { class: "typing-text", "data-own-case": true });
   el = h("div", { id: "typing", "aria-live": "polite" }, who, h("span", { class: "typing-value" }, text, h("span", { class: "typing-caret", "aria-hidden": "true" })));
   document.body.append(el);
   return el;

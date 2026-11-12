@@ -18,13 +18,13 @@ const CLOUD_DARK = "M9 1h3v1h-3zM7 2h7v1h-7zM6 3h9v1h-9zM5 4h11v1h-11zM4 5h12v1h
 
 const ICONS: Record<string, Icon> = {
   clear: {
-    label: "clear",
+    label: "Clear",
     width: 20,
     height: 14,
     paths: [["yellow", "M9 2h1v1h-1zM6 3h1v1h-1zM12 3h1v1h-1zM8 4h3v1h-3zM7 5h5v1h-5zM5 6h1v1h-1zM7 6h5v1h-5zM13 6h1v1h-1zM7 7h5v1h-5zM8 8h3v1h-3zM6 9h1v1h-1zM12 9h1v1h-1zM9 10h1v1h-1z"]],
   },
   "clear-night": {
-    label: "clear night",
+    label: "Clear night",
     width: 20,
     height: 14,
     paths: [
@@ -33,7 +33,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   "partly-cloudy": {
-    label: "partly cloudy",
+    label: "Partly cloudy",
     width: 20,
     height: 14,
     paths: [
@@ -42,7 +42,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   cloudy: {
-    label: "cloudy",
+    label: "Cloudy",
     width: 20,
     height: 14,
     paths: [
@@ -51,7 +51,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   rain: {
-    label: "rain",
+    label: "Rain",
     width: 20,
     height: 14,
     paths: [
@@ -60,7 +60,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   "heavy-rain": {
-    label: "heavy rain",
+    label: "Heavy rain",
     width: 20,
     height: 14,
     paths: [
@@ -70,7 +70,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   snow: {
-    label: "snow",
+    label: "Snow",
     width: 20,
     height: 14,
     paths: [
@@ -79,7 +79,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   thunderstorm: {
-    label: "thunderstorm",
+    label: "Thunderstorm",
     width: 20,
     height: 14,
     paths: [
@@ -89,7 +89,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   wind: {
-    label: "windy",
+    label: "Windy",
     width: 20,
     height: 14,
     paths: [
@@ -99,7 +99,7 @@ const ICONS: Record<string, Icon> = {
     ],
   },
   fog: {
-    label: "fog",
+    label: "Fog",
     width: 20,
     height: 14,
     paths: [["dark-foreground", "M2 3h12v1h-12zM5 6h13v1h-13zM1 9h11v1h-11zM6 12h11v1h-11z"]],

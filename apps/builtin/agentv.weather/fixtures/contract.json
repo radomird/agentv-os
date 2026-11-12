@@ -10,7 +10,7 @@
       "name": "small: the weather now, as MET's recorded symbol and wind say, asked for as AgenTV with the place rounded",
       "call": "tile",
       "args": ["s"],
-      "expect": { "headline": { "label": "amsterdam", "icon": "wind", "value": "12°", "caption": "windy" } },
+      "expect": { "headline": { "label": "amsterdam", "icon": "wind", "value": "12°", "caption": "Windy" } },
       "asks": [{ "url": "\\?lat=52\\.37&lon=4\\.9$", "headers": { "user-agent": "^AgenTV-contract agentv\\.weather/" } }]
     },
     {

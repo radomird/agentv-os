@@ -42,7 +42,7 @@ function placeOf(ctx: AppContext): Place | null {
     return null;
   }
   return {
-    name: ctx.settings.place || "here",
+    name: ctx.settings.place || "Here",
     // Two decimals is about a kilometre, and all MET needs.
     lat: Math.round(lat * 100) / 100,
     lon: Math.round(lon * 100) / 100,
@@ -83,6 +83,9 @@ async function forecast(ctx: AppContext, place: Place): Promise<{ body: unknown;
   }
 }
 
+// The day's high and low, as Terminal's tile shows them. The TV's own check
+// of the weather tiles reads the two letters as they are here
+// (daemon/weather-check.ts), so they stay small.
 function hilo(day: Day | undefined, units: Place["units"]): string {
   return day ? `h ${degrees(day.high, units)} · l ${degrees(day.low, units)}` : "";
 }
@@ -102,10 +105,10 @@ export function tileFor(size: TileSize, place: Place, current: Now, week: Day[],
   }
   if (size === "m") {
     const tomorrow = week[1];
-    const entries: TileEntry[] = [{ label: "today", ...nowEntry, caption: `${current.label}\n${hilo(today, place.units)}` }];
+    const entries: TileEntry[] = [{ label: "Today", ...nowEntry, caption: `${current.label}\n${hilo(today, place.units)}` }];
     if (tomorrow) {
       entries.push({
-        label: "tomorrow",
+        label: "Tomorrow",
         icon: tomorrow.scene,
         value: degrees(tomorrow.high, place.units),
         caption: `${tomorrow.label}\n${hilo(tomorrow, place.units)}`,
@@ -116,7 +119,7 @@ export function tileFor(size: TileSize, place: Place, current: Now, week: Day[],
   return {
     headline: { label: `${where} · 7 days`, ...nowEntry, caption: `${current.label}\n${hilo(today, place.units)}` },
     entries: week.map((day, i) => ({
-      label: i === 0 ? "today" : weekday(day.date),
+      label: i === 0 ? "Today" : weekday(day.date),
       icon: day.scene,
       value: degrees(day.high, place.units),
       caption: degrees(day.low, place.units),
@@ -134,7 +137,7 @@ const app: TvApp = {
   async tile(ctx: AppContext, size: TileSize): Promise<Tile> {
     const place = placeOf(ctx);
     // A time zone like UTC has no city: the tile says where to pick one.
-    if (!place) return { headline: { label: "no city yet", caption: "pick one in\nsettings → weather" } };
+    if (!place) return { headline: { label: "No city yet", caption: "Pick one in\nSettings" } };
     const { body, offline } = await forecast(ctx, place);
     const all = steps(body);
     const at = new Date();

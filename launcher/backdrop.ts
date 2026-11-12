@@ -3,7 +3,9 @@
 // and with the dynamicbg switch on, Omarchy's moving ones over it:
 //   - a video background, which loops, muted;
 //   - a picture's theme intro, once when the TV session starts and once after
-//     the theme changes, which ends on its still.
+//     the theme changes, which ends on its still. It plays again each time
+//     home comes back, from an app or from another page, but not when home
+//     only draws again.
 //
 // They play only where the box decodes the video's codec in hardware, as its
 // check says (GET /api/box), and show the still otherwise. They pause while an
@@ -96,13 +98,17 @@ export class Backdrop {
   private ambient = false;
   // The TV is on, as the screen daemon says (ADR-072).
   tvOn = true;
-  private moving: { el: HTMLVideoElement; kind: "loop" | "intro"; src: string; due?: string } | null = null;
+  private moving: { el: HTMLVideoElement; kind: "loop" | "intro"; src: string; due?: string | null } | null = null;
   // The system's reduce motion, as well as Settings' (ADR-024).
   private reduced = matchMedia("(prefers-reduced-motion: reduce)");
   // The intro home dealt with last, before the daemon says so, and the
   // videos that wouldn't play.
   private shown: string | null = null;
   private broken = new Set<string>();
+  // Home has been on show since the page loaded, and it's just come back
+  // after an app or another page was over it: the intro plays again.
+  private seen = false;
+  private again = false;
 
   constructor(el: HTMLElement) {
     this.el = el;
@@ -112,6 +118,7 @@ export class Backdrop {
       const on = document.body.classList.contains("on-home");
       if (on !== this.onHome) {
         this.onHome = on;
+        if (on) this.cameBack();
         this.draw();
       }
     }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
@@ -141,8 +148,16 @@ export class Backdrop {
   // An app came in front of home, or home is in front again (the screen
   // daemon says so).
   setFront(front: boolean): void {
+    const back = front && !this.front;
     this.front = front;
+    if (back && this.onHome) this.cameBack();
     this.draw();
+  }
+
+  // Home is back in front, from an app or another page. Only once it's been
+  // seen, so the page loading isn't a coming back.
+  private cameBack(): void {
+    if (this.seen) this.again = true;
   }
 
   setAmbient(on: boolean): void {
@@ -177,6 +192,9 @@ export class Backdrop {
   }
 
   draw(): void {
+    const again = this.again;
+    this.again = false;
+    if (this.visible()) this.seen = true;
     const next = plan(this.now(), this.shown, this.broken);
     const item = next.item;
     document.body.classList.toggle("with-backdrop", Boolean(item));
@@ -214,18 +232,21 @@ export class Backdrop {
       return;
     }
     this.stopMoving();
+    if (!this.visible()) return;
     const due = this.state.backgrounds?.theme?.introDue;
-    if (!this.visible() || !due) return;
     if (next.intro) this.playIntro(img, next.intro.src, next.intro.due);
-    else if (next.why && item.intro && this.shown !== due && this.state.backgrounds?.theme?.introShown?.due !== due) this.report(due, "still", next.why);
+    else if (due && next.why && item.intro && this.shown !== due && this.state.backgrounds?.theme?.introShown?.due !== due) this.report(due, "still", next.why);
+    // Coming back to home plays the intro again, where it would play at all.
+    else if (again && this.state.dynamic && item.intro && !this.broken.has(item.intro) && !stillBecause(this.now(), item.introCodec, "intro")) this.playIntro(img, item.intro, null);
   }
 
   // The intro once, muted, over its still, which shows again as it ends. The
   // intro's last frame is the still, so the still waits hidden under it,
-  // rather than show before its first frame. It counts as shown once it
-  // starts, so an app opened over it doesn't bring it back later.
-  private playIntro(img: HTMLImageElement, src: string, due: string): void {
-    this.report(due, "played");
+  // rather than show before its first frame. The one that's due counts as
+  // shown once it starts. One played again on coming back to home (due is
+  // null) isn't the daemon's to hear about.
+  private playIntro(img: HTMLImageElement, src: string, due: string | null): void {
+    if (due) this.report(due, "played");
     const el = h("video", { class: "backdrop-picture backdrop-video backdrop-intro", src, muted: true, autoplay: true, playsinline: true, preload: "auto", "aria-hidden": "true" });
     el.muted = true;
     Object.assign(el.style, { position: "absolute", inset: "0" });
@@ -234,7 +255,7 @@ export class Backdrop {
     const slow = setTimeout(() => {
       if (this.moving?.el !== el || !el.paused) return;
       this.broken.add(src);
-      this.report(due, "still", "slow");
+      if (due) this.report(due, "still", "slow");
       this.endIntro();
     }, INTRO_START_MS);
     el.addEventListener("playing", () => clearTimeout(slow), { once: true });
@@ -243,7 +264,7 @@ export class Backdrop {
       clearTimeout(slow);
       if (this.moving?.el !== el) return;
       this.broken.add(src);
-      this.report(due, "still", "error");
+      if (due) this.report(due, "still", "error");
       this.endIntro();
     });
     img.after(el);

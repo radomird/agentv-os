@@ -117,7 +117,7 @@ test("S2.3 every tile can be reached with the keyboard alone", async () => {
 
 test("S2.7 no tile shows a tier, on home or in Apps", async () => {
   const page = await tv();
-  const tiers = /official|community|built in|made by|your agent|on this tv only/i;
+  const tiers = /official|community|built in|made by|made on this tv|from agentv|your agent/i;
   assert.doesNotMatch(await page.locator(".grid").innerText(), tiers);
   await page.keyboard.press("ArrowDown");
   await page.goto(`${url}/`);
@@ -131,9 +131,9 @@ test("S2.7 no tile shows a tier, on home or in Apps", async () => {
 test("S2.7 every app's details say who made it", async () => {
   const page = await tv();
   const makers: Record<string, RegExp> = {
-    official: /official · made by agentv/,
-    community: /community · made by someone/,
-    local: /made by your agent · on this tv only/,
+    official: /^from agentv$/,
+    community: /^from the community · someone$/,
+    local: /^made on this tv$/,
   };
   for (const fixture of FIXTURES) {
     await page.goto(`${url}/`);
@@ -679,11 +679,11 @@ test("an app's tile that says set up opens its setup: the server's address, type
     // The field has the focus, and a url keyboard on the phone.
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.dataset.field), "serverUrl");
     assert.equal(await field.getAttribute("type"), "url");
-    assert.equal(await page.locator('[data-action="save"]').innerText(), "save, then sign in");
+    assert.equal(await page.locator('[data-action="save"]').innerText(), "save and sign in");
     // A wrong one says why, and stays.
     await page.keyboard.type("ftp://media.example");
     await page.keyboard.press("Enter");
-    await page.locator('.toast:has-text("server address is an address like")').waitFor();
+    await page.locator('.toast:has-text("Type an address like http://192.168.1.20:8096")').waitFor();
     await field.fill("");
     await field.focus();
     await page.keyboard.type("192.168.1.20:8096");

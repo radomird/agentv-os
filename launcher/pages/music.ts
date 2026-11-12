@@ -1,16 +1,15 @@
-// The built-in Music app (ADR-017): the albums and playlists in the box's
-// folders, USB drives and NAS shares, a search, what's playing, and the
-// sources. The library and the player live in the TV session (the screen
+// The built-in Music app (ADR-017): the albums and playlists in the TV's
+// folders, USB drives and network folders, a search, what's playing, and
+// where the music comes from. The library and the player live in the TV session (the screen
 // daemon), as the person the box logs in, who can read those files; this
 // page asks it for each.
 
-import { screen } from "../api.ts";
-import { named } from "../looks/looks.ts";
-import { h } from "../dom.ts";
+import { ONLY_ON_TV, screen } from "../api.ts";
+import { asWritten, h } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "./network.ts";
-import { bar, heading } from "./parts.ts";
+import { bar, heading, section } from "./parts.ts";
 
 interface AlbumInfo {
   id: string;
@@ -64,16 +63,20 @@ interface Progress {
   error?: string;
 }
 
+// What a search result is, and where music comes from, in words.
+const KINDS: Record<Result["kind"], string> = { album: "Album", track: "Song", playlist: "Playlist" };
+const SOURCES: Record<SourceInfo["kind"], string> = { folder: "Folder", usb: "USB drive", share: "Network folder" };
+
 // How far reading the music has got, in a line.
 function progressLine(progress: Progress | undefined): string {
   if (!progress) return "";
   const count = (n: number) => n.toLocaleString("en-GB");
   if (progress.scanning) {
-    const where = progress.source ? `reading ${progress.source.toLowerCase()}` : "finding the music";
+    const where = progress.source ? `Reading ${progress.source}` : "Looking for music";
     return `${where} · ${count(progress.read)} of ${count(progress.found)} files · ${count(progress.albums)} albums so far`;
   }
-  if (progress.error) return `reading stopped: ${progress.error.toLowerCase()}`;
-  return progress.finishedAt ? `read ${count(progress.read)} files · ${count(progress.albums)} albums` : "";
+  if (progress.error) return "Stopped looking";
+  return progress.finishedAt ? `${count(progress.read)} files · ${count(progress.albums)} albums` : "";
 }
 
 const covers = new Map<string, string | null>();
@@ -86,7 +89,7 @@ function minutes(seconds: number): string {
 // An album's cover, fetched once, or its first letters while it comes or
 // when it has none.
 function cover(id: string, title: string, has: boolean, big = false): HTMLElement {
-  const el = h("span", { class: `album-cover${big ? " album-cover-big" : ""}` }, title.slice(0, 2).toLowerCase());
+  const el = h("span", { class: `album-cover${big ? " album-cover-big" : ""}` }, title.slice(0, 2));
   const show = (data: string | null) => {
     if (data) el.replaceChildren(h("img", { src: data, alt: "" }));
   };
@@ -106,7 +109,7 @@ async function play(ctx: Ctx, request: Record<string, unknown>): Promise<void> {
   if (reply.ok) ctx.sounds.play("confirm");
   else {
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? "that didn't play", "fail");
+    ctx.toast(reply.error ?? "Couldn't play that", "fail");
   }
 }
 
@@ -114,16 +117,16 @@ async function play(ctx: Ctx, request: Record<string, unknown>): Promise<void> {
 // page is on the screen.
 function nowPlaying(): HTMLElement {
   const text = h("span", { class: "now-text" }, "");
-  const pause = h("button", { class: "button", "data-focus": true, "data-action": "pause", onclick: () => void screen.music("pause", {}).then(draw) }, "pause");
-  const next = h("button", { class: "button", "data-focus": true, "data-action": "next", onclick: () => void screen.music("next", {}).then(draw) }, "next");
-  const el = h("div", { class: "now-playing hidden" }, h("span", { class: "now-label" }, "now playing"), text, pause, next);
+  const pause = h("button", { class: "button", "data-focus": true, "data-action": "pause", onclick: () => void screen.music("pause", {}).then(draw) }, "Pause");
+  const next = h("button", { class: "button", "data-focus": true, "data-action": "next", onclick: () => void screen.music("next", {}).then(draw) }, "Next");
+  const el = h("div", { class: "now-playing hidden" }, h("span", { class: "now-label" }, "Now playing"), text, pause, next);
   async function draw(): Promise<void> {
     const reply = await screen.music("now", {});
     const now = reply.now as Now | null | undefined;
     el.classList.toggle("hidden", !now);
     if (!now) return;
-    text.textContent = `${named(now.title)} · ${named(now.artist)} · ${minutes(now.position)} / ${minutes(now.duration)}`;
-    pause.textContent = now.playing ? "pause" : "play";
+    text.textContent = `${now.title} · ${now.artist} · ${minutes(now.position)} / ${minutes(now.duration)}`;
+    pause.textContent = now.playing ? "Pause" : "Play";
   }
   const timer = setInterval(() => {
     if (!el.isConnected) clearInterval(timer);
@@ -133,14 +136,14 @@ function nowPlaying(): HTMLElement {
   return el;
 }
 
-// An album on a share that's away stays, dimmed, and says so.
+// An album on a folder that isn't connected stays, dimmed, and says so.
 function albumTile(ctx: Ctx, album: AlbumInfo): HTMLElement {
   return h(
     "button",
     { class: `tile size-s album-tile${album.away ? " away" : ""}`, "data-focus": true, "data-album": album.id, "aria-label": album.title, onclick: () => ctx.go(`music/${album.id}`) },
     cover(album.id, album.title, Boolean(album.cover)),
-    h("span", { class: "album-title" }, named(album.title)),
-    h("span", { class: "album-artist" }, album.away ? `away · ${named(album.artist)}` : named(album.artist)),
+    h("span", { class: "album-title" }, album.title),
+    h("span", { class: "album-artist" }, album.away ? `Offline · ${album.artist}` : album.artist),
   );
 }
 
@@ -156,8 +159,8 @@ export function music(ctx: Ctx, album?: string): View {
     class: "music-search",
     "data-focus": true,
     type: "search",
-    placeholder: "search music",
-    "aria-label": "search music",
+    placeholder: "Search music",
+    "aria-label": "Search music",
     autocomplete: "off",
     oninput: () => {
       clearTimeout(typing);
@@ -183,11 +186,11 @@ export function music(ctx: Ctx, album?: string): View {
             h(
               "button",
               { class: "button music-result", "data-focus": true, onclick: () => void play(ctx, { kind: result.kind, key: result.id }) },
-              h("span", {}, `${result.kind} · ${named(result.title)}`),
-              h("span", { class: "button-value" }, named(result.subtitle)),
+              h("span", {}, `${KINDS[result.kind]} · ${result.title}`),
+              h("span", { class: "button-value" }, result.subtitle),
             ),
           )
-        : [h("div", { class: "empty" }, `nothing matches ${q}`)]),
+        : [h("div", { class: "empty" }, "No results for ", asWritten(q))]),
     );
   }
 
@@ -200,27 +203,27 @@ export function music(ctx: Ctx, album?: string): View {
       h(
         "div",
         { class: "page-head" },
-        h("div", {}, ...heading("music", "music.")),
-        h("button", { class: "button", "data-focus": true, "data-action": "sources", onclick: () => ctx.go("music/sources") }, "sources →"),
+        h("div", {}, ...heading("music", "Music")),
+        h("button", { class: "button", "data-focus": true, "data-action": "sources", onclick: () => ctx.go("music/sources") }, "Add music"),
       ),
       nowPlaying(),
       search,
       results,
-      h("div", { class: "section" }, "# albums"),
+      section("Albums"),
       albums,
-      h("div", { class: "section playlists-head hidden" }, "# playlists"),
+      section("Playlists", "playlists-head hidden"),
       playlists,
     ),
-    bar(ctx, "music", "↵ open · type to search"),
+    bar(ctx, "music"),
   );
 
   void screen.music("library", {}).then((reply) => {
     if (!reply.ok) {
-      albums.replaceChildren(h("div", { class: "empty" }, reply.error === "that works on the TV" ? "music plays on the TV" : (reply.error ?? "the library isn't there")));
+      albums.replaceChildren(h("div", { class: "empty" }, reply.error === ONLY_ON_TV ? "Music plays on the TV" : (reply.error ?? "Couldn't open your music")));
       return;
     }
     const list = (reply.albums as AlbumInfo[] | undefined) ?? [];
-    albums.replaceChildren(...(list.length ? list.map((item) => albumTile(ctx, item)) : [h("div", { class: "empty" }, "no music yet. add a folder, a usb drive or a share in sources")]));
+    albums.replaceChildren(...(list.length ? list.map((item) => albumTile(ctx, item)) : [h("div", { class: "empty" }, "No music yet. Add a folder or a drive.")]));
     const lists = (reply.playlists as { id: string; name: string; tracks: string[] }[] | undefined) ?? [];
     el.querySelector(".playlists-head")?.classList.toggle("hidden", lists.length === 0);
     playlists.replaceChildren(
@@ -228,7 +231,7 @@ export function music(ctx: Ctx, album?: string): View {
         h(
           "button",
           { class: "button", "data-focus": true, onclick: () => void play(ctx, { kind: "playlist", key: list.id }) },
-          h("span", {}, named(list.name)),
+          h("span", {}, list.name),
           h("span", { class: "button-value" }, `${list.tracks.length} tracks`),
         ),
       ),
@@ -240,16 +243,16 @@ export function music(ctx: Ctx, album?: string): View {
 
 function albumPage(ctx: Ctx, id: string): View {
   const body = h("div", { class: "album-page" }, h("div", { class: "empty" }, loadingMark()));
-  const el = h("div", { class: "screen" }, h("div", { class: "page music" }, nowPlaying(), body), bar(ctx, "music", "↵ play · back to music"));
+  const el = h("div", { class: "screen" }, h("div", { class: "page music" }, nowPlaying(), body), bar(ctx, "music"));
   let first: HTMLElement | undefined;
   void screen.music("album", { key: id }).then((reply) => {
     if (!reply.ok) {
-      body.replaceChildren(h("div", { class: "empty" }, reply.error ?? "that album isn't there"));
+      body.replaceChildren(h("div", { class: "empty" }, reply.error ?? "Couldn't find that album"));
       return;
     }
     const album = reply.album as AlbumInfo;
     const tracks = (reply.tracks as TrackInfo[]) ?? [];
-    const playAll = h("button", { class: "button primary", "data-focus": true, "data-action": "play", onclick: () => void play(ctx, { kind: "album", key: id }) }, "↵ play the album");
+    const playAll = h("button", { class: "button primary", "data-focus": true, "data-action": "play", onclick: () => void play(ctx, { kind: "album", key: id }) }, "Play album");
     body.replaceChildren(
       h(
         "div",
@@ -259,8 +262,8 @@ function albumPage(ctx: Ctx, id: string): View {
           "div",
           {},
           h("div", { class: "prompt" }, h("b", {}, "~"), " $ music album"),
-          h("h1", { class: "headline" }, named(album.title)),
-          h("div", { class: "maker" }, [named(album.artist), album.year, `${tracks.length} tracks`].filter(Boolean).join(" · ")),
+          h("h1", { class: "headline" }, album.title),
+          h("div", { class: "maker" }, [album.artist, album.year, `${tracks.length} tracks`].filter(Boolean).join(" · ")),
         ),
       ),
       playAll,
@@ -271,7 +274,7 @@ function albumPage(ctx: Ctx, id: string): View {
           h(
             "button",
             { class: "button track", "data-focus": true, onclick: () => void play(ctx, { kind: "album", key: id, from: at }) },
-            h("span", {}, `${String(track.number || at + 1).padStart(2, "0")}  ${named(track.title)}`),
+            h("span", {}, `${String(track.number || at + 1).padStart(2, "0")}  ${track.title}`),
             h("span", { class: "button-value" }, minutes(track.duration)),
           ),
         ),
@@ -283,49 +286,48 @@ function albumPage(ctx: Ctx, id: string): View {
   return { el, first };
 }
 
-// A NAS the box found (pages/network.ts): its folders, after a sign-in typed
-// on the phone if it wants one. The one picked becomes a source, with the
-// password kept where only root reads it, as for a share typed in.
+// A network drive the TV found (pages/network.ts): its folders, after a
+// sign-in typed on the phone if it wants one. The one picked is added to the
+// music, with the password kept where only root reads it, as for a folder
+// typed in.
 function nas(ctx: Ctx, host: string): View {
   let adding = false;
   const add = async (share: ShareFound, password?: string) => {
     if (adding) return;
     adding = true;
-    ctx.toast("mounting the share");
+    ctx.toast("Connecting…");
     const reply = await screen.music("add-share", { uri: share.uri, ...(password ? { password } : {}) });
     adding = false;
     if (reply.ok) {
       ctx.sounds.play("confirm");
-      ctx.toast(`${share.name} is a music source now`, "ok");
+      ctx.toast(h("span", {}, "Added ", asWritten(share.name)), "ok");
       ctx.back();
       return;
     }
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? "that share didn't mount", "fail");
+    ctx.toast(reply.error ?? "Couldn't open that folder", "fail");
     // A folder shown to a guest that wants a user name to open.
-    if (/user name and password/.test(reply.error ?? "") && !password) folders.signIn();
+    if (/user name/i.test(reply.error ?? "") && !password) folders.signIn();
   };
   const folders = shareList({ host, focus: ctx.focus, pick: (share, password) => void add(share, password) });
-  const el = h(
-    "div",
-    { class: "screen" },
-    h("div", { class: "page music" }, ...heading(`music sources ${host}`, `${host}.`), h("div", { class: "panel-note" }, "pick the folder with your music"), folders.el),
-    bar(ctx, "music", "↵ add it · esc back"),
-  );
+  // The drive's own name keeps its letters in every look.
+  const [prompt, headline] = heading("music add", host);
+  headline.setAttribute("data-own-case", "");
+  const el = h("div", { class: "screen" }, h("div", { class: "page music" }, prompt, headline, h("div", { class: "panel-note" }, "Pick the folder with your music"), folders.el), bar(ctx, "music"));
   return { el, first: folders.first() };
 }
 
-// Where the music comes from: folders, USB drives and shares, a new share,
-// and reading them all again.
+// Where the music comes from: folders, USB drives and network folders, a new
+// network folder, and reading them all again.
 function sources(ctx: Ctx): View {
   const list = h("div", { class: "sources" }, h("div", { class: "empty" }, loadingMark()));
   const progress = h("div", { class: "scan-progress" }, "");
-  const address = h("input", { class: "music-search", "data-focus": true, type: "text", placeholder: "smb://nas/music or smb://you@nas/music", "aria-label": "a share's address", autocomplete: "off" }) as HTMLInputElement;
-  // Only for a share with a user name in its address. The box keeps it where
+  const address = h("input", { class: "music-search", "data-focus": true, type: "text", placeholder: "smb://nas/music or smb://you@nas/music", "aria-label": "Folder address", autocomplete: "off" }) as HTMLInputElement;
+  // Only for a folder with a user name in its address. The TV keeps it where
   // only root can read it, mounts the share with it after every restart, and
   // never shows it again (ADR-038).
-  const password = h("input", { class: "music-search", "data-focus": true, type: "password", placeholder: "its password, if it has a user name", "aria-label": "the share's password", autocomplete: "off" }) as HTMLInputElement;
-  const hint = h("div", { class: "hint" }, "the box keeps the password, so a nas account that can only read is best");
+  const password = h("input", { class: "music-search", "data-focus": true, type: "password", placeholder: "Password, if it needs one", "aria-label": "Password", autocomplete: "off" }) as HTMLInputElement;
+  const hint = h("div", { class: "hint" }, "Your TV saves this password. A read-only account is safest.");
   const add = h(
     "button",
     {
@@ -337,18 +339,18 @@ function sources(ctx: Ctx): View {
         // has mounted.
         const secret = password.value;
         password.value = "";
-        ctx.toast("mounting the share");
+        ctx.toast("Connecting…");
         const reply = await screen.music("add-share", { uri: address.value.trim(), ...(secret ? { password: secret } : {}) });
         if (reply.ok) {
           ctx.sounds.play("confirm");
           ctx.render("music/sources", "add-share");
         } else {
           ctx.sounds.play("failure");
-          ctx.toast(reply.error ?? "that share didn't mount", "fail");
+          ctx.toast(reply.error ?? "Couldn't open that folder", "fail");
         }
       },
     },
-    "add the share",
+    "Add folder",
   );
   const scan = h(
     "button",
@@ -358,20 +360,20 @@ function sources(ctx: Ctx): View {
       "data-action": "scan",
       onclick: async () => {
         const reply = await screen.music("scan", {});
-        if (!reply.ok) ctx.toast(reply.error ?? "that didn't work", "fail");
+        if (!reply.ok) ctx.toast(reply.error ?? "Something went wrong", "fail");
         progress.textContent = progressLine(reply.progress as Progress | undefined);
       },
     },
-    "read them all again",
+    "Rescan",
   );
-  // With the discover switch on, the NASes on the network come first, and
-  // the share's address typed on the phone second.
+  // With the discover switch on, the drives on the network come first, and
+  // the folder's address typed on the phone second.
   const onNetwork = h("div", { class: "found" });
   shown(onNetwork, false);
   void discoverOn().then((on) => {
     if (!on) return;
     const found = foundList({ kinds: NAS, machines: true, focus: ctx.focus, typed: address, pick: (one) => ctx.go(`music/nas:${one.host}`) });
-    onNetwork.replaceChildren(h("div", { class: "section" }, "# on your network"), found.el);
+    onNetwork.replaceChildren(section("On your network"), found.el);
     shown(onNetwork, true);
   });
   const el = h(
@@ -380,16 +382,16 @@ function sources(ctx: Ctx): View {
     h(
       "div",
       { class: "page music" },
-      ...heading("music sources", "sources."),
+      ...heading("music add", "Your music"),
       list,
       progress,
       onNetwork,
-      h("div", { class: "section" }, "# a nas share"),
+      section("A network folder"),
       h("div", { class: "share-form" }, address, password),
       hint,
       h("div", { class: "share-actions" }, add, scan),
     ),
-    bar(ctx, "music", "usb drives show up when they're plugged in"),
+    bar(ctx, "music", "USB drives show up when they're plugged in"),
   );
   // The sources, and how far reading them has got, every 2 s while it reads.
   let wasScanning = false;
@@ -404,13 +406,14 @@ function sources(ctx: Ctx): View {
             h(
               "div",
               { class: "source" },
-              h("span", {}, `${source.kind === "usb" ? "usb" : source.kind} · ${source.name}`),
+              // A folder's or a drive's own name keeps its letters in every look.
+              h("span", {}, `${SOURCES[source.kind]} · `, asWritten(source.name)),
               source.available || source.kind === "usb"
-                ? h("span", { class: "button-value" }, source.available ? "ready" : "plugged in")
-                : h("span", { class: `button-value ${source.error ? "problem" : "away"}` }, (source.error ?? "away").toLowerCase()),
+                ? h("span", { class: "button-value" }, source.available ? "Ready" : "Plugged in")
+                : h("span", { class: `button-value ${source.error ? "problem" : "away"}` }, source.error ?? "Offline"),
             ),
           )
-        : [h("div", { class: "empty" }, reply.ok ? "no folders, drives or shares yet" : "music plays on the TV")]),
+        : [h("div", { class: "empty" }, reply.ok ? "No folders or drives yet" : "Music plays on the TV")]),
     );
     wasScanning = Boolean(now?.scanning);
   };
