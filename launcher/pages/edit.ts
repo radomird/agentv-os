@@ -8,7 +8,8 @@
 import type { SizeChoice } from "../api.ts";
 import { h, zoom } from "../dom.ts";
 import { at, choices, GRID_MORE, move, resize, span, unpin, type Placed, type Size } from "../layout.ts";
-import { currentGrid } from "../looks/looks.ts";
+import { currentGrid, lookId } from "../looks/looks.ts";
+import { rowEdit } from "../looks/row-edit.ts";
 import type { Ctx, View } from "../main.ts";
 import { placeTile, tileFor } from "./home.ts";
 import { bar } from "./parts.ts";
@@ -38,6 +39,9 @@ function reduced(): boolean {
 }
 
 export function edit(ctx: Ctx, focusOn?: string): View {
+  // Glass and Cinema draw home as rows, so they're edited as rows.
+  const look = lookId();
+  if (look === "glass" || look === "cinema") return rowEdit(ctx, focusOn);
   // The grid being arranged: Terminal's 5 × 4 at more on screen (D6), or 4 × 3.
   const g = currentGrid();
   const COLUMNS = g.columns;
