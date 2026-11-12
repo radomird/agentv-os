@@ -106,7 +106,7 @@ export function takeTheme(o: { themes: string; id: string; home: string; omarchy
   if (!ID.test(o.id)) return { error: "which theme" };
   const name = themeName(o.id);
   const from = join(o.themes, o.id);
-  if (!existsSync(join(from, "colors.toml"))) return { error: "it isn't on this box" };
+  if (!existsSync(join(from, "colors.toml"))) return { error: "It isn't on this TV" };
   if (existsSync(join(o.omarchy, "themes", name))) return { error: `There's already a theme called ${name}` };
   const to = join(o.home, ".config", "omarchy", "themes", name);
   const ours = () => {

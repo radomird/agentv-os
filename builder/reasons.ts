@@ -29,6 +29,7 @@ export type Why =
   | "busy" // another app is being made
   | "setup" // the AI's own tool couldn't be fetched
   | "start" // the builder's own parts didn't start
+  | "install" // it passed, and couldn't be put on the TV
   | "checks" // AgenTV's static checks, or what it connects to
   | "tests"; // its tests, or the test TV
 
@@ -58,6 +59,7 @@ const WORDS: [Why, RegExp][] = [
   ["busy", /another build is (running|going)/i],
   ["setup", /couldn't fetch|isn't on the box yet/i],
   ["start", /way out didn't start|builder didn't start|no agentv-builder user|build folders aren't root's|build's folder isn't a folder/i],
+  ["install", /couldn't be installed|isn't approved and waiting|no such build to install/i],
   ["slow", /took longer than/i],
   ["tries", /ran out of (turns|steps)|error_max_turns/i],
   ["unclear", /didn't say what it understood/i],
@@ -98,6 +100,7 @@ const LINES: Record<Why, (told: Told) => string> = {
   busy: () => "One at a time. Wait for the other app.",
   setup: ({ ai }) => `Couldn't get ${ai ?? "your AI"} ready`,
   start: () => "Couldn't start. Restart your TV and try again.",
+  install: () => "Couldn't install it. Try again.",
   checks: () => "It didn't pass the safety checks",
   tests: () => "It didn't pass its tests",
 };

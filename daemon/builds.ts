@@ -310,7 +310,9 @@ export class Builds {
         state: refused ? "failed" : starting ? "starting" : (mine?.state ?? "starting"),
         phase: mine?.phase ?? "understand",
         step: mine?.step,
-        steps: (mine?.steps ?? []).map((step) => ({ ...step, label: stepLabel(step) })),
+        // A step's own label, or its recipe's for a build from before steps
+        // had one, or its id as words.
+        steps: (mine?.steps ?? []).map((step) => ({ ...step, label: step.label ?? recipe?.steps.find((s) => s.id === step.id)?.label ?? stepLabel(step) })),
         ...(raw ? { reason: plainReason(raw, told) } : {}),
         spent: this.spentBy(asked.build) ?? mine?.spent,
         understood: mine?.understood,

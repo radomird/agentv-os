@@ -120,7 +120,7 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   // The TV: a card with the two and "none of these", the first focused.
   await screen.waitForSelector("#said.on .said-choice");
   assert.deepEqual(await screen.locator("#said .said-choice").allTextContents(), ["frozen · film · sample", "frozen · album · sample"]);
-  assert.equal(await screen.locator("#said .notice-title").textContent(), "which one?");
+  assert.equal(await screen.locator("#said .notice-title").textContent(), "Which one?");
   assert.equal(await screen.locator("#said .said-heard").textContent(), '"play frozen"');
   assert.equal(await screen.evaluate(() => document.querySelector("#said .focused")?.textContent), "frozen · film · sample");
   // The phone: the same two, under its box.
@@ -176,7 +176,7 @@ test("a pick whose reply comes before its outcome keeps the bar on 'which one?' 
   await screen.route(/\/api\/say\/pick$/, (route) => route.fulfill({ json: { ok: true } }));
   await screen.keyboard.press("Enter");
   await screen.waitForFunction(() => !document.querySelector("#said.on"));
-  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "Which one?");
   await hand.click('[data-action="said-pick"][data-choice="1"]');
   await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "frozen, on sample");
   assert.equal(await screen.locator(".toast", { hasText: "frozen, on sample" }).count(), 0);
@@ -210,13 +210,13 @@ test("words that land after their sentence leave the bar on 'which one?'", async
   await until(() => words === 1);
   await hand.click('[data-action="say"]');
   await screen.waitForSelector("#said.on .said-choice");
-  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "Which one?");
   const landed = hand.waitForResponse((response) => response.request() === late);
   release();
   await landed;
   // Long enough for an event the late words set off to reach the TV.
   await new Promise((resolve) => setTimeout(resolve, 300));
-  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent({ timeout: 2000 }), "which one?");
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent({ timeout: 2000 }), "Which one?");
   assert.equal(await screen.locator("#said.on .said-choice").count(), 2, "and the choice is still up");
   await screen.keyboard.press("Escape");
   await screen.waitForFunction(() => !document.querySelector("#said.on") && !document.querySelector("#listening.on"));
@@ -266,8 +266,8 @@ test("S7.3 a sentence that can't be routed is 'i didn't get that' on the TV and 
   asks.length = 0;
   await ask(hand, "turn the lights off");
   await hand.waitForSelector('[data-said="none"]');
-  assert.equal(await hand.locator(".said-say").textContent(), "i didn't get that");
-  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"] .listening-words')?.textContent === "i didn't get that");
+  assert.equal(await hand.locator(".said-say").textContent(), "Didn't get that");
+  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"] .listening-words')?.textContent === "Didn't get that");
   assert.equal(await screen.locator("#said.on").count(), 0);
   // Only the bar, for over an app in front: nothing looked up or opened.
   await until(() => asks.some((a) => a.kind === "live" && a.state === "said"));
@@ -275,7 +275,7 @@ test("S7.3 a sentence that can't be routed is 'i didn't get that' on the TV and 
   // Said with no box open, there's no bar, and it's a toast.
   asks.length = 0;
   await fetch(`${url}/api/say`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sentence: "turn the lights off" }) });
-  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.fail")].some((t) => t.textContent === "i didn't get that"));
+  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.fail")].some((t) => t.textContent === "Didn't get that"));
   await until(() => asks.some((a) => a.kind === "tell"));
   await screen.close();
   await hand.close();
@@ -325,12 +325,12 @@ test("ADR-054 sent from the box, the bar says it's thinking, then what came of i
   await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"]'));
   const seen = await states();
   assert.ok(seen.includes("thinking: turn the lights off"), seen.join(" | "));
-  assert.equal(seen.at(-1), "said: i didn't get that");
-  assert.equal(await screen.locator(".toast", { hasText: "i didn't get that" }).count(), 0, "the bar, not a toast");
+  assert.equal(seen.at(-1), "said: Didn't get that");
+  assert.equal(await screen.locator(".toast", { hasText: "Didn't get that" }).count(), 0, "the bar, not a toast");
   // Which one: the bar says so, with the card over home, and goes with it.
   await ask(hand, "play frozen");
   await screen.waitForSelector("#said.on .said-choice");
-  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "which one?");
+  assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "Which one?");
   await screen.keyboard.press("Escape");
   await screen.waitForFunction(() => !document.querySelector("#said.on") && !document.querySelector("#listening.on"));
   await screen.close();
