@@ -12,7 +12,9 @@ import type { AppHost, PageBroker, Viewer } from "../../../daemon/apps/loader.ts
 import type { Daemon } from "../../../daemon/server.ts";
 import { SignInWatch, type SignInDeps } from "../../../daemon/signin.ts";
 import { iconLinks, siteIcon } from "../../../daemon/site-icon.ts";
-import { FIXTURES, startBox } from "../ui/box.mts";
+import { Home } from "../../../daemon/home.ts";
+import { FIXTURES, makeBox, startBox } from "../ui/box.mts";
+import { HARNESS } from "../harness.mts";
 
 const viewer: Viewer = { id: "radomir", role: "adult" };
 const page = { url: async () => "https://tube.example/", call: async () => null } as PageBroker;
@@ -117,7 +119,7 @@ test("an app without signIn.open stays where it opened; i'm signed in asks now; 
 
 // --- Site icons -----------------------------------------------------------------
 
-test("a page's icons, best first: its apple-touch-icon, then the largest", () => {
+test("a page's icons, best first: the largest, with an apple-touch-icon that says no size as 180 px", () => {
   const html = `<html><head>
     <link rel="icon" href="/favicon-16.png" sizes="16x16">
     <link rel="stylesheet" href="/site.css">
@@ -127,16 +129,22 @@ test("a page's icons, best first: its apple-touch-icon, then the largest", () =>
     <link rel="icon" href="javascript:alert(1)">
   </head></html>`;
   assert.deepEqual(iconLinks(html, "https://tube.example/watch/"), [
-    "https://tube.example/watch/touch.png",
     "https://cdn.example/icon-192.png",
+    "https://tube.example/watch/touch.png",
     "https://tube.example/favicon-16.png",
   ]);
+  // A tie goes to the apple-touch-icon, made for a home screen.
+  assert.deepEqual(iconLinks('<link rel="icon" href="/a.png" sizes="180x180"><link rel="apple-touch-icon" href="/b.png">', "https://tube.example/"), ["https://tube.example/b.png", "https://tube.example/a.png"]);
 });
 
 let server: Server;
 let base = "";
 const served: string[] = [];
 const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+// A stand-in site whose page is refused until open is true, as a TV in
+// another region might be, and one that names icons of several sizes.
+let open = false;
+const sized = (size: number) => Buffer.concat([PNG, Buffer.from(`${size}`)]);
 
 before(async () => {
   server = createServer((request, response) => {
@@ -153,6 +161,21 @@ before(async () => {
     } else if (request.url === "/plain/") {
       response.writeHead(200, { "Content-Type": "text/html" });
       response.end("<p>no icons named</p>");
+    } else if (request.url === "/region/") {
+      response.writeHead(open ? 200 : 403, { "Content-Type": "text/html" });
+      response.end(open ? '<link rel="apple-touch-icon" href="/logo.png">' : "not here");
+    } else if (request.url === "/sizes/" || request.url === "/big/") {
+      // The big page's icons are at the top, with 3 MB after them.
+      const head = '<link rel="icon" href="/32.png" sizes="32x32"><link rel="apple-touch-icon" href="/180.png"><link rel="icon" href="/512.png" sizes="512x512">';
+      const body = Buffer.from(request.url === "/big/" ? head + " ".repeat(3 * 1024 * 1024) : head);
+      response.writeHead(200, { "Content-Type": "text/html", "Content-Length": body.length });
+      response.end(body);
+    } else if (/^\/(32|180|512)\.png$/.test(request.url ?? "")) {
+      response.writeHead(200, { "Content-Type": "image/png" });
+      response.end(sized(Number(request.url!.slice(1, -4))));
+    } else if (request.url === "/favicon.ico" && !open && /local\.region$/.test(request.headers["user-agent"] ?? "")) {
+      response.writeHead(403);
+      response.end();
     } else if (request.url === "/favicon.ico") {
       response.writeHead(200, { "Content-Type": "application/octet-stream" });
       response.end(Buffer.from([0, 0, 1, 0]));
@@ -175,6 +198,50 @@ test("a site's icon: the best one its page names that's an image, else its favic
   const ico = await siteIcon(`${base}/plain/`, { userAgent: "AgenTV/0.1 local.notes" });
   assert.equal(ico?.type, "image/x-icon");
   assert.equal(await siteIcon("http://127.0.0.1:1/", { userAgent: "AgenTV" }), null);
+});
+
+test("a site's largest icon wins, even on a page bigger than the part that's read", async () => {
+  for (const path of ["/sizes/", "/big/"]) {
+    const icon = await siteIcon(`${base}${path}`, { userAgent: "AgenTV/0.1 local.notes" });
+    assert.ok(icon?.body.equals(sized(512)), `${path}: ${icon?.body.subarray(PNG.length).toString()}`);
+  }
+});
+
+test("a site's icon that didn't come says why in the log, and is asked for again later", async () => {
+  const { apps, state } = makeBox([
+    {
+      id: "local.region",
+      name: "Region",
+      tier: "local",
+      category: "streaming",
+      edit: (m) => {
+        m.tv.homeUrl = `${base}/region/`;
+        m.tv.origins = [base];
+        m.tv.capabilities = ["launch"];
+        delete m.tv.setup;
+        delete m.tv.icon;
+        delete m.tv.tiles;
+      },
+    },
+  ]);
+  const lines: string[] = [];
+  const changes: string[] = [];
+  const home = new Home({ appsDir: apps, state, userAgent: "AgenTV/0.1", harness: HARNESS, iconRetryMs: 300, log: (line) => lines.push(line), changed: (event) => changes.push(event) });
+  open = false;
+  try {
+    assert.equal((await home.apps()).find((app) => app.id === "local.region")?.icon, undefined);
+    for (let i = 0; i < 50 && !lines.some((line) => line.startsWith("local.region:")); i++) await sleep(20);
+    const said = lines.find((line) => line.startsWith("local.region:")) ?? `nothing logged: ${lines.join("\n")}`;
+    assert.ok(said.includes(`${base}/region/ answered 403`), said);
+    assert.ok(said.includes(`${base}/favicon.ico answered 403`), said);
+    // The site lets the TV in now, and the icon comes without home asking.
+    open = true;
+    for (let i = 0; i < 100 && !changes.includes("apps"); i++) await sleep(20);
+    assert.ok(changes.includes("apps"), lines.join("\n"));
+    assert.equal((await home.apps()).find((app) => app.id === "local.region")?.icon, "/api/apps/local.region/icon");
+  } finally {
+    home.stop();
+  }
 });
 
 // --- The daemon -------------------------------------------------------------------

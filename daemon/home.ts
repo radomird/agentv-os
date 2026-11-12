@@ -254,6 +254,8 @@ export interface HomeOptions {
   state: string; // the daemon's own state
   builtins?: string; // AgenTV's own apps: /usr/share/agentv/apps/builtin
   userAgent?: string; // what every app's requests say they are
+  // How long before a site's icon that didn't come is asked for again: 6 h.
+  iconRetryMs?: number;
   // Only for a test harness (daemon/apps/loader.ts): the box never sets it.
   harness?: AppHostOptions["harness"];
   ledger?: () => Ledger; // for the free continue tile (ADR-016)
@@ -280,6 +282,11 @@ export interface HomeOptions {
 
 // How long before a site's icon that didn't come is asked for again.
 const ICON_RETRY_MS = 6 * 3600_000;
+
+// A wait for the log: "6 h", or "2 s" in a test.
+function hours(ms: number): string {
+  return ms >= 3600_000 ? `${Math.round(ms / 3600_000)} h` : `${Math.round(ms / 1000)} s`;
+}
 
 // A tile's content, and whether it's still waiting for it.
 export interface TileAnswer {
@@ -330,6 +337,8 @@ export class Home {
   private hosts = new Map<string, AppHost>();
   private tiles = new Map<string, { at: number; tile: unknown; settings: string }>();
   private iconTried = new Map<string, number>();
+  private iconRetry = new Map<string, ReturnType<typeof setTimeout>>();
+  private iconRetryMs: number;
   private changed: (event: string) => void;
   private log: (line: string) => void;
   private viewerOf?: () => Promise<Viewer & { name: string; avatar?: string }>;
@@ -347,6 +356,7 @@ export class Home {
     this.state = options.state;
     this.builtins = options.builtins;
     this.userAgent = options.userAgent;
+    this.iconRetryMs = options.iconRetryMs ?? ICON_RETRY_MS;
     this.harness = options.harness;
     this.ledger = options.ledger;
     this.changed = options.changed ?? (() => {});
@@ -594,21 +604,40 @@ export class Home {
     if (tier === "built-in") return false;
     if (existsSync(join(this.state, "icons", `${id}.json`))) return true;
     const tried = this.iconTried.get(id);
-    if (tried === undefined || Date.now() - tried > ICON_RETRY_MS) {
-      this.iconTried.set(id, Date.now());
-      void this.fetchSiteIcon(id).catch((error: Error) => this.log(`${id}'s site icon: ${error.message}`));
-    }
+    if (tried === undefined || Date.now() - tried > this.iconRetryMs) this.askSiteIcon(id);
     return false;
   }
 
-  private async fetchSiteIcon(id: string): Promise<void> {
+  // Asks the site for its icon, and again after iconRetryMs when it didn't
+  // come, whether or not home asks for the apps in between.
+  private askSiteIcon(id: string): void {
+    clearTimeout(this.iconRetry.get(id));
+    this.iconRetry.delete(id);
+    this.iconTried.set(id, Date.now());
+    const later = () => {
+      const again = setTimeout(() => {
+        this.iconRetry.delete(id);
+        if (!existsSync(join(this.state, "icons", `${id}.json`))) this.askSiteIcon(id);
+      }, this.iconRetryMs);
+      again.unref();
+      this.iconRetry.set(id, again);
+    };
+    void this.fetchSiteIcon(id, later).catch((error: Error) => {
+      this.log(`${id}'s site icon: ${error.message}; it's asked for again in ${hours(this.iconRetryMs)}`);
+      later();
+    });
+  }
+
+  private async fetchSiteIcon(id: string, later: () => void): Promise<void> {
     const target = await this.launch(id);
     if (target?.runtime !== "web") return;
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     const allowed = found ? allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}, this.onBox(found)) : new Set<string>();
-    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "AgenTV"} ${id}`, allowed: (url) => allowed.has(url.origin) });
+    const reasons: string[] = [];
+    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "AgenTV"} ${id}`, allowed: (url) => allowed.has(url.origin), reasons });
     if (!icon) {
-      this.log(`${id}: its site has no icon to show, so its tile keeps its letters`);
+      this.log(`${id}: its site has no icon to show (${reasons.join("; ") || "no reason given"}), so its tile keeps its letters; it's asked for again in ${hours(this.iconRetryMs)}`);
+      later();
       return;
     }
     const dir = join(this.state, "icons");
@@ -1110,6 +1139,8 @@ export class Home {
 
   stop(): void {
     for (const host of this.hosts.values()) host.stop();
+    for (const timer of this.iconRetry.values()) clearTimeout(timer);
+    this.iconRetry.clear();
     this.watcher?.close();
     if (this.watchSoon) clearTimeout(this.watchSoon);
     if (this.watchAgain) clearInterval(this.watchAgain);
