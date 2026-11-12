@@ -27,15 +27,15 @@ function focusedTile(ctx: Ctx): string | undefined {
 // opens and as an install moves on.
 let available: Available | null = null;
 let loadedAt = 0;
+// The ask that's on its way, so a page drawn again before it answers waits
+// for it too, rather than showing its loading mark until something else
+// draws the page.
+let loading: Promise<Available> | null = null;
 
-export async function loadAvailable(): Promise<Available> {
+export function loadAvailable(): Promise<Available> {
   loadedAt = Date.now();
-  try {
-    available = await daemon.available();
-  } catch (error) {
-    available = { apps: [], error: (error as Error).message };
-  }
-  return available;
+  loading = daemon.available().catch((error: Error): Available => ({ apps: [], error: error.message }));
+  return loading.then((answer) => (available = answer));
 }
 
 // What OK does on a tile, at its top, and how its install is going, under
@@ -121,8 +121,9 @@ export function addApp(ctx: Ctx): View {
     : [line ? h("div", { class: "empty add-empty" }, line) : null, h("div", { class: "row add-row" }, ...apps.map((app) => appTile(ctx, app)), buildOwn(ctx))];
   const el = h("div", { class: "screen" }, h("div", { class: "page add-page" }, h("div", { class: "page-head" }, h("div", {}, ...heading("tv apps add", "Add an app"))), ...body), bar(ctx, "apps"));
   // Asked for again as the page opens, then drawn once it's here.
-  if (Date.now() - loadedAt > 2000) {
-    void loadAvailable().then(() => {
+  const asked = Date.now() - loadedAt > 2000 ? loadAvailable() : !available && loading ? loading.then((answer) => (available = answer)) : null;
+  if (asked) {
+    void asked.then(() => {
       if (el.isConnected) ctx.render("add-app", focusedTile(ctx));
     });
   }

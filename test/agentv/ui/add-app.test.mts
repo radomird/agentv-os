@@ -144,6 +144,25 @@ test("D11 with every app on the TV, the library says so and still offers Build y
   await page.close();
 });
 
+test("the library drawn again while its list is on its way still shows the list when it comes", async () => {
+  const page = await tv();
+  // The list answers only when the test says, as on a slow TV.
+  let answer = () => {};
+  const held = new Promise<void>((resolve) => (answer = resolve));
+  await page.route(`${url}/api/apps/add`, async (route) => {
+    await held;
+    await route.fulfill({ json: { apps: [] } });
+  });
+  await go(page, "add-app");
+  await page.waitForSelector(".add-page");
+  // Something draws the page again before the list has answered.
+  await go(page, "add-app");
+  answer();
+  await page.waitForSelector(".add-row .build-own", { timeout: 5_000 });
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.close();
+});
+
 test("ADR-042 a child's profile has no add an app", async () => {
   const page = await tv("child");
   await go(page, "apps");
