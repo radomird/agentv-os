@@ -46,7 +46,7 @@ export interface Phone {
   update: { version: string; later: boolean } | null;
   // What's on the TV: front is home or an app, and screen is home, a menu
   // or the screen saver.
-  tv: { view: string; field: Field | null; playing: boolean; front?: string; screen?: string };
+  tv: { view: string; field: Field | null; playing: boolean; front?: string; screen?: string; details?: boolean };
   setup: { step: string; part: string; muted: boolean } | null;
   notices?: { app: string; name: string; text: string; at: string }[];
   builds?: PhoneBuild[];
@@ -84,9 +84,9 @@ const STEP_PX = 44;
 const HOLD_MS = 600;
 // How long Back is held before the phone sends the hold that goes home.
 const BACK_HOLD_MS = 700;
-// How long the TV holds OK for a hold on the phone's OK: longer than the
-// TV waits on a tile before it opens the app's details (launcher/input.ts).
-const OK_HOLD_MS = 700;
+// What a hold sends where an app's tile has the focus: the key that opens
+// its details on the TV (launcher/input.ts), as a gamepad's Y does.
+const DETAILS = { key: "i" };
 
 // A request whose answer says how it went, whether or not it worked.
 async function post<T extends object>(path: string, body: unknown): Promise<T & { ok: boolean; why?: string; error?: string }> {
@@ -340,9 +340,9 @@ export class Remote2 {
     );
   }
 
-  // What a hold on the surface does, in its hint: details with home or Apps
-  // in front, the pointer over an app. Only the words change, so a finger
-  // that's on the surface stays on it.
+  // What a hold on the surface does, in its hint: details on an app's tile
+  // on home or Apps, the pointer everywhere else. Only the words change, so
+  // a finger that's on the surface stays on it.
   private sayHold(): void {
     if (!this.holdHint) return;
     const what = this.holds() ? "hold for details" : "hold for the pointer";
@@ -350,10 +350,10 @@ export class Remote2 {
     this.holdHint.area.setAttribute("aria-label", `swipe to move, tap for ok, ${what}`);
   }
 
-  // The surface: swipes move the focus and a tap is OK. A hold with home or
-  // Apps in front is a hold on OK, which opens the focused app's details
-  // (ADR-089), and over an app it gives the pointer. With the switch on, a
-  // d-pad; on the desktop, the pointer.
+  // The surface: swipes move the focus and a tap is OK. A hold on an app's
+  // tile on home or Apps opens that app's details (ADR-089). Everywhere
+  // else it gives the pointer: a still finger is never a press. With the
+  // switch on, a d-pad; on the desktop, the pointer.
   private surface(state: Phone): HTMLElement {
     if (state.tv.view === "trackpad" || this.pointer) return this.pointerPad(state.tv.view !== "trackpad");
     if (dpadOn()) return this.dpad();
@@ -362,6 +362,8 @@ export class Remote2 {
     this.holdHint = { area, line };
     this.sayHold();
     let from: { x: number; y: number; at: number } | null = null;
+    // The one finger the gesture is, from down to up.
+    let finger: number | null = null;
     let moved = false;
     let hold = 0;
     const flash = () => {
@@ -370,16 +372,22 @@ export class Remote2 {
       if (feelOn()) navigator.vibrate?.(8);
     };
     area.addEventListener("pointerdown", (event) => {
+      // A second finger is no gesture of its own, and two aren't a hold.
+      if (finger !== null) {
+        clearTimeout(hold);
+        return;
+      }
+      finger = event.pointerId;
       area.setPointerCapture(event.pointerId);
       from = { x: event.clientX, y: event.clientY, at: Date.now() };
       moved = false;
       hold = window.setTimeout(() => {
         from = null;
         if (feelOn()) navigator.vibrate?.(20);
-        // What the TV says is in front as the hold lands, the same way the
-        // d-pad's OK asks.
+        // What the TV says has the focus as the hold lands, the same way
+        // the d-pad's OK asks.
         if (this.holds()) {
-          this.send({ hold: "enter", ms: OK_HOLD_MS });
+          this.send(DETAILS);
           flash();
           return;
         }
@@ -388,7 +396,7 @@ export class Remote2 {
       }, HOLD_MS);
     });
     area.addEventListener("pointermove", (event) => {
-      if (!from) return;
+      if (!from || event.pointerId !== finger) return;
       const dx = event.clientX - from.x;
       const dy = event.clientY - from.y;
       if (Math.abs(dx) < STEP_PX && Math.abs(dy) < STEP_PX) {
@@ -404,6 +412,8 @@ export class Remote2 {
       from = across ? { ...from, x: from.x + Math.sign(dx) * STEP_PX } : { ...from, y: from.y + Math.sign(dy) * STEP_PX };
     });
     const end = (event: PointerEvent) => {
+      if (event.pointerId !== finger) return;
+      finger = null;
       clearTimeout(hold);
       if (from && !moved && event.type === "pointerup" && Date.now() - from.at < HOLD_MS) {
         this.send({ key: "enter" });
@@ -416,18 +426,20 @@ export class Remote2 {
     return area;
   }
 
-  // Whether a hold on OK, or on the surface, has anything to open: only on
-  // home's own screens, where a tile's details are. With an app or the screen saver in front,
-  // the TV would only get Enter held down. (For the PIN pad the phone shows
-  // its own digits, and no OK.)
+  // Whether a hold on OK, or on the surface, has anything to open: only
+  // where the TV says an app's tile has the focus, on home or Apps. On
+  // Settings, a details page, an app made on the TV, any other app or the
+  // screen saver, there's nothing, and the TV gets no key for a hold. (For
+  // the PIN pad the phone shows its own digits, and no OK.)
   private holds(): boolean {
     const tv = this.kit.state()?.tv;
-    return tv?.front === "home" && tv.screen !== "ambient";
+    return tv?.front === "home" && tv.screen !== "ambient" && tv.details === true;
   }
 
-  // The d-pad's OK. A tap is OK. Held with home in front, the phone sends
-  // the hold, and on a tile the TV opens that app's details (ADR-084), as
-  // Back's hold goes home. Anywhere else a long press is OK as it lifts.
+  // The d-pad's OK. A tap is OK. Held on an app's tile, the phone asks the
+  // TV for that app's details (ADR-084) as the hold lands. Anywhere else a
+  // long press is OK as it lifts. A finger that has slid off the button by
+  // the time it lifts, or by the time the hold lands, takes the press back.
   // The press is the remote's and not the button's, since the remote can
   // draw itself again under a finger: one press at a time, which ends when
   // its own finger lifts, whichever button is there by then.
@@ -444,27 +456,33 @@ export class Remote2 {
         if (!this.holds()) return;
         press.held = true;
         if (feelOn()) navigator.vibrate?.(20);
-        this.send({ hold: "enter", ms: OK_HOLD_MS });
+        this.send(DETAILS);
       }, HOLD_MS);
+      // A touch stays the button's until it lifts, so where the finger is
+      // decides, not whether the button heard it leave.
+      const off = (at: PointerEvent) => {
+        const box = this.root.querySelector(".r2-ok")?.getBoundingClientRect();
+        return !box || at.clientX < box.left || at.clientX > box.right || at.clientY < box.top || at.clientY > box.bottom;
+      };
+      const slide = (moved: PointerEvent) => {
+        if (moved.pointerId !== press.finger || press.left || !off(moved)) return;
+        press.left = true;
+        clearTimeout(press.timer);
+        this.root.querySelector(".r2-ok")?.classList.remove("holding");
+      };
       const release = (lifted: PointerEvent) => {
         if (lifted.pointerId !== press.finger) return;
+        window.removeEventListener("pointermove", slide, true);
         window.removeEventListener("pointerup", release, true);
         window.removeEventListener("pointercancel", release, true);
         clearTimeout(press.timer);
         this.okPress = null;
         this.root.querySelector(".r2-ok")?.classList.remove("holding");
-        if (!press.held && !press.left && lifted.type === "pointerup") this.send({ key: "enter" });
+        if (!press.held && !press.left && lifted.type === "pointerup" && !off(lifted)) this.send({ key: "enter" });
       };
+      window.addEventListener("pointermove", slide, true);
       window.addEventListener("pointerup", release, true);
       window.addEventListener("pointercancel", release, true);
-    });
-    // A finger that slides off the button takes the press back.
-    ok.addEventListener("pointerleave", (event) => {
-      const press = this.okPress;
-      if (!press || press.finger !== event.pointerId) return;
-      press.left = true;
-      clearTimeout(press.timer);
-      ok.classList.remove("holding");
     });
     // A keyboard's Enter on the button, which has no pointer.
     ok.addEventListener("click", (event) => event.detail === 0 && this.send({ key: "enter" }));

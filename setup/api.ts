@@ -151,6 +151,9 @@ export interface Network {
   secure: boolean;
 }
 
+// What the TV answers a guarded request whose grant is missing or no good.
+export const NEEDS_PIN = "that needs the pin";
+
 async function call<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const response = await fetch(path, {
     method,

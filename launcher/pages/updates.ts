@@ -135,6 +135,12 @@ function choices(ctx: Ctx, route: string): HTMLElement[] {
   return parts.filter((part): part is HTMLElement => part !== null);
 }
 
+// The night's update waited because a game was being played. It installs
+// the night after, whatever is open.
+function held(ctx: Ctx): boolean {
+  return Boolean(ctx.updates.held && ready(ctx.updates.status) && (tonight(ctx.updates) || ctx.state.settings.updateOvernight));
+}
+
 function tonightNote(ctx: Ctx): HTMLElement | null {
   if (!tonight(ctx.updates)) return null;
   return h("div", { class: "panel-note tonight-note" }, "It installs tonight between 2 and 5");
@@ -182,6 +188,7 @@ export function updatesValue(ctx: Ctx): string {
 
 // The page's one line: what happens next, or how updates reach this TV.
 function line(ctx: Ctx, status: UpdateStatus): string {
+  if (held(ctx)) return "Waited for your game. Updates tonight.";
   if (tonight(ctx.updates)) return "It installs tonight between 2 and 5";
   if (status.waiting && pending(status)) return "It's still being tested";
   if (!status.ok) return `Last check failed, ${when(status.checked_at)}`;
@@ -207,7 +214,7 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
       row("AgenTV", status.agentv.installed, status.agentv.available),
       row("Omarchy", status.omarchy.installed, status.omarchy.available),
     ),
-    h("div", { class: `panel-note${tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, line(ctx, status)),
+    h("div", { class: `panel-note${held(ctx) ? " held-note" : tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, line(ctx, status)),
     h(
       "div",
       { class: "update-choices" },

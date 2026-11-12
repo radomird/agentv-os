@@ -144,9 +144,19 @@ async function join(ctx: Ctx, ssid: string, password: string): Promise<string | 
   return "pin";
 }
 
+// What's wrong with a Wi-Fi password, as the TV checks it too
+// (daemon/hotspot.ts): 8 to 63 plain characters, or 64 hex digits.
+function passwordLine(password: string): string | null {
+  if (password.length < 8) return "Wi-Fi passwords have at least 8 characters";
+  if (/^[0-9a-fA-F]{64}$/.test(password)) return null;
+  if (!/^[\x20-\x7e]*$/.test(password)) return "Wi-Fi passwords use plain letters, numbers and symbols";
+  if (password.length > 63) return "Wi-Fi passwords have at most 63 characters";
+  return null;
+}
+
 // What the page says when the daemon wouldn't start a join.
-function refusedLine(why: string, ssid: string): Node[] {
-  if (why === "password") return withName("Wi-Fi passwords have at least 8 characters");
+function refusedLine(why: string, ssid: string, password = ""): Node[] {
+  if (why === "password") return withName(passwordLine(password) ?? "Wi-Fi passwords have at least 8 characters");
   if (why === "name") return withName("Check the network name");
   return withName("Couldn't join %s. Try again.", ssid);
 }
@@ -267,13 +277,14 @@ export function wifiPage(ctx: Ctx): View {
       if (fields.name) ctx.focus.set(fields.name);
       return;
     }
-    if (fields.password && password.length < 8) return say(withName("Wi-Fi passwords have at least 8 characters"));
+    const wrong = fields.password ? passwordLine(password) : null;
+    if (wrong) return say(withName(wrong));
     sending = true;
     line.textContent = "";
     const why = await join(ctx, name, password);
     if (why) {
       sending = false;
-      if (why !== "pin") say(refusedLine(why, name));
+      if (why !== "pin") say(refusedLine(why, name, password));
       return;
     }
     // Joining takes a while. The page says so, then how it went.

@@ -29,6 +29,10 @@ const SEALED = "application/agentv-sealed";
 // pairing that worked puts another in its place.
 export class Unpaired extends Error {}
 const UNPAIRED = "this phone isn't paired: pair it from the tv";
+// What the box says when a pairing didn't work. Anyone on the network can
+// write that answer too, so its words are shown only when they're one of
+// these, and anything else is the box not answering.
+const PAIR_FAILED = ["that isn't the code on the tv", "that code has run out: pair again from the tv"];
 
 const KEPT = "agentv-phone-key";
 // What a phone paired before requests were signed still holds. Nothing takes
@@ -77,7 +81,7 @@ export async function pair(how: { secret: string } | { code: string }, name: str
   const mine = random(32);
   const mineOpen = x25519Public(mine);
   const { status, data } = await plain("/api/phone/pair", { key: encode(mineOpen), name, proof: encode(hmac(k, concat(utf8(INFO.pair), mineOpen))) });
-  if (status !== 200) throw new Error(typeof data.error === "string" ? data.error : "the tv didn't answer");
+  if (status !== 200) throw new Error(PAIR_FAILED.find((said) => said === data.error) ?? "the tv didn't answer");
   const theirs = typeof data.key === "string" ? decode(data.key) : null;
   const confirm = typeof data.confirm === "string" ? decode(data.confirm) : null;
   if (!theirs || theirs.length !== 32 || !confirm || typeof data.id !== "string") throw new Error("the tv didn't answer");

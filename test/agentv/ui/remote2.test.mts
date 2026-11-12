@@ -183,7 +183,7 @@ test("T8.3 a password's field is the phone's password field, for its password ma
   await hand.close();
 });
 
-test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens details on home and gives the pointer over an app, which moves and clicks", async () => {
+test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens details on an app's tile and gives the pointer everywhere else, which moves and clicks", async () => {
   const b = await box(true);
   const hand = await phone(b);
   const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
@@ -203,7 +203,7 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
   await hand.mouse.click(cx, cy);
   await until(() => b.keys.length >= from + 4);
   assert.deepEqual(b.keys.slice(from), [{ key: "right" }, { key: "down" }, { key: "down" }, { key: "enter" }]);
-  // A hold with home in front: the held OK that opens the focused app's
+  // A hold with an app's tile focused on home: the key that opens its
   // details, sent while the finger is still down, and no pointer and no tap
   // as it lifts. The hint says so.
   const held = async () => {
@@ -216,14 +216,47 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
     await wait(300);
     return { down, all: b.keys.slice(at), pointer: await hand.locator(".r2-pointer").count() };
   };
-  await context(b, { front: "home", screen: "home" });
+  await context(b, { front: "home", screen: "home", details: true });
   await until(async () => (await hint()) === "hold for details");
   assert.equal(await label(), "swipe to move, tap for ok, hold for details");
-  assert.deepEqual(await held(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], pointer: 0 });
+  assert.deepEqual(await held(), { down: [{ key: "i" }], all: [{ key: "i" }], pointer: 0 });
   await context(b, { screen: "menu" });
   await wait(150);
   assert.equal(await hint(), "hold for details");
-  assert.deepEqual(await held(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], pointer: 0 }, "Apps is home's too");
+  assert.deepEqual(await held(), { down: [{ key: "i" }], all: [{ key: "i" }], pointer: 0 }, "a tile in Apps has details too");
+  // Two fingers aren't a hold, and the first one's timer goes with it: a
+  // swipe that follows sends its step and nothing held.
+  {
+    const cdp = await hand.context().newCDPSession(hand);
+    const at = b.keys.length;
+    const one = { x: Math.round(cx), y: Math.round(cy), id: 1 };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [one] });
+    await wait(100);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [one, { x: one.x + 30, y: one.y, id: 2 }] });
+    await wait(100);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...one, x: one.x + 60 }, { x: one.x + 30, y: one.y, id: 2 }] });
+    await wait(700);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await wait(200);
+    assert.deepEqual(b.keys.slice(at), [{ key: "right" }], "no held key lands mid-swipe");
+    await cdp.detach();
+  }
+  // Home's other screens, where the focus is on no tile: Settings on a row,
+  // a details page, an app made on the TV. The hint says the pointer, and a
+  // hold gives it and sends the TV nothing.
+  await context(b, { screen: "menu", details: false });
+  await until(async () => (await hint()) === "hold for the pointer");
+  {
+    const at = b.keys.length;
+    await hand.mouse.move(cx, cy);
+    await hand.mouse.down();
+    await hand.waitForSelector(".r2-pointer", { timeout: 1500 });
+    await hand.mouse.up();
+    await wait(200);
+    assert.deepEqual(b.keys.slice(at), [], "a still finger is not a press");
+    await hand.locator('[data-action="pointer-done"]').click();
+    await hand.waitForSelector('.r2-surface[data-action="surface"]');
+  }
   // A hold with an app in front: the pointer, as it was, and nothing sent.
   await context(b, { front: "app", screen: "home", playing: false });
   await until(async () => (await hint()) === "hold for the pointer");
@@ -278,7 +311,7 @@ async function fingers(hand: Page): Promise<{ down(count?: number): Promise<void
   };
 }
 
-test("the d-pad's OK sends its hold only while home is in front: with an app or the screen saver there, a long press is one OK as the finger lifts", async () => {
+test("the d-pad's OK asks for details only on an app's tile: anywhere else a long press is one OK as the finger lifts, and its fill is the button's size", async () => {
   const b = await box(true);
   const hand = await phone(b);
   await hand.locator('[data-action="dpad"]').click();
@@ -294,17 +327,46 @@ test("the d-pad's OK sends its hold only while home is in front: with an app or 
     await wait(300);
     return { down: while_, all: b.keys.slice(from), filling };
   };
-  // Home in front: the hold, as the finger is still down, and the button
-  // shows it's being held.
-  await context(b, { front: "home", screen: "home" });
-  assert.deepEqual(await long(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], filling: 1 });
+  // A tile focused on home: details, as the finger is still down, and the
+  // button shows it's being held.
+  await context(b, { front: "home", screen: "home", details: true });
+  await wait(150);
+  assert.deepEqual(await long(), { down: [{ key: "i" }], all: [{ key: "i" }], filling: 1 });
   await context(b, { screen: "menu" });
-  assert.deepEqual((await long()).all, [{ hold: "enter", ms: 700 }], "Apps and Settings are home's too");
+  assert.deepEqual((await long()).all, [{ key: "i" }], "a tile in Apps has details too");
+  // The fill is the button's, not the whole pad's.
+  const sizes = await hand.evaluate(() => {
+    const button = document.querySelector(".r2-ok")!;
+    const fill = getComputedStyle(button, "::before");
+    return { button: [button.clientWidth, button.clientHeight], fill: [parseFloat(fill.width), parseFloat(fill.height)], clipped: getComputedStyle(button).overflow };
+  });
+  assert.deepEqual(sizes.fill, sizes.button);
+  assert.equal(sizes.clipped, "hidden");
+  // A finger that slides off OK takes the press back: nothing as it lifts
+  // out there, and no hold either.
+  {
+    const box = (await hand.locator(".r2-ok").boundingBox())!;
+    const on = { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2), id: 1 };
+    const out = { ...on, y: Math.round(box.y + box.height + 60) };
+    const cdp = await hand.context().newCDPSession(hand);
+    for (const ms of [100, 900]) {
+      const from = b.keys.length;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [on] });
+      await wait(100);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [out] });
+      await wait(ms);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await wait(200);
+      assert.deepEqual(b.keys.slice(from), [], `slid off and lifted after ${ms} ms`);
+    }
+    await cdp.detach();
+  }
   // Anything else in front: nothing while the finger is down, and one OK
   // as it lifts.
   const others: [string, object, object][] = [
     ["an app", { front: "app", playing: false }, { front: "home" }],
     ["the screen saver", { screen: "ambient" }, { screen: "home" }],
+    ["Settings", { screen: "menu", details: false }, { screen: "home", details: true }],
   ];
   for (const [what, there, gone] of others) {
     await context(b, there);
@@ -313,7 +375,7 @@ test("the d-pad's OK sends its hold only while home is in front: with an app or 
     await context(b, gone);
     await wait(150);
   }
-  assert.deepEqual((await long()).all, [{ hold: "enter", ms: 700 }], "and with home back, the hold again");
+  assert.deepEqual((await long()).all, [{ key: "i" }], "and back on a tile, details again");
   await hand.close();
 });
 
@@ -336,7 +398,9 @@ test("the d-pad's OK counts one press: a redraw under a quick tap still sends th
   await wait(900);
   assert.deepEqual(b.keys.slice(from), [{ key: "enter" }]);
 
-  // Two fingers on OK, held: one hold.
+  // Two fingers on OK, held on a tile: one ask for details.
+  await context(b, { front: "home", screen: "home", details: true, playing: false });
+  await wait(150);
   from = b.keys.length;
   const two = await fingers(hand);
   await two.down(1);
@@ -345,7 +409,7 @@ test("the d-pad's OK counts one press: a redraw under a quick tap still sends th
   await wait(1000);
   await two.up();
   await wait(300);
-  assert.deepEqual(b.keys.slice(from), [{ hold: "enter", ms: 700 }]);
+  assert.deepEqual(b.keys.slice(from), [{ key: "i" }]);
   await hand.close();
 });
 

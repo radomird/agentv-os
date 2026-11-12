@@ -108,6 +108,14 @@ export class Sleep {
     else if (this.offSince === null) this.offSince = this.now();
   }
 
+  // The night's update waits for another night, so a box the wake alarm
+  // woke for it goes back to sleep at the next look, not an hour later. One
+  // that someone has used since it woke stays up its hour.
+  nothingTonight(lastInput: number): void {
+    if (lastInput >= this.awakeSince) return;
+    this.awakeSince = Math.min(this.awakeSince, this.now() - this.after);
+  }
+
   // For the checks: sleep after this many seconds, not an hour.
   afterSeconds(seconds: number | null): object {
     this.afterOverride = seconds === null ? null : seconds * 1000;
