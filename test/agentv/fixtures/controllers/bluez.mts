@@ -148,6 +148,10 @@ export class StandInBluez {
       device.paired = true;
       return ok();
     }
+    if (verb === "call" && member === "Disconnect") {
+      device.connected = false;
+      return ok();
+    }
     if (verb === "call" && member === "Connect") {
       if (!device.paired) return failed("Not Ready");
       device.connected = true;

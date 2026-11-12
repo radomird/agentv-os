@@ -141,6 +141,8 @@ export interface Updates {
   seen?: { kept: string | null; wentBack: string | null; later?: string | null };
   // Tonight was chosen, for this release ("packages" when it's only those).
   tonight?: { version: string; at: string } | null;
+  // The night's update waited for a game, and installs the night after.
+  held?: { at: string } | null;
 }
 
 // An item to open, as the contract's Item has it.

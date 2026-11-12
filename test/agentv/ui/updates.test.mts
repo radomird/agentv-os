@@ -326,6 +326,15 @@ test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it bac
   assert.match(await page.locator(".panel").innerText(), /it installs tonight, between 2 and 5, once nothing has played for half an hour/);
   assert.equal(await page.locator('.panel [data-action="tonight"]').count(), 0, "chosen already");
   assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "later");
+  // The night's update waited for a game: the page says so, until it's in.
+  assert.equal(await page.locator(".held-note").count(), 0);
+  const held = (on: boolean) => page.evaluate((h) => fetch("/api/updates/held", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ held: h }) }), on);
+  await held(true);
+  await page.waitForSelector(".held-note");
+  assert.match(await page.locator(".held-note").innerText(), /^waited for your game\. updates tonight\.$/i);
+  assert.match((await api(page, "/api/updates")).held.at, /^\d{4}-/);
+  await held(false);
+  await page.waitForFunction(() => !document.querySelector(".held-note"));
   await page.keyboard.press("Escape");
   await page.waitForSelector(".grid .tile");
   assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 installs tonight/);

@@ -112,13 +112,48 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.match(await page.locator(".page").innerText(), /scan the new code on your TV$/);
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
+  const first = JSON.parse(readFileSync(drop(), "utf8"));
+  assert.deepEqual(first.join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
   rmSync(drop());
 
   // The password was wrong: the hotspot comes back, and so does the reason.
-  hotspotIs({ on: true, error: "that password didn't work for home wi-fi" });
+  hotspotIs({ on: true, error: "that password didn't work for home wi-fi", answered: first.id });
   await page.waitForFunction(() => /that password didn't work for home wi-fi/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
   assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+
+  // Another try. Until the TV says how this one went, the first try's
+  // reason is still the last thing it said, and it isn't shown for this one.
+  await page.locator('button.network[data-ssid="home wi-fi"]').tap();
+  await page.locator('input[type="password"]').fill("correct horse 2");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  const second = JSON.parse(readFileSync(drop(), "utf8"));
+  rmSync(drop());
+  await page.waitForResponse((response) => response.url().includes("/api/setup/state"));
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+  assert.equal(await page.locator("h1").innerText(), "joining home wi-fi", "the try before's reason isn't this try's");
+  hotspotIs({ on: true, error: "the tv can't see home wi-fi from here", answered: second.id });
+  await page.waitForFunction(() => /the tv can't see home wi-fi from here/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.close();
+});
+
+test("the hotspot's page says it's still open while it's on screen, so the hotspot isn't closed under someone finding their password", async () => {
+  hotspotIs({ on: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
+  await page.goto(`${captive}/`);
+  await page.waitForSelector("button.network");
+  await page.locator('button.network[data-ssid="home wi-fi"]').tap();
+  await page.waitForSelector('input[type="password"]');
+  let requests = 0;
+  page.on("request", () => requests++);
+  // Five minutes on the password's page, asking for nothing by hand.
+  await page.clock.runFor(5 * 60_000);
+  const end = Date.now() + 5000;
+  while (requests < 4 && Date.now() < end) await new Promise((done) => setTimeout(done, 20));
+  assert.ok(requests >= 4 && requests <= 6, `about one a minute, and no more: ${requests}`);
+  assert.equal(await page.locator('input[type="password"]').count(), 1, "and the page is as it was");
   await page.close();
 });
 
@@ -836,6 +871,26 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   await page.waitForSelector(".people");
   await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
   assert.equal(await page.locator(".pin-pad").count(), 0);
+
+  // The TV ends every grant, as when it has been off for a while, and setup
+  // doesn't know. The next change asks for the PIN again and goes through.
+  // It used to be refused with no pad, on every try.
+  assert.equal((await post("/api/pin/lock", { reason: "tv-off" })).status, 200);
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".pin-pad");
+  assert.equal(await page.locator(".toast.fail").count(), 0);
+  await page.keyboard.type("2468");
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 1);
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".goals");
   await page.close();

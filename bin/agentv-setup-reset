@@ -12,20 +12,16 @@ set -euo pipefail
 
 port=${AGENTV_PORT:-3000}
 url="http://127.0.0.1:$port"
-grant=()
-if [[ -n ${AGENTV_PIN:-} ]]; then
-  # The PIN goes in on stdin, so it's on no command line.
-  token=$(jq -nc --arg pin "$AGENTV_PIN" '{pin: $pin}' |
-    curl -sS --max-time 5 -H 'Content-Type: application/json' -d @- "$url/api/pin/check" | jq -r '.grant // empty') || token=""
-  if [[ -z $token ]]; then
-    echo "The TV didn't take the PIN in AGENTV_PIN." >&2
-    exit 1
-  fi
-  grant=(-H "X-AgenTV-Grant: $token")
-fi
+ask='{"done": false}'
+# The PIN goes in on stdin, so it's on no command line. It's sent with the
+# ask itself: the TV checks it for this and gives nothing else for it.
+[[ -z ${AGENTV_PIN:-} ]] || ask=$(jq -nc --arg pin "$AGENTV_PIN" '{done: false, pin: $pin}')
 
-status=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' ${grant[@]+"${grant[@]}"} \
-  -d '{"done": false}' "$url/api/setup") || status=""
+status=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d @- "$url/api/setup" <<<"$ask") || status=""
+if [[ $status == "403" && -n ${AGENTV_PIN:-} ]]; then
+  echo "The TV didn't take the PIN in AGENTV_PIN." >&2
+  exit 1
+fi
 if [[ $status == "403" ]]; then
   echo "This TV has an adult PIN set. Run it again with the PIN: AGENTV_PIN=<the PIN> agentv setup reset" >&2
   exit 1

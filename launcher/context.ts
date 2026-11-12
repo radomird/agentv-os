@@ -1,13 +1,14 @@
 // What's on the TV, for the phone's remote to follow (ADR-037): the PIN pad,
 // what it's for and how many digits are in, a text field with the focus and
-// its kind, and home, a menu or the ambient screen. It goes to the daemon as
-// it changes, a few changes at a time. Never a digit of the PIN.
+// its kind, home, a menu or the ambient screen, and whether the focus is on
+// an app's tile, where a hold opens its details (ADR-089). It goes to the
+// daemon as it changes, a few changes at a time. Never a digit of the PIN.
 
 type Pin = { title: string; for: string; digits: number; error: string | null } | null;
 type Field = { kind: string; label?: string };
-type Context = { pin: Pin; field: Field | null; screen: "home" | "menu" | "ambient" };
+type Context = { pin: Pin; field: Field | null; screen: "home" | "menu" | "ambient"; details: boolean };
 
-const now: Context = { pin: null, field: null, screen: "home" };
+const now: Context = { pin: null, field: null, screen: "home", details: false };
 let timer = 0;
 
 export function tell(change: Partial<Context>): void {

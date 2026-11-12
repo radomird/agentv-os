@@ -197,6 +197,7 @@ test("S2.12 the daemon passes on what the update check found and how an install 
     wentBack: null,
     seen: { kept: null, wentBack: null, later: null },
     tonight: null,
+    held: null,
   });
   // The TV hears when either changes.
   const events = await fetch(`${url}/api/events`);

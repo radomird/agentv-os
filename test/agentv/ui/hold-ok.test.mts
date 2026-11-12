@@ -16,7 +16,7 @@
 //   for it.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +31,7 @@ const { chromium } = require("playwright-core") as typeof import("playwright-cor
 
 const LOOKS = ["terminal", "glass", "cinema"] as const;
 type Look = (typeof LOOKS)[number];
-const KEY_NAMES: Record<string, string> = { enter: "Enter", up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", back: "Escape", home: "Home" };
+const KEY_NAMES: Record<string, string> = { i: "i", enter: "Enter", up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", back: "Escape", home: "Home" };
 // An app on every look's home, and one that's only in Apps.
 const APP = "agentv.tube";
 
@@ -40,6 +40,7 @@ let browser: Browser;
 let daemon: Daemon;
 let input: RemoteInput;
 let url = "";
+let appsDir = "";
 // The TV's page the phone's keys go to, and what the phone sent.
 let screen: Page | null = null;
 const sent: Record<string, unknown>[] = [];
@@ -77,7 +78,13 @@ before(async () => {
   const passwd = join(dir, "passwd");
   writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
   process.env.AGENTV_PASSWD = passwd;
-  ({ daemon, url } = await startBox());
+  ({ daemon, url, apps: appsDir } = await startBox());
+  // A page app, as an app or a game made on this TV is: a page in home's
+  // own window.
+  cpSync(join(import.meta.dirname, "../fixtures/apps/blocks"), join(appsDir, "agentv.blocks"), { recursive: true });
+  const installed = JSON.parse(readFileSync(join(appsDir, "installed.json"), "utf8"));
+  installed["agentv.blocks"] = { id: "agentv.blocks", name: "Blocks", version: "1.0.0", tier: "official", installedAt: "2026-10-27T12:00:00Z" };
+  writeFileSync(join(appsDir, "installed.json"), JSON.stringify(installed, null, 2));
   await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "field" }) });
   input = new RemoteInput({ url: `${url}/api/remote`, send: press, log: () => {} });
   input.start();
@@ -157,21 +164,21 @@ async function holdEnter(page: Page, ms: number, key = "Enter"): Promise<void> {
 
 // A paired phone with the d-pad on, which has the remote's OK button. Its
 // buzz is kept, since a headless phone has none.
-async function phone(): Promise<Page> {
+async function phone(dpad = true): Promise<Page> {
   await fetch(`${url}/api/phones/pair`, { method: "POST" });
   const page = await browser.newPage({ viewport: { width: 375, height: 812 }, hasTouch: true });
   page.on("pageerror", (error) => errors.push(`${page.url()}: ${error.message}`));
-  await page.addInitScript(() => {
-    localStorage.setItem("agentv-phone-dpad", "on");
+  await page.addInitScript((on) => {
+    if (on) localStorage.setItem("agentv-phone-dpad", "on");
     const w = window as unknown as { buzzed: unknown[] };
     w.buzzed = [];
     navigator.vibrate = (pattern) => {
       w.buzzed.push(pattern);
       return true;
     };
-  });
+  }, dpad);
   await page.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
-  await page.waitForSelector('.r2 [data-key="enter"]');
+  await page.waitForSelector(dpad ? '.r2 [data-key="enter"]' : '.r2-surface[data-action="surface"]');
   return page;
 }
 
@@ -240,17 +247,18 @@ for (const look of LOOKS) {
     assert.deepEqual(sent, [{ key: "enter" }]);
     assert.equal(await page.locator(".details-head").count(), 0);
 
-    // A finger held on OK: the phone ticks as the hold lands and sends it,
-    // the TV opens details, and nothing more is sent as the finger lifts.
+    // A finger held on OK: the phone ticks as the hold lands and asks for
+    // details, the TV opens them, and nothing more is sent as the finger
+    // lifts. The phone knows from the TV that a tile has the focus.
+    await until(async () => (await hand.locator(".r2-ok").count()) === 1 && (daemon as unknown as { tv: { details: boolean } }).tv.details);
     sent.length = 0;
     await hand.evaluate(() => ((window as unknown as { buzzed: unknown[] }).buzzed.length = 0));
     await touchOk(hand, 900);
     await onDetails(page);
     await until(() => sent.length === 1);
-    assert.deepEqual(sent, [{ hold: "enter", ms: 700 }]);
+    assert.deepEqual(sent, [{ key: "i" }]);
     assert.deepEqual(await hand.evaluate(() => (window as unknown as { buzzed: unknown[] }).buzzed), [10, 20], "the press's own buzz, then one tick as the hold lands");
-    // Once the TV has let the key go.
-    await sleep(900);
+    await sleep(300);
     assert.equal(sent.length, 1);
     assert.equal((await asked(page, "open-app")).length, before + 1, "the hold opened nothing");
     assert.equal(await page.locator(".details-head").count(), 1);
@@ -305,13 +313,14 @@ test("T16.1 OK held on something that isn't a tile is one OK, however long the k
   await holdEnter(page, 700);
   await sleep(200);
   assert.equal(await opened(), 1, "a key held on Play opens once");
-  // And from the phone, whose hold the TV keeps down for 700 ms.
+  // And from the phone, which knows the focus is on no tile: one OK as the
+  // finger lifts.
   const hand = await phone();
   sent.length = 0;
   await touchOk(hand, 900);
   await until(() => sent.length === 1);
-  await sleep(900);
-  assert.deepEqual(sent, [{ hold: "enter", ms: 700 }]);
+  await sleep(300);
+  assert.deepEqual(sent, [{ key: "enter" }]);
   assert.equal(await opened(), 2, "a finger held on the phone's OK opens once more");
   assert.equal(await page.locator(".details-head").count(), 0);
   await hand.close();
@@ -341,6 +350,71 @@ test("T16.1 OK held on something that isn't a tile is one OK, however long the k
     const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).grant;
     await send("DELETE", "/api/pin", undefined, grant);
   }
+  await page.close();
+});
+
+// A finger held still on the phone's swipe pad for ms.
+async function touchPad(hand: Page, ms: number): Promise<void> {
+  const box = (await hand.locator('.r2-surface[data-action="surface"]').boundingBox())!;
+  const cdp = await hand.context().newCDPSession(hand);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }] });
+  await sleep(ms);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
+test("a hold on the phone's swipe pad opens details only on an app's tile, on home and in Apps: in Settings, on a details page and with an app made on the TV in front it gives the pointer and presses nothing", async () => {
+  await useLook("glass");
+  const page = await tv();
+  const hand = await phone(false);
+  const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
+  const says = (what: string) => until(async () => (await hint()) === what);
+  const pointerAndNothingSent = async (where: string) => {
+    await says("hold for the pointer");
+    sent.length = 0;
+    await touchPad(hand, 800);
+    await hand.waitForSelector(".r2-pointer");
+    await sleep(200);
+    assert.deepEqual(sent, [], `${where}: the TV got no key`);
+    await hand.locator('[data-action="pointer-done"]').click();
+    await hand.waitForSelector('.r2-surface[data-action="surface"]');
+  };
+
+  // A tile on home, then one in Apps: details.
+  for (const [route, tile] of [["home", `#page [data-id="${APP}"]`], ["apps", `.apps-page [data-id="${APP}"]`]] as const) {
+    await go(page, route);
+    await focusOn(page, tile);
+    await says("hold for details");
+    sent.length = 0;
+    await touchPad(hand, 800);
+    await onDetails(page);
+    assert.deepEqual(sent, [{ key: "i" }], route);
+    assert.equal(await hand.locator(".r2-pointer").count(), 0);
+    // On the details page, with the focus on Open: the pointer, and the
+    // app doesn't open.
+    await pointerAndNothingSent("a details page");
+    assert.deepEqual(await asked(page, "open-app"), []);
+    await page.keyboard.press("Escape");
+  }
+
+  // Settings, with the focus on a row: nothing is pressed.
+  await go(page, "settings");
+  await page.waitForSelector("#page .focused");
+  const where = () => page.evaluate(() => `${location.hash} ${document.querySelector("#page .focused")?.textContent}`);
+  const row = await where();
+  await pointerAndNothingSent("Settings");
+  assert.equal(await where(), row, "Settings is where it was");
+
+  // An app made on the TV in front, which is a page in home's own window.
+  // Opened from its tile, which had details a moment ago.
+  await go(page, "home");
+  await focusOn(page, `#page [data-id="${APP}"]`);
+  await says("hold for details");
+  await go(page, "app/agentv.blocks");
+  await page.waitForSelector(".page-app-view", { state: "attached" });
+  await page.waitForSelector(".page-app.on iframe");
+  await pointerAndNothingSent("an app made on the TV");
+  await hand.close();
   await page.close();
 });
 
