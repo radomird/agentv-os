@@ -608,7 +608,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
 
   // The CLI's first run, as the screen daemon tells it.
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
-  await page.waitForFunction(() => /claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /Claude Code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   await page.keyboard.press("Enter");
   await page.waitForSelector(".people");
   assert.match(await textOf(page, ".bar"), /claude code ready/, "the CLI's state stays in the bar");
@@ -626,7 +626,7 @@ test("Q103 with Claude's plan, once its terms are accepted and the CLI is in, th
   assert.match(await plan.innerText(), /^\[ \] claude pro or max · you'll sign in to it the first time agentv builds an app$/);
   assert.match((await plan.getAttribute("class")) ?? "", /mark-todo/);
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
-  await page.waitForFunction(() => /\[x\] claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /\[x\] Claude Code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   assert.doesNotMatch(await textOf(page, ".ready-list"), /signed in/);
   await page.close();
 });

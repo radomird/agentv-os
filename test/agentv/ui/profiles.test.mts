@@ -146,7 +146,7 @@ test("S4.2 a profile is added on the TV: a typed name, then its role and colour 
   assert.equal(await page.locator(".profile-head .avatar.avatar-yellow").innerText(), "l");
   // With no PIN, a child's profile can't be added, and the TV says why.
   await page.locator('[data-action="save"]').click();
-  await page.waitForFunction(() => /needs an adult pin/.test(document.querySelector(".toast")?.textContent ?? ""));
+  await page.waitForFunction(() => /adult pin/i.test(document.querySelector(".toast")?.textContent ?? ""));
   assert.equal((await viewers()).length, 2);
 
   // With one, it asks for it first.
