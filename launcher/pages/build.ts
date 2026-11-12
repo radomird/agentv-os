@@ -565,7 +565,7 @@ async function removeBuilt(ctx: Ctx, id: string, name: string): Promise<void> {
 // on home.
 export function buildChange(ctx: Ctx, id: string): View {
   const now = builds().find((b) => b.id === id && b.state === "installed");
-  const name = now ? nameOf(now) : id;
+  const name = now ? nameOf(now) : (ctx.state.apps.find((app) => app.id === id)?.name ?? id);
   const field = h("input", {
     class: "music-search build-ask",
     "data-focus": true,
