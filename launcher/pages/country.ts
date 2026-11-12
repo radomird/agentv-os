@@ -1,5 +1,5 @@
 // The TV's location (ADR-055), which setup confirmed: a row in Settings,
-// This TV, and the page it opens to pick another. The time zone and new
+// System, and the page it opens to pick another. The time zone and new
 // this week follow it.
 
 import { daemon, type Country, type CountryState } from "../api.ts";
@@ -17,7 +17,7 @@ export async function loadCountry(): Promise<void> {
   countryState = await daemon.country().catch(() => countryState);
 }
 
-// The value of This TV's "Location" row.
+// The value of System's "Location" row.
 export function countryValue(): string {
   return countryState ? (countryState.name ?? "No location yet") : "";
 }

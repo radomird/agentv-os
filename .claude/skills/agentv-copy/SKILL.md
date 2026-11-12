@@ -47,7 +47,7 @@ These are Radomir's notes on the rules, and they win where the two differ.
 
 ### Never say
 
-To someone on the couch, AgenTV never says: agent, builder, a build, recipe, provider, daemon, box, session, edge, stable channel, nightly run, tier, contract, capability, adapter, index, router, relay, sandbox, safeguards, cap, origin, manifest, package, snapshot, migration, mount, share (for a network folder), source (for where music is), ambient, the system, root, country, region.
+To someone on the couch, AgenTV never says: agent, builder, a build, recipe, provider, daemon, box, session, edge, stable channel, nightly run, tier, contract, capability, adapter, index, router, relay, sandbox, safeguards, cap, origin, manifest, package, snapshot, migration, mount, share (for a network folder), source (for where music is), ambient, the system (in a sentence; Settings' section is called System), root, country, region.
 
 What stays, because it's someone else's word or a name: "API key" and "plan" (the AI companies' own terms), their plan names and terms, "Powered by Omarchy", "Omarchy's desktop", the TMDB, JustWatch and MET Norway credits, trademark notices, and GitHub.
 
