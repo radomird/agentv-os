@@ -410,6 +410,35 @@ test("a phone whose first ask after pairing gets no answer still follows the TV,
   await hand.close();
 });
 
+test("a paired phone opened while the TV is away says it's waiting, then follows the TV when it's back", async () => {
+  // The TV off or restarting is ordinary. The page said nothing at all then.
+  const { code } = await pairCode();
+  const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  hand.on("pageerror", (error) => errors.push(error.message));
+  let away = true;
+  await hand.route("**/api/phone/state*", (route) => (away ? route.abort() : route.continue()));
+  await hand.goto(`${phoneUrl}/`);
+  await hand.waitForSelector("input.code");
+  // Paired by the code: the pairing page goes, and the phone says what it's
+  // waiting for. Pressing pair again there would only say the code is spent.
+  await hand.locator("input.code").fill(code);
+  await hand.locator("button.primary").tap();
+  await hand.waitForSelector(".waiting", { timeout: 5000 });
+  assert.match(await hand.locator(".waiting").innerText(), /waiting for the tv/);
+  assert.equal(await hand.locator("input.code").count(), 0);
+  // Opened again while the TV is still away: the same line, not a blank page.
+  await hand.reload();
+  await hand.waitForSelector(".waiting", { timeout: 5000 });
+  await hand.waitForTimeout(2500);
+  assert.equal(await hand.locator(".waiting").count(), 1);
+  assert.equal(await hand.locator("input.code").count(), 0);
+  // The TV is back: the remote takes the line's place.
+  away = false;
+  await hand.waitForSelector(".dpad", { timeout: 8000 });
+  assert.equal(await hand.locator(".waiting").count(), 0);
+  await hand.close();
+});
+
 test("a page that isn't the TV's, answering in its place once, doesn't stop the phone following the TV", async () => {
   const hand = await phone();
   // A network's own sign-in page, to the phone's next ask for what's on.
