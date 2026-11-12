@@ -24,7 +24,7 @@ async function load(): Promise<NonNullable<typeof known>> {
 // The country confirmed or picked, then on to the next step.
 async function choose(ctx: Ctx, code: string): Promise<void> {
   try {
-    if (!(await ctx.guarded("the country", (grant) => setup.setCountry(code, grant)))) return;
+    if (!(await ctx.guarded("changing location", (grant) => setup.setCountry(code, grant)))) return;
   } catch (error) {
     ctx.toast((error as Error).message, "fail");
     ctx.sounds.play("failure");
@@ -38,23 +38,23 @@ export async function country(ctx: Ctx): Promise<View> {
   if (!state?.code || !state.name) return pick(ctx);
   const code = state.code;
   const name = state.name;
-  const ok = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void choose(ctx, code) }, "↵ that's right");
-  const other = h("button", { class: "button", "data-focus": true, "data-action": "country-other", onclick: () => ctx.open("country/pick") }, "another country");
-  const top = heading("where is this tv?", `${name.toLowerCase()}.`, ctx.reduced());
+  const ok = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void choose(ctx, code) }, "Yes");
+  const other = h("button", { class: "button", "data-focus": true, "data-action": "country-other", onclick: () => ctx.open("country/pick") }, "Another location");
+  const top = heading("tv location", `${name}?`, ctx.reduced());
   if (name.length > 14) top[1].classList.add("long");
   const el = h(
     "div",
     { class: "setup-page" },
     h("div", { class: "setup-top" }, h("div", {}, ...top), ok),
-    h("div", { class: "setup-foot country-foot" }, h("span", { class: "setup-note" }, "the time and what's new on your apps follow the country."), other),
+    h("div", { class: "setup-foot country-foot" }, h("span", { class: "setup-note" }, "It sets your clock and what's new"), other),
   );
-  return { el, first: ok, info: "↵ that's right · ↓ another country" };
+  return { el, first: ok };
 }
 
 export async function pick(ctx: Ctx): Promise<View> {
   const state = known ?? (await load().catch(() => null));
   const picker = countryPicker(state?.countries ?? [], state?.code ?? null, (c) => void choose(ctx, c.code));
-  const top = heading("where is this tv?", "pick the country.", ctx.reduced());
-  const el = h("div", { class: "setup-page" }, h("div", {}, ...top), picker.el, h("span", { class: "setup-note" }, "type it on your phone, or move with the arrows. the time and what's new follow it."));
-  return { el, first: picker.first, info: "↑↓←→ move · ↵ pick" };
+  const top = heading("tv location --pick", "Pick your location", ctx.reduced());
+  const el = h("div", { class: "setup-page" }, h("div", {}, ...top), picker.el, h("span", { class: "setup-note" }, "Type on your phone, or use the arrows"));
+  return { el, first: picker.first };
 }

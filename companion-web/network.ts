@@ -50,7 +50,17 @@ function machines(found: Found[]): Row[] {
     const known = byHost.get(one.host);
     if (!known || (known.kind === "nfs" && one.kind === "smb")) byHost.set(one.host, one);
   }
-  return [...byHost.values()].map((one) => ({ key: `nas ${one.host}`, text: `${one.name.toLowerCase()} · ${one.host}` }));
+  return [...byHost.values()].map((one) => ({ key: `nas ${one.host}`, text: `${one.name} · ${one.host}` }));
+}
+
+// Where a server answers, as its row says it: the address in its link, so
+// a server that answers from two addresses is two rows that read apart.
+function address(one: Found): string {
+  try {
+    return new URL(one.url).host || one.host;
+  } catch {
+    return one.host;
+  }
 }
 
 // The line for the list on the TV. It asks the box for what's in it for as
@@ -58,13 +68,13 @@ function machines(found: Found[]): Row[] {
 export function networkLine(list: TvList, failed: (error: unknown) => void): HTMLElement {
   const folders = "host" in list;
   const rows = h("div", { class: "r2-network-rows" });
-  const status = h("span", { class: "r2-network-status" }, "looking…");
+  const status = h("span", { class: "r2-network-status" }, "Looking…");
   const el = h(
     "section",
-    { class: "r2-network", "aria-label": folders ? `${list.host}'s folders` : "on your network" },
-    h("div", { class: "r2-network-head" }, h("span", {}, folders ? list.host : "on your network"), status),
+    { class: "r2-network", "aria-label": folders ? `${list.host}'s folders` : "On your network" },
+    h("div", { class: "r2-network-head" }, h("span", {}, folders ? list.host : "On your network"), status),
     rows,
-    folders ? null : row("typed", "type an address", "r2-network-typed"),
+    folders ? null : row("typed", "Type its address", "r2-network-typed"),
   );
   let shown = "";
   let placed = false;
@@ -96,15 +106,15 @@ export function networkLine(list: TvList, failed: (error: unknown) => void): HTM
       const answer = await api<{ shares?: Share[]; login?: boolean }>("GET", `/api/phone/discover/shares?host=${encodeURIComponent(list.host)}`);
       const shares = answer.shares ?? [];
       draw(
-        shares.map((share) => ({ key: share.uri, text: share.name.toLowerCase() })),
-        answer.login && !shares.length ? "sign in to it on the tv" : shares.length ? "" : "no folders to share",
+        shares.map((share) => ({ key: share.uri, text: share.name })),
+        answer.login && !shares.length ? "Sign in to it on your TV" : shares.length ? "" : "No shared folders",
       );
       return AGAIN_MS;
     }
     const answer = await api<{ found?: Found[]; looking?: boolean }>("GET", `/api/phone/discover?kinds=${list.kinds.join(",")}`);
     const found = (answer.found ?? []).filter((one) => list.kinds.includes(one.kind));
-    const items = list.machines ? machines(found) : found.map((one) => ({ key: `${one.kind} ${one.url}`, text: `${one.name.toLowerCase()} · ${one.host}` }));
-    draw(items, answer.looking ? "looking…" : items.length ? "" : "nothing answered");
+    const items = list.machines ? machines(found) : found.map((one) => ({ key: `${one.kind} ${one.url}`, text: `${one.name} · ${address(one)}` }));
+    draw(items, answer.looking ? "Looking…" : items.length ? "" : "Nothing found");
     return answer.looking ? LOOKING_MS : AGAIN_MS;
   };
 

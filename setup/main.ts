@@ -221,8 +221,8 @@ const ctx: Ctx = {
     let grant: string | null = null;
     const ok = await openPad({
       command: "tv setup · pin",
-      title: "enter the adult pin",
-      note: `for ${what}.`,
+      title: "Enter the adult PIN",
+      note: `For ${what}`,
       cancel: true,
       submit: async (pin) => {
         const reply = await daemon.checkPin(pin);
@@ -239,7 +239,7 @@ const ctx: Ctx = {
     try {
       return { value: await send(grant || undefined) };
     } catch (error) {
-      if ((error as Error).message !== NEEDS_PIN) throw error;
+      if ((error as Error).message.toLowerCase() !== NEEDS_PIN) throw error;
     }
     // The TV asked for the PIN, so there is one, whatever this page knew.
     held = null;

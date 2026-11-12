@@ -98,14 +98,14 @@ export function bar(step: string, info: string, count?: { n: number; of: number 
   const blocks = count
     ? h(
         "span",
-        { class: "bar-blocks", role: "img", "aria-label": `step ${count.n} of ${count.of}` },
+        { class: "bar-blocks", role: "img", "aria-label": `Step ${count.n} of ${count.of}` },
         ...Array.from({ length: count.of }, (_, i) => h("span", { class: `bar-block${i < count.n ? " done" : ""}` })),
       )
     : null;
   return h(
     "div",
     { class: `bar${count ? " counted" : ""}` },
-    h("div", { class: "bar-left" }, h("span", { class: "bar-mode" }, "setup"), ...(blocks ? [blocks] : []), h("span", { class: "bar-step" }, step)),
+    h("div", { class: "bar-left" }, h("span", { class: "bar-mode" }, "Setup"), ...(blocks ? [blocks] : []), h("span", { class: "bar-step" }, step)),
     h("div", { class: "bar-right" }, h("span", { class: "bar-info" }, info), time),
   );
 }

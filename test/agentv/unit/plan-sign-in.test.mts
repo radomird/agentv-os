@@ -506,7 +506,7 @@ test("ADR-040 the daemon asks for the sign-in once, shows its link, hands over t
   take("sign-in");
   said({ state: "waiting", url: "https://claude.ai/oauth/authorize?state=s7Q", at: "2026-10-27T18:02:00Z" });
   assert.deepEqual((await builds.find(made.build))!.signIn, { state: "waiting", url: "https://claude.ai/oauth/authorize?state=s7Q", pastes: true });
-  assert.match((await builds.signInCode(made.build, "two words")).error!, /paste the code/);
+  assert.match((await builds.signInCode(made.build, "two words")).error!, /Paste the code/);
   assert.deepEqual(await builds.signInCode(made.build, " good-code#s7Q "), {});
   assert.deepEqual(take("sign-in-code"), { code: "good-code#s7Q" });
 
@@ -524,7 +524,7 @@ test("a sign-in that didn't finish, or a stop, fails the build, which tries agai
   status(made.id, { build: made.build, state: "plan-sign-in", at: "2026-10-27T18:01:00Z" });
   said({ state: "failed", reason: "it took longer than 15 minutes", at: "2026-10-27T18:20:00Z" });
   const failed = (await builds.find(made.build))!;
-  assert.deepEqual([failed.state, failed.reason, failed.signIn], ["failed", "couldn't sign in to the plan: it took longer than 15 minutes", undefined]);
+  assert.deepEqual([failed.state, failed.reason, failed.signIn], ["failed", "Couldn't sign in to Claude", undefined]);
   assert.equal(await builds.tend(), false, "not asked for again by itself");
   assert.equal((await builds.retry(made.build)).error, undefined);
   assert.equal(take("start").phase, "understand");
@@ -532,7 +532,7 @@ test("a sign-in that didn't finish, or a stop, fails the build, which tries agai
   status(made.id, { build: made.build, state: "plan-sign-in", at: "2026-10-27T18:21:00Z" });
   said({ state: "waiting", url: "https://claude.ai/x", at: "2026-10-27T18:22:00Z" });
   writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "stop", build: null, started: false, reason: "stopped", at: "2026-10-27T18:23:00Z" }));
-  assert.deepEqual([(await builds.find(made.build))!.state, (await builds.find(made.build))!.reason], ["failed", "couldn't sign in to the plan: you stopped it"]);
+  assert.deepEqual([(await builds.find(made.build))!.state, (await builds.find(made.build))!.reason], ["failed", "You stopped it"]);
 });
 
 test("ADR-040 a plan whose sign-in ran out gets a sign-in of its own, not the one before, and the TV and phone hear it's one again", async () => {

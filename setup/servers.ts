@@ -20,7 +20,7 @@ import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
 const MUSIC = "agentv.music";
-const NAMES: Record<string, string> = { "agentv.jellyfin": "jellyfin", "agentv.plex": "plex", "agentv.immich": "immich", [MUSIC]: "music" };
+const NAMES: Record<string, string> = { "agentv.jellyfin": "Jellyfin", "agentv.plex": "Plex", "agentv.immich": "Immich", [MUSIC]: "Music" };
 
 // The apps still to go, the one on screen first.
 let queue: string[] = [];
@@ -62,11 +62,11 @@ async function pickServer(ctx: Ctx, app: string, url: string, called: string): P
   const answer = picked.value;
   if (!answer?.ok) {
     ctx.sounds.play("failure");
-    ctx.toast(answer?.error ?? "the tv couldn't keep that", "fail");
+    ctx.toast(answer?.error ?? "Couldn't save that", "fail");
     return false;
   }
   ctx.sounds.play("confirm");
-  ctx.toast(`${name} will use ${called.toLowerCase()}`, "ok");
+  ctx.toast(`${name} will use ${called}`, "ok");
   return true;
 }
 
@@ -83,8 +83,8 @@ export function serverPage(ctx: Ctx): View {
 // The two rows under every list: an address typed on the phone, and later.
 function choices(ctx: Ctx, typed: () => void): { typed: HTMLElement; later: HTMLElement } {
   return {
-    typed: h("button", { class: "button found-typed", "data-focus": true, "data-action": "type-address", onclick: typed }, "type an address on your phone"),
-    later: h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => next(ctx) }, "set it up later"),
+    typed: h("button", { class: "button found-typed", "data-focus": true, "data-action": "type-address", onclick: typed }, "Type its address"),
+    later: h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => next(ctx) }, "Later"),
   };
 }
 
@@ -96,7 +96,7 @@ function appPage(ctx: Ctx, app: string): View {
     "data-field": "address",
     type: "url",
     placeholder: "http://192.168.1.20:8096",
-    "aria-label": `your ${name} server's address`,
+    "aria-label": `Your ${name} server's address`,
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
@@ -125,10 +125,10 @@ function appPage(ctx: Ctx, app: string): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading(`agentv app setup ${name}`, `pick your ${name}.`, ctx.reduced())),
-    h("div", { class: "found" }, h("span", { class: "field-label" }, "found on your network"), list.el, typed, form, later),
+    h("div", {}, ...heading(`agentv app setup ${name.toLowerCase()}`, `Pick your ${name}`, ctx.reduced())),
+    h("div", { class: "found" }, h("span", { class: "field-label" }, "Found on your network"), list.el, typed, form, later),
   );
-  return { el, first: typed, info: "↑↓ move · ↵ pick" };
+  return { el, first: typed };
 }
 
 function musicPage(ctx: Ctx): View {
@@ -140,16 +140,16 @@ function musicPage(ctx: Ctx): View {
   const add = async (uri: string, called: string, password?: string, folders?: ReturnType<typeof shareList>): Promise<void> => {
     if (adding) return;
     adding = true;
-    ctx.toast("mounting the share");
+    ctx.toast("Connecting…");
     const reply = await screen.music("add-share", { uri, ...(password ? { password } : {}) }).finally(() => (adding = false));
     if (reply.ok) {
       ctx.sounds.play("confirm");
-      ctx.toast(`${called.toLowerCase()} is a music source now`, "ok");
+      ctx.toast(`Added ${called} to your music`, "ok");
       next(ctx);
       return;
     }
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? "that share didn't mount", "fail");
+    ctx.toast(reply.error ?? "Couldn't open that folder", "fail");
     // A folder shown to a guest that wants a user name to open.
     if (/user name and password/.test(reply.error ?? "") && !password) folders?.signIn();
   };
@@ -157,8 +157,8 @@ function musicPage(ctx: Ctx): View {
   // The NASes on the network, and a share's address typed on the phone.
   const machines = () => {
     nasHost = null;
-    const address = h("input", { class: "text-field", "data-focus": true, "data-field": "share", type: "url", placeholder: "smb://nas.local/music", "aria-label": "the share's address", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
-    const password = h("input", { class: "text-field", "data-focus": true, "data-field": "password", type: "password", placeholder: "its password, if it has one", "aria-label": "the share's password", autocomplete: "current-password" }) as HTMLInputElement;
+    const address = h("input", { class: "text-field", "data-focus": true, "data-field": "share", type: "url", placeholder: "smb://nas.local/music", "aria-label": "Folder address", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+    const password = h("input", { class: "text-field", "data-focus": true, "data-field": "password", type: "password", placeholder: "Password, if it needs one", "aria-label": "Folder password", autocomplete: "current-password" }) as HTMLInputElement;
     const form = h("div", { class: "profile-form hidden" }, address, password);
     for (const field of [address, password]) {
       field.addEventListener("keydown", (event) => {
@@ -178,8 +178,8 @@ function musicPage(ctx: Ctx): View {
     });
     const list = foundList({ kinds: NAS, machines: true, focus: ctx.focus, typed, pick: (one) => folders(one.host) });
     el.replaceChildren(
-      h("div", {}, ...heading("agentv music sources", "pick your nas.", ctx.reduced())),
-      h("div", { class: "found" }, h("span", { class: "field-label" }, "found on your network"), list.el, typed, form, later),
+      h("div", {}, ...heading("agentv music sources", "Pick your drive", ctx.reduced())),
+      h("div", { class: "found" }, h("span", { class: "field-label" }, "Found on your network"), list.el, typed, form, later),
     );
     return typed;
   };
@@ -189,8 +189,8 @@ function musicPage(ctx: Ctx): View {
     nasHost = host;
     const list: ReturnType<typeof shareList> = shareList({ host, focus: ctx.focus, pick: (share: ShareFound, password?: string) => void add(share.uri, share.name, password, list) });
     el.replaceChildren(
-      h("div", {}, ...heading(`agentv music sources ${host}`, `${host}.`, ctx.reduced())),
-      h("div", { class: "found" }, h("span", { class: "field-label" }, "pick the folder with your music"), list.el),
+      h("div", {}, ...heading(`agentv music sources ${host}`, host, ctx.reduced())),
+      h("div", { class: "found" }, h("span", { class: "field-label" }, "Pick the folder with your music"), list.el),
     );
     ctx.sounds.play("forward");
   };
@@ -199,7 +199,6 @@ function musicPage(ctx: Ctx): View {
   return {
     el,
     first,
-    info: "↑↓ move · ↵ pick",
     // Back from a NAS's folders goes back to the NASes.
     back() {
       if (!nasHost) return false;

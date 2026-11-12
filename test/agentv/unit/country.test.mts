@@ -187,7 +187,7 @@ test("ADR-055 setup confirms the country after getting ready, and a box already 
   await fresh.finish("welcome");
   await fresh.finish("ready");
   assert.equal((await fresh.read()).step, "country");
-  assert.deepEqual(await fresh.finish("ai"), { error: "country isn't finished yet" });
+  assert.deepEqual(await fresh.finish("ai"), { error: "Finish location first" });
   assert.equal((await fresh.finish("country")).state?.step, "ai");
   // A box on the AI step when an update brought the country step.
   const path = join(scratch, "past", "setup.json");
