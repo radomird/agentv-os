@@ -203,7 +203,7 @@ AgenTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4.5 and
 
 This repo is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that follows Omarchy's stable releases. I don't edit Omarchy's own files here, with one exception: the security policy and the issue forms are AgenTV's, so a report about AgenTV reaches me and not Omarchy. Everything AgenTV adds lives in the folders above. Omarchy's own README is still here, at [`../README.md`](../README.md).
 
-Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. AgenTV's additions are copyright Radomir Drndarski and use the same licence. AgenTV isn't made or endorsed by the Omarchy project.
+Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. AgenTV's additions are copyright Radomir Drndarski and use the same licence, with two exceptions. The [menu sounds](../launcher/sounds/LICENSE) and the [setup music](../setup/audio/LICENSE) are all rights reserved and ship only with AgenTV. The fonts keep their own [open licence](../launcher/fonts/OFL.txt). AgenTV isn't made or endorsed by the Omarchy project.
 
 The AgenTV wordmark is drawn in the letters of Omarchy's logo, as a thank-you, and its "a" is Omarchy's own.
 
