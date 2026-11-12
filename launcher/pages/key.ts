@@ -9,7 +9,7 @@
 // used (Q104, ADR-023).
 
 import { daemon, type KeyState, type KeyTerms } from "../api.ts";
-import { h } from "../dom.ts";
+import { asWritten, h } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -391,10 +391,11 @@ export function planSignInPage(ctx: Ctx): View {
 
   const draw = (now: PlanSignIn | null) => {
     const state = now?.now?.state;
-    line.textContent = now?.signedIn
-      ? "you're signed in. builds and voice use your plan."
-      : state === "waiting" && now?.now?.code
-        ? `scan to sign in, then enter ${now.now.code}`
+    // The code to enter keeps its capitals.
+    if (!now?.signedIn && state === "waiting" && now?.now?.code) line.replaceChildren("scan to sign in, then enter ", asWritten(now.now.code));
+    else
+      line.textContent = now?.signedIn
+        ? "you're signed in. builds and voice use your plan."
         : state === "waiting" && now?.now?.pastes
           ? "scan to sign in, then paste the code it gives you"
           : state === "waiting"

@@ -7,7 +7,7 @@
 // shows.
 
 import { daemon, screen, shownCurrent, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
-import { h } from "../launcher/dom.ts";
+import { asWritten, h } from "../launcher/dom.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "../launcher/pages/network.ts";
 import { setup } from "./api.ts";
@@ -68,6 +68,17 @@ export async function background(ctx: Ctx): Promise<View> {
     const photos = now.items.filter((item) => item.kind === "photo").length;
     const shown = shownPictures(now);
     const theme = now.theme?.name?.replace(/[-_]+/g, " ");
+    // A work's credit is its maker's name and its title, as they write them.
+    const credit = now.source === "art" ? shown.find((item) => item.id === now.current)?.credit.text : undefined;
+    if (credit) {
+      line.replaceChildren(asWritten(credit));
+      return;
+    }
+    // So is the name of a folder or an album the pictures came from.
+    if (now.source === "folder" && shown[0]?.credit.from) {
+      line.replaceChildren(`${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from `, asWritten(shown[0].credit.from), ".");
+      return;
+    }
     line.textContent =
       now.source === "theme"
         ? own
@@ -159,7 +170,7 @@ export function photos(ctx: Ctx): View {
   if (!paired) {
     void setup.pair().then((code) => {
       if (code?.url) qr.setAttribute("src", `/api/phones/qr?${code.code}`);
-      label.textContent = code ? `pair a phone · code ${code.code}` : "";
+      label.replaceChildren(...(code ? ["pair a phone · code ", asWritten(code.code)] : []));
     });
   }
   let moved = false;

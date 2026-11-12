@@ -10,7 +10,7 @@
 // no "use a keyboard instead": the phone is the way in. Enter still carries
 // on the same way, for a household with only a keyboard.
 
-import { h } from "../launcher/dom.ts";
+import { asWritten, h } from "../launcher/dom.ts";
 import { joinFields, networkRow, type Picked } from "../launcher/wifi-parts.ts";
 import { setup, type SetupInfo } from "./api.ts";
 import { heading, hi, prompt } from "./frame.ts";
@@ -58,7 +58,9 @@ export function welcome(ctx: Ctx, phase2 = false): View {
   let stopped = false;
   let timer = 0;
 
-  const showQr = (src: string | null, text: string) => {
+  // The words under the code. A code, a network's name and its password keep
+  // their capitals where the rest is drawn in lower case.
+  const showQr = (src: string | null, ...text: (string | Node)[]) => {
     if (src) {
       if (qr.getAttribute("src") !== src) qr.setAttribute("src", src);
       right.classList.remove("away");
@@ -66,7 +68,7 @@ export function welcome(ctx: Ctx, phase2 = false): View {
       right.classList.add("away");
       qr.removeAttribute("src");
     }
-    label.textContent = text;
+    label.replaceChildren(...text);
   };
 
   // A code that pairs the phone, a new one shortly before it runs out.
@@ -86,21 +88,21 @@ export function welcome(ctx: Ctx, phase2 = false): View {
     const { hotspot, network } = about;
     if (paired) {
       line.textContent = `${paired} is paired.`;
-      showQr(null, "");
+      showQr(null);
     } else if (hotspot.on && hotspot.ssid) {
       line.textContent = hotspot.error ? `${hotspot.error}. scan the code to try again.` : "scan the code with your phone.";
-      showQr(`/api/hotspot/qr?${encodeURIComponent(hotspot.ssid)}`, hotspot.password ? `wifi ${hotspot.ssid} · password ${hotspot.password}` : `wifi ${hotspot.ssid}`);
+      showQr(`/api/hotspot/qr?${encodeURIComponent(hotspot.ssid)}`, "wifi ", asWritten(hotspot.ssid), ...(hotspot.password ? [" · password ", asWritten(hotspot.password)] : []));
     } else if (hotspot.joining) {
       line.textContent = `joining ${hotspot.joining}.`;
-      showQr(null, "");
+      showQr(null);
     } else if (network.online) {
       const code = await pairCode();
       if (stopped) return;
       line.textContent = about.phones.length ? "your phone is paired. scan the code to pair another." : "scan the code with your phone to pair it.";
-      showQr(code?.url ? `/api/phones/qr?${code.code}` : null, code ? `code ${code.code}` : "");
+      showQr(code?.url ? `/api/phones/qr?${code.code}` : null, ...(code ? ["code ", asWritten(code.code)] : []));
     } else {
       line.textContent = phase2 ? "plug in a network cable." : "plug in a network cable, or press enter to pick a wi-fi.";
-      showQr(null, "");
+      showQr(null);
     }
   }
 

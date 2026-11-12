@@ -53,3 +53,10 @@ export function fit(canvas = { width: 1920, height: 1080 }): void {
   root.style.setProperty("--canvas-height", `${canvas.height}px`);
   root.style.zoom = String(Math.min(innerWidth / canvas.width, innerHeight / canvas.height));
 }
+
+// Words whose capitals matter, kept as written in every look: a code or a
+// password to copy, an address, a network's name. Terminal draws everything
+// else in lower case (launcher.css), and this is how a page says "not this".
+export function asWritten(text: string): HTMLElement {
+  return h("span", { "data-own-case": true }, text);
+}

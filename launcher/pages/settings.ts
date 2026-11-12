@@ -3,7 +3,7 @@
 // desktop and Power work now; the sections later stages build say so.
 
 import { creditLine, daemon, screen, shownCurrent, type AudioState, type Backgrounds, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
-import { h } from "../dom.ts";
+import { asWritten, h } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import { lookId, looksList, sizeId } from "../looks/looks.ts";
 import { lookCards } from "../looks/preview.ts";
@@ -406,7 +406,7 @@ export function settings(ctx: Ctx, open?: string): View {
         "button",
         { class: "button", "data-focus": true, "data-action": "background", onclick: () => void nextBackground() },
         h("span", {}, "background"),
-        h("span", { class: "button-value" }, source === "theme" ? (shown ? creditLine(shown) : "the theme's") : SOURCE_WORDS[source]),
+        h("span", { class: "button-value" }, source === "theme" ? (shown ? asWritten(creditLine(shown)) : "the theme's") : SOURCE_WORDS[source]),
       ),
       ...themePictures(),
     ];
@@ -620,7 +620,8 @@ export function settings(ctx: Ctx, open?: string): View {
         // TMDB's terms: its logo, less prominent than AgenTV's, and its
         // notice; JustWatch's: credit for where to watch.
         h("img", { class: "about-tmdb", src: TMDB_LOGO, alt: "tmdb" }),
-        note(TMDB_NOTICE),
+        // TMDB's own notice, as they word it, in every look.
+        h("p", { class: "panel-note", "data-own-case": true }, TMDB_NOTICE),
         note("where to watch is from justwatch, through tmdb."),
       ],
     },
