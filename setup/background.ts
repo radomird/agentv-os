@@ -73,6 +73,12 @@ export async function background(ctx: Ctx): Promise<View> {
       line.replaceChildren(asWritten(credit));
       return;
     }
+    // Where a folder's pictures are from is a name too: an album's, or a path.
+    const from = now.source === "folder" ? shown[0]?.credit.from : undefined;
+    if (from) {
+      line.replaceChildren(`${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from `, asWritten(from));
+      return;
+    }
     line.textContent =
       now.source === "theme"
         ? own
@@ -81,7 +87,7 @@ export async function background(ctx: Ctx): Promise<View> {
         : now.source === "art"
         ? "Art from museums"
         : now.source === "folder"
-          ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from ${shown[0]?.credit.from ?? "a folder"}`
+          ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from a folder`
           : photos
           ? `${photos === 1 ? "1 photo" : `${photos} photos`} from your phone. Send more any time.`
           : "On your phone, tap Send a photo";

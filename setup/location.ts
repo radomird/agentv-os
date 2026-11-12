@@ -22,9 +22,10 @@ let asked: ZoneAsk | null = null;
 
 const time = (zone: string) => new Date().toLocaleTimeString("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit" });
 const city = (zone: string) => (zone.split("/").pop() ?? zone).replace(/_/g, " ");
-// A name the daemon sent in lower case, with its capitals: "new york" is
-// "New York". One that has capitals already stays as it is.
-const proper = (text: string) => (/\p{Lu}/u.test(text) ? text : text.replace(/(^|\s)\p{L}/gu, (letter) => letter.toUpperCase()));
+// A time zone's name as the daemon sends it, in lower case, with its
+// capitals: "hawaii-aleutian" is "Hawaii-Aleutian". One that has capitals
+// already stays as it is.
+const proper = (text: string) => (/\p{Lu}/u.test(text) ? text : text.replace(/(^|[\s-])\p{L}/gu, (letter) => letter.toUpperCase()));
 // A location as a sentence starts with it: "The Netherlands", "Norway".
 const place = (at: { name: string; called: string }) => (/^the /i.test(at.called) ? `The ${at.name}` : at.name);
 
@@ -120,7 +121,7 @@ export function zoneQuestion(ctx: Ctx): View {
       "button",
       { class: "zone", "data-focus": true, "data-zone": zone.zone, onclick: () => void choose(ctx, question.code, zone.zone) },
       h("span", { class: "zone-name" }, proper(zone.name)),
-      h("span", { class: "zone-where" }, `${proper(zone.city)} · ${time(zone.zone)}`),
+      h("span", { class: "zone-where" }, `${city(zone.zone)} · ${time(zone.zone)}`),
     ),
   );
   const drawn = page(ctx, "agentv location --zone", "Which time zone?", `${place(question)} has ${question.zones.length}`, h("div", { class: "zones" }, ...cards));
