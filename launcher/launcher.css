@@ -64,24 +64,33 @@ body.pointer-hidden * {
 }
 
 /* What keeps its capitals in every look: what someone typed, a code or a
-   password to copy, an app's initials and its own words on its tile, and
-   anything a page marks with data-own-case. */
+   password to copy, a person's or an app's initials, an app's own words on
+   its tile, an update's notes, a picture's credit, and anything a page marks
+   with data-own-case. */
 input,
 textarea,
 code,
 .pair-code,
 .logo,
+.avatar,
 .person-face,
+.app-face,
 .entry-label,
 .entry-caption,
+.tile-head-label,
+.notes,
+.ambient-credit,
 .build-said,
 [data-own-case] {
   text-transform: none;
 }
 
+/* A button doesn't take the page's case by itself, so Terminal's lower case
+   is passed on to it here. */
 button {
   font: inherit;
   color: inherit;
+  text-transform: inherit;
   background: none;
   border: none;
   padding: 0;
