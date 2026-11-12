@@ -133,9 +133,9 @@ test("an index that can't be read says why, and is asked again a little later", 
   assert.deepEqual(list.more.map((app) => app.id), ["agentv.music"], "the built-in apps are still there");
   await apps.list("streaming", [MUSIC]);
   assert.equal(calls, 1, "not asked again at once");
-  assert.match((await apps.install(["agentv.jellyfin"])) ?? "", /isn't signed/);
+  assert.equal(await apps.install(["agentv.jellyfin"]), "Couldn't load the apps. Try again later.", "why is the list's to say: a person reads what to do");
   const nowhere = new SetupApps({ state: join(scratch, "nowhere"), source: async () => undefined });
-  assert.match((await nowhere.list("music", [])).error ?? "", /no app index set up yet/);
+  assert.match((await nowhere.list("music", [])).error ?? "", /^Couldn't load the apps$/);
 });
 
 test("the apps picked go to root in a drop only it takes, and only official apps from the index", async () => {
@@ -149,7 +149,7 @@ test("the apps picked go to root in a drop only it takes, and only official apps
   assert.match((await apps.install(["agentv.plex"])) ?? "", /isn't one of AgenTV's official apps/);
 
   // Nothing takes it: it doesn't stay.
-  assert.match((await apps.install(["agentv.immich"])) ?? "", /agentv-setup-apps.path isn't running/);
+  assert.match((await apps.install(["agentv.immich"])) ?? "", /^Couldn't install the apps\. Restart your TV and try again\.$/);
   assert.ok(!existsSync(join(dir, "apps-drop", "install.json")));
 
   const stop = root(join(dir, "apps-drop", "install.json"), statusPath, (id) => (id === "agentv.steam" ? "failed" : "installed"));
@@ -223,7 +223,7 @@ test("ADR-042 Apps → add an app lists the official apps not on the TV, and add
     assert.equal((await post("/api/apps/add", { id: "agentv.steam" }, grant)).status, 200);
     const second = await post("/api/apps/add", { id: "agentv.jellyfin" }, grant);
     assert.equal(second.status, 400);
-    assert.equal((await second.json()).error, "steam is still installing. add this one once it's done", "root installs one at a time");
+    assert.equal((await second.json()).error, "Steam is still installing. Try again after.", "root installs one at a time");
     const until = Date.now() + 5000;
     let steam = (await listed()).find((app) => app.id === "agentv.steam");
     while (Date.now() < until && steam?.state !== "failed") {

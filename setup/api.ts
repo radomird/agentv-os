@@ -159,7 +159,7 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
     cache: "no-store",
   });
   const data = await response.json();
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? `${method} ${path} didn't work`);
+  if (!response.ok || data.ok === false) throw new Error(data.error ?? "Something went wrong. Try again.");
   return data as T;
 }
 

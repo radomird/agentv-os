@@ -66,10 +66,10 @@ test("T3.1 the NUC8i5BEH on its Panasonic gives the plan's own example", () => {
   assert.ok(modes.includes("1920x1080@60"));
   assert.deepEqual(
     boxLines(box, "passed").map((line) => `${line.label}: ${line.value}`),
-    ["tv: 4k tv · panasonic · 60 hz", "box: keeps 4k smooth", "games: light games · intel iris plus 655", "space: 1.6 tb free", "network: wi-fi · 433 mbps"],
+    ["TV: 4K TV · Panasonic · 60 Hz", "Computer: Smooth at 4K", "Games: Light games · Intel Iris Plus 655", "Space: 1.6 TB free", "Network: Wi-Fi · 433 Mbps"],
     "the box step's lines, as D3 draws them",
   );
-  assert.equal(summary(box), "4k tv · light games · 1.6 tb free · wi-fi");
+  assert.equal(summary(box), "4K TV · light games · 1.6 TB free · Wi-Fi");
 });
 
 test("T3.1 the Panasonic's EDID: its name, every progressive mode it lists, no HDR, PCM and AC-3", () => {
@@ -159,9 +159,9 @@ test("T3.1 the CPU, the memory and the model, without the makers' filler", () =>
 test("T3.1 space is short under 32 GB free, and a link speed nobody knows is 0", () => {
   const mini = report(readings("amd-mini-pc"));
   assert.equal(mini.verdicts.spaceLow, true);
-  assert.equal(boxLines(mini, "unchecked").find((line) => line.key === "space")?.value, "only 20 gb free");
+  assert.equal(boxLines(mini, "unchecked").find((line) => line.key === "space")?.value, "Only 20 GB free");
   assert.equal(mini.verdicts.fourK, false);
-  assert.equal(boxLines(mini, "unchecked").find((line) => line.key === "box")?.value, "amd ryzen 7 5700u · 16 gb", "a box on a 1080p TV says its CPU and memory");
+  assert.equal(boxLines(mini, "unchecked").find((line) => line.key === "box")?.value, "AMD Ryzen 7 5700U · 16 GB", "a box on a 1080p TV says its CPU and memory");
   assert.equal(parseSpeed("433 Mb/s"), 433);
   assert.equal(parseSpeed("1000"), 1000);
   assert.equal(parseSpeed("-1"), 0);
@@ -178,7 +178,7 @@ test("T3.1 4K stays smooth only on a 4K test that held 57 fps on this GPU", () =
   assert.equal(report(readings("nuc8i5beh")).verdicts.fourKSmooth, false, "not tested yet");
   const qemu = report(readings("qemu"));
   assert.deepEqual(qemu.tv, { name: "", modes: [], hdr: false, audio: [] }, "no EDID to read");
-  assert.equal(boxLines(qemu, "unchecked")[0].value, "couldn't read the tv");
+  assert.equal(boxLines(qemu, "unchecked")[0].value, "Couldn't check the TV");
 });
 
 test("T3.2 setup shows your box as step 4 of 12, after getting ready, only with its switch on", async () => {
@@ -188,17 +188,19 @@ test("T3.2 setup shows your box as step 4 of 12, after getting ready, only with 
   await off.finish("welcome");
   assert.equal((await off.finish("ready")).state?.step, "country", "with the switch off, getting ready goes on to the location");
   const on = new Setup({ path: join(scratch, "setup-box-on", "setup.json"), on: async (feature) => feature === "setup2" || feature === "boxcheck" });
-  assert.equal((await on.progress()).parts.box, "4 of 12 · your box");
+  assert.equal((await on.progress()).parts.box, "4 of 12 · your setup");
   await on.finish("welcome");
   assert.equal((await on.finish("ready")).state?.step, "box");
   assert.equal((await on.finish("box")).state?.step, "country");
 });
 
-test("outside Terminal's lower case, the units are written as they should be", () => {
+test("a line written in lower case gets its units' capitals, and one written with them stays as it is", () => {
   assert.equal(properUnits("4k tv · panasonic · 60 hz"), "4K tv · panasonic · 60 Hz");
   assert.equal(properUnits("only 20 gb free · 1.6 tb free"), "only 20 GB free · 1.6 TB free");
   assert.equal(properUnits("wi-fi · 433 mbps · 1 gbps"), "wi-fi · 433 Mbps · 1 Gbps");
   assert.equal(properUnits("1080p tv"), "1080p tv", "1080p is written so everywhere");
+  assert.equal(properUnits("4K TV · Panasonic · 60 Hz"), "4K TV · Panasonic · 60 Hz");
+  assert.equal(properUnits("Only 20 GB free · Wi-Fi · 433 Mbps"), "Only 20 GB free · Wi-Fi · 433 Mbps");
 });
 
 // --- The readers, on a made-up machine --------------------------------------
@@ -386,6 +388,6 @@ test("a paired phone gets the box in one line, for its menu", async () => {
   const token = await pairPhone(lan, code, "iphone");
   const answer = await (await token.fetch(`/api/phone/box`)).json();
   assert.equal(answer.ok, true);
-  assert.match(answer.line, /^4k tv · light games · .+ free · wi-fi$/);
+  assert.match(answer.line, /^4K TV · light games · .+ free · Wi-Fi$/);
   assert.equal(answer.box.model, "NUC8i5BEH");
 });

@@ -643,27 +643,31 @@
   gap: 24px;
 }
 
-.app-pick,
-.app-add {
+.app-pick {
   display: flex;
   align-items: center;
   gap: 24px;
+  width: 440px;
   height: 150px;
   padding: 0 32px;
   text-align: left;
-}
-
-.app-pick {
-  width: 440px;
   border: 2px solid var(--selection);
   background: color-mix(in srgb, var(--background) 88%, transparent);
   color: var(--bright-foreground);
 }
 
-.app-add {
-  width: 520px;
-  background: var(--magenta);
-  color: var(--background);
+/* "Can't find it? Build your own" (design page D11): the last tile of the
+   grid, the same shape as the apps before it, with Ask's sparkle where an
+   app has its letter. The question is the small line, over the name. */
+.app-add .app-name {
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.app-ask {
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--foreground);
 }
 
 .app-pick.focused {
@@ -684,6 +688,8 @@
   color: var(--red);
 }
 
+/* An app's first letter keeps its capital where setup's words are drawn in
+   lower case. */
 .app-face {
   display: flex;
   align-items: center;
@@ -694,6 +700,7 @@
   font-size: 30px;
   font-weight: 800;
   color: var(--background);
+  text-transform: none;
 }
 
 .app-text {
@@ -716,10 +723,6 @@
   white-space: nowrap;
 }
 
-.app-add .app-note-line {
-  color: var(--background);
-}
-
 /* With the starter pack (D3, board 9): six cards to a row, each with its
    face and mark across the top and its name at the bottom, so the pack and
    more fit on one screen. */
@@ -736,8 +739,7 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
-.apps-page.pack .app-pick,
-.apps-page.pack .app-add {
+.apps-page.pack .app-pick {
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-areas: "face mark" "text text";
@@ -748,8 +750,7 @@
   gap: 0;
 }
 
-.apps-page.pack .app-face,
-.apps-page.pack .app-add > svg {
+.apps-page.pack .app-face {
   grid-area: face;
   width: 56px;
   height: 56px;
@@ -769,6 +770,11 @@
 .apps-page.pack .app-name {
   font-size: 32px;
   line-height: 1.15;
+}
+
+/* The question and a name on two lines, under the sparkle. */
+.apps-page.pack .app-add .app-text {
+  gap: 0;
 }
 
 .apps-page.pack .app-note-line {
@@ -1041,6 +1047,11 @@
   color: var(--foreground);
 }
 
+/* Nothing to say while it plays: the name stands alone. */
+.player-note:empty {
+  display: none;
+}
+
 /* The equaliser: seven bars, each scaled to its band's level as the music
    plays (transform only, ADR-024). */
 .eq {
@@ -1222,10 +1233,6 @@ body.counted .player-name {
 
 body.counted .player-note {
   font-size: 23px;
-}
-
-body.counted .player-score {
-  display: none;
 }
 
 /* --- Phase 2's screens (design page D3) ------------------------------------------ */
