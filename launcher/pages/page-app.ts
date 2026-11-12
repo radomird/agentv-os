@@ -92,7 +92,7 @@ function start(ctx: Ctx, id: string, name: string): Open {
     referrerpolicy: "no-referrer",
     title: name,
   }) as HTMLIFrameElement;
-  const wrap = h("div", { class: "page-app loading", "data-app": id }, h("div", { class: "page-app-cover" }, h("span", {}, `${name.toLowerCase()}…`)), frame);
+  const wrap = h("div", { class: "page-app loading", "data-app": id }, h("div", { class: "page-app-cover" }, h("span", {}, `${name}…`)), frame);
   layer().append(wrap);
   const entry: Open = {
     id,
@@ -119,7 +119,7 @@ function start(ctx: Ctx, id: string, name: string): Open {
   let loads = 0;
   frame.addEventListener("load", () => {
     if (++loads > 1) {
-      ctx.toast(`${name.toLowerCase()} tried to leave its page, so it was closed`, "fail");
+      ctx.toast(`${name} was closed for safety`, "fail");
       leave(ctx, entry);
     }
   });
@@ -221,7 +221,7 @@ function listenKeys(): void {
 export function openPage(ctx: Ctx, id: string): void {
   const app = ctx.state.apps.find((a) => a.id === id);
   if (!app || app.runtime !== "page") {
-    ctx.toast("that app isn't on this tv", "fail");
+    ctx.toast("That app was removed", "fail");
     return;
   }
   ctx.go(`app/${id}`);

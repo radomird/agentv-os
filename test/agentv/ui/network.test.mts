@@ -101,8 +101,8 @@ function screenRequests(page: Page, cmd: string, op?: string): Promise<Record<st
 
 const box = (options: Pick<BoxOptions, "features">) => startBox(0, FIXTURES, { ...options, builtins: true, discover: standIns() });
 
-// A row's name and what's on its right.
-const rows = (page: Page, selector: string) => page.$$eval(selector, (all) => all.map((row) => [row.querySelector("b")?.textContent, row.querySelector(".button-value")?.textContent]));
+// A row's name and its address after it, which keeps its own letters.
+const rows = (page: Page, selector: string) => page.$$eval(selector, (all) => all.map((row) => [row.querySelector("b")?.textContent, row.querySelector(".found-address [data-own-case]")?.textContent]));
 
 // Music → sources, from Music's tile on home.
 async function sources(url: string): Promise<Page> {
@@ -132,12 +132,15 @@ bothWays("discover", "an app's setup lists the servers on your network first, an
       await page.close();
       return;
     }
-    await page.waitForFunction(() => document.querySelector(".page h1.headline")?.textContent === "pick your radio.");
+    await page.waitForFunction(() => document.querySelector(".page h1.headline")?.textContent === "Pick your Radio");
     await page.waitForSelector("[data-found]");
-    assert.deepEqual(await rows(page, "[data-found]"), [["living room", "nas.local"]]);
+    // The server's address is next to its name, so two that answer from two
+    // addresses read as two rows.
+    assert.deepEqual(await rows(page, "[data-found]"), [["living room", "127.0.0.1:8096"]]);
+    assert.equal(await page.locator("[data-found] .found-name").innerText(), "living room · 127.0.0.1:8096");
     // The first server found has the focus, and typing is the row after it.
     await page.waitForSelector('.focused[data-found="jellyfin http://127.0.0.1:8096"]');
-    assert.equal(await page.locator('[data-action="type-address"]').innerText(), "type an address on your phone");
+    assert.equal(await page.locator('[data-action="type-address"]').innerText(), "type its address");
     assert.equal(await page.locator('input[data-field="serverUrl"]').isVisible(), false);
     // Typing instead shows the field, with the focus, for the phone's keyboard.
     await page.keyboard.press("ArrowDown");
@@ -170,24 +173,24 @@ bothWays("discover", "Music → sources lists the NASes on your network, and a N
     const page = await sources(url);
     if (!on) {
       await page.waitForTimeout(800);
-      assert.equal(await page.locator(".section", { hasText: "# on your network" }).count(), 0);
+      assert.equal(await page.locator(".section", { hasText: "On your network" }).count(), 0);
       assert.equal(await page.locator("[data-found]").count(), 0);
       await page.close();
       return;
     }
     await page.waitForSelector("[data-found]");
-    assert.deepEqual(await rows(page, "[data-found]"), [["living room nas", "nas.local"]]);
+    assert.deepEqual(await rows(page, "[data-found]"), [["living room NAS", "nas.local"]]);
     assert.equal(await page.locator(".focused").getAttribute("data-found"), "nas nas.local");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelector(".page.music h1.headline")?.textContent === "nas.local.");
+    await page.waitForFunction(() => document.querySelector(".page.music h1.headline")?.textContent === "nas.local");
     await page.waitForSelector("[data-share]");
-    assert.deepEqual(await page.locator("[data-share] b").allInnerTexts(), ["▶ music", "▶ photos", "▶ films"]);
+    assert.deepEqual(await page.locator("[data-share] b").allInnerTexts(), ["music", "photos", "films"]);
     assert.deepEqual(smbAsked, [["smbclient", "-L", "//nas.local", "-I", "127.0.0.1", "-N", "-g"]]);
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => (window as unknown as { screenRequests: { op?: string }[] }).screenRequests.some((r) => r.op === "add-share"));
     const [added] = await screenRequests(page, "music", "add-share");
     assert.deepEqual([added.uri, added.password], ["smb://nas.local/music", undefined]);
-    await page.locator('.toast:has-text("music is a music source now")').waitFor();
+    await page.locator('.toast:has-text("Added music")').waitFor();
     await page.close();
   } finally {
     await daemon.close();
@@ -204,7 +207,7 @@ test("a NAS that shows its folders only after a sign-in asks for it, and the sha
     await page.locator("[data-found]").click();
     // The sign-in, typed on the phone: these are the TV's fields it fills.
     await page.waitForFunction(() => (document.activeElement as HTMLInputElement | null)?.dataset.field === "user");
-    assert.match(await page.locator(".page.music .panel-note").last().innerText(), /nas\.local shows its folders after you sign in/);
+    assert.match(await page.locator(".page.music .panel-note").last().innerText(), /^sign in to see nas\.local's folders$/);
     await page.keyboard.type("radomir");
     await page.locator('input[data-field="password"]').fill("tunes, at 9 = fine");
     await page.locator('[data-action="list"]').click();
@@ -295,7 +298,7 @@ bothWays("discover", "setup's apps step opens the servers on your network for ea
     await headline(page, "pick your jellyfin.");
     assert.match(await page.locator(".setup-page .prompt").innerText(), /agentv app setup jellyfin/);
     await page.waitForSelector('.focused[data-found="jellyfin http://127.0.0.1:8096"]');
-    assert.deepEqual(await rows(page, "[data-found]"), [["living room", "nas.local"]]);
+    assert.deepEqual(await rows(page, "[data-found]"), [["living room", "127.0.0.1:8096"]]);
     assert.deepEqual(await page.locator(".found > .button").allInnerTexts(), ["type an address on your phone", "set it up later"]);
     assert.match(await page.locator(".bar").innerText(), /apps[\s\S]*↑↓ move · ↵ pick/);
     // OK on it: Jellyfin will use it, and Immich's page is next.
@@ -329,7 +332,7 @@ test("setup's apps step on music lists the NASes on your network, and a NAS's fo
     await page.locator('[data-action="continue"]').click();
     await headline(page, "pick your nas.");
     await page.waitForSelector('.focused[data-found="nas nas.local"]');
-    assert.deepEqual(await rows(page, "[data-found]"), [["living room nas", "nas.local"]]);
+    assert.deepEqual(await rows(page, "[data-found]"), [["living room NAS", "nas.local"]]);
     await page.keyboard.press("Enter");
     await headline(page, "nas.local.");
     assert.match(await page.locator(".setup-page .prompt").innerText(), /agentv music sources nas\.local/);
