@@ -1,2 +1,32 @@
 # Strings in the UI text that may use a word from ui-words, each with why.
 # A path, then a perl pattern the whole string matches (without case).
+
+# The daemon's strings that never reach someone on the couch, each with why.
+# Input checks on an API call the TV's own pages always make right.
+daemon/builds.ts ^the safeguards are on or off$
+daemon/country.ts ^a country is two capital letters
+daemon/location.ts ^a country is two capital letters
+daemon/routes/setup.ts ^a country is two capital letters
+daemon/server.ts ^that isn't an app on this box$
+daemon/server.ts ^only an app that's gone from the box is forgotten$
+# Refusals for a caller that isn't one of AgenTV's own pages or processes.
+daemon/server.ts ^not from one of this box's own pages$
+daemon/server.ts ^only the screen daemon takes the phone's keys$
+daemon/routes/remote.ts ^only the screen daemon answers for the phone$
+# `agentv phone`, run in a terminal on Omarchy's desktop, and the phone
+# client's own handshake, whose failures the phone shows in its own words.
+daemon/phone-call.ts .
+daemon/phone-client.ts .
+# The AI's raw answer, kept for the log. What a person reads is
+# daemon/providers/no-answer.ts's line.
+daemon/providers/http.ts ^the provider
+daemon/router-serve.ts .
+# Between the screen daemon and the TV's daemon, and for the journal.
+daemon/screen.ts ^(restarting the box|shutting the box down|restarting the box to its boot menu|the daemon said)
+daemon/remote.ts ^the daemon answered
+daemon/voice-play.ts ^there's no player for sound on this box$
+# Compared with, not shown: New this week waits while there's no key.
+daemon/tmdb-api.ts ^there's no tmdb key on the box$
+daemon/tmdb.ts ^there's no tmdb key on the box$
+# agentv selftest's report, read in a terminal.
+daemon/weather-check.ts .
