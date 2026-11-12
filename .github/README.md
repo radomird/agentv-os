@@ -171,7 +171,7 @@ AgenTV is Omarchy with a TV session next to its desktop. Your box starts straigh
 
 The part that makes apps is the AI you already use, working on your box through its own coding tool. It knows how to make a few kinds of app (a game, a page, a slideshow of your photos, a theme). Every app follows the same small set of rules, so they all work with the remote, with profiles and with Continue.
 
-Your box only installs packages signed with AgenTV's key, and the apps that come with AgenTV from a list signed with it. And before a release reaches you, it installs, boots and updates itself in a VM.
+Your box only installs packages signed with AgenTV's key. The apps that come with AgenTV install from a list signed with the same key. And before a release reaches you, it installs, boots and updates itself in a VM.
 
 Where things are:
 
