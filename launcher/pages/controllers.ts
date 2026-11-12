@@ -28,7 +28,7 @@ interface State {
   looking: boolean;
   controllers: ControllerInfo[];
   usb: string[];
-  why?: "none" | "off" | "not-a-controller" | "gone" | "code" | "failed";
+  why?: "none" | "off" | "not-a-controller" | "not-removed" | "gone" | "code" | "failed";
   error?: string;
   pin?: boolean;
 }
@@ -131,6 +131,7 @@ export function controllersPanel(ctx: Ctx): HTMLElement[] {
           ctx.toast(words("Paired {name}", one.name), "ok");
         } else if (answer.why === "code") failed(words("Couldn't pair {name}. If it asks for a code, use a cable instead.", one.name));
         else if (answer.why === "not-a-controller") failed(words("Couldn't pair {name}. Only game controllers pair here.", one.name));
+        else if (answer.why === "not-removed") failed(words("Couldn't remove {name}. Try again.", one.name));
         else if (answer.bluetooth === "away") failed(words("Your TV isn't ready yet. Try again in a moment."));
         else failed(words("Couldn't pair {name}. Put it in pairing mode and try again.", one.name));
       },

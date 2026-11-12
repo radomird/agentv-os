@@ -54,9 +54,15 @@ if (( status != 1 )) || [[ $out != *"AGENTV_PIN"* ]]; then fail "agentv setup re
 status=0
 out=$(AGENTV_PORT=$port AGENTV_PIN=0000 "$ROOT/bin/agentv-setup-reset" 2>&1) || status=$?
 if (( status != 1 )) || [[ $out != *"didn't take the PIN"* ]]; then fail "a wrong PIN is refused" "$out"; fi
+# The PIN there starts setup again and nothing more: a wrong try on the TV's
+# pad before it still counts after it.
+curl -sS -o /dev/null -H 'Content-Type: application/json' -d '{"pin": "0000"}' "$url/api/pin/check"
+tries=$(jq -r '.fails' "$SCRATCH/state/pin.json")
+(( tries > 0 )) || fail "a wrong try on the pad is counted"
 out=$(AGENTV_PORT=$port AGENTV_PIN=4826 "$ROOT/bin/agentv-setup-reset") || fail "agentv setup reset works with the PIN" "$out"
 [[ $(curl -fsS "$url/health" | jq -r '.screen') == "welcome" ]] || fail "with the PIN, the TV is on the welcome page"
-pass "with an adult PIN set, agentv setup reset needs it"
+[[ $(jq -r '.fails' "$SCRATCH/state/pin.json") == "$tries" ]] || fail "agentv setup reset's PIN leaves the pad's wrong tries as they were" "$(jq -c 'del(.hash)' "$SCRATCH/state/pin.json")"
+pass "with an adult PIN set, agentv setup reset needs it, and its PIN does nothing else"
 
 kill "$pid"
 wait "$pid" 2>/dev/null || true

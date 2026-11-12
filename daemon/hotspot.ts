@@ -76,8 +76,12 @@ export class Hotspot {
   private dropDir: string;
   private usedFile: string;
   private usedAt = 0;
-  // The id of the last join handed to root.
+  // Asks that wait for root to take the one before them.
+  private waiting: { id: string; request: object }[] = [];
+  private timer: ReturnType<typeof setInterval> | undefined;
+  // The id of the last join handed to root, and of the last ask to close.
   asked = "";
+  private stopping = "";
 
   constructor(options: HotspotOptions) {
     this.run = options.run ?? "/run/agentv-hotspot";
@@ -152,7 +156,7 @@ export class Hotspot {
   // compares a time: a write from just before the ask, or one that finishes
   // an earlier ask, isn't this one's answer.
   answered(id: string): boolean {
-    if (id === "" || existsSync(join(this.dropDir, "request.json"))) return false;
+    if (id === "" || existsSync(join(this.dropDir, "request.json")) || this.waiting.some((ask) => ask.id === id)) return false;
     try {
       return JSON.parse(readFileSync(join(this.run, "state.json"), "utf8")).answered === id;
     } catch {
@@ -166,6 +170,7 @@ export class Hotspot {
   // ask's drop stays.
   takeBack(id: string): void {
     const file = join(this.dropDir, "request.json");
+    this.waiting = this.waiting.filter((ask) => ask.id !== id);
     try {
       if (id !== "" && JSON.parse(readFileSync(file, "utf8")).id === id) rmSync(file);
     } catch {
@@ -202,18 +207,45 @@ export class Hotspot {
     return null;
   }
 
-  // Asks root to close the hotspot, as setup ends.
+  // Asks root to close the hotspot, as setup ends. Once is enough: while
+  // root hasn't taken the last such ask, another would only wait behind it.
   stop(): void {
-    this.drop({ stop: true });
+    if (this.waiting.some((ask) => ask.id === this.stopping)) return;
+    try {
+      if (this.stopping !== "" && JSON.parse(readFileSync(join(this.dropDir, "request.json"), "utf8")).id === this.stopping) return;
+    } catch {
+      // Root took it, or there was none.
+    }
+    this.stopping = this.drop({ stop: true });
   }
 
+  // The drop holds one ask. One made while root hasn't taken the last would
+  // replace it, and that one would never be answered. So it waits its turn
+  // here, and goes in once root has taken the one before.
   private drop(request: object): string {
     const id = randomBytes(8).toString("hex");
-    mkdirSync(this.dropDir, { recursive: true, mode: 0o700 });
-    const file = join(this.dropDir, "request.json");
-    writeFileSync(`${file}.next`, JSON.stringify({ ...request, id }), { mode: 0o600 });
-    renameSync(`${file}.next`, file);
+    this.waiting.push({ id, request });
+    this.next();
+    if (this.waiting.length > 0 && !this.timer) {
+      this.timer = setInterval(() => this.next(), 200);
+      this.timer.unref();
+    }
     return id;
+  }
+
+  // Hands root the ask that has waited longest, if the drop is free.
+  next(): void {
+    const file = join(this.dropDir, "request.json");
+    if (this.waiting.length > 0 && !existsSync(file)) {
+      const { id, request } = this.waiting.shift()!;
+      mkdirSync(this.dropDir, { recursive: true, mode: 0o700 });
+      writeFileSync(`${file}.next`, JSON.stringify({ ...request, id }), { mode: 0o600 });
+      renameSync(`${file}.next`, file);
+    }
+    if (this.waiting.length === 0) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
   }
 }
 

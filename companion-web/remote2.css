@@ -189,11 +189,9 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  position: relative;
-  overflow: hidden;
 }
 
-/* OK held on home: it fills as Back does, and the phone sends the hold when
+/* OK held on an app's tile: it fills as Back does, and the phone sends the hold when
    it's full. It stays full until the finger lifts. */
 .r2-ok::before {
   content: "";
@@ -261,6 +259,9 @@
   color: var(--r2-on-accent);
   font-size: 22px;
   font-weight: 800;
+  /* The fill is the button's own size, and stays inside its shape. */
+  position: relative;
+  overflow: hidden;
   /* Held, it opens an app's details on the TV, so a long press selects
      nothing and brings up no menu on the phone. */
   user-select: none;
