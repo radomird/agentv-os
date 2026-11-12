@@ -46,11 +46,11 @@ function page(ctx: Ctx, command: string, title: string, line: string, ...rest: H
 // A country confirmed or picked, or a zone chosen: on to the AI, or to the
 // question of which zone.
 async function choose(ctx: Ctx, code: string, zone?: string): Promise<void> {
-  const grant = await ctx.grant("the location");
-  if (grant === null) return;
   let answer;
   try {
-    answer = await setup.setLocation(code, zone, grant || undefined);
+    const set = await ctx.guarded("the location", (grant) => setup.setLocation(code, zone, grant));
+    if (!set) return;
+    answer = set.value;
   } catch (error) {
     ctx.toast((error as Error).message, "fail");
     ctx.sounds.play("failure");

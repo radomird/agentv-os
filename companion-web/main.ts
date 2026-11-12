@@ -127,10 +127,15 @@ const remote2 = new Remote2(app, {
   updatePage: () => (state?.update ? updatePage(state.update) : null),
 });
 
+// The TV said it doesn't know this phone. The phone still holds its key, so
+// this is what keeps it on the pairing page, not asking, until it pairs.
+let forgotten = false;
+
 const failed = (error: unknown) => {
   if (error instanceof Unpaired) {
     // The phone keeps its key until a new pairing works: see channel.ts.
     state = null;
+    forgotten = true;
     pairView();
     return;
   }
@@ -904,7 +909,8 @@ function took(next: State, before: State | null, force: boolean): void {
 async function follow(): Promise<void> {
   for (;;) {
     try {
-      if (document.visibilityState === "visible" && paired() && state) await refresh(false, true);
+      // With no state yet, the first ask got no answer: this asks again.
+      if (document.visibilityState === "visible" && paired() && !forgotten) await refresh(!state, true);
       else await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch {
       // One answer that couldn't be drawn doesn't stop the next from coming.
@@ -915,10 +921,13 @@ async function follow(): Promise<void> {
 
 // The first state, and the page following the TV from then on, whichever way
 // the phone got paired: the QR code, or the code typed on the pairing page.
+// A paired phone follows even when that first ask got no answer, as while
+// the TV restarts: its code is spent, so the pairing page would be a dead
+// end. The pairing page is only for a phone the TV says it doesn't know.
 let following = false;
 async function start(): Promise<void> {
+  forgotten = false;
   await refresh(true);
-  if (!state) return pairView();
   if (following) return;
   following = true;
   void follow();

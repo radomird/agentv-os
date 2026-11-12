@@ -29,6 +29,18 @@ const SEALED = "application/agentv-sealed";
 // pairing that worked puts another in its place.
 export class Unpaired extends Error {}
 const UNPAIRED = "This phone isn't paired. Pair it from your TV.";
+// What the box says when a pairing didn't work. Anyone on the network can
+// write that answer too, so the phone shows its own words for one of these,
+// and anything else is the box not answering. The box's words are matched
+// without case, in their old words and their new.
+const PAIR_FAILED: [string[], string][] = [
+  [["that isn't the code on the tv", "that isn't the code on your tv"], "That isn't the code on your TV"],
+  [["that code has run out: pair again from the tv", "that code ran out. pair again from your tv."], "That code ran out. Pair again from your TV."],
+];
+function pairFailed(said: unknown): string {
+  const words = typeof said === "string" ? said.trim().toLowerCase() : "";
+  return PAIR_FAILED.find(([known]) => known.includes(words))?.[1] ?? "Couldn't reach your TV";
+}
 
 const KEPT = "agentv-phone-key";
 // What a phone paired before requests were signed still holds. Nothing takes
@@ -77,7 +89,7 @@ export async function pair(how: { secret: string } | { code: string }, name: str
   const mine = random(32);
   const mineOpen = x25519Public(mine);
   const { status, data } = await plain("/api/phone/pair", { key: encode(mineOpen), name, proof: encode(hmac(k, concat(utf8(INFO.pair), mineOpen))) });
-  if (status !== 200) throw new Error(typeof data.error === "string" ? data.error : "Couldn't reach your TV");
+  if (status !== 200) throw new Error(pairFailed(data.error));
   const theirs = typeof data.key === "string" ? decode(data.key) : null;
   const confirm = typeof data.confirm === "string" ? decode(data.confirm) : null;
   if (!theirs || theirs.length !== 32 || !confirm || typeof data.id !== "string") throw new Error("Couldn't reach your TV");
