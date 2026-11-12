@@ -274,7 +274,7 @@ for (const look of LOOKS) {
       bluez.seen.add(stuck.address);
       await page.waitForSelector(row(stuck.address));
       await page.locator(row(stuck.address)).click();
-      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), said("Couldn't pair {name}. Only game controllers pair here.").replace("{name}", stuck.name));
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), `Couldn't pair ${stuck.name}. Only game controllers pair here.`);
       bluez.devices = bluez.devices.filter((device) => device.address !== stuck.address);
 
       // An app opened in front of home, as from a phone: the looking rests
