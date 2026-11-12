@@ -11,7 +11,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import type { AiState } from "../../../daemon/ai.ts";
+import { OFFERS, type AiState } from "../../../daemon/ai.ts";
 import { boxRouter, viaSocket } from "../../../daemon/router-client.ts";
 import { cliPolicy, PER_MINUTE, routeRequest, routeServer } from "../../../daemon/router-serve.ts";
 import { NONE, type Routed } from "../../../daemon/router.ts";
@@ -57,13 +57,13 @@ test("the daemon asks the back end setup chose, and says what's missing until it
   let key = { set: false, provider: null as string | null };
   const route = boxRouter({ ai: async () => state, key: () => key, sockets });
   const why = async () => (await route("play frozen", [])).error;
-  assert.equal(await why(), "set up your agent in settings → ai first");
+  assert.equal(await why(), "Set up AI in Settings first");
   state = ai({ provider: "claude", path: "key" });
-  assert.equal(await why(), "an adult accepts Claude's terms on a phone first");
+  assert.equal(await why(), "Accept Claude's terms first");
   state = ai({ provider: "claude", path: "key", accepted });
-  assert.equal(await why(), "add Claude's key in settings → ai first");
+  assert.equal(await why(), "Add your Claude key in Settings first");
   key = { set: true, provider: "chatgpt" };
-  assert.equal(await why(), "add Claude's key in settings → ai first", "a key for another provider isn't this one's");
+  assert.equal(await why(), "Add your Claude key in Settings first", "a key for another provider isn't this one's");
   assert.deepEqual(heard, [], "nothing reached a router until then");
   key = { set: true, provider: "claude" };
   const viaKey = await route("play frozen", [{ id: "local.kino", name: "Kino", category: "streaming" }]);
@@ -76,18 +76,18 @@ test("the daemon asks the back end setup chose, and says what's missing until it
   key = { set: false, provider: null };
   assert.equal((await route("play frozen", [])).via, "cli", "a plan needs no key");
   state = ai({ provider: "muse", path: "plan", accepted: { ...accepted, provider: "muse", path: "plan" } });
-  assert.equal(await why(), "A Muse Code subscription can't take requests yet");
+  assert.equal(await why(), `${OFFERS.muse.plan.name} can't do this yet`);
 });
 
 test("a router that isn't running, or doesn't answer in time, is none, failed, with why", async () => {
   const gone = await viaSocket(join(scratch, "nothing.sock"), { provider: "claude", sentence: "play frozen", apps: [] });
-  assert.deepEqual([gone.route, gone.none, gone.error], [NONE, "failed", "your agent's router isn't running"]);
+  assert.deepEqual([gone.route, gone.none, gone.error], [NONE, "failed", "Can't answer right now"]);
   const path = join(scratch, "slow.sock");
   const slow = createServer(() => {});
   servers.push(slow);
   await new Promise<void>((resolve) => slow.listen(path, () => resolve()));
   const late = await viaSocket(path, { provider: "claude", sentence: "play frozen", apps: [] }, 200);
-  assert.equal(late.error, "your agent took too long to answer");
+  assert.equal(late.error, "That took too long. Try again.");
   slow.closeAllConnections();
 });
 
@@ -99,7 +99,7 @@ test("a page that talks too much can't spend the key: at most 30 sentences a min
   await new Promise<void>((resolve) => server.listen(path, () => resolve()));
   const ask = () => viaSocket(path, { provider: "claude", sentence: "play frozen", apps: [] });
   for (let i = 0; i < PER_MINUTE; i++) assert.equal((await ask()).none, undefined, `sentence ${i + 1}`);
-  assert.equal((await ask()).error, "too many sentences at once: try again in a minute");
+  assert.equal((await ask()).error, "Too many requests. Try again in a minute.");
   clock += 61_000;
   assert.equal((await ask()).none, undefined, "a minute later it takes them again");
 });

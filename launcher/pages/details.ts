@@ -1,11 +1,10 @@
-// An app's details (ADR-018): the one place that says who made it, what it can
-// reach and which tile sizes it has, with the brand owner's note for an app
+// An app's details (ADR-018): the one place that says who made it, what it
+// connects to and which tile sizes it has, with the brand owner's note for an app
 // named after someone else's brand. An adult ticks it for children here too
 // (ADR-009). You get here with i, a gamepad's Y or by holding OK on its tile,
 // and while the app is open, Quit closes it (ADR-084).
 
 import { daemon, screen } from "../api.ts";
-import { named, said } from "../looks/looks.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, openBuiltin, quit } from "./home.ts";
@@ -15,7 +14,7 @@ import { bar, childProfileButton, togglePin } from "./parts.ts";
 export function details(ctx: Ctx, id: string): View {
   const app = ctx.state.apps.find((a) => a.id === id);
   if (!app) {
-    const el = h("div", { class: "screen" }, h("div", { class: "page" }, h("p", { class: "empty" }, "that app isn't on this tv any more")), bar(ctx, "apps"));
+    const el = h("div", { class: "screen" }, h("div", { class: "page" }, h("p", { class: "empty" }, "That app was removed")), bar(ctx, "apps"));
     return { el };
   }
 
@@ -30,7 +29,7 @@ export function details(ctx: Ctx, id: string): View {
         if (await togglePin(ctx, id)) ctx.render(`details/${id}`, toggle.dataset.action);
       },
     },
-    h("span", {}, "on home"),
+    h("span", {}, "On home"),
     h("span", { class: "button-value" }, onHome ? "[x]" : "[ ]"),
   );
 
@@ -59,7 +58,7 @@ export function details(ctx: Ctx, id: string): View {
               ctx.render(`details/${id}`, "children");
             },
           },
-          h("span", {}, "for children"),
+          h("span", {}, "For children"),
           h("span", { class: "button-value" }, app.forChildren ? "[x]" : "[ ]"),
         )
       : null;
@@ -75,17 +74,17 @@ export function details(ctx: Ctx, id: string): View {
           return;
         }
         const reply = await screen.open(id);
-        if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
+        if (!reply.ok) ctx.toast(reply.error ?? `Couldn't open ${app.name}`, "fail");
       },
     },
-    "↵ open",
+    "Open",
   );
 
   // Only while it's open behind home. The page is drawn again once it has
   // closed, and the button goes.
-  const close = ctx.running.has(id) ? h("button", { class: "button", "data-focus": true, "data-action": "quit", onclick: () => void quit(ctx, app) }, said("quit")) : null;
+  const close = ctx.running.has(id) ? h("button", { class: "button", "data-focus": true, "data-action": "quit", onclick: () => void quit(ctx, app) }, "Quit") : null;
 
-  const sizes = app.sizes.map((choice) => `${choice.size} ${choice.label}`).join(" · ");
+  const sizes = app.sizes.map((choice) => `${choice.size.toUpperCase()} ${choice.label}`).join(" · ");
   const el = h(
     "div",
     { class: "screen" },
@@ -99,8 +98,8 @@ export function details(ctx: Ctx, id: string): View {
         h(
           "div",
           {},
-          h("div", { class: "prompt" }, h("b", {}, "~"), ` $ tv app ${named(app.name)}`),
-          h("h1", { class: "headline" }, named(app.name)),
+          h("div", { class: "prompt" }, h("b", {}, "~"), ` $ tv app ${app.name}`),
+          h("h1", { class: "headline" }, app.name),
           h("div", { class: "maker" }, app.maker),
         ),
       ),
@@ -110,17 +109,15 @@ export function details(ctx: Ctx, id: string): View {
         h(
           "dl",
           { class: "facts" },
-          h("dt", {}, "made by"),
-          h("dd", {}, app.maker),
-          h("dt", {}, "what it's for"),
-          h("dd", {}, app.description.toLowerCase()),
-          h("dt", {}, "can reach"),
-          h("dd", {}, app.reach.join(", ")),
-          h("dt", {}, "tile sizes"),
+          // Who made it is said once, under its name.
+          h("dt", {}, "About"),
+          h("dd", {}, app.description),
+          h("dt", {}, "Connects to"),
+          // A server's address keeps its own letters in every look.
+          h("dd", { "data-own-case": app.reach.some((one) => /[.:]/.test(one)) }, app.reach.join(", ")),
+          h("dt", {}, "Sizes"),
           h("dd", {}, sizes),
-          h("dt", {}, "version"),
-          h("dd", {}, app.version),
-          app.credit ? h("dt", {}, "data") : null,
+          app.credit ? h("dt", {}, "Data from") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
         h("div", { class: "actions" }, open, close, toggle, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),

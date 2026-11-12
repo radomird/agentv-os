@@ -525,6 +525,11 @@ body.with-backdrop {
   font-weight: 700;
 }
 
+/* The "# " before a section's name is Terminal's. */
+.section-hash {
+  display: none;
+}
+
 .empty {
   color: var(--foreground);
 }
@@ -614,9 +619,12 @@ body.with-backdrop {
   letter-spacing: 0;
 }
 
+/* "Add an app": dashed, as an outline, so it's the size of the tiles
+   before it, which have no border. */
 .row .tile-apps {
   background: transparent;
-  border: 2px dashed var(--muted);
+  outline: 2px dashed var(--muted);
+  outline-offset: -2px;
 }
 
 /* An app's details: its logo, its name big, one line, its actions as pills. */

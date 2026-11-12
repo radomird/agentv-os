@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "agentv",
   "license": "MIT",
-  "description": "Your own music, from the box's folders, USB drives and NAS shares",
+  "description": "Your own music, from folders, USB drives and network drives",
   "kinds": ["tv-app"],
   "entryPoints": { "tvApp": "app.ts" },
   "tv": {

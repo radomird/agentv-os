@@ -1,13 +1,15 @@
 // What's on your network (daemon/discover.ts), wherever the TV used to ask
-// for an address: the servers and NASes the box found come first, as they
-// answer, and typing an address on the phone second. A NAS lists its
-// folders when it's picked, after a sign-in typed on the phone if it wants
-// one. The TV's pages show this only with the discover switch on.
+// for an address: the servers and network drives the TV found come first,
+// as they answer, and typing an address on the phone second. A row is a
+// find's name and its address, "Jellyfin · 192.168.1.20:8096", so one that
+// answers from two addresses reads as two rows you can tell apart. A drive
+// lists its folders when it's picked, after a sign-in typed on the phone if
+// it wants one. The TV's pages show this only with the discover switch on.
 //
-// The phone shows the same list as a line "on your network" while it's on
+// The phone shows the same list as a line "On your network" while it's on
 // the TV, and a pick there picks the TV's row, as OK would.
 
-import { h } from "../dom.ts";
+import { asWritten, h } from "../dom.ts";
 import { featureOn } from "../features.ts";
 import type { Focus } from "../focus.ts";
 
@@ -163,23 +165,36 @@ function pickRow(rows: HTMLElement, attribute: string, key: string, focus: Pick<
 async function ask<T>(path: string, body?: unknown): Promise<Answer<T>> {
   const response = await fetch(path, body === undefined ? { cache: "no-store" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = (await response.json()) as Answer<T>;
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? "the tv couldn't ask its network");
+  if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't search your network");
   return data;
 }
 
+// Where a find answers, as its row says it: the address's host, with its
+// port when it isn't the usual one, or the machine's name for a drive.
+export function addressOf(found: Pick<Found, "url" | "host">): string {
+  try {
+    return new URL(found.url).host || found.host;
+  } catch {
+    return found.host;
+  }
+}
+
 // A row of the list: a server's letter in its colour, as setup's apps step
-// draws the apps, its name, and where it is on the right. A folder has no
-// letter.
-function row(face: Kind | null, name: string, value: string, data: Record<string, string>, pick: () => void): HTMLElement {
+// draws the apps, then "{name} · {address}". The address keeps its own
+// letters in every look, and so does a folder's name. A folder has no letter
+// and no address, and says what kind it is on the right when that matters.
+function row(face: Kind | null, name: string, address: string, value: string, data: Record<string, string>, pick: () => void): HTMLElement {
   const letter = face ? h("span", { class: `avatar avatar-${FACES[face][1]}`, "aria-hidden": "true" }, FACES[face][0]) : null;
-  return h("button", { class: "button", "data-focus": true, ...data, onclick: pick }, h("span", { class: "profile-who" }, letter, h("b", {}, name.toLowerCase())), h("span", { class: "button-value" }, value));
+  const words = face ? h("b", {}, name) : h("b", { "data-own-case": true }, name);
+  const where = address ? h("span", { class: "found-address" }, " · ", asWritten(address)) : null;
+  return h("button", { class: "button", "data-focus": true, ...data, onclick: pick }, h("span", { class: "profile-who" }, letter, h("span", { class: "found-name" }, words, where)), value ? h("span", { class: "button-value" }, value) : null);
 }
 
 export interface ListOptions {
   kinds: Kind[];
   focus: Pick<Focus, "get" | "set">;
   pick(found: Found): void;
-  // One row a machine, for the NASes, rather than one a server.
+  // One row a machine, for the network drives, rather than one a server.
   machines?: boolean;
   // The row after the list, which has the focus until something's found.
   typed: HTMLElement;
@@ -189,7 +204,7 @@ export interface ListOptions {
 // on the page.
 export function foundList(options: ListOptions): { el: HTMLElement; rows: HTMLElement } {
   const rows = h("div", { class: "found-rows profile-form" });
-  const looking = h("div", { class: "panel-note found-looking" }, "● still looking");
+  const looking = h("div", { class: "panel-note found-looking" }, "Looking…");
   const el = h("div", { class: "found-list" }, rows, looking);
   let unhear: (() => void) | null = null;
   // How many times the stream spoke: an answer asked for before the last
@@ -211,14 +226,14 @@ export function foundList(options: ListOptions): { el: HTMLElement; rows: HTMLEl
 
   const draw = (answer: { found?: Found[]; looking?: boolean }) => {
     const found = (answer.found ?? []).filter((one) => options.kinds.includes(one.kind));
-    const items = options.machines ? machines(found) : found.map((one) => ({ key: `${one.kind} ${one.url}`, face: one.kind, name: one.name, value: one.host, found: one }));
-    looking.textContent = answer.looking ? "● still looking" : items.length ? "" : "nothing on your network answered";
+    const items = options.machines ? machines(found) : found.map((one) => ({ key: `${one.kind} ${one.url}`, face: one.kind, name: one.name, value: addressOf(one), found: one }));
+    looking.textContent = answer.looking ? "Looking…" : items.length ? "" : "Nothing found on your network";
     const key = items.map((item) => `${item.key} ${item.name} ${item.value}`).join("|");
     if (key === shown) return;
     shown = key;
     const had = options.focus.get();
     const index = had ? [...rows.children].indexOf(had) : -1;
-    rows.replaceChildren(...items.map((item) => row(item.face, item.name, item.value, { "data-found": item.key }, () => options.pick(item.found))));
+    rows.replaceChildren(...items.map((item) => row(item.face, item.name, item.value, "", { "data-found": item.key }, () => options.pick(item.found))));
     // Focus stays on the same place in the list.
     if (index >= 0) options.focus.set((rows.children[Math.min(index, rows.children.length - 1)] as HTMLElement | undefined) ?? options.typed, false);
     else settle();
@@ -260,7 +275,7 @@ export function foundList(options: ListOptions): { el: HTMLElement; rows: HTMLEl
   return { el, rows };
 }
 
-// The NASes, one row a machine: its SMB name, or its NFS export's.
+// The network drives, one row a machine: its SMB name, or its NFS export's.
 function machines(found: Found[]): { key: string; face: Kind; name: string; value: string; found: Found }[] {
   const byHost = new Map<string, Found>();
   for (const one of found) {
@@ -273,19 +288,19 @@ function machines(found: Found[]): { key: string; face: Kind; name: string; valu
 export interface SharesOptions {
   host: string;
   focus: Pick<Focus, "get" | "set">;
-  // The share picked, with the sign-in its address was listed with, which
-  // the share then keeps as Music's sources do.
+  // The folder picked, with the sign-in its address was listed with, which
+  // the folder then keeps as Music's own do.
   pick(share: ShareFound, password?: string): void;
 }
 
-// A NAS's folders, and its sign-in, typed on the phone, when it lists them
-// only for a user.
+// A network drive's folders, and its sign-in, typed on the phone, when it
+// lists them only for a user.
 export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): void; first(): HTMLElement | undefined } {
   const rows = h("div", { class: "found-rows profile-form" });
   const line = h("div", { class: "panel-note" }, "…");
-  const user = h("input", { class: "music-search", "data-focus": true, "data-field": "user", type: "text", placeholder: "your user name on it", "aria-label": "your user name on the nas", autocomplete: "username", spellcheck: "false" }) as HTMLInputElement;
-  const password = h("input", { class: "music-search", "data-focus": true, "data-field": "password", type: "password", placeholder: "its password", "aria-label": "the nas's password", autocomplete: "current-password" }) as HTMLInputElement;
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "list", onclick: () => void list(true) }, "↵ show its folders");
+  const user = h("input", { class: "music-search", "data-focus": true, "data-field": "user", type: "text", placeholder: "User name", "aria-label": "User name", autocomplete: "username", spellcheck: "false" }) as HTMLInputElement;
+  const password = h("input", { class: "music-search", "data-focus": true, "data-field": "password", type: "password", placeholder: "Password", "aria-label": "Password", autocomplete: "current-password" }) as HTMLInputElement;
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "list", onclick: () => void list(true) }, "Show folders");
   const form = h("div", { class: "share-form" }, user, password, go);
   shown(form, false);
   const el = h("div", { class: "found-list" }, rows, form, line);
@@ -293,7 +308,7 @@ export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): 
 
   const signIn = () => {
     shown(form, true);
-    line.textContent = `${options.host} shows its folders after you sign in. type it on your phone.`;
+    line.replaceChildren("Sign in to see ", asWritten(options.host), "'s folders");
     options.focus.set(user.value ? password : user, false);
   };
 
@@ -301,7 +316,7 @@ export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): 
     line.textContent = "…";
     let answer: Answer<ShareFound>;
     try {
-      // The password leaves the page with the ask, and the share keeps it.
+      // The password leaves the page with the ask, and the folder keeps it.
       answer = withLogin ? await ask<ShareFound>("/api/discover/shares", { host: options.host, user: user.value.trim(), password: password.value }) : await ask<ShareFound>(`/api/discover/shares?host=${encodeURIComponent(options.host)}`);
     } catch (error) {
       line.textContent = (error as Error).message;
@@ -310,10 +325,10 @@ export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): 
     signedIn = withLogin ? password.value : undefined;
     password.value = "";
     const shares = answer.shares ?? [];
-    rows.replaceChildren(...shares.map((share) => row(null, `▶ ${share.name}`, share.kind === "nfs" ? "nfs" : "", { "data-share": share.uri }, () => options.pick(share, signedIn))));
+    rows.replaceChildren(...shares.map((share) => row(null, share.name, "", share.kind === "nfs" ? "NFS" : "", { "data-share": share.uri }, () => options.pick(share, signedIn))));
     if (answer.login && !withLogin) return signIn();
     shown(form, false);
-    line.textContent = shares.length ? "" : `${options.host} has no folders to share`;
+    line.replaceChildren(...(shares.length ? [] : ["No shared folders on ", asWritten(options.host)]));
     const first = rows.firstElementChild as HTMLElement | null;
     if (first) options.focus.set(first, false);
   };

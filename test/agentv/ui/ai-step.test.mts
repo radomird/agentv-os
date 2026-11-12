@@ -120,11 +120,17 @@ test("T7.2 each provider shows its own icon from its site, and one whose site ha
   const page = await tv();
   try {
     await page.waitForSelector(".ai-cards");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick your ai.");
-    assert.equal(await page.locator(".setup-line").textContent(), "it builds your apps and answers what you ask");
-    assert.equal(await page.locator(".bar .bar-step").textContent(), "6 of 12 · ai");
-    assert.deepEqual(await page.locator(".ai-card .ai-name").allTextContents(), ["Claude", "ChatGPT", "Gemini", "Grok", "Muse"]);
-    assert.deepEqual(await page.locator(".ai-card .ai-maker").allTextContents(), ["Anthropic", "OpenAI", "Google", "xAI", "Meta"]);
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick your AI");
+    assert.equal(await page.locator(".setup-line").textContent(), "It answers you and makes your apps");
+    assert.equal(await page.locator(".bar .bar-step").textContent(), "6 of 12 · AI");
+    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-name").allTextContents(), ["Claude", "ChatGPT", "Gemini", "Grok", "Muse"]);
+    // The last card of the row leaves the AI for later.
+    assert.deepEqual(await page.locator(".ai-cards > :last-child").evaluate((el) => [el.className, el.getAttribute("data-action"), el.textContent?.trim()]), ["ai-card ai-later", "later", "Later"]);
+    assert.equal(await page.locator(".ai-later .ai-name").textContent(), "Later");
+    const cards = await page.locator(".ai-card").evaluateAll((all) => all.map((card) => ({ top: (card as HTMLElement).offsetTop, fits: [...card.querySelectorAll<HTMLElement>(".ai-name, .ai-maker")].every((el) => el.scrollWidth <= card.clientWidth) })));
+    assert.equal(cards.length, 6);
+    assert.ok(cards.every((card) => card.top === cards[0].top && card.fits), "six cards in one row, each with its words inside it");
+    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-maker").allTextContents(), ["Anthropic", "OpenAI", "Google", "xAI", "Meta"]);
     // The icons that came load; the ones that didn't are gone, names left.
     await page.waitForFunction(() => document.querySelectorAll(".ai-icon").length === 2 && [...document.querySelectorAll<HTMLImageElement>(".ai-icon")].every((img) => img.complete && img.naturalWidth > 0));
     assert.deepEqual(await page.locator(".ai-icon").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("data-icon"))), ["claude", "gemini"]);
@@ -143,6 +149,23 @@ test("T7.2 each provider shows its own icon from its site, and one whose site ha
   }
 });
 
+test("the AI step's last card, Later, moves setup on with no AI picked", async () => {
+  atAi();
+  const page = await tv();
+  try {
+    await page.waitForSelector(".ai-cards");
+    // Along the row from Claude to its end.
+    for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "later");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "7 of 12 · who's watching");
+    const ai = await (await fetch(`${url}/api/ai`)).json();
+    assert.deepEqual([ai.provider, ai.path], [null, null]);
+  } finally {
+    await page.close();
+  }
+});
+
 test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone, the link as a QR code, the code, and on", async () => {
   atAi();
   const page = await tv();
@@ -150,10 +173,10 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     await page.waitForSelector(".ai-cards");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".ai-options");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "sign in to Claude.");
-    assert.deepEqual(await page.locator(".ai-options > .button").allTextContents(), ["↵ use my plan", "use a key from my phone", "later, in settings"]);
+    assert.match((await page.locator(".setup-headline").getAttribute("aria-label")) ?? "", /^Sign in to claude$/i, "a headline has no full stop");
+    assert.deepEqual(await page.locator(".ai-options > .button").allTextContents(), ["Use my plan", "Use an API key", "Later"]);
     assert.equal(await page.locator(".ai-paste.hidden").count(), 1, "no code to paste until the sign-in asks for one");
-    assert.equal(await page.locator(".focused").textContent(), "↵ use my plan");
+    assert.equal(await page.locator(".focused").textContent(), "Use my plan");
     await page.keyboard.press("Enter");
     // The terms come first, accepted on the phone. Nothing signs in before.
     await page.waitForSelector(".terms-list");
@@ -167,14 +190,14 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     // gives.
     signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
     await page.waitForSelector(".ai-qr:not(.hidden) .qr[src]");
-    assert.equal(await page.locator('[data-line="sign-in"]').textContent(), "scan to sign in, then paste the code it gives you");
+    assert.equal(await page.locator('[data-line="sign-in"]').textContent(), "Scan to sign in, then paste the code it gives you");
     await page.fill('[data-action="sign-in-code"]', "good-code#s7Q");
     await page.locator('[data-action="send-code"]').click();
     for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
     assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
     // Signed in: on to who watches, with the plan kept for voice.
     signInSays({ state: "done" });
-    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "7 of 12 · who watches");
+    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "7 of 12 · who's watching");
     const ai = await (await fetch(`${url}/api/ai`)).json();
     assert.deepEqual([ai.provider, ai.path], ["claude", "plan"]);
     assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn.signedIn, true);
@@ -203,18 +226,18 @@ test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, s
     assert.equal((await (await fetch(`${url}/api/ai`)).json()).channel, "stable");
     for (const provider of ["claude", "chatgpt", "grok"]) {
       const found = await ways(provider);
-      assert.deepEqual(found.buttons, ["↵ use my plan", "use a key from my phone", "later, in settings"], provider);
+      assert.deepEqual(found.buttons, ["Use my plan", "Use an API key", "Later"], provider);
       assert.doesNotMatch(found.line, /coming soon|best effort|key works now/, provider);
     }
     // Google keeps its plan to its own apps, by its own terms: no plan to
     // pick, and the line says so without a "soon".
     const google = await ways("gemini");
-    assert.deepEqual(google.buttons, ["use a key from my phone", "later, in settings"]);
+    assert.deepEqual(google.buttons, ["Use an API key", "Later"]);
     assert.equal(google.line, "Google keeps its plan to its own apps. A key works now.");
     // Meta has been asked, so Muse's is coming soon.
     const muse = await ways("muse");
-    assert.deepEqual(muse.buttons, ["use a key from my phone", "later, in settings"]);
-    assert.equal(muse.line, "A Muse Code subscription is coming soon. a key works now");
+    assert.deepEqual(muse.buttons, ["Use an API key", "Later"]);
+    assert.equal(muse.line, "A Muse Code subscription is coming soon. A key works now.");
   } finally {
     writeFileSync(channel, was);
     await page.close();
@@ -271,7 +294,7 @@ test("setup run again with a PIN set: a key typed on the TV asks for the PIN and
     await page.waitForSelector(".pin-pad", { timeout: 5000 });
     assert.equal(await page.locator(".key-field").inputValue(), `sk-ant-${"e".repeat(40)}`, "the key waits in its field while the PIN is asked for");
     await page.keyboard.type("2468");
-    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "all set.");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "All set");
     assert.deepEqual((await (await fetch(`${url}/api/ai`)).json()).key, { set: true, provider: "claude" });
     assert.equal(await page.locator(".toast.fail").count(), 0);
   } finally {
@@ -324,7 +347,7 @@ test("a PIN the TV stopped honouring is asked for again at the key, which stays 
     assert.equal(await page.locator(".key-field").inputValue(), key);
     assert.equal((await (await fetch(`${url}/api/ai`)).json()).key.set, false);
     await page.keyboard.type("2468");
-    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "all set.");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "All set");
     assert.deepEqual((await (await fetch(`${url}/api/ai`)).json()).key, { set: true, provider: "claude" });
     assert.equal(await page.locator(".toast.fail").count(), 0);
   } finally {
@@ -398,13 +421,13 @@ test("ADR-070 a sign-in that fails says why and tries again, and later leaves it
     await page.waitForSelector(".ai-options");
     for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
     signInSays({ state: "failed", reason: "it took longer than 15 minutes" });
-    await page.waitForFunction(() => document.querySelector('[data-line="sign-in"]')?.textContent === "that didn't work: it took longer than 15 minutes. try again");
+    await page.waitForFunction(() => document.querySelector('[data-line="sign-in"]')?.textContent === "Couldn't sign in. Try again.");
     rmSync(join(state, "build-drop", "sign-in.json"), { force: true });
     await page.keyboard.press("Enter");
     for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
     assert.ok(existsSync(join(state, "build-drop", "sign-in.json")), "use my plan starts it again");
     await page.locator('[data-action="later"]').click();
-    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "7 of 12 · who watches");
+    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "7 of 12 · who's watching");
     const ai = await (await fetch(`${url}/api/ai`)).json();
     assert.deepEqual([ai.provider, ai.path], ["claude", "plan"], "Settings → AI and a first build still have the plan to sign in to");
   } finally {
@@ -430,7 +453,7 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
       await page.goto(`${url}/`);
       await page.waitForFunction((want) => (document.documentElement.dataset.features ?? "").split(" ").includes("setup2") === want, on);
       await page.waitForFunction(() => Boolean((window as unknown as { agentvLauncher?: unknown }).agentvLauncher));
-      await go(page, "settings/ai");
+      await go(page, "settings/your-ai");
       await page.waitForSelector('[data-action="use-plan"]');
       if (!on) {
         assert.equal(await page.locator('[data-action="plan-sign-in"]').count(), 0);
@@ -446,7 +469,7 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
       for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
       assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
       signInSays({ state: "done" });
-      await page.locator('.toast:has-text("you\'re signed in to your plan")').waitFor();
+      await page.locator('.toast:has-text("You\'re signed in")').waitFor();
       await page.waitForSelector('[data-action="plan-sign-in"]');
       assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn.signedIn, true);
     } finally {

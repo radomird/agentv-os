@@ -6,7 +6,7 @@ import type { Route } from "../router.ts";
 import type { ExecContext, Outcome } from "./index.ts";
 
 export async function newEpisode(route: Route, ctx: ExecContext): Promise<Outcome> {
-  if (!ctx.news) return { kind: "none", why: "soon", say: "i can't check for new episodes on this tv yet" };
+  if (!ctx.news) return { kind: "none", why: "soon", say: "Can't check for new episodes yet" };
   const answer = await ctx.news.episode(route.query);
   if (!answer.ok) {
     const why = answer.why === "no-key" || answer.why === "no-region" ? "no-tmdb" : answer.why === "failed" ? "failed" : "not-found";

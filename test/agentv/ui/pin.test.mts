@@ -88,14 +88,14 @@ test("S4.5 Settings → Adult PIN sets a PIN on its pad, chosen twice, with the 
   const page = await tv();
   await home(page);
   await go(page, "settings/pin");
-  await page.waitForSelector('.menu-item.open[data-key="pin"]');
-  assert.match(await page.locator('.menu-item[data-key="pin"]').innerText(), /adult pin\s+off/);
-  assert.match(await page.locator(".panel").innerText(), /off[\s\S]*a child's profile needs one/);
+  await page.waitForSelector('.settings-panel[data-page="pin"]');
+  assert.equal(await page.locator(".menu-item.open").innerText(), "profiles", "the adult PIN is a row in Profiles");
+  assert.match(await page.locator(".panel").innerText(), /set a pin\s+4 digits, for settings, new apps and the desktop/);
   await page.keyboard.press("Enter");
   assert.equal(await focused(page), "set-pin");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /tv settings · pin[\s\S]*set an adult pin[\s\S]*4 digits, for settings, builds and the desktop/);
+  assert.match(await padText(page), /tv settings · pin[\s\S]*set an adult pin[\s\S]*4 digits, for settings, new apps and the desktop/);
   assert.equal(await focused(page), "1", "the pad starts on 1");
 
   // The remote's arrows and OK: 4 is under 1.
@@ -111,18 +111,25 @@ test("S4.5 Settings → Adult PIN sets a PIN on its pad, chosen twice, with the 
   await type(page, "826");
   // The second pad: a different PIN is refused and cleared, the same one is
   // kept.
-  await page.waitForFunction(() => /the same pin again/.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /Enter it again/.test(document.getElementById("pin")?.textContent ?? ""));
   assert.equal(await filled(page), 0);
   await type(page, "4827");
-  await page.waitForFunction(() => /that's not the same pin\./.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /Those don't match/.test(document.getElementById("pin")?.textContent ?? ""));
   assert.equal(await filled(page), 0);
   assert.equal(daemon.pin.status().set, false);
   await type(page, PIN);
   await waitPad(page, false);
   assert.equal(daemon.pin.status().set, true);
-  await page.waitForFunction(() => /adult pin\s*on/.test(document.querySelector('.menu-item[data-key="pin"]')?.textContent ?? ""));
-  assert.match(await page.locator(".toast").last().innerText(), /the pin is set/);
-  assert.match(await page.locator('.menu-item[data-key="desktop"]').innerText(), /omarchy desktop\s+\[pin\]/);
+  await page.waitForSelector('.panel [data-action="remove-pin"]');
+  assert.match(await page.locator(".toast").last().innerText(), /^pin set$/);
+  // The row says it's on, and nothing in Settings is marked "[pin]".
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.settings-panel[data-page="profiles"]');
+  assert.match(await page.locator('.panel [data-action="pin"]').innerText(), /adult pin\s+on/);
+  assert.equal(await focused(page), "pin", "Back from the page lands on its row");
+  await go(page, "settings/tv");
+  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  assert.doesNotMatch(await page.locator(".page.settings").innerText(), /\[pin\]/);
   await page.close();
 });
 
@@ -132,11 +139,11 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await home(page);
   // Omarchy's desktop: Back cancels the pad, and nothing is asked of the TV.
   await go(page, "settings/desktop");
-  await page.waitForSelector('.menu-item.open[data-key="desktop"]');
+  await page.waitForSelector('.settings-panel[data-page="desktop"]');
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /enter the adult pin[\s\S]*for omarchy's desktop\./);
+  assert.match(await padText(page), /enter the adult pin[\s\S]*for omarchy's desktop$/m);
   await page.keyboard.press("Escape");
   await waitPad(page, false);
   assert.deepEqual(await sent(page, "desktop"), []);
@@ -146,7 +153,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.keyboard.press("Enter");
   await waitPad(page, true);
   await type(page, "0000");
-  await page.waitForFunction(() => /that's not the pin\./.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Wrong PIN$/.test(document.querySelector("#pin .pin-message")?.textContent ?? "") && /./.test(document.getElementById("pin")?.textContent ?? ""));
   assert.equal(await padUp(page), true);
   await type(page, PIN);
   await waitPad(page, false);
@@ -156,8 +163,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   // The rest of this visit to Settings uses the same grant: Power doesn't
   // ask again.
   await go(page, "settings/power");
-  await page.waitForSelector('.menu-item.open[data-key="power"]');
-  assert.match(await page.locator('.menu-item[data-key="power"]').innerText(), /power\s+\[pin\]/);
+  await page.waitForSelector('.settings-panel[data-page="tv"]');
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".page.power");
@@ -186,7 +192,7 @@ test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Adu
   await page.waitForSelector('.panel [data-action="lock"]');
   await page.locator('.panel [data-action="lock"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /tv locked[\s\S]*enter the adult pin[\s\S]*the tv is locked\./);
+  assert.match(await padText(page), /tv locked[\s\S]*enter the adult pin[\s\S]*this tv is locked$/m);
   // Back and Home don't get past it.
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");
@@ -255,14 +261,14 @@ test("S4.5 agentv-pin-check's ask on the TV brings up the pad each time, and its
   const ask = (action: string) => page.evaluate((a) => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin(a), action);
   const asked = ask("desktop");
   await waitPad(page, true);
-  assert.match(await padText(page), /for omarchy's desktop\./);
+  assert.match(await padText(page), /for omarchy's desktop$/m);
   await type(page, PIN);
   const { grant } = await asked;
   assert.ok(grant && daemon.pin.allows(grant));
   // Asked again, it asks again.
   const again = ask("power");
   await waitPad(page, true);
-  assert.match(await padText(page), /for restarting or shutting down\./);
+  assert.match(await padText(page), /for restarting or shutting down$/m);
   await page.keyboard.press("Escape");
   assert.equal((await again).grant, null);
   // Nor does it stand in for Settings: Omarchy's desktop there asks.
@@ -281,7 +287,7 @@ test("S4.5 agentv-pin-check's ask on the TV brings up the pad each time, and its
   await page.waitForFunction(() => /tv locked/.test(document.getElementById("pin")?.textContent ?? ""));
   const locked = ask("desktop");
   await type(page, PIN);
-  await page.waitForFunction(() => /for omarchy's desktop\./.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /For Omarchy's desktop/.test(document.getElementById("pin")?.textContent ?? ""));
   await type(page, PIN);
   const unlocked = await locked;
   assert.ok(unlocked.grant && daemon.pin.allows(unlocked.grant));
@@ -294,14 +300,14 @@ test("S4.5 changing the PIN needs the one before, and so does taking it off", as
   await home(page);
   await go(page, "settings/pin");
   await page.waitForSelector('.panel [data-action="set-pin"]');
-  assert.match(await page.locator(".panel").innerText(), /on[\s\S]*change the pin →[\s\S]*lock the tv now[\s\S]*take the pin off/);
+  assert.match(await page.locator(".panel").innerText(), /^change pin\s+lock the tv now\s+remove pin$/);
   await page.locator('.panel [data-action="set-pin"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /for changing the pin\./);
+  assert.match(await padText(page), /for changing the pin$/m);
   await type(page, PIN);
-  await page.waitForFunction(() => /choose a new pin/.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /Choose a new PIN/.test(document.getElementById("pin")?.textContent ?? ""));
   await type(page, "1357");
-  await page.waitForFunction(() => /the same pin again/.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /Enter it again/.test(document.getElementById("pin")?.textContent ?? ""));
   await type(page, "1357");
   await waitPad(page, false);
   assert.equal(daemon.pin.check(PIN).ok, false);
@@ -316,7 +322,7 @@ test("S4.5 changing the PIN needs the one before, and so does taking it off", as
   await waitPad(page, true);
   await type(page, "1357");
   await waitPad(page, false);
-  await page.waitForFunction(() => /adult pin\s*off/.test(document.querySelector('.menu-item[data-key="pin"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /^Set a PIN/.test(document.querySelector(".panel")?.textContent ?? ""));
   assert.equal(daemon.pin.status().set, false);
   await page.close();
 });

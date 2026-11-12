@@ -72,22 +72,22 @@ test("S5.6 setup's step is kept in setup.json, and a box from before stage 5 sta
 
 test("no step is skipped: forward only as far as the first one that isn't finished, and back always", async () => {
   const store = new Setup({ path: join(scratch, "order.json") });
-  assert.match((await store.go("goal")).error ?? "", /welcome isn't finished yet/);
-  assert.match((await store.finish("ready")).error ?? "", /welcome isn't finished yet/);
+  assert.match((await store.go("goal")).error ?? "", /Finish getting ready first/);
+  assert.match((await store.finish("ready")).error ?? "", /Finish getting ready first/);
   await store.finish("welcome");
   await store.finish("ready");
   assert.equal((await store.read()).step, "country");
-  assert.match((await store.finish("ai")).error ?? "", /country isn't finished yet/);
+  assert.match((await store.finish("ai")).error ?? "", /Finish location first/);
   await store.finish("country");
   assert.equal((await store.read()).step, "ai");
-  assert.match((await store.go("goal")).error ?? "", /ai isn't finished yet/);
+  assert.match((await store.go("goal")).error ?? "", /Finish AI first/);
   await store.finish("ai");
   assert.equal((await store.read()).step, "people");
   await store.finish("people");
   assert.equal((await store.read()).step, "goal");
   assert.equal((await store.go("welcome")).state?.step, "welcome");
   assert.equal((await store.go("goal")).state?.step, "goal");
-  assert.match((await store.finish("goal")).error ?? "", /pick what the tv is for first/);
+  assert.match((await store.finish("goal")).error ?? "", /Pick what your TV is for first/);
   assert.match((await store.setGoal("films")).error ?? "", /streaming, music, media, gaming/);
   await store.setGoal("music");
   assert.equal((await store.finish("goal")).state?.goal, "music");
@@ -140,7 +140,7 @@ test("the setup screens hear where setup is, how the box is online, the hotspot 
   const info = await (await fetch(`${url}/api/setup`)).json();
   assert.equal(info.setup.step, "welcome");
   assert.deepEqual(info.steps, ["welcome", "ready", "box", "country", "ai", "people", "goal", "apps", "look", "theme", "background"]);
-  assert.equal(info.parts.box, "4 of 12 · your box");
+  assert.equal(info.parts.box, "4 of 12 · your setup");
   assert.equal(info.parts.apps, "9 of 12 · apps");
   assert.equal(info.parts.look, "10 of 12 · look and size");
   assert.equal(info.parts.theme, "11 of 12 · theme and background");
@@ -151,7 +151,7 @@ test("the setup screens hear where setup is, how the box is online, the hotspot 
   try {
     const before = await (await fetch(`${url}/api/setup`)).json();
     assert.deepEqual(before.steps, ["welcome", "ready", "country", "ai", "people", "goal", "apps", "theme", "background"]);
-    assert.equal(before.parts.country, "1/6 country");
+    assert.equal(before.parts.country, "1/6 location");
     assert.equal(before.parts.goal, "4/6 goal");
     assert.equal(before.parts.apps, "5/6 apps");
     assert.equal(before.parts.theme, "6/6 look");
@@ -251,13 +251,13 @@ test("with music as the goal, Music is on home from the start", async () => {
 
 test("an app asked for at add your own is kept for later, once, up to five", async () => {
   const store = new Setup({ path: join(scratch, "wishes.json") });
-  assert.match((await store.wish("")).error ?? "", /a few words/);
-  assert.match((await store.wish("x".repeat(81))).error ?? "", /a few words/);
-  assert.match((await store.wish("<script>")).error ?? "", /a few words/);
+  assert.match((await store.wish("")).error ?? "", /Use a few words/);
+  assert.match((await store.wish("x".repeat(81))).error ?? "", /Use a few words/);
+  assert.match((await store.wish("<script>")).error ?? "", /Use a few words/);
   assert.deepEqual((await store.wish("  a radio   app ")).state?.wishes, ["a radio app"]);
   assert.deepEqual((await store.wish("A radio app")).state?.wishes, ["a radio app"], "the same words again are kept once");
   for (const app of ["one", "two", "three", "four"]) await store.wish(app);
-  assert.match((await store.wish("six")).error ?? "", /5 for later already/);
+  assert.match((await store.wish("six")).error ?? "", /That's 5 saved already/);
   assert.equal((await new Setup({ path: join(scratch, "wishes.json") }).read()).wishes.length, 5);
   assert.deepEqual((await store.mark(false)).wishes, [], "setup started again forgets them");
 });
@@ -280,10 +280,10 @@ test("T7.1 setup's order is ADR-071's: the TV starts at getting ready, 3 of 12, 
     [
       ["welcome", 3, "getting ready"],
       ["ready", 3, "getting ready"],
-      ["box", 4, "your box"],
+      ["box", 4, "your setup"],
       ["country", 5, "location"],
-      ["ai", 6, "ai"],
-      ["people", 7, "who watches"],
+      ["ai", 6, "AI"],
+      ["people", 7, "who's watching"],
       ["goal", 8, "goal"],
       ["apps", 9, "apps"],
       ["look", 10, "look and size"],
@@ -300,11 +300,11 @@ test("T7.1 with setup's own switch on, the bar says \"5 of 12 · location\", and
   const off = new Setup({ path: join(scratch, "progress.json") });
   const before = await off.progress();
   assert.equal(before.numbers, null);
-  assert.equal(before.parts.country, "1/6 country");
+  assert.equal(before.parts.country, "1/6 location");
   const on = new Setup({ path: join(scratch, "progress.json"), on: async (feature) => feature === "setup2" });
   const after = await on.progress();
   assert.deepEqual(after.steps, STEPS.filter((step) => step !== "look" && step !== "box"), "the look and your box wait for their own switches");
-  assert.deepEqual([after.parts.welcome, after.parts.country, after.parts.people, after.parts.background], ["3 of 12 · getting ready", "5 of 12 · location", "7 of 12 · who watches", "11 of 12 · theme and background"]);
+  assert.deepEqual([after.parts.welcome, after.parts.country, after.parts.people, after.parts.background], ["3 of 12 · getting ready", "5 of 12 · location", "7 of 12 · who's watching", "11 of 12 · theme and background"]);
   assert.deepEqual([after.numbers?.ready, after.numbers?.ai, after.of], [3, 6, 12]);
 });
 
@@ -312,7 +312,7 @@ test("T7.1 with setup's own switch on, the bar says \"5 of 12 · location\", and
 const SWITCHED: StepEntry[] = [
   { step: "welcome", n: 3, name: "getting ready" },
   { step: "ready", n: 3, name: "getting ready" },
-  { step: "box", n: 4, name: "your box", feature: "boxcheck" },
+  { step: "box", n: 4, name: "your setup", feature: "boxcheck" },
   { step: "country", n: 5, name: "location" },
   { step: "ai", n: 6, name: "ai" },
 ];
@@ -328,10 +328,10 @@ test("a step behind a switch shows only with it on, and setup goes past it with 
   boxcheck = true;
   await store.mark(false);
   assert.deepEqual(await store.steps(), ["welcome", "ready", "box", "country", "ai"]);
-  assert.equal(((await store.progress()).parts as Record<string, string>).box, "4 of 12 · your box");
+  assert.equal(((await store.progress()).parts as Record<string, string>).box, "4 of 12 · your setup");
   await store.finish("welcome");
   assert.equal((await store.finish("ready")).state?.step, "box");
-  assert.match((await store.finish("country")).error ?? "", /box isn't finished yet/);
+  assert.match((await store.finish("country")).error ?? "", /Finish your setup first/);
   assert.equal((await store.finish("box")).state?.step, "country");
 });
 

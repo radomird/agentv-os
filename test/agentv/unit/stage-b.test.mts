@@ -202,7 +202,7 @@ test("ADR-011 a streaming service's app on home goes on with stage B by itself o
   // never to put away, since its app is on home.
   status(made.id, { build: made.build, phase: "stage-b", state: "failed", reason: "study: it stopped", understood, at: "2026-10-27T18:40:00Z" });
   assert.equal(await tend(), false, "a failed stage B isn't started again by itself");
-  assert.match((await builds.forget(made.build)).error!, /its app is on the tv: try again, or remove the app/);
+  assert.match((await builds.forget(made.build)).error!, /Its app is on your TV\. Try again, or remove the app\./);
   assert.equal((await builds.retry(made.build)).error, undefined);
   assert.equal(take("start").phase, "stage-b");
 });

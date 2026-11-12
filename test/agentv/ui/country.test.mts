@@ -64,9 +64,10 @@ test("ADR-055 setup's country step starts on the installer's time zone's country
   const page = await tv();
   try {
     await page.waitForSelector('[data-action="country-other"]');
-    assert.equal(await headline(page), "norway.");
-    assert.equal(await page.locator(".setup-page .prompt").textContent(), "~ $ where is this tv?");
-    assert.match((await page.locator(".bar").textContent()) ?? "", /1\/6 country/);
+    assert.equal(await headline(page), "Norway?");
+    assert.equal(await page.locator(".setup-page .prompt").textContent(), "~ $ tv location");
+    assert.match((await page.locator(".bar").textContent()) ?? "", /1\/6 location/);
+    assert.deepEqual(await page.locator(".setup-page .button").allTextContents(), ["Yes", "Another location"]);
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "continue");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".providers");
@@ -88,11 +89,11 @@ test("ADR-055 another country is typed on the phone's keyboard, and the time zon
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "country-other");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".country-picker");
-    assert.equal(await headline(page), "pick the country.");
+    assert.equal(await headline(page), "Pick your location");
     // The phone's keyboard types into the field, as on the box.
     await page.fill('[data-action="country-field"]', "unit");
     await page.waitForFunction(() => document.querySelectorAll(".country-list .country").length === 1);
-    assert.equal(await page.locator(".country-list .country").first().textContent(), "united statesus");
+    assert.equal(await page.locator(".country-list .country").first().textContent(), "United StatesUS");
     await page.click('.country-list [data-code="US"]');
     await page.waitForSelector(".providers");
     const now = await country();
@@ -115,7 +116,7 @@ test("ADR-055 with the arrows: the picker opens around the box's country, and OK
     // Two by four, around norway, which has the focus and says it's here.
     assert.deepEqual(await page.locator(".country-list .country").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.code)), ["JP", "NL", "NZ", "NO", "PT", "RS", "SJ", "US"]);
     assert.equal(await page.locator(".focused").getAttribute("data-code"), "NO");
-    assert.match((await page.locator(".country.current").textContent()) ?? "", /here now/);
+    assert.match((await page.locator(".country.current").textContent()) ?? "", /^NorwayCurrent$/);
     await page.keyboard.press("ArrowDown");
     assert.equal(await page.locator(".focused").getAttribute("data-code"), "RS");
     await page.keyboard.press("Enter");
@@ -133,7 +134,7 @@ test("ADR-055 a box in UTC has no country to confirm, so the step starts on pick
   try {
     await page.waitForSelector(".country-picker");
     assert.equal(await page.locator('[data-action="country-other"]').count(), 0);
-    assert.equal(await headline(page), "pick the country.");
+    assert.equal(await headline(page), "Pick your location");
     await page.fill('[data-action="country-field"]', "japan");
     await page.click('.country-list [data-code="JP"]');
     await page.waitForSelector(".providers");
@@ -150,14 +151,17 @@ test("ADR-055 Settings → country shows where the TV is and changes the same se
   try {
     await page.waitForSelector(".grid .tile.focused");
     await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/country"));
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("this tv is in"));
-    assert.match((await page.locator(".settings-panel").textContent()) ?? "", /this tv is innorway[\s\S]*the time is oslo's, and new this week comes from here/);
+    // It's the Location row in This TV, with where the TV is as its value.
+    await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="country"]')?.textContent === "LocationNorway");
+    assert.equal(await page.locator(".menu-item.open").textContent(), "This TV");
     await page.click('[data-action="country"]');
     await page.waitForSelector(".country-picker");
+    assert.equal(await page.locator(".page .headline").textContent(), "Pick your location");
+    assert.equal(await page.locator(".page > .panel-note").textContent(), "It sets your clock and what's new");
     await page.fill('[data-action="country-field"]', "port");
     await page.click('.country-list [data-code="PT"]');
-    await page.locator(".toast.ok", { hasText: "this tv is in portugal now" }).waitFor();
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("portugal"));
+    await page.locator(".toast.ok", { hasText: "Location set to Portugal" }).waitFor();
+    await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="country"]')?.textContent === "LocationPortugal");
     assert.deepEqual([(await country()).code, zone()], ["PT", "Europe/Lisbon"]);
   } finally {
     await page.close();

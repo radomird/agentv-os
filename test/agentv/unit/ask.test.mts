@@ -58,27 +58,27 @@ function context(o: { builds?: Partial<ExecBuilds> | null; apps?: ExecApp[] } = 
 
 test("T11.2 make starts the builder with what was said, and the TV says the agent is reading it", async () => {
   const { ctx, asked } = context();
-  assert.deepEqual(await execute(routed(make("a game like Tetris")), ctx), { kind: "build", build: "b1", what: "a game like Tetris", say: "your agent is reading what you asked" });
+  assert.deepEqual(await execute(routed(make("a game like Tetris")), ctx), { kind: "build", build: "b1", what: "a game like Tetris", say: "On it…" });
   assert.deepEqual(asked, ["a game like Tetris"]);
 });
 
 test("T11.2 a child's make or change is 'ask a grown-up', and nothing is built", async () => {
   const { ctx, asked } = context({ builds: { adult: false } });
-  assert.deepEqual(await execute(routed(make("a game with unicorns")), ctx), { kind: "none", why: "child", say: "ask a grown-up to make apps" });
-  assert.deepEqual(await execute(routed(change("make the jump higher", "local.blocks")), ctx), { kind: "none", why: "child", say: "ask a grown-up to change apps" });
+  assert.deepEqual(await execute(routed(make("a game with unicorns")), ctx), { kind: "none", why: "child", say: "Ask a grown-up to make apps" });
+  assert.deepEqual(await execute(routed(change("make the jump higher", "local.blocks")), ctx), { kind: "none", why: "child", say: "Ask a grown-up to change apps" });
   assert.deepEqual(asked, []);
 });
 
 test("with no AI ready to build, make says where to set it up, and a builder that won't start says why", async () => {
   const { ctx } = context({ builds: { ready: async () => NO_AI } });
-  assert.deepEqual(await execute(routed(make("a quiz")), ctx), { kind: "none", why: "no-ai", say: "set up an ai first: settings → ai" });
-  const busy = context({ builds: { make: async () => ({ error: "another build is going; one runs at a time" }) } });
-  assert.deepEqual(await execute(routed(make("a quiz")), busy.ctx), { kind: "none", why: "not-built", say: "another build is going; one runs at a time" });
+  assert.deepEqual(await execute(routed(make("a quiz")), ctx), { kind: "none", why: "no-ai", say: "Set up AI in Settings first" });
+  const busy = context({ builds: { make: async () => ({ error: "One at a time. Wait for the other app." }) } });
+  assert.deepEqual(await execute(routed(make("a quiz")), busy.ctx), { kind: "none", why: "not-built", say: "One at a time. Wait for the other app." });
   // An AI that isn't set up can't route anything, so the router says so,
   // and with the Ask box building the TV says where to set it up.
-  const failed = routed({ ...NONE }, { none: "failed", error: "set up your agent in settings → ai first", setup: "ai" });
+  const failed = routed({ ...NONE }, { none: "failed", error: "Set up AI in Settings first", setup: "ai" });
   assert.deepEqual(await execute(failed, context().ctx), { kind: "none", why: "no-ai", say: NO_AI });
-  assert.deepEqual(await execute(failed, context({ builds: null }).ctx), { kind: "none", why: "failed", say: "your agent didn't answer", detail: "set up your agent in settings → ai first" }, "with the switch off, as before");
+  assert.deepEqual(await execute(failed, context({ builds: null }).ctx), { kind: "none", why: "failed", say: NO_AI }, "with the switch off, the same line");
 });
 
 test("with the askbuilds switch off, make and change are 'i didn't get that', as before the router knew them", async () => {
@@ -90,7 +90,7 @@ test("with the askbuilds switch off, make and change are 'i didn't get that', as
 test("T11.2 a change to an app the agent made waits for an adult's ok, with its recipe", async () => {
   const { ctx, asked } = context();
   const waiting = await execute(routed(change("make the pieces fall faster", "local.blocks")), ctx);
-  assert.deepEqual(waiting, { kind: "change", app: "local.blocks", name: "Blocks", what: "make the pieces fall faster", recipe: "game", say: "change blocks: make the pieces fall faster?" });
+  assert.deepEqual(waiting, { kind: "change", app: "local.blocks", name: "Blocks", what: "make the pieces fall faster", recipe: "game", say: "Change Blocks: make the pieces fall faster?" });
   // By its name too, as said.
   assert.equal(((await execute(routed(change("add levels", "Blocks")), ctx)) as Outcome & { app: string }).app, "local.blocks");
   assert.deepEqual(asked, [], "nothing starts before the ok");
@@ -99,12 +99,12 @@ test("T11.2 a change to an app the agent made waits for an adult's ok, with its 
 test("a change names the app or finds the only one the agent made, and says why when it can't", async () => {
   const { ctx } = context();
   assert.equal(((await execute(routed(change("make the jump higher")), ctx)) as Outcome & { app: string }).app, "local.blocks", "the only one the agent made");
-  assert.deepEqual(await execute(routed(change("make it faster", "agentv.jellyfin")), ctx), { kind: "none", why: "not-made", say: "your agent didn't make jellyfin, so it can't change it" });
-  assert.deepEqual(await execute(routed(change("make it faster", "Snake")), ctx), { kind: "none", why: "missing", say: "there's no snake on this tv" });
+  assert.deepEqual(await execute(routed(change("make it faster", "agentv.jellyfin")), ctx), { kind: "none", why: "not-made", say: "Jellyfin isn't one of your own apps" });
+  assert.deepEqual(await execute(routed(change("make it faster", "Snake")), ctx), { kind: "none", why: "missing", say: "Snake isn't on this TV" });
   const none = context({ apps: [APPS[0]] });
-  assert.deepEqual(await execute(routed(change("make the jump higher")), none.ctx), { kind: "none", why: "not-made", say: "your agent hasn't made any apps yet" });
+  assert.deepEqual(await execute(routed(change("make the jump higher")), none.ctx), { kind: "none", why: "not-made", say: "You haven't made any apps yet" });
   const two = context({ apps: [...APPS, { id: "local.quiz", name: "Quiz", category: "games", capabilities: [], made: true }] });
-  assert.deepEqual(await execute(routed(change("make the jump higher")), two.ctx), { kind: "none", why: "which", say: "which app? say its name too" });
+  assert.deepEqual(await execute(routed(change("make the jump higher")), two.ctx), { kind: "none", why: "which", say: "Which app? Say its name." });
 });
 
 // --- The Ask box's routes ------------------------------------------------------
@@ -154,7 +154,7 @@ test("T11.2 GET says what the Ask box is waiting on: a make the agent read, with
 
 test("T11.2 an adult's ok to a make is the builder's own confirm, and only once the agent has read it", async () => {
   const reading = fakeKit({ outcome: { kind: "build", build: "b1", what: "x", say: "" }, build: { state: "running" } });
-  assert.deepEqual((await call(reading.kit, "POST", "/api/phone/ask/confirm", { n: 7 })).data, { ok: false, error: "your agent is still reading it" });
+  assert.deepEqual((await call(reading.kit, "POST", "/api/phone/ask/confirm", { n: 7 })).data, { ok: false, error: "Still working it out" });
   const { kit, did } = fakeKit({ outcome: { kind: "build", build: "b1", what: "x", say: "" } });
   assert.equal((await call(kit, "POST", "/api/phone/ask/confirm", { n: 6 })).status, 409, "not a newer sentence's");
   assert.equal((await call(kit, "POST", "/api/phone/ask/confirm", { n: 7 })).status, 200);
@@ -167,7 +167,7 @@ test("T11.2 an adult's ok to a make is the builder's own confirm, and only once 
 test("T11.2 an adult's ok to a change starts its new version, and 'not this' drops it; a child can do neither", async () => {
   const outcome: Outcome = { kind: "change", app: "local.blocks", name: "Blocks", what: "make the pieces fall faster", recipe: "game", say: "" };
   const child = fakeKit({ adult: false, outcome });
-  assert.deepEqual((await call(child.kit, "POST", "/api/phone/ask/confirm", { n: 7 })).data, { ok: false, error: "ask a grown-up to make apps" });
+  assert.deepEqual((await call(child.kit, "POST", "/api/phone/ask/confirm", { n: 7 })).data, { ok: false, error: "Ask a grown-up to make apps" });
   assert.deepEqual(child.did, []);
   const { kit, did } = fakeKit({ outcome });
   const ok = await call(kit, "POST", "/api/ask/confirm", { n: 7 });
@@ -248,7 +248,7 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
       writeFileSync(join(version, "status.json"), JSON.stringify({ build: made.outcome.build, id: "local.blocks", version: "1.0.0", phase: "understand", steps: [], started: "", at: "", ...change }));
     };
     status({ state: "running" });
-    assert.equal((await (await phone("POST", "/api/phone/ask/confirm", { n: made.n })).json()).error, "your agent is still reading it");
+    assert.equal((await (await phone("POST", "/api/phone/ask/confirm", { n: made.n })).json()).error, "Still working it out");
     status({ state: "confirm", understood: { name: "Blocks", recipe: "game", says: "a falling-block game" } });
     const waiting = (await (await phone("GET", "/api/phone/ask")).json()).ask;
     assert.deepEqual([waiting.kind, waiting.state, waiting.name, waiting.recipe], ["build", "confirm", "Blocks", "game"]);
@@ -268,17 +268,17 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
     // A change: the router hears Blocks is the agent's, and nothing starts before the ok.
     const asked = await say("make the pieces in blocks fall faster", change("make the pieces fall faster", "local.blocks"));
     assert.deepEqual(heard.find((app) => app.id === "local.blocks"), { id: "local.blocks", name: "Blocks", category: "games", made: true });
-    assert.deepEqual(asked.outcome, { kind: "change", app: "local.blocks", name: "Blocks", what: "make the pieces fall faster", recipe: "game", say: "change blocks: make the pieces fall faster?" });
+    assert.deepEqual(asked.outcome, { kind: "change", app: "local.blocks", name: "Blocks", what: "make the pieces fall faster", recipe: "game", say: "Change Blocks: make the pieces fall faster?" });
     assert.equal((await (await phone("GET", "/api/phone/ask")).json()).ask.kind, "change");
     assert.equal((await send("POST", "/api/ask/confirm", { n: asked.n })).status, 200);
     const changed = JSON.parse(readFileSync(join(base, "state", "build-drop", "start.json"), "utf8"));
     assert.deepEqual([changed.phase, changed.id, changed.version, changed.from, changed.change], ["build", "local.blocks", "1.1.0", "1.0.0", "make the pieces fall faster"]);
-    assert.equal((await (await send("GET", "/api/say")).json()).said.outcome.say, "building blocks");
+    assert.equal((await (await send("GET", "/api/say")).json()).said.outcome.say, "Making Blocks");
 
     // A child's profile: ask a grown-up, and the routes say so too.
     const child = (await (await send("POST", "/api/viewers", { name: "mia", role: "child" }, onTv)).json()).profile;
     await send("POST", "/api/viewer", { id: child.id });
-    assert.deepEqual((await say("make me a game with unicorns", make("a game with unicorns"))).outcome, { kind: "none", why: "child", say: "ask a grown-up to make apps" });
+    assert.deepEqual((await say("make me a game with unicorns", make("a game with unicorns"))).outcome, { kind: "none", why: "child", say: "Ask a grown-up to make apps" });
     assert.deepEqual(await (await phone("GET", "/api/phone/ask")).json(), { ok: true, ask: null });
   } finally {
     await daemon.close();

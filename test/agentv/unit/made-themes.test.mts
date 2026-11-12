@@ -119,13 +119,13 @@ test("S6.4 the screen daemon hands a made theme to Omarchy as the person's and s
 
   // Omarchy's own, and a theme of the person's, are left alone.
   placeTheme(drawn(join(base, "tokyo")), themes, { id: "local.tokyo-night", name: "Tokyo night", version: "1.0.0" });
-  assert.deepEqual(takeTheme({ themes, id: "local.tokyo-night", home, omarchy }), { error: "omarchy has a theme called tokyo-night already" });
+  assert.deepEqual(takeTheme({ themes, id: "local.tokyo-night", home, omarchy }), { error: "There's already a theme called tokyo-night" });
   mkdirSync(join(home, ".config/omarchy/themes/dusk"), { recursive: true });
   writeFileSync(join(home, ".config/omarchy/themes/dusk/colors.toml"), "mine");
   placeTheme(drawn(join(base, "dusk")), themes, { id: "local.dusk", name: "Dusk", version: "1.0.0" });
-  assert.deepEqual(takeTheme({ themes, id: "local.dusk", home, omarchy }), { error: "you have a theme called dusk already" });
+  assert.deepEqual(takeTheme({ themes, id: "local.dusk", home, omarchy }), { error: "There's already a theme called dusk" });
   assert.equal(readFileSync(join(home, ".config/omarchy/themes/dusk/colors.toml"), "utf8"), "mine");
-  assert.deepEqual(takeTheme({ themes, id: "local.nowhere", home, omarchy }), { error: "it isn't on this box" });
+  assert.deepEqual(takeTheme({ themes, id: "local.nowhere", home, omarchy }), { error: "It isn't on this TV" });
   const failing = { setTheme: async () => ({ ok: false, error: "the theme does not exist" }) };
   assert.deepEqual(await answerTheme({ kind: "take", id: ID }, failing, { home, omarchy, themes }), { ok: false, error: "the theme does not exist" });
 
@@ -185,10 +185,11 @@ test("S6.4 the daemon has a made theme set once a version, lists it in Look, and
     await until(() => existsSync(join(base, "state", "made-themes.json")) && Object.keys(state()).length === 2);
     assert.deepEqual(state(), { [ID]: { version: "1.0.0", name: "calm-forest" }, "local.dusk": { version: "1.0.0", error: "you have a theme called dusk already" } });
 
-    // Look lists the one that's set, after Omarchy's own, made by your agent.
+    // Look lists the one that's set, after Omarchy's own, as made by you,
+    // by the name it was given.
     const looks = await (await send("GET", "/api/themes")).json();
-    const made = looks.themes.filter((look: { note: string }) => look.note === "made by your agent");
-    assert.deepEqual(made.map((look: { id: string; name: string }) => [look.id, look.name]), [["calm-forest", "calm forest"]]);
+    const made = looks.themes.filter((look: { note: string }) => look.note === "Made by you");
+    assert.deepEqual(made.map((look: { id: string; name: string }) => [look.id, look.name]), [["calm-forest", "Calm forest"]]);
     assert.equal(made[0].colors.accent, "#e0a458");
     assert.deepEqual((await (await send("GET", "/api/builds")).json()).themes, state(), "the TV's build page hears it too");
 
@@ -203,7 +204,7 @@ test("S6.4 the daemon has a made theme set once a version, lists it in Look, and
     rmSync(join(themes, ID), { recursive: true });
     await until(() => !state()[ID]);
     assert.deepEqual(asked.at(-1), { kind: "drop", id: ID, n: asked.length });
-    assert.ok(!(await (await send("GET", "/api/themes")).json()).themes.some((look: { note: string }) => look.note === "made by your agent"));
+    assert.ok(!(await (await send("GET", "/api/themes")).json()).themes.some((look: { note: string }) => look.note === "Made by you"));
   } finally {
     screen.stop();
     await daemon.close();

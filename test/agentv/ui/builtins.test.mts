@@ -72,12 +72,14 @@ test("S3.8 the small weather tile draws MET's condition as its scene, with the t
     caption: el.querySelector(".headline-caption")?.textContent,
     foot: el.querySelector(".entry-caption")?.textContent,
   }));
-  assert.equal(drawn.head, "weather");
+  assert.equal(drawn.head, "Weather");
   assert.equal(drawn.place, "Amsterdam");
   // MET said partly cloudy with 11.2 m/s of wind: windy.
-  assert.equal(drawn.scene, "windy");
+  assert.equal(drawn.scene, "Windy");
   assert.equal(drawn.value, "12°");
-  assert.equal(drawn.caption, "windy");
+  assert.equal(drawn.caption, "Windy");
+  // Terminal shows AgenTV's own tile in lower case, like the rest of the TV.
+  assert.match(await page.locator(tile).innerText(), /^weather\s+amsterdam\s+12°\s+windy\s+h -?\d+° · l -?\d+°$/);
   assert.match(drawn.foot ?? "", /^h -?\d+° · l -?\d+°$/);
   // Its colours are the theme's.
   const colours = await page.$eval(`${tile} .pixel path`, (path) => [getComputedStyle(path).fill, getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim()]);
@@ -95,7 +97,7 @@ test("the ten weather scenes are in the launcher's own pixel set", async () => {
     const names = ["clear", "clear-night", "partly-cloudy", "cloudy", "rain", "heavy-rain", "snow", "thunderstorm", "wind", "fog"];
     return names.map((name) => pixel(name, 100)?.getAttribute("aria-label") ?? null);
   });
-  assert.deepEqual(found, ["clear", "clear night", "partly cloudy", "cloudy", "rain", "heavy rain", "snow", "thunderstorm", "windy", "fog"]);
+  assert.deepEqual(found, ["Clear", "Clear night", "Partly cloudy", "Cloudy", "Rain", "Heavy rain", "Snow", "Thunderstorm", "Windy", "Fog"]);
   await page.close();
 });
 
@@ -107,8 +109,8 @@ test("S3.9 the medium weather tile shows today and tomorrow, and the large one n
     els.map((el) => [el.querySelector(".entry-label")?.textContent, el.querySelector(".pixel")?.getAttribute("aria-label"), el.querySelector(".entry-value")?.textContent]),
   );
   assert.equal(medium.length, 2);
-  assert.deepEqual(medium[0], ["today", "windy", "12°"]);
-  assert.equal(medium[1][0], "tomorrow");
+  assert.deepEqual(medium[0], ["Today", "Windy", "12°"]);
+  assert.equal(medium[1][0], "Tomorrow");
   await page.close();
 
   await setWeather("l");
@@ -121,10 +123,10 @@ test("S3.9 the medium weather tile shows today and tomorrow, and the large one n
     icons: el.querySelectorAll(".entry .pixel").length,
   }));
   assert.equal(large.place, "Amsterdam · 7 days");
-  assert.equal(large.scene, "windy");
+  assert.equal(large.scene, "Windy");
   assert.equal(large.days.length, 7);
-  assert.equal(large.days[0], "today");
-  assert.ok(large.days.slice(1).every((day) => /^(mon|tue|wed|thu|fri|sat|sun)$/.test(day ?? "")));
+  assert.equal(large.days[0], "Today");
+  assert.ok(large.days.slice(1).every((day) => /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/.test(day ?? "")));
   assert.equal(large.icons, 7);
   // Nothing spills out of the tile.
   const spill = await page.$eval(tile, (el) => {
@@ -161,14 +163,18 @@ test("choosing Weather opens Settings → Weather, where left and right pick ano
   const page = await tv();
   await page.locator(tile).hover();
   await page.keyboard.press("Enter");
-  await page.waitForSelector('.menu-item.open[data-key="weather"]');
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Amsterdam");
+  // It's the Weather row's page, in Home and apps.
+  await page.waitForSelector('.settings-panel[data-page="weather"]');
+  assert.equal(await page.locator(".menu-item.open").innerText(), "home and apps");
+  const city = (name: string) => page.waitForFunction((want) => document.querySelector('[data-action="city"] .button-value')?.textContent === want, name);
+  await city("Amsterdam");
   await page.locator('[data-action="city"]').hover();
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Belgrade");
+  await city("Belgrade");
   assert.equal((await (await fetch(`${url}/api/tile/agentv.weather/s`)).json()).tile.headline.label, "Belgrade");
   await page.locator('[data-action="own-city"]').click();
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Amsterdam");
+  await city("Amsterdam");
+  assert.equal(await page.locator(".settings-panel .panel-note").count(), 1, "one line, and only one");
   await page.close();
 });
 
@@ -177,9 +183,11 @@ test("Weather's details say it's built in and whose data it shows", async () => 
   await page.locator(tile).hover();
   await page.keyboard.press("i");
   await page.waitForSelector(".details-head");
+  // Who made it is said once, under its name.
+  assert.equal(await page.locator(".details-head .maker").textContent(), "Built in");
   const text = await page.$eval(".details", (el) => el.textContent ?? "");
-  assert.match(text, /built in/);
-  assert.match(text, /weather data from met norway, under cc by 4\.0/);
+  assert.doesNotMatch(text, /Built in/);
+  assert.match(text, /Data fromWeather data from MET Norway, under CC BY 4\.0/);
   assert.equal(await page.$(".owner"), null);
   await page.close();
 });

@@ -964,7 +964,7 @@ s73() {
   outcome=$(jq -c '.said.outcome // empty' <<<"$said" 2>/dev/null)
   if [[ -z $outcome ]]; then
     result fail S7.3 "the daemon didn't take the sentence: $(jq -r '.error // "no answer"' <<<"$said" 2>/dev/null)"
-  elif jq -e '.kind == "none" and (.why == "unroutable" or .why == "unreadable") and .say == "i didn'"'"'t get that"' <<<"$outcome" >/dev/null; then
+  elif jq -e '.kind == "none" and (.why == "unroutable" or .why == "unreadable") and .say == "Didn'"'"'t get that"' <<<"$outcome" >/dev/null; then
     result pass S7.3 "\"the cat sat on the\" came back as i didn't get that, and nothing opened"
   elif jq -e '.why == "failed"' <<<"$outcome" >/dev/null; then
     result fail S7.3 "your agent didn't answer: $(jq -r '.detail // .say' <<<"$outcome")"

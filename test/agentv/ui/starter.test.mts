@@ -96,15 +96,29 @@ bothWays("starter", "T9.2 on Streaming, setup's apps start with the starter pack
       assert.equal(await page.locator(".setup-line").count(), 0);
       return;
     }
-    assert.deepEqual(await groups(page), ["# starter pack", "# more"]);
-    assert.equal(await page.locator(".setup-line").innerText(), "the streaming starter pack is ticked");
-    assert.deepEqual(await names(page, "# starter pack"), ["harbour", "kite"]);
+    assert.deepEqual(await groups(page), ["# streaming", "# more"]);
+    assert.equal(await page.locator(".setup-line").innerText(), "the streaming apps are picked");
+    assert.equal(await page.locator(".setup-line").textContent(), "The streaming apps are picked");
+    assert.deepEqual(await names(page, "# streaming"), ["harbour", "kite"]);
     for (const id of ["agentv.harbour", "agentv.kite"]) assert.match(await page.locator(`[data-app="${id}"]`).innerText(), /\[x\]/);
     assert.match(await page.locator('[data-app="agentv.harbour"]').innerText(), /plays in sd here/, "its description's second sentence is its note");
     assert.equal((await page.locator('[data-app="agentv.kite"] .app-note-line').innerText()).trim(), "", "and no note when it says no more");
     assert.deepEqual(await names(page, "# more"), ["jellyfin", "immich", "steam"], "the servers you run yourself first");
-    assert.equal(await page.locator(".app-group:not(.hidden) .app-row").last().locator(".app-add").count(), 1, "add your own ends more");
-    assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.harbour", "the focus starts on the pack");
+    // One way to build: the last tile of the grid, shaped like the apps
+    // before it, with Ask's sparkle and no small line under it.
+    const add = page.locator(".app-group:not(.hidden) .app-row").last().locator(":scope > :last-child.app-add");
+    assert.match(await add.innerText(), /^can't find it\?\s+build your own$/);
+    assert.equal(await page.locator(".app-add").count(), 1);
+    assert.equal(await add.locator(".app-face .glyph-spark").count(), 1);
+    assert.equal(await add.locator(".app-note-line").count(), 0);
+    const box = (selector: string) => page.locator(selector).evaluate((el) => [(el as HTMLElement).offsetWidth, (el as HTMLElement).offsetHeight, el.scrollHeight <= el.clientHeight + 1]);
+    assert.deepEqual(await box(".app-add"), await box('[data-app="agentv.steam"]'), "the same shape, and its words fit it");
+    assert.equal((await box(".app-add"))[2], true);
+    // The apps are picked already, so the focus starts on continue: the
+    // first press goes on, and doesn't untick one. The pack is one press down.
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "continue");
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.harbour", "down from continue is the pack");
 
     // OK unticks one and ticks it again; continue installs both, and nothing else.
     await page.keyboard.press("Enter");
@@ -130,7 +144,8 @@ bothWays("starter", "T9.2 on any other goal, the starter pack is one press away,
       return;
     }
     assert.deepEqual(await groups(page), ["# for photos", "# more"]);
-    assert.equal(await page.locator(".setup-line").innerText(), "the streaming starter pack is one press away");
+    assert.equal(await page.locator(".setup-line").innerText(), "add all the streaming apps with one press");
+    assert.equal(await page.locator(".app-group:not(.hidden) .app-row").last().locator(":scope > :last-child.app-add").count(), 1, "build your own ends the grid here too");
     assert.deepEqual(await names(page, "# for photos"), ["jellyfin", "immich"]);
     assert.deepEqual(await names(page, "# more"), ["streaming", "steam"], "the pack starts more, as one card");
     const pack = page.locator('[data-app="starter"]');

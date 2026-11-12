@@ -369,7 +369,7 @@ export class HandOver {
     const cli = CLIS[provider];
     if (!existsSync(join(this.o.home, ".local/bin", cli)) && !this.o.systemctl(["start", `agentv-builder-cli@${cli}.service`])) return refuse(`the box couldn't fetch ${cli}`);
     if (!this.o.systemctl(["restart", "agentv-build-net.service"])) return refuse("the builder's way out didn't start");
-    if (!this.o.systemctl(["start", "--no-block", `agentv-builder-sign-in@${provider}.service`])) return refuse("the sign-in didn't start");
+    if (!this.o.systemctl(["start", "--no-block", `agentv-builder-sign-in@${provider}.service`])) return refuse("Couldn't start the sign-in");
     return this.answer(build, true, undefined, "sign-in");
   }
 

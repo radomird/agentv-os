@@ -307,38 +307,38 @@ test("days as the TV says them: today, tomorrow, and a weekday with its date", (
   assert.equal(spokenDay("2026-11-01", TODAY), "today");
   assert.equal(spokenDay("2026-11-02", TODAY), "tomorrow");
   assert.equal(spokenDay("2026-10-31", TODAY), "yesterday");
-  assert.equal(spokenDay("2026-11-06", TODAY), "on fri 6 nov");
-  assert.equal(spokenDay("2027-01-08", TODAY), "on fri 8 jan 2027");
+  assert.equal(spokenDay("2026-11-06", TODAY), "on Fri 6 Nov");
+  assert.equal(spokenDay("2027-01-08", TODAY), "on Fri 8 Jan 2027");
 });
 
 test("S8.2 a new episode is yes when one is out after the one they watched, with the next air date", async () => {
   const { n } = news();
   const yes = await n.episode("severed lines", [row("Severed Lines", 2, 3)], "adult", ["local.kino"]);
-  assert.deepEqual({ yes: yes.yes, say: yes.say }, { yes: true, say: "yes: severed lines s2 e4 is out. the next is s2 e6, on fri 6 nov" });
+  assert.deepEqual({ yes: yes.yes, say: yes.say }, { yes: true, say: "Yes, Severed Lines S2 E4 is out. The next is S2 E6, on Fri 6 Nov." });
   assert.deepEqual(yes.latest, { season: 2, episode: 5, date: "2026-10-30" });
   assert.deepEqual(yes.next, { season: 2, episode: 6, date: "2026-11-06" });
   const no = await n.episode("Severed Lines", [row("Severed Lines", 2, 5)], "adult", ["local.kino"]);
-  assert.deepEqual({ yes: no.yes, say: no.say }, { yes: false, say: "no: you've seen the newest severed lines. the next is s2 e6, on fri 6 nov" });
+  assert.deepEqual({ yes: no.yes, say: no.say }, { yes: false, say: "No, you've seen the newest Severed Lines. The next is S2 E6, on Fri 6 Nov." });
 });
 
 test("S8.2 with nothing in the ledger, it's yes when one came out this week; an ended show says so", async () => {
   const { n } = news();
-  assert.equal((await n.episode("severed lines", [], "adult", [])).say, "yes: severed lines s2 e5 came out on fri 30 oct. the next is s2 e6, on fri 6 nov");
-  assert.equal((await n.episode("quiet valley", [], "adult", [])).say, "no new episode of quiet valley this week. it has ended");
+  assert.equal((await n.episode("severed lines", [], "adult", [])).say, "Yes, Severed Lines S2 E5 came out on Fri 30 Oct. The next is S2 E6, on Fri 6 Nov.");
+  assert.equal((await n.episode("quiet valley", [], "adult", [])).say, "No new episode of Quiet Valley this week. It has ended.");
   // With no show named, the newest show in their ledger.
-  assert.equal((await n.episode(null, [row("Severed Lines", 2, 4)], "adult", [])).say, "yes: severed lines s2 e5 is out. the next is s2 e6, on fri 6 nov");
+  assert.equal((await n.episode(null, [row("Severed Lines", 2, 4)], "adult", [])).say, "Yes, Severed Lines S2 E5 is out. The next is S2 E6, on Fri 6 Nov.");
   assert.equal((await n.episode(null, [], "adult", [])).why, "which");
-  assert.equal((await n.episode("dune", [], "adult", [])).say, "i couldn't find a show called dune");
+  assert.equal((await n.episode("dune", [], "adult", [])).say, "Couldn't find a show called dune");
 });
 
 test("a season watched to its last episode goes on to the next season's first, and no next date is said plainly", () => {
   const show = { id: 1, name: "Copper Hill", status: "Returning Series", latest: { season: 3, episode: 1, date: "2026-10-28" }, next: null, seasons: [{ season: 2, date: "2024-04-01", episodes: 8 }, { season: 3, date: "2026-10-28", episodes: 8 }] };
-  assert.equal(answerEpisode(show, { season: 2, episode: 8 }, TODAY).say, "yes: copper hill s3 e1 is out. there's no date for the next one yet");
+  assert.equal(answerEpisode(show, { season: 2, episode: 8 }, TODAY).say, "Yes, Copper Hill S3 E1 is out. There's no date for the next one yet.");
 });
 
 test("a child only hears about a show on their apps, or one in their own ledger", async () => {
   const { n } = news();
-  assert.equal((await n.episode("severed lines", [], "child", ["local.kino"])).say, "severed lines isn't on your apps");
+  assert.equal((await n.episode("severed lines", [], "child", ["local.kino"])).say, "Severed Lines isn't on your apps");
   assert.equal((await n.episode("copper hill", [], "child", ["local.lumen"])).yes, true);
   assert.equal((await n.episode("severed lines", [row("Severed Lines", 2, 1)], "child", ["local.kino"])).yes, true);
 });
@@ -367,7 +367,7 @@ test("S8.1 'what's new' says the top three and offers them to choose from, and n
   const outcome = await execute(routed({ ...NONE, intent: "whats_new" }), ctx);
   assert.equal(outcome.kind, "choose");
   const choose = outcome as Extract<Outcome, { kind: "choose" }>;
-  assert.equal(choose.say, "new this week: glass harbour, night train and copper hill, season 3");
+  assert.equal(choose.say, "New this week: Glass Harbour, Night Train and Copper Hill, season 3");
   assert.deepEqual(choose.candidates.map((c) => [c.name, c.item.id, c.item.kind, c.item.title, c.item.season ?? null]), [
     ["Lumen+", "tmdb:film:104", "film", "Glass Harbour", null],
     ["Kino", "tmdb:film:101", "film", "Night Train", null],
@@ -375,23 +375,23 @@ test("S8.1 'what's new' says the top three and offers them to choose from, and n
   ]);
   assert.deepEqual(calls, []);
   const onKino = await execute(routed({ ...NONE, intent: "whats_new", app: "kino", kind: "series" }), ctx);
-  assert.equal(onKino.say, "new this week: the long field");
+  assert.equal(onKino.say, "New this week: The Long Field");
   assert.equal(listed(["a", "b"]), "a and b");
 });
 
 test("what's new without a key says where to add one; a request for music says it only knows films and shows", async () => {
   const { ctx } = context(news({ key: false }).n);
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "no-tmdb", say: "add a tmdb key in settings → new this week first" });
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "copper hill" }), ctx), { kind: "none", why: "no-tmdb", say: "add a tmdb key in settings → new this week first" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "no-tmdb", say: "Set up New this week in Settings first" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "copper hill" }), ctx), { kind: "none", why: "no-tmdb", say: "Set up New this week in Settings first" });
   const { ctx: c2 } = context(news().n);
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new", kind: "album" }), c2), { kind: "none", why: "not-found", say: "what's new only knows films and shows" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new", kind: "album" }), c2), { kind: "none", why: "not-found", say: "New this week is films and shows only" });
 });
 
 test("S8.2 'is there a new episode of' is told, yes or no with the next air date, and nothing opens", async () => {
   const { ctx, calls } = context(news().n);
   const outcome = await execute(routed({ ...NONE, intent: "new_episode", query: "Copper Hill" }), ctx);
   assert.equal(outcome.kind, "told");
-  assert.equal(outcome.say, "yes: copper hill s3 e1 came out on wed 28 oct. the next is s3 e2, on wed 4 nov");
+  assert.equal(outcome.say, "Yes, Copper Hill S3 E1 came out on Wed 28 Oct. The next is S3 E2, on Wed 4 Nov.");
   assert.deepEqual(calls, []);
 });
 
@@ -418,9 +418,9 @@ test("S8.1 a title picked from what's new is looked up in its app and played, as
   const said = await say.hear("what's new", "iphone");
   assert.equal(said.outcome?.kind, "choose");
   // Over an app, the TV session's overlay says the three, and the phone has them.
-  assert.deepEqual(asks.splice(0), [{ kind: "tell", text: "new this week: glass harbour, night train and copper hill, season 3. your phone has them" }], "nothing is looked up or opened until one is picked");
+  assert.deepEqual(asks.splice(0), [{ kind: "tell", text: "New this week: Glass Harbour, Night Train and Copper Hill, season 3. Pick on your phone." }], "nothing is looked up or opened until one is picked");
   const picked = await say.pick(said.n, 0);
-  assert.deepEqual(picked.said?.outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-77", kind: "film", title: "Glass Harbour" }, say: "glass harbour, on lumen+" });
+  assert.deepEqual(picked.said?.outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-77", kind: "film", title: "Glass Harbour" }, say: "Glass Harbour, on Lumen+" });
   assert.deepEqual(
     asks.map((a) => (a.kind === "search" ? `search ${a.query} in ${a.apps}` : a.kind === "open" ? `open ${a.app} ${a.item?.id}` : a.kind)),
     ["search Glass Harbour in local.lumen", "open local.lumen lumen-77"],
@@ -499,7 +499,7 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     tvSession.start();
     try {
       const opened = await send("POST", "/api/whats-new/open", { id: "tmdb:film:104" });
-      assert.deepEqual((opened.data.said as { outcome: unknown }).outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-104", kind: "film", title: "Glass Harbour" }, say: "glass harbour, on lumen+" });
+      assert.deepEqual((opened.data.said as { outcome: unknown }).outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-104", kind: "film", title: "Glass Harbour" }, say: "Glass Harbour, on Lumen+" });
       assert.deepEqual(asks.filter((a) => a.kind !== "tell").map((a) => (a.kind === "search" ? `search ${a.query} in ${a.apps}` : a.kind === "open" ? `open ${a.app} ${a.item?.id}` : a.kind)), ["search Glass Harbour in local.lumen", "open local.lumen lumen-104"]);
       assert.equal((await send("POST", "/api/whats-new/open", { id: "tmdb:film:999" })).status, 404);
     } finally {

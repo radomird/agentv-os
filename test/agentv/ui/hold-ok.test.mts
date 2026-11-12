@@ -370,7 +370,7 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
   const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
   const says = (what: string) => until(async () => (await hint()) === what);
   const pointerAndNothingSent = async (where: string) => {
-    await says("hold for the pointer");
+    await says("Hold for the pointer");
     sent.length = 0;
     await touchPad(hand, 800);
     await hand.waitForSelector(".r2-pointer");
@@ -384,7 +384,7 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
   for (const [route, tile] of [["home", `#page [data-id="${APP}"]`], ["apps", `.apps-page [data-id="${APP}"]`]] as const) {
     await go(page, route);
     await focusOn(page, tile);
-    await says("hold for details");
+    await says("Hold for details");
     sent.length = 0;
     await touchPad(hand, 800);
     await onDetails(page);
@@ -409,7 +409,7 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
   // Opened from its tile, which had details a moment ago.
   await go(page, "home");
   await focusOn(page, `#page [data-id="${APP}"]`);
-  await says("hold for details");
+  await says("Hold for details");
   await go(page, "app/agentv.blocks");
   await page.waitForSelector(".page-app-view", { state: "attached" });
   await page.waitForSelector(".page-app.on iframe");

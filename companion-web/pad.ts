@@ -6,26 +6,13 @@ import { api, h, NeedsPin, prompt } from "./lib.ts";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
 
-// Whether the box has an adult PIN, as its state last said. With none,
-// nothing on the phone names one (ADR-087).
-let pinSet = false;
-export function pinIs(set: boolean): void {
-  pinSet = set;
-}
-
-// A button's words for an action the PIN guards: they say so only when
-// there is one.
-export function withPinWords(words: string): string {
-  return pinSet ? `${words} with pin` : words;
-}
-
 // The grant for an action, or null when the pad was closed.
 export function askPin(what: string): Promise<string | null> {
   return new Promise((resolve) => {
     let digits = "";
     let busy = false;
     const boxes = Array.from({ length: 4 }, () => h("span", { class: "pin-box" }));
-    const message = h("p", { class: "note" }, `for ${what}.`);
+    const message = h("p", { class: "note" }, `For ${what}`);
     const draw = () => boxes.forEach((box, i) => box.classList.toggle("filled", i < digits.length));
     const done = (grant: string | null) => {
       overlay.remove();
@@ -39,7 +26,7 @@ export function askPin(what: string): Promise<string | null> {
       } catch (error) {
         digits = "";
         draw();
-        message.textContent = `${(error as Error).message}.`;
+        message.textContent = (error as Error).message;
         message.classList.add("bad");
         navigator.vibrate?.([30, 40, 30]);
       }
@@ -54,12 +41,12 @@ export function askPin(what: string): Promise<string | null> {
     };
     const overlay = h(
       "div",
-      { class: "overlay", role: "dialog", "aria-label": "the adult pin" },
+      { class: "overlay", role: "dialog", "aria-label": "Adult PIN" },
       h(
         "div",
         { class: "page" },
         prompt("tv pin"),
-        h("h1", {}, "enter the adult pin"),
+        h("h1", {}, "Enter the adult PIN"),
         message,
         h("div", { class: "pin-boxes" }, ...boxes),
         h(
@@ -67,13 +54,13 @@ export function askPin(what: string): Promise<string | null> {
           { class: "pin-keys" },
           ...KEYS.map((key) =>
             key === "⌫"
-              ? h("button", { type: "button", class: "pin-key pin-delete", "aria-label": "delete", "data-pin": "delete", onclick: () => type(key) }, glyph("backspace", 28))
+              ? h("button", { type: "button", class: "pin-key pin-delete", "aria-label": "Delete", "data-pin": "delete", onclick: () => type(key) }, glyph("backspace", 28))
               : key
                 ? h("button", { type: "button", class: "pin-key", "data-pin": key, onclick: () => type(key) }, key)
                 : h("span", {}),
           ),
         ),
-        h("button", { type: "button", class: "button", "data-action": "cancel", onclick: () => done(null) }, "cancel"),
+        h("button", { type: "button", class: "button", "data-action": "cancel", onclick: () => done(null) }, "Cancel"),
       ),
     );
     document.body.append(overlay);

@@ -81,25 +81,25 @@ test("Clock, Music, New this week and Weather come with AgenTV, first, and their
   const [clock, music, news, weather] = home.apps;
   for (const app of [clock, music, news, weather]) {
     assert.equal(app.tier, "built-in");
-    assert.equal(app.maker, "built in");
+    assert.equal(app.maker, "Built in");
     assert.equal(app.owner, undefined);
     assert.equal(app.needsSetup, false);
     assert.equal(app.icon, `/api/apps/${app.id}/icon`);
   }
   assert.deepEqual(clock.sizes.map((s: any) => `${s.size} ${s.label}`), ["s time", "m time and date"]);
   assert.deepEqual(weather.sizes.map((s: any) => `${s.size} ${s.label}`), ["s now", "m today and tomorrow", "l 7 days"]);
-  assert.equal(weather.credit, "weather data from met norway, under cc by 4.0");
+  assert.equal(weather.credit, "Weather data from MET Norway, under CC BY 4.0");
   assert.deepEqual(weather.reach, ["127.0.0.1:" + new URL(met.url).port]);
-  assert.deepEqual(clock.reach, ["nothing outside this tv"]);
+  assert.deepEqual(clock.reach, ["Nothing online"]);
   // New this week is TMDB's, through the daemon (S8.1), and credits TMDB and
   // JustWatch as their terms ask.
   assert.deepEqual(news.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m new this week", "l new this week"]);
-  assert.equal(news.credit, "this product uses the tmdb api but is not endorsed or certified by tmdb. where to watch is from justwatch");
+  assert.equal(news.credit, "This product uses the TMDB API but is not endorsed or certified by TMDB. Where to watch is from JustWatch.");
   assert.equal(news.category, "utility", "the router never hears of it as something to play");
   assert.equal(news.forChildren, true);
   assert.deepEqual(music.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m now playing", "l now playing and recent"]);
   assert.equal(music.category, "music");
-  assert.deepEqual(music.reach, ["nothing outside this tv"]);
+  assert.deepEqual(music.reach, ["Nothing online"]);
 });
 
 test("on a new box Weather is on home first, pinned small, Clock too with the looks off, and Music waits in apps", async () => {
@@ -175,7 +175,7 @@ test("S8.1 a streaming household's home gets New this week once, at the largest 
 
 test("S3.8 the weather tile shows the forecast for the time zone's city, asked for with its coordinates", async () => {
   const { tile } = await get("/api/tile/agentv.weather/s");
-  assert.deepEqual(tile.headline, { label: "Amsterdam", icon: "wind", value: "12°", caption: "windy" });
+  assert.deepEqual(tile.headline, { label: "Amsterdam", icon: "wind", value: "12°", caption: "Windy" });
   assert.match(met.seen.at(-1)!.url, /\?lat=52\.37&lon=4\.9$/);
   assert.match(String(met.seen.at(-1)!.headers["user-agent"]), /^AgenTV\/\S+ agentv\.weather\/1\.0\.0$/);
   const clock = await get("/api/tile/agentv.clock/m");
@@ -185,7 +185,7 @@ test("S3.8 the weather tile shows the forecast for the time zone's city, asked f
 test("S3.8 S3.9 agentv selftest compares the weather tiles with MET's forecast, fetched again", async () => {
   const now = await weatherCheck("S3.8", met.url);
   assert.match(now, /^pass S3\.8 the tile shows wind at 12° for Amsterdam \(52\.37, 4\.9\), as MET's partlycloudy_day with 11\.2 m\/s of wind does/m);
-  assert.match(now, /^manual S3\.8 on yr\.no, Amsterdam's forecast for now says windy/m);
+  assert.match(now, /^manual S3\.8 on yr\.no, Amsterdam's forecast for now says Windy/m);
   const week = await weatherCheck("S3.9", met.url);
   assert.match(week, /^pass S3\.9 the medium and large weather tiles match MET's forecast for Amsterdam/m);
   // Another forecast than the tile's: Oslo's heavy rain.
@@ -317,7 +317,7 @@ test("a new time zone reaches the tiles at once, and one with no city says where
     rmSync(link);
     symlinkSync("/usr/share/zoneinfo/UTC", link);
     const { tile } = await get("/api/tile/agentv.weather/s");
-    assert.deepEqual(tile.headline, { label: "no city yet", caption: "pick one in\nsettings → weather" });
+    assert.deepEqual(tile.headline, { label: "No city yet", caption: "Pick one in\nSettings" });
     const place = await get("/api/weather");
     assert.equal(place.zone, "UTC");
     assert.equal(place.lat, undefined);

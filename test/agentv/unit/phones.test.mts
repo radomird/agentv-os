@@ -250,6 +250,16 @@ test("the home network gets only the phone companion: its page, its requests, an
   assert.equal(script.type, "text/javascript; charset=utf-8");
   assert.doesNotMatch(script.text, /: Promise<boolean>/, "served with its types stripped");
   assert.match((await send(phone, "GET", "/api/theme.css")).type, /text\/css/);
+  // A name and an icon, for a phone's home screen when the remote is added
+  // to it.
+  assert.match(page.text, /<link rel="manifest" href="\/companion-web\/manifest\.json">/);
+  assert.match(page.text, /<link rel="apple-touch-icon" href="\/companion-web\/icon-180\.png">/);
+  const manifest = (await send(phone, "GET", "/companion-web/manifest.json")).data;
+  assert.deepEqual([manifest.name, manifest.short_name, manifest.start_url], ["AgenTV", "AgenTV", "/"]);
+  for (const icon of [...manifest.icons.map((one: { src: string }) => one.src), "/companion-web/icon-180.png"]) {
+    const drawn = await fetch(`${phone}${icon}`);
+    assert.deepEqual([drawn.status, drawn.headers.get("content-type")], [200, "image/png"], icon);
+  }
   // The TV's own requests and pages aren't served, paired or not.
   for (const path of ["/api/home", "/api/pin", "/api/key", "/api/remote", "/launcher/main.ts", "/companion-web/../daemon/pin.ts", "/health"]) {
     assert.ok([401, 404].includes((await send(phone, "GET", path)).status), path);
@@ -314,7 +324,7 @@ test("F9 a phone's wrong PINs make only that phone wait, not the TV or another p
   for (let i = 0; i < 5; i++) assert.equal((await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "0000" } })).status, 403);
   const waiting = await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "4826" } });
   assert.equal(waiting.status, 403, "that phone waits, even with the right one");
-  assert.match(waiting.data.error, /^too many tries/);
+  assert.match(waiting.data.error, /^Too many tries\. Wait \d+ seconds\.$/);
   assert.equal((await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).status, 200, "the tv's pad doesn't");
   assert.equal((await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).status, 200, "and neither does another phone");
   assert.equal((await send(tv, "DELETE", `/api/phones/${other.kept.id}`, { grant })).status, 200);

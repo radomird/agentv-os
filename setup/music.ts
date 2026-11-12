@@ -42,10 +42,10 @@ export class Soundtrack {
     this.say(false);
     this.el = h(
       "div",
-      { class: "player", "aria-label": "the setup soundtrack" },
+      { class: "player", "aria-label": "Setup soundtrack" },
       h("span", { class: "player-art" }, glyph("music", 40)),
-      h("span", { class: "player-text" }, h("span", { class: "player-name" }, "setup soundtrack"), this.note),
-      h("span", { class: "eq", role: "img", "aria-label": "music playing" }, ...this.bars),
+      h("span", { class: "player-text" }, h("span", { class: "player-name" }, "Setup soundtrack"), this.note),
+      h("span", { class: "eq", role: "img", "aria-label": "Music playing" }, ...this.bars),
     );
   }
 
@@ -110,10 +110,10 @@ export class Soundtrack {
     if (this.gain && this.context) this.gain.gain.setTargetAtTime(muted ? 0 : VOLUME, this.context.currentTime, 0.15);
   }
 
-  // The note under its name. "original score" goes with setup's own switch
-  // on (design page D7), so the note fits at 23 px.
+  // The note under its name: that it's muted, and nothing while it plays.
+  // M still mutes it from a keyboard, and the phone has its own button.
   private say(muted: boolean): void {
-    this.note.replaceChildren(...(muted ? ["muted · m to play"] : [h("span", { class: "player-score" }, "original score · "), "m to mute"]));
+    this.note.textContent = muted ? "Muted" : "";
   }
 
   isMuted(): boolean {

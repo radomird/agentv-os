@@ -12,7 +12,7 @@ export const LONGEST = 3840;
 
 export async function draw(file: File, longest: number, type: string, quality: number): Promise<{ blob: Blob; url: string }> {
   const bitmap = await createImageBitmap(file).catch(() => {
-    throw new Error("that photo couldn't be read");
+    throw new Error("Couldn't open that photo");
   });
   const scale = Math.min(1, longest / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
@@ -20,23 +20,23 @@ export async function draw(file: File, longest: number, type: string, quality: n
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
   canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((made) => (made ? resolve(made) : reject(new Error("that photo couldn't be read"))), type, quality));
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((made) => (made ? resolve(made) : reject(new Error("Couldn't open that photo"))), type, quality));
   return { blob, url: canvas.toDataURL(type, quality) };
 }
 
 export function photoPage(failed: (error: unknown) => void): HTMLElement {
   const input = h("input", { type: "file", accept: "image/*", class: "photo-input", id: "photo-file" }) as HTMLInputElement;
-  const preview = h("img", { class: "photo-preview hidden", alt: "the photo to send" }) as HTMLImageElement;
+  const preview = h("img", { class: "photo-preview hidden", alt: "The photo to send" }) as HTMLImageElement;
   const credit = h("input", {
     class: "field",
     id: "photo-credit",
     type: "text",
     maxlength: "120",
-    placeholder: "who took it, if you know",
+    placeholder: "Photo credit (optional)",
     autocomplete: "off",
     autocapitalize: "off",
   }) as HTMLInputElement;
-  const send = h("button", { type: "button", class: "button primary", "data-action": "send-photo", disabled: true }, glyph("tv", 18), h("span", {}, "send to the tv")) as HTMLButtonElement;
+  const send = h("button", { type: "button", class: "button primary", "data-action": "send-photo", disabled: true }, glyph("tv", 18), h("span", {}, "Send")) as HTMLButtonElement;
   let picked: File | null = null;
 
   input.addEventListener("change", () => {
@@ -59,9 +59,9 @@ export function photoPage(failed: (error: unknown) => void): HTMLElement {
       const { blob } = await draw(picked, LONGEST, "image/jpeg", 0.9);
       const response = await call("POST", `/api/phone/background?credit=${encodeURIComponent(credit.value)}`, { type: "image/jpeg", blob });
       const data = response.data;
-      if (response.status === 401) throw new Unpaired(data.error ?? "this phone isn't paired");
-      if (!response.ok || data.ok === false) throw new Error(data.error ?? "the tv didn't take it");
-      toast("it's the tv's background now.", true);
+      if (response.status === 401) throw new Unpaired(data.error ?? "This phone isn't paired");
+      if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't send it");
+      toast("It's on your TV now", true);
       picked = null;
       input.value = "";
       credit.value = "";
@@ -78,9 +78,9 @@ export function photoPage(failed: (error: unknown) => void): HTMLElement {
     "div",
     { class: "photo-page" },
     prompt("tv background"),
-    h("h1", {}, "send a photo."),
-    h("p", { class: "note" }, "it becomes the tv's background, and the ambient screen says who took it."),
-    h("label", { class: "button", for: "photo-file" }, glyph("photo", 18), h("span", {}, "choose a photo")),
+    h("h1", {}, "Send a photo"),
+    h("p", { class: "note" }, "It becomes your TV's background"),
+    h("label", { class: "button", for: "photo-file" }, glyph("photo", 18), h("span", {}, "Choose a photo")),
     input,
     preview,
     credit,
