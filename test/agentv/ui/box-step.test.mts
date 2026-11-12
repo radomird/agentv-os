@@ -156,7 +156,7 @@ for (const looks of [false, true]) {
         }
         await page.waitForFunction(() => (window as unknown as { agentvLauncher?: object }).agentvLauncher);
         await go(page, "settings/about");
-        await page.waitForSelector('.menu-item.open[data-key="about"]');
+        await page.waitForSelector('.settings-panel[data-page="about"]');
         if (!on) {
           await page.waitForTimeout(500);
           assert.equal(await page.locator(".box-row").count(), 0, "nothing of the box check with its switch off");

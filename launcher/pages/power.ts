@@ -1,5 +1,5 @@
-// Settings → Power (ADR-033): Restart and Shut down, each asking first on a
-// screen of its own. Restart goes right after its question. Shut down counts
+// Restart and Shut down (ADR-033), rows in Settings, This TV, each asking
+// first on a screen of its own. Restart goes right after its question. Shut down counts
 // down 10 seconds, which Cancel stops, then the screen daemon turns the box
 // off through Omarchy's own command. Only an adult gets here, never while an
 // update runs, and the adult PIN, when there is one, asks first (ADR-009).
@@ -25,24 +25,25 @@ export type Power = "restart" | "shutdown" | "bootmenu";
 // and the focus on it, while the box is asked again.
 let bootMenuShown = false;
 
-// The Power section of Settings: the choices, or why not now.
-export function powerPanel(ctx: Ctx): HTMLElement[] {
-  if (installing(ctx.updates)) {
-    return [h("div", { class: "panel-big" }, "updating"), h("p", { class: "panel-note" }, "not while an update runs. it restarts the box itself when it needs to.")];
-  }
+// This TV's rows for it in Settings: Restart, Shut down, the boot menu on a
+// box that can, and sleep. While an update runs, each says why not.
+export function powerRows(ctx: Ctx): HTMLElement[] {
+  const go = (route: string) => () => {
+    if (!installing(ctx.updates)) return ctx.go(route);
+    ctx.sounds.play("failure");
+    ctx.toast("Not during an update", "fail");
+  };
   // It shows once the box says it can.
-  const bootMenu = h("button", { class: bootMenuShown ? "button" : "button hidden", "data-focus": true, "data-action": "bootmenu", onclick: () => ctx.go("power/bootmenu") }, "restart to the boot menu →");
+  const bootMenu = h("button", { class: bootMenuShown ? "button" : "button hidden", "data-focus": true, "data-action": "bootmenu", onclick: go("power/bootmenu") }, "Restart to the boot menu");
   void screen.bootMenu().then((can) => {
     bootMenuShown = can;
     bootMenu.classList.toggle("hidden", !can);
   });
   return [
-    h("div", { class: "panel-title" }, "the box"),
-    h("button", { class: "button", "data-focus": true, "data-action": "restart", onclick: () => ctx.go("power/restart") }, "restart →"),
-    h("button", { class: "button", "data-focus": true, "data-action": "shutdown", onclick: () => ctx.go("power/shutdown") }, "shut down →"),
+    h("button", { class: "button", "data-focus": true, "data-action": "restart", onclick: go("power/restart") }, "Restart"),
+    h("button", { class: "button", "data-focus": true, "data-action": "shutdown", onclick: go("power/shutdown") }, "Shut down"),
     bootMenu,
     ...sleepRow(ctx),
-    h("p", { class: "panel-note" }, "each asks first. shut down waits 10 seconds, and the box's power button turns it back on."),
   ];
 }
 
@@ -54,22 +55,22 @@ export function power(ctx: Ctx, what: Power): View {
     "div",
     { class: "panel-note check-summary" },
     menu
-      ? "it waits on the menu, where you can pick a snapshot."
+      ? "You can pick an earlier backup there"
       : restart
-        ? "the apps close, then agentv starts again on home."
-        : "the apps close, and the box is off 10 seconds after you choose. its power button turns it back on.",
+        ? "Apps close, then you're back on home"
+        : "Apps close, and it turns off in 10 seconds",
   );
   const count = h("div", { class: "power-count hidden" });
   const choose = h(
     "button",
     { class: "button primary", "data-focus": true, "data-action": what, onclick: () => void askFirst() },
-    restart ? "↵ restart" : "↵ shut down",
+    restart ? "Restart" : "Shut down",
   );
-  const cancel = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: () => stop() }, "cancel");
+  const cancel = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: () => stop() }, "Cancel");
   const actions = h("div", { class: "check-actions" }, choose, cancel);
-  const question = menu ? "restart to the boot menu?" : restart ? "restart the box?" : "shut down the box?";
+  const question = menu ? "Restart to the boot menu?" : restart ? "Restart?" : "Shut down?";
   const [prompt, title] = heading(`tv power ${menu ? "boot-menu" : what}`, question);
-  const el = h("div", { class: "screen" }, h("div", { class: "page power" }, prompt, title, summary, count, actions), bar(ctx, "power", "↵ select · esc cancel"));
+  const el = h("div", { class: "screen" }, h("div", { class: "page power" }, prompt, title, summary, count, actions), bar(ctx, "power"));
 
   let timer = 0;
   let going = false;
@@ -77,14 +78,14 @@ export function power(ctx: Ctx, what: Power): View {
 
   // The PIN first, when there is one, then the restart or the countdown.
   const askFirst = async () => {
-    const got = await ctx.grant(restart ? "restarting the box" : "shutting the box down");
+    const got = await ctx.grant(restart ? "restarting" : "shutting down");
     if (got === null || !el.isConnected) return;
     grant = got;
     if (restart) void go();
     else countdown();
   };
 
-  // Back to Settings → Power, with the countdown stopped.
+  // Back to Settings, with the countdown stopped.
   const stop = () => {
     clearInterval(timer);
     timer = 0;
@@ -98,7 +99,7 @@ export function power(ctx: Ctx, what: Power): View {
     title.textContent = question;
     count.classList.add("hidden");
     choose.classList.remove("hidden");
-    summary.textContent = "it didn't shut down: an update started.";
+    summary.textContent = "An update started, so it stayed on";
   };
 
   const go = async () => {
@@ -106,8 +107,9 @@ export function power(ctx: Ctx, what: Power): View {
     clearInterval(timer);
     timer = 0;
     actions.classList.add("hidden");
-    title.textContent = restart ? "restarting." : "shutting down.";
-    summary.textContent = menu ? "restarting to the boot menu now." : restart ? "restarting now." : "shutting down now.";
+    // The headline says it, so the line under it goes.
+    title.textContent = restart ? "Restarting…" : "Shutting down…";
+    summary.textContent = "";
     const reply = await screen.power(what, grant);
     if (reply.pin) ctx.forgetGrant();
     if (reply.ok) {
@@ -116,7 +118,7 @@ export function power(ctx: Ctx, what: Power): View {
     }
     going = false;
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? (restart ? "the box couldn't restart" : "the box couldn't shut down"), "fail");
+    ctx.toast(reply.error ?? (restart ? "Couldn't restart" : "Couldn't shut down"), "fail");
     if (el.isConnected) ctx.back();
   };
 
@@ -124,7 +126,7 @@ export function power(ctx: Ctx, what: Power): View {
   // page goes, or when an update starts (ADR-025).
   const countdown = () => {
     const end = Date.now() + COUNTDOWN_S * 1000;
-    title.textContent = "shutting down.";
+    title.textContent = "Shutting down…";
     choose.classList.add("hidden");
     count.classList.remove("hidden");
     const tick = () => {
@@ -135,7 +137,7 @@ export function power(ctx: Ctx, what: Power): View {
       if (installing(ctx.updates)) return asked();
       const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
       count.textContent = String(left);
-      summary.textContent = `shutting down in ${left} ${left === 1 ? "second" : "seconds"}.`;
+      summary.textContent = `Shutting down in ${left} ${left === 1 ? "second" : "seconds"}`;
       if (left === 0) void go();
     };
     // The number first, so the focus ring finds Cancel where it ends up.

@@ -65,13 +65,14 @@ const go = (page: Page, route: string) => page.evaluate((r) => (window as unknow
 test("pairing: the TV shows a code, the phone types it, and the TV says the phone is paired", async () => {
   const screen = await tv();
   await go(screen, "settings/phones");
-  await screen.waitForFunction(() => /none yet/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.match(await screen.locator('.menu-item[data-key="phones"]').innerText(), /phones\s+0/);
+  await screen.waitForFunction(() => /No phones yet/.test(document.querySelector(".panel")?.textContent ?? ""));
+  assert.equal(await screen.locator(".menu-item.open").textContent(), "Phones and controllers");
+  assert.equal(await screen.locator('.panel [data-action^="phone-"]').count(), 0);
   await screen.keyboard.press("Enter");
   await screen.keyboard.press("Enter");
   await screen.waitForFunction(() => /^[A-HJKMNP-Z2-9]{6}$/.test(document.querySelector(".pair-code")?.textContent ?? ""));
   const code = await screen.locator(".pair-code").innerText();
-  assert.match(await screen.locator(".page.pair").innerText(), new RegExp(`open http://127\\.0\\.0\\.1:${daemon.lanPort}/ and type the code[\\s\\S]*the code lasts 10 more minutes`));
+  assert.match(await screen.locator(".page.pair").innerText(), new RegExp(`scan it on the same wi-fi, or open http://127\\.0\\.0\\.1:${daemon.lanPort}/ and type the code\\s+[A-HJKMNP-Z2-9]{6}\\s+the code lasts 10 more minutes$`));
 
   // The code is typed. One in the address pairs nothing: it would go over
   // the network as it is.
@@ -85,7 +86,7 @@ test("pairing: the TV shows a code, the phone types it, and the TV says the phon
   // The TV: a toast, and back to Settings → Phones with the phone listed.
   await screen.waitForFunction(() => /android phone is paired/.test(document.body.textContent ?? ""));
   await screen.waitForFunction(() => /android phone/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.match(await screen.locator('.menu-item[data-key="phones"]').innerText(), /phones\s+1/);
+  assert.equal(await screen.locator('.panel [data-action^="phone-"]').count(), 1);
   await screen.close();
   await hand.close();
 });
@@ -246,7 +247,7 @@ test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Set
   await go(screen, "settings/phones");
   await screen.locator('[data-action="pair"]').click();
   await screen.waitForSelector(".pin-pad");
-  assert.match(await screen.locator(".pin-pad").innerText(), /enter the adult pin[\s\S]*for settings\./);
+  assert.match(await screen.locator(".pin-pad").innerText(), /enter the adult pin[\s\S]*for settings/);
   await screen.keyboard.press("Escape");
   await screen.waitForSelector(".pin-pad", { state: "detached" });
   assert.equal(await screen.locator(".page.pair").count(), 0, "still on Settings → Phones");
@@ -267,7 +268,7 @@ test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Set
   await go(screen, "settings/phones");
   await screen.waitForSelector('[data-action^="phone-p-"]');
   await screen.locator('[data-action^="phone-p-"]').first().click();
-  await screen.waitForFunction(() => /is forgotten/.test(document.getElementById("toasts")?.textContent ?? ""));
+  await screen.waitForFunction(() => /Removed /.test(document.getElementById("toasts")?.textContent ?? ""));
   assert.equal(await screen.locator(".pin-pad").count(), 0);
   assert.deepEqual((await send("GET", "/api/phones")).phones, []);
   const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).grant;

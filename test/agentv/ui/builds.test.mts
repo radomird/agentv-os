@@ -316,27 +316,44 @@ test("ADR-045 Settings → usage shows the month's spend, and the caps and safeg
   writeFileSync(join(state, "..", "spend.json"), JSON.stringify({ month, spent: 3.456, builds: {} }));
   writeFileSync(join(state, "..", "npm-warnings.json"), JSON.stringify({ apps: [{ id: "local.photos", version: "1.0.0", build: "b1", malware: ["evil-pkg@1.0.0"], serious: [], since: "" }] }));
   const page = await tv();
-  await go(page, "settings/usage");
+  // AI's rows: what's spent, with a bar toward the month's limit, then the
+  // two limits and the safety checks, each on one line.
+  await go(page, "settings/ai");
   await page.waitForFunction(() => /\$3\.46 of \$20/.test(document.querySelector(".panel")?.textContent ?? ""));
   const panel = await page.locator(".panel").innerText();
-  assert.match(panel, /a build may spend\s+‹ \$5 ›[\s\S]*a month may spend\s+‹ \$20 ›[\s\S]*npm safeguards\s+\[x\]/);
-  assert.match(panel, /photos 1\.0\.0: evil-pkg@1\.0\.0, known malware/);
+  assert.match(panel, /spent this month\s+\$3\.46 of \$20\s+limit per app\s+\$5\s+limit per month\s+\$20\s+extra safety checks\s+on$/i);
+  assert.equal(await page.locator(".panel .panel-note").count(), 0, "nothing is explained under a row");
+  const meter = page.locator('.panel [data-action="usage"] .meter');
+  assert.equal(await meter.getAttribute("aria-label"), "17 percent of the month's limit");
+  const bar = await meter.evaluate((el) => ({ all: el.getBoundingClientRect().width, filled: el.firstElementChild!.getBoundingClientRect().width, shown: getComputedStyle(el.firstElementChild!).backgroundColor }));
+  assert.ok(bar.all > 300 && Math.abs(bar.filled / bar.all - 0.17) < 0.01 && bar.shown !== "rgba(0, 0, 0, 0)", `the bar is filled as far as what's spent: ${JSON.stringify(bar)}`);
+  // The spending row's page has what the nightly check found.
+  await page.locator('.panel [data-action="usage"]').click();
+  await page.waitForSelector('.settings-panel[data-page="usage"]');
+  const spending = await page.locator(".panel").innerText();
+  assert.match(spending, /spent this month\s+\$3\.46 of \$20\s+making an app stops at its limit\s+problems found/i);
+  assert.match(spending, /photos 1\.0\.0: evil-pkg@1\.0\.0, known malware\. remove it or make it again from its details\./i);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.settings-panel[data-page="ai"]');
   await page.locator('[data-action="cap-build"]').focus();
   await page.evaluate(() => (window as unknown as { agentvLauncher: { focus: { set(el: Element): void } } }).agentvLauncher.focus.set(document.querySelector('[data-action="cap-build"]')!));
   await page.keyboard.press("ArrowRight");
   await waitPad(page, true);
   for (const digit of "2468") await page.keyboard.press(digit);
   await waitPad(page, false);
-  await page.waitForFunction(() => /‹ \$10 ›/.test(document.querySelector('[data-action="cap-build"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /\$10$/.test(document.querySelector('[data-action="cap-build"]')?.textContent ?? ""));
   assert.deepEqual((await send("GET", "/api/builds")).settings.cap, { build: 10, month: 20 });
   // The PIN entered once does for the rest of this visit.
   await page.evaluate(() => (window as unknown as { agentvLauncher: { focus: { set(el: Element): void } } }).agentvLauncher.focus.set(document.querySelector('[data-action="cap-month"]')!));
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => /‹ \$50 ›/.test(document.querySelector('[data-action="cap-month"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /\$50$/.test(document.querySelector('[data-action="cap-month"]')?.textContent ?? ""));
   await page.locator('[data-action="safeguards"]').click();
-  await page.waitForFunction(() => /npm safeguards\s*\[ \]/.test(document.querySelector('[data-action="safeguards"]')?.textContent ?? ""));
+  await page.waitForFunction(() => document.querySelector('[data-action="safeguards"]')?.textContent === "Extra safety checksOff");
   assert.deepEqual((await send("GET", "/api/builds")).settings, { cap: { build: 10, month: 50 }, safeguards: false });
-  assert.match(await page.locator(".panel").innerText(), /safeguards are off[\s\S]*known malware is refused either way/);
+  // Off, the spending page's one line says what that means.
+  await go(page, "settings/usage");
+  await page.waitForSelector('.settings-panel[data-page="usage"]');
+  assert.match(await page.locator(".panel").innerText(), /safety checks are off\. known malware is still blocked\./i);
   await page.close();
 });
 
@@ -639,7 +656,7 @@ test("S6.4 Look's describe your own asks for a theme, the phone approves it with
   screen.start();
   try {
     const page = await tv();
-    await go(page, "settings/look");
+    await go(page, "settings/theme");
     await page.waitForSelector('[data-action="theme-own"]', { timeout: 10_000 });
     const look = await page.locator('[data-action^="theme-"]').evaluateAll((els) => els.map((el) => el.getAttribute("data-action")));
     assert.equal(look.at(-1), "theme-own", "describe your own is Look's last");
@@ -687,10 +704,10 @@ test("S6.4 Look's describe your own asks for a theme, the phone approves it with
     assert.ok(await page.locator('[data-action="remove-built"]').isVisible());
 
     // Look lists it after Omarchy's own, with its page a press away.
-    await go(page, "settings/look");
+    await go(page, "settings/theme");
     const name = themeName(asked.id);
     await page.waitForSelector(`[data-action="theme-${name}"]`, { timeout: 10_000 });
-    assert.match(await page.locator(`[data-action="theme-made-${name}"]`).innerText(), /calm forest, made by your agent/);
+    assert.match(await page.locator(`[data-action="theme-made-${name}"]`).innerText(), /^calm forest, made by you$/i);
     await page.close();
   } finally {
     screen.stop();

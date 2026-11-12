@@ -313,7 +313,7 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
       await page.goto(`${url}/`);
       await page.waitForFunction((want) => (document.documentElement.dataset.features ?? "").split(" ").includes("setup2") === want, on);
       await page.waitForFunction(() => Boolean((window as unknown as { agentvLauncher?: unknown }).agentvLauncher));
-      await go(page, "settings/ai");
+      await go(page, "settings/your-ai");
       await page.waitForSelector('[data-action="use-plan"]');
       if (!on) {
         assert.equal(await page.locator('[data-action="plan-sign-in"]').count(), 0);
@@ -329,7 +329,7 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
       for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
       assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
       signInSays({ state: "done" });
-      await page.locator('.toast:has-text("you\'re signed in to your plan")').waitFor();
+      await page.locator('.toast:has-text("You\'re signed in")').waitFor();
       await page.waitForSelector('[data-action="plan-sign-in"]');
       assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn.signedIn, true);
     } finally {

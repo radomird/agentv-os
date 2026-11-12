@@ -63,43 +63,58 @@ test("T17.1 Q143 Settings → AI names the plans it offers: Claude's, ChatGPT's 
   await page.route(`${url}/api/key`, (route) => route.fulfill({ json: { ok: true, set: false, provider: null, plans } }));
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
-  await go(page, "settings/ai");
-  await page.waitForFunction(() => /no key yet/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.match(await page.locator(".panel").innerText(), /an api key from claude, chatgpt, gemini, grok or muse, or your plan: claude's\./);
-  assert.doesNotMatch(await page.locator(".panel").innerText(), /coming soon/);
-  assert.equal(await page.locator('.panel [data-action="use-plan"]').innerText(), "use my plan →");
+  await go(page, "settings/your-ai");
+  await page.waitForFunction(() => /Not set up/.test(document.querySelector(".panel")?.textContent ?? ""));
+  assert.match(await page.locator(".panel").innerText(), /^your ai\s+not set up\s+an api key, or your plan\s+add an api key\s+use my plan$/);
   plans = [...plans, { provider: "chatgpt" }, { provider: "grok" }];
   await go(page, "home");
-  await go(page, "settings/ai");
-  await page.waitForFunction(() => /grok's/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.match(await page.locator(".panel").innerText(), /or your plan: claude's, chatgpt's or grok's\./);
-  assert.doesNotMatch(await page.locator(".panel").innerText(), /best effort|coming soon/);
+  const asked = page.waitForResponse((response) => response.url().endsWith("/api/key"));
+  await go(page, "settings/your-ai");
+  await asked;
+  await page.locator('.panel [data-action="use-plan"]').click();
+  await page.waitForSelector('.page [data-action="provider"]');
+  // Every plan on offer can be picked, and none is "coming soon".
+  const offered: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    offered.push(await page.locator('[data-action="provider"] .button-value').innerText());
+    await page.keyboard.press("ArrowRight");
+  }
+  assert.deepEqual(offered, ["claude", "chatgpt", "grok"]);
+  assert.doesNotMatch(await page.locator(".page").innerText(), /best effort|coming soon/);
   await page.close();
 });
 
 test("S4.6 Settings → AI takes a key in a field that doesn't show it, for the provider picked", async () => {
   const { page, puts } = await tv();
   await go(page, "settings/ai");
-  await page.waitForFunction(() => /no key/.test(document.querySelector('.menu-item[data-key="ai"]')?.textContent ?? ""));
-  assert.match(await page.locator(".panel").innerText(), /no key yet[\s\S]*or your plan: claude's/);
+  await page.waitForFunction(() => /Not set up/.test(document.querySelector('.panel [data-action="your-ai"]')?.textContent ?? ""));
+  assert.match(await page.locator('.panel [data-action="your-ai"]').innerText(), /^your ai\s+not set up$/);
+  // OK on the section goes into it, and OK on the row opens its page.
   await page.keyboard.press("Enter");
+  assert.equal(await focused(page), "your-ai");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.settings-panel[data-page="your-ai"]');
+  assert.match(await page.locator(".panel").innerText(), /not set up[\s\S]*an api key, or your plan/);
   assert.equal(await focused(page), "add-key");
   await page.keyboard.press("Enter");
   await page.waitForSelector('.page [data-action="provider"]');
-  assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ claude ›/);
+  assert.match(await page.locator('[data-action="provider"]').innerText(), /^ai\s+claude$/);
   await page.keyboard.press("ArrowRight");
-  assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ chatgpt ›/);
+  assert.match(await page.locator('[data-action="provider"]').innerText(), /^ai\s+chatgpt$/);
   await page.keyboard.press("ArrowDown");
   assert.equal(await focused(page), "key");
   assert.equal(await page.locator('[data-action="key"]').getAttribute("type"), "password", "the key isn't shown on the TV");
   await page.keyboard.type(KEY);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /the key for chatgpt is kept/.test(document.body.textContent ?? ""));
+  await page.waitForFunction(() => /ChatGPT key saved/.test(document.body.textContent ?? ""));
   assert.deepEqual(puts, [{ body: { provider: "chatgpt", key: KEY }, grant: undefined }]);
-  await page.waitForSelector('.menu-item.open[data-key="ai"]');
-  assert.match(await page.locator('.menu-item[data-key="ai"]').innerText(), /ai\s+chatgpt/);
-  assert.match(await page.locator(".panel").innerText(), /chatgpt[\s\S]*never shown again[\s\S]*replace the key →[\s\S]*take the key off/);
+  await page.waitForSelector('.settings-panel[data-page="your-ai"]');
+  assert.match(await page.locator(".panel").innerText(), /^your ai\s+chatgpt\s+your key is saved\. it's never shown again\.\s+replace key\s+remove key\s+use my plan instead$/);
+  // Back from the page is AI's rows, where the row says which.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.settings-panel[data-page="ai"]');
+  assert.match(await page.locator('.panel [data-action="your-ai"]').innerText(), /^your ai\s+chatgpt$/);
   assert.ok(!(await page.content()).includes(KEY), "nothing on the page has it after");
   await page.close();
 });
@@ -118,9 +133,9 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   };
 
   await addKey(0);
-  await page.waitForFunction(() => /claude's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
+  await page.waitForFunction(() => /Claude's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
   assert.deepEqual(await page.locator(".profile-form [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-commercial-terms", "anthropic-usage-policy", "claude-code-legal"]);
-  assert.match(await page.locator(".page").innerText(), /an adult accepts them on a paired phone\. the key is kept once they do\./);
+  assert.match(await page.locator(".page").innerText(), /accept them on your phone/);
   assert.ok(!(await page.content()).includes(KEY), "the key isn't on the page while it waits");
 
   // An adult on a paired phone reads them and accepts.
@@ -131,7 +146,7 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   await phone.waitForSelector("#tv-ask");
   assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
   await phone.locator('[data-action="accept"]').tap();
-  await page.waitForFunction(() => /the key for claude is kept/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
+  await page.waitForFunction(() => /Claude key saved/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
   const accepted = (await daemon.ai.history()).filter((a) => a.provider === "claude" && a.path === "key");
   assert.deepEqual(accepted.map((a) => a.by.phone), ["phone"]);
@@ -139,13 +154,13 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   // Another key for Claude: its terms are accepted, so it just saves.
   await page.waitForSelector(".grid .tile.focused");
   await addKey(0);
-  await page.waitForFunction(() => document.querySelectorAll(".toast").length > 0 && /the key for claude is kept/.test(document.querySelector(".toast:last-child")?.textContent ?? ""), null, { timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelectorAll(".toast").length > 0 && /Claude key saved/.test(document.querySelector(".toast:last-child")?.textContent ?? ""), null, { timeout: 10_000 });
   assert.equal((await daemon.ai.history()).length, accepted.length, "no new acceptance");
 
   // ChatGPT's, then back: the phone stops asking.
   await page.waitForSelector(".grid .tile.focused");
   await addKey(1);
-  await page.waitForFunction(() => /chatgpt's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
+  await page.waitForFunction(() => /ChatGPT's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
   await phone.waitForSelector("#tv-ask");
   assert.equal(await phone.locator("#tv-ask h1").innerText(), "chatgpt terms");
   await page.keyboard.press("Escape");
@@ -159,18 +174,18 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${url}/`);
   await page.waitForSelector(".grid .tile.focused");
-  await go(page, "settings/ai");
+  await go(page, "settings/your-ai");
   await page.waitForSelector('.panel [data-action="use-plan"]');
   await page.locator('.panel [data-action="use-plan"]').click();
   await page.waitForSelector('.page [data-action="provider"]');
-  assert.match(await page.locator('[data-action="provider"]').innerText(), /plan\s+‹ claude ›/);
-  assert.equal(await page.locator('[data-plan="about"]').innerText(), "claude pro or max. you sign in to it on your phone the first time your agent builds an app.");
+  assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+claude$/);
+  assert.equal(await page.locator('[data-plan="about"]').innerText(), "claude pro or max. you sign in on your phone when you first build an app.");
   await page.locator('[data-action="save"]').click();
 
   // Claude's terms for a plan come first, accepted by an adult on a phone.
-  await page.waitForFunction(() => /claude's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
+  await page.waitForFunction(() => /Claude's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
   assert.deepEqual(await page.locator(".profile-form [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-consumer-terms", "anthropic-usage-policy", "claude-code-legal"]);
-  assert.match(await page.locator(".page").innerText(), /an adult accepts them on a paired phone\. builds use the plan once they do\./);
+  assert.match(await page.locator(".page").innerText(), /accept them on your phone/);
   await fetch(`${url}/api/phones/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   phone.on("pageerror", (error) => errors.push(error.message));
@@ -178,36 +193,38 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   await phone.waitForSelector("#tv-ask");
   assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
   await phone.locator('[data-action="accept"]').tap();
-  await page.waitForFunction(() => /builds use your claude plan now/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
+  await page.waitForFunction(() => /Now using your Claude plan/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
   assert.deepEqual((await daemon.ai.history()).filter((a) => a.provider === "claude" && a.path === "plan").map((a) => a.by.phone), ["phone"]);
 
   // Settings → AI says builds use it.
   await go(page, "settings/ai");
-  await page.waitForFunction(() => /claude plan/.test(document.querySelector('.menu-item[data-key="ai"]')?.textContent ?? ""));
-  assert.match(await page.locator(".panel").innerText(), /claude plan[\s\S]*claude pro or max\. you sign in to it[\s\S]*change the plan →[\s\S]*use a key instead →/);
+  await page.waitForFunction(() => /Claude plan/.test(document.querySelector('.panel [data-action="your-ai"]')?.textContent ?? ""));
+  await go(page, "settings/your-ai");
+  await page.waitForSelector('.panel [data-action="use-plan"]');
+  assert.match(await page.locator(".panel").innerText(), /claude plan[\s\S]*(claude pro or max\. you sign in on your phone|sign in now so voice works)[\s\S]*change plan\s+use a key instead/);
 
   // On stable, as this box is: ChatGPT's and Grok's plans, each with its
   // own terms. Google's and Muse's aren't in the list.
   {
     await go(page, "home");
-    await go(page, "settings/ai");
+    await go(page, "settings/your-ai");
     await page.waitForSelector('.panel [data-action="use-plan"]');
     await page.locator('.panel [data-action="use-plan"]').click();
     await page.waitForSelector('.page [data-action="provider"]');
     await page.keyboard.press("ArrowRight");
-    assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ chatgpt ›/);
-    assert.equal(await page.locator('[data-plan="about"]').innerText(), "chatgpt plus or pro. you sign in to it on your phone the first time your agent builds an app.");
+    assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+chatgpt$/);
+    assert.equal(await page.locator('[data-plan="about"]').innerText(), "chatgpt plus or pro. you sign in on your phone when you first build an app.");
     await page.keyboard.press("ArrowRight");
-    assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ grok ›/);
+    assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+grok$/);
     // Grok's is the last: right goes round to Claude's, never to a plan
     // that isn't offered.
     await page.keyboard.press("ArrowRight");
-    assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ claude ›/);
+    assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+claude$/);
     await page.keyboard.press("ArrowLeft");
-    assert.match(await page.locator('[data-action="provider"]').innerText(), /‹ grok ›/);
+    assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+grok$/);
     await page.locator('[data-action="save"]').click();
-    await page.waitForFunction(() => /grok's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
+    await page.waitForFunction(() => /Grok's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
     assert.deepEqual(await page.locator(".profile-form [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["xai-consumer-terms", "xai-acceptable-use-policy"]);
     await phone.waitForSelector("#tv-ask");
     assert.equal(await phone.locator("#tv-ask h1").innerText(), "grok terms");
@@ -229,9 +246,9 @@ test("S4.6 S4.5 with a PIN set, the key is past it", async () => {
   await page.locator('[data-action="key"]').fill(KEY);
   await page.locator('[data-action="save"]').click();
   await page.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
-  assert.match(await page.locator("#pin").innerText(), /for the ai key\./);
+  assert.match(await page.locator("#pin").innerText(), /for your ai key/);
   for (const digit of "4826") await page.keyboard.press(digit);
-  await page.waitForFunction(() => /the key for claude is kept/.test(document.body.textContent ?? ""));
+  await page.waitForFunction(() => /Claude key saved/.test(document.body.textContent ?? ""));
   assert.equal(puts.length, 1);
   assert.ok(puts[0].grant && daemon.pin.allows(puts[0].grant), "it carries the grant");
   await page.close();
