@@ -9,7 +9,7 @@
 
 import { glyph } from "../launcher/glyphs.ts";
 import { api, file, h, prompt, toast } from "./lib.ts";
-import { withPin, withPinWords } from "./pad.ts";
+import { withPin } from "./pad.ts";
 
 // How each build stands, from the phone's state.
 export interface PhoneBuild {
@@ -51,7 +51,10 @@ interface FullBuild {
   shot: boolean;
 }
 
-const lower = (b: { name?: string; sentence?: string }) => (b.name ?? b.sentence ?? "the app").toLowerCase();
+const named = (b: { name?: string; sentence?: string }) => b.name ?? b.sentence ?? "your app";
+// Each AI by its name, where the TV sends its id.
+const AI: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", grok: "Grok", muse: "Muse" };
+const ai = (provider: string) => AI[provider] ?? provider;
 const money = (dollars: number) => `$${dollars.toFixed(2)}`;
 
 // Tells what moved on since the phone last asked, as the TV does.
@@ -61,15 +64,14 @@ export function buildNotices(before: PhoneBuild[] | undefined, now: PhoneBuild[]
   for (const b of now) {
     const then = was.get(b.build);
     if (!then || then.state === b.state) continue;
-    const name = b.name.toLowerCase();
-    if (b.state === "approve") toast(`${name} is ready: approve it here`, true);
-    else if (b.state === "plan") toast(`a plan for ${name}: approve it here`, true);
-    else if (b.state === "plan-sign-in") toast(b.ranOut ? `your ${b.provider} plan's sign-in ran out: sign in again to build ${name}` : `sign in to your ${b.provider} plan to build ${name}`, true);
-    else if (b.state === "failed") toast(`couldn't build ${name}: ${b.reason ?? "it stopped"}`);
+    if (b.state === "approve") toast(`${b.name} is ready. Approve it here.`, true);
+    else if (b.state === "plan") toast(`Check the steps for ${b.name}`, true);
+    else if (b.state === "plan-sign-in") toast(b.ranOut ? `Sign in to ${ai(b.provider)} again to finish ${b.name}` : `Sign in to ${ai(b.provider)} to make ${b.name}`, true);
+    else if (b.state === "failed") toast(`Couldn't make ${b.name}`);
   }
   // Approved and gone from the list: it's on the TV's home.
   for (const then of before) {
-    if (then.state === "approve" && !now.some((b) => b.build === then.build)) toast(`${then.name.toLowerCase()} is on your tv`, true);
+    if (then.state === "approve" && !now.some((b) => b.build === then.build)) toast(`${then.name} is on your TV`, true);
   }
 }
 
@@ -82,26 +84,24 @@ export function buildBanner(builds: PhoneBuild[] | undefined, open: (build: stri
       "button",
       { type: "button", class: "banner", "data-action": "plan-sign-in", "data-build": signing.build, onclick: () => open(signing.build) },
       glyph("lock", 18),
-      h("span", {}, `sign in to your ${signing.provider} plan${signing.ranOut ? " again" : ""} ›`),
+      h("span", {}, `Sign in to ${ai(signing.provider)}${signing.ranOut ? " again" : ""}`),
     );
   }
   const waiting = builds?.find((b) => b.state === "approve" || b.state === "plan");
   if (waiting) {
-    const name = waiting.name.toLowerCase();
     return h(
       "button",
       { type: "button", class: "banner", "data-action": "approve-build", "data-build": waiting.build, onclick: () => open(waiting.build) },
       glyph("check", 18),
-      h("span", {}, waiting.state === "plan" ? `a plan for ${name} · approve it ›` : `${name} is ready · approve it ›`),
+      h("span", {}, waiting.state === "plan" ? `Check the steps for ${waiting.name}` : `${waiting.name} is ready · approve it`),
     );
   }
   const b = builds?.[0];
   if (!b) return null;
-  const name = b.name.toLowerCase();
-  if (b.state === "failed") return h("p", { class: "note bad with-icon", "data-build": b.build }, glyph("tv", 16), h("span", {}, `couldn't build ${name} · try again on the tv`));
+  if (b.state === "failed") return h("p", { class: "note bad with-icon", "data-build": b.build }, glyph("tv", 16), h("span", {}, `Couldn't make ${b.name}. Try again on your TV.`));
   if (b.state === "running" || b.state === "starting") {
     const far = b.steps ? ` · ${b.done} of ${b.steps}` : "";
-    return h("p", { class: "note with-icon", "data-build": b.build }, glyph("tv", 16), h("span", {}, `building ${name}${far}`));
+    return h("p", { class: "note with-icon", "data-build": b.build }, glyph("tv", 16), h("span", {}, `Making ${b.name}${far}`));
   }
   return null;
 }
@@ -143,18 +143,18 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
       return;
     }
     if (!b || (b.state !== "approve" && b.state !== "plan")) {
-      page.replaceChildren(prompt("tv app approve"), h("p", { class: "note" }, "there's nothing waiting for you here now."), h("button", { class: "button", type: "button", onclick: back }, "back"));
+      page.replaceChildren(prompt("tv app approve"), h("p", { class: "note" }, "Nothing to approve right now"), h("button", { class: "button", type: "button", onclick: back }, "Back"));
       return;
     }
-    const name = lower(b);
+    const name = named(b);
     const plan = b.state === "plan";
     // A theme your agent made (S6.4) becomes the TV's and the desktop's.
     const theme = b.understood?.recipe === "theme";
     const yes = async () => {
       try {
-        const answered = await withPin(plan ? `the plan for ${name}` : `adding ${name}`, (grant) => api("POST", `/api/phone/builds/${build}/${plan ? "plan" : "approve"}`, {}, grant));
+        const answered = await withPin(plan ? `the steps for ${name}` : `adding ${name}`, (grant) => api("POST", `/api/phone/builds/${build}/${plan ? "plan" : "approve"}`, {}, grant));
         if (answered === null) return;
-        toast(plan ? `your agent builds ${name} now` : theme ? `${name} becomes your theme` : `${name} goes on your tv's home`, true);
+        toast(plan ? `Making ${name} now` : theme ? `${name} is your theme now` : `${name} is on your home`, true);
         back();
         await done();
       } catch (error) {
@@ -164,52 +164,56 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
     const buttons = h(
       "div",
       { class: "build-buttons" },
-      h("button", { class: "button primary", type: "button", "data-action": plan ? "approve-plan" : "approve", onclick: () => void yes() }, glyph("lock", 20), h("span", {}, withPinWords("approve"))),
-      h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "not now"),
+      h("button", { class: "button primary", type: "button", "data-action": plan ? "approve-plan" : "approve", onclick: () => void yes() }, glyph("lock", 20), h("span", {}, "Approve")),
+      h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "Not now"),
     );
     if (plan && b.plan) {
       const p = b.plan;
       const reach = [
-        p.permissions.origins.length ? `reaches ${p.permissions.origins.join(", ")}` : "reaches nothing on the internet",
-        ...(p.permissions.media.length ? [`shows your ${p.permissions.media.join(" and ")} through the tv`] : []),
-        ...(p.permissions.tile ? ["puts a tile on home"] : []),
-        ...(p.permissions.notices ? ["can show notices on the tv and here"] : []),
-        "can't see your other sign-ins or your ai key",
-        "stays on this tv",
+        p.permissions.origins.length ? `Connects to ${p.permissions.origins.join(", ")}` : "Doesn't go online",
+        ...(p.permissions.media.length ? [`Can show your ${p.permissions.media.join(" and ")}`] : []),
+        ...(p.permissions.tile ? ["Adds a tile to home"] : []),
+        ...(p.permissions.notices ? ["Can send you notices"] : []),
+        "Can't see your other sign-ins or your AI key",
+        "Stays on this TV",
       ];
-      const cost = b.path === "key" ? (b.cost ? `about ${money(b.cost.low)} to ${money(b.cost.high)} on your ${b.provider} key.` : `on your ${b.provider} key.`) : `on your ${b.provider} plan, within its own limits.`;
+      const cost = b.path === "key" ? (b.cost ? `About ${money(b.cost.low)} to ${money(b.cost.high)}` : `Uses your ${ai(b.provider)} key`) : `Uses your ${ai(b.provider)} plan`;
       page.replaceChildren(
-        prompt(`tv app plan ${name}`),
-        h("h1", {}, `a plan for ${name}`),
-        h("p", { class: "note" }, `no recipe fits "${b.sentence}", so your agent wrote this plan. it builds nothing until you approve it.`),
-        h("p", { class: "note" }, p.says.toLowerCase()),
+        prompt(`tv app plan ${name.toLowerCase()}`),
+        h("h1", {}, `Steps for ${name}`),
+        h("p", { class: "note" }, "This one's new, so check the steps. Nothing is made until you approve."),
+        h("p", { class: "note" }, p.says),
         h("ol", { class: "plan-steps" }, ...p.steps.map((s) => h("li", {}, s.does))),
         checks(reach),
-        h("p", { class: "note" }, p.packages.length ? `packages: ${p.packages.map((x) => (x.version ? `${x.name} ${x.version}` : x.name)).join(", ")}` : "packages: none"),
-        h("div", { class: "limits" }, h("b", {}, "cost"), h("span", {}, cost)),
+        ...(p.packages.length ? [h("p", { class: "note" }, `Uses: ${p.packages.map((x) => (x.version ? `${x.name} ${x.version}` : x.name)).join(", ")}`)] : []),
+        h("div", { class: "limits" }, h("b", {}, "Cost"), h("span", {}, cost)),
         buttons,
       );
       return;
     }
     const a = b.approval ?? { reaches: { always: [], declared: [] }, packages: [] };
-    const img = h("img", { class: "build-shot", alt: theme ? `the tv in ${name}` : `${name} on the test tv` }) as HTMLImageElement;
-    const passed = b.steps.filter((s) => s.state === "done").length;
+    const img = h("img", { class: "build-shot", alt: theme ? `Your TV in ${name}` : `${name} on a TV` }) as HTMLImageElement;
+    const signedInLook = b.understood?.recipe === "streaming" && b.phase !== "stage-b";
     page.replaceChildren(
-      prompt(`tv app approve ${name}`),
+      prompt(`tv app approve ${name.toLowerCase()}`),
       h("h1", {}, `${name} is ready`),
       h(
         "p",
         { class: "note" },
         b.phase === "stage-b"
-          ? `your agent learned how to search ${name}, play from it and see what's on. update it on the tv?`
+          ? `${name} can now search, play and show what's on. Update it on your TV?`
           : theme
-            ? "your agent made a theme: its colours and a background or two. make it your theme, on the tv and omarchy's desktop?"
-            : "your agent built it. add it to the tv?",
+            ? "Your theme is ready: colours and a background or two. Use it?"
+            : "Add it to your TV?",
       ),
       ...(b.shot ? [img] : []),
-      checks(theme ? ["its colours, its icons and its pictures, and nothing that runs", "reaches nothing on the internet", "stays on this tv"] : [...a.reaches.always, ...a.reaches.declared, "can't see your other sign-ins or your ai key", "stays on this tv"]),
-      ...(theme ? [] : [h("p", { class: "note" }, a.packages.length ? `packages: ${a.packages.map((x) => `${x.name} ${x.version}`).join(", ")}` : "packages: none")]),
-      h("p", { class: "note ok-line" }, h("b", {}, "✓"), theme ? ` its checks passed: ${passed} steps, and the theme check` : ` its checks passed: ${passed} steps, and the test tv`),
+      checks(theme ? ["Just colours, icons and pictures", "Doesn't go online", "Stays on this TV"] : [...a.reaches.always, ...a.reaches.declared, "Can't see your other sign-ins or your AI key", "Stays on this TV"]),
+      ...(!theme && a.packages.length ? [h("p", { class: "note" }, `Uses: ${a.packages.map((x) => `${x.name} ${x.version}`).join(", ")}`)] : []),
+      h("p", { class: "note ok-line" }, h("b", {}, "✓"), " Tested and working"),
+      // A streaming app's first yes is also a yes to what comes after it:
+      // once someone signs in to it, the TV studies the signed-in pages
+      // (stage B), and the AI reads what it finds there.
+      ...(signedInLook ? [h("p", { class: "note", "data-note": "signed-in-look" }, `To finish, your TV looks at a few pages of ${name} while you're signed in, and sends what it reads to ${ai(b.provider)}`)] : []),
       buttons,
     );
     if (b.shot) {
@@ -225,29 +229,30 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
 // the code it gives, typed into the CLI's prompt on the box. Its tokens stay
 // in the CLI's own files there; this page never sees them.
 function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
-  const name = lower(b);
+  const name = named(b);
+  const provider = ai(b.provider);
   const s = b.signIn;
   const head = [
     prompt(`tv app sign-in ${b.provider}`),
-    h("h1", {}, `sign in to your ${b.provider} plan${b.ranOut ? " again" : ""}`),
-    h("p", { class: "note" }, b.ranOut ? `${name} is built on your ${b.provider} plan, and your agent's sign-in to it ran out, so you sign in again.` : `${name} is built on your ${b.provider} plan, and your agent isn't signed in to it yet. you sign in once.`),
+    h("h1", {}, `Sign in to ${provider}${b.ranOut ? " again" : ""}`),
+    h("p", { class: "note" }, b.ranOut ? `Your ${provider} sign-in expired. Sign in again to finish ${name}.` : `Sign in to ${provider} to make ${name}. You only do this once.`),
   ];
-  const leave = h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "back");
-  if (s?.state !== "waiting" || !s.url) return [...head, h("p", { class: "note" }, s?.state === "done" ? "you're signed in. your agent goes on." : "the sign-in is starting on the tv…"), leave];
-  const link = h("a", { class: "button primary", href: s.url, target: "_blank", rel: "noopener noreferrer", "data-action": "open-sign-in" }, `open ${b.provider}'s sign-in ›`);
+  const leave = h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "Back");
+  if (s?.state !== "waiting" || !s.url) return [...head, h("p", { class: "note" }, s?.state === "done" ? "You're signed in. Carrying on." : "Starting the sign-in…"), leave];
+  const link = h("a", { class: "button primary", href: s.url, target: "_blank", rel: "noopener noreferrer", "data-action": "open-sign-in" }, `Open ${provider}'s sign-in`);
   if (s.code) {
-    return [...head, link, h("p", { class: "note" }, "sign in there, and enter this code when it asks:"), h("p", { class: "plan-code" }, s.code), h("p", { class: "note" }, "the tv goes on once you're in."), leave];
+    return [...head, link, h("p", { class: "note" }, "Sign in there, and enter this code when it asks:"), h("p", { class: "plan-code" }, s.code), h("p", { class: "note" }, "It continues once you're in"), leave];
   }
-  const field = h("input", { class: "field", type: "text", name: "code", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "paste the code here", "aria-label": "the sign-in code" }) as HTMLInputElement;
+  const field = h("input", { class: "field", type: "text", name: "code", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "Paste the code", "aria-label": "Sign-in code" }) as HTMLInputElement;
   const send = async (event: Event) => {
     event.preventDefault();
     const code = field.value.trim();
-    if (!code) return toast("paste the code first");
+    if (!code) return toast("Paste the code first");
     try {
-      const answered = await withPin(`the ${b.provider} plan's sign-in`, (grant) => api("POST", `/api/phone/builds/${b.build}/code`, { code }, grant));
+      const answered = await withPin(`signing in to ${provider}`, (grant) => api("POST", `/api/phone/builds/${b.build}/code`, { code }, grant));
       if (answered === null) return;
       field.value = "";
-      toast("signing in on the tv…", true);
+      toast("Signing in on your TV…", true);
     } catch (error) {
       failed(error);
     }
@@ -255,8 +260,8 @@ function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => 
   return [
     ...head,
     link,
-    h("p", { class: "note" }, "sign in there, then copy the code the page gives you and paste it here."),
-    h("form", { class: "plan-paste", onsubmit: (event: Event) => void send(event) }, field, h("button", { class: "button primary", type: "submit", "data-action": "send-code" }, glyph("lock", 20), h("span", {}, withPinWords("send it")))),
+    h("p", { class: "note" }, "Sign in there, then paste the code it gives you here"),
+    h("form", { class: "plan-paste", onsubmit: (event: Event) => void send(event) }, field, h("button", { class: "button primary", type: "submit", "data-action": "send-code" }, glyph("lock", 20), h("span", {}, "Send"))),
     leave,
   ];
 }
@@ -273,43 +278,42 @@ export interface Offer {
 
 export function exportBanner(offer: Offer | null | undefined, failed: (error: unknown) => void): HTMLElement | null {
   if (!offer) return null;
-  const name = offer.name.toLowerCase();
   const save = async () => {
     try {
       const response = await file(`/api/phone/apps/${offer.id}/export`);
-      if (!response.ok) throw new Error((response.data as { error?: string }).error ?? "it couldn't be exported");
+      if (!response.ok) throw new Error((response.data as { error?: string }).error ?? "Couldn't save a copy");
       const link = h("a", { href: URL.createObjectURL(new Blob([response.bytes as BlobPart], { type: response.type })), download: `${offer.id}-${offer.version}.zip` }) as HTMLAnchorElement;
       document.body.append(link);
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
-      toast(`${name} is saved on this phone`, true);
+      toast(`${offer.name} is saved on this phone`, true);
     } catch (error) {
       failed(error);
     }
   };
-  return h("button", { type: "button", class: "banner", "data-action": "save-export", onclick: () => void save() }, glyph("download", 18), h("span", {}, `save ${name} on this phone ›`));
+  return h("button", { type: "button", class: "banner", "data-action": "save-export", onclick: () => void save() }, glyph("download", 18), h("span", {}, `Save ${offer.name} on this phone`));
 }
 
 // The push, when the box is signed in to GitHub as the person.
 export function pushBanner(offer: Offer | null | undefined, open: () => void): HTMLElement | null {
   if (!offer?.github) return null;
-  return h("button", { type: "button", class: "banner", "data-action": "push-export", onclick: open }, glyph("lock", 18), h("span", {}, `push ${offer.name.toLowerCase()} to github ›`));
+  return h("button", { type: "button", class: "banner", "data-action": "push-export", onclick: open }, glyph("lock", 18), h("span", {}, `Push ${offer.name} to GitHub`));
 }
 
 // Where it goes, asked each time, and the PIN. The TV pushes it as the
 // person, in a folder named after the app, and never with --force.
 export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: string } }, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
-  const name = offer.name.toLowerCase();
-  const field = h("input", { class: "field", type: "text", name: "repo", value: `${offer.github.login}/${offer.id.replace(/^local\./, "")}`, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "the repo" }) as HTMLInputElement;
-  const label = h("span", {}, withPinWords("push it"));
+  const name = offer.name;
+  const field = h("input", { class: "field", type: "text", name: "repo", value: `${offer.github.login}/${offer.id.replace(/^local\./, "")}`, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "Repo" }) as HTMLInputElement;
+  const label = h("span", {}, "Push");
   const button = h("button", { class: "button primary", type: "submit", "data-action": "push" }, glyph("lock", 20), label) as HTMLButtonElement;
   const push = async (event: Event) => {
     event.preventDefault();
     const repo = field.value.trim();
-    if (!repo) return toast("type the repo first");
+    if (!repo) return toast("Type the repo first");
     button.disabled = true;
-    label.textContent = "pushing…";
+    label.textContent = "Pushing…";
     try {
       const answered = await withPin(`pushing ${name}`, (grant) => api<{ url: string; pushed: boolean }>("POST", `/api/phone/apps/${offer.id}/push`, { repo }, grant));
       if (answered === null) return;
@@ -319,15 +323,15 @@ export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: st
       failed(error);
     } finally {
       button.disabled = false;
-      label.textContent = withPinWords("push it");
+      label.textContent = "Push";
     }
   };
   return [
     prompt(`git push ${offer.id}`),
-    h("h1", {}, `push ${name} to github`),
-    h("p", { class: "note" }, `the tv pushes it as ${offer.github.login}, in a folder named ${offer.id}. the rest of the repo stays as it is, and nothing is forced.`),
-    h("p", { class: "note" }, offer.github.via === "gh" ? "a repo that isn't there yet is made, private." : "the repo has to be on github already."),
+    h("h1", {}, `Push ${name} to GitHub`),
+    h("p", { class: "note" }, `Your TV pushes it as ${offer.github.login}, to a folder named ${offer.id}. Nothing else in the repo changes.`),
+    h("p", { class: "note" }, offer.github.via === "gh" ? "A new repo is made private" : "The repo has to be on GitHub already"),
     h("form", { class: "plan-paste", onsubmit: (event: Event) => void push(event) }, field, button),
-    h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "back"),
+    h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "Back"),
   ];
 }

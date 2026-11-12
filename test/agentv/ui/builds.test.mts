@@ -221,7 +221,7 @@ test("ADR-043 the phone follows a build, shows the finished app with its screens
   const understood = { name: "Photos", recipe: "photos", says: "The photos on your NAS" };
   status(b.id, b.build, { phase: "build", state: "running", steps: STEPS(1), understood });
   const hand = await phone();
-  await hand.waitForFunction(() => /building photos · 1 of 4/.test(document.querySelector("[data-build]")?.textContent ?? ""));
+  await hand.waitForFunction(() => /^Making Photos · 1 of 4$/.test(document.querySelector("[data-build]")?.textContent ?? ""));
 
   status(b.id, b.build, {
     phase: "build",
@@ -231,18 +231,19 @@ test("ADR-043 the phone follows a build, shows the finished app with its screens
     approval: { reaches: { always: ["the remote and a gamepad"], declared: ["your photos, through the tv"] }, packages: [{ name: "exifr", version: "7.1.3" }] },
   });
   writeFileSync(join(builds, b.id, "1.0.0", "shot.png"), PNG);
-  await hand.waitForFunction(() => /photos is ready: approve it here/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
+  await hand.waitForFunction(() => /^Photos is ready\. Approve it here\.$/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
   await hand.locator('[data-action="approve-build"]').tap();
   await hand.waitForSelector(".build-approve h1");
   const page = await hand.locator(".build-approve").innerText();
-  assert.match(page, /photos is ready[\s\S]*your agent built it\. add it to the tv\?/);
-  assert.match(page, /\[x\] the remote and a gamepad[\s\S]*\[x\] your photos, through the tv[\s\S]*\[x\] can't see your other sign-ins or your ai key[\s\S]*\[x\] stays on this tv/);
-  assert.match(page, /packages: exifr 7\.1\.3/);
-  assert.match(page, /✓ its checks passed: 4 steps, and the test tv/);
+  assert.match(page, /Photos is ready\n+Add it to your TV\?\n/);
+  assert.match(page, /\[x\] the remote and a gamepad[\s\S]*\[x\] your photos, through the tv[\s\S]*\[x\] Can't see your other sign-ins or your AI key[\s\S]*\[x\] Stays on this TV/);
+  assert.match(page, /\nUses: exifr 7\.1\.3\n/);
+  assert.match(page, /\n✓ Tested and working\n/);
+  assert.doesNotMatch(page, /while you're signed in/, "only a streaming app's approval says what comes after the sign-in");
   await hand.waitForFunction(() => (document.querySelector(".build-shot") as HTMLImageElement | null)?.src.startsWith("data:image/png"));
 
   rmSync(join(state, "build-drop", "install.json"), { force: true });
-  assert.equal(await hand.locator('[data-action="approve"]').innerText(), "approve with pin");
+  assert.equal(await hand.locator('[data-action="approve"]').innerText(), "Approve");
   await hand.locator('[data-action="approve"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
   for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
@@ -270,14 +271,15 @@ test("ADR-046 a plan for a request no recipe fits is approved on the phone, and 
   });
   const hand = await phone();
   await hand.waitForSelector('[data-action="approve-build"]', { timeout: 10_000 });
-  assert.match(await hand.locator('[data-action="approve-build"]').innerText(), /a plan for chores · approve it/);
+  assert.match(await hand.locator('[data-action="approve-build"]').innerText(), /^Check the steps for Chores$/);
   await hand.locator('[data-action="approve-build"]').tap();
   await hand.waitForSelector(".build-approve h1");
   const page = await hand.locator(".build-approve").innerText();
-  assert.match(page, /a plan for chores[\s\S]*no recipe fits "a family chore chart"/);
-  assert.match(page, /work out the chart and its buttons[\s\S]*write the page app/i);
-  assert.match(page, /\[x\] reaches nothing on the internet[\s\S]*\[x\] puts a tile on home/);
-  assert.match(page, /cost[\s\S]*about \$0\.50 to \$2\.00 on your claude key/);
+  assert.match(page, /Steps for Chores\n+This one's new, so check the steps\. Nothing is made until you approve\.\n+A chart of who does which chore this week\n/);
+  assert.match(page, /Work out the chart and its buttons[\s\S]*Write the page app/);
+  assert.match(page, /\[x\] Doesn't go online[\s\S]*\[x\] Adds a tile to home/);
+  assert.doesNotMatch(page, /Uses:/, "with nothing extra in it, no line says so");
+  assert.match(page, /Cost\n*About \$0\.50 to \$2\.00\n/);
   await hand.locator('[data-action="approve-plan"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
   for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
@@ -439,16 +441,16 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
 
     const hand = await phone();
     await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
-    assert.match(await hand.locator('[data-action="plan-sign-in"]').innerText(), /sign in to your claude plan ›/);
+    assert.match(await hand.locator('[data-action="plan-sign-in"]').innerText(), /^Sign in to Claude$/);
     await hand.locator('[data-action="plan-sign-in"]').tap();
     await hand.waitForSelector('[data-action="open-sign-in"]');
     assert.equal(await hand.locator('[data-action="open-sign-in"]').getAttribute("href"), link);
     await hand.locator('input[name="code"]').fill("good-code#s7Q");
-    assert.equal(await hand.locator('[data-action="send-code"]').innerText(), "send it with pin");
+    assert.equal(await hand.locator('[data-action="send-code"]').innerText(), "Send");
     await hand.locator('[data-action="send-code"]').tap();
     await hand.waitForSelector(".overlay .pin-keys");
     for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
-    await hand.waitForFunction(() => /signing in on the tv/.test(document.getElementById("toast")?.textContent ?? ""));
+    await hand.waitForFunction(() => /^Signing in on your TV…$/.test(document.getElementById("toast")?.textContent ?? ""));
     assert.deepEqual(drop("sign-in-code"), { code: "good-code#s7Q" });
     rmSync(join(state, "build-drop", "sign-in-code.json"));
 
@@ -506,14 +508,14 @@ test("ADR-040 a plan whose sign-in ran out asks for it again on the TV and the p
 
     const hand = await phone();
     await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
-    assert.match(await hand.locator('[data-action="plan-sign-in"]').innerText(), /sign in to your claude plan again ›/);
+    assert.match(await hand.locator('[data-action="plan-sign-in"]').innerText(), /^Sign in to Claude again$/);
     await hand.locator('[data-action="plan-sign-in"]').tap();
     await hand.waitForSelector('[data-action="open-sign-in"]');
     assert.equal(await hand.locator('[data-action="open-sign-in"]').getAttribute("href"), link);
     const phoneSays = await hand.locator(".page.build-approve").innerText();
-    assert.match(phoneSays, /sign in to your claude plan again/);
-    assert.match(phoneSays, /your agent's sign-in to it ran out, so you sign in again\./);
-    assert.doesNotMatch(phoneSays, /you sign in once/);
+    assert.match(phoneSays, /\nSign in to Claude again\n/);
+    assert.match(phoneSays, /Your Claude sign-in expired\. Sign in again to finish /);
+    assert.doesNotMatch(phoneSays, /You only do this once/);
 
     await send("POST", `/api/builds/${asked.build}/forget`, {}, grant);
     await hand.close();
@@ -529,6 +531,15 @@ test("ADR-011 a streaming service's app learns the rest after the sign-in, and a
   assert.ok(asked, "a new build starts");
   rmSync(join(state, "build-drop", "start.json"), { force: true });
   const understood = { name: "Stand-in", recipe: "streaming", says: "A made-up streaming service" };
+  // Its first approval, on the phone, says what comes after the sign-in:
+  // the look at its signed-in pages, and who reads what's found there.
+  status(asked.id, asked.build, { phase: "build", state: "approve", steps: STEPS(4), understood, approval: { reaches: { always: [], declared: [] }, packages: [] } });
+  const hand = await phone();
+  await hand.waitForSelector('[data-action="approve-build"]', { timeout: 10_000 });
+  await hand.locator('[data-action="approve-build"]').tap();
+  await hand.waitForSelector(".build-approve h1");
+  assert.match(await hand.locator(".build-approve").innerText(), /\nTo finish, your TV looks at a few pages of Stand-in while you're signed in, and sends what it reads to Claude\n+Approve\n/);
+  await hand.close();
   status(asked.id, asked.build, { phase: "stage-b", state: "running", steps: STEPS(1), understood });
   const page = await tv();
   await go(page, `build/${asked.build}`);
@@ -557,7 +568,7 @@ test("ADR-045 Export from a built app's details offers it to the phone, which sa
 
   const hand = await phone();
   await hand.waitForSelector('[data-action="save-export"]', { timeout: 10_000 });
-  assert.match(await hand.locator('[data-action="save-export"]').innerText(), /save blocks on this phone ›/);
+  assert.match(await hand.locator('[data-action="save-export"]').innerText(), /^Save Blocks on this phone$/);
   const [download] = await Promise.all([hand.waitForEvent("download"), hand.locator('[data-action="save-export"]').tap()]);
   assert.equal(download.suggestedFilename(), `${asked.id}-1.0.0.zip`);
   await hand.waitForFunction(() => !document.querySelector('[data-action="save-export"]'), undefined, { timeout: 10_000 });
@@ -595,20 +606,20 @@ test("ADR-045 with the box signed in to GitHub, the phone pushes a built app to 
 
     const hand = await phone();
     await hand.waitForSelector('[data-action="push-export"]', { timeout: 10_000 });
-    assert.match(await hand.locator('[data-action="push-export"]').innerText(), /push blocks to github ›/);
+    assert.match(await hand.locator('[data-action="push-export"]').innerText(), /^Push Blocks to GitHub$/);
     await hand.locator('[data-action="push-export"]').tap();
     await hand.waitForSelector('input[name="repo"]');
     const shown = await hand.locator("body").innerText();
-    assert.match(shown, /push blocks to github/);
-    assert.equal(await hand.locator('[data-action="push"]').innerText(), "push it with pin");
-    assert.match(shown, new RegExp(`the tv pushes it as person, in a folder named ${asked.id.replace(/\./g, "\\.")}`));
-    assert.match(shown, /a repo that isn't there yet is made, private/);
+    assert.match(shown, /Push Blocks to GitHub/);
+    assert.equal(await hand.locator('[data-action="push"]').innerText(), "Push");
+    assert.match(shown, new RegExp(`Your TV pushes it as person, to a folder named ${asked.id.replace(/\./g, "\\.")}\\.`));
+    assert.match(shown, /\nA new repo is made private\n/);
     assert.equal(await hand.locator('input[name="repo"]').inputValue(), `person/${asked.id.replace(/^local\./, "")}`);
     await hand.locator('input[name="repo"]').fill("my-blocks");
     await hand.locator('[data-action="push"]').tap();
     await hand.waitForSelector(".overlay .pin-keys");
     for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
-    await hand.waitForFunction(() => /blocks is on github\.com\/person\/my-blocks/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    await hand.waitForFunction(() => /^Blocks is on github\.com\/person\/my-blocks$/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
     assert.equal(pushes.length, 1);
     assert.deepEqual(pushes[0]!.repo, { owner: "person", name: "my-blocks" });
     assert.ok(pushes[0]!.files.some((file) => file.path === "manifest.json"));
@@ -663,15 +674,15 @@ test("S6.4 Look's describe your own asks for a theme, the phone approves it with
     await hand.locator('[data-action="approve-build"]').tap();
     await hand.waitForSelector(".build-approve h1");
     const approval = await hand.locator(".build-approve").innerText();
-    assert.match(approval, /calm forest is ready[\s\S]*your agent made a theme: its colours and a background or two\. make it your theme, on the tv and omarchy's desktop\?/);
-    assert.match(approval, /\[x\] its colours, its icons and its pictures, and nothing that runs[\s\S]*\[x\] reaches nothing on the internet[\s\S]*\[x\] stays on this tv/);
-    assert.doesNotMatch(approval, /packages:/);
-    assert.match(approval, /✓ its checks passed: 4 steps, and the theme check/);
+    assert.match(approval, /Calm forest is ready\n+Your theme is ready: colours and a background or two\. Use it\?\n/);
+    assert.match(approval, /\[x\] Just colours, icons and pictures[\s\S]*\[x\] Doesn't go online[\s\S]*\[x\] Stays on this TV/);
+    assert.doesNotMatch(approval, /Uses:/);
+    assert.match(approval, /\n✓ Tested and working\n/);
     rmSync(join(state, "build-drop", "install.json"), { force: true });
     await hand.locator('[data-action="approve"]').tap();
     await hand.waitForSelector(".overlay .pin-keys");
     for (const digit of "2468") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
-    await hand.waitForFunction(() => /calm forest becomes your theme/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    await hand.waitForFunction(() => /^Calm forest is your theme now$/.test(document.getElementById("toast")?.textContent ?? ""), undefined, { timeout: 10_000 });
     assert.deepEqual(drop("install"), { build: asked.build, id: asked.id, version: "1.0.0" });
     await hand.close();
 

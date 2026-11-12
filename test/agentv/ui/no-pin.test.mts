@@ -423,7 +423,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await say("a build waiting for a yes");
   await openOffer(b, hand, "approve-build", /approve it/);
   await hand.waitForSelector(".build-approve h1");
-  assert.equal(await hand.locator('[data-action="approve"]').innerText(), "approve");
+  assert.equal(await hand.locator('[data-action="approve"]').innerText(), "Approve");
   await say("the phone's page for a finished build");
   rmSync(join(b.state, "build-drop", "install.json"), { force: true });
   await hand.locator('[data-action="approve"]').tap();
@@ -468,12 +468,12 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await go(screen, `build/${planned.build}`);
   await screen.waitForSelector('.build-page[data-state="plan-sign-in"]', { timeout: 10_000 });
   await say("the plan's sign-in on the tv");
-  await openOffer(b, hand, "plan-sign-in", /sign in to your claude plan/);
+  await openOffer(b, hand, "plan-sign-in", /Sign in to Claude/);
   await hand.waitForSelector('[data-action="open-sign-in"]');
-  assert.equal(await hand.locator('[data-action="send-code"]').innerText(), "send it");
+  assert.equal(await hand.locator('[data-action="send-code"]').innerText(), "Send");
   await hand.locator('input[name="code"]').fill("good-code#s7Q");
   await hand.locator('[data-action="send-code"]').tap();
-  await hand.waitForFunction(() => /signing in on the tv/.test(document.getElementById("toast")?.textContent ?? ""));
+  await hand.waitForFunction(() => /^Signing in on your TV…$/.test(document.getElementById("toast")?.textContent ?? ""));
   assert.deepEqual(drop(b, "sign-in-code"), { code: "good-code#s7Q" });
   await say("the plan's sign-in on the phone");
   await send(b, "POST", `/api/builds/${planned.build}/forget`, {});
