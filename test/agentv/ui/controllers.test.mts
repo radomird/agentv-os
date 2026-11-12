@@ -258,6 +258,15 @@ for (const look of LOOKS) {
       assert.equal(bluez.devices.find((device) => device.address === odd.address)?.paired, false, "it isn't left paired");
       assert.equal(bluez.devices.find((device) => device.address === odd.address)?.trusted, false);
       bluez.devices = bluez.devices.filter((device) => device.address !== odd.address);
+      // And one that can't be removed again: still the pairing's line, since
+      // nobody asked to remove anything.
+      const stuck = { ...odd, address: "C8:3F:26:0A:0B:0D", name: "Stuck Pad", stays: true };
+      bluez.devices.push(stuck);
+      bluez.seen.add(stuck.address);
+      await page.waitForSelector(row(stuck.address));
+      await page.locator(row(stuck.address)).click();
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), said("Couldn't pair {name}. Only game controllers pair here.").replace("{name}", stuck.name));
+      bluez.devices = bluez.devices.filter((device) => device.address !== stuck.address);
 
       // An app opened in front of home, as from a phone: the looking rests
       // until home is in front again.

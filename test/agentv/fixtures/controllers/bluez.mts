@@ -24,6 +24,8 @@ export interface StandInDevice {
   presents?: "keyboard" | "mouse";
   // Says something else about itself once it's connected.
   becomes?: { icon?: string; appearance?: number };
+  // BlueZ won't remove it.
+  stays?: boolean;
 }
 
 // What the devices in these tests say about themselves, as BlueZ reads it.
@@ -130,6 +132,7 @@ export class StandInBluez {
     if (verb === "call" && iface === "org.bluez.Adapter1" && member === "RemoveDevice") {
       const device = this.at(rest[1]);
       if (!device) return failed("Does Not Exist");
+      if (device.stays) return failed("Failed");
       // Still in pairing mode, a look that's running finds it again.
       if (!this.scanning) this.seen.delete(device.address);
       if (device.nearby) Object.assign(device, { paired: false, trusted: false, connected: false });
