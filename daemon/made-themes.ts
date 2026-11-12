@@ -92,7 +92,7 @@ export function madeThemes(themes: string): (ThemePreview & { app: string; versi
   for (const id of entries) {
     try {
       const about = JSON.parse(readFileSync(join(themes, id, "about.json"), "utf8")) as Partial<MadeTheme>;
-      const preview = themePreview(themeName(id), String(about.name ?? themeName(id)).toLowerCase().slice(0, 40), "made by your agent", readFileSync(join(themes, id, "colors.toml"), "utf8"));
+      const preview = themePreview(themeName(id), String(about.name ?? themeName(id)).slice(0, 40), "Made by you", readFileSync(join(themes, id, "colors.toml"), "utf8"));
       if (preview) found.push({ ...preview, app: id, version: String(about.version ?? "") });
     } catch {}
   }
@@ -106,8 +106,8 @@ export function takeTheme(o: { themes: string; id: string; home: string; omarchy
   if (!ID.test(o.id)) return { error: "which theme" };
   const name = themeName(o.id);
   const from = join(o.themes, o.id);
-  if (!existsSync(join(from, "colors.toml"))) return { error: "it isn't on this box" };
-  if (existsSync(join(o.omarchy, "themes", name))) return { error: `omarchy has a theme called ${name} already` };
+  if (!existsSync(join(from, "colors.toml"))) return { error: "It isn't on this TV" };
+  if (existsSync(join(o.omarchy, "themes", name))) return { error: `There's already a theme called ${name}` };
   const to = join(o.home, ".config", "omarchy", "themes", name);
   const ours = () => {
     try {
@@ -116,7 +116,7 @@ export function takeTheme(o: { themes: string; id: string; home: string; omarchy
       return false;
     }
   };
-  if (existsSync(to) && !ours()) return { error: `you have a theme called ${name} already` };
+  if (existsSync(to) && !ours()) return { error: `There's already a theme called ${name}` };
   mkdirSync(join(o.home, ".config", "omarchy", "themes"), { recursive: true });
   try {
     copyTheme(from, to, { [MARK]: `${o.id}\n` });
@@ -148,6 +148,6 @@ export interface ThemeAnswer {
 // Only what an answer from the screen daemon has, within bounds.
 export function cleanTheme(said: unknown): ThemeAnswer {
   const a = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
-  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 200) : "the TV couldn't set it" };
+  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 200) : "Couldn't switch to it" };
   return { ok: true, ...(typeof a.name === "string" && /^[a-z0-9][a-z0-9-]{0,62}$/.test(a.name) ? { name: a.name } : {}) };
 }

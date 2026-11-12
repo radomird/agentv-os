@@ -46,6 +46,7 @@ export const PAGE_TOOLS: Tool[] = ["read", "list", "write", "remove", "npm_info"
 
 export interface Step {
   id: string;
+  label?: string; // what the TV shows while the step runs: "Designing", "Testing"
   does: string; // in plain words: what the agent supplies here
   tools: Tool[];
   writes?: string[]; // where the write and remove tools may write: globs in the build's work folder
@@ -93,6 +94,15 @@ export interface Plan {
 }
 
 const STEP_ID = /^[a-z][a-z0-9-]{0,30}$/;
+
+// A step as a person reads it on the TV: its label, or for a step with none,
+// such as one from a plan, its id as words ("draw-the-board" is "Draw the
+// board"). The id stays what the data and the log have.
+export function stepLabel(step: { id: string; label?: string }): string {
+  if (step.label) return step.label;
+  const words = step.id.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 const PAGE = /^[a-z0-9][a-z0-9_-]{0,30}$/;
 // A language or a country at the front of a path, like /en or /en-gb.
 const LOCALE = /^[a-z]{2}([-_][a-z]{2})?$/;
@@ -188,6 +198,7 @@ export function recipeProblems(data: unknown, dir: string): string[] {
       }
       if (ids.has(step.id)) problems.push(`the step ${step.id} is there twice`);
       ids.add(step.id);
+      if (!text(step.label, 40)) problems.push(`the step ${step.id} has a label, the few words the TV shows for it`);
       if (!text(step.does, 1200)) problems.push(`the step ${step.id} says what it does`);
       if (!Array.isArray(step.tools) || step.tools.length === 0) problems.push(`the step ${step.id} lists its tools`);
       for (const tool of Array.isArray(step.tools) ? step.tools : []) {
@@ -302,6 +313,7 @@ export function planRecipe(plan: Plan, root: string): Recipe {
       ...plan.steps.map((step): Step => ({ id: step.id, does: step.does, tools: PAGE_TOOLS, writes: work, reads: ["kit", "plan"], turns: 60 })),
       {
         id: "tests",
+        label: "Testing",
         does: "Write tests in tests/ for what the plan says the app does. Use the test API the tests reference describes, and run them with run_tests.",
         tools: ["read", "list", "write", "run_tests"],
         writes: ["tests/**"],
@@ -310,6 +322,7 @@ export function planRecipe(plan: Plan, root: string): Recipe {
       },
       {
         id: "try",
+        label: "Trying it on a TV",
         does: "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only what the plan says.",
         tools: ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
         writes: [...work, "tests/**"],

@@ -26,7 +26,8 @@ import { PLAN, UNDERSTAND } from "./harness/steps.ts";
 import { lockedPackages } from "./packages.ts";
 import { command, outcome, type Outcome, ownTools } from "./providers.ts";
 import { signedIn } from "./sign-in.ts";
-import { KINDS, loadRecipes, planRecipe, type Recipe, type Step } from "./recipe.ts";
+import { whyOf, type Why } from "./reasons.ts";
+import { KINDS, loadRecipes, planRecipe, stepLabel, type Recipe, type Step } from "./recipe.ts";
 
 export interface RunOptions {
   root?: string; // AgenTV's files: /usr/share/agentv
@@ -109,10 +110,13 @@ export class Runner {
     } as BuildStatus);
   }
 
-  private fail(reason: string): BuildStatus {
+  // The reason is the builder's own, for the log. A screen shows the plain
+  // line for its kind: the one given, or what the reason's words say.
+  private fail(reason: string, kind?: Why): BuildStatus {
+    const why = kind ?? whyOf(reason);
     this.build.log({ failed: reason });
     this.log(`the build failed: ${reason}`);
-    this.status({ state: "failed", reason, step: undefined });
+    this.status({ state: "failed", reason, why, step: undefined });
     return this.build.status()!;
   }
 
@@ -231,7 +235,7 @@ export class Runner {
 
   private async understand(request: BuildRequest): Promise<BuildStatus> {
     const recipes = loadRecipes(join(this.root, "builder/recipes"));
-    this.status({ state: "running", step: UNDERSTAND.id, steps: [{ id: UNDERSTAND.id, state: "running" }] });
+    this.status({ state: "running", step: UNDERSTAND.id, steps: [{ id: UNDERSTAND.id, label: stepLabel(UNDERSTAND), state: "running" }] });
     const prompt = [
       `The request: "${request.sentence}"`,
       "",
@@ -245,13 +249,13 @@ export class Runner {
     if (!understood && this.ranOut(request, result)) return this.signIn(request, true);
     if (!result.ok && !understood) return this.fail(result.reason ?? "the agent didn't say what it understood");
     if (!understood) return this.fail("the agent didn't say what it understood");
-    this.status({ state: "confirm", step: undefined, steps: [{ id: UNDERSTAND.id, state: "done" }], understood });
+    this.status({ state: "confirm", step: undefined, steps: [{ id: UNDERSTAND.id, label: stepLabel(UNDERSTAND), state: "done" }], understood });
     return this.build.status()!;
   }
 
   private async plan(request: BuildRequest): Promise<BuildStatus> {
     if (request.recipe !== null) return this.fail("a plan is only for a request no recipe fits");
-    this.status({ state: "running", step: PLAN.id, steps: [{ id: PLAN.id, state: "running" }] });
+    this.status({ state: "running", step: PLAN.id, steps: [{ id: PLAN.id, label: stepLabel(PLAN), state: "running" }] });
     const understood = this.build.state().understood;
     const prompt = [
       `The request: "${request.sentence}"`,
@@ -272,7 +276,7 @@ export class Runner {
     const plan = this.build.state().plan;
     if (!plan && this.ranOut(request, result)) return this.signIn(request, true);
     if (!plan) return this.fail(result.reason ?? "the agent didn't submit a plan");
-    this.status({ state: "plan", step: undefined, steps: [{ id: PLAN.id, state: "done" }], plan });
+    this.status({ state: "plan", step: undefined, steps: [{ id: PLAN.id, label: stepLabel(PLAN), state: "done" }], plan });
     return this.build.status()!;
   }
 
@@ -308,7 +312,7 @@ export class Runner {
 
     const understood = this.build.state().understood?.says;
     const deadline = Date.now() + recipe.minutes * 60_000;
-    const states = steps.map((step) => ({ id: step.id, state: "waiting" as const }));
+    const states = steps.map((step) => ({ id: step.id, label: stepLabel(step), state: "waiting" as const }));
     const say = (index: number, state: "running" | "done" | "failed") => {
       (states[index] as { state: string }).state = state;
       this.status({ state: "running", step: steps[index].id, steps: [...states] });
@@ -343,24 +347,24 @@ export class Runner {
     // Gate 1, the static checks, and the gates beyond them.
     if (recipe.runtime !== "theme") {
       const { manifest, problems } = validatePackage(this.build.app, "local");
-      if (!manifest) return this.fail(`the static checks found: ${problems[0]}`);
+      if (!manifest) return this.fail(`the static checks found: ${problems[0]}`, "checks");
       const gates = await this.options.gates?.(this.build, recipe);
-      if (gates?.problems.length) return this.fail(gates.problems[0]);
+      if (gates?.problems.length) return this.fail(gates.problems[0], whyOf(gates.problems[0]) ?? "tests");
       // What's enforced and what an adult approves are one list: an origin
       // the build declared and the app doesn't list never reaches approval.
       const declared = recipe.bounds.origins ? declaredOrigins(this.build, recipe, request) : [];
       const listed = manifest.tv.origins ?? [];
       const unlisted = declared.filter((origin) => !listed.includes(origin));
       const undeclared = listed.filter((origin) => !declared.includes(origin));
-      if (unlisted.length) return this.fail(`the build declared ${unlisted.join(", ")}, and the app's manifest doesn't list it`);
-      if (undeclared.length) return this.fail(`the app's manifest lists ${undeclared.join(", ")}, which the build didn't declare`);
+      if (unlisted.length) return this.fail(`the build declared ${unlisted.join(", ")}, and the app's manifest doesn't list it`, "checks");
+      if (undeclared.length) return this.fail(`the app's manifest lists ${undeclared.join(", ")}, which the build didn't declare`, "checks");
       const reaches = reachesOf(manifest);
       const packages = this.packages();
       this.status({ state: "approve", step: undefined, steps: [...states], approval: { shot: gates?.shot, reaches, packages } });
       this.log("the build passed its checks, and waits for an adult's approval");
     } else {
       const gates = await this.options.gates?.(this.build, recipe);
-      if (gates?.problems.length) return this.fail(gates.problems[0]);
+      if (gates?.problems.length) return this.fail(gates.problems[0], whyOf(gates.problems[0]) ?? "checks");
       this.status({ state: "approve", step: undefined, steps: [...states], approval: { shot: gates?.shot, reaches: { always: [], declared: [] }, packages: [] } });
     }
     return this.build.status()!;

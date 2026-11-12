@@ -17,6 +17,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { join } from "node:path";
 import type { Manifest, Media } from "../apps/contract/manifest.ts";
 import { pagePermissions } from "../apps/contract/page.ts";
+import type { Why } from "./reasons.ts";
 import type { Kind, Plan, Recipe } from "./recipe.ts";
 
 // The provider the household picked, by its product's name (ADR-011, ADR-047).
@@ -70,9 +71,13 @@ export interface BuildStatus {
   // installed is the version on home, and kept the one before it, for
   // rollback (Q117).
   state: "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
-  steps: { id: string; state: StepState }[];
+  // Each step by its id, with the label the TV shows for it.
+  steps: { id: string; label?: string; state: StepState }[];
   step?: string;
-  reason?: string; // one line, why it failed
+  // Why it failed, in the builder's own words, for the log. A screen shows
+  // the plain line for its kind (reasons.ts), where the builder knows it.
+  reason?: string;
+  why?: Why;
   ranOut?: boolean; // waiting for the plan's sign-in again, since it ran out
   spent?: number; // dollars, with a key
   turns?: number;
@@ -170,6 +175,10 @@ export function declaredOrigins(build: Build, recipe: Recipe, request: BuildRequ
 // installed.
 export function reachesOf(manifest: Manifest): { always: string[]; declared: string[] } {
   if (manifest.tv.runtime === "page") return pagePermissions(manifest);
+  // These words are compared as they are when root installs or rolls back
+  // (hand-over.ts), against what an approval showed when it was made. So
+  // they stay as they were written: new words would refuse every app
+  // approved before them.
   return { always: [], declared: (manifest.tv.origins ?? []).map((o) => `the internet, at ${o.replace(/^https?:\/\//, "")}`) };
 }
 

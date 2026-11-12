@@ -419,7 +419,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   status(b, asked.id, asked.build, { phase: "build", state: "approve", steps: STEPS, understood, approval: { reaches: { always: ["the remote and a gamepad"], declared: [] }, packages: [] } });
   await go(screen, `build/${asked.build}`);
   await screen.waitForSelector('.build-page[data-state="approve"]', { timeout: 10_000 });
-  assert.match(await screen.locator(".build-page").innerText(), /blocks is ready\.[\s\S]*your agent built it, and its checks passed\. approve it on your phone to put blocks on your home\./);
+  assert.match(await screen.locator(".build-page").innerText(), /blocks is ready$[\s\S]*tested and ready\. approve on your phone to add it to home\./m);
   await say("a build waiting for a yes");
   await openOffer(b, hand, "approve-build", /approve it/);
   await hand.waitForSelector(".build-approve h1");
@@ -444,7 +444,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await say("a built app's details");
   await focusOn(screen, '[data-action="remove-built"]');
   await screen.keyboard.press("Enter");
-  await toasted(screen, "blocks is gone, with every version of it");
+  await toasted(screen, "Removed Blocks");
   assert.deepEqual(drop(b, "remove"), { id: asked.id });
   await say("removing a built app");
   rmSync(join(b.apps, asked.id), { recursive: true, force: true });
