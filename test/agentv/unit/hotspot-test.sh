@@ -34,7 +34,9 @@ case "$*" in
   "-t -f DEVICE,TYPE,STATE,CONNECTION device status") cat "$FAKE/links" ;;
   "-t -f ACTIVE,SSID device wifi list --rescan no ifname wlan0") cat "$FAKE/on-wifi" 2>/dev/null ;;
   "-g GENERAL.CON-UUID device show wlan0") echo "${FAKE_PREVIOUS:-}" ;;
-  "-t -f TYPE,NAME connection show") printf '802-3-ethernet:Wired connection 1\n802-11-wireless:agentv-setup\n%s\n' "${FAKE_KNOWN:-}" ;;
+  "-t -f TYPE,NAME connection show") printf '802-3-ethernet:Wired connection 1\n802-11-wireless:agentv-hotspot-this-tv-opens-itself\n%s\n' "${FAKE_KNOWN:-}" ;;
+  "-t -f UUID,TYPE,NAME connection show") cat "$FAKE/profiles" 2>/dev/null ;;
+  "-g 802-11-wireless.mode connection show uuid "*) if [[ $6 == "old-hotspot" ]]; then echo ap; else echo infrastructure; fi ;;
   *"device connect wlan0") [[ -z ${FAKE_REJOINS:-} ]] || cp "$FAKE/links-back" "$FAKE/links" ;;
   *"device wifi list --rescan yes ifname wlan0")
     printf '%s\n' '82:WPA2:home wi-fi' '40:WPA2:home wi-fi' '61::cafe' '55:WPA3:new\:net' '30:WPA1 WPA2:neighbours' '90:WPA2:AgenTV-0000' '70:WPA2:' ;;
@@ -95,6 +97,9 @@ state() {
   jq -r "$1" "$AGENTV_HOTSPOT_RUN/state.json"
 }
 
+# The hotspot's own connection in NetworkManager.
+own=agentv-hotspot-this-tv-opens-itself
+
 # Opening it.
 hotspot run || fail "the hotspot opens" "$(cat "$SCRATCH/out")"
 jq -e '. == [
@@ -110,11 +115,12 @@ password=$(state .password)
 [[ $(state .on) == "true" && $(state .device) == "wlan0" && $(state .address) == "10.42.0.1" ]] || fail "state.json says it's on, where" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 [[ $(stat -c %a "$AGENTV_HOTSPOT_RUN/state.json") == 644 ]] || fail "and the daemon can read it"
 add=$(grep "^nmcli connection add" "$FAKE/calls")
-for word in "save no" "ifname wlan0" "con-name agentv-setup" "autoconnect no" "ssid $ssid" "802-11-wireless.mode ap" "wifi-sec.key-mgmt wpa-psk" \
+for word in "save no" "ifname wlan0" "con-name $own" "autoconnect no" "ssid $ssid" "802-11-wireless.mode ap" "wifi-sec.key-mgmt wpa-psk" \
   "ipv4.method manual ipv4.addresses 10.42.0.1/24 ipv6.method disabled"; do
   [[ $add == *"$word"* ]] || fail "the access point has $word" "$add"
 done
-grep -qx "nmcli --wait 45 connection up agentv-setup" "$FAKE/calls" || fail "and comes up"
+grep -qx "nmcli --wait 45 connection up $own" "$FAKE/calls" || fail "and comes up"
+(( ${#own} > 32 )) || fail "its connection has a name no network can have: a network's is 32 bytes at most" "$own"
 pass "it looks first, then opens AgenTV's own WPA2 network, kept in memory only, at 10.42.0.1"
 
 expected=$(printf '%s\n' \
@@ -144,7 +150,7 @@ pass "opened again in the same boot, it keeps its name and password, and its hol
 
 hotspot down || fail "it closes" "$(cat "$SCRATCH/out")"
 [[ ! -s $FAKE/rules ]] || fail "and takes every hole out" "$(cat "$FAKE/rules")"
-grep -qx "nmcli connection delete agentv-setup" "$FAKE/calls" || fail "and its network goes"
+grep -qx "nmcli connection delete $own" "$FAKE/calls" || fail "and its network goes"
 [[ $(state .on) == "false" && $(state .ssid) == "$ssid" ]] || fail "state.json says it's off"
 SERVICE_RESULT=exit-code "$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1
 [[ $(state .error) == "the setup hotspot stopped" ]] || fail "when it failed, state.json says so" "$(state .error)"
@@ -457,11 +463,11 @@ pass "time asleep doesn't count as time with no network"
 # With the hotspot open: the network back by any route closes it.
 hotspot run >/dev/null || true
 set_state '.watch = true'
-printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:unavailable:' "wlan0:wifi:connected:$own" >"$FAKE/links"
 ago 0 >"$AGENTV_HOTSPOT_RUN/opened-at"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "its own hotspot isn't a network, and it stays open" "$(cat "$FAKE/calls")"; fi
-printf '%s\n' 'enp1s0:ethernet:connected:Wired connection 1' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:connected:Wired connection 1' "wlan0:wifi:connected:$own" >"$FAKE/links"
 tick
 grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a cable that comes up closes the hotspot" "$(cat "$FAKE/calls")"
 [[ $(state .watch) == "null" ]] || fail "and it's no longer the watch's"
@@ -470,10 +476,25 @@ tick
 if grep -q "systemctl stop" "$FAKE/calls"; then fail "a hotspot someone opened by hand isn't the watch's to close"; fi
 pass "the network coming back closes the hotspot the watch opened, and only that one"
 
+# A home network called agentv-setup, the name the hotspot's own connection
+# had before: it's a network like any other, and what's kept for it stays.
+set_state '.on = true | .watch = true'
+printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+tick
+grep -qx "systemctl stop agentv-hotspot.service" "$FAKE/calls" || fail "a TV on a home network called agentv-setup is online, and the hotspot closes" "$(cat "$FAKE/calls")"
+printf '%s\n' 'home-network:802-11-wireless:agentv-setup' 'old-hotspot:802-11-wireless:agentv-setup' 'cable:802-3-ethernet:agentv-setup' >"$FAKE/profiles"
+: >"$FAKE/calls"
+hotspot run || fail "the hotspot opens" "$(cat "$SCRATCH/out")"
+hotspot down || fail "and closes" "$(cat "$SCRATCH/out")"
+grep -qx "nmcli connection delete uuid old-hotspot" "$FAKE/calls" || fail "a hotspot left open under the old name, as over an update, is taken away" "$(cat "$FAKE/calls")"
+if grep -qE "nmcli connection (delete|down) (agentv-setup|uuid (home-network|cable))$" "$FAKE/calls"; then fail "what's kept for a home network called agentv-setup stays" "$(grep "connection d" "$FAKE/calls")"; fi
+rm -f "$FAKE/profiles"
+pass "a home network called agentv-setup counts as online, and opening or closing the hotspot leaves it alone"
+
 # The router that restarts: with nobody using the hotspot's page, it closes
 # now and then to look for the Wi-Fi the TV knows.
 set_state '.on = true | .watch = true'
-printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:agentv-setup' >"$FAKE/links"
+printf '%s\n' 'enp1s0:ethernet:unavailable:' "wlan0:wifi:connected:$own" >"$FAKE/links"
 printf '%s\n' 'enp1s0:ethernet:unavailable:' 'wlan0:wifi:connected:home wi-fi' >"$FAKE/links-back"
 : >"$FAKE/stations"
 ago 100 >"$AGENTV_HOTSPOT_RUN/opened-at"

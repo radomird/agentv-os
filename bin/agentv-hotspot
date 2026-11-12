@@ -61,7 +61,12 @@ CONNECTIONS=${AGENTV_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 HANDED=${AGENTV_HOTSPOT_HANDED:-/etc/agentv/hotspot.json}
 PORT=${AGENTV_SETUP_PORT:-3002}
 ADDRESS=10.42.0.1
-CONNECTION=agentv-setup
+# The hotspot's own connection in NetworkManager. A network's name is 32
+# bytes at most and this is longer, so no network the TV joins can have it:
+# a join names its connection after the network. It was agentv-setup once,
+# which a home network can be called too (forget_old).
+CONNECTION=agentv-hotspot-this-tv-opens-itself
+OLD_CONNECTION=agentv-setup
 TAG=agentv-setup-hotspot
 LOST_AFTER=${AGENTV_HOTSPOT_LOST_AFTER:-60}
 RETRY_AFTER=${AGENTV_HOTSPOT_RETRY_AFTER:-300}
@@ -211,6 +216,19 @@ firewall_close() {
   done
 }
 
+# Takes away the hotspot an AgenTV from before the name changed left open,
+# as on a TV updated with its hotspot up. That one was an access point named
+# agentv-setup. A home network of that name isn't one, and stays.
+forget_old() {
+  local uuid type name
+
+  while IFS=: read -r uuid type name; do
+    [[ $type == "802-11-wireless" && $name == "$OLD_CONNECTION" ]] || continue
+    [[ $(nmcli -g 802-11-wireless.mode connection show uuid "$uuid" 2>/dev/null) == "ap" ]] || continue
+    nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
+  done < <(nmcli -t -f UUID,TYPE,NAME connection show 2>/dev/null || true)
+}
+
 run() {
   local device ssid password networks handed=false
 
@@ -223,6 +241,7 @@ run() {
   nmcli radio wifi on >/dev/null 2>&1 || true
   firewall_close
   nmcli connection delete "$CONNECTION" >/dev/null 2>&1 || true
+  forget_old
 
   networks=$(scan "$device")
   write_networks "$networks"
@@ -276,6 +295,7 @@ run() {
 down() {
   nmcli connection down "$CONNECTION" >/dev/null 2>&1 || true
   nmcli connection delete "$CONNECTION" >/dev/null 2>&1 || true
+  forget_old
   firewall_close
   [[ -f $RUN/state.json ]] || return 0
   if [[ ${SERVICE_RESULT:-success} == "success" ]]; then
