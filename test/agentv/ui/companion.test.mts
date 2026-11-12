@@ -117,7 +117,7 @@ test("the phone's buttons carry icons: the d-pad, the tabs, delete and enter", a
   await hand.locator('[data-mode="type"]').tap();
   assert.equal(await hand.locator('[data-key="backspace"] svg.glyph-backspace').count(), 1);
   assert.equal(await hand.locator('[data-key="enter"] svg.glyph-enter').count(), 1);
-  assert.equal(await hand.locator('[data-key="backspace"]').getAttribute("aria-label"), "delete");
+  assert.equal(await hand.locator('[data-key="backspace"]').getAttribute("aria-label"), "Delete");
   await hand.close();
 });
 
@@ -127,7 +127,7 @@ test("S4.2 who's watching, from the phone: the TV follows within a second, and a
   const hand = await phone();
   await hand.locator('[data-action="who"]').tap();
   await hand.waitForSelector(".viewer");
-  assert.match(await hand.locator(".typing").innerText(), /who's watching\?[\s\S]*radomir\s+watching[\s\S]*ana/);
+  assert.match(await hand.locator(".typing").innerText(), /Who's watching\?[\s\S]*radomir\s+Watching[\s\S]*ana/);
   const ana = (await (await fetch(`${url}/api/viewers`)).json()).viewers.find((v: { name: string }) => v.name === "ana");
   const at = Date.now();
   await hand.locator(`[data-viewer="${ana.id}"]`).tap();
@@ -144,7 +144,7 @@ test("S4.2 who's watching, from the phone: the TV follows within a second, and a
   await hand.locator('[data-action="who"]').tap();
   await hand.locator('[data-viewer="radomir"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
-  assert.match(await hand.locator(".overlay").innerText(), /enter the adult pin[\s\S]*for watching as radomir\./);
+  assert.match(await hand.locator(".overlay").innerText(), /Enter the adult PIN\n+For watching as radomir\n/);
   assert.equal(await hand.locator('.overlay [data-pin="delete"] svg.glyph-backspace').count(), 1);
   for (const digit of "0000") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
   await hand.waitForFunction(() => /Wrong PIN/.test(document.querySelector(".overlay")?.textContent ?? ""));
@@ -168,10 +168,10 @@ test("ADR-034 the phone shows a lock on a locked profile, and switching to it ta
   await hand.waitForSelector(".viewer");
   assert.equal(await hand.locator(`[data-viewer="${ana.id}"] svg.glyph-lock`).count(), 1);
   assert.equal(await hand.locator('[data-viewer="radomir"] svg.glyph-lock').count(), 0);
-  assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the adult pin/);
+  assert.match(await hand.locator(".typing").innerText(), /An adult's or a locked profile needs the PIN/);
   await hand.locator(`[data-viewer="${ana.id}"]`).tap();
   await hand.waitForSelector(".overlay .pin-keys");
-  assert.match(await hand.locator(".overlay").innerText(), /for watching as ana\./);
+  assert.match(await hand.locator(".overlay").innerText(), /\nFor watching as ana\n/);
   for (const digit of PIN) await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
   await screen.waitForFunction(() => document.querySelector(".bar-right span")?.textContent === "ana");
   await post("/api/viewer", { id: "radomir" });
@@ -189,7 +189,7 @@ test("S4.7 arrange home on the phone: tap a tile, then where it goes, and the TV
   const hand = await phone();
   await hand.locator('[data-mode="home"]').tap();
   await hand.waitForSelector(".mini-grid");
-  assert.match(await hand.locator(".page").innerText(), /arrange home[\s\S]*for radomir/);
+  assert.match(await hand.locator(".page").innerText(), /Edit home[\s\S]*For radomir/);
   const layout = (await (await fetch(`${url}/api/home`)).json()).layout as { id: string; x: number; y: number }[];
   const apps = layout.find((t) => t.id === "apps")!;
   const empty = await hand.locator(".mini-empty").first().getAttribute("data-cell");
@@ -197,7 +197,7 @@ test("S4.7 arrange home on the phone: tap a tile, then where it goes, and the TV
   const [x, y] = empty!.split(",").map(Number);
   const before = await screen.locator('.grid .tile[data-id="apps"]').boundingBox();
   await hand.locator('.mini-tile[data-id="apps"]').tap();
-  assert.match(await hand.locator(".sizes").innerText(), /size · all apps/);
+  assert.match(await hand.locator(".sizes").innerText(), /Size · All apps/);
   const at = Date.now();
   await hand.locator(`.mini-empty[data-cell="${empty}"]`).tap();
   await until(async () => {
@@ -235,14 +235,14 @@ test("S4.8 the phone shows the update notice the TV does, and Install tonight fr
   renameSync(join(updates, "status.json.next"), join(updates, "status.json"));
   const hand = await phone();
   await hand.waitForSelector('[data-action="update"]');
-  assert.match(await hand.locator('[data-action="update"]').innerText(), /agentv 0\.3\.0 is ready ›/);
+  assert.match(await hand.locator('[data-action="update"]').innerText(), /^Update ready$/);
   await hand.locator('[data-action="update"]').tap();
   await hand.waitForSelector('[data-action="tonight"]');
-  assert.match(await hand.locator(".page").innerText(), /agentv 0\.3\.0 is ready[\s\S]*omarchy 4\.5\.0[\s\S]*\+ tiles come in small, medium and large[\s\S]*install tonight[\s\S]*install now with pin[\s\S]*later/);
+  assert.match(await hand.locator(".page").innerText(), /AgenTV 0\.3\.0 is ready[\s\S]*Includes Omarchy 4\.5\.0[\s\S]*\+ tiles come in small, medium and large[\s\S]*Install tonight[\s\S]*Install now\n[\s\S]*Later/);
   await hand.locator('[data-action="tonight"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
   for (const digit of PIN) await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
-  await hand.waitForFunction(() => /it installs tonight, between 2 and 5/.test(document.body.textContent ?? ""));
+  await hand.waitForFunction(() => /It installs tonight between 2 and 5/.test(document.body.textContent ?? ""));
   const tonight = (await (await fetch(`${url}/api/updates`)).json()).tonight;
   assert.equal(tonight?.version, "0.3.0-1", "the TV's install tonight has it");
   await hand.close();
@@ -257,7 +257,7 @@ test("S4.9 on the TV's sign-in screen, the phone offers fields its password mana
   assert.equal(await hand.locator("#username").getAttribute("autocomplete"), "username");
   assert.equal(await hand.locator("#password").getAttribute("autocomplete"), "current-password");
   assert.equal(await hand.locator("#password").getAttribute("type"), "password");
-  assert.match(await hand.locator("form").innerText(), /signing in to tube on the tv/);
+  assert.match(await hand.locator("form").innerText(), /Signing in to Tube on your TV/);
   remote.length = 0;
   await hand.locator("#username").fill("ana@example.org");
   await hand.locator("#password").fill("correct horse");
@@ -505,7 +505,7 @@ test("S4.10 every press shows, clicks and buzzes, quick taps each count and neve
   const before = await hand.evaluate(() => (window as unknown as { buzzes: number }).buzzes);
   await hand.tap('[data-key="down"]');
   assert.equal(await hand.evaluate(() => (window as unknown as { buzzes: number }).buzzes), before);
-  assert.equal(await hand.locator('[data-action="feel"] .feel-value').innerText(), "off");
+  assert.equal(await hand.locator('[data-action="feel"] .feel-value').innerText(), "Off");
   // Settings, beside Back and Home, opens on the TV.
   await hand.tap('[data-action="settings"]');
   await screen.waitForSelector(".page.settings", { timeout: 1500 });
@@ -523,29 +523,33 @@ test("S5.10 the phone shares a link, a photo and a video to the TV, each with wh
     await hand.locator('button[data-action="share"]').tap();
     await hand.waitForSelector(".share-page");
     for (const action of ["share-link", "share-photo", "share-video"]) assert.equal(await hand.locator(`[data-action="${action}"]`).isDisabled(), true, `nothing for ${action} before it's picked`);
-    const toastSays = (text: RegExp) => hand.waitForFunction((source) => new RegExp(source).test(document.getElementById("toast")?.textContent ?? ""), text.source);
+    // The toast is emptied once it's read, since the next one may say the same.
+    const toastSays = async (text: RegExp) => {
+      await hand.waitForFunction((source) => new RegExp(source).test(document.getElementById("toast")?.textContent ?? ""), text.source);
+      await hand.evaluate(() => void (document.getElementById("toast")!.textContent = ""));
+    };
     // A link.
     await hand.locator("#share-link").fill("https://www.example.org/watch?v=1");
     await hand.locator('[data-action="share-link"]').tap();
-    await toastSays(/the tv is asking about the link now/);
+    await toastSays(/^Sent\. Check your TV\.$/);
     // A photo, drawn again first, with who took it.
     await hand.locator("#share-photo").setInputFiles({ name: "red.png", mimeType: "image/png", buffer: RED_PNG });
     await hand.waitForSelector(".share-page .photo-preview:not(.hidden)");
     await hand.locator("#share-credit").fill("ana's photo, día 1");
     await hand.locator('[data-action="share-photo"]').tap();
-    await toastSays(/the tv is asking about the photo now/);
+    await toastSays(/^Sent\. Check your TV\.$/);
     // A video, as it is, while something plays on the TV: it waits.
     await post("/api/tv/context", { front: "app", playing: true });
     const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(4), Buffer.from("isomiso2"), Buffer.alloc(2000, 7)]);
     await hand.locator("#share-video").setInputFiles({ name: "ana's día.mp4", mimeType: "video/mp4", buffer: MP4 });
-    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /ana's día\.mp4, 1 mb/);
+    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /ana's día\.mp4, 1 MB/);
     await hand.locator('[data-action="share-video"]').tap();
-    await toastSays(/the tv has the video\. it'll ask once nothing's playing\./);
+    await toastSays(/^Sent\. Your TV asks when nothing's playing\.$/);
     await post("/api/tv/context", { front: "home", playing: false });
 
     const shared = await (await fetch(`${url}/api/shared`)).json();
     assert.deepEqual(shared.shares.slice(0, 3).map((one: { kind: string }) => one.kind), ["video", "photo", "link"]);
-    assert.match(shared.shares[0].from, / on (iphone|android phone|phone)$/);
+    assert.match(shared.shares[0].from, / on (iPhone|Android phone|Phone)$/);
     assert.equal(shared.shares[0].title, "ana's día.mp4");
     assert.equal(shared.shares[1].credit, "ana's photo, día 1", "an apostrophe, a space and an accent in the address all arrive");
     assert.equal(shared.shares[1].type, "image/jpeg", "the phone drew the photo again, so nothing else of the file went along");
@@ -569,12 +573,12 @@ test("S5.3 a photo shared from the phone becomes the TV's background, with its c
   await hand.waitForSelector(".photo-preview:not(.hidden)");
   await hand.locator("#photo-credit").fill("the layer 4 test's photo, día 2");
   await hand.locator('[data-action="send-photo"]').tap();
-  await hand.waitForFunction(() => /background now/.test(document.getElementById("toast")?.textContent ?? ""));
+  await hand.waitForFunction(() => /^It's on your TV now$/.test(document.getElementById("toast")?.textContent ?? ""));
 
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "photos");
   assert.equal(now.items[0].credit.text, "the layer 4 test's photo, día 2");
-  assert.match(now.items[0].credit.from, / on iphone$|on phone$/);
+  assert.match(now.items[0].credit.from, / on iPhone$|on Phone$/);
   assert.equal(now.items[0].type, "image/jpeg", "the phone drew it again as a JPEG, so nothing else of the file went along");
 
   // Home has it behind the tiles, and the ambient screen shows it with its

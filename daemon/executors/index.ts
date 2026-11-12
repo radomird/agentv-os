@@ -1,8 +1,9 @@
 // The executors (ADR-003, ADR-013): what a route does, the same whichever
 // provider routed it. Each one is plain code: a route opens an app at an
 // item, offers up to three to choose from, or says why it can't, in one
-// line the TV shows and, from stage 8, speaks. A route of none is "i
-// didn't get that", and nothing happens (S7.3). What's new and new episodes
+// line the TV shows, written for the screen, so the TV has no "I". With a
+// key for an AI that has a voice, the TV says the same line. A route of none
+// is "Didn't get that", and nothing happens (S7.3). What's new and new episodes
 // ask TMDB (stage 8, daemon/tmdb.ts): what's new offers up to three to
 // choose from, and a new episode is an answer, told.
 //
@@ -11,7 +12,9 @@
 // (make.ts, ADR-068).
 
 import type { Item } from "../../apps/contract/contract.ts";
+import { AI_NAMES } from "../../builder/reasons.ts";
 import type { WatchRow } from "../ledger.ts";
+import { noAnswer } from "../providers/no-answer.ts";
 import type { Route, Routed } from "../router.ts";
 import type { EpisodeAnswer, Feed } from "../tmdb.ts";
 import { continueItem, toContinue } from "./continue.ts";
@@ -36,6 +39,8 @@ export type Outcome =
   | { kind: "told"; say: string; episode?: EpisodeAnswer }
   | { kind: "build"; say: string; build: string; what: string; app?: string }
   | { kind: "change"; say: string; app: string; name: string; what: string; recipe: string | null }
+  // detail is the raw reason, for the log. It never reaches a screen
+  // (daemon/say.ts takes it out).
   | { kind: "none"; say: string; why: NoneWhy; detail?: string };
 
 // Why nothing happened: the router couldn't route it, its answer didn't
@@ -46,9 +51,9 @@ export type Outcome =
 // the agent made, or it isn't clear which one.
 export type NoneWhy = "unroutable" | "unreadable" | "failed" | "missing" | "not-found" | "soon" | "not-opened" | "no-tmdb" | "child" | "no-ai" | "not-built" | "not-made" | "which";
 
-export const DIDNT_GET = "i didn't get that";
+export const DIDNT_GET = "Didn't get that";
 // With no AI set up yet, where to set one up (D5).
-export const NO_AI = "set up an ai first: settings → ai";
+export const NO_AI = "Set up AI in Settings first";
 
 // An app who's watching can open, as the executors know it.
 export interface ExecApp {
@@ -83,25 +88,29 @@ const lower = (text: string) => text.toLowerCase();
 // What a kind is, as the TV says it next to a title.
 export const KIND_WORDS: Record<string, string> = { film: "film", series: "show", episode: "episode", track: "song", album: "album", playlist: "playlist", "photo-album": "photos", game: "game" };
 
-// An item as the TV names it: "severance s2 e3".
+// An item as the TV names it: "Severance S2 E3".
 export function itemWords(item: Item): string {
-  const at = [item.season !== undefined ? `s${item.season}` : "", item.episode !== undefined ? `e${item.episode}` : ""].filter(Boolean).join(" ");
-  return lower(at ? `${item.title} ${at}` : item.title);
+  const at = [item.season !== undefined ? `S${item.season}` : "", item.episode !== undefined ? `E${item.episode}` : ""].filter(Boolean).join(" ");
+  return at ? `${item.title} ${at}` : item.title;
 }
 
 export async function opening(ctx: ExecContext, app: ExecApp, item?: Item): Promise<Outcome> {
   const opened = await ctx.open(app.id, item);
-  if (!opened.ok) return { kind: "none", why: "not-opened", say: item ? `${lower(app.name)} didn't open ${itemWords(item)}` : `${lower(app.name)} didn't open`, ...(opened.error ? { detail: opened.error } : {}) };
-  return { kind: "opened", app: app.id, ...(item ? { item } : {}), say: item ? `${itemWords(item)}, on ${lower(app.name)}` : lower(app.name) };
+  if (!opened.ok) return { kind: "none", why: "not-opened", say: `Couldn't open ${item ? itemWords(item) : app.name}`, ...(opened.error ? { detail: opened.error } : {}) };
+  return { kind: "opened", app: app.id, ...(item ? { item } : {}), say: item ? `${itemWords(item)}, on ${app.name}` : app.name };
 }
 
 export async function execute(routed: Routed, ctx: ExecContext): Promise<Outcome> {
   const route = routed.route;
   if (route.intent === "none") {
-    // With the Ask box building, an AI that isn't set up says where to set
-    // it up, as D5's "set up an ai first: settings → ai".
-    if (routed.none === "failed" && routed.setup && ctx.builds) return { kind: "none", why: "no-ai", say: routed.setup === "ai" ? NO_AI : (routed.error ?? NO_AI) };
-    if (routed.none === "failed") return { kind: "none", why: "failed", say: "your agent didn't answer", ...(routed.error ? { detail: routed.error } : {}) };
+    // An AI that isn't set up says what to set up, in the router's own plain
+    // line (daemon/router-client.ts). With the Ask box building, that's why
+    // nothing was made.
+    const setUp = routed.setup === "ai" ? NO_AI : (routed.error ?? NO_AI);
+    if (routed.none === "failed" && routed.setup && ctx.builds) return { kind: "none", why: "no-ai", say: setUp };
+    if (routed.none === "failed" && routed.setup) return { kind: "none", why: "failed", say: setUp };
+    // No answer: the plain line for why, and the raw reason for the log.
+    if (routed.none === "failed") return { kind: "none", why: "failed", say: noAnswer(routed.error, AI_NAMES[routed.provider]), ...(routed.error ? { detail: routed.error } : {}) };
     return { kind: "none", why: routed.none === "unreadable" ? "unreadable" : "unroutable", say: DIDNT_GET };
   }
   return run(route, ctx);
@@ -115,7 +124,7 @@ export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
   if (route.app) {
     const said = route.app;
     app = ctx.apps.find((a) => lower(a.id) === lower(said)) ?? ctx.apps.find((a) => words(a.name) === words(said));
-    if (!app) return { kind: "none", why: "missing", say: `there's no ${lower(said)} on this tv` };
+    if (!app) return { kind: "none", why: "missing", say: `${said} isn't on this TV` };
   }
 
   // Make and change, for the box's agent to build (ADR-068).
@@ -127,7 +136,7 @@ export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
 
   if (route.intent === "continue") {
     const row = toContinue(ctx.rows(), { ...route, app: app?.id ?? null }, new Set(ctx.apps.map((a) => a.id)));
-    if (!row) return { kind: "none", why: "not-found", say: route.query ? `there's nothing called ${lower(route.query)} to continue` : "there's nothing to continue yet" };
+    if (!row) return { kind: "none", why: "not-found", say: route.query ? `Couldn't find ${route.query} to continue` : "There's nothing to continue yet" };
     return opening(ctx, ctx.apps.find((a) => a.id === row.app_id)!, continueItem(row));
   }
 
@@ -137,15 +146,15 @@ export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
   // asked for it, and the TV says why that's all.
   if (app && !app.capabilities.includes("search")) {
     const opened = await opening(ctx, app);
-    return opened.kind === "opened" ? { ...opened, say: `${lower(app.name)} can't look up ${lower(route.query)}, so it's open` } : opened;
+    return opened.kind === "opened" ? { ...opened, say: `Opened ${app.name}. It can't find ${route.query}.` } : opened;
   }
   const searching = app ? [app] : ctx.apps.filter((a) => a.capabilities.includes("search"));
-  if (!searching.length) return { kind: "none", why: "not-found", say: "nothing on this tv can look things up yet" };
+  if (!searching.length) return { kind: "none", why: "not-found", say: "No app here can search yet" };
   const found = await ctx.search(route.query, searching.map((a) => a.id));
   const chosen = pick(rank(found, route));
   const name = (id: string) => ctx.apps.find((a) => a.id === id)?.name ?? id;
   if ("one" in chosen) return opening(ctx, ctx.apps.find((a) => a.id === chosen.one.app)!, toOpen(chosen.one.item, route));
-  if ("some" in chosen) return { kind: "choose", say: "which one?", candidates: chosen.some.map((r) => ({ app: r.app, name: name(r.app), item: toOpen(r.item, route) })) };
+  if ("some" in chosen) return { kind: "choose", say: "Which one?", candidates: chosen.some.map((r) => ({ app: r.app, name: name(r.app), item: toOpen(r.item, route) })) };
   const failed = found.filter((f) => f.error).map((f) => `${lower(name(f.app))}: ${f.error}`);
-  return { kind: "none", why: "not-found", say: `i couldn't find ${lower(route.query)}`, ...(failed.length ? { detail: failed.join("; ").slice(0, 200) } : {}) };
+  return { kind: "none", why: "not-found", say: `Couldn't find ${route.query}`, ...(failed.length ? { detail: failed.join("; ").slice(0, 200) } : {}) };
 }

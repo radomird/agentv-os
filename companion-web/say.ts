@@ -27,15 +27,15 @@ export interface Said {
 const KIND_WORDS: Record<string, string> = { film: "film", series: "show", episode: "episode", track: "song", album: "album", playlist: "playlist", "photo-album": "photos", game: "game" };
 
 function label(c: Candidate): string {
-  const at = [c.item.season !== undefined ? `s${c.item.season}` : "", c.item.episode !== undefined ? `e${c.item.episode}` : ""].filter(Boolean).join(" ");
-  return [`${c.item.title.toLowerCase()}${at ? ` ${at}` : ""}`, KIND_WORDS[c.item.kind] ?? c.item.kind, c.name.toLowerCase()].join(" · ");
+  const at = [c.item.season !== undefined ? `S${c.item.season}` : "", c.item.episode !== undefined ? `E${c.item.episode}` : ""].filter(Boolean).join(" ");
+  return [`${c.item.title}${at ? ` ${at}` : ""}`, KIND_WORDS[c.item.kind] ?? c.item.kind, c.name].join(" · ");
 }
 
 // What the TV made of the last sentence.
 function answer(said: Said, failed: (error: unknown) => void, done: () => void): HTMLElement {
   const heard = h("p", { class: "said-heard" }, `"${said.sentence}"`);
   const outcome = said.outcome;
-  if (said.state === "routing" || !outcome) return h("div", { class: "said", "data-said": "routing" }, heard, h("p", { class: "note" }, "your agent is on it…"));
+  if (said.state === "routing" || !outcome) return h("div", { class: "said", "data-said": "routing" }, heard, h("p", { class: "note" }, "On it…"));
   if (outcome.kind !== "choose") {
     return h("div", { class: `said${outcome.kind === "none" ? " bad" : ""}`, "data-said": outcome.kind }, heard, h("p", { class: "said-say" }, outcome.say), outcome.kind === "none" && outcome.detail ? h("p", { class: "note" }, outcome.detail) : null);
   }
@@ -50,7 +50,7 @@ function answer(said: Said, failed: (error: unknown) => void, done: () => void):
     heard,
     h("p", { class: "said-say" }, outcome.say),
     ...outcome.candidates.map((c, i) => h("button", { type: "button", class: "button said-choice", "data-action": "said-pick", "data-choice": String(i), onclick: () => pick(i) }, label(c))),
-    h("button", { type: "button", class: "button", "data-action": "said-none", onclick: () => void api("POST", "/api/phone/say/dismiss", { n: said.n }).then(done, failed) }, "none of these"),
+    h("button", { type: "button", class: "button", "data-action": "said-none", onclick: () => void api("POST", "/api/phone/say/dismiss", { n: said.n }).then(done, failed) }, "None of these"),
   );
 }
 
@@ -80,7 +80,7 @@ export function sayBox(said: Said | null | undefined, failed: (error: unknown) =
     autocapitalize: "off",
     spellcheck: "false",
     enterkeyhint: "send",
-    placeholder: options.placeholder ?? "play frozen, or continue my show",
+    placeholder: options.placeholder ?? "play a film, or continue my show",
   }) as HTMLInputElement;
   if (options.value) field.value = options.value;
   // The TV's listening bar: what the box holds, as it changes.
@@ -131,8 +131,8 @@ export function sayBox(said: Said | null | undefined, failed: (error: unknown) =
   return h(
     "div",
     { class: "say" },
-    h("label", { for: "say-text", class: "label" }, "ask your tv · the keyboard's microphone works here"),
-    h("div", { class: "say-row" }, field, h("button", { type: "button", class: "button primary", "data-action": "say", onclick: () => void go() }, "ask")),
+    h("label", { for: "say-text", class: "label" }, "Ask your TV · your keyboard's microphone works here"),
+    h("div", { class: "say-row" }, field, h("button", { type: "button", class: "button primary", "data-action": "say", onclick: () => void go() }, "Ask")),
     said ? answer(said, failed, done) : null,
   );
 }

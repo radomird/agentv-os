@@ -40,9 +40,9 @@ export class NeedsPin extends Error {}
 // The answer is the box's own: call takes none that didn't come sealed.
 export async function api<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const { status, ok, data } = await call(method, path, body === undefined ? undefined : { json: body }, grant);
-  if (status === 401) throw new Unpaired(data.error ?? "this phone isn't paired");
-  if (status === 403 && data.pin) throw new NeedsPin(data.error ?? "that needs the pin");
-  if (!ok || data.ok === false) throw new Error(data.error ?? "the tv didn't answer");
+  if (status === 401) throw new Unpaired(data.error ?? "This phone isn't paired");
+  if (status === 403 && data.pin) throw new NeedsPin(data.error ?? "That needs the PIN");
+  if (!ok || data.ok === false) throw new Error(data.error ?? "Couldn't reach your TV");
   return data as T;
 }
 
@@ -56,7 +56,7 @@ export interface Viewer {
 }
 
 export function avatar(viewer: Pick<Viewer, "name" | "avatar">, big = false): HTMLElement {
-  return h("span", { class: `avatar avatar-${viewer.avatar}${big ? " big" : ""}` }, viewer.name.slice(0, 1).toLowerCase());
+  return h("span", { class: `avatar avatar-${viewer.avatar}${big ? " big" : ""}` }, viewer.name.slice(0, 1));
 }
 
 export function prompt(command: string): HTMLElement {

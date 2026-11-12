@@ -16,6 +16,7 @@ import { after, before, test } from "node:test";
 import type { Provider } from "../../../daemon/ai.ts";
 import { cliAnswer, cliBackend, cliCommand, runCli, withSchema } from "../../../daemon/providers/cli.ts";
 import { apiBackend, KEY_VARS, ROUTER_MODELS } from "../../../daemon/providers/index.ts";
+import { logged } from "../../../daemon/router-serve.ts";
 import { BRIEF, cleanSentence, INTENTS, KINDS, NONE, parseRoute, ROUTE_SCHEMA, routeInput, Router, type Answer, type Ask, type Backend, type RouterApp } from "../../../daemon/router.ts";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/router");
@@ -278,8 +279,10 @@ test("xAI and Meta: Chat Completions with a bearer key, the brief as the system 
 
 test("a provider's error says why in one line, and never holds the key", async () => {
   for (const [status, why] of [
-    [401, /the provider refused the key \(401\)/],
-    [429, /the provider is busy, or the key is out of credit \(429\)/],
+    // The two a person can do something about are plain lines, as the TV
+    // shows them. What the provider itself said is for the log.
+    [401, /^That key was refused$/],
+    [429, /^Your AI is busy, or the key is out of credit$/],
     [500, /the provider had a problem \(500\)/],
     [400, /the provider refused the request \(400\)/],
   ] as const) {
@@ -291,6 +294,13 @@ test("a provider's error says why in one line, and never holds the key", async (
       assert.ok(!routed.error?.includes(KEY), `${provider} ${status} says the key`);
     }
   }
+  // The router's service keeps the provider's own words in its log, without
+  // the key, and passes the plain line on.
+  const lines: string[] = [];
+  answer = { status: 401, body: { error: { message: `bad key ${KEY}` } } };
+  const routed = await new Router(logged(backendFor("claude"), (line) => lines.push(line))).route("play frozen", APPS);
+  assert.equal(routed.error, "That key was refused");
+  assert.deepEqual(lines, ["claude api: the provider refused the key (401): bad key the key"]);
 });
 
 test("an answer that was cut off, declined, or isn't JSON is none, not a guess", async () => {
@@ -320,7 +330,7 @@ test("a provider that doesn't answer in time is none, failed", async () => {
   const routed = await new Router(apiBackend("claude", { key: KEY, base: at, timeoutMs: 200 })).route("play frozen", APPS);
   slow.closeAllConnections();
   slow.close();
-  assert.deepEqual([routed.none, routed.error], ["failed", "the provider didn't answer in time"]);
+  assert.deepEqual([routed.none, routed.error], ["failed", "Your AI took too long"]);
 });
 
 // --- A plan's CLI ------------------------------------------------------------
@@ -382,14 +392,14 @@ test("each CLI's recorded output reads as the route, and its errors say why", ()
   assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true }), 1), /claude stopped: error_max_turns/);
   assert.throws(() => cliAnswer("claude", "", 1, "Something broke\n"), /claude stopped \(exit 1\): Something broke/);
   // A plan signs in at the builder's first run (ADR-040), and the TV says so.
-  assert.throws(() => cliAnswer("claude", "", 1, "Invalid API key · Please run /login\n"), /^Error: the plan isn't signed in yet: it signs in the first time your agent builds something$/);
-  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login" }), 1), /the plan isn't signed in yet/);
+  assert.throws(() => cliAnswer("claude", "", 1, "Invalid API key · Please run /login\n"), /^Error: Sign in to your plan first, in Settings$/);
+  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login" }), 1), /Sign in to your plan first, in Settings/);
   // As the Mac's Claude Code said, with its auth status still saying it was
   // signed in (2026-10-30): a sign-in that ran out says so.
-  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", terminal_reason: "api_error" }), 1), /^Error: the plan's sign-in ran out: it needs signing in again$/);
+  assert.throws(() => cliAnswer("claude", JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", terminal_reason: "api_error" }), 1), /^Error: Your plan's sign-in expired\. Sign in again\.$/);
   // The builder's words for each CLI (builder/providers.ts), so the router
   // and the builder agree on a sign-in that ran out.
-  const ranOut = /^Error: the plan's sign-in ran out: it needs signing in again$/;
+  const ranOut = /^Error: Your plan's sign-in expired\. Sign in again\.$/;
   assert.throws(() => cliAnswer("claude", "", 1, "OAuth token revoked · Please run /login\n"), ranOut, "revoked, though it says /login");
   assert.throws(() => cliAnswer("chatgpt", '{"type":"error","message":"Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again."}\n', 1), ranOut);
   assert.throws(() => cliAnswer("grok", "", 1, "Your session has expired. Run `grok login` to sign in again.\n"), ranOut);
@@ -421,9 +431,9 @@ else console.log(JSON.stringify({ type: "result", subtype: "success", is_error: 
     assert.equal(routed.via, "cli");
     assert.equal(routed.route.query, "none");
     const slow = await new Router(cliBackend("claude", { home, work: scratch, timeoutMs: 300 })).route("slow", APPS);
-    assert.deepEqual([slow.none, slow.error], ["failed", "claude didn't answer in time"]);
+    assert.deepEqual([slow.none, slow.error], ["failed", "Your AI took too long"]);
     const missing = await new Router(cliBackend("grok", { home, work: scratch })).route("play frozen", APPS);
-    assert.deepEqual([missing.none, missing.error], ["failed", "grok isn't on the box yet: it comes with your agent's first build"]);
+    assert.deepEqual([missing.none, missing.error], ["failed", "grok isn't on the box yet: it comes with the first app that's made"]);
   } finally {
     delete process.env.AGENTV_SECRET;
     delete process.env.ANTHROPIC_API_KEY;

@@ -30,27 +30,27 @@ export function listed(words: string[]): string {
   return words.length < 2 ? (words[0] ?? "") : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
 }
 
-const spoken = (t: NewTitle) => (t.season ? `${t.title.toLowerCase()}, season ${t.season}` : t.title.toLowerCase());
+const spoken = (t: NewTitle) => (t.season ? `${t.title}, season ${t.season}` : t.title);
 
 export async function whatsNew(route: Route, ctx: ExecContext, app?: ExecApp): Promise<Outcome> {
-  if (!ctx.news) return { kind: "none", why: "soon", say: "i can't tell you what's new on this tv yet" };
+  if (!ctx.news) return { kind: "none", why: "soon", say: "Can't show what's new yet" };
   // Films and shows: TMDB knows nothing new about music or games.
   const kind = route.kind === "film" ? "film" : route.kind === "series" ? "series" : null;
-  if (route.kind && route.kind !== "video" && !kind) return { kind: "none", why: "not-found", say: "what's new only knows films and shows" };
+  if (route.kind && route.kind !== "video" && !kind) return { kind: "none", why: "not-found", say: "New this week is films and shows only" };
   const feed = await ctx.news.whatsNew({ app: app?.id ?? null, kind });
   if (!feed.ok) {
     if (feed.why === "no-key") return { kind: "none", why: "no-tmdb", say: NO_KEY };
-    if (feed.why === "no-region") return { kind: "none", why: "no-tmdb", say: "pick your region in settings → new this week first" };
-    if (feed.why === "no-services") return { kind: "none", why: "not-found", say: `tmdb doesn't list your apps' services in ${feed.region?.toLowerCase() ?? "your region"}` };
-    return { kind: "none", why: "failed", say: "tmdb didn't answer", ...(feed.error ? { detail: feed.error } : {}) };
+    if (feed.why === "no-region") return { kind: "none", why: "no-tmdb", say: "Pick your location in Settings first" };
+    if (feed.why === "no-services") return { kind: "none", why: "not-found", say: `Can't see what's new on your apps in ${feed.region ?? "your location"}` };
+    return { kind: "none", why: "failed", say: "Couldn't check just now", ...(feed.error ? { detail: feed.error } : {}) };
   }
-  const where = app ? app.name.toLowerCase() : "your apps";
-  if (!feed.titles.length) return { kind: "none", why: "not-found", say: `nothing new on ${where} this week` };
+  const where = app ? app.name : "your apps";
+  if (!feed.titles.length) return { kind: "none", why: "not-found", say: `Nothing new on ${where} this week` };
   const top = feed.titles.slice(0, 3);
   const name = (id: string) => ctx.apps.find((a) => a.id === id)?.name ?? id;
   return {
     kind: "choose",
-    say: `new this week: ${listed(top.map(spoken))}`,
+    say: `New this week: ${listed(top.map(spoken))}`,
     candidates: top.map((t) => ({ app: t.app, name: name(t.app), item: newItem(t) })),
   };
 }

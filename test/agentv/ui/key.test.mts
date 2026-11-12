@@ -149,7 +149,7 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   await page.waitForFunction(() => /Claude key saved/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
   const accepted = (await daemon.ai.history()).filter((a) => a.provider === "claude" && a.path === "key");
-  assert.deepEqual(accepted.map((a) => a.by.phone), ["phone"]);
+  assert.deepEqual(accepted.map((a) => a.by.phone), ["Phone"]);
 
   // Another key for Claude: its terms are accepted, so it just saves.
   await page.waitForSelector(".grid .tile.focused");
@@ -195,7 +195,7 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   await phone.locator('[data-action="accept"]').tap();
   await page.waitForFunction(() => /Now using your Claude plan/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
-  assert.deepEqual((await daemon.ai.history()).filter((a) => a.provider === "claude" && a.path === "plan").map((a) => a.by.phone), ["phone"]);
+  assert.deepEqual((await daemon.ai.history()).filter((a) => a.provider === "claude" && a.path === "plan").map((a) => a.by.phone), ["Phone"]);
 
   // Settings → AI says builds use it.
   await go(page, "settings/ai");

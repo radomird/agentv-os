@@ -35,8 +35,8 @@ export function countryPicker(all: Country[], current: string | null, pick: (cou
     "data-focus": true,
     "data-action": "country-field",
     type: "text",
-    placeholder: "type a country",
-    "aria-label": "type a country",
+    placeholder: "Your location",
+    "aria-label": "Your location",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
@@ -49,11 +49,11 @@ export function countryPicker(all: Country[], current: string | null, pick: (cou
             h(
               "button",
               { class: `button country${c.code === current ? " current" : ""}`, "data-focus": true, "data-action": "country-pick", "data-code": c.code, onclick: () => pick(c) },
-              h("span", {}, c.name.toLowerCase()),
-              h("span", { class: "button-value" }, c.code === current ? "here now" : c.code.toLowerCase()),
+              h("span", {}, c.name),
+              h("span", { class: "button-value" }, c.code === current ? "Current" : c.code),
             ),
           )
-        : [h("p", { class: "panel-note" }, "no country by that name.")]),
+        : [h("p", { class: "panel-note" }, "No match")]),
     );
   };
   field.addEventListener("input", draw);

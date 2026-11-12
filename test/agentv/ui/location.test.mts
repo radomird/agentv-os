@@ -70,12 +70,13 @@ test("T7.1 the location step starts on the country of a stand-in phone's time zo
   const page = await tv();
   try {
     await page.waitForSelector('[data-action="country-other"]');
-    assert.equal(await headline(page), "the netherlands?");
+    assert.equal(await headline(page), "The Netherlands?");
     assert.equal(await page.locator(".setup-page .prompt").textContent(), "~ $ agentv location");
-    assert.match((await page.locator(".setup-line").textContent()) ?? "", /^from your phone's time zone · \d\d:\d\d in amsterdam$/);
+    assert.match((await page.locator(".setup-line").textContent()) ?? "", /^Guessed from your phone · \d\d:\d\d in Amsterdam$/);
     assert.equal(await page.locator(".bar .bar-step").textContent(), "5 of 12 · location");
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "continue");
-    assert.equal(await page.locator(".focused").textContent(), "↵ yes");
+    assert.equal(await page.locator(".focused").textContent(), "Yes");
+    assert.equal(await page.locator('[data-action="country-other"]').textContent(), "Another location");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["NL", "Europe/Amsterdam"]);
@@ -94,15 +95,15 @@ test("T7.1 a country with several time zones asks which one, each with its city 
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "country-other");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".country-picker");
-    assert.equal(await headline(page), "pick the country.");
+    assert.equal(await headline(page), "Pick your location");
     await page.fill('[data-action="country-field"]', "unit");
     await page.waitForFunction(() => document.querySelectorAll(".country-list .country").length === 1);
     await page.click('.country-list [data-code="US"]');
     await page.waitForSelector(".zones");
-    assert.equal(await headline(page), "which time zone?");
-    assert.equal(await page.locator(".setup-line").textContent(), "the united states has six");
-    assert.deepEqual(await page.locator(".zone .zone-name").allTextContents(), ["eastern", "central", "mountain", "mountain", "pacific", "hawaii-aleutian"]);
-    assert.match((await page.locator('.zone[data-zone="America/Phoenix"] .zone-where').textContent()) ?? "", /^phoenix · \d\d:\d\d$/);
+    assert.equal(await headline(page), "Which time zone?");
+    assert.equal(await page.locator(".setup-line").textContent(), "The United States has 6");
+    assert.deepEqual(await page.locator(".zone .zone-name").allTextContents(), ["Eastern", "Central", "Mountain", "Mountain", "Pacific", "Hawaii-Aleutian"]);
+    assert.match((await page.locator('.zone[data-zone="America/Phoenix"] .zone-where').textContent()) ?? "", /^Phoenix · \d\d:\d\d$/);
     assert.equal(await page.locator(".bar .bar-step").textContent(), "5 of 12 · location");
     assert.equal(zone(), "UTC", "nothing moves before a zone is picked");
     await page.locator('.zone[data-zone="America/Phoenix"]').click();
@@ -119,7 +120,7 @@ test("T7.1 no question when the phone's zone is in the country, or the country k
   let page = await tv();
   try {
     await page.waitForSelector('[data-action="country-other"]');
-    assert.equal(await headline(page), "the united states?");
+    assert.equal(await headline(page), "The United States?");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["US", "America/Chicago"]);
@@ -149,8 +150,8 @@ test("T7.1 with no phone and a box in UTC, the step starts on a pick, and a phon
   let page = await tv();
   try {
     await page.waitForSelector(".country-picker");
-    assert.equal(await headline(page), "pick the country.");
-    assert.equal(await page.locator(".setup-line").textContent(), "type it on your phone, or move with the arrows");
+    assert.equal(await headline(page), "Pick your location");
+    assert.equal(await page.locator(".setup-line").textContent(), "Type on your phone, or use the arrows");
   } finally {
     await page.close();
   }
@@ -161,11 +162,11 @@ test("T7.1 with no phone and a box in UTC, the step starts on a pick, and a phon
   page = await tv();
   try {
     await page.waitForSelector('[data-action="country-other"]');
-    assert.equal(await headline(page), "norway?");
-    assert.match((await page.locator(".setup-line").textContent()) ?? "", /^from this box's time zone · \d\d:\d\d in oslo$/);
+    assert.equal(await headline(page), "Norway?");
+    assert.match((await page.locator(".setup-line").textContent()) ?? "", /^Guessed from the clock · \d\d:\d\d in Oslo$/);
     await phoneIn("Europe/Amsterdam");
-    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "the netherlands?");
-    assert.match((await page.locator(".setup-line").textContent()) ?? "", /in amsterdam$/);
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "The Netherlands?");
+    assert.match((await page.locator(".setup-line").textContent()) ?? "", /in Amsterdam$/);
     await page.keyboard.press("Enter");
     await page.waitForSelector(".ai-cards");
     assert.deepEqual([(await country()).code, zone()], ["NL", "Europe/Amsterdam"]);

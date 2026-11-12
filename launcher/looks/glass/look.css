@@ -678,18 +678,23 @@ body.with-backdrop {
   font-weight: 700;
 }
 
-/* New this week: posters with rounded corners and the app under each. */
+/* New this week: posters with rounded corners and the app under each. The
+   card has room around the poster and its two lines, so the focus ring sits
+   clear of them, and the negative margin keeps the posters where they were. */
 .poster-row {
-  gap: 28px;
+  gap: 44px;
   overflow: visible;
 }
 
 .poster-card {
   --lift: 0.06;
-  padding: 0;
+  --room: 16px;
+  padding: var(--room);
+  margin: calc(-1 * var(--room));
   border: none;
+  border-radius: calc(20px + var(--room));
   background: none;
-  width: 232px;
+  width: calc(232px + 2 * var(--room));
 }
 
 .poster-image {
@@ -708,12 +713,102 @@ body.with-backdrop {
 /* --- Overlays ------------------------------------------------------------- */
 
 .toast,
-.notice-card,
-.pin-pad {
+.notice-card {
   border-radius: 32px;
   border: 1.5px solid var(--glass-edge);
   background: var(--glass-strong);
   backdrop-filter: blur(36px);
+}
+
+/* --- The adult PIN (pin.ts) ------------------------------------------------- */
+
+/* Centred on frosted glass, as Ask is: what's behind is blurred past
+   reading. Four dots fill as the digits come, and the keys are round and
+   frosted, filled in the words' colour when they have the focus, as a
+   button is. No panel and no boxes. */
+#pin {
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  backdrop-filter: blur(60px) saturate(140%);
+}
+
+.pin-pad {
+  width: auto;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.pin-pad .headline {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -2px;
+}
+
+.pin-message {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.pin-boxes {
+  width: auto;
+  gap: 28px;
+  margin: 22px 0 26px;
+}
+
+.pin-box {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--foreground);
+  border-radius: 50%;
+}
+
+.pin-box.filled {
+  background: var(--bright-foreground);
+  border-color: var(--bright-foreground);
+}
+
+.pin-keys {
+  width: auto;
+  grid-template-columns: repeat(3, 100px);
+  gap: 22px 32px;
+}
+
+.pin-key {
+  --lift: 0;
+  width: 100px;
+  height: 100px;
+  border: 1.5px solid var(--glass-edge);
+  border-radius: 50%;
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px);
+  font-size: 44px;
+  font-weight: 700;
+}
+
+.pin-key.focused {
+  border-color: var(--bright-foreground);
+  background: var(--bright-foreground);
+  color: var(--background);
+}
+
+.pin-delete {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+/* Delete in the same line drawing as the look's other icons, rather than
+   Terminal's pixel glyph. */
+.pin-delete > svg {
+  display: none;
+}
+
+.pin-delete::before {
+  content: "";
+  width: 52px;
+  height: 52px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7z'/%3E%3Cpath d='M12.5 9.5l5 5M17.5 9.5l-5 5'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 /* --- The ambient screen ---------------------------------------------------- */
@@ -738,6 +833,88 @@ body.with-backdrop {
 
 .ambient-day::first-letter {
   text-transform: uppercase;
+}
+
+/* --- Updating (updates.ts) ------------------------------------------------- */
+
+/* Centred on frosted glass, as the PIN pad is: the
+   headline, a slim rounded bar, one line, and the steps as a short list.
+   Each step's mark is drawn here rather than written: a filled tick when
+   it's done, a dot for the one that's going, and a faint ring for those to
+   come. */
+#updating {
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  backdrop-filter: blur(60px) saturate(140%);
+}
+
+.updating-box {
+  width: min(1100px, calc(100% - 2 * var(--safe-x)));
+  align-items: center;
+  gap: 32px;
+  text-align: center;
+}
+
+.updating-title {
+  font-size: 60px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.updating-bar {
+  width: min(760px, 100%);
+  height: 12px;
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bright-foreground) 16%, transparent);
+}
+
+.updating-fill {
+  border-radius: 6px;
+  background: var(--bright-foreground);
+}
+
+.updating-steps {
+  align-self: center;
+  gap: 16px;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.updating-step {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.updating-step > b {
+  display: none;
+}
+
+.updating-step::before {
+  content: "";
+  flex: none;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 3px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  border-radius: 50%;
+}
+
+.updating-step.now::before {
+  border: 9px solid var(--bright-foreground);
+}
+
+.updating-step:has(~ .now)::before {
+  border: none;
+  background: var(--bright-foreground);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cmask id='m'%3E%3Ccircle cx='12' cy='12' r='12' fill='white'/%3E%3Cpath d='M6.5 12.5l3.5 3.5 7.5-8' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/mask%3E%3Crect width='24' height='24' mask='url(%23m)'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.updating-step.now {
+  color: var(--bright-foreground);
+  font-weight: 700;
 }
 
 /* --- Larger --------------------------------------------------------------- */
