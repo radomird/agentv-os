@@ -15,6 +15,7 @@
 import { screen } from "../launcher/api.ts";
 import { h } from "../launcher/dom.ts";
 import { discoverOn, foundList, NAS, serverKinds, shareList, type Found, type ShareFound } from "../launcher/pages/network.ts";
+import { NEEDS_PIN } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
@@ -44,14 +45,21 @@ function next(ctx: Ctx): void {
 
 async function pickServer(ctx: Ctx, app: string, url: string, called: string): Promise<boolean> {
   const name = NAMES[app] ?? app;
-  const grant = await ctx.grant(`setting up ${name}`);
-  if (grant === null) return false;
-  const response = await fetch("/api/discover/pick", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
-    body: JSON.stringify({ app, url }),
-  }).catch(() => null);
-  const answer = (await response?.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+  type Answer = { ok?: boolean; error?: string; pin?: boolean } | null;
+  const picked = await ctx
+    .guarded(`setting up ${name}`, async (grant) => {
+      const response = await fetch("/api/discover/pick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+        body: JSON.stringify({ app, url }),
+      }).catch(() => null);
+      const answer = (await response?.json().catch(() => null)) as Answer;
+      if (response?.status === 403 && answer?.pin) throw new Error(NEEDS_PIN);
+      return answer;
+    })
+    .catch((error: Error) => ({ value: { error: error.message } as Answer }));
+  if (!picked) return false;
+  const answer = picked.value;
   if (!answer?.ok) {
     ctx.sounds.play("failure");
     ctx.toast(answer?.error ?? "the tv couldn't keep that", "fail");

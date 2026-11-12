@@ -304,6 +304,16 @@ test("M5 a recipe names the pages stage B looks at while signed in, and an accou
   // likely the person's own page, in the path or after the #.
   for (const path of ["/en", "/en/", "/de", "/pt-br", "/index.html", "/index", "/en/index.html", "/#/en", "/#/index", "/my/watch/1", "/id/browse", "/index.php/search", "/en/index.php/watch/1", "/#/index/browse"]) assert.ok(at(path), path);
   for (const path of ["/me", "/my", "/id", "/me/", "/ME", "/#/me", "/#!/my", "/browse#/id", "/en/me", "/me/account", "/index.php/account", "/index.html/settings", "/#/index/account", "/en/index.php/account", "/index/en/account", "/index/index/account"]) assert.ok(!at(path), path);
+  // With only index after it, /me is still the person's own page.
+  for (const path of ["/me/index", "/my/index.html", "/id/index", "/#/me/index", "/ID/Index.php", "/en/me/index", "/me/index/index"]) assert.ok(!at(path), path);
+  // A service that starts at /id says so in its recipe. That allows the
+  // start page alone, and a page after it is still judged by its own name.
+  const there = (path: string) => signedInPage([...streaming.signedInPages!, "id"], new URL(`https://stand-in.test${path}`));
+  for (const path of ["/id", "/id/", "/id/index.html", "/#/id", "/id/browse"]) assert.ok(there(path), path);
+  for (const path of ["/id/account", "/my", "/me/index", "/id/index/account"]) assert.ok(!there(path), path);
+  assert.deepEqual(recipeProblems({ ...JSON.parse(readFileSync(join(streaming.dir, "recipe.json"), "utf8")), signedInPages: ["browse", "id"] }, streaming.dir), []);
+  // A language after index isn't skipped: refused, which is the safe side.
+  assert.ok(!at("/index.php/en/browse"));
   // A plain anchor is left alone, even one that doesn't decode. A route
   // that doesn't decode is still a route.
   for (const path of ["/browse#50%", "/#100%", "/watch/1#t=5%"]) assert.ok(at(path), path);

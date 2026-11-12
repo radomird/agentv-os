@@ -365,6 +365,51 @@ test("a phone paired by typing the TV's code follows the TV from then on, with n
   await hand.close();
 });
 
+test("a phone whose first ask after pairing gets no answer still follows the TV, by a typed code or already paired", async () => {
+  // The TV is away for a moment right after the code is taken: the code is
+  // spent, so the pairing page would be a dead end. It used to stay there.
+  const { code } = await pairCode();
+  const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  hand.on("pageerror", (error) => errors.push(error.message));
+  await hand.goto(`${phoneUrl}/`);
+  await hand.waitForSelector("input.code");
+  let dropped = 0;
+  const drop = () =>
+    hand.route(
+      "**/api/phone/state*",
+      (route) => {
+        dropped++;
+        return route.abort();
+      },
+      { times: 1 },
+    );
+  await drop();
+  await hand.locator("input.code").fill(code);
+  await hand.locator("button.primary").tap();
+  await hand.waitForSelector(".dpad", { timeout: 8000 });
+  assert.equal(dropped, 1);
+  assert.equal(await hand.locator("input.code").count(), 0);
+
+  // The same phone opened again, paired, with its first ask dropped.
+  await drop();
+  await hand.reload();
+  await hand.waitForSelector(".dpad", { timeout: 8000 });
+  assert.equal(dropped, 2);
+  assert.equal(await hand.locator("input.code").count(), 0);
+
+  // A phone the TV forgot is another matter: it gets the pairing page, and
+  // what's typed there stays while it waits.
+  const mine = (await (await fetch(`${url}/api/phones`)).json()).phones as { id: string }[];
+  const grant = (await post("/api/pin/check", { pin: PIN })).grant as string | undefined;
+  for (const one of mine) await fetch(`${url}/api/phones/${one.id}`, { method: "DELETE", headers: grant ? { "X-AgenTV-Grant": grant } : {} });
+  await hand.reload();
+  await hand.waitForSelector("input.code");
+  await hand.locator("input.code").fill("AB");
+  await hand.waitForTimeout(3500);
+  assert.equal(await hand.locator("input.code").inputValue(), "AB");
+  await hand.close();
+});
+
 test("a page that isn't the TV's, answering in its place once, doesn't stop the phone following the TV", async () => {
   const hand = await phone();
   // A network's own sign-in page, to the phone's next ask for what's on.
