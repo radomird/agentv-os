@@ -596,7 +596,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
 
   // The key, pasted on the phone (board 05).
   await phone.waitForSelector("#api-key");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude api key");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "Claude api key");
   assert.match(await phone.locator(".limits").innerText(), /\$5 per app it builds, \$20 a month/);
   await phone.locator("#api-key").fill(`sk-ant-${"k".repeat(40)}`);
   await phone.locator('[data-action="save-key"]').tap();
@@ -1172,7 +1172,7 @@ test("the background: art from a museum archive, searched through the daemon and
   assert.match(await textOf(page, ".setup-note"), /Sète Harbour Sunset 04 · Christian Ferrer, 2014 · CC BY 4\.0 · Wikimedia Commons/);
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "art");
-  assert.equal(now.items.find((item: { id: string }) => item.id === now.current).credit.from, "wikimedia commons");
+  assert.equal(now.items.find((item: { id: string }) => item.id === now.current).credit.from, "Wikimedia Commons");
   await post("/api/backgrounds", { source: "field" });
   await page.close();
 });
