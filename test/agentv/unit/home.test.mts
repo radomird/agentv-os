@@ -39,9 +39,9 @@ test("the home screen gets the apps, who made each, and where they are", async (
   const home = await get("/api/home");
   assert.equal(home.viewer.role, "adult");
   const byId = Object.fromEntries(home.apps.map((app: any) => [app.id, app]));
-  assert.equal(byId["agentv.sample"].maker, "official · made by agentv");
-  assert.equal(byId["someone.radio"].maker, "community · made by someone");
-  assert.equal(byId["local.mytv"].maker, "made by your agent · on this tv only");
+  assert.equal(byId["agentv.sample"].maker, "From AgenTV");
+  assert.equal(byId["someone.radio"].maker, "From the community · someone");
+  assert.equal(byId["local.mytv"].maker, "Made on this TV");
   assert.deepEqual(byId["local.mytv"].sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m continue"]);
   assert.deepEqual(byId["agentv.tube"].sizes.map((s: any) => s.size), ["s"]);
   assert.equal(byId["someone.radio"].needsSetup, true);
@@ -325,7 +325,7 @@ test("an app's own setup, from its tile: its fields, then the sign-in, past the 
     });
     assert.equal((await call("GET", "/api/apps/agentv.nothing/setup")).status, 404);
     for (const [values, why] of [
-      [{ serverUrl: "ftp://media.example" }, "server address is an address like http://192.168.1.20:8096"],
+      [{ serverUrl: "ftp://media.example" }, "Type an address like http://192.168.1.20:8096"],
       [{ serverUrl: "  " }, "server address is up to 500 characters, and not empty"],
       [{ password: "hunter2" }, "radio has no field called password"],
       [["serverUrl"], "send the fields to fill in"],

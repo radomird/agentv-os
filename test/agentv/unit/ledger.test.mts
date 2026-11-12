@@ -263,7 +263,7 @@ test("S3.10 an app with playback and no tile() gets a medium continue tile from 
   assert.deepEqual(
     tile.entries.map((entry: any) => [entry.label, entry.caption, Math.round(entry.progress * 100)]),
     [
-      ["Spring", "film · 4 min left", 50],
+      ["Spring", "Film · 4 min left", 50],
       ["Sintel", "S1 E4 · 15 min left", 1],
     ],
   );

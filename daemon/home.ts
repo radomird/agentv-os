@@ -46,7 +46,7 @@ export interface AppSummary {
   // Its service wants a sign-in (ADR-032): the app said so the last time it
   // was asked, or it has a sign-in step and hasn't been asked yet.
   signIn?: "needed";
-  credit?: string; // whose data it shows, for app details: "weather data from met norway"
+  credit?: string; // whose data it shows, for app details: "Weather data from MET Norway"
   // A child's profile can open it (ADR-009): an adult ticked it, or its
   // manifest says it's child-safe and no one unticked it.
   forChildren: boolean;
@@ -119,8 +119,8 @@ export function asAddress(typed: string, own: Iterable<string> | null = ownAddre
 
 // Whose data a built-in app shows, as its terms ask.
 const CREDITS: Record<string, string> = {
-  "agentv.weather": "weather data from met norway, under cc by 4.0",
-  "agentv.new": "this product uses the tmdb api but is not endorsed or certified by tmdb. where to watch is from justwatch",
+  "agentv.weather": "Weather data from MET Norway, under CC BY 4.0",
+  "agentv.new": "This product uses the TMDB API but is not endorsed or certified by TMDB. Where to watch is from JustWatch.",
 };
 
 const WEATHER = "agentv.weather";
@@ -226,17 +226,17 @@ export function sizesOf(manifest: Manifest): SizeChoice[] {
 }
 
 // What a page app reaches, as its details say (ADR-043): what it declared,
-// or nothing outside this TV.
+// or nothing online.
 function pageReach(manifest: Manifest): string[] {
   const { declared } = pagePermissions(manifest);
-  return declared.length ? declared : ["nothing outside this tv"];
+  return declared.length ? declared : ["Nothing online"];
 }
 
 function maker(tier: AppTier, manifest: Manifest): string {
-  if (tier === "built-in") return "built in";
-  if (tier === "official") return "official · made by agentv";
-  if (tier === "community") return `community · made by ${manifest.author}`;
-  return "made by your agent · on this tv only";
+  if (tier === "built-in") return "Built in";
+  if (tier === "official") return "From AgenTV";
+  if (tier === "community") return `From the community · ${manifest.author}`;
+  return "Made on this TV";
 }
 
 export interface HomeOptions {
@@ -279,7 +279,7 @@ export interface TileAnswer {
 
 // The free continue tile's entries: how far in, and how long is left.
 function caption(row: WatchRow): string {
-  const what = [row.season !== null ? `S${row.season}` : "", row.episode !== null ? `E${row.episode}` : ""].filter(Boolean).join(" ") || row.kind;
+  const what = [row.season !== null ? `S${row.season}` : "", row.episode !== null ? `E${row.episode}` : ""].filter(Boolean).join(" ") || `${row.kind.charAt(0).toUpperCase()}${row.kind.slice(1)}`;
   if (row.duration_s === null || row.position_s === null || row.duration_s <= 0) return what;
   const left = Math.max(0, Math.ceil((row.duration_s - row.position_s) / 60));
   return left > 0 ? `${what} · ${left} min left` : `${what} · watched`;
@@ -292,6 +292,8 @@ function caption(row: WatchRow): string {
 export function continueTile(rows: WatchRow[]): unknown {
   if (rows.length === 0) return null;
   return {
+    // The size's own name, as an app's manifest writes it ("m": "continue"),
+    // and as agentv selftest looks for it.
     headline: { label: "continue" },
     entries: rows.map((row) => ({
       label: row.title,
@@ -434,7 +436,7 @@ export class Home {
         version: manifest.version,
         tier,
         maker: maker(tier, manifest),
-        owner: builtin ? undefined : `${manifest.name.toLowerCase()} and its logo belong to their owner, who didn't make or endorse this app.`,
+        owner: builtin ? undefined : `${manifest.name} and its logo belong to their owner, who didn't make or endorse this app.`,
         description: manifest.description,
         category: manifest.tv.category,
         runtime: manifest.tv.runtime,
@@ -446,10 +448,10 @@ export class Home {
             : reach.length
               ? reach
               : manifest.tv.runtime === "native"
-                ? ["its own window on this tv"]
+                ? ["Runs on its own"]
                 : builtin
-                  ? ["nothing outside this tv"]
-                  : ["nothing yet"],
+                  ? ["Nothing online"]
+                  : ["Nothing yet"],
         needsSetup: fields.some((field) => field.type === "field" && !values[field.key]),
         signIn: manifest.tv.capabilities.includes("signIn") && (signedIn === false || (signedIn === undefined && signInStep)) ? "needed" : undefined,
         credit: builtin ? CREDITS[manifest.id] : undefined,
@@ -630,7 +632,7 @@ export class Home {
       const thisBox = this.harness?.thisBox === true || app.standIn === true;
       const { manifest, problems } = validatePackage(dir, app.tier, { thisBox });
       if (!manifest) {
-        results.push({ id: app.id, name: app.name, ok: false, error: problems[0] ?? "it doesn't pass the app contract's checks" });
+        results.push({ id: app.id, name: app.name, ok: false, error: problems[0] ?? "This app is broken" });
         continue;
       }
       if (!manifest.entryPoints.tvApp) {
@@ -703,7 +705,7 @@ export class Home {
     if (c.zone !== undefined) {
       if (c.zone === null) delete next.zone;
       else if (typeof c.zone === "string" && (await cityOf(c.zone))) next.zone = c.zone;
-      else return "that isn't a city the weather knows";
+      else return "Couldn't find that city";
     }
     if (c.units !== undefined) {
       if (c.units === null) delete next.units;
@@ -754,7 +756,7 @@ export class Home {
         continue;
       }
       const address = this.harness?.thisBox ? asAddress(value, null) : asAddress(value);
-      if (!address) return `${field.label.toLowerCase()} is an address like http://192.168.1.20:8096`;
+      if (!address) return "Type an address like http://192.168.1.20:8096";
       next[key] = address;
     }
     all[id] = next;
