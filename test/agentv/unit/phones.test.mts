@@ -30,7 +30,7 @@ function asking(k: string | Buffer, name = "x", key: Uint8Array = x25519Pair().p
 test("a code is six letters and digits that don't look alike, and it pairs one phone", () => {
   const clock = { now: 1_800_000_000_000 };
   const phones = new Phones({ path: join(dir, `phones-${++n}.json`), now: () => clock.now });
-  assert.deepEqual(phones.pair(asking("ABCDEF")), { error: "That code expired. Get a new one on your TV." });
+  assert.deepEqual(phones.pair(asking("ABCDEF")), { error: "That code ran out. Pair again from your TV." });
   assert.equal(phones.secret(), null);
   const { code, until } = phones.code();
   assert.match(code, /^[A-HJKMNP-Z2-9]{6}$/);
@@ -42,7 +42,7 @@ test("a code is six letters and digits that don't look alike, and it pairs one p
   assert.equal(paired.phone.name, "Ana's iPhone");
   assert.equal(phones.showing(), null, "the code is used up");
   assert.equal(phones.secret(), null);
-  assert.deepEqual(phones.pair(asking(code, "again")), { error: "That code expired. Get a new one on your TV." });
+  assert.deepEqual(phones.pair(asking(code, "again")), { error: "That code ran out. Pair again from your TV." });
   // The phone's key is kept, in a file only the daemon reads.
   const path = join(dir, `phones-${n}.json`);
   assert.equal(statSync(path).mode & 0o777, 0o600);
@@ -61,10 +61,10 @@ test("F1 the QR code's secret pairs a phone too, and the code itself is no proof
   const { code } = phones.code();
   const secret = Buffer.from(phones.secret()!, "base64url");
   // Sending the code as the old page did is a wrong try, not a pairing.
-  assert.deepEqual(phones.pair({ code, name: "x" } as any), { error: "That's not the code on your TV" });
-  assert.deepEqual(phones.pair({ ...asking(code), proof: b64u(Buffer.from(code)) }), { error: "That's not the code on your TV" });
+  assert.deepEqual(phones.pair({ code, name: "x" } as any), { error: "That isn't the code on your TV" });
+  assert.deepEqual(phones.pair({ ...asking(code), proof: b64u(Buffer.from(code)) }), { error: "That isn't the code on your TV" });
   // A proof made for another key doesn't carry over.
-  assert.deepEqual(phones.pair({ ...asking(secret), key: b64u(x25519Pair().public) }), { error: "That's not the code on your TV" });
+  assert.deepEqual(phones.pair({ ...asking(secret), key: b64u(x25519Pair().public) }), { error: "That isn't the code on your TV" });
   const paired = phones.pair(asking(secret, "by qr"));
   assert.ok("id" in paired, JSON.stringify(paired));
   assert.equal(Buffer.from(paired.key, "base64url").length, 32);
@@ -74,14 +74,14 @@ test("F1 a public key that shares nothing is refused, and counts as a try", () =
   const phones = new Phones({ path: join(dir, `phones-${++n}.json`) });
   const { code } = phones.code();
   for (const key of [new Uint8Array(32), Uint8Array.from([1, ...new Uint8Array(31)])]) {
-    assert.deepEqual(phones.pair(asking(code, "x", key)), { error: "That's not the code on your TV" });
+    assert.deepEqual(phones.pair(asking(code, "x", key)), { error: "That isn't the code on your TV" });
   }
-  assert.deepEqual(phones.pair(asking(code, "x", randomBytes(31))), { error: "That's not the code on your TV" });
+  assert.deepEqual(phones.pair(asking(code, "x", randomBytes(31))), { error: "That isn't the code on your TV" });
   assert.equal(phones.list().length, 0);
   // Three tries are gone: two more end the code.
   phones.pair(asking("ZZZZZZ"));
   phones.pair(asking("ZZZZZZ"));
-  assert.deepEqual(phones.pair(asking(code)), { error: "That code expired. Get a new one on your TV." });
+  assert.deepEqual(phones.pair(asking(code)), { error: "That code ran out. Pair again from your TV." });
 });
 
 test("H7 a phone's name is one line: control characters are left out", () => {
@@ -99,12 +99,12 @@ test("five wrong proofs end the code, and so do 10 minutes", () => {
   const phones = new Phones({ path: join(dir, `phones-${++n}.json`), now: () => clock.now });
   const { code } = phones.code();
   const secret = Buffer.from(phones.secret()!, "base64url");
-  for (let i = 0; i < 5; i++) assert.deepEqual(phones.pair(asking(i % 2 ? "ZZZZZZ" : randomBytes(16))), { error: "That's not the code on your TV" });
-  assert.deepEqual(phones.pair(asking(code)), { error: "That code expired. Get a new one on your TV." });
-  assert.deepEqual(phones.pair(asking(secret)), { error: "That code expired. Get a new one on your TV." });
+  for (let i = 0; i < 5; i++) assert.deepEqual(phones.pair(asking(i % 2 ? "ZZZZZZ" : randomBytes(16))), { error: "That isn't the code on your TV" });
+  assert.deepEqual(phones.pair(asking(code)), { error: "That code ran out. Pair again from your TV." });
+  assert.deepEqual(phones.pair(asking(secret)), { error: "That code ran out. Pair again from your TV." });
   const next = phones.code().code;
   clock.now += CODE_MS;
-  assert.deepEqual(phones.pair(asking(next)), { error: "That code expired. Get a new one on your TV." });
+  assert.deepEqual(phones.pair(asking(next)), { error: "That code ran out. Pair again from your TV." });
 });
 
 test("F1 a phone stored without a key (paired before phones had keys) is gone from the file once it's read", () => {
