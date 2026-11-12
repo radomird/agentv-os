@@ -186,7 +186,7 @@ export class Storage {
     const folders: Source[] = saved.folders.map((path) => ({
       id: `folder:${path}`,
       kind: "folder",
-      name: path.split("/").filter(Boolean).pop()?.toLowerCase() ?? path,
+      name: path.split("/").filter(Boolean).pop() ?? path,
       path,
       available: existsSync(path),
     }));

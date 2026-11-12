@@ -2144,17 +2144,17 @@ export class Daemon {
     const apps = await this.home.apps(viewer);
     const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
     const name = (id: string) => apps.find((app) => app.id === id)?.name ?? id;
+    // The location by its name, as on the right of the tile's head.
+    const region = feed.region ? ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region) : "";
     if (!feed.ok) {
       const adult = viewer.role === "adult";
       const why: Record<string, string> = {
         "no-key": adult ? "Set up New this week in Settings" : "Ask an adult to set up New this week",
         "no-region": adult ? "Pick your location in Settings" : "Ask an adult to pick your location",
-        "no-services": `Can't see what's new on your apps in ${feed.region ?? "your location"}`,
+        "no-services": region ? `Can't see what's new on your apps in ${region}` : "Can't see what's new on your apps here",
       };
       return { content: { headline: { label: "", caption: why[feed.why ?? ""] ?? "Couldn't check just now" }, refreshMins: 30 }, failed: feed.why === "failed" };
     }
-    // The region on the right of the tile's head, as Weather has its city.
-    const region = (await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "";
     if (!feed.titles.length) return { content: { headline: { label: region, caption: "Nothing new on your apps this week" }, refreshMins: 180 }, failed: false };
     if (size === "s") return { content: { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 }, failed: false };
     const content = {

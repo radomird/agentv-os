@@ -229,7 +229,7 @@ test("USB sticks come from lsblk and mount through udisks2; shares mount through
   assert.deepEqual(
     (await storage.sources()).map((s) => [s.id, s.name, s.available]),
     [
-      [`folder:${join(home, "Music")}`, "music", true],
+      [`folder:${join(home, "Music")}`, "Music", true],
       ["usb:/dev/sda1", "STICK", false],
     ],
   );

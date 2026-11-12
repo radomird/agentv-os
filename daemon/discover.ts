@@ -724,9 +724,9 @@ export class Discover {
       });
       const named = wsdName((await response.text()).slice(0, 256 * 1024));
       if (!named || !this.looking) return;
-      this.computers.set(from.address, named.toLowerCase());
+      this.computers.set(from.address, named);
       const entry = this.entries.get(key);
-      if (entry?.via === "wsd") this.add({ ...entry, name: named.toLowerCase() }, from.address, key);
+      if (entry?.via === "wsd") this.add({ ...entry, name: named }, from.address, key);
     } catch {
       // Its address stands in for its name.
     }

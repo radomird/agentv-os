@@ -76,7 +76,7 @@ export const FIELD = `(() => {${DEEP}
   const by = (el.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean)
     .map((id) => (root.getElementById ? root.getElementById(id) : null)?.textContent || "").join(" ");
   const label = (el.getAttribute("aria-label") || by || (el.labels && el.labels[0] ? el.labels[0].textContent : "") ||
-    el.getAttribute("placeholder") || el.getAttribute("title") || "").replace(/\\s+/g, " ").trim().toLowerCase().slice(0, 40);
+    el.getAttribute("placeholder") || el.getAttribute("title") || "").replace(/\\s+/g, " ").trim().slice(0, 40);
   if (kind === "password") return { kind, label };
   const value = el.isContentEditable ? el.innerText.replace(/\\n$/, "") : el.value;
   return { kind, label, value: String(value).slice(0, 500) };
