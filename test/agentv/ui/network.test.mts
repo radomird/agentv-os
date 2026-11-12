@@ -240,7 +240,7 @@ bothWays("discover", "setup's shared folder lists the NASes on your network, and
     // backgrounds.
     await page.waitForSelector('.tb-back[data-background="folder"]');
     await page.locator('.tb-back[data-background="folder"]').click();
-    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a folder.");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Pick a folder");
     if (!on) {
       await page.waitForTimeout(800);
       assert.equal(await page.locator("[data-found]").count(), 0);
@@ -254,7 +254,7 @@ bothWays("discover", "setup's shared folder lists the NASes on your network, and
     // Back goes back to the NASes, not out of the page.
     await page.keyboard.press("Escape");
     await page.waitForSelector("[data-found]");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a folder.");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick a folder");
     await page.keyboard.press("Enter");
     await page.locator('[data-share="smb://nas.local/photos"]').click();
     await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; source?: string }[] }).screenRequests.some((r) => r.cmd === "background-folder" && r.source === "share:smb://nas.local/photos"));
@@ -295,16 +295,17 @@ bothWays("discover", "setup's apps step opens the servers on your network for ea
       await page.close();
       return;
     }
-    await headline(page, "pick your jellyfin.");
+    await headline(page, "Pick your Jellyfin");
     assert.match(await page.locator(".setup-page .prompt").innerText(), /agentv app setup jellyfin/);
     await page.waitForSelector('.focused[data-found="jellyfin http://127.0.0.1:8096"]');
     assert.deepEqual(await rows(page, "[data-found]"), [["living room", "127.0.0.1:8096"]]);
-    assert.deepEqual(await page.locator(".found > .button").allInnerTexts(), ["type an address on your phone", "set it up later"]);
-    assert.match(await page.locator(".bar").innerText(), /apps[\s\S]*↑↓ move · ↵ pick/);
+    assert.deepEqual(await page.locator(".found > .button").allInnerTexts(), ["type its address", "later"]);
+    assert.match(await page.locator(".bar").innerText(), /apps/);
+    assert.doesNotMatch(await page.locator(".bar").innerText(), /move|pick|↵|esc/, "no key hints in the bar");
     // OK on it: Jellyfin will use it, and Immich's page is next.
     await page.keyboard.press("Enter");
     await page.locator('.toast:has-text("jellyfin will use living room")').waitFor();
-    await headline(page, "pick your immich.");
+    await headline(page, "Pick your Immich");
     // Nothing answers as Immich here. Later goes on to the look.
     await page.locator('[data-action="later"]').click();
     await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
@@ -330,16 +331,16 @@ test("setup's apps step on music lists the NASes on your network, and a NAS's fo
     const page = await tv(url);
     await page.waitForSelector(".apps-page .app-pick");
     await page.locator('[data-action="continue"]').click();
-    await headline(page, "pick your nas.");
+    await headline(page, "Pick your drive");
     await page.waitForSelector('.focused[data-found="nas nas.local"]');
     assert.deepEqual(await rows(page, "[data-found]"), [["living room NAS", "nas.local"]]);
     await page.keyboard.press("Enter");
-    await headline(page, "nas.local.");
+    await headline(page, "nas.local");
     assert.match(await page.locator(".setup-page .prompt").innerText(), /agentv music sources nas\.local/);
     await page.waitForSelector("[data-share]");
     // Back goes back to the NASes, and in again.
     await page.keyboard.press("Escape");
-    await headline(page, "pick your nas.");
+    await headline(page, "Pick your drive");
     await page.waitForSelector('.focused[data-found="nas nas.local"]');
     await page.keyboard.press("Enter");
     await page.waitForSelector('.focused[data-share="smb://nas.local/music"]');
@@ -347,7 +348,7 @@ test("setup's apps step on music lists the NASes on your network, and a NAS's fo
     await page.waitForSelector(".setup-look-list", { timeout: 10_000 });
     const [added] = await screenRequests(page, "music", "add-share");
     assert.deepEqual([added.uri, added.password], ["smb://nas.local/music", undefined]);
-    await page.locator('.toast:has-text("music is a music source now")').waitFor();
+    await page.locator('.toast:has-text("added music to your music")').waitFor();
     await page.close();
   } finally {
     await daemon.close();

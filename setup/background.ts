@@ -23,12 +23,12 @@ interface Card {
 }
 
 const CARDS: Card[] = [
-  { id: "theme", name: "the theme's", note: "default", icon: "grid" },
-  { id: "field", name: "pixel field", note: "in its colours" },
-  { id: "photos", name: "your photos", note: "sent from your phone", icon: "photo" },
-  { id: "folder", name: "shared folder", note: "nas or immich", icon: "grid" },
-  { id: "art", name: "art", note: "museum archives", icon: "spark" },
-  { id: "made", name: "made for you", note: "your agent will draw it", icon: "spark", soon: "your tv's agent will draw backgrounds soon" },
+  { id: "theme", name: "The theme's", note: "Default", icon: "grid" },
+  { id: "field", name: "Pixel field", note: "In its colours" },
+  { id: "photos", name: "Your photos", note: "Sent from your phone", icon: "photo" },
+  { id: "folder", name: "Shared folder", note: "A drive or Immich", icon: "grid" },
+  { id: "art", name: "Art", note: "Museum archives", icon: "spark" },
+  { id: "made", name: "Made for you", note: "Coming soon", icon: "spark", soon: "Made-to-order backgrounds are coming soon" },
 ];
 
 const empty = (): Backgrounds => ({ source: "theme", current: null, items: [] });
@@ -44,7 +44,7 @@ export async function background(ctx: Ctx): Promise<View> {
       h("span", { class: "look-text" }, h("span", { class: "look-name" }, card.name), h("span", { class: "look-note" }, card.soon && card.id !== "made" ? `${card.note} · soon` : card.note)),
     );
   });
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("background") }, "↵ done");
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("background") }, "Done");
   const line = h("span", { class: "setup-note" });
 
   const draw = () => {
@@ -67,30 +67,30 @@ export async function background(ctx: Ctx): Promise<View> {
     }
     const photos = now.items.filter((item) => item.kind === "photo").length;
     const shown = shownPictures(now);
-    const theme = now.theme?.name?.replace(/[-_]+/g, " ");
     // A work's credit is its maker's name and its title, as they write them.
     const credit = now.source === "art" ? shown.find((item) => item.id === now.current)?.credit.text : undefined;
     if (credit) {
       line.replaceChildren(asWritten(credit));
       return;
     }
-    // So is the name of a folder or an album the pictures came from.
-    if (now.source === "folder" && shown[0]?.credit.from) {
-      line.replaceChildren(`${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from `, asWritten(shown[0].credit.from), ".");
+    // Where a folder's pictures are from is a name too: an album's, or a path.
+    const from = now.source === "folder" ? shown[0]?.credit.from : undefined;
+    if (from) {
+      line.replaceChildren(`${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from `, asWritten(from));
       return;
     }
     line.textContent =
       now.source === "theme"
         ? own
-          ? `${theme}'s own, as on omarchy's desktop. it changes with the theme.`
-          : `${theme ?? "this theme"} has no backgrounds of its own, so it's the pixel field for now.`
+          ? "Comes with the theme"
+          : "This theme has none, so you get a plain pattern"
         : now.source === "art"
-        ? (shown.find((item) => item.id === now.current)?.credit.text ?? "art from the archives.")
+        ? "Art from museums"
         : now.source === "folder"
-          ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from ${shown[0]?.credit.from ?? "a folder"}.`
+          ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from a folder`
           : photos
-          ? `${photos === 1 ? "1 photo" : `${photos} photos`} from your phone. send more any time.`
-          : "on your phone: the tv's page, then send a photo.";
+          ? `${photos === 1 ? "1 photo" : `${photos} photos`} from your phone. Send more any time.`
+          : "On your phone, tap Send a photo";
   };
 
   const pick = async (card: Card) => {
@@ -123,14 +123,13 @@ export async function background(ctx: Ctx): Promise<View> {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading("tv background", "pick a background.", ctx.reduced())), go),
+    h("div", { class: "setup-top" }, h("div", {}, ...heading("tv background", "Pick a background", ctx.reduced())), go),
     h("div", { class: "backs" }, ...cards),
     line,
   );
   return {
     el,
     first: cards.find((card) => card.dataset.background === now.source) ?? cards[0],
-    info: "←→ move · ↵ pick",
     heard(event, data) {
       if (event !== "background") return;
       now = data as Backgrounds;
@@ -149,7 +148,7 @@ export function photos(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading("tv background --photos", "send a photo.", ctx.reduced())),
+    h("div", {}, ...heading("tv background --photos", "Send a photo", ctx.reduced())),
     h(
       "div",
       { class: "terms" },
@@ -159,10 +158,10 @@ export function photos(ctx: Ctx): View {
         h(
           "div",
           { class: "ready-list" },
-          h("span", { class: `ready-row ${paired ? "mark-done" : "mark-now"}` }, h("span", {}, h("b", {}, paired ? "[x]" : "[>]"), paired ? ` paired · ${ctx.info.phones[ctx.info.phones.length - 1]}` : " pair your phone with the code")),
-          h("span", { class: "ready-row mark-todo" }, h("span", {}, h("b", {}, "[ ]"), " on the phone: send a photo")),
+          h("span", { class: `ready-row ${paired ? "mark-done" : "mark-now"}` }, h("span", {}, h("b", {}, paired ? "[x]" : "[>]"), paired ? ` Paired · ${ctx.info.phones[ctx.info.phones.length - 1]}` : " Pair your phone with the code")),
+          h("span", { class: "ready-row mark-todo" }, h("span", {}, h("b", {}, "[ ]"), " On your phone, tap Send a photo")),
         ),
-        h("p", { class: "setup-note" }, "it becomes the background, and the ambient screen says who took it."),
+        h("p", { class: "setup-note" }, "It becomes your background"),
       ),
       paired ? null : h("div", { class: "welcome-qr small" }, h("span", { class: "qr-box" }, qr), label),
     ),
@@ -170,18 +169,18 @@ export function photos(ctx: Ctx): View {
   if (!paired) {
     void setup.pair().then((code) => {
       if (code?.url) qr.setAttribute("src", `/api/phones/qr?${code.code}`);
-      label.replaceChildren(...(code ? ["pair a phone · code ", asWritten(code.code)] : []));
+      label.replaceChildren(...(code ? ["Pair a phone · code ", asWritten(code.code)] : []));
     });
   }
   let moved = false;
   return {
     el,
-    info: "waiting for a photo · esc back",
+    info: "Waiting for a photo…",
     heard(event, data) {
       if (event !== "background" || moved || !(data as Backgrounds).items?.length) return;
       moved = true;
       ctx.sounds.play("confirm");
-      ctx.toast("your photo is the background now", "ok");
+      ctx.toast("Your photo is the background", "ok");
       ctx.open("background", "back");
     },
   };
@@ -191,12 +190,13 @@ export function photos(ctx: Ctx): View {
 // and Wikimedia Commons, searched through the daemon, which asks each
 // archive's own API. A few words to start with, or your own, typed here or
 // on the phone; OK on a work fetches it whole and makes it the background,
-// with its credit.
+// with its credit. The words are searched as they are here, and each one's
+// chip says it with a capital.
 const WORDS = ["landscape", "the sea", "flowers", "night", "mountains"];
 const ARCHIVES: { id: Art["archive"]; name: string }[] = [
-  { id: "met", name: "the met" },
-  { id: "aic", name: "art institute of chicago" },
-  { id: "commons", name: "wikimedia commons" },
+  { id: "met", name: "The Met" },
+  { id: "aic", name: "Art Institute of Chicago" },
+  { id: "commons", name: "Wikimedia Commons" },
 ];
 
 export function art(ctx: Ctx): View {
@@ -213,12 +213,12 @@ export function art(ctx: Ctx): View {
     type: "search",
     value: WORDS[0],
     maxlength: "80",
-    placeholder: "what to look for",
-    "aria-label": "what to look for",
+    placeholder: "Search art",
+    "aria-label": "Search art",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
-  const chips = WORDS.map((word) => h("button", { class: "chip", "data-focus": true, "data-words": word, onclick: () => ((words.value = word), void look()) }, word));
+  const chips = WORDS.map((word) => h("button", { class: "chip", "data-focus": true, "data-words": word, onclick: () => ((words.value = word), void look()) }, word.slice(0, 1).toUpperCase() + word.slice(1)));
   const works = h("div", { class: "works" });
   const line = h("span", { class: "setup-note" });
 
@@ -227,14 +227,14 @@ export function art(ctx: Ctx): View {
       "button",
       { class: "work", "data-focus": true, "data-work": `${work.archive}/${work.id}`, onclick: () => void pick(work) },
       h("span", { class: "work-shot" }, h("img", { src: `/api/art/${work.archive}/${work.id}/thumb`, alt: "", loading: "lazy" })),
-      h("span", { class: "look-text" }, h("span", { class: "look-name" }, work.title.toLowerCase()), h("span", { class: "look-note" }, [work.artist, work.date].filter(Boolean).join(", ").toLowerCase())),
+      h("span", { class: "look-text" }, h("span", { class: "look-name" }, work.title), h("span", { class: "look-note" }, [work.artist, work.date].filter(Boolean).join(", "))),
     );
 
   const look = async () => {
     const at = ++asked;
     for (const tab of tabs) tab.classList.toggle("picked", tab.dataset.archive === archive);
     const name = ARCHIVES.find((one) => one.id === archive)!.name;
-    line.textContent = `asking ${name}…`;
+    line.textContent = `Searching ${name}…`;
     let found: Art[];
     try {
       found = await daemon.searchArt(archive, words.value.trim() || WORDS[0]);
@@ -246,13 +246,13 @@ export function art(ctx: Ctx): View {
     }
     if (at !== asked) return;
     works.replaceChildren(...found.map(card));
-    line.textContent = found.length ? `${found.length === 1 ? "1 work" : `${found.length} works`} from ${name}, free to show.` : `nothing from ${name} for that. try other words.`;
+    line.textContent = found.length ? `${found.length === 1 ? "1 work" : `${found.length} works`} from ${name}, free to show` : "Nothing found. Try other words.";
   };
 
   const pick = async (work: Art) => {
     if (picking) return;
     picking = true;
-    line.textContent = `fetching ${work.title.toLowerCase()}…`;
+    line.textContent = `Getting ${work.title}…`;
     try {
       await daemon.pickArt(work.archive, work.id);
     } catch (error) {
@@ -263,7 +263,7 @@ export function art(ctx: Ctx): View {
       return;
     }
     ctx.sounds.play("confirm");
-    ctx.toast("it's the background now", "ok");
+    ctx.toast("Background set", "ok");
     ctx.open("background", "back");
   };
 
@@ -271,13 +271,12 @@ export function art(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading("tv background --art", "pick a work.", ctx.reduced())),
+    h("div", {}, ...heading("tv background --art", "Pick a picture", ctx.reduced())),
     h("div", { class: "art-page" }, h("div", { class: "art-side" }, h("div", { class: "chips archives" }, ...tabs), words, h("div", { class: "chips" }, ...chips), line), works),
   );
   return {
     el,
     first: tabs[0],
-    info: "↵ pick · esc back",
     act(action) {
       // Enter in the field looks.
       if (action !== "ok" || ctx.focus.get() !== words) return false;
@@ -301,6 +300,9 @@ interface FolderInfo {
   error?: string;
 }
 
+// What each kind of place is called on its chip.
+const KINDS: Record<FolderInfo["kind"], string> = { folder: "Folder", usb: "USB", share: "Network folder" };
+
 export function folder(ctx: Ctx): View {
   const list = h("div", { class: "chips archives" });
   const line = h("span", { class: "setup-note" }, "…");
@@ -311,7 +313,7 @@ export function folder(ctx: Ctx): View {
     "data-action": "share",
     type: "text",
     placeholder: "smb://nas/photos or smb://you@nas/photos",
-    "aria-label": "a share's address",
+    "aria-label": "Folder address",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
@@ -320,8 +322,8 @@ export function folder(ctx: Ctx): View {
     "data-focus": true,
     "data-action": "share-password",
     type: "password",
-    placeholder: "its password, if it has a user name",
-    "aria-label": "the share's password",
+    placeholder: "Password, if it needs one",
+    "aria-label": "Folder password",
     autocomplete: "off",
   }) as HTMLInputElement;
 
@@ -331,7 +333,7 @@ export function folder(ctx: Ctx): View {
     "data-action": "immich",
     type: "url",
     placeholder: "https://photos.example/share/…",
-    "aria-label": "an immich album's shared link",
+    "aria-label": "An Immich album's shared link",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
@@ -344,11 +346,11 @@ export function folder(ctx: Ctx): View {
       onclick: async () => {
         if (copying) return;
         copying = true;
-        line.textContent = "getting the album's photos…";
+        line.textContent = "Getting the album's photos…";
         try {
           const got = await daemon.immichAlbum(link.value.trim());
           ctx.sounds.play("confirm");
-          ctx.toast(`photos from ${got.album.toLowerCase()} are the background now`, "ok");
+          ctx.toast(`Photos from ${got.album} are the background`, "ok");
           ctx.open("background", "back");
         } catch (error) {
           ctx.sounds.play("failure");
@@ -359,7 +361,7 @@ export function folder(ctx: Ctx): View {
         }
       },
     },
-    "use the album",
+    "Use the album",
   );
 
   const draw = async () => {
@@ -367,10 +369,10 @@ export function folder(ctx: Ctx): View {
     const found = ((reply.sources as FolderInfo[] | undefined) ?? []).filter((one) => one.available);
     list.replaceChildren(
       ...found.map((one) =>
-        h("button", { class: "chip", "data-focus": true, "data-folder": one.id, onclick: () => void copy(one) }, `${one.kind === "folder" ? "folder" : one.kind} · ${one.name}`),
+        h("button", { class: "chip", "data-focus": true, "data-folder": one.id, onclick: () => void copy(one) }, `${KINDS[one.kind]} · ${one.name}`),
       ),
     );
-    line.textContent = found.length ? "ok on one copies up to 60 of its pictures." : "no folders, drives or shares yet. add a share, or plug in a usb drive.";
+    line.textContent = found.length ? "Pick one to use up to 60 of its pictures" : "No folders or drives yet. Add a folder or plug in a drive.";
     // The first source, rather than the share's field, once there's one.
     const first = list.querySelector<HTMLElement>("[data-folder]");
     if (first && ctx.focus.get() === address && !address.value) ctx.focus.set(first, false);
@@ -379,17 +381,17 @@ export function folder(ctx: Ctx): View {
   const copy = async (one: FolderInfo) => {
     if (copying) return;
     copying = true;
-    line.textContent = `copying pictures from ${one.name}…`;
+    line.textContent = `Copying pictures from ${one.name}…`;
     const reply = await screen.backgroundFolder(one.id);
     copying = false;
     if (!reply.ok) {
       ctx.sounds.play("failure");
-      ctx.toast(reply.error ?? `${one.name}'s pictures didn't come`, "fail");
+      ctx.toast(reply.error ?? `Couldn't copy ${one.name}'s pictures`, "fail");
       line.textContent = "";
       return;
     }
     ctx.sounds.play("confirm");
-    ctx.toast(`pictures from ${one.name} are the background now`, "ok");
+    ctx.toast(`Pictures from ${one.name} are the background`, "ok");
     ctx.open("background", "back");
   };
 
@@ -403,11 +405,11 @@ export function folder(ctx: Ctx): View {
         // The password leaves the page as it's sent.
         const secret = password.value;
         password.value = "";
-        line.textContent = "mounting the share…";
+        line.textContent = "Connecting…";
         const reply = await screen.music("add-share", { uri: address.value.trim(), ...(secret ? { password: secret } : {}) });
         if (!reply.ok) {
           ctx.sounds.play("failure");
-          ctx.toast(reply.error ?? "that share didn't mount", "fail");
+          ctx.toast(reply.error ?? "Couldn't open that folder", "fail");
           line.textContent = "";
           return;
         }
@@ -416,14 +418,14 @@ export function folder(ctx: Ctx): View {
         await draw();
       },
     },
-    "add the share",
+    "Add folder",
   );
 
   void draw();
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading("tv background --folder", "pick a folder.", ctx.reduced())),
+    h("div", {}, ...heading("tv background --folder", "Pick a folder", ctx.reduced())),
     h(
       "div",
       { class: "art-page" },
@@ -431,12 +433,12 @@ export function folder(ctx: Ctx): View {
       h(
         "div",
         { class: "art-side" },
-        h("span", { class: "field-label" }, "a nas share"),
+        h("span", { class: "field-label" }, "A network folder"),
         address,
         password,
-        h("span", { class: "setup-note" }, "a read-only nas account is best."),
+        h("span", { class: "setup-note" }, "A read-only account is best"),
         add,
-        h("span", { class: "field-label" }, "an immich album's shared link"),
+        h("span", { class: "field-label" }, "An Immich album's shared link"),
         link,
         album,
       ),
@@ -453,12 +455,12 @@ export function folder(ctx: Ctx): View {
   let showingShares = false;
   const addFound = async (share: ShareFound, password?: string, folders?: ReturnType<typeof shareList>) => {
     if (copying) return;
-    line.textContent = "mounting the share…";
+    line.textContent = "Connecting…";
     const reply = await screen.music("add-share", { uri: share.uri, ...(password ? { password } : {}) });
     const source = reply.source as FolderInfo | undefined;
     if (!reply.ok || !source) {
       ctx.sounds.play("failure");
-      ctx.toast(reply.error ?? "that share didn't mount", "fail");
+      ctx.toast(reply.error ?? "Couldn't open that folder", "fail");
       line.textContent = "";
       if (/user name and password/.test(reply.error ?? "") && !password) folders?.signIn();
       return;
@@ -473,14 +475,13 @@ export function folder(ctx: Ctx): View {
   void discoverOn().then((on) => {
     if (!on) return;
     const found = foundList({ kinds: NAS, machines: true, focus: ctx.focus, typed: address, pick: (one) => showShares(one.host) });
-    nasList = [h("span", { class: "field-label" }, "on your network"), found.el];
+    nasList = [h("span", { class: "field-label" }, "On your network"), found.el];
     onNetwork.replaceChildren(...nasList);
     shown(onNetwork, true);
   });
   return {
     el,
     first: address,
-    info: "↵ pick · esc back",
     // Back from a NAS's folders goes back to the NASes.
     back() {
       if (!showingShares) return false;

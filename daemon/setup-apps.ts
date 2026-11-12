@@ -123,7 +123,7 @@ export class SetupApps {
     if (this.cached && this.cached.until > Date.now()) return this.cached;
     try {
       const source = await this.source();
-      if (!source && !this.given) throw new Error("this box has no app index set up yet");
+      if (!source && !this.given) throw new Error("Couldn't load the apps");
       const apps = (await this.catalog(source ?? "")).filter((app) => app.tier === "official");
       this.cached = { until: Date.now() + 600_000, apps };
     } catch (error) {
@@ -211,13 +211,13 @@ export class SetupApps {
   // that hasn't moved for longer than root may take was cut short.
   async add(id: unknown, present: Present[]): Promise<string | null> {
     if (typeof id !== "string" || !ID.test(id)) return "send the app to add as its id";
-    if (present.some((app) => app.id === id)) return "that app is on the tv already";
+    if (present.some((app) => app.id === id)) return "You already have that app";
     const going = Object.entries(this.status()).find(
       ([, app]) => (app.state === "queued" || app.state === "installing") && !(app.at && Date.now() - Date.parse(app.at) > STALE_MS),
     );
     if (going) {
       const name = (await this.official()).apps.find((app) => app.id === going[0])?.name ?? going[0];
-      return `${name.toLowerCase()} is still installing. add this one once it's done`;
+      return `${name} is still installing. Try again after.`;
     }
     const why = await this.install([id]);
     if (!why) this.added.add(id);
@@ -231,7 +231,9 @@ export class SetupApps {
       return "send the apps to install as a list of their ids";
     }
     const { apps, error } = await this.official();
-    if (error) return error;
+    // The list's own error says why it couldn't be read. A person reads what
+    // to do.
+    if (error) return "Couldn't load the apps. Try again later.";
     const unknown = (ids as string[]).find((id) => !apps.some((app) => app.id === id));
     if (unknown) return `${unknown} isn't one of AgenTV's official apps`;
     const wanted = [...new Set(ids as string[])];
@@ -249,7 +251,7 @@ export class SetupApps {
       }
     }
     rmSync(this.drop, { force: true });
-    return "the apps couldn't be installed: agentv-setup-apps.path isn't running";
+    return "Couldn't install the apps. Restart your TV and try again.";
   }
 
   // Tells the TV as each install moves on, until none is left going.
