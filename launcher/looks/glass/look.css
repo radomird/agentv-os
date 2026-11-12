@@ -424,7 +424,11 @@ body:has(#offline) .glass-bar .bar-hint {
   padding: var(--safe-y) var(--safe-x) 0;
 }
 
+/* A headline is as wide as its words, and stops short of the glass bar at
+   the top right: a long one goes on to a second line first. */
 .headline {
+  width: fit-content;
+  max-width: calc(100% - 420px);
   margin: 0;
   font-size: 80px;
   font-weight: 800;
