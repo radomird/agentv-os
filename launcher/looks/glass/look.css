@@ -436,6 +436,16 @@ body:has(#offline) .glass-bar .bar-hint {
   line-height: 1.1;
 }
 
+/* The PIN pad is a narrow column in the middle, and New this week's
+   headline sits in a box only as wide as its words, so the room the bar
+   needs would wrap their headlines and push the pad and the posters off the
+   screen. Neither is under the bar. */
+.pin-pad > .headline,
+.new-week .page-head .headline {
+  width: auto;
+  max-width: none;
+}
+
 .page-line {
   margin-top: 8px;
   color: var(--bright-foreground);
