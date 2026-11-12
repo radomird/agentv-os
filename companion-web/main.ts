@@ -180,6 +180,13 @@ function pairView(): void {
   );
 }
 
+// A paired phone with nothing from the TV yet: the TV is off, restarting or
+// out of reach. It says so until the first state comes, which draws the
+// page in its place.
+function waitView(): void {
+  app.replaceChildren(h("div", { class: "page waiting" }, prompt("tv"), h("h1", {}, "waiting for the tv")));
+}
+
 // --- The remote and the keyboard ----------------------------------------------
 
 // A key, text, or the trackpad's moves, to the TV. The press itself already
@@ -929,6 +936,7 @@ async function follow(): Promise<void> {
 let following = false;
 async function start(): Promise<void> {
   forgotten = false;
+  if (!state) waitView();
   await refresh(true);
   if (following) return;
   following = true;
