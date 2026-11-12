@@ -35,6 +35,9 @@ let watching = 0;
 // which a join then needs.
 let after = false;
 let needsPin = false;
+// How often a page that's on screen says so. The TV counts a page as in use
+// for five minutes after it last asked for something.
+const STILL_HERE_MS = 60_000;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -168,6 +171,14 @@ async function start(): Promise<void> {
     needsPin = found.pin === true;
     if (state.joining) joining(state.joining);
     else list(state.error ?? undefined);
+    // While the page is on screen it asks now and then, so the TV knows
+    // someone is using it and keeps the hotspot open: picking a network and
+    // typing its password ask for nothing by themselves.
+    const here = () => {
+      if (document.visibilityState === "visible") void call("GET", "/api/setup/state").catch(() => {});
+    };
+    window.setInterval(here, STILL_HERE_MS);
+    document.addEventListener("visibilitychange", here);
   } catch (error) {
     app.replaceChildren(h("div", { class: "page" }, prompt("tv wi-fi"), h("h1", {}, "the tv isn't answering"), h("p", { class: "note bad" }, (error as Error).message)));
   }

@@ -137,6 +137,26 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   await page.close();
 });
 
+test("the hotspot's page says it's still open while it's on screen, so the hotspot isn't closed under someone finding their password", async () => {
+  hotspotIs({ on: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
+  await page.goto(`${captive}/`);
+  await page.waitForSelector("button.network");
+  await page.locator('button.network[data-ssid="home wi-fi"]').tap();
+  await page.waitForSelector('input[type="password"]');
+  let requests = 0;
+  page.on("request", () => requests++);
+  // Five minutes on the password's page, asking for nothing by hand.
+  await page.clock.runFor(5 * 60_000);
+  const end = Date.now() + 5000;
+  while (requests < 4 && Date.now() < end) await new Promise((done) => setTimeout(done, 20));
+  assert.ok(requests >= 4 && requests <= 6, `about one a minute, and no more: ${requests}`);
+  assert.equal(await page.locator('input[type="password"]').count(), 1, "and the page is as it was");
+  await page.close();
+});
+
 test("stage 4 an open network needs no password, and one that hides its name is typed in", async () => {
   hotspotIs({ on: true });
   const page = await phone();
