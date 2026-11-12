@@ -901,7 +901,7 @@ test("apps: add your own asks what to add, keeps it for the TV's agent, and noth
   await page.keyboard.press("Enter");
   await page.waitForSelector(".wish-field");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "add your own.");
-  assert.match(await textOf(page, ".setup-page"), /what should I add\?[\s\S]*\$5 cap/);
+  assert.match(await textOf(page, ".setup-page"), /what should i add\?[\s\S]*\$5 cap/);
   await page.keyboard.type("A radio app");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".apps-page .app-note");
