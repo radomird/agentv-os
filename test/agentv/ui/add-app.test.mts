@@ -110,7 +110,9 @@ test("D11 Apps has one way in to more apps, and the library ends with Build your
   const add = page.locator('.apps-page [data-action="add-app"]');
   assert.equal(await add.innerText(), "add an app");
   assert.equal(await add.textContent(), "Add an app");
-  assert.equal(await add.locator(".logo-plus").evaluate((el) => getComputedStyle(el, "::before").content), '"+"');
+  // Apps can draw itself again as it loads, so this reads the tile that's
+  // on the page, not one that just went.
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.apps-page [data-action="add-app"] .logo-plus')!, "::before").content === '"+"');
   assert.deepEqual(await page.locator(".apps-page .section").allTextContents(), ["# On home", "# Not on home"]);
   await add.click();
   await page.waitForSelector(".add-row .build-own");
