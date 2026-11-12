@@ -225,7 +225,7 @@ export class PhoneChannel<P> {
   // response is sealed on its way out.
   async open(request: IncomingMessage, response: ServerResponse): Promise<{ phone: P; request: IncomingMessage } | null> {
     const refuse = (what: "pair" | "session") => {
-      const body = JSON.stringify(what === "pair" ? { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true } : { ok: false, error: "this phone has to say hello again", session: true });
+      const body = JSON.stringify(what === "pair" ? { ok: false, error: "This phone isn't paired. Pair it from your TV.", pair: true } : { ok: false, error: "this phone has to say hello again", session: true });
       response.writeHead(401, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
       response.end(body);
       return null;

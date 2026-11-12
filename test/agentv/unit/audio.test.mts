@@ -168,7 +168,7 @@ test("S2.19 Settings → Sound's output picker keeps its output the default, ove
   pulse.calls = [];
   await pulse.fire(audio);
   assert.deepEqual(pulse.calls, [], "the connected HDMI output doesn't take it back");
-  assert.deepEqual(await audio.choose("alsa_output.nowhere"), { ok: false, error: "that output isn't there" });
+  assert.deepEqual(await audio.choose("alsa_output.nowhere"), { ok: false, error: "Couldn't find that output" });
   audio.stop();
 });
 
@@ -180,7 +180,7 @@ test("S2.19 a filter or a virtual output someone made the default is left alone"
   const status = (await audio.status()) as { output: string | null; volume: number | null };
   assert.equal(status.output, null);
   assert.equal(status.volume, null);
-  assert.deepEqual(await audio.setLevel(0.5), { ok: false, error: "there's no sound output to set" });
+  assert.deepEqual(await audio.setLevel(0.5), { ok: false, error: "No sound output to change" });
   audio.stop();
 });
 

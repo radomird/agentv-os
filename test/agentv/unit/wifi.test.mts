@@ -153,7 +153,7 @@ test("a join asked while a look is still running waits for its own answer", () =
   rootTakes();
   const mid = network.state();
   assert.equal(mid.joining, "cafe", "the look's answer isn't the join's");
-  rootSays({ wifi: "Home", radio: true, joining: null, error: "the tv couldn't join cafe", why: "failed" });
+  rootSays({ wifi: "Home", radio: true, joining: null, error: "Couldn't join cafe", why: "failed" });
   assert.deepEqual(network.state().problem, { ssid: "cafe", why: "failed" });
   assert.equal(network.state().joining, null);
   network.close();

@@ -405,7 +405,7 @@ test("F1 five wrong proofs over the network end the code", async () => {
   for (let i = 0; i < 5; i++) assert.equal((await handPair(lan, randomBytes(16))).status, 403);
   const late = await handPair(lan, Buffer.from(pairing.code));
   assert.equal(late.status, 403);
-  assert.match(late.text, /that code has run out/);
+  assert.match(late.text, /That code ran out/);
 });
 
 test("F1 the daemon's own routes: the state comes sealed, the PIN goes sealed, and a wrong PIN's answer is sealed too", async () => {
@@ -447,7 +447,7 @@ test("F1 a token no longer does anything: the old header gets 401, and so does a
   for (const headers of [{}, { Authorization: `Bearer ${"x".repeat(43)}` }, { Authorization: `Bearer ${mine.key.toString("base64url")}` }, { Authorization: `Bearer ${mine.id}` }] as Record<string, string>[]) {
     const response = await fetch(`${lan}/api/phone/state`, { headers });
     assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
+    assert.deepEqual(await response.json(), { ok: false, error: "This phone isn't paired. Pair it from your TV.", pair: true });
   }
   const sent = await fetch(`${lan}/api/phone/remote`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${"x".repeat(43)}` }, body: '{"key":"up"}' });
   assert.equal(sent.status, 401);

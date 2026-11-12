@@ -65,9 +65,16 @@ function approver(from: string, yes: boolean): (manifest: Manifest) => Promise<b
     const env = sudoer ? { ...process.env, XDG_RUNTIME_DIR: `/run/user/${process.env.SUDO_UID}` } : process.env;
     const pin = spawnSync(pinCheck, ["app-install"], { stdio: "inherit", env });
     if (pin.error) throw new IndexError(`couldn't ask for the adult PIN (${pin.error.message})`);
-    if (pin.status !== 0) throw new IndexError("that needs the adult PIN, so nothing was installed");
+    if (pin.status !== 0) throw new IndexError("That needs the adult PIN, so nothing was installed");
     return true;
   };
+}
+
+// A refusal as a line of its own: its first letter a capital, and a full
+// stop after it.
+function said(message: string): string {
+  const line = /^couldn't /.test(message) || /^[A-Z]/.test(message) ? message : `Couldn't do it: ${message}`;
+  return /[.!?]$/.test(line) ? line : `${line}.`;
 }
 
 async function main(args: string[]): Promise<number> {
@@ -83,7 +90,7 @@ async function main(args: string[]): Promise<number> {
       return 2;
     }
     const app = await installLocal(others[1], appsDir, approver(resolve(others[1]), yes), { standIn });
-    console.log(`Installed ${app.name} ${app.version} (${app.id}). It's in Apps on the TV, where its details put it on home.`);
+    console.log(`Installed ${app.name} ${app.version}. Open Apps on your TV to add it to home.`);
     return 0;
   }
   if (command === "install") {
@@ -95,7 +102,7 @@ async function main(args: string[]): Promise<number> {
       return 2;
     }
     const source = flag ?? process.env.AGENTV_INDEX_URL ?? (await setting("AGENTV_INDEX_URL"));
-    if (!source) throw new IndexError("this box has no app index set up yet");
+    if (!source) throw new IndexError("Couldn't load the apps");
     const app = await installFromIndex(id, source, appsDir, process.env.AGENTV_KEYRING);
     console.log(`Installed ${app.name} ${app.version} (${app.id}).`);
     return 0;
@@ -123,7 +130,7 @@ async function main(args: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (error: Error) => {
-    console.error(error instanceof IndexError ? `Couldn't do it: ${error.message}.` : `Something went wrong: ${error.message}`);
+    console.error(error instanceof IndexError ? said(error.message) : `Something went wrong: ${error.message}`);
     process.exit(1);
   },
 );

@@ -59,8 +59,8 @@ if [[ -t 0 && -t 2 ]]; then
     echo >&2
     reply=$(jq -Rc '{pin: .}' <<<"$pin" | post /api/pin/check)
     [[ $(jq -r '.ok // false' <<<"$reply" 2>/dev/null) == "true" ]] && exit 0
-    error=$(jq -r '.error // "that is not the pin"' <<<"$reply" 2>/dev/null || echo "AgenTV's daemon didn't answer")
-    echo "${error^}." >&2
+    error=$(jq -r '.error // "Wrong PIN"' <<<"$reply" 2>/dev/null || echo "AgenTV's daemon didn't answer")
+    echo "${error^}" >&2
     [[ $(jq -r '.wait // 0' <<<"$reply" 2>/dev/null) == "0" ]] || exit 1
   done
   exit 1

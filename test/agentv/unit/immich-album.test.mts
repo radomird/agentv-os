@@ -59,16 +59,16 @@ test("the album's photos become the background, credited to it, in place of a fo
 
 test("a link that isn't an album's, has a password, or isn't one says so, and the pictures stay", async () => {
   const had = (await backgrounds()).items.length;
-  assert.deepEqual(await use("https://photos.example/albums/1"), { status: 400, data: { ok: false, error: "an album's shared link looks like https://photos.example/share/…" } });
-  assert.deepEqual(await use(`${immich.url}/share/not-the-key`), { status: 400, data: { ok: false, error: "immich didn't take that link: invalid share key" } });
+  assert.deepEqual(await use("https://photos.example/albums/1"), { status: 400, data: { ok: false, error: "An album's link looks like https://photos.example/share/…" } });
+  assert.deepEqual(await use(`${immich.url}/share/not-the-key`), { status: 400, data: { ok: false, error: "Immich couldn't open that link" } });
   immich.editLink((body) => (body.password = "secret"));
-  assert.deepEqual(await use(immich.link), { status: 400, data: { ok: false, error: "that link has a password. share the album without one" } });
+  assert.deepEqual(await use(immich.link), { status: 400, data: { ok: false, error: "That link has a password. Share the album without one." } });
   immich.editLink((body) => ((body.password = null), (body.type = "INDIVIDUAL"), delete body.album));
-  assert.deepEqual(await use(immich.link), { status: 400, data: { ok: false, error: "that link is to some photos, not an album" } });
+  assert.deepEqual(await use(immich.link), { status: 400, data: { ok: false, error: "That link is to some photos, not an album" } });
   immich.editLink((body) => ((body.type = "ALBUM"), (body.album = { id: "00000000-0000-0000-0000-000000000001", albumName: "Autumn" })));
   // Nothing at that address.
   const nowhere = await use("http://127.0.0.1:9/share/fixture-key");
   assert.equal(nowhere.status, 400);
-  assert.match(nowhere.data.error, /^immich didn't answer: /);
+  assert.match(nowhere.data.error, /^Couldn't reach Immich$/);
   assert.equal((await backgrounds()).items.length, had);
 });

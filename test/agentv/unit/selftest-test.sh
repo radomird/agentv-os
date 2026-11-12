@@ -423,9 +423,9 @@ echo '{"ok": true, "on": false, "keys": 30, "played": [], "worst_ms": null, "clo
 ! run1 S2.11 || fail "UI sounds turned off fail S2.11"
 grep -qF "fail S2.11 Settings → Sound has the UI sounds off" "$SCRATCH/out" || fail "it says the sounds are off" "$(cat "$SCRATCH/out")"
 [[ $(grep -c "^fail S2.11" "$SCRATCH/out") == 1 ]] || fail "sounds off is said once, with nothing more to measure" "$(cat "$SCRATCH/out")"
-echo '{"ok": false, "error": "the home screen isn'"'"'t running"}' >"$state/sounds.json"
+echo '{"ok": false, "error": "Your TV isn'"'"'t ready yet"}' >"$state/sounds.json"
 ! run1 S2.11 || fail "a measurement that doesn't come back fails S2.11"
-grep -qF "fail S2.11 couldn't measure the UI sounds: the home screen isn't running" "$SCRATCH/out" || fail "it says why it couldn't measure" "$(cat "$SCRATCH/out")"
+grep -qF "fail S2.11 couldn't measure the UI sounds: Your TV isn't ready yet" "$SCRATCH/out" || fail "it says why it couldn't measure" "$(cat "$SCRATCH/out")"
 # TV setup not done yet: the welcome page has no tiles or sounds to measure.
 echo '{"ok": true, "welcome_shown": true, "screen": "welcome"}' >"$state/health"
 ! run1 S2.10 S2.11 || fail "S2.10 and S2.11 fail before TV setup is done"
@@ -636,14 +636,14 @@ rm -f "$state/music-stuck"
 echo '{"ok": true, "albums": [
   {"id": "u1", "title": "Night Shift", "source": "usb:/dev/sdb1"},
   {"id": "s1", "title": "Harbour Lights", "source": "share:smb://radomir@nas/music", "away": true}], "playlists": []}' >"$state/music-library"
-echo '{"ok": true, "sources": [{"id": "share:smb://radomir@nas/music", "kind": "share", "name": "nas/music", "available": false, "error": "the NAS didn'"'"'t take that user name and password"}]}' >"$state/music-sources"
+echo '{"ok": true, "sources": [{"id": "share:smb://radomir@nas/music", "kind": "share", "name": "nas/music", "available": false, "error": "Wrong user name or password"}]}' >"$state/music-sources"
 ! run1 S3.6 || fail "an album that's away fails S3.6"
-grep -qF "fail S3.6 there's no album on a NAS share whose name is only there (nas/music is away: the NAS didn't take that user name and password); add a share" "$SCRATCH/out" ||
+grep -qF "fail S3.6 there's no album on a NAS share whose name is only there (nas/music is away: Wrong user name or password); add a share" "$SCRATCH/out" ||
   fail "it says the share is away, and why" "$(cat "$SCRATCH/out")"
 if grep -qx "play album Harbour Lights" "$state/music.log"; then fail "and doesn't try to play it"; fi
-echo '{"ok": false, "error": "music isn'"'"'t here"}' >"$state/music-scan"
+echo '{"ok": false, "error": "Music isn'"'"'t available"}' >"$state/music-scan"
 ! run1 S3.6 || fail "Music not starting a scan fails S3.6"
-grep -qF "fail S3.6 Music couldn't start reading its sources: music isn't here" "$SCRATCH/out" || fail "it says Music couldn't start" "$(cat "$SCRATCH/out")"
+grep -qF "fail S3.6 Music couldn't start reading its sources: Music isn't available" "$SCRATCH/out" || fail "it says Music couldn't start" "$(cat "$SCRATCH/out")"
 # The NUC's empty reason: a scan that answers nothing says so.
 : >"$state/music-scan"
 ! run1 S3.6 || fail "Music saying nothing fails S3.6"

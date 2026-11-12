@@ -72,7 +72,7 @@ if [[ -f $TMDB_DROP ]]; then
   if (( ! readable )) || [[ -n $tmdb && ! $tmdb =~ $KEY_SHAPE ]]; then
     echo "agentv-key-store: that doesn't look like a TMDB key; nothing changed" >&2
     tmdb_bad=1
-    tmdb_status "$(jq -r '.set // false' "$AGENTV_ETC/tmdb.json" 2>/dev/null || echo false)" "that doesn't look like a tmdb key"
+    tmdb_status "$(jq -r '.set // false' "$AGENTV_ETC/tmdb.json" 2>/dev/null || echo false)" "That doesn't look like a TMDB key"
   else
     rewrite "${tmdb:+TMDB_API_KEY=$tmdb}" TMDB_API_KEY
     if [[ -n $tmdb ]]; then
@@ -112,7 +112,7 @@ case "$provider" in
 esac
 if [[ -n $var && ! $key =~ $KEY_SHAPE ]]; then
   echo "agentv-key-store: that doesn't look like a key; nothing changed" >&2
-  status "$(jq -r '.provider // empty' "$AGENTV_ETC/key.json" 2>/dev/null || true)" "that doesn't look like a key"
+  status "$(jq -r '.provider // empty' "$AGENTV_ETC/key.json" 2>/dev/null || true)" "That doesn't look like a key"
   exit 1
 fi
 

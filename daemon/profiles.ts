@@ -34,6 +34,8 @@ export interface ProfilesOptions {
   pinSet?: () => boolean;
 }
 
+export const NO_PROFILE = "Couldn't find that profile";
+
 export class Profiles {
   private ledger: () => Ledger;
   private state: string;
@@ -117,22 +119,22 @@ export class Profiles {
   // asks for it to open.
   async needPin(): Promise<string | null> {
     const all = await this.list();
-    if (all.some((p) => p.role === "child")) return "a child's profile needs the pin, so it stays";
-    if (all.some((p) => p.locked)) return "a locked profile needs the pin. unlock it in settings → profiles first";
+    if (all.some((p) => p.role === "child")) return "Keep the PIN while there's a child's profile";
+    if (all.some((p) => p.locked)) return "Keep the PIN while a profile is locked";
     return null;
   }
 
   // Why a name, role and avatar can't be a profile, or null.
   private async problem(input: Record<string, unknown>, id?: string): Promise<string | null> {
     if (input.name !== undefined) {
-      if (typeof input.name !== "string" || !input.name.trim() || input.name.trim().length > NAME_MAX) return `a name of up to ${NAME_MAX} characters`;
+      if (typeof input.name !== "string" || !input.name.trim() || input.name.trim().length > NAME_MAX) return `Names can be up to ${NAME_MAX} characters`;
       const name = input.name.trim().toLowerCase();
-      if ((await this.list()).some((p) => p.id !== id && p.name.toLowerCase() === name)) return "someone here has that name already";
+      if ((await this.list()).some((p) => p.id !== id && p.name.toLowerCase() === name)) return "That name is taken";
     }
     if (input.role !== undefined && input.role !== "adult" && input.role !== "child") return "adult or child";
     if (input.avatar !== undefined && (typeof input.avatar !== "string" || !AVATARS.includes(input.avatar))) return `a colour: ${AVATARS.join(", ")}`;
     if (input.locked !== undefined && typeof input.locked !== "boolean") return "locked is true or false";
-    if (input.locked === true && input.role === "child") return "only an adult's profile locks";
+    if (input.locked === true && input.role === "child") return "Only an adult's profile can be locked";
     return null;
   }
 
@@ -148,7 +150,7 @@ export class Profiles {
   }
 
   async add(input: Record<string, unknown>): Promise<{ profile?: Profile; error?: string }> {
-    if (input.name === undefined) return { error: `a name of up to ${NAME_MAX} characters` };
+    if (input.name === undefined) return { error: `Names can be up to ${NAME_MAX} characters` };
     const why = await this.problem(input);
     if (why) return { error: why };
     const all = await this.list();
@@ -168,11 +170,11 @@ export class Profiles {
   async edit(id: string, input: Record<string, unknown>): Promise<{ profile?: Profile; error?: string }> {
     const all = await this.list();
     const found = all.find((p) => p.id === id);
-    if (!found) return { error: "there's no such profile" };
+    if (!found) return { error: NO_PROFILE };
     const why = await this.problem(input, id);
     if (why) return { error: why };
     const role = input.role === undefined ? found.role : (input.role as Profile["role"]);
-    if (input.locked === true && role === "child") return { error: "only an adult's profile locks" };
+    if (input.locked === true && role === "child") return { error: "Only an adult's profile can be locked" };
     const profile: Profile = {
       ...found,
       name: input.name === undefined ? found.name : String(input.name).trim(),
@@ -181,7 +183,7 @@ export class Profiles {
       // A profile that becomes a child's stops asking for the PIN.
       locked: role === "child" ? false : input.locked === undefined ? found.locked : input.locked === true,
     };
-    if (found.role === "adult" && profile.role === "child" && !all.some((p) => p.id !== id && p.role === "adult")) return { error: "the box needs an adult" };
+    if (found.role === "adult" && profile.role === "child" && !all.some((p) => p.id !== id && p.role === "adult")) return { error: "Keep at least one adult" };
     this.keep(profile);
     if (profile.locked !== found.locked) await this.setLocked(id, profile.locked);
     return { profile };
@@ -191,8 +193,8 @@ export class Profiles {
   async remove(id: string): Promise<string | null> {
     const all = await this.list();
     const found = all.find((p) => p.id === id);
-    if (!found) return "there's no such profile";
-    if (found.role === "adult" && !all.some((p) => p.id !== id && p.role === "adult")) return "the box needs an adult";
+    if (!found) return NO_PROFILE;
+    if (found.role === "adult" && !all.some((p) => p.id !== id && p.role === "adult")) return "Keep at least one adult";
     this.ledger().removeViewer(id);
     const saved = await this.saved();
     await this.save({

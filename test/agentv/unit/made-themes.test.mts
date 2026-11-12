@@ -103,7 +103,7 @@ test("S6.4 the screen daemon hands a made theme to Omarchy as the person's and s
   let busy = 1;
   const screen = {
     async setTheme(theme: unknown) {
-      if (busy-- > 0) return { ok: false, error: "tokyo night is still being set" };
+      if (busy-- > 0) return { ok: false, error: "Still changing the theme", busy: true };
       set.push(String(theme));
       return { ok: true };
     },

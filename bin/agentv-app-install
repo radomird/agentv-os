@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# agentv:summary=Install an app from AgenTV's signed app index, or one built on this box
+# agentv:summary=Install an app
 # agentv:args=<app-id> [--index <folder-or-url>] | --local <folder> [--yes]
 # agentv:examples=agentv app install agentv.jellyfin | agentv app install --local ~/my-app
 # agentv:requires-sudo=true

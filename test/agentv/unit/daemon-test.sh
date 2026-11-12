@@ -53,7 +53,7 @@ if (( status != 1 )) || [[ $out != *"AGENTV_PIN"* ]]; then fail "agentv setup re
 [[ $(curl -fsS "$url/health" | jq -r '.screen') == "home" ]] || fail "and setup stays done"
 status=0
 out=$(AGENTV_PORT=$port AGENTV_PIN=0000 "$ROOT/bin/agentv-setup-reset" 2>&1) || status=$?
-if (( status != 1 )) || [[ $out != *"didn't take the PIN"* ]]; then fail "a wrong PIN is refused" "$out"; fi
+if (( status != 1 )) || [[ $out != *"Wrong PIN"* ]]; then fail "a wrong PIN is refused" "$out"; fi
 # The PIN there starts setup again and nothing more: a wrong try on the TV's
 # pad before it still counts after it.
 curl -sS -o /dev/null -H 'Content-Type: application/json' -d '{"pin": "0000"}' "$url/api/pin/check"

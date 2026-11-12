@@ -274,7 +274,7 @@ export class Display {
 
   // A size or an output picked, from Settings or setup's look step.
   async choose(change: unknown): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
-    if (!(await this.o.on())) return { ok: false, status: 409, error: "sizes are switched off on this box" };
+    if (!(await this.o.on())) return { ok: false, status: 409, error: "Sizes aren't available" };
     if (!change || typeof change !== "object" || Array.isArray(change)) return { ok: false, status: 400, error: 'send {"size": "larger" | "standard" | "more"} or {"output": "auto" | "1080p"}' };
     const { size, output } = change as { size?: unknown; output?: unknown };
     if (size === undefined && output === undefined) return { ok: false, status: 400, error: "send a size or an output" };
@@ -285,7 +285,7 @@ export class Display {
       const planned = await this.plan(saved);
       const sizes = planned?.sizes ?? offered(null);
       // Only what this TV offers, unless the output changes with it.
-      if (output === undefined && !sizes.includes(size as Size)) return { ok: false, status: 400, error: `this tv offers ${sizes.join(" and ")}` };
+      if (output === undefined && !sizes.includes(size as Size)) return { ok: false, status: 400, error: `This TV offers ${sizes.join(" and ")}` };
     }
     await this.change((saved) => ({ ...saved, ...(size !== undefined ? { size: size as Size } : {}), ...(output !== undefined ? { output: output as Output } : {}) }));
     return { ok: true };

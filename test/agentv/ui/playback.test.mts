@@ -120,7 +120,7 @@ test("T8.2 with nothing to play, the phone hears so, and a native app gets the m
   const target = await cdp.open(`${site}stream.html`);
   await until(async () => (await cdp.evaluateIn(target, `document.readyState`).catch(() => "")) === "complete");
   front = { kind: "page", id: "agentv.tube", evaluate: (expression) => cdp.evaluateIn(target, expression) };
-  assert.deepEqual(await press("toggle"), { status: 200, body: { ok: false, why: "nothing is playing" } });
+  assert.deepEqual(await press("toggle"), { status: 200, body: { ok: false, why: "Nothing is playing" } });
   await cdp.close(target);
   front = { kind: "native", id: "0xd" };
   assert.deepEqual(await press("toggle"), { status: 200, body: { ok: true, by: "key" } });
@@ -135,5 +135,5 @@ test("T8.2 a bad press is refused, and with no TV session the phone hears that t
   // The screen daemon stops: the stream closes, and the next press says so.
   input.stop();
   await new Promise((done) => setTimeout(done, 300));
-  assert.deepEqual(await press("toggle"), { status: 503, body: { ok: false, why: "the tv session isn't on" } });
+  assert.deepEqual(await press("toggle"), { status: 503, body: { ok: false, why: "Your TV isn't ready yet" } });
 });

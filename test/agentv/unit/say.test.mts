@@ -269,7 +269,7 @@ const phone = (path: string, body?: unknown) =>
 test("the TV takes a sentence only once setup is done", async () => {
   const early = await phone("/api/phone/say", { sentence: "play frozen" });
   assert.equal(early.status, 409);
-  assert.equal((await early.json()).error, "the tv takes requests once setup is done");
+  assert.equal((await early.json()).error, "Finish setup on your TV first");
   writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-10-29T18:00:00Z" }));
   assert.equal((await phone("/api/phone/say", { sentence: " " })).status, 400);
 });

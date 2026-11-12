@@ -25,6 +25,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Asks } from "../asks.ts";
 import type { Pad } from "../box.ts";
+import { NOT_READY } from "../notices.ts";
 import { ADDRESS, cleanAnswer, type ControllerAnswer, type ControllerAsk } from "../controllers.ts";
 
 export interface ControllersKit {
@@ -39,7 +40,7 @@ export interface ControllersKit {
   adult(request: IncomingMessage, response: ServerResponse, what: string): Promise<boolean>;
 }
 
-const LATE: ControllerAnswer = { ok: false, bluetooth: "none", looking: false, controllers: [], error: "the tv didn't answer in time: is its session running?" };
+const LATE: ControllerAnswer = { ok: false, bluetooth: "none", looking: false, controllers: [], error: NOT_READY };
 
 export class ControllerRoutes {
   private kit: ControllersKit;

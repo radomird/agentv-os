@@ -212,7 +212,7 @@ test("ADR-087 a PIN taken off in Settings leaves no lock behind: a locked profil
   const ana = (await send("POST", "/api/viewers", { name: "ana", role: "adult", locked: true }, { grant: await grant() })).data.profile.id as string;
   assert.equal((await send("POST", "/api/viewer", { id: ana })).data.pin, true, "locked, it asks");
   // Settings says why the PIN stays, with the PIN still set.
-  assert.deepEqual((await send("DELETE", "/api/pin", undefined, { grant: await grant() })).data, { ok: false, error: "a locked profile needs the pin. unlock it in settings → profiles first" });
+  assert.deepEqual((await send("DELETE", "/api/pin", undefined, { grant: await grant() })).data, { ok: false, error: "Keep the PIN while a profile is locked" });
   assert.equal((await send("PUT", `/api/viewers/${ana}`, { locked: false }, { grant: await grant() })).status, 200);
   assert.equal((await send("DELETE", "/api/pin", undefined, { grant: await grant() })).status, 200);
   assert.deepEqual((await send("GET", "/api/viewers")).data.viewers.map((v: any) => v.locked), [false, false]);
@@ -251,7 +251,7 @@ test("ADR-087 profiles on their own: with no PIN none is locked, and with one a 
   const profiles = new Profiles({ ledger: () => ledger, state: join(dir, "state-own"), passwd, pinSet: () => set });
   assert.equal((await profiles.edit("radomir", { locked: true })).profile!.locked, true);
   assert.equal((await profiles.list())[0].locked, true);
-  assert.equal(await profiles.needPin(), "a locked profile needs the pin. unlock it in settings → profiles first");
+  assert.equal(await profiles.needPin(), "Keep the PIN while a profile is locked");
   set = false;
   assert.equal((await profiles.list())[0].locked, false);
   assert.equal((await profiles.active()).locked, false);
@@ -273,7 +273,7 @@ test("with a PIN set, an adult picks or clears the household's AI only past the 
     for (const body of [{ provider: "claude", path: "key" }, { provider: null }]) {
       const refused = await send("POST", "/api/ai", body);
       assert.equal(refused.status, 403, JSON.stringify(refused.data));
-      assert.deepEqual(refused.data, { ok: false, error: "that needs the pin", pin: true });
+      assert.deepEqual(refused.data, { ok: false, error: "That needs the PIN", pin: true });
       // The same answer the plan's own route gives.
       assert.deepEqual((await send("PUT", "/api/ai/plan", { provider: "claude" })).data, refused.data);
       assert.equal((await send("POST", "/api/ai", body, { grant: await grant() })).status, 200);

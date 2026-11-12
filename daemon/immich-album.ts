@@ -47,41 +47,35 @@ export class ImmichAlbum {
     return this.fetch(url, { headers: { "User-Agent": this.userAgent }, signal: AbortSignal.timeout(ms), redirect: "error" });
   }
 
-  // What Immich said, from its error's message.
-  private async why(response: Response): Promise<string> {
-    const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
-    return typeof body?.message === "string" ? body.message.toLowerCase().slice(0, 120) : `it answered ${response.status}`;
-  }
-
   // The album's name and up to 60 of its photos' previews, at random. Each
   // picture goes to `each` as it comes, so the first can take the place of
   // the pictures before while the rest are still on their way.
   async pictures(link: unknown, each: (picture: AlbumPicture) => Promise<boolean>): Promise<{ album?: string; count?: number; error?: string }> {
     const share = shareLink(link);
-    if (!share) return { error: "an album's shared link looks like https://photos.example/share/…" };
+    if (!share) return { error: "An album's link looks like https://photos.example/share/…" };
     const key = `key=${encodeURIComponent(share.key)}`;
     let shared: { type?: unknown; password?: unknown; album?: { id?: unknown; albumName?: unknown } };
     try {
       const response = await this.get(`${share.server}/api/shared-links/me?${key}`, ASK_MS);
-      if (!response.ok) return { error: `immich didn't take that link: ${await this.why(response)}` };
+      if (!response.ok) return { error: "Immich couldn't open that link" };
       shared = await response.json();
-    } catch (error) {
-      return { error: `immich didn't answer: ${(error as Error).message}` };
+    } catch {
+      return { error: "Couldn't reach Immich" };
     }
-    if (shared.type !== "ALBUM" || typeof shared.album?.id !== "string" || !/^[0-9a-f-]{36}$/.test(shared.album.id)) return { error: "that link is to some photos, not an album" };
-    if (shared.password) return { error: "that link has a password. share the album without one" };
+    if (shared.type !== "ALBUM" || typeof shared.album?.id !== "string" || !/^[0-9a-f-]{36}$/.test(shared.album.id)) return { error: "That link is to some photos, not an album" };
+    if (shared.password) return { error: "That link has a password. Share the album without one." };
     const name = typeof shared.album.albumName === "string" && shared.album.albumName.trim() ? shared.album.albumName.trim().slice(0, 60) : "an album";
 
     let assets: { id?: unknown; type?: unknown }[];
     try {
       const response = await this.get(`${share.server}/api/albums/${shared.album.id}?${key}`, ASK_MS);
-      if (!response.ok) return { error: `immich didn't give the album: ${await this.why(response)}` };
+      if (!response.ok) return { error: "Couldn't get the album from Immich" };
       assets = ((await response.json()) as { assets?: { id?: unknown; type?: unknown }[] }).assets ?? [];
-    } catch (error) {
-      return { error: `immich didn't answer: ${(error as Error).message}` };
+    } catch {
+      return { error: "Couldn't reach Immich" };
     }
     const photos = assets.filter((asset): asset is { id: string; type: string } => asset.type === "IMAGE" && typeof asset.id === "string" && /^[0-9a-f-]{36}$/.test(asset.id)).map((asset) => asset.id);
-    if (!photos.length) return { album: name, error: `there are no photos in ${name}` };
+    if (!photos.length) return { album: name, error: `No photos in ${name}` };
     for (let i = photos.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [photos[i], photos[j]] = [photos[j], photos[i]];
@@ -107,6 +101,6 @@ export class ImmichAlbum {
       // In order, so the first one kept is the first one handed over.
       for (const body of bodies) if (body && (await each({ body, album: name }))) count++;
     }
-    return count ? { album: name, count } : { album: name, error: `none of the photos in ${name} came` };
+    return count ? { album: name, count } : { album: name, error: `Couldn't get the photos in ${name}` };
   }
 }

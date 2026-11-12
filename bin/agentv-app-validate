@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# agentv:summary=Check an app package against AgenTV's app contract
+# agentv:summary=Check an app before you share it
 # agentv:args=[--official | --local] <package-dir>...
 # agentv:examples=agentv app validate ./my-app | agentv app validate --official apps/builtin/clock
 

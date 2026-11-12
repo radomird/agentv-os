@@ -37,13 +37,14 @@ export type GitHubAsk = { kind: "sign-in" } | PushAsk;
 export interface GitHubAnswer {
   ok: boolean;
   error?: string;
+  detail?: string; // what git or gh said, for the log only
   via?: "gh" | "ssh";
   login?: string;
   url?: string; // the repo on GitHub, once it's pushed
   pushed?: boolean; // false when the repo had this version already
 }
 
-export const NOT_SIGNED_IN = "this box isn't signed in to GitHub: run gh auth login on Omarchy's desktop, or add an SSH key there";
+export const NOT_SIGNED_IN = "This TV isn't signed in to GitHub: run gh auth login on Omarchy's desktop, or add an SSH key there";
 
 // AgenTV's own repos, whose names a fork keeps.
 const AGENTV_REPOS = ["agentv-os", "agentv-iso", "agentv-pkgs", "agentv-apps", "agentv-plugin", "agentv-adapters", "agentv-planning"];
@@ -55,7 +56,7 @@ const NAME = /^[A-Za-z0-9._-]{1,100}$/;
 export function parseRepo(typed: unknown, login: string): Repo | { error: string } {
   const text = typeof typed === "string" ? typed.trim().replace(/^https:\/\/github\.com\//i, "").replace(/\/$/, "").replace(/\.git$/, "") : "";
   const [owner, name, ...rest] = text.includes("/") ? text.split("/") : [login, text];
-  if (rest.length || !owner || !name || !OWNER.test(owner) || !NAME.test(name) || name === "." || name === "..") return { error: "type the repo as name, or owner/name" };
+  if (rest.length || !owner || !name || !OWNER.test(owner) || !NAME.test(name) || name === "." || name === "..") return { error: "Type the repo as name, or owner/name" };
   return { owner, name };
 }
 
@@ -63,15 +64,15 @@ export function parseRepo(typed: unknown, login: string): Repo | { error: string
 // one of them.
 export function repoRefusal(repo: Repo, agentv: string | null): string | null {
   const name = repo.name.toLowerCase();
-  if (agentv && repo.owner.toLowerCase() === agentv.toLowerCase() && /^agentv(?:-|$)/.test(name)) return "that's one of AgenTV's own repos: pick one of yours";
-  if (AGENTV_REPOS.includes(name)) return "that's named like one of AgenTV's own repos: pick another";
+  if (agentv && repo.owner.toLowerCase() === agentv.toLowerCase() && /^agentv(?:-|$)/.test(name)) return "That's one of AgenTV's own repos. Pick one of yours.";
+  if (AGENTV_REPOS.includes(name)) return "That's named like one of AgenTV's own repos. Pick another.";
   return null;
 }
 
 // Only what an answer from the screen daemon has, within bounds.
 export function cleanGitHub(said: unknown): GitHubAnswer {
   const a = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
-  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "the TV couldn't do it" };
+  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "Couldn't do that", ...(typeof a.detail === "string" ? { detail: a.detail.slice(0, 300) } : {}) };
   return {
     ok: true,
     ...(a.via === "gh" || a.via === "ssh" ? { via: a.via } : {}),
@@ -177,7 +178,8 @@ export async function pushApp(ask: PushAsk, o: GitHubOptions = {}): Promise<GitH
   if (!who) return { ok: false, error: NOT_SIGNED_IN };
   const { owner, name } = ask.repo;
   const url = `https://github.com/${owner}/${name}`;
-  const failed = (what: string, ran: Ran): GitHubAnswer => ({ ok: false, error: [what, firstLine(ran.stderr)].filter(Boolean).join(": ") });
+  // What a person reads, and git's own words beside it for the log.
+  const failed = (what: string, ran: Ran): GitHubAnswer => ({ ok: false, error: what, ...(firstLine(ran.stderr) ? { detail: firstLine(ran.stderr) } : {}) });
   return inFolder(o, who.via === "ssh", async (dir, knownHosts) => {
     const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
     if (who.via === "ssh") env.GIT_SSH_COMMAND = ["ssh", ...sshOptions(knownHosts)].map((word) => `'${word}'`).join(" ");
@@ -187,13 +189,13 @@ export async function pushApp(ask: PushAsk, o: GitHubOptions = {}): Promise<GitH
     const git = (args: string[], cwd?: string) => exec("git", [...helper, ...args], { cwd, env, ms: 120_000 });
 
     if (who.via === "gh" && (await exec("gh", ["repo", "view", `${owner}/${name}`, "--json", "name"], { env, ms: 30_000 })).code !== 0) {
-      const made = await exec("gh", ["repo", "create", `${owner}/${name}`, "--private", "--description", `${ask.name}, made by my agent on AgenTV`], { env, ms: 60_000 });
-      if (made.code !== 0) return failed("GitHub didn't make the repo", made);
+      const made = await exec("gh", ["repo", "create", `${owner}/${name}`, "--private", "--description", `${ask.name}, made on my TV with AgenTV`], { env, ms: 60_000 });
+      if (made.code !== 0) return failed("GitHub couldn't make the repo", made);
     }
     const work = join(dir, "repo");
     const remote = o.remote?.(who, ask.repo) ?? (who.via === "gh" ? `${url}.git` : `git@github.com:${owner}/${name}.git`);
     const cloned = await git(["clone", "--quiet", "--depth", "1", remote, work]);
-    if (cloned.code !== 0) return failed(who.via === "ssh" ? "the repo isn't there, or your SSH key can't reach it: make it on GitHub first" : "the repo couldn't be read", cloned);
+    if (cloned.code !== 0) return failed(who.via === "ssh" ? "Couldn't reach the repo. Make it on GitHub first." : "Couldn't read the repo", cloned);
 
     // The app's folder is replaced, and the rest of the repo stays as it is.
     const folder = join(work, ask.id);
@@ -207,10 +209,10 @@ export async function pushApp(ask: PushAsk, o: GitHubOptions = {}): Promise<GitH
     await git(["add", "--all", "--", ask.id], work);
     if ((await git(["diff", "--cached", "--quiet"], work)).code === 0) return { ok: true, url, pushed: false };
     if ((await git(["rev-parse", "--verify", "--quiet", "HEAD"], work)).code !== 0) await git(["symbolic-ref", "HEAD", "refs/heads/main"], work);
-    const committed = await git(["commit", "--quiet", "--no-verify", "-m", `${ask.name} ${ask.version}, made by my agent on AgenTV`], work);
-    if (committed.code !== 0) return failed(/user\.(?:name|email)|identity/i.test(committed.stderr) ? "git doesn't know your name and email yet: set them on Omarchy's desktop" : "it couldn't be committed", committed);
+    const committed = await git(["commit", "--quiet", "--no-verify", "-m", `${ask.name} ${ask.version}, made on my TV with AgenTV`], work);
+    if (committed.code !== 0) return failed(/user\.(?:name|email)|identity/i.test(committed.stderr) ? "Git doesn't know your name and email yet. Set them on Omarchy's desktop." : "Couldn't commit the app", committed);
     const pushed = await git(["push", "--quiet", "--no-verify", "origin", "HEAD"], work);
-    if (pushed.code !== 0) return failed(/\[rejected\]|non-fast-forward|fetch first/.test(pushed.stderr) ? "the repo changed while this was pushing: try again" : "GitHub refused the push", pushed);
+    if (pushed.code !== 0) return failed(/\[rejected\]|non-fast-forward|fetch first/.test(pushed.stderr) ? "The repo changed while pushing. Try again." : "GitHub refused the push", pushed);
     return { ok: true, url, pushed: true };
   });
 }

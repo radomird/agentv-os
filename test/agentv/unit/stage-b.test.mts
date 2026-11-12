@@ -125,7 +125,7 @@ test("the daemon's asks wait for the screen daemon, take only what a page answer
   const taking = asks.take(1000);
   const second = asks.ask("https://stand-in.test/b", ["https://stand-in.test"], 30);
   assert.equal((await taking)!.url, "https://stand-in.test/b");
-  assert.match((await second).error!, /didn't answer in time/);
+  assert.match((await second).error!, /^Your TV isn't ready yet$/);
 });
 
 test("ADR-011 the screen daemon's watch takes each ask and answers it with what it read", async () => {

@@ -77,9 +77,9 @@ export class PlanSignIn {
   // The code the provider's page gave the person, for the CLI's prompt.
   async code(code: unknown): Promise<{ error?: string }> {
     const now = await this.state();
-    if (now?.now?.state !== "waiting" || !now.now.pastes) return { error: "nothing is waiting for a code" };
+    if (now?.now?.state !== "waiting" || !now.now.pastes) return { error: "Nothing is waiting for a code" };
     const text = typeof code === "string" ? code.trim() : "";
-    if (!CODE.test(text)) return { error: "paste the code the page gave you" };
+    if (!CODE.test(text)) return { error: "Paste the code the page gave you" };
     await this.drop("sign-in-code", { code: text });
     return {};
   }
@@ -116,7 +116,7 @@ export class PlanSignIn {
       answer = JSON.parse(readFileSync(join(this.o.run, "answer.json"), "utf8"));
     } catch {}
     if (answer?.action === "sign-in" && answer.build === null && typeof answer.at === "string" && answer.at > kept.asked && !answer.started) {
-      return { provider: kept.provider, signedIn: false, now: { state: "failed", reason: answer.reason ?? "the sign-in didn't start" } };
+      return { provider: kept.provider, signedIn: false, now: { state: "failed", reason: answer.reason ?? "Couldn't start the sign-in" } };
     }
     return { provider: kept.provider, signedIn: false, now: { state: "starting" } };
   }

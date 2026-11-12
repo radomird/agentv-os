@@ -64,7 +64,7 @@ async function writeInstalled(appsDir: string, record: Record<string, Installed>
 // not built in, since only AgenTV itself brings those. Returns its manifest.
 function check(pkg: string, id: string, tier: Tier, thisBox = false): Manifest {
   const { manifest, problems } = validatePackage(pkg, tier, { thisBox });
-  if (!manifest) throw new IndexError(`${id} doesn't pass the app contract's checks:\n  ${problems.join("\n  ")}`);
+  if (!manifest) throw new IndexError(`${id} is broken:\n  ${problems.join("\n  ")}`);
   if (manifest.tv.runtime === "builtin") {
     throw new IndexError(`${id} says it's built in, and built-in apps only come with AgenTV itself`);
   }
@@ -91,6 +91,13 @@ async function putInPlace(pkg: string, staging: string, appsDir: string, record:
 }
 
 // Fetches entry's exact commit, checks it and puts it in place.
+// A refusal with one line for the person, which the TV shows, and the
+// detail on stderr for whoever reads the journal or ran the command.
+function cant(shown: string, detail: string): IndexError {
+  console.error(`agentv: ${detail}`);
+  return new IndexError(shown);
+}
+
 export async function installEntry(entry: IndexEntry, appsDir: string): Promise<Installed> {
   await mkdir(appsDir, { recursive: true });
   const staging = await mkdtemp(join(appsDir, `.staging-${entry.id}-`));
@@ -98,11 +105,11 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
     const checkout = join(staging, "package");
     await run("git", [...GIT, "init", "--quiet", checkout], GIT_ENV);
     await run("git", [...GIT, "-C", checkout, "fetch", "--quiet", "--depth", "1", entry.repo, entry.commit], GIT_ENV).catch(() => {
-      throw new IndexError(`couldn't fetch ${entry.id} from ${entry.repo}`);
+      throw cant(`Couldn't download ${entry.name}`, `couldn't fetch ${entry.id} from ${entry.repo}`);
     });
     await run("git", [...GIT, "-C", checkout, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", "FETCH_HEAD"], GIT_ENV);
     const head = (await run("git", [...GIT, "-C", checkout, "rev-parse", "HEAD"], GIT_ENV)).stdout.trim();
-    if (head !== entry.commit) throw new IndexError(`${entry.id}'s repo gave a different commit than the index pins`);
+    if (head !== entry.commit) throw cant(`Couldn't install ${entry.name}`, `${entry.id}'s repo gave a different commit than the index pins`);
     await rm(join(checkout, ".git"), { recursive: true, force: true });
 
     // The app's own folder, each step of the way a real folder, not a link.
@@ -110,13 +117,13 @@ export async function installEntry(entry: IndexEntry, appsDir: string): Promise<
     for (const name of entry.path ? entry.path.split("/") : []) {
       pkg = join(pkg, name);
       const found = await lstat(pkg).catch(() => null);
-      if (!found?.isDirectory()) throw new IndexError(`${entry.id}'s repo has no folder ${entry.path} at the commit the index pins`);
+      if (!found?.isDirectory()) throw cant(`Couldn't install ${entry.name}`, `${entry.id}'s repo has no folder ${entry.path} at the commit the index pins`);
     }
     await rm(join(pkg, "fixtures"), { recursive: true, force: true });
 
     const manifest = check(pkg, entry.id, entry.tier);
     if (manifest.id !== entry.id || manifest.version !== entry.version) {
-      throw new IndexError(`${entry.id}'s manifest says ${manifest.id} ${manifest.version}, but the index lists ${entry.id} ${entry.version}`);
+      throw cant(`Couldn't install ${entry.name}`, `${entry.id}'s manifest says ${manifest.id} ${manifest.version}, but the index lists ${entry.id} ${entry.version}`);
     }
 
     return await putInPlace(pkg, staging, appsDir, {
@@ -194,7 +201,7 @@ export async function installLocal(dir: string, appsDir: string, approve: (manif
 export async function installFromIndex(id: string, source: string, appsDir: string, keyring?: string): Promise<Installed> {
   const index = await loadIndex(source, keyring, join(appsDir, SEEN));
   const entry = index.apps.find((app) => app.id === id);
-  if (!entry) throw new IndexError(`${id} isn't in the app index`);
+  if (!entry) throw new IndexError(`Couldn't find ${id} in the app list`);
   return installEntry(entry, appsDir);
 }
 

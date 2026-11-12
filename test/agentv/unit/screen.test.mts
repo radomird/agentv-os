@@ -405,7 +405,7 @@ class FakeLauncher implements Launcher {
   shares = new Map<string, { url: string; app?: string }>();
   async shareTarget(id: string) {
     const found = this.shares.get(id);
-    if (!found) throw new Error("that share isn't here");
+    if (!found) throw new Error("That's no longer on your TV");
     return found;
   }
   async toast(text: string) {
@@ -817,7 +817,7 @@ test("the home screen opens an installed web app the way its manifest says", asy
   hypr.open("0xd", web.pid);
   await screen.idle();
   assert.equal(screen.front()?.role, "web");
-  assert.deepEqual(await screen.fromHome({ cmd: "open-app", app: "agentv.nothing" }), { ok: false, error: "that app can't be opened yet" });
+  assert.deepEqual(await screen.fromHome({ cmd: "open-app", app: "agentv.nothing" }), { ok: false, error: "Can't open that app yet" });
   launcher.targets.set("agentv.player", { runtime: "native", exec: ["player"] });
   assert.equal((await screen.fromHome({ cmd: "open-app", app: "agentv.player" }) as { ok: boolean }).ok, false);
 });
@@ -911,19 +911,19 @@ test("ADR-032 a tile that says Sign in opens the app maximized over AgenTV's sig
   assert.deepEqual(t.launcher.bars, ["Tube", null]);
   assert.deepEqual(t.launcher.signings, ["agentv.tube", null]);
   assert.equal(t.hypr.get("0xd").fullscreen, 2, "full screen again once it's signed in");
-  assert.deepEqual(t.launcher.toasts, ["signed in to tube"]);
+  assert.deepEqual(t.launcher.toasts, ["Signed in to Tube"]);
 });
 
 test("ADR-032 Home or the app closing ends the sign-in screen, and i'm signed in asks the app now", async () => {
   const { signIn, calls } = fakeSignIn({ now: false });
   const t = await tv({ signIn });
-  assert.deepEqual(await t.screen.handle({ cmd: "signed-in" }), { ok: false, error: "nothing is signing in" });
+  assert.deepEqual(await t.screen.handle({ cmd: "signed-in" }), { ok: false, error: "Nothing is signing in" });
   t.launcher.targets.set("agentv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
   await t.screen.handle({ cmd: "sign-in", app: "agentv.tube" });
   t.hypr.open("0xd", t.launcher.last("web").pid);
   await t.screen.idle();
   assert.deepEqual(await t.screen.handle({ cmd: "signed-in" }), { ok: true, signedIn: false });
-  assert.deepEqual(t.launcher.toasts, ["tube still says you're signed out"]);
+  assert.deepEqual(t.launcher.toasts, ["Still signed out of Tube"]);
   await t.screen.home();
   assert.deepEqual(calls.stopped, ["agentv.tube"]);
   assert.deepEqual(t.launcher.bars, ["Tube", null]);
@@ -948,9 +948,9 @@ test("ADR-032 an installed web app is asked once as it opens whether it's signed
   await t.screen.openWeb("https://elsewhere.example/");
   assert.equal(calls.checked.length, 1, "not a page opened by address");
   t.launcher.targets.set("agentv.player", { runtime: "native", exec: ["player"] });
-  assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.player" }), { ok: false, error: "only a web app signs in on the tv" });
+  assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.player" }), { ok: false, error: "Can't sign in to that app here" });
   // An app with no signIn can't say, so the bar goes again.
-  assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.tube" }), { ok: false, error: "that app can't tell whether it's signed in" });
+  assert.deepEqual(await t.screen.handle({ cmd: "sign-in", app: "agentv.tube" }), { ok: false, error: "Can't tell if that app is signed in" });
   assert.deepEqual(t.launcher.bars, ["agentv.tube", null], "named by its id when the daemon gives no name");
   assert.equal(t.hypr.get("0xd").fullscreen, 2);
 });
@@ -989,7 +989,7 @@ test("ADR-009 someone else watching: the apps open take the service's profile fo
   const t = await tv({ profiles });
   await openApp(t, "agentv.tube", "0xd");
   await sleep(10);
-  assert.deepEqual(t.launcher.toasts, ["agentv.tube couldn't open the profile for children"], "named by its id when the daemon gives no name");
+  assert.deepEqual(t.launcher.toasts, ["Couldn't open the children's profile in agentv.tube"], "named by its id when the daemon gives no name");
   await t.screen.openWeb("https://elsewhere.example/");
   asked.length = 0;
   assert.deepEqual(await t.screen.fromHome({ cmd: "viewer" }), { ok: true });
@@ -1026,7 +1026,7 @@ test("ADR-009 signed in on the sign-in screen, an app lists its service's profil
   await t.screen.idle();
   await sleep(10);
   assert.deepEqual(asked, ["agentv.tube", "agentv.tube"], "and again once it's signed in");
-  assert.deepEqual(t.launcher.toasts, ["signed in to tube"]);
+  assert.deepEqual(t.launcher.toasts, ["Signed in to Tube"]);
 });
 
 test("the home screen's Settings → Omarchy desktop runs agentv desktop", async () => {
@@ -1048,10 +1048,10 @@ test("S2.19 Settings → Sound and agentv screen audio reach the box's sound out
   const { screen } = await tv({ sound });
   assert.deepEqual(await screen.fromHome({ cmd: "audio", volume: 0.6 }), { ok: true, output: "hdmi", volume: 0.6 });
   assert.deepEqual(await screen.handle({ cmd: "audio", output: "analog" }), { ok: true, output: "hdmi", volume: 1 });
-  assert.deepEqual(await screen.handle({ cmd: "audio", volume: 2 }), { ok: false, error: "pactl set-sink-volume: no such sink" });
+  assert.deepEqual(await screen.handle({ cmd: "audio", volume: 2 }), { ok: false, error: "Couldn't change the sound" });
   assert.deepEqual(asked.map((r) => r.volume ?? r.output), [0.6, "analog", 2]);
   const { screen: none } = await tv();
-  assert.deepEqual(await none.fromHome({ cmd: "audio" }), { ok: false, error: "sound isn't here" });
+  assert.deepEqual(await none.fromHome({ cmd: "audio" }), { ok: false, error: "Sound isn't available" });
 });
 
 test("T2.2 Settings → Power restarts to the boot menu past the PIN, never during an update, and says whether the box can", async () => {
@@ -1064,10 +1064,10 @@ test("T2.2 Settings → Power restarts to the boot menu past the PIN, never duri
   assert.deepEqual(launcher.pins, ["power"], "it asks whether the pin lets it, as Restart does");
   assert.ok(lines.includes("restarting the box to its boot menu from settings → power"), lines.join("\n"));
   launcher.updateRunning = true;
-  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "not while an update runs" });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "Not during an update" });
   launcher.updateRunning = false;
   launcher.powerWorks = false;
-  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "the box couldn't restart" });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "bootmenu" }), { ok: false, error: "Couldn't restart" });
 });
 
 test("S2.18 Settings → Power restarts and shuts down through Omarchy's commands, past the PIN, never during an update", async () => {
@@ -1082,21 +1082,21 @@ test("S2.18 Settings → Power restarts and shuts down through Omarchy's command
   // Not while an update runs (ADR-025), and not past a PIN that says no.
   launcher.powered = [];
   launcher.updateRunning = true;
-  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "not while an update runs" });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "Not during an update" });
   launcher.updateRunning = false;
   launcher.pinOk = false;
-  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "that needs the pin", pin: true });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "shutdown" }), { ok: false, error: "That needs the PIN", pin: true });
   assert.deepEqual(launcher.powered, []);
   // When Omarchy's command couldn't start, the TV says so.
   launcher.pinOk = true;
   launcher.powerWorks = false;
-  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: false, error: "the box couldn't restart" });
+  assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), { ok: false, error: "Couldn't restart" });
 });
 
 test("S4.5 with a PIN set, the home screen's adult actions need its grant, and the owner's own commands don't", async () => {
   const { launcher, screen } = await tv();
   launcher.pinOk = false;
-  const refused = { ok: false, error: "that needs the pin", pin: true };
+  const refused = { ok: false, error: "That needs the PIN", pin: true };
   for (const cmd of ["desktop", "update-install", "update-go-back"]) assert.deepEqual(await screen.fromHome({ cmd }), refused, cmd);
   assert.deepEqual(await screen.fromHome({ cmd: "power", what: "restart" }), refused);
   assert.deepEqual(await screen.fromHome({ cmd: "desktop", grant: "stale" }), refused);
@@ -1126,7 +1126,7 @@ test("S4.5 agentv screen pin asks for the PIN on the home screen, in front, and 
   assert.deepEqual(await screen.handle({ cmd: "pin", action: "desktop" }), { ok: true, grant: "good" });
   assert.ok(launcher.homeBrowser.evaluated.some((e) => e.includes('askPin?.("desktop")')));
   launcher.homeBrowser.answer = (expression) => (expression.includes("askPin") ? { grant: null } : undefined);
-  assert.deepEqual(await screen.handle({ cmd: "pin", action: "desktop" }), { ok: false, error: "the pin wasn't entered" });
+  assert.deepEqual(await screen.handle({ cmd: "pin", action: "desktop" }), { ok: false, error: "The PIN wasn't entered" });
   assert.deepEqual(await screen.handle({ cmd: "pin", action: "x; rm" }), { ok: false, error: "the pin for which action" });
 });
 
@@ -1602,7 +1602,7 @@ test("S5.10 a shared link with no app of its own opens in the share browser, on 
   browser.exit();
   await t.screen.idle();
   assert.equal(t.screen.front()?.role, "home");
-  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: "c".repeat(16) }), { ok: false, error: "that share isn't here" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-share", share: "c".repeat(16) }), { ok: false, error: "That's no longer on your TV" });
   t.screen.stop();
 });
 
@@ -2445,7 +2445,7 @@ test("S2.12 at night, nothing installs without Tonight or overnight, while waiti
 
 test("S5.5 the provider's agent CLI runs for the first time only once its terms are accepted, once at a time, and the daemon hears how it went", async () => {
   const t = await tv();
-  assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: false, error: "the provider's terms aren't accepted yet" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: false, error: "Accept your AI's terms first" });
   assert.deepEqual(t.launcher.firstRuns, [], "nothing installs before an adult accepts");
   t.launcher.accepted = "claude";
   assert.deepEqual(await t.screen.fromHome({ cmd: "cli-install" }), { ok: true });
@@ -2488,7 +2488,7 @@ test("one of the theme's own backgrounds picked on the TV goes to Omarchy by its
   assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "0123456789ABCDEF" }), refused);
   assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "0123456789abcdef" }), { ok: true });
   t.launcher.backgroundWhy = "that isn't one of the theme's backgrounds";
-  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "fedcba9876543210" }), { ok: false, error: "that isn't one of the theme's backgrounds" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-bg-set", background: "fedcba9876543210" }), { ok: false, error: "Couldn't change the background" });
   // agentv screen background asks the same over the socket.
   t.launcher.backgroundWhy = null;
   assert.deepEqual(await t.screen.handle({ cmd: "theme-bg-set", background: "00112233445566aa" }), { ok: true });
@@ -2503,13 +2503,13 @@ test("S5.2 a look picked on the TV is set with Omarchy's own omarchy-theme-set, 
   assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set" }), { ok: false, error: "an omarchy theme's name" });
   const first = t.screen.fromHome({ cmd: "theme-set", theme: "gruvbox" });
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: "catppuccin-latte" }), { ok: false, error: "gruvbox is still being set" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "theme-set", theme: "catppuccin-latte" }), { ok: false, error: "Still changing the theme", busy: true });
   t.launcher.themeDone(null);
   assert.deepEqual(await first, { ok: true });
   const second = t.screen.fromHome({ cmd: "theme-set", theme: "nowhere" });
   await new Promise((resolve) => setTimeout(resolve, 10));
   t.launcher.themeDone("Theme 'nowhere' does not exist");
-  assert.deepEqual(await second, { ok: false, error: "Theme 'nowhere' does not exist" });
+  assert.deepEqual(await second, { ok: false, error: "Couldn't change the theme" });
   // A theme installed on Omarchy's desktop can have any name Omarchy allows
   // (ADR-048), and still nothing hidden or outside the themes folders.
   const third = t.screen.fromHome({ cmd: "theme-set", theme: "neo_brutal+2.0" });
@@ -2537,11 +2537,11 @@ test("a folder as the background: the TV session finds it among Music's sources 
   };
   const music: Music = { handle: async (request) => (request.op === "sources" ? { ok: true, sources } : { ok: false }), scan: async () => null };
   const t = await tv({ music, pictures });
-  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "folder:/etc" }), { ok: false, error: "that isn't one of the tv's folders" });
-  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "share:smb://nas/photos" }), { ok: false, error: "nas/photos isn't there right now" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "folder:/etc" }), { ok: false, error: "Couldn't find that folder" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "share:smb://nas/photos" }), { ok: false, error: "nas/photos isn't connected right now" });
   const copying = t.screen.fromHome({ cmd: "background-folder", source: "folder:/home/owner/Pictures", grant: "g" });
   await sleep(10);
-  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "folder:/home/owner/Pictures" }), { ok: false, error: "the pictures are still being copied" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "background-folder", source: "folder:/home/owner/Pictures" }), { ok: false, error: "Still copying the last pictures" });
   finish({ ok: true, count: 12 });
   assert.deepEqual(await copying, { ok: true, count: 12 });
   assert.deepEqual(sent, [{ source: { name: "pictures", path: "/home/owner/Pictures" }, grant: "g" }]);

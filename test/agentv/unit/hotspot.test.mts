@@ -43,9 +43,9 @@ test("it reads what agentv-hotspot says, and the networks the box saw, strongest
   rmSync(join(run, "state.json"), { force: true });
   assert.deepEqual(hotspot.status(), { on: false, ssid: null, password: null, joining: null, joined: null, error: null });
   assert.deepEqual(hotspot.networks(), []);
-  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", device: "wlan0", error: "that password didn't work for home wi-fi" });
+  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", device: "wlan0", error: "Wrong password for home wi-fi" });
   writeFileSync(join(run, "networks.json"), JSON.stringify(NETWORKS));
-  assert.deepEqual(hotspot.status(), { on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", joining: null, joined: null, error: "that password didn't work for home wi-fi" });
+  assert.deepEqual(hotspot.status(), { on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", joining: null, joined: null, error: "Wrong password for home wi-fi" });
   assert.deepEqual(
     hotspot.networks().map((n) => n.ssid),
     ["home wi-fi", "cafe", "neighbours"],
@@ -63,10 +63,10 @@ test("a network's name and password are checked before anything is handed over",
 test("joining hands the network and its password to root in a drop only its owner can read", () => {
   const hotspot = new Hotspot({ state, run });
   hotspotIs({ on: false });
-  assert.equal(hotspot.join("home wi-fi", "correct horse"), "the setup hotspot isn't on");
+  assert.equal(hotspot.join("home wi-fi", "correct horse"), "The setup Wi-Fi isn't on");
   hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n" });
-  assert.equal(hotspot.join("", "correct horse"), "that isn't a wi-fi network's name");
-  assert.equal(hotspot.join("home wi-fi", "short"), "a wi-fi password is 8 to 63 characters");
+  assert.equal(hotspot.join("", "correct horse"), "That isn't a Wi-Fi network's name");
+  assert.equal(hotspot.join("home wi-fi", "short"), "Wi-Fi passwords have 8 to 63 characters");
   assert.equal(hotspot.join("home wi-fi", ""), "home wi-fi needs its password");
   assert.ok(!existsSync(drop), "nothing is handed over until it's right");
 
@@ -228,7 +228,7 @@ test("it lists the networks, takes the one picked and hands it to root, never lo
 
   const wrong = await phone("/api/setup/wifi", host, "POST", { ssid: "home wi-fi", password: "short" });
   assert.equal(wrong.status, 400);
-  assert.equal(JSON.parse(wrong.body).error, "a wi-fi password is 8 to 63 characters");
+  assert.equal(JSON.parse(wrong.body).error, "Wi-Fi passwords have 8 to 63 characters");
   const elsewhere = await phone("/api/setup/wifi", host, "POST", { ssid: "home wi-fi", password: "correct horse" }, { Origin: "http://evil.example" });
   assert.equal(elsewhere.status, 403);
   assert.ok(!existsSync(drop));
@@ -245,10 +245,10 @@ test("it lists the networks, takes the one picked and hands it to root, never lo
 
   // The reason the try before didn't work is still there until root says
   // how this one went, and a page that names its ask can tell them apart.
-  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "that password didn't work for home wi-fi", answered: "0000000000000000" });
-  assert.deepEqual(JSON.parse((await phone("/api/setup/state", host)).body), { ok: true, on: true, joining: null, joined: null, error: "that password didn't work for home wi-fi" });
+  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "Wrong password for home wi-fi", answered: "0000000000000000" });
+  assert.deepEqual(JSON.parse((await phone("/api/setup/state", host)).body), { ok: true, on: true, joining: null, joined: null, error: "Wrong password for home wi-fi" });
   assert.equal(JSON.parse((await phone(`/api/setup/state?ask=${ask}`, host)).body).answered, false, "an error from before this ask isn't its answer");
-  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "the tv can't see home wi-fi from here", answered: ask });
+  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "Can't find home wi-fi from here", answered: ask });
   assert.equal(JSON.parse((await phone(`/api/setup/state?ask=${ask}`, host)).body).answered, true);
 });
 

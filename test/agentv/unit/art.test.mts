@@ -54,9 +54,9 @@ test("an archive's text is plain, and only free licences are shown", () => {
   assert.equal(plain(""), null);
   assert.equal(person('<a href="//commons.wikimedia.org/wiki/User:JJ_Harrison">JJ Harrison</a> ( https://www.jjharrison.com.au/ )'), "JJ Harrison");
   assert.equal(licenceOf("Public domain"), "public domain");
-  assert.equal(licenceOf("CC0"), "cc0");
-  assert.equal(licenceOf("CC BY-SA 4.0"), "cc by-sa 4.0");
-  assert.equal(licenceOf("CC BY 2.0"), "cc by 2.0");
+  assert.equal(licenceOf("CC0"), "CC0");
+  assert.equal(licenceOf("CC BY-SA 4.0"), "CC BY-SA 4.0");
+  assert.equal(licenceOf("CC BY 2.0"), "CC BY 2.0");
   for (const no of ["Fair use", "CC BY-NC 4.0", "All rights reserved", null]) assert.equal(licenceOf(no), null, String(no));
   const original = "https://upload.wikimedia.org/wikipedia/commons/4/4f/Harbour_at_dusk.jpg";
   assert.equal(commonsThumb(original), "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/Harbour_at_dusk.jpg/640px-Harbour_at_dusk.jpg");
@@ -74,12 +74,12 @@ test("The Met: its public-domain works, each looked up and credited, and one tha
   assert.deepEqual(
     data.items.map((work: { id: string; credit: string }) => [work.id, work.credit]),
     [
-      ["502724", "Ensuranai · Sea Dayaks (Iban), 19th century · the met"],
-      ["436021", "The Sea · Gustave Courbet, 1865 or later · the met"],
-      ["361765", "Sea Storms · Wenceslaus Hollar, 1665 · the met"],
-      ["195362", "Sea monster · Severo Calzetta da Ravenna, early 16th century · the met"],
-      ["437914", "Calm Sea · Simon de Vlieger, after 1640 · the met"],
-      ["207000", "Sea monster · Severo Calzetta da Ravenna, ca. 1500–1510 · the met"],
+      ["502724", "Ensuranai · Sea Dayaks (Iban), 19th century · The Met"],
+      ["436021", "The Sea · Gustave Courbet, 1865 or later · The Met"],
+      ["361765", "Sea Storms · Wenceslaus Hollar, 1665 · The Met"],
+      ["195362", "Sea monster · Severo Calzetta da Ravenna, early 16th century · The Met"],
+      ["437914", "Calm Sea · Simon de Vlieger, after 1640 · The Met"],
+      ["207000", "Sea monster · Severo Calzetta da Ravenna, ca. 1500–1510 · The Met"],
     ],
   );
   // The search can list one that isn't public domain (267004 for "sea" one
@@ -95,7 +95,7 @@ test("The Met: its public-domain works, each looked up and credited, and one tha
 test("the Art Institute and Commons: their works, with the licence when one asks for a credit", async () => {
   const aic = (await get("/api/art/search?archive=aic&q=water lilies")).data;
   assert.equal(aic.items.length, 6);
-  assert.deepEqual([aic.items[0].id, aic.items[0].credit], ["16568", "Water Lilies · Claude Monet, 1906 · art institute of chicago"]);
+  assert.deepEqual([aic.items[0].id, aic.items[0].credit], ["16568", "Water Lilies · Claude Monet, 1906 · Art Institute of Chicago"]);
   assert.equal(aic.items[0].page, "https://www.artic.edu/artworks/16568");
   assert.match(String(archives.seen.find((one) => one.url.startsWith("/aic/artworks/search"))?.url), /query\[term\]\[is_public_domain\]=true/);
   const commons = (await get("/api/art/search?archive=commons&q=harbour")).data;
@@ -103,9 +103,9 @@ test("the Art Institute and Commons: their works, with the licence when one asks
   assert.deepEqual(
     commons.items.slice(0, 3).map((work: { id: string; credit: string }) => [work.id, work.credit]),
     [
-      ["9428075", "Sydney Harbour Bridge from Circular Quay · JJ Harrison, 2010 · cc by-sa 3.0 · wikimedia commons"],
-      ["37347823", "Puerto de Vestmannaeyjar, Heimaey, Islas Vestman, Suðurland, Islandia, 2014-08-17, DD 017-019 PAN · Diego Delso, 2014 · cc by-sa 4.0 · wikimedia commons"],
-      ["37658477", "Sète Harbour Sunset 04 · Christian Ferrer, 2014 · cc by 4.0 · wikimedia commons"],
+      ["9428075", "Sydney Harbour Bridge from Circular Quay · JJ Harrison, 2010 · CC BY-SA 3.0 · Wikimedia Commons"],
+      ["37347823", "Puerto de Vestmannaeyjar, Heimaey, Islas Vestman, Suðurland, Islandia, 2014-08-17, DD 017-019 PAN · Diego Delso, 2014 · CC BY-SA 4.0 · Wikimedia Commons"],
+      ["37658477", "Sète Harbour Sunset 04 · Christian Ferrer, 2014 · CC BY 4.0 · Wikimedia Commons"],
     ],
   );
   // Its thumbnail comes from Commons' thumbnail host, at the picker's width,
@@ -132,10 +132,10 @@ test("Commons: a file under a licence that doesn't let the TV show it, or that i
 
 test("a search says what's wrong: an archive it doesn't know, no words, or the archive not answering", async () => {
   assert.deepEqual(await get("/api/art/search?archive=louvre&q=sea"), { status: 400, data: { ok: false, error: "an archive: met, aic, commons" } });
-  assert.deepEqual(await get("/api/art/search?archive=met&q=%20"), { status: 400, data: { ok: false, error: "say what to look for" } });
+  assert.deepEqual(await get("/api/art/search?archive=met&q=%20"), { status: 400, data: { ok: false, error: "Say what to look for" } });
   archives.down(429);
   try {
-    assert.deepEqual(await get("/api/art/search?archive=commons&q=sea"), { status: 502, data: { ok: false, error: "wikimedia commons didn't answer: it answered 429" } });
+    assert.deepEqual(await get("/api/art/search?archive=commons&q=sea"), { status: 502, data: { ok: false, error: "Couldn't reach Wikimedia Commons" } });
   } finally {
     archives.down(null);
   }
@@ -168,7 +168,7 @@ test("a work picked becomes the background, fetched whole and kept with its cred
   const data = await picked.json();
   assert.equal(picked.status, 200);
   assert.equal(data.source, "art");
-  assert.deepEqual([data.background.kind, data.background.credit], ["art", { text: "Water Lilies · Claude Monet, 1906 · art institute of chicago", from: "art institute of chicago" }]);
+  assert.deepEqual([data.background.kind, data.background.credit], ["art", { text: "Water Lilies · Claude Monet, 1906 · Art Institute of Chicago", from: "Art Institute of Chicago" }]);
   assert.equal(data.current, data.background.id);
   // The whole picture, at the largest size the Art Institute gives.
   assert.ok(archives.seen.some((one) => one.url === "/iiif/2/3c27b499-af56-f0d5-93b5-a7f2f1ad5813/full/1686,/0/default.jpg"));
@@ -176,12 +176,12 @@ test("a work picked becomes the background, fetched whole and kept with its cred
   assert.equal(file.status, 200);
 
   // The photos stay the photos.
-  assert.deepEqual((await (await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "photos" }) })).json()).error, "send a photo from your phone first");
+  assert.deepEqual((await (await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "photos" }) })).json()).error, "Send a photo from your phone first");
   assert.equal((await (await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "field" }) })).json()).source, "field");
   assert.equal((await (await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "art" }) })).json()).source, "art");
 
   // One that can't be shown, or isn't there, isn't kept.
   const no = await fetch(`${url}/api/backgrounds/art`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archive: "met", id: "267004" }) });
-  assert.deepEqual([no.status, (await no.json()).error], [502, "that work isn't in the archive, or can't be shown"]);
+  assert.deepEqual([no.status, (await no.json()).error], [502, "Couldn't find that picture"]);
   assert.equal((await (await fetch(`${url}/api/backgrounds`)).json()).items.length, 1);
 });

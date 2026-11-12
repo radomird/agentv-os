@@ -416,7 +416,7 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     const phone = (method: string, path: string, body?: unknown, grant?: string) =>
       token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
 
-    assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /pick the AI/, "nothing's built before the AI is picked and its terms accepted");
+    assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /Set up AI in Settings first/, "nothing's built before the AI is picked and its terms accepted");
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
     const grant = (await (await phone("POST", "/api/phone/pin", { pin: "2468" })).json()).grant;
     // The TV's own pages hold a grant of their own: a phone's is no use to them.
