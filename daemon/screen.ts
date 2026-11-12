@@ -3143,6 +3143,7 @@ async function main(): Promise<void> {
   // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ
   // lets pair a Bluetooth game controller, so the daemon's asks come here.
   const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`), store: join(homedir(), ".local", "state", "agentv", "controllers.json") });
+  controllers.watch();
   new AskWatch<ControllerAsk, ControllerAnswer>({
     url: HOME_URL,
     path: "api/controllers/ask",
