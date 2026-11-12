@@ -559,14 +559,27 @@ if opened; then fail "the home Wi-Fi came back, so the hotspot stays closed" "$(
 pass "with nobody using its page the hotspot closes every few minutes to look for the Wi-Fi the TV knows, and opens again only without it"
 
 # While root joins a network, the watch keeps out of it.
-set_state '.joining = "home wi-fi" | .on = false'
+set_state '.joining = "home wi-fi" | .joining_since = (now | floor) | .joining_reopens = true | .on = false'
 printf '%s\n' "$no_network" >"$FAKE/links"
 ago 600 >"$AGENTV_HOTSPOT_RUN/lost-since"
 tick
 if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone"; fi
 [[ ! -e $AGENTV_HOTSPOT_RUN/lost-since ]] || fail "and the count starts again after it"
+# A join that was killed outright never said how it went. It doesn't read as
+# under way for the rest of the boot.
+set_state '.joining_since = (now | floor) - 600'
+tick
+jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join that's older than any join can be is over, and says it didn't work" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+opened || fail "and the hotspot it had closed opens again" "$(cat "$FAKE/calls")"
+echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+set_state '.joining = "home wi-fi" | .joining_since = (now | floor) - 600 | .joining_reopens = false'
+tick
+[[ $(state .joining) == "null" ]] || fail "during setup too"
+if opened; then fail "a join from Settings that was killed opens no hotspot by that alone"; fi
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
 unset AGENTV_HOTSPOT_LOST_AFTER AGENTV_HOTSPOT_RETRY_AFTER AGENTV_HOTSPOT_REJOIN_WAIT FAKE_KNOWN
-pass "the watch leaves a join that's under way alone"
+pass "the watch leaves a join that's under way alone, and ends one that was killed before it said how it went"
 
 grep -qx "ExecStart=/usr/bin/agentv-hotspot watch" "$ROOT/system/agentv-hotspot-watch.service" || fail "the watch has its unit"
 grep -qx "WantedBy=multi-user.target" "$ROOT/system/agentv-hotspot-watch.service" || fail "which starts with the box"

@@ -71,6 +71,9 @@ TAG=agentv-setup-hotspot
 LOST_AFTER=${AGENTV_HOTSPOT_LOST_AFTER:-60}
 RETRY_AFTER=${AGENTV_HOTSPOT_RETRY_AFTER:-300}
 REJOIN_WAIT=${AGENTV_HOTSPOT_REJOIN_WAIT:-30}
+# A join is done in under two minutes, however it goes. One that still reads
+# as under way after this was killed before it could say how it went.
+JOIN_STALE=180
 WATCH_SKIP=${AGENTV_HOTSPOT_WATCH_SKIP:-}
 # With no network the watch looks every 5 seconds. Two looks further apart
 # than this had a sleep or a clock change between them.
@@ -384,7 +387,9 @@ join() {
   [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1 || true)
   JOIN_CLOSED_HOTSPOT=$was_on
   trap join_ended EXIT
-  state_set '.joining = $ssid | .error = null | .why = null' --arg ssid "$ssid"
+  # When it started and whether it closed the hotspot, for the watch: a join
+  # killed outright never says how it went (join_stale).
+  state_set '.joining = $ssid | .joining_since = (now | floor) | .joining_reopens = ($reopens == "true") | .error = null | .why = null' --arg ssid "$ssid" --arg reopens "$was_on"
   systemctl stop agentv-hotspot.service
 
   [[ $(jq -r --arg ssid "$ssid" 'map(select(.ssid == $ssid))[0].sae // false' "$RUN/networks.json" 2>/dev/null) == "true" ]] && keymgmt=sae
@@ -528,6 +533,28 @@ page_in_use() {
   (( $(date +%s) - seen < RETRY_AFTER ))
 }
 
+# A join that was killed outright, as by the kernel when memory runs out,
+# never got to say how it went, and nothing else takes its "joining" away.
+# The watch does once it's older than any join can be, so Settings stops
+# saying "Joining" and the next join isn't told the TV is busy. If the join
+# had closed the hotspot and the TV isn't online, the hotspot opens again.
+join_stale() {
+  local ssid since reopens
+
+  ssid=$(state_get .joining)
+  [[ -n $ssid ]] || return 0
+  since=$(state_get .joining_since)
+  [[ $since =~ ^[0-9]+$ ]] || since=0
+  (( $(date +%s) - since > JOIN_STALE )) || return 0
+  reopens=$(state_get .joining_reopens)
+  echo "agentv-hotspot: the join of $ssid never said how it went" >&2
+  state_set '.joining = null | .joining_since = null | .joining_reopens = null | .error = $error | .why = "failed"' --arg error "the tv couldn't join $ssid"
+  links
+  if [[ $reopens == "true" ]] && (( ! ONLINE )); then
+    systemctl start --no-block agentv-hotspot.service || true
+  fi
+}
+
 # awk reads to the end here too, so nmcli never writes into a closed pipe.
 knows_wifi() {
   nmcli -t -f TYPE,NAME connection show 2>/dev/null |
@@ -547,6 +574,7 @@ watch_tick() {
   local now since seen ours=false
 
   PAUSE=300
+  join_stale
   setup_done || return 0
   # A join is root's own doing, and says how it went itself. The count of
   # how long the network has been gone starts again after it.
