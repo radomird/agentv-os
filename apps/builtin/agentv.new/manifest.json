@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "agentv",
   "license": "MIT",
-  "description": "What came out this week on your services, from TMDB",
+  "description": "What came out this week on your apps",
   "kinds": ["tv-app"],
   "entryPoints": { "tvApp": "app.ts" },
   "tv": {

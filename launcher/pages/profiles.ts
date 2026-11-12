@@ -1,7 +1,7 @@
-// Profiles on the TV (ADR-009, S4.2, board 06): Settings → Profiles lists who
-// watches, each with their avatar, and a profile's own page switches to it,
-// renames it, makes it an adult or a child, picks its colour, locks it or takes
-// it off. The phone does the same once it's paired. Changing profiles needs
+// Profiles on the TV (ADR-009, S4.2, board 06): Settings, Profiles has a row
+// for each person, with their avatar, and a profile's own page switches to it,
+// renames it, makes it an adult or a child, picks its colour, locks it or
+// removes it. The phone does the same once it's paired. Changing profiles needs
 // the PIN once there is one, and a child's profile needs one to exist. A
 // locked profile (ADR-034) asks for the PIN to open after the box starts,
 // after the TV has been off and when someone switches to it, and shows a
@@ -12,6 +12,7 @@ import { h } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { pinAsked } from "./pin.ts";
 import { loadShared, sharesAllowed } from "./shared.ts";
 
 // The theme's colours an avatar can be, in the daemon's order.
@@ -19,29 +20,21 @@ export const AVATARS = ["blue", "green", "magenta", "yellow", "cyan", "orange", 
 
 // The name's first letter on its colour.
 export function avatar(viewer: Pick<Viewer, "name" | "avatar">, big = false): HTMLElement {
-  return h("span", { class: `avatar avatar-${AVATARS.includes(viewer.avatar) ? viewer.avatar : "blue"}${big ? " big" : ""}`, "aria-hidden": "true" }, viewer.name.slice(0, 1).toLowerCase());
+  return h("span", { class: `avatar avatar-${AVATARS.includes(viewer.avatar) ? viewer.avatar : "blue"}${big ? " big" : ""}`, "aria-hidden": "true" }, viewer.name.slice(0, 1).toUpperCase());
 }
 
-export function profilesPanel(ctx: Ctx): HTMLElement[] {
+// Settings' rows: one a person, with Adult or Child, and adding another.
+export function profileRows(ctx: Ctx): HTMLElement[] {
   return [
-    h("div", { class: "panel-title" }, "who watches?"),
     ...ctx.state.viewers.map((viewer) =>
       h(
         "button",
         { class: "button profile-row", "data-focus": true, "data-action": `viewer-${viewer.id}`, onclick: () => ctx.go(`profile/${viewer.id}`) },
         h("span", { class: "profile-who" }, avatar(viewer), h("span", {}, viewer.name), viewer.locked ? glyph("lock", 24) : null),
-        h("span", { class: "button-value" }, [viewer.role === "child" ? "child" : "", viewer.id === ctx.state.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
+        h("span", { class: "button-value" }, [viewer.role === "child" ? "Child" : "Adult", viewer.id === ctx.state.viewer.id ? "Watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
-    h("button", { class: "button", "data-focus": true, "data-action": "add-profile", onclick: () => ctx.go("profile/new") }, h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "add a profile"))),
-    // With no PIN, nothing here names one (ADR-087).
-    h(
-      "p",
-      { class: "panel-note" },
-      ctx.state.pin?.set
-        ? "a child's profile needs the adult pin, and sees only the apps ticked for children in their details. a locked one asks for the pin to open."
-        : "a child's profile sees only the apps ticked for children in their details.",
-    ),
+    h("button", { class: "button", "data-focus": true, "data-action": "add-profile", onclick: () => ctx.go("profile/new") }, h("span", { class: "with-icon" }, glyph("plus", 28), h("span", {}, "Add a profile"))),
   ];
 }
 
@@ -49,7 +42,7 @@ export function profile(ctx: Ctx, id: string): View {
   const fresh = id === "new";
   const found = ctx.state.viewers.find((v) => v.id === id);
   if (!fresh && !found) {
-    return { el: h("div", { class: "screen" }, h("div", { class: "page" }, h("p", { class: "empty" }, "that profile isn't here any more")), bar(ctx, "settings")) };
+    return { el: h("div", { class: "screen" }, h("div", { class: "page" }, h("p", { class: "empty" }, "That profile was removed")), bar(ctx, "settings")) };
   }
   const draft = {
     name: found?.name ?? "",
@@ -61,7 +54,7 @@ export function profile(ctx: Ctx, id: string): View {
   };
   const watching = found?.id === ctx.state.viewer.id;
 
-  const name = h("input", { class: "music-search profile-name", "data-focus": true, "data-action": "name", type: "text", value: draft.name, maxlength: "20", placeholder: "their name", "aria-label": "their name", autocomplete: "off" }) as HTMLInputElement;
+  const name = h("input", { class: "music-search profile-name", "data-focus": true, "data-action": "name", type: "text", value: draft.name, maxlength: "20", placeholder: "Name", "aria-label": "Name", autocomplete: "off" }) as HTMLInputElement;
   const value = (text: string) => h("span", { class: "button-value" }, text);
   const roleValue = value("");
   const colourValue = value("");
@@ -74,21 +67,21 @@ export function profile(ctx: Ctx, id: string): View {
   const lock = h(
     "button",
     { class: "button", "data-focus": true, "data-action": "lock", "data-adjust": "lock", onclick: () => step("lock", 1) },
-    h("span", { class: "with-icon" }, glyph("lock", 24), h("span", {}, "ask for the pin to open")),
+    h("span", { class: "with-icon" }, glyph("lock", 24), h("span", {}, "Lock with PIN")),
     lockValue,
   ) as HTMLButtonElement;
   // Only a child's profile is asked; an adult's always takes them.
   const shares = h(
     "button",
     { class: "button", "data-focus": true, "data-action": "shares", "data-adjust": "shares", onclick: () => step("shares", 1) },
-    h("span", { class: "with-icon" }, glyph("phone", 24), h("span", {}, "take what phones share")),
+    h("span", { class: "with-icon" }, glyph("phone", 24), h("span", {}, "Accept what phones send")),
     sharesValue,
   ) as HTMLButtonElement;
   const draw = () => {
-    roleValue.textContent = `‹ ${draft.role} ›`;
-    colourValue.textContent = `‹ ${draft.avatar} ›`;
-    lockValue.textContent = `‹ ${draft.locked ? "yes" : "no"} ›`;
-    sharesValue.textContent = `‹ ${draft.shares ? "yes" : "no"} ›`;
+    roleValue.textContent = draft.role === "child" ? "Child" : "Adult";
+    colourValue.textContent = draft.avatar.charAt(0).toUpperCase() + draft.avatar.slice(1);
+    lockValue.textContent = draft.locked ? "On" : "Off";
+    sharesValue.textContent = draft.shares ? "On" : "Off";
     lock.style.display = draft.role === "child" || !pinSet ? "none" : "";
     shares.style.display = draft.role === "child" ? "" : "none";
     preview.replaceChildren(avatar({ name: name.value.trim() || "?", avatar: draft.avatar }, true));
@@ -104,8 +97,8 @@ export function profile(ctx: Ctx, id: string): View {
     ctx.sounds.play("move");
     draw();
   };
-  const role = h("button", { class: "button", "data-focus": true, "data-action": "role", "data-adjust": "role", onclick: () => step("role", 1) }, h("span", {}, "role"), roleValue);
-  const colour = h("button", { class: "button", "data-focus": true, "data-action": "avatar", "data-adjust": "avatar", onclick: () => step("avatar", 1) }, h("span", {}, "colour"), colourValue);
+  const role = h("button", { class: "button", "data-focus": true, "data-action": "role", "data-adjust": "role", onclick: () => step("role", 1) }, h("span", {}, "Role"), roleValue);
+  const colour = h("button", { class: "button", "data-focus": true, "data-action": "avatar", "data-adjust": "avatar", onclick: () => step("avatar", 1) }, h("span", {}, "Colour"), colourValue);
 
   const failed = (error: unknown) => {
     ctx.sounds.play("failure");
@@ -120,12 +113,12 @@ export function profile(ctx: Ctx, id: string): View {
       if (fresh) await daemon.addViewer(change, grant || undefined);
       else await daemon.editViewer(id, change, grant || undefined);
     } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      if (pinAsked(error)) ctx.forgetGrant();
       return failed(error);
     }
     await loadShared();
     ctx.sounds.play("confirm");
-    ctx.toast(fresh ? `${change.name} is here now` : `${change.name} is saved`, "ok");
+    ctx.toast(fresh ? `Added ${change.name}` : "Saved", "ok");
     ctx.back();
   };
   const remove = async () => {
@@ -137,7 +130,7 @@ export function profile(ctx: Ctx, id: string): View {
       return failed(error);
     }
     ctx.sounds.play("confirm");
-    ctx.toast(`${found!.name} is gone, with what they watched`, "ok");
+    ctx.toast(`Removed ${found!.name}`, "ok");
     ctx.back();
   };
   // Watching as someone else: from a child's profile to an adult's, or to a
@@ -154,9 +147,9 @@ export function profile(ctx: Ctx, id: string): View {
   };
 
   const buttons = [
-    !fresh && !watching ? h("button", { class: "button primary", "data-focus": true, "data-action": "watch", onclick: () => void watch() }, `watch as ${found!.name}`) : null,
-    h("button", { class: `button${fresh || watching ? " primary" : ""}`, "data-focus": true, "data-action": "save", onclick: () => void save() }, fresh ? "add" : "save"),
-    !fresh ? h("button", { class: "button", "data-focus": true, "data-action": "remove", onclick: () => void remove() }, `take ${found!.name} off`) : null,
+    !fresh && !watching ? h("button", { class: "button primary", "data-focus": true, "data-action": "watch", onclick: () => void watch() }, `Watch as ${found!.name}`) : null,
+    h("button", { class: `button${fresh || watching ? " primary" : ""}`, "data-focus": true, "data-action": "save", onclick: () => void save() }, fresh ? "Add" : "Save"),
+    !fresh ? h("button", { class: "button", "data-focus": true, "data-action": "remove", onclick: () => void remove() }, `Remove ${found!.name}`) : null,
   ].filter((el): el is HTMLButtonElement => el !== null);
   const el = h(
     "div",
@@ -164,11 +157,11 @@ export function profile(ctx: Ctx, id: string): View {
     h(
       "div",
       { class: "page profile" },
-      h("div", { class: "profile-head" }, preview, h("div", {}, ...heading("tv settings · profiles", fresh ? "a new profile" : found!.name))),
+      h("div", { class: "profile-head" }, preview, h("div", {}, ...heading("tv settings · profiles", fresh ? "A new profile" : found!.name))),
       h("div", { class: "profile-form" }, name, role, colour, lock, shares, h("div", { class: "check-actions" }, ...buttons)),
-      h("p", { class: "panel-note" }, watching ? "watching now." : "a child sees only the apps ticked for children."),
+      h("p", { class: "panel-note" }, watching ? "Watching now" : "A child only sees apps marked For children"),
     ),
-    bar(ctx, "settings", "←→ change · ↵ select · esc back"),
+    bar(ctx, "settings"),
   );
   draw();
   return {

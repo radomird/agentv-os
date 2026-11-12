@@ -1,5 +1,5 @@
-// The AI on the TV (ADR-009, ADR-022, ADR-047, S4.6): Settings → AI says
-// what builds use, a plan or a key. The key page takes a key, typed or
+// The AI on the TV (ADR-009, ADR-022, ADR-047, S4.6): Settings, AI has a row
+// that says what's in use, a plan or a key, and its page changes it. The key page takes a key, typed or
 // pasted, for Claude, ChatGPT, Gemini, Grok or Muse. The daemon hands it to
 // root and it's never shown again. The plan page picks the household's plan,
 // from the ones this box's channel offers (Q143, ADR-053). Either is an
@@ -13,6 +13,7 @@ import { asWritten, h } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { pinAsked } from "./pin.ts";
 
 const PROVIDERS = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
@@ -32,46 +33,49 @@ export function termsHeard(data: unknown): void {
   termsAccepted?.(data as { provider?: string; path?: string });
 }
 
-// The plans on offer: Claude's, ChatGPT's and Grok's, on every TV (ADR-087).
-function plansOf(state: KeyState | null): { provider: string; name?: string }[] {
-  return state?.plans ?? [{ provider: "claude", name: "claude pro or max" }];
+// The AI companies' names, as they write them.
+const NAMES: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", grok: "Grok", muse: "Muse" };
+
+export function providerName(id: string | null | undefined): string {
+  return NAMES[id ?? ""] ?? id ?? "";
 }
 
-// The plan builds use, once its terms are accepted, or null for a key or
-// none.
+// The plans on offer: Claude's, ChatGPT's and Grok's, on every TV (ADR-087).
+function plansOf(state: KeyState | null): { provider: string; name?: string }[] {
+  return state?.plans ?? [{ provider: "claude", name: "Claude Pro or Max" }];
+}
+
+// The plan in use, once its terms are accepted, or null for a key or none.
 function planInUse(state: KeyState | null): { provider: string; name?: string } | null {
   const ai = state?.ai;
   if (!ai || ai.path !== "plan" || !ai.accepted || !ai.provider) return null;
   return plansOf(state).find((plan) => plan.provider === ai.provider) ?? { provider: ai.provider };
 }
 
-export function aiValue(ctx: Ctx): string {
+// The value of AI's "Your AI" row.
+export function aiValue(): string {
   if (!keyState) return "";
-  const guard = ctx.state.pin?.set ? " [pin]" : "";
   const plan = planInUse(keyState);
-  if (plan) return `${plan.provider} plan${guard}`;
-  return keyState.set ? `${keyState.provider}${guard}` : "no key";
+  if (plan) return `${providerName(plan.provider)} plan`;
+  return keyState.set ? providerName(keyState.provider) : "Not set up";
 }
 
-// What builds can use here: a key from any provider, or one of the plans on
-// offer.
-function waysLine(state: KeyState): string {
-  const names = plansOf(state).map((plan) => `${plan.provider}'s`);
-  const plans = names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}` : (names[0] ?? "");
-  const keys = "an api key from claude, chatgpt, gemini, grok or muse";
-  return plans ? `${keys}, or your plan: ${plans}.` : `${keys}.`;
+// A plan's name, as its company writes it.
+function planName(plan: { provider: string; name?: string }): string {
+  return plan.name ?? `${providerName(plan.provider)}'s plan`;
 }
 
 // A plan's line: its name, and when it's signed in.
 function planLine(plan: { provider: string; name?: string }): string {
-  return `${plan.name ?? `${plan.provider}'s plan`}. you sign in to it on your phone the first time your agent builds an app.`;
+  return `${planName(plan)}. You sign in on your phone when you first build an app.`;
 }
 
+// The "Your AI" row's page: what's in use, a plan or a key, and changing it.
 export function aiPanel(ctx: Ctx): HTMLElement[] {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
   if (!keyState) return [h("div", { class: "panel-big" }, loadingMark())];
   const remove = async () => {
-    const grant = await ctx.grant("the ai key");
+    const grant = await ctx.grant("your AI key");
     if (grant === null) return;
     try {
       setKeyState(await daemon.removeKey(grant || undefined));
@@ -81,43 +85,43 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
       return;
     }
     ctx.sounds.play("confirm");
-    ctx.toast("the key is off", "ok");
-    ctx.render("settings/ai", "add-key");
+    ctx.toast("Key removed", "ok");
+    ctx.render("settings/your-ai", "add-key");
   };
   const plans = plansOf(keyState).length > 0;
   const button = (action: string, label: string, onclick: () => void, primary = false) => h("button", { class: `button${primary ? " primary" : ""}`, "data-focus": true, "data-action": action, onclick }, label);
-  const removeKey = keyState.set ? [button("remove-key", "take the key off", () => void remove())] : [];
+  const removeKey = keyState.set ? [button("remove-key", "Remove key", () => void remove())] : [];
   const plan = planInUse(keyState);
   if (plan) {
     // With setup's own switch on, the plan's sign-in is here too, for a
     // household that left it for later in setup (ADR-070).
-    const signIn = signInHere() ? [button("plan-sign-in", "sign in to your plan →", () => ctx.go("plan-sign-in"))] : [];
+    const signIn = signInHere() ? [button("plan-sign-in", "Sign in to your plan", () => ctx.go("plan-sign-in"))] : [];
     return [
-      h("div", { class: "panel-title" }, "builds and voice use"),
-      h("div", { class: "panel-big" }, `${plan.provider} plan`),
-      note(signIn.length ? `${plan.name ?? `${plan.provider}'s plan`}. sign in to it here, so voice works, or the first time your agent builds an app.` : planLine(plan)),
+      h("div", { class: "panel-title" }, "Your AI"),
+      h("div", { class: "panel-big" }, `${providerName(plan.provider)} plan`),
+      note(signIn.length ? "Sign in now so voice works" : planLine(plan)),
       ...signIn,
-      button("use-plan", "change the plan →", () => ctx.go("plan")),
-      button("add-key", "use a key instead →", () => ctx.go("key")),
+      button("use-plan", "Change plan", () => ctx.go("plan")),
+      button("add-key", "Use a key instead", () => ctx.go("key")),
       ...removeKey,
     ];
   }
-  const usePlan = plans ? [button("use-plan", "use my plan instead →", () => ctx.go("plan"))] : [];
+  const usePlan = plans ? [button("use-plan", "Use my plan instead", () => ctx.go("plan"))] : [];
   return keyState.set
     ? [
-        h("div", { class: "panel-title" }, "builds and voice use"),
-        h("div", { class: "panel-big" }, keyState.provider ?? ""),
-        note("a key is set. only the system can read it, and it's never shown again."),
-        button("add-key", "replace the key →", () => ctx.go("key")),
+        h("div", { class: "panel-title" }, "Your AI"),
+        h("div", { class: "panel-big" }, providerName(keyState.provider)),
+        note("Your key is saved. It's never shown again."),
+        button("add-key", "Replace key", () => ctx.go("key")),
         ...removeKey,
         ...usePlan,
       ]
     : [
-        h("div", { class: "panel-title" }, "builds and voice use"),
-        h("div", { class: "panel-big" }, "no key yet"),
-        note(waysLine(keyState)),
-        button("add-key", "add a key →", () => ctx.go("key"), true),
-        ...(plans ? [button("use-plan", "use my plan →", () => ctx.go("plan"))] : []),
+        h("div", { class: "panel-title" }, "Your AI"),
+        h("div", { class: "panel-big" }, "Not set up"),
+        note(plans ? "An API key, or your plan" : "An API key"),
+        button("add-key", "Add an API key", () => ctx.go("key"), true),
+        ...(plans ? [button("use-plan", "Use my plan", () => ctx.go("plan"))] : []),
       ];
 }
 
@@ -129,15 +133,15 @@ function waitForTerms(ctx: Ctx, form: HTMLElement, note: HTMLElement, terms: Key
     termsAccepted = null;
     accepted();
   };
-  const backButton = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: back }, "back");
+  const backButton = h("button", { class: "button", "data-focus": true, "data-action": "cancel", onclick: back }, "Back");
   form.replaceChildren(
-    h("div", { class: "panel-title" }, `${terms.name}'s terms come first`),
+    h("div", { class: "panel-title" }, `${providerName(terms.provider) || terms.name}'s terms come first`),
     ...terms.terms.map((t) => h("div", { class: "terms-row", "data-terms": t.id }, t.name)),
     h("p", { class: "panel-note" }, terms.summary),
-    h("p", { class: "panel-note" }, path === "key" ? "an adult accepts them on a paired phone. the key is kept once they do." : "an adult accepts them on a paired phone. builds use the plan once they do."),
+    h("p", { class: "panel-note" }, "Accept them on your phone"),
     h("div", { class: "check-actions" }, backButton),
   );
-  note.textContent = "no phone yet? pair one in settings → phones.";
+  note.textContent = "No phone yet? Pair one in Settings.";
   ctx.focus.refresh();
   ctx.focus.set(backButton);
 }
@@ -145,20 +149,20 @@ function waitForTerms(ctx: Ctx, form: HTMLElement, note: HTMLElement, terms: Key
 export function keyPage(ctx: Ctx): View {
   let provider = keyState?.provider && PROVIDERS.includes(keyState.provider) ? keyState.provider : PROVIDERS[0];
   const value = h("span", { class: "button-value" }, "");
-  const draw = () => (value.textContent = `‹ ${provider} ›`);
+  const draw = () => (value.textContent = providerName(provider));
   const step = (by: number) => {
     provider = PROVIDERS[(PROVIDERS.indexOf(provider) + by + PROVIDERS.length) % PROVIDERS.length];
     ctx.sounds.play("move");
     draw();
   };
-  const which = h("button", { class: "button", "data-focus": true, "data-action": "provider", "data-adjust": "provider", onclick: () => step(1) }, h("span", {}, "provider"), value);
+  const which = h("button", { class: "button", "data-focus": true, "data-action": "provider", "data-adjust": "provider", onclick: () => step(1) }, h("span", {}, "AI"), value);
   const field = h("input", {
     class: "music-search",
     "data-focus": true,
     "data-action": "key",
     type: "password",
-    placeholder: "paste the key",
-    "aria-label": "the key",
+    placeholder: "Paste the key",
+    "aria-label": "The key",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
@@ -167,9 +171,9 @@ export function keyPage(ctx: Ctx): View {
     { class: "profile-form" },
     which,
     field,
-    h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "save")),
+    h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "Save")),
   );
-  const note = h("p", { class: "panel-note" }, "only the system can read it, and it's never shown again.");
+  const note = h("p", { class: "panel-note" }, "It's never shown again");
   // The terms the key waits for, in place of the form, until a phone
   // accepts them or the page goes back.
   let waiting = false;
@@ -199,7 +203,7 @@ export function keyPage(ctx: Ctx): View {
     try {
       saved = await daemon.saveKey(provider, key, grant);
     } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      if (pinAsked(error)) ctx.forgetGrant();
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
       return;
@@ -211,16 +215,16 @@ export function keyPage(ctx: Ctx): View {
     setKeyState(saved);
     field.value = "";
     ctx.sounds.play("confirm");
-    ctx.toast(`the key for ${provider} is kept`, "ok");
+    ctx.toast(`${providerName(provider)} key saved`, "ok");
     ctx.back();
   };
   const save = async () => {
     const key = field.value.trim();
     if (!key) {
-      ctx.toast("paste the key first", "fail");
+      ctx.toast("Paste the key first", "fail");
       return;
     }
-    const grant = await ctx.grant("the ai key");
+    const grant = await ctx.grant("your AI key");
     if (grant === null) return;
     await keep(key, grant || undefined);
   };
@@ -231,11 +235,11 @@ export function keyPage(ctx: Ctx): View {
     h(
       "div",
       { class: "page profile" },
-      ...heading("tv settings · ai", "add a key"),
+      ...heading("tv settings · ai", "Add an API key"),
       form,
       note,
     ),
-    bar(ctx, "settings", "←→ provider · ↵ select · esc back"),
+    bar(ctx, "settings"),
   );
   return {
     el,
@@ -261,7 +265,7 @@ export function planPage(ctx: Ctx): View {
   const value = h("span", { class: "button-value" }, "");
   const about = h("p", { class: "panel-note", "data-plan": "about" }, "");
   const draw = () => {
-    value.textContent = `‹ ${plans[at].provider} ›`;
+    value.textContent = providerName(plans[at].provider);
     about.textContent = planLine(plans[at]);
   };
   const step = (by: number) => {
@@ -269,15 +273,15 @@ export function planPage(ctx: Ctx): View {
     ctx.sounds.play("move");
     draw();
   };
-  const which = h("button", { class: "button", "data-focus": true, "data-action": "provider", "data-adjust": "provider", onclick: () => step(1) }, h("span", {}, "plan"), value);
+  const which = h("button", { class: "button", "data-focus": true, "data-action": "provider", "data-adjust": "provider", onclick: () => step(1) }, h("span", {}, "Plan"), value);
   const form = h(
     "div",
     { class: "profile-form" },
     which,
     about,
-    h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void use() }, "use this plan")),
+    h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void use() }, "Use this plan")),
   );
-  const note = h("p", { class: "panel-note" }, "builds then run on your plan, through its own app, within its own limits.");
+  const note = h("p", { class: "panel-note" }, "Building then uses your plan");
   let waiting = false;
   const stopWaiting = () => {
     if (!waiting) return;
@@ -291,7 +295,7 @@ export function planPage(ctx: Ctx): View {
     try {
       done = await daemon.usePlan(provider, grant);
     } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      if (pinAsked(error)) ctx.forgetGrant();
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
       return;
@@ -314,11 +318,11 @@ export function planPage(ctx: Ctx): View {
     }
     if (keyState) setKeyState({ ...keyState, ai: { provider, path: "plan", accepted: true } });
     ctx.sounds.play("confirm");
-    ctx.toast(`builds use your ${provider} plan now`, "ok");
+    ctx.toast(`Now using your ${providerName(provider)} plan`, "ok");
     ctx.back();
   };
   const use = async () => {
-    const grant = await ctx.grant("the ai plan");
+    const grant = await ctx.grant("your AI plan");
     if (grant === null) return;
     await choose(grant || undefined);
   };
@@ -329,11 +333,11 @@ export function planPage(ctx: Ctx): View {
     h(
       "div",
       { class: "page profile" },
-      ...heading("tv settings · ai", "use my plan"),
+      ...heading("tv settings · ai", "Use my plan"),
       form,
       note,
     ),
-    bar(ctx, "settings", "←→ plan · ↵ select · esc back"),
+    bar(ctx, "settings"),
   );
   return {
     el,
@@ -368,22 +372,22 @@ async function signInCall(method: string, path: string, body?: unknown, grant?: 
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? "that didn't work");
+  if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't sign in");
   return data;
 }
 
-// Settings → AI's sign-in to the household's plan (ADR-070): the same
+// Settings, AI's sign-in to the household's plan (ADR-070): the same
 // sign-in a first build runs, started from here. Its link shows as a QR
 // code, and the code its page gives is typed on the phone's keyboard into
 // the field. Once it's in, back to Settings.
 export function planSignInPage(ctx: Ctx): View {
-  const line = h("p", { class: "panel-note", "data-line": "sign-in" }, "getting the sign-in ready");
-  const qr = h("img", { alt: "the sign-in's code to scan" }) as HTMLImageElement;
+  const line = h("p", { class: "panel-note", "data-line": "sign-in" }, "Getting the sign-in ready…");
+  const qr = h("img", { alt: "The sign-in's code to scan" }) as HTMLImageElement;
   const qrBox = h("div", { class: "pair-qr build-qr hidden" }, qr);
-  const field = h("input", { class: "music-search", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "the code the sign-in gave you", placeholder: "paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
-  const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "send it");
+  const field = h("input", { class: "music-search", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "The code the sign-in gave you", placeholder: "Paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "Send");
   const paste = h("div", { class: "profile-form hidden" }, field, h("div", { class: "check-actions" }, send));
-  const again = h("button", { class: "button", "data-focus": true, "data-action": "again", onclick: () => void start() }, "start it again");
+  const again = h("button", { class: "button", "data-focus": true, "data-action": "again", onclick: () => void start() }, "Start over");
   let grant: string | undefined;
   let shown = "";
   let timer = 0;
@@ -392,17 +396,17 @@ export function planSignInPage(ctx: Ctx): View {
   const draw = (now: PlanSignIn | null) => {
     const state = now?.now?.state;
     // The code to enter keeps its capitals.
-    if (!now?.signedIn && state === "waiting" && now?.now?.code) line.replaceChildren("scan to sign in, then enter ", asWritten(now.now.code));
+    if (!now?.signedIn && state === "waiting" && now?.now?.code) line.replaceChildren("Scan to sign in, then enter ", asWritten(now.now.code));
     else
       line.textContent = now?.signedIn
-        ? "you're signed in. builds and voice use your plan."
+        ? "You're signed in"
         : state === "waiting" && now?.now?.pastes
-          ? "scan to sign in, then paste the code it gives you"
+          ? "Scan to sign in, then paste the code it gives you"
           : state === "waiting"
-            ? "scan to sign in with your plan"
+            ? "Scan to sign in with your plan"
             : state === "failed"
-              ? `that didn't work: ${now?.now?.reason ?? "it stopped"}`
-              : "getting the sign-in ready";
+              ? "Couldn't sign in"
+              : "Getting the sign-in ready…";
     const url = state === "waiting" ? now?.now?.url : undefined;
     qrBox.classList.toggle("hidden", !url);
     if (url && url !== shown) {
@@ -424,13 +428,13 @@ export function planSignInPage(ctx: Ctx): View {
       moved = true;
       clearInterval(timer);
       ctx.sounds.play("confirm");
-      ctx.toast("you're signed in to your plan", "ok");
+      ctx.toast("You're signed in", "ok");
       ctx.back();
     }
   };
 
   const start = async () => {
-    const asked = await ctx.grant("the ai plan");
+    const asked = await ctx.grant("your AI plan");
     if (asked === null) return;
     grant = asked || undefined;
     try {
@@ -447,7 +451,7 @@ export function planSignInPage(ctx: Ctx): View {
     field.value = "";
     try {
       await signInCall("POST", "/api/ai/sign-in/code", { code }, grant);
-      ctx.toast("signing in…", "ok");
+      ctx.toast("Signing in…", "ok");
     } catch (error) {
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
@@ -476,8 +480,8 @@ export function planSignInPage(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile plan-sign-in" }, ...heading("tv settings · ai", "sign in to your plan"), line, paste, again, qrBox),
-    bar(ctx, "settings", ""),
+    h("div", { class: "page profile plan-sign-in" }, ...heading("tv settings · ai", "Sign in to your plan"), line, paste, again, qrBox),
+    bar(ctx, "settings"),
   );
   return { el, first: again };
 }

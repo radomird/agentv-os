@@ -1,26 +1,26 @@
 // An app's own setup, from its tile ("Setup flow", ADR-011): the fields its
 // package asks for, such as the address of a Jellyfin or Immich server,
-// typed here or on the phone's keyboard, then its sign-in (ADR-032). It's an
+// typed on the phone's keyboard, then its sign-in (ADR-032). It's an
 // adult's, past the PIN once there is one. Which profile is for children
 // comes after, from the app's details. With the discover switch on, the
 // servers the box found on the network come first, and typing an address
 // second (pages/network.ts).
 
 import { daemon, screen, type AppSetup } from "../api.ts";
-import { h } from "../dom.ts";
+import { asWritten, h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { discoverOn, foundList, kindsFor, shown } from "./network.ts";
 import { bar, heading } from "./parts.ts";
 
 export function appSetup(ctx: Ctx, id: string): View {
-  const name = (ctx.state.apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
+  const name = ctx.state.apps.find((app) => app.id === id)?.name ?? id;
   const form = h("div", { class: "profile-form" });
   const note = h("p", { class: "panel-note" }, "…");
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "save") as HTMLButtonElement;
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "Save") as HTMLButtonElement;
   let setup: AppSetup | null = null;
   let fields: { key: string; label: string; el: HTMLInputElement }[] = [];
   let saving = false;
-  const [prompt, headline] = heading(`tv apps · ${name}`, `set up ${name}`);
+  const [prompt, headline] = heading(`tv apps · ${name}`, `Set up ${name}`);
   const network = h("div", { class: "found" });
   shown(network, false);
 
@@ -29,7 +29,7 @@ export function appSetup(ctx: Ctx, id: string): View {
     shown(network, false);
     shown(form, true);
     shown(note, true);
-    headline.textContent = `set up ${name}`;
+    headline.textContent = `Set up ${name}`;
     const field = fields.find((one) => one.key === focusKey) ?? fields.find((one) => !one.el.value) ?? fields[0];
     if (field) ctx.focus.set(field.el, false);
   };
@@ -38,7 +38,7 @@ export function appSetup(ctx: Ctx, id: string): View {
   const offerFound = (found: AppSetup) => {
     const address = found.fields.find((field) => field.address);
     if (!address) return;
-    const typed = h("button", { class: "button found-typed", "data-focus": true, "data-action": "type-address", onclick: () => showForm(address.key) }, "type an address on your phone");
+    const typed = h("button", { class: "button found-typed", "data-focus": true, "data-action": "type-address", onclick: () => showForm(address.key) }, "Type its address");
     const list = foundList({
       kinds: kindsFor(id),
       focus: ctx.focus,
@@ -49,8 +49,8 @@ export function appSetup(ctx: Ctx, id: string): View {
         else showForm();
       },
     });
-    network.replaceChildren(h("div", { class: "panel-note" }, "found on your network"), list.el, typed);
-    headline.textContent = `pick your ${name}.`;
+    network.replaceChildren(h("div", { class: "panel-note" }, "Found on your network"), list.el, typed);
+    headline.textContent = `Pick your ${name}`;
     shown(form, false);
     shown(note, false);
     shown(network, true);
@@ -61,24 +61,23 @@ export function appSetup(ctx: Ctx, id: string): View {
     setup = found;
     fields = found.fields.map((field) => ({
       key: field.key,
-      label: field.label.toLowerCase(),
+      label: field.label,
       el: h("input", {
         class: "music-search",
         "data-focus": true,
         "data-field": field.key,
         type: field.address ? "url" : "text",
-        placeholder: field.label.toLowerCase(),
-        "aria-label": field.label.toLowerCase(),
+        placeholder: field.label,
+        "aria-label": field.label,
         autocomplete: "off",
         spellcheck: "false",
         value: field.value,
       }) as HTMLInputElement,
     }));
-    go.textContent = found.signIn ? "save, then sign in" : "save";
+    go.textContent = found.signIn ? "Save and sign in" : "Save";
     form.replaceChildren(...fields.flatMap((field) => [h("div", { class: "panel-title" }, field.label), field.el]), h("div", { class: "check-actions" }, go));
-    note.textContent = found.fields.some((field) => field.address)
-      ? "the address your server shows, like http://192.168.1.20:8096. the phone's keyboard works here too."
-      : "the phone's keyboard works here too.";
+    // An address keeps its own letters in every look.
+    note.replaceChildren(...(found.fields.some((field) => field.address) ? ["Your server's address, like ", asWritten("http://192.168.1.20:8096")] : []));
     const empty = fields.find((field) => !field.el.value) ?? fields[0];
     if (empty) ctx.focus.set(empty.el, false);
     void discoverOn().then((on) => on && offerFound(found));
@@ -89,7 +88,7 @@ export function appSetup(ctx: Ctx, id: string): View {
     const missing = fields.find((field) => !field.el.value.trim());
     if (missing) {
       ctx.sounds.play("failure");
-      ctx.toast(`type the ${missing.label} first`, "fail");
+      ctx.toast("Fill in every field first", "fail");
       ctx.focus.set(missing.el, false);
       return;
     }
@@ -99,7 +98,7 @@ export function appSetup(ctx: Ctx, id: string): View {
     try {
       setup = await daemon.saveAppSetup(id, Object.fromEntries(fields.map((field) => [field.key, field.el.value.trim()])), grant || undefined);
     } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      if (/^that needs the pin$/i.test((error as Error).message)) ctx.forgetGrant();
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
       return;
@@ -114,7 +113,7 @@ export function appSetup(ctx: Ctx, id: string): View {
     }
     // Its sign-in next: AgenTV's sign-in screen, over the service's own page.
     const reply = await screen.signIn(id);
-    if (!reply.ok) ctx.toast(reply.error ?? `${name} can't sign in from here`, "fail");
+    if (!reply.ok) ctx.toast(reply.error ?? `Couldn't sign in to ${name}`, "fail");
   };
 
   void daemon.appSetup(id).then(draw, (error: Error) => {
@@ -125,7 +124,7 @@ export function appSetup(ctx: Ctx, id: string): View {
     "div",
     { class: "screen" },
     h("div", { class: "page profile" }, prompt, headline, network, form, note),
-    bar(ctx, "apps", "↑↓ move · ↵ save · esc back"),
+    bar(ctx, "apps"),
   );
   return {
     el,

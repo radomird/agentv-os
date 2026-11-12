@@ -150,6 +150,25 @@ body.with-backdrop {
   font-size: 24px;
 }
 
+/* The hint for the tile in focus is a quiet line under the pill, with no
+   pill of its own, so it sits clear of Apps' first row. */
+.glass-bar .bar-hint {
+  padding: 0 14px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+  font-weight: 600;
+  opacity: 0.85;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  order: 0;
+}
+
+/* The card a TV that lost its network shows sits where the hint would. */
+body:has(#offline) .glass-bar .bar-hint {
+  visibility: hidden;
+}
+
 .bar-step-row {
   position: fixed;
   left: 50%;
@@ -536,16 +555,74 @@ body.with-backdrop {
   text-overflow: ellipsis;
 }
 
+/* "Add an app" is a tile like the apps before it: a plus where they have a
+   logo, and its name under it (D11). */
 .row .tile-apps {
-  border-style: dashed;
+  border-color: var(--glass-edge);
 }
 
-.row .tile-apps .tile-top {
+/* Its plus is as big as the logos around it, which are big in Glass. */
+.row .tile-apps .logo-plus::before {
+  font-size: 56px;
+}
+
+.add-page .page-head {
+  margin-bottom: 40px;
+}
+
+/* The app library is drawn as Apps is (D11): the icon in the tile and the
+   name under it, six to a row. How an install is going is a second line
+   under the name, and so is "Can't find it?" over "Build your own". */
+.row.add-row {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  row-gap: 96px;
+}
+
+.row.add-row .tile {
+  height: 148px;
+  justify-content: center;
+}
+
+.row.add-row .tile-name {
+  margin-top: 0;
+}
+
+.row.add-row .tile-label,
+.row.add-row .tile-line:not(.add-state) {
   display: none;
 }
 
-.row .tile-apps .tile-name {
-  position: static;
+.row.add-row .add-state,
+.row.add-row .tile-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
+.row.add-row .add-state {
+  top: calc(100% + 52px);
+}
+
+.row.add-row .build-own .tile-count {
+  top: calc(100% + 14px);
+  color: var(--bright-foreground);
+  font-size: 29px;
+  line-height: 1.1;
+}
+
+.row.add-row .build-own .tile-name {
+  top: calc(100% + 14px + 32px);
+}
+
+.section-hash {
+  display: none;
 }
 
 /* An app's details: its logo, its name big, one line, and its actions in a

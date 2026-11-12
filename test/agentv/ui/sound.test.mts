@@ -76,13 +76,13 @@ test("S2.19 Settings → Sound shows the output playing at 100%, and left and ri
   const page = await tv();
   await go(page, "settings/sound");
   await page.waitForSelector('.panel [data-action="output"]');
-  assert.match(await row(page, "output"), /output\s+‹ lg tv \(hdmi\) ›/);
-  assert.match(await row(page, "output-volume"), /output volume\s+100%/);
-  assert.match(await page.locator('.menu-item[data-key="sound"]').innerText(), /sound\s+100% · ui sounds on/);
-  assert.match(await page.locator(".panel").innerText(), /the tv's remote sets how loud it is/);
-  // The UI sounds keep their own switch and volume, under the output's.
-  assert.match(await row(page, "sound"), /ui sounds/);
-  assert.match(await row(page, "volume"), /ui sounds volume/);
+  assert.match(await row(page, "output"), /^output\s+lg tv \(hdmi\)$/);
+  assert.match(await row(page, "output-volume"), /^volume\s+100%$/);
+  // The menu sounds keep their own switch and volume, under the output's.
+  assert.match(await row(page, "sound"), /^menu sounds\s+on$/);
+  assert.match(await row(page, "volume"), /^menu sounds volume\s+\d+%$/);
+  // A row is one line, and nothing is explained under it.
+  assert.equal(await page.locator(".panel .panel-note").count(), 0);
 
   await page.keyboard.press("Enter");
   assert.equal(await focused(page), "output");
@@ -94,7 +94,6 @@ test("S2.19 Settings → Sound shows the output playing at 100%, and left and ri
   await page.waitForFunction(() => /90%/.test(document.querySelector('.panel [data-action="output-volume"]')?.textContent ?? ""));
   assert.equal(await focused(page), "output-volume", "the focus stays on the volume");
   assert.deepEqual((await sent(page)).map((r) => r.volume), [0.95, 0.9]);
-  assert.match(await page.locator('.menu-item[data-key="sound"]').innerText(), /90% · ui sounds on/);
   // Right goes back up, and never past 100%.
   for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => /100%/.test(document.querySelector('.panel [data-action="output-volume"]')?.textContent ?? ""));
@@ -128,7 +127,7 @@ test("S2.19 Settings drawn again before the box answers still shows the output",
   await go(page, "settings/sound");
   await go(page, "settings/sound");
   await page.waitForSelector('.panel [data-action="output"]', { timeout: 5000 });
-  assert.match(await row(page, "output"), /output\s+‹ lg tv \(hdmi\) ›/);
+  assert.match(await row(page, "output"), /^output\s+lg tv \(hdmi\)$/);
   await page.close();
 });
 
@@ -138,12 +137,12 @@ test("S2.19 left and right on the output pick another one, which plays at its ow
   await page.waitForSelector('.panel [data-action="output"]');
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => /built-in audio analog stereo/.test(document.querySelector('.panel [data-action="output"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /built-in audio analog stereo/i.test(document.querySelector('.panel [data-action="output"]')?.textContent ?? ""));
   assert.equal(await focused(page), "output");
   assert.deepEqual((await sent(page)).map((r) => r.output), ["analog"]);
   assert.match(await row(page, "output-volume"), /100%/);
   await page.keyboard.press("ArrowLeft");
-  await page.waitForFunction(() => /lg tv/.test(document.querySelector('.panel [data-action="output"]')?.textContent ?? ""));
+  await page.waitForFunction(() => /lg tv/i.test(document.querySelector('.panel [data-action="output"]')?.textContent ?? ""));
   await page.close();
 });
 
@@ -151,8 +150,7 @@ test("S2.19 with no sound output, Settings → Sound says so and keeps the UI so
   const page = await tv(false);
   await go(page, "settings/sound");
   await page.waitForSelector('.panel [data-action="sound"]');
-  await page.waitForFunction(() => /no sound output/.test(document.querySelector(".panel")?.textContent ?? ""));
-  assert.equal(await page.locator('.panel [data-action="output"]').count(), 0);
-  assert.match(await page.locator('.menu-item[data-key="sound"]').innerText(), /sound\s+ui sounds on/);
+  await page.waitForFunction(() => /No sound output found/.test(document.querySelector(".panel")?.textContent ?? ""));
+  assert.equal(await page.locator('.panel [data-action="output"], .panel [data-action="output-volume"]').count(), 0);
   await page.close();
 });

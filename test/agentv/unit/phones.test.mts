@@ -324,7 +324,7 @@ test("F9 a phone's wrong PINs make only that phone wait, not the TV or another p
   for (let i = 0; i < 5; i++) assert.equal((await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "0000" } })).status, 403);
   const waiting = await send(phone, "POST", "/api/phone/pin", { token: other, body: { pin: "4826" } });
   assert.equal(waiting.status, 403, "that phone waits, even with the right one");
-  assert.match(waiting.data.error, /^too many tries/);
+  assert.match(waiting.data.error, /^Too many tries\. Wait \d+ seconds\.$/);
   assert.equal((await send(tv, "POST", "/api/pin/check", { body: { pin: "4826" } })).status, 200, "the tv's pad doesn't");
   assert.equal((await send(phone, "POST", "/api/phone/pin", { token, body: { pin: "4826" } })).status, 200, "and neither does another phone");
   assert.equal((await send(tv, "DELETE", `/api/phones/${other.kept.id}`, { grant })).status, 200);

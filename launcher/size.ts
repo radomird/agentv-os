@@ -8,7 +8,7 @@
 import { featureOn } from "./features.ts";
 import type { SizeId } from "./looks/looks.ts";
 
-export const SIZE_NAMES: Record<SizeId, string> = { larger: "larger", standard: "standard", more: "more on screen" };
+export const SIZE_NAMES: Record<SizeId, string> = { larger: "Larger", standard: "Standard", more: "More on screen" };
 
 // What GET /api/display answers (daemon/display.ts).
 export interface DisplayState {
@@ -54,11 +54,11 @@ async function put(change: { size?: SizeId; output?: DisplayState["output"] }, g
       body: JSON.stringify(change),
     });
     const data = (await response.json()) as DisplayState & { ok?: boolean; error?: string };
-    if (!response.ok || data.ok === false) return { error: data.error ?? "the tv didn't take it" };
+    if (!response.ok || data.ok === false) return { error: data.error ?? "Couldn't change the size" };
     shown = data;
     return { state: data };
   } catch {
-    return { error: "the tv didn't take it" };
+    return { error: "Couldn't change the size" };
   }
 }
 
@@ -72,12 +72,12 @@ export function setOutput(output: DisplayState["output"], grant?: string): Promi
   return put({ output }, grant);
 }
 
-// What the resolution row says: "4k" for 3840 x 2160, "1440p" and so on,
+// What the resolution row says: "4K" for 3840 x 2160, "1440p" and so on,
 // and "1080p" for 1080p output.
 export function resolutionName(state: DisplayState): string {
   if (state.output === "1080p" || !state.full) return "1080p";
   const height = Number(/x(\d+)@/.exec(state.full)?.[1] ?? 0);
-  return height >= 2160 ? "4k" : `${height}p`;
+  return height >= 2160 ? "4K" : `${height}p`;
 }
 
 // The size one step over: larger to the left, more on screen to the right,
