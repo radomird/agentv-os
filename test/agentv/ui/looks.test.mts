@@ -494,8 +494,8 @@ test("Settings → Appearance keeps the focus ring on the card as each look is p
           await page.keyboard.press("Enter");
           await ringOn(page, "look-terminal", `${at}, into the panel`);
           // Across the three cards, and each look picked in turn: the page
-          // is laid out again in the new look after the pick. At larger the
-          // third card is under the first, so the arrows go by where a card is.
+          // is laid out again in the new look after the pick. The arrows go
+          // by where a card is.
           for (const look of ["glass", "terminal", "cinema", "terminal", "glass"] as const) {
             for (let presses = 0; presses < 2 && (await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) !== `look-${look}`; presses++) {
               await page.keyboard.press(await page.evaluate(arrowTo, `look-${look}`));

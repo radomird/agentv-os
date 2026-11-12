@@ -82,7 +82,12 @@ test("S3.8 the small weather tile draws MET's condition as its scene, with the t
   assert.match(await page.locator(tile).innerText(), /^weather\s+amsterdam\s+12°\s+windy\s+h -?\d+° · l -?\d+°$/);
   assert.match(drawn.foot ?? "", /^H -?\d+° · L -?\d+°$/);
   // Its colours are the theme's.
-  const colours = await page.$eval(`${tile} .pixel path`, (path) => [getComputedStyle(path).fill, getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim()]);
+  // Found and read in one go: home can draw the tile again between a lookup
+  // and a later read, and a path that's been replaced has no style at all.
+  const colours = await page.evaluate((selector) => {
+    const path = document.querySelector(selector)!;
+    return [getComputedStyle(path).fill, getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim()];
+  }, `${tile} .pixel path`);
   assert.equal(colours[0], "rgb(169, 177, 214)");
   assert.equal(colours[1], "#a9b1d6");
   await page.close();
