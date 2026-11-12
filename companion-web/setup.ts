@@ -25,6 +25,8 @@ interface Joining {
   on: boolean;
   joining: string | null;
   error: string | null;
+  // Whether the TV has answered the join this page asked for.
+  answered?: boolean;
 }
 
 let networks: Network[] = [];
@@ -92,15 +94,16 @@ function form(network: Network | null): void {
     if (!ssid) return toast("type the network's name");
     if (password && network?.secure && typed.length < 8) return toast("Wi-Fi passwords have at least 8 characters");
     if (pin && !/^\d{4}$/.test(pin.value)) return toast("The adult PIN has 4 digits");
+    let ask: string | undefined;
     try {
-      await call("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) });
+      ({ ask } = await call<{ ask?: string }>("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) }));
     } catch (error) {
       const refused = error as Error & { pin?: boolean; wait?: number };
       if (!refused.pin) return toast(refused.message);
       pin!.value = "";
       return toast(refused.wait ? `Too many tries. Try again in ${refused.wait} ${refused.wait === 1 ? "second" : "seconds"}.` : "Wrong PIN");
     }
-    joining(ssid);
+    joining(ssid, ask);
   };
   for (const field of [name, password, pin]) {
     field?.addEventListener("keydown", (event) => {
@@ -124,8 +127,10 @@ function form(network: Network | null): void {
   (name ?? password)?.focus();
 }
 
-// The box is joining it. If this page hears back, it didn't work.
-function joining(ssid: string): void {
+// The box is joining it. If this page hears back, it didn't work. With the
+// id of its own join, it waits for the answer to that one, so the reason
+// the try before didn't work isn't shown for this try.
+function joining(ssid: string, ask?: string): void {
   app.replaceChildren(
     h(
       "div",
@@ -138,9 +143,10 @@ function joining(ssid: string): void {
   );
   clearInterval(watching);
   watching = window.setInterval(() => {
-    call<Joining>("GET", "/api/setup/state")
+    call<Joining>("GET", ask ? `/api/setup/state?ask=${ask}` : "/api/setup/state")
       .then((state) => {
         if (state.joining || !state.error) return;
+        if (ask && !state.answered) return;
         list(state.error);
       })
       .catch(() => {

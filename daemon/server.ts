@@ -1342,10 +1342,13 @@ export class Daemon {
     }
 
     // How joining goes, for a phone back on the hotspot after a wrong
-    // password.
+    // password. A page that's waiting on its own join names it, and hears
+    // whether root has answered that one: an error from the try before
+    // isn't this try's.
     if (method === "GET" && path === "/api/setup/state") {
       const { on, joining, joined, error } = this.hotspot.status();
-      this.json(response, 200, { ok: true, on, joining, joined, error });
+      const ask = url.searchParams.get("ask");
+      this.json(response, 200, { ok: true, on, joining, joined, error, ...(ask === null ? {} : { answered: this.hotspot.answered(ask) }) });
       return;
     }
 
@@ -1378,7 +1381,7 @@ export class Daemon {
         return;
       }
       this.log(`a phone on the setup hotspot asked to join ${String(body?.ssid)}`);
-      this.json(response, 200, { ok: true, joining: body?.ssid });
+      this.json(response, 200, { ok: true, joining: body?.ssid, ask: this.hotspot.asked });
       return;
     }
 

@@ -235,14 +235,21 @@ test("it lists the networks, takes the one picked and hands it to root, never lo
 
   const joined = await phone("/api/setup/wifi", host, "POST", { ssid: "home wi-fi", password: "correct horse" }, { Origin: `http://${host}` });
   assert.equal(joined.status, 200);
-  assert.deepEqual(JSON.parse(joined.body), { ok: true, joining: "home wi-fi" });
+  const { ask, ...answer } = JSON.parse(joined.body);
+  assert.deepEqual(answer, { ok: true, joining: "home wi-fi" });
+  assert.equal(JSON.parse(readFileSync(drop, "utf8")).id, ask, "the page gets the id of its ask");
   assert.deepEqual(readDrop(), { join: { ssid: "home wi-fi", password: "correct horse", hidden: false } });
   assert.ok(lines.some((line) => line.includes("asked to join home wi-fi")));
   assert.ok(!lines.some((line) => line.includes("correct horse")), "the password is in no log line");
   rmSync(drop);
 
-  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "that password didn't work for home wi-fi" });
+  // The reason the try before didn't work is still there until root says
+  // how this one went, and a page that names its ask can tell them apart.
+  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "that password didn't work for home wi-fi", answered: "0000000000000000" });
   assert.deepEqual(JSON.parse((await phone("/api/setup/state", host)).body), { ok: true, on: true, joining: null, joined: null, error: "that password didn't work for home wi-fi" });
+  assert.equal(JSON.parse((await phone(`/api/setup/state?ask=${ask}`, host)).body).answered, false, "an error from before this ask isn't its answer");
+  hotspotIs({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", error: "the tv can't see home wi-fi from here", answered: ask });
+  assert.equal(JSON.parse((await phone(`/api/setup/state?ask=${ask}`, host)).body).answered, true);
 });
 
 test("it answers on the hotspot's address and nowhere else", async () => {

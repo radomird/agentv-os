@@ -112,13 +112,28 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.match(await page.locator(".page").innerText(), /scan the new code on your TV$/);
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
+  const first = JSON.parse(readFileSync(drop(), "utf8"));
+  assert.deepEqual(first.join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
   rmSync(drop());
 
   // The password was wrong: the hotspot comes back, and so does the reason.
-  hotspotIs({ on: true, error: "that password didn't work for home wi-fi" });
+  hotspotIs({ on: true, error: "that password didn't work for home wi-fi", answered: first.id });
   await page.waitForFunction(() => /that password didn't work for home wi-fi/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
   assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+
+  // Another try. Until the TV says how this one went, the first try's
+  // reason is still the last thing it said, and it isn't shown for this one.
+  await page.locator('button.network[data-ssid="home wi-fi"]').tap();
+  await page.locator('input[type="password"]').fill("correct horse 2");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  const second = JSON.parse(readFileSync(drop(), "utf8"));
+  rmSync(drop());
+  await page.waitForResponse((response) => response.url().includes("/api/setup/state"));
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+  assert.equal(await page.locator("h1").innerText(), "joining home wi-fi", "the try before's reason isn't this try's");
+  hotspotIs({ on: true, error: "the tv can't see home wi-fi from here", answered: second.id });
+  await page.waitForFunction(() => /the tv can't see home wi-fi from here/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
   await page.close();
 });
 
