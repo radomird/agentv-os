@@ -250,6 +250,9 @@ export interface TvContext {
   pin: { title: string; for: string; digits: number; error: string | null } | null;
   field: (Omit<Field, "label"> & { label?: string; app?: string }) | null;
   screen: "home" | "menu" | "ambient";
+  // The focus is on an app's tile on home or Apps, where a hold opens its
+  // details (ADR-089).
+  details: boolean;
   front: "home" | "app";
   playing: boolean;
   desktop: boolean;
@@ -379,7 +382,7 @@ export class Daemon {
   // What's on the TV for the phones (ADR-037), and a count that goes up with
   // every change the phones should hear, which their asks for the state wait
   // on.
-  private tv: TvContext = { pin: null, field: null, screen: "home", front: "home", playing: false, desktop: false };
+  private tv: TvContext = { pin: null, field: null, screen: "home", details: false, front: "home", playing: false, desktop: false };
   private phoneVersion = 1;
   private phoneWaiters = new Set<() => void>();
   // The provider whose terms a key from Settings → AI waits for (Q104), which
@@ -978,6 +981,7 @@ export class Daemon {
     // none.
     if (change.field !== undefined) this.homeField = cleanField(change.field);
     if (change.screen === "home" || change.screen === "menu" || change.screen === "ambient") next.screen = change.screen;
+    if (typeof change.details === "boolean") next.details = change.details;
     if (change.front === "home" || change.front === "app") {
       next.front = change.front;
       const field = cleanField(change.appField);

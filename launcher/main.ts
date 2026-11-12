@@ -99,9 +99,20 @@ const page = document.getElementById("page")!;
 const sounds = new Sounds();
 const focus = new Focus(document.getElementById("ring")!);
 // A text field with the focus opens the phone's keyboard (ADR-037).
+// Which app's details a hold on OK opens now (ADR-084): the focused tile's.
+// A tile says it has them with data-details; nothing does while something
+// else has the keys.
+const detailsNow = () => {
+  if (preview() || updatingShown || ambient || pinOpen || noticeOpen) return undefined;
+  // A tile left behind by the page before, as under an app made on the TV,
+  // which takes no focus of home's, is no tile.
+  const on = focus.get();
+  return on?.isConnected ? on.dataset.details : undefined;
+};
 focus.onSet = (el) => {
   const field = el instanceof HTMLInputElement ? fieldOf(el) : null;
-  tell({ field });
+  // The phone hears whether a hold has details to open (ADR-089).
+  tell({ field, details: detailsNow() !== undefined });
   typingField(field);
 };
 let history: string[] = ["home"];
@@ -436,6 +447,7 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     setTimeout(() => focus.release(), 400);
   }
   page.replaceChildren(el);
+  tell({ details: detailsNow() !== undefined });
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
   // Under a share's notice too, which has the keys (ADR-050): the page gets
@@ -854,10 +866,8 @@ async function start(): Promise<void> {
     },
     true,
   );
-  // Holding OK on a tile opens its app's details (ADR-084). A tile says it
-  // has them with data-details; nothing does while something else has the
-  // keys.
-  listenInput(act, () => (preview() || updatingShown || ambient || pinOpen || noticeOpen ? undefined : focus.get()?.dataset.details));
+  // Holding OK on a tile opens its app's details (ADR-084).
+  listenInput(act, detailsNow);
   listen({
     layout: () => void refresh(),
     // Another look was picked, in Settings or on the phone: the page again,
