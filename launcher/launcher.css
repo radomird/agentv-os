@@ -2377,21 +2377,25 @@ body.with-backdrop.on-home {
 }
 
 /* A look's preview (ADR-063): home itself in a frame, scaled to a card, for
-   Settings → Themes and backgrounds and setup's look step. */
+   Settings → Themes and backgrounds and setup's look step. In Settings the
+   three cards share the panel's width, three across at every size. */
 .look-cards {
-  display: flex;
-  gap: 32px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
 
+/* The focus ring is drawn on the card's own edge, so the card's padding is
+   the room between the ring and the preview and its name. */
 .look-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 0;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 16px 18px;
   border: none;
   background: none;
-  width: var(--card-width, auto);
+  text-align: left;
 }
 
 .look-frame {
@@ -2405,8 +2409,8 @@ body.with-backdrop.on-home {
   background: var(--background);
 }
 
-.look-card.picked .look-frame {
-  border-color: var(--accent);
+.look-frame.fill {
+  width: auto;
 }
 
 .look-frame-page {
@@ -2420,7 +2424,20 @@ body.with-backdrop.on-home {
 }
 
 .look-card-name {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   font-weight: 800;
+}
+
+/* The look in use: a small mark after its name, in Settings and in setup.
+   The focus ring stays the only ring. */
+.look-card.picked .look-card-name::after {
+  content: "";
+  flex: none;
+  width: 0.36em;
+  height: 0.36em;
+  background: var(--accent);
 }
 
 
