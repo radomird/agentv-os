@@ -12,14 +12,17 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Item } from "../../../apps/contract/contract.ts";
 import { installLocal } from "../../../daemon/apps/install.ts";
+import { AppHost, type PageBroker } from "../../../daemon/apps/loader.ts";
 import { AskWatch } from "../../../daemon/asks.ts";
 import { continueItem, finished, toContinue } from "../../../daemon/executors/continue.ts";
 import { DIDNT_GET, execute, type ExecApp, type ExecContext } from "../../../daemon/executors/index.ts";
 import { match, pick, rank, type Found } from "../../../daemon/executors/play.ts";
 import type { WatchRow } from "../../../daemon/ledger.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "../../../daemon/router.ts";
+import { answerSay, type SayScreen } from "../../../daemon/say-watch.ts";
 import { cleanSayAnswer, type SayAnswer, type SayAsk } from "../../../daemon/say.ts";
 import { Daemon } from "../../../daemon/server.ts";
+import { HARNESS } from "../harness.mts";
 import { pairPhone, type TestPhone } from "./phone-client.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -189,6 +192,117 @@ test("what's new and new episodes, with no way to ask TMDB, say so plainly and d
 test("the screen daemon's answer is held to its shape: items it can't read are dropped", () => {
   const answer = cleanSayAnswer({ ok: true, found: [{ app: "local.kino", items: [{ id: "1", kind: "film", title: "Heat", poster: "javascript:alert(1)", season: -2 }, { id: 2, kind: "film", title: "x" }, { id: "3", kind: "toaster", title: "y" }] }, "junk"] });
   assert.deepEqual(answer, { ok: true, found: [{ app: "local.kino", items: [{ id: "1", kind: "film", title: "Heat" }] }] });
+});
+
+// --- The TV session's side: an app whose page isn't open ----------------------------
+
+// Kino stands in for a streaming app whose search and title pages are its
+// site's own, so they need its page, which isn't open until the app is.
+const KINO_URL = "https://kino.example";
+const KINO_CODE = (show: boolean) => `
+export default {
+  id: "local.kino",
+  async launch() {},
+  signIn: { async isSignedIn() { return true; } },
+  async search(ctx, query) {
+    if (!ctx.page) throw new Error("Kino's page isn't open");
+    await ctx.page.goto(ctx.settings.serverUrl + "/search?q=" + encodeURIComponent(query));
+    return ctx.page.evaluate("results");
+  },
+  playback: {
+    async open() {},
+    async readPlaybackState() { return null; },
+    ${show ? `async show(ctx, item) {
+      if (!ctx.page) throw new Error("Kino's page isn't open");
+      await ctx.page.goto(ctx.settings.serverUrl + "/search?q=" + encodeURIComponent(item.title));
+      const hit = (await ctx.page.evaluate("results")).find((r) => r.title === item.title && r.kind === item.kind && r.year === item.year);
+      if (!hit) return false;
+      await ctx.page.goto(ctx.settings.serverUrl + "/title/" + hit.id);
+      return true;
+    },` : ""}
+  },
+};
+`;
+
+function kino(show = true): AppHost {
+  const dir = join(scratch, `kino-${show ? "show" : "plain"}`);
+  cpSync(join(ROOT, "test/agentv/fixtures/apps/pager"), dir, { recursive: true });
+  writeFileSync(join(dir, "app.ts"), KINO_CODE(show));
+  const manifest = { ...JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")), id: "local.kino", name: "Kino" };
+  return new AppHost({ dir, manifest, settings: { serverUrl: KINO_URL }, harness: HARNESS });
+}
+
+// Kino's site in its page: a search that finds two films of one name, a
+// remake years apart, and each one's own page.
+function kinoTv() {
+  let href = `${KINO_URL}/`;
+  const page: PageBroker = {
+    url: async () => href,
+    async call(method, args) {
+      if (method === "goto") href = String(args[0]);
+      else if (method === "evaluate") {
+        const q = new URL(href).searchParams.get("q") ?? "";
+        return [
+          { id: "k1987", kind: "film", title: "Glass Harbour", year: 1987 },
+          { id: "k2026", kind: "film", title: "Glass Harbour", year: 2026 },
+        ].filter((r) => q && r.title.toLowerCase().includes(q.toLowerCase()));
+      } else throw new Error(`a page can't ${method} here`);
+      return null;
+    },
+  };
+  // The TV: Kino isn't open, and its page is there once it opens.
+  const did: string[] = [];
+  let open = false;
+  const screen: SayScreen = {
+    open: async (app, it) => {
+      did.push(`open ${app}${it ? ` ${it.id}` : ""}`);
+      open = true;
+      return { ok: true };
+    },
+    ready: async (app) => {
+      did.push(`ready ${app}`);
+      return open ? page : undefined;
+    },
+    page: () => (open ? page : undefined),
+    tell: async () => ({ ok: true }),
+    live: async () => ({ ok: true }),
+    speak: async () => ({ ok: true }),
+  };
+  return { screen, did, at: () => href };
+}
+
+const ana = { id: "ana", role: "adult" as const };
+const glass = { id: "tmdb:film:104", kind: "film" as const, title: "Glass Harbour", year: 2026 };
+
+test("a title from New this week opens its app, waits for its page and lands on the title's own page, by its name, kind and year", async () => {
+  let tv = kinoTv();
+  assert.deepEqual(await answerSay({ kind: "show", app: "local.kino", item: glass, viewer: ana }, { screen: tv.screen, host: async () => kino() }), { ok: true, shown: "title" });
+  assert.deepEqual(tv.did, ["open local.kino", "ready local.kino"], "the app opens with nothing to play, and its page is waited for");
+  assert.equal(tv.at(), `${KINO_URL}/title/k2026`, "the remake of 1987 isn't picked");
+  // One the app doesn't have leaves it on its own search for the title.
+  tv = kinoTv();
+  assert.deepEqual(await answerSay({ kind: "show", app: "local.kino", item: { ...glass, year: 2001 }, viewer: ana }, { screen: tv.screen, host: async () => kino() }), { ok: true, shown: "search" });
+  assert.equal(tv.at(), `${KINO_URL}/search?q=Glass%20Harbour`);
+  // An app with no way to show a title's page says so, and nothing opens.
+  tv = kinoTv();
+  assert.deepEqual(await answerSay({ kind: "show", app: "local.kino", item: glass, viewer: ana }, { screen: tv.screen, host: async () => kino(false) }), { ok: true, shown: "unsupported" });
+  assert.deepEqual(tv.did, []);
+});
+
+test("play X on an app whose search needs its page opens the app first and looks with it, and nothing found leaves it on its own search", async () => {
+  const tv = kinoTv();
+  const answer = await answerSay({ kind: "search", query: "Glass Harbour", apps: ["local.kino"], viewer: ana }, { screen: tv.screen, host: async () => kino(false) });
+  assert.deepEqual(answer.found?.map((f) => [f.app, f.items.map((i) => i.id), f.opened, f.error]), [["local.kino", ["k1987", "k2026"], true, undefined]]);
+  assert.deepEqual(tv.did, ["open local.kino", "ready local.kino"]);
+  // Among other apps, it isn't opened just to look.
+  const among = kinoTv();
+  const found = (await answerSay({ kind: "search", query: "Glass Harbour", apps: ["local.kino", "local.other"], viewer: ana }, { screen: among.screen, host: async (id) => (id === "local.kino" ? kino(false) : null) })).found;
+  assert.match(found?.[0].error ?? "", /Kino's page isn't open/);
+  assert.deepEqual(among.did, []);
+  // Opened to look and nothing matched: the person is on the app's search.
+  const { ctx } = context();
+  ctx.search = async () => [{ app: "local.kino", items: [], opened: true }];
+  assert.deepEqual(await execute(routed(play("Dune", { app: "local.kino" })), ctx), { kind: "opened", app: "local.kino", say: "Searched Kino for Dune" });
 });
 
 // --- From a phone, through the daemon ---------------------------------------------

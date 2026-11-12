@@ -18,6 +18,7 @@ export function newItem(title: NewTitle): Item {
     id: `tmdb:${title.kind}:${title.id}`,
     kind: title.kind,
     title: title.title,
+    ...(title.year ? { year: title.year } : {}),
     ...(title.season ? { season: title.season, subtitle: `season ${title.season}` } : {}),
     ...(title.poster ? { poster: title.poster } : {}),
   };

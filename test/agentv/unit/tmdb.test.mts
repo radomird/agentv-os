@@ -395,9 +395,12 @@ test("S8.2 'is there a new episode of' is told, yes or no with the next air date
   assert.deepEqual(calls, []);
 });
 
-test("S8.1 a title picked from what's new is looked up in its app and played, as 'play it on that app' would", async () => {
+test("S8.1 a title picked from what's new opens on its own page in its app; one it can't find is left on the app's search, and an app that can't show a page plays it, as 'play it on that app' would", async () => {
   const { n } = news();
   const asks: SayAsk[] = [];
+  // What the TV session says the app's playback.show came to: none, for an
+  // app without one.
+  let shown: SayAnswer["shown"];
   const apps = [
     { id: "local.kino", name: "Kino", category: "streaming", capabilities: ["launch", "search", "playback"] },
     { id: "local.lumen", name: "Lumen+", category: "streaming", capabilities: ["launch", "search", "playback"] },
@@ -411,10 +414,24 @@ test("S8.1 a title picked from what's new is looked up in its app and played, as
     ask: async (ask) => {
       asks.push(ask);
       if (ask.kind === "search") return { ok: true, found: [{ app: "local.lumen", items: [{ id: "lumen-77", kind: "film", title: "Glass Harbour" }, { id: "lumen-78", kind: "film", title: "Glass Harbour 2" }] }] };
+      if (ask.kind === "show") return { ok: true, ...(shown ? { shown } : {}) };
       return { ok: true };
     },
     changed: () => {},
   });
+  const glass = { id: "tmdb:film:104", kind: "film", title: "Glass Harbour", year: 2026, poster: "https://image.tmdb.org/t/p/w342/f104.jpg" };
+  for (const [answer, outcome] of [
+    ["title", { kind: "opened", app: "local.lumen", item: glass, say: "Glass Harbour, on Lumen+" }],
+    ["search", { kind: "opened", app: "local.lumen", say: "Searched Lumen+ for Glass Harbour" }],
+  ] as const) {
+    shown = answer;
+    const said = await say.hear("what's new", "iphone");
+    asks.splice(0);
+    assert.deepEqual((await say.pick(said.n, 0)).said?.outcome, outcome);
+    assert.deepEqual(asks, [{ kind: "show", app: "local.lumen", item: glass, viewer: { id: "radomir", name: "radomir", role: "adult" } }], "the item is TMDB's name, kind and year, and nothing is searched for or played");
+  }
+  shown = undefined;
+  asks.splice(0);
   const said = await say.hear("what's new", "iphone");
   assert.equal(said.outcome?.kind, "choose");
   // Over an app, the TV session's overlay says the three, and the phone has them.
@@ -422,8 +439,8 @@ test("S8.1 a title picked from what's new is looked up in its app and played, as
   const picked = await say.pick(said.n, 0);
   assert.deepEqual(picked.said?.outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-77", kind: "film", title: "Glass Harbour" }, say: "Glass Harbour, on Lumen+" });
   assert.deepEqual(
-    asks.map((a) => (a.kind === "search" ? `search ${a.query} in ${a.apps}` : a.kind === "open" ? `open ${a.app} ${a.item?.id}` : a.kind)),
-    ["search Glass Harbour in local.lumen", "open local.lumen lumen-77"],
+    asks.map((a) => (a.kind === "search" ? `search ${a.query} in ${a.apps}` : a.kind === "open" ? `open ${a.app} ${a.item?.id}` : a.kind === "show" ? `show ${a.app} ${a.item.id}` : a.kind)),
+    ["show local.lumen tmdb:film:104", "search Glass Harbour in local.lumen", "open local.lumen lumen-77"],
   );
 });
 
@@ -480,8 +497,9 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     assert.equal(feed.titles[0].title, "Glass Harbour");
     const answer = (await send("POST", "/api/whats-new/episode", { query: "copper hill" })).data.answer as { yes: boolean };
     assert.equal(answer.yes, true);
-    // A title chosen on New this week is looked up in its app and played,
-    // through the TV session, as a sentence would be.
+    // A title chosen on New this week opens on its own page in its app,
+    // through the TV session, found there by its name, kind and year. One
+    // its app doesn't have leaves it on the app's own search for it.
     const asks: SayAsk[] = [];
     const tvSession = new AskWatch<SayAsk, SayAnswer>({
       url: `${url}/`,
@@ -489,7 +507,7 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
       what: "a sentence",
       handle: async (ask) => {
         asks.push(ask);
-        if (ask.kind === "search") return { ok: true, found: [{ app: "local.lumen", items: [{ id: "lumen-104", kind: "film", title: "Glass Harbour" }] }] };
+        if (ask.kind === "show") return { ok: true, shown: ask.item.year === 2026 ? "title" : "search" };
         return { ok: true };
       },
       failed: (error) => ({ ok: false, error: error.message }),
@@ -499,8 +517,13 @@ test("S8.1 the daemon's what's new is for who's watching, and the TMDB key goes 
     tvSession.start();
     try {
       const opened = await send("POST", "/api/whats-new/open", { id: "tmdb:film:104" });
-      assert.deepEqual((opened.data.said as { outcome: unknown }).outcome, { kind: "opened", app: "local.lumen", item: { id: "lumen-104", kind: "film", title: "Glass Harbour" }, say: "Glass Harbour, on Lumen+" });
-      assert.deepEqual(asks.filter((a) => a.kind !== "tell").map((a) => (a.kind === "search" ? `search ${a.query} in ${a.apps}` : a.kind === "open" ? `open ${a.app} ${a.item?.id}` : a.kind)), ["search Glass Harbour in local.lumen", "open local.lumen lumen-104"]);
+      const item = { id: "tmdb:film:104", kind: "film", title: "Glass Harbour", year: 2026, poster: "https://image.tmdb.org/t/p/w342/f104.jpg" };
+      assert.deepEqual((opened.data.said as { outcome: unknown }).outcome, { kind: "opened", app: "local.lumen", item, say: "Glass Harbour, on Lumen+" });
+      assert.deepEqual(
+        asks.filter((a) => a.kind !== "tell").map((a) => (a.kind === "show" ? { kind: a.kind, app: a.app, item: a.item } : a)),
+        [{ kind: "show", app: "local.lumen", item }],
+        "nothing is searched for or played: the title's own page is shown",
+      );
       assert.equal((await send("POST", "/api/whats-new/open", { id: "tmdb:film:999" })).status, 404);
     } finally {
       tvSession.stop();

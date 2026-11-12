@@ -8,11 +8,13 @@
 import type { Item, ItemKind } from "../../apps/contract/contract.ts";
 import type { Kind, Route } from "../router.ts";
 
-// What one app's search found, or why it couldn't.
+// What one app's search found, or why it couldn't. opened: the app was
+// opened to look with its page, and it's in front now.
 export interface Found {
   app: string;
   items: Item[];
   error?: string;
+  opened?: boolean;
 }
 
 // The contract's kinds each of the router's kinds takes.

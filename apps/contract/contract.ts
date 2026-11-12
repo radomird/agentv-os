@@ -22,6 +22,7 @@ export interface Item {
   season?: number;
   episode?: number;
   subtitle?: string; // artist, year, album owner
+  year?: number; // the year it came out, when known: a title from New this week has TMDB's
   poster?: string; // 2:3 artwork URL; falls back to TMDB by title (ADR-014)
   still?: string; // 16:9 episode still URL, used by Continue
 }
@@ -84,6 +85,18 @@ export interface TvApp {
   playback?: {
     /** Find and start an item. Resolves when it is playing. */
     open(ctx: AppContext, item: Item): Promise<void>;
+    /**
+     * Optional. Bring the page to a title's own page in the service, without
+     * playing it, so Play is one press away (ADR-097). A title chosen on New
+     * this week comes here: item is TMDB's, with its title, its kind (film or
+     * series), its year when TMDB has one and a season for a new one. Its id
+     * isn't the app's. Use the year and the kind so a remake or another show
+     * of the same name isn't picked. Resolves true once the page is on the
+     * title's page, and false when the service doesn't have it, with the page
+     * left on the service's own search for the title. Without it, the TV
+     * looks the title up with search and opens it with open().
+     */
+    show?(ctx: AppContext, item: Item): Promise<boolean>;
     /** Read from URL + DOM + <video>; never from pixels. Null when nothing is playing. */
     readPlaybackState(ctx: AppContext): Promise<PlaybackState | null>;
     /** The site's own "next episode" control, used by the continue executor. */

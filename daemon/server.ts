@@ -3462,8 +3462,8 @@ export class Daemon {
       this.json(response, 200, { ok: true, answer: await this.news.episode(query, this.ledger.recent(viewer.id, { limit: 200 }), viewer.role, apps) });
       return;
     }
-    // A title on New this week, chosen on home: looked up in its app and
-    // played, as a sentence would, and the TV and the phones hear how it went.
+    // A title on New this week, chosen on home: its app opens on the title's
+    // own page (ADR-097), and the TV and the phones hear how it went.
     if (method === "POST" && path === "/api/whats-new/open") {
       const body = (await this.body(request)) as { id?: unknown } | undefined;
       const viewer = await this.profiles.active();
@@ -3474,7 +3474,7 @@ export class Daemon {
         return;
       }
       const route: Route = { ...NONE, intent: "play", query: title.title, kind: title.kind, app: title.app, season: title.season ?? null };
-      this.json(response, 200, { ok: true, said: await this.say.act(route, "the tv", title.title) });
+      this.json(response, 200, { ok: true, said: await this.say.act(route, "the tv", title.title, newItem(title)) });
       return;
     }
     // The TV's spoken answers (stage 8): which voice says them, whether
