@@ -73,7 +73,7 @@ test("S3.8 the small weather tile draws MET's condition as its scene, with the t
     foot: el.querySelector(".entry-caption")?.textContent,
   }));
   assert.equal(drawn.head, "weather");
-  assert.equal(drawn.place, "amsterdam");
+  assert.equal(drawn.place, "Amsterdam");
   // MET said partly cloudy with 11.2 m/s of wind: windy.
   assert.equal(drawn.scene, "windy");
   assert.equal(drawn.value, "12°");
@@ -120,7 +120,7 @@ test("S3.9 the medium weather tile shows today and tomorrow, and the large one n
     days: [...el.querySelectorAll(".entry")].map((entry) => entry.querySelector(".entry-label")?.textContent),
     icons: el.querySelectorAll(".entry .pixel").length,
   }));
-  assert.equal(large.place, "amsterdam · 7 days");
+  assert.equal(large.place, "Amsterdam · 7 days");
   assert.equal(large.scene, "windy");
   assert.equal(large.days.length, 7);
   assert.equal(large.days[0], "today");
@@ -145,7 +145,7 @@ test("the clock ticks on home, and choosing it opens the ambient screen", async 
   const shown = await page.$eval(clock, (el) => [el.querySelector(".clock-time")?.textContent, el.querySelector(".tile-head-label")?.textContent]);
   assert.match(shown[0] ?? "", /^\d\d:\d\d$/);
   // Medium: the box's own city along the top.
-  assert.equal(shown[1], "amsterdam");
+  assert.equal(shown[1], "Amsterdam");
   await page.locator(clock).hover();
   await page.keyboard.press("Enter");
   await page.waitForSelector("#ambient.on");
@@ -162,13 +162,13 @@ test("choosing Weather opens Settings → Weather, where left and right pick ano
   await page.locator(tile).hover();
   await page.keyboard.press("Enter");
   await page.waitForSelector('.menu-item.open[data-key="weather"]');
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "amsterdam");
+  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Amsterdam");
   await page.locator('[data-action="city"]').hover();
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "belgrade");
-  assert.equal((await (await fetch(`${url}/api/tile/agentv.weather/s`)).json()).tile.headline.label, "belgrade");
+  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Belgrade");
+  assert.equal((await (await fetch(`${url}/api/tile/agentv.weather/s`)).json()).tile.headline.label, "Belgrade");
   await page.locator('[data-action="own-city"]').click();
-  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "amsterdam");
+  await page.waitForFunction(() => document.querySelector(".panel-big")?.textContent === "Amsterdam");
   await page.close();
 });
 
