@@ -314,7 +314,9 @@ test("T16.1 OK held on something that isn't a tile is one OK, however long the k
   await sleep(200);
   assert.equal(await opened(), 1, "a key held on Play opens once");
   // And from the phone, which knows the focus is on no tile: one OK as the
-  // finger lifts.
+  // finger lifts. The phone learns it from the TV, so it opens once the TV
+  // has said so, and not on what the page before it said.
+  await until(() => !(daemon as unknown as { tv: { details: boolean } }).tv.details);
   const hand = await phone();
   sent.length = 0;
   await touchOk(hand, 900);
