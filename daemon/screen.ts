@@ -1611,11 +1611,14 @@ export class Screen {
   // The home screen in front on its ambient screen, the one idle screen.
   // What was in front stays open behind it, unless the TV went off and it
   // closed.
-  showAmbient(): Promise<object> {
+  // On a locked TV nothing is kept to go back to (behind is false): a key on
+  // the ambient screen goes to the PIN pad.
+  showAmbient(behind = true): Promise<object> {
     return this.queue(async () => {
+      if (!behind) this.ambientFrom = null;
       if (this.ambient) return;
       const front = this.front();
-      this.ambientFrom = front && front.role !== "home" ? front.address : null;
+      this.ambientFrom = behind && front && front.role !== "home" ? front.address : null;
       const home = this.homeWindow();
       if (home && front?.address !== home.address) await this.toFront(home.address);
       this.ambient = true;
@@ -1779,19 +1782,49 @@ export class Screen {
         this.log(`${game} stays in front`);
       }
     })
-      .then(() => (stays ? undefined : this.showAmbient()))
+      // A locked TV comes back on home's PIN pad, not on the game that was
+      // in front: a key on the ambient screen doesn't go back to it. That
+      // holds for a TV that came back on while the apps closed too.
+      .then(() => (stays ? undefined : this.showAmbient(!locked)))
       .then(() =>
         this.queue(async () => {
-          // A locked TV comes back on home's PIN pad, not on the game that
-          // was in front: a key on the ambient screen doesn't go back to it.
-          // That holds for a TV that came back on while the apps closed too.
-          if (locked && this.ambientFrom && this.windows.get(this.ambientFrom)?.role === "steam") this.ambientFrom = null;
+          if (locked) await this.gameOutOfReach();
           // Then nothing draws until the TV is back (ADR-072).
           if (!this.tvOff) return;
           this.dark = true;
           await this.output(false, "the TV is off");
         }),
       );
+  }
+
+  // On a locked TV the game ends out of reach, whatever happened on the way
+  // to home: a compositor call that failed, or home with no window just
+  // then. Steam's windows go out of sight, home is asked for once more, and
+  // a game that can't be put out of sight closes.
+  private async gameOutOfReach(): Promise<void> {
+    const games = [...this.windows.values()].filter((w) => w.role === "steam").map((w) => w.address);
+    if (!games.length) return;
+    const onTv = async () => (await this.hypr.clients()).filter((c) => c.workspace.name === TV_WORKSPACE).map((c) => c.address);
+    let seen: string[] = [];
+    try {
+      seen = await onTv();
+      if (games.some((a) => seen.includes(a))) {
+        this.log("the TV is locked and the game was still on it; out of sight");
+        for (const address of games.filter((a) => seen.includes(a))) await this.hold(address);
+        seen = await onTv();
+        if (games.some((a) => seen.includes(a))) throw new Error("it's still on the TV");
+      }
+    } catch (error) {
+      this.log(`the TV is locked and the game couldn't be put out of sight, so it closes: ${(error as Error).message}`);
+      this.opens = this.opens.filter((o) => o.role !== "steam");
+      this.apps.get("steam")?.stop();
+      this.running();
+    }
+    this.stack = this.stack.filter((a) => !games.includes(a));
+    const home = this.homeWindow();
+    // Home's new window comes in front when it opens.
+    if (!home) this.want = { role: "home", until: Infinity };
+    else if (!seen.includes(home.address)) await this.toFront(home.address).catch((error: Error) => this.log(`home couldn't be put in front: ${error.message}`));
   }
 
   // The game in front, if one is: Steam's window, or a game made on this TV

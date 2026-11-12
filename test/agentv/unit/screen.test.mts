@@ -68,6 +68,8 @@ class FakeHyprland implements Hyprland {
   // How many times turning the output off is refused, as Hyprland does just
   // after a wake.
   refuseOff = 0;
+  // A call the compositor fails, as a hyprctl that timed out does.
+  refuse: (expression: string) => boolean = () => false;
   private handler: (name: string, data: string) => void = () => {};
 
   async clients() {
@@ -91,6 +93,7 @@ class FakeHyprland implements Hyprland {
 
   async dispatch(expression: string) {
     this.dispatched.push(expression);
+    if (this.refuse(expression)) throw new Error("hyprctl dispatch: timed out");
     let m;
     if (/^hl\.dsp\.dpms\(\{ action = "disable"/.test(expression) && this.refuseOff > 0) {
       this.refuseOff--;
@@ -1850,6 +1853,61 @@ test("T16.2 no answer about the lock counts as locked: the game doesn't stay in 
   await sleep(60);
   await t.screen.idle();
   await t.screen.fromHome({ cmd: "wake" });
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.stop();
+});
+
+test("T16.2 a profile that locks, and home can't be put in front: the game ends out of sight, not on the TV", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  t.launcher.locking = true;
+  const { steam } = await withSteam(t);
+  // The compositor fails the one call that brings home's window onto the TV.
+  let refused = 0;
+  t.hypr.refuse = (expression) => /^hl\.dsp\.window\.move\(\{ window = "address:0xa", workspace = "1"/.test(expression) && refused++ === 0;
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(refused > 0, true, "the call failed");
+  assert.equal(steam.stopped, false, "the game stays open");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE, "and out of sight");
+  assert.deepEqual(t.hypr.onTv(), ["0xa"], "home is asked for again, and is what the TV comes back to");
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.hypr.active, "0xa");
+  t.screen.stop();
+});
+
+test("T16.2 a profile that locks, and the compositor keeps failing: the game closes", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  t.launcher.locking = true;
+  const { steam } = await withSteam(t);
+  t.hypr.refuse = (expression) => /^hl\.dsp\.window\.move\(/.test(expression);
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(steam.stopped, true, "a game that can't be put out of sight closes");
+  assert.deepEqual(await open(t.screen), []);
+  t.screen.stop();
+});
+
+test("T16.2 a profile that locks, and home has no window just then: the game is out of sight, and home comes in front when it's back", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  t.launcher.locking = true;
+  const { steam } = await withSteam(t);
+  // Home's Chromium went, and its new window isn't up yet.
+  t.hypr.close("0xa");
+  await t.screen.idle();
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(steam.stopped, false);
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE, "the game is out of sight");
+  assert.deepEqual(t.hypr.onTv(), []);
+  t.hypr.open("0xc", t.launcher.last("home").pid);
+  await t.screen.idle();
+  assert.deepEqual(t.hypr.onTv(), ["0xc"], "home's new window comes in front");
   assert.equal(t.screen.front()?.role, "home");
   t.screen.stop();
 });
