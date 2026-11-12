@@ -24,6 +24,11 @@
 //   what it gets in its own files in the builder's home.
 // - sign-in-code.json: the code the person pasted on the phone, for the
 //   CLI's prompt.
+// - fetch-cli.json: the AI's CLI, wanted now rather than with the first
+//   build, once the AI is connected, at the daemon's start and when an ask
+//   found it missing. If it isn't in the builder's home, this starts
+//   agentv-builder-cli@ for it and doesn't wait, so nothing else queues
+//   behind the download. It writes no answer, so it never hides a build's.
 //
 // One build runs at a time. What happened goes to /run/agentv-build/answer.json
 // for the daemon, and a refused build's status.json says why.
@@ -205,7 +210,27 @@ export class HandOver {
     const install = this.take("install.json");
     if (install.found) return this.install(install.data);
     const start = this.take("start.json");
-    return start.found ? this.start(start.data) : null;
+    if (start.found) return this.start(start.data);
+    const fetch = this.take("fetch-cli.json");
+    return fetch.found ? this.fetchCli(fetch.data) : null;
+  }
+
+  // The AI's CLI, fetched in the background if it isn't there yet. A build
+  // or a sign-in that comes along meanwhile waits for the same fetch.
+  fetchCli(data: unknown): { started: boolean; reason?: string } {
+    const provider = (data as { provider?: unknown } | null)?.provider as Provider;
+    if (!PROVIDERS.includes(provider)) {
+      console.error("agentv-build-start: a CLI for which provider");
+      return { started: false, reason: "which provider" };
+    }
+    const cli = CLIS[provider];
+    if (existsSync(join(this.o.home, ".local/bin", cli))) return { started: true };
+    if (!this.o.systemctl(["start", "--no-block", `agentv-builder-cli@${cli}.service`])) {
+      console.error(`agentv-build-start: couldn't start fetching ${cli}`);
+      return { started: false, reason: `couldn't start fetching ${cli}` };
+    }
+    console.log(`agentv-build-start: fetching ${cli}`);
+    return { started: true };
   }
 
   // A version's folder, if it's a real one under the app's root-owned one.

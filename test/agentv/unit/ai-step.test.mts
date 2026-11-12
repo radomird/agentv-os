@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -126,5 +127,66 @@ test("the AI step's routes: icons, and the sign-in only for a plan whose terms a
     assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn, null);
   } finally {
     await daemon.close();
+  }
+});
+
+// The drop's fetch-cli.json once the daemon leaves one, or null.
+async function fetchAsked(drop: string): Promise<unknown> {
+  for (let i = 0; i < 100; i++) {
+    try {
+      return JSON.parse(readFileSync(join(drop, "fetch-cli.json"), "utf8"));
+    } catch {
+      await sleep(20);
+    }
+  }
+  return null;
+}
+
+test("the AI's CLI is fetched as soon as the AI is connected, by plan or key, and again each time the daemon starts, not with the first app that's made", async () => {
+  const state = join(scratch, "fetch");
+  const drop = join(state, "build-drop");
+  const run = join(scratch, "fetch-run");
+  const daemon = new Daemon({ root: ROOT, state, port: 0, log: () => {}, builtins: null, buildRun: run });
+  const url = `http://127.0.0.1:${await daemon.listen()}`;
+  const post = (path: string, body: unknown = {}) => fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post("/api/ai", { provider: "claude", path: "plan" })).status, 200);
+    await sleep(100);
+    assert.ok(!existsSync(join(drop, "fetch-cli.json")), "nothing installs before the terms are accepted");
+    await daemon.ai.accept("claude", "plan", { phone: "pixel", viewer: "radomir" });
+    assert.equal((await post("/api/ai", { provider: "claude", path: "plan" })).status, 200);
+    assert.deepEqual(await fetchAsked(drop), { provider: "claude" });
+    rmSync(join(drop, "fetch-cli.json")); // root took it
+
+    // A plan's sign-in done says so again.
+    const signIn = daemon.planSignIn;
+    await signIn.start("claude");
+    rmSync(join(drop, "sign-in.json"));
+    mkdirSync(join(run, "sign-in"), { recursive: true });
+    writeFileSync(join(run, "sign-in", "status.json"), JSON.stringify({ provider: "claude", state: "done", at: new Date(Date.now() + 1000).toISOString() }));
+    assert.equal((await signIn.state())?.signedIn, true);
+    assert.deepEqual(await fetchAsked(drop), { provider: "claude" });
+    rmSync(join(drop, "fetch-cli.json"));
+
+    // A key, its terms accepted: its CLI too, for the first build.
+    await daemon.ai.choose("gemini", "key");
+    await daemon.ai.accept("gemini", "key", { phone: "pixel", viewer: "radomir" });
+    assert.equal((await post("/api/ai", { provider: "gemini", path: "key" })).status, 200);
+    assert.deepEqual(await fetchAsked(drop), { provider: "gemini" });
+    rmSync(join(drop, "fetch-cli.json"));
+    assert.equal((await post("/api/ai", { provider: "claude", path: "plan" })).status, 200);
+    assert.deepEqual(await fetchAsked(drop), { provider: "claude" });
+    rmSync(join(drop, "fetch-cli.json"));
+  } finally {
+    await daemon.close();
+  }
+
+  // Start-up asks again, in case it's missing: root checks.
+  const again = new Daemon({ root: ROOT, state, port: 0, log: () => {}, builtins: null, buildRun: run });
+  await again.listen();
+  try {
+    assert.deepEqual(await fetchAsked(drop), { provider: "claude" });
+  } finally {
+    await again.close();
   }
 });
