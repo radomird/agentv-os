@@ -159,8 +159,8 @@ async function main(id: string): Promise<void> {
     const high = degrees(day.high, place.units);
     const low = degrees(day.low, place.units);
     const caption = entry.caption ?? "";
-    const shownHigh = today ? caption.match(/h (-?\d+)°/)?.[1] : entry.value;
-    const shownLow = caption.match(/l (-?\d+)°/)?.[1] ?? caption.match(/^(-?\d+)°$/)?.[1];
+    const shownHigh = today ? caption.match(/\bh (-?\d+)°/i)?.[1] : entry.value;
+    const shownLow = caption.match(/\bl (-?\d+)°/i)?.[1] ?? caption.match(/^(-?\d+)°$/)?.[1];
     if (!today && entry.icon !== day.scene) problems.push(`${what} shows ${entry.icon}, MET says ${day.scene}`);
     if (!near(shownHigh, high)) problems.push(`${what}'s high is ${shownHigh ?? "missing"}, MET says ${high}`);
     if (!near(shownLow, low)) problems.push(`${what}'s low is ${shownLow ?? "missing"}, MET says ${low}`);
