@@ -479,9 +479,12 @@ test("Up from the bar goes back into the Settings page it left, and doesn't put 
     await page.locator('.menu-item[data-key="tv"]').click();
     await page.locator('.panel [data-action="updates"]').click();
     await page.waitForSelector('.settings-panel[data-page="updates"] [data-focus]');
-    await page.keyboard.press("ArrowDown");
-    for (let i = 0; i < 10 && !(await page.evaluate(() => Boolean(document.querySelector(".bar .focused")))); i++) await page.keyboard.press("ArrowDown");
-    assert.equal(await page.evaluate(() => Boolean(document.querySelector(".settings-panel .focused"))), false, "down from the page's last row is the bar");
+    // Down from the page's last row stays on it (ADR-094).
+    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".settings-panel [data-focus]")].at(-1)?.classList.contains("focused")), true, "down stays on the page's last row");
+    // The bar, as a pointer or the arrows from the list reach it.
+    await page.locator(".bar-link").last().hover();
+    await page.waitForFunction(() => Boolean(document.querySelector(".bar .focused")));
     await page.keyboard.press("ArrowUp");
     assert.equal(await page.locator('.settings-panel[data-page="updates"]').count(), 1, "the page is still open");
     assert.equal(await page.evaluate(() => Boolean(document.querySelector(".settings-panel .focused"))), true, "and the focus is back in it");
