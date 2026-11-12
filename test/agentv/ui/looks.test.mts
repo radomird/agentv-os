@@ -522,7 +522,10 @@ test("Settings → Appearance keeps the focus ring on the card as each look is p
           await settled(page);
           await page.keyboard.press("Enter");
           assert.match((await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "", /^theme-/, `${at}: OK goes into the theme list`);
-          assert.deepEqual(await list(), { cut: 0, shown: 4, thumb: true, down: 0 }, `${at}: two whole rows of themes, and the thumb at the top`);
+          // As many whole rows as the page has room for, more than two
+          // (ADR-095), two themes a row.
+          const top = await list();
+          assert.ok(top.cut === 0 && top.shown > 4 && top.shown % 2 === 0 && top.thumb && top.down === 0, `${at}: whole rows of themes filling the page, and the thumb at the top: ${JSON.stringify(top)}`);
           await frames(page);
           const inSight = await page.evaluate(() => {
             const panel = document.querySelector(".settings-panel")!.getBoundingClientRect();
@@ -530,14 +533,14 @@ test("Settings → Appearance keeps the focus ring on the card as each look is p
             return row.top >= panel.top - 1 && row.bottom <= panel.bottom + 1;
           });
           assert.ok(inSight, `${at}: the focused theme is in sight`);
-          for (let row = 0; row < 3; row++) await page.keyboard.press("ArrowDown");
+          for (let row = 0; row < top.shown / 2 + 1; row++) await page.keyboard.press("ArrowDown");
           const focused = (await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "";
           assert.match(focused, /^theme-/, `${at}: still in the list`);
           await ringOn(page, focused, `${at}, down the theme list`);
           // The thumb moves with the list's scroll, a frame after the keys.
           await frames(page);
           const down = await list();
-          assert.ok(down.cut === 0 && down.shown === 4 && down.down > 0, `${at}: whole rows still, and the thumb has moved down: ${JSON.stringify(down)}`);
+          assert.ok(down.cut === 0 && down.shown === top.shown && down.down > 0, `${at}: whole rows still, and the thumb has moved down: ${JSON.stringify(down)}`);
         } finally {
           await page.close();
         }

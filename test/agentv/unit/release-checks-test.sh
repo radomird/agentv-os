@@ -95,7 +95,7 @@ pass "a branch named like the release's tag isn't its tag"
 # Not being able to ask isn't the same as no tag: the night stops.
 run 1.0.0 "$SCRATCH/no-such-repo"
 [[ $status == 1 ]] || fail "a repository that can't be listed exits 1, not 3" "status $status"
-for odd in 1.0 1.0.0-rc1 v1.0.0 "1.0.0 x" ""; do
+for odd in 1.0 1.0.0-rc1 v1.0.0 "1.0.0 x" "" 01.0.0 1.00.0; do
   run "$odd" "$iso"
   [[ $status == 1 ]] || fail "'$odd' isn't a release's version" "status $status"
 done

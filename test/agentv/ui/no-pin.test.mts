@@ -384,7 +384,8 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await hand.locator('[data-action="later"]').tap();
   await remote(b, hand);
   rmSync(join(b.state, "update-seen.json"), { force: true });
-  await go(screen, "settings/updates");
+  // Tonight is with the notes, a level under Updates (ADR-094).
+  await go(screen, "settings/whats-new");
   await screen.waitForSelector('.settings-panel [data-action="tonight"]');
   await screen.locator('.settings-panel [data-action="tonight"]').click();
   await screen.waitForSelector(".tonight-note");
@@ -721,7 +722,7 @@ for (const screens of SCREENS) {
       const sent = (cmd: string) => page.evaluate((c) => (window as unknown as { screenRequests: Request[] }).screenRequests.filter((r) => r.cmd === c).length, cmd);
 
       // Tonight: Back leaves it unasked, and the PIN asks it.
-      await go(page, "settings/updates");
+      await go(page, "settings/whats-new");
       await page.waitForSelector('.settings-panel [data-action="tonight"]');
       await page.locator('.settings-panel [data-action="tonight"]').click();
       await padUp(page, true);
