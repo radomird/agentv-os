@@ -80,7 +80,7 @@ test("S3.8 the small weather tile draws MET's condition as its scene, with the t
   assert.equal(drawn.caption, "Windy");
   // Terminal shows AgenTV's own tile in lower case, like the rest of the TV.
   assert.match(await page.locator(tile).innerText(), /^weather\s+amsterdam\s+12°\s+windy\s+h -?\d+° · l -?\d+°$/);
-  assert.match(drawn.foot ?? "", /^h -?\d+° · l -?\d+°$/);
+  assert.match(drawn.foot ?? "", /^H -?\d+° · L -?\d+°$/);
   // Its colours are the theme's.
   const colours = await page.$eval(`${tile} .pixel path`, (path) => [getComputedStyle(path).fill, getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim()]);
   assert.equal(colours[0], "rgb(169, 177, 214)");
