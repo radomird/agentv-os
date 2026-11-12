@@ -19,17 +19,17 @@ import type { Ctx, View } from "./main.ts";
 // What's going on, for the status bar.
 function info(about: SetupInfo): string {
   const phone = about.phones.length ? `${about.phones[about.phones.length - 1]} paired` : "phone waiting";
-  if (about.hotspot.on) return `wifi hotspot · ${phone}`;
-  if (about.network.via === "ethernet") return `ethernet · ${phone}`;
-  if (about.network.via === "wi-fi") return `wifi ${about.network.name ?? ""} · ${phone}`.replace("  ", " ");
-  return "no network yet";
+  if (about.hotspot.on) return `Wi-Fi hotspot · ${phone}`;
+  if (about.network.via === "ethernet") return `Cable · ${phone}`;
+  if (about.network.via === "wi-fi") return `Wi-Fi ${about.network.name ?? ""} · ${phone}`.replace("  ", " ");
+  return "No network yet";
 }
 
 // The welcome screen as D3 draws it, with setup's own switch on.
 export const welcome2 = (ctx: Ctx): View => welcome(ctx, true);
 
 export function welcome(ctx: Ctx, phase2 = false): View {
-  const line = h("p", { class: "welcome-line" }, "scan the code with your phone.");
+  const line = h("p", { class: "welcome-line" }, "Scan the code with your phone");
   const qr = h("img", { class: "qr", alt: "" }) as HTMLImageElement;
   const label = h("span", { class: "qr-label" });
   const frame = h(
@@ -42,12 +42,13 @@ export function welcome(ctx: Ctx, phase2 = false): View {
     h("span", { class: "qr-box" }, qr),
   );
   const right = h("div", { class: "welcome-qr away" }, frame, label);
-  const enterLabel = h("span", {}, ctx.info.phones.length ? "carry on" : "use a keyboard instead");
+  // The Enter key's cap, and what it does once a phone is paired. With no
+  // phone yet, the line above says what Enter is for.
   const enter = h(
     "button",
     { class: "enter", "data-focus": true, "data-action": "enter", onclick: () => void carryOn() },
-    h("span", { class: "key" }, "↵ enter"),
-    enterLabel,
+    h("span", { class: "key" }, "Enter"),
+    ctx.info.phones.length ? h("span", {}, "Continue") : null,
   );
   const el = phase2
     ? h("div", { class: "setup-page welcome welcome2" }, h("div", { class: "welcome-left" }, hi(), line), right)
@@ -87,21 +88,21 @@ export function welcome(ctx: Ctx, phase2 = false): View {
     ctx.status(info(about));
     const { hotspot, network } = about;
     if (paired) {
-      line.textContent = `${paired} is paired.`;
+      line.textContent = `${paired} is paired`;
       showQr(null);
     } else if (hotspot.on && hotspot.ssid) {
-      line.textContent = hotspot.error ? `${hotspot.error}. scan the code to try again.` : "scan the code with your phone.";
-      showQr(`/api/hotspot/qr?${encodeURIComponent(hotspot.ssid)}`, "wifi ", asWritten(hotspot.ssid), ...(hotspot.password ? [" · password ", asWritten(hotspot.password)] : []));
+      line.textContent = hotspot.error ? `${hotspot.error}. Scan the code to try again.` : "Scan the code with your phone";
+      showQr(`/api/hotspot/qr?${encodeURIComponent(hotspot.ssid)}`, "Wi-Fi ", asWritten(hotspot.ssid), ...(hotspot.password ? [" · password ", asWritten(hotspot.password)] : []));
     } else if (hotspot.joining) {
-      line.textContent = `joining ${hotspot.joining}.`;
+      line.replaceChildren("Joining ", asWritten(hotspot.joining), "…");
       showQr(null);
     } else if (network.online) {
       const code = await pairCode();
       if (stopped) return;
-      line.textContent = about.phones.length ? "your phone is paired. scan the code to pair another." : "scan the code with your phone to pair it.";
-      showQr(code?.url ? `/api/phones/qr?${code.code}` : null, ...(code ? ["code ", asWritten(code.code)] : []));
+      line.textContent = about.phones.length ? "Your phone is paired. Scan the code to pair another." : "Scan the code with your phone to pair it";
+      showQr(code?.url ? `/api/phones/qr?${code.code}` : null, ...(code ? ["Code ", asWritten(code.code)] : []));
     } else {
-      line.textContent = phase2 ? "plug in a network cable." : "plug in a network cable, or press enter to pick a wi-fi.";
+      line.textContent = phase2 ? "Plug in a cable" : "Plug in a cable, or press Enter to pick Wi-Fi";
       showQr(null);
     }
   }
@@ -113,7 +114,7 @@ export function welcome(ctx: Ctx, phase2 = false): View {
     if (network.online) await ctx.finish("welcome", { keyboard: ctx.info.phones.length === 0 });
     else if (hotspot.on) ctx.open("welcome/wifi");
     else {
-      ctx.toast("plug in a network cable first", "fail");
+      ctx.toast("Plug in a cable first", "fail");
       ctx.sounds.play("failure");
     }
   }
@@ -159,7 +160,7 @@ export function welcome(ctx: Ctx, phase2 = false): View {
 export function wifi(ctx: Ctx): View {
   const list = h("div", { class: "networks" });
   const form = h("div", { class: "network-form hidden" });
-  const el = h("div", { class: "setup-page" }, ...heading("tv setup · wifi", "pick your wi-fi.", ctx.reduced()), h("div", { class: "wifi" }, list, form));
+  const el = h("div", { class: "setup-page" }, ...heading("tv setup · wifi", "Pick your Wi-Fi", ctx.reduced()), h("div", { class: "wifi" }, list, form));
   let picked: Picked | null = null;
 
   const join = async (ssid: string, password: string) => {
@@ -176,12 +177,12 @@ export function wifi(ctx: Ctx): View {
 
   const pick = (network: Picked) => {
     picked = network;
-    const { name, password, go } = joinFields(network, { name: "the network's name", password: `the password for ${network.ssid || "the network"}`, join: "↵ join" }, (ssid, typed) => void join(ssid, typed));
+    const { name, password, go } = joinFields(network, { name: "Network name", password: `Password for ${network.ssid || "the network"}`, join: "Join" }, (ssid, typed) => void join(ssid, typed));
     const parts: (HTMLElement | null)[] = [
-      h("div", { class: "panel-title" }, network.hidden ? "another network" : network.ssid),
-      name ? h("label", { class: "field-label" }, "name") : null,
+      h("div", { class: "panel-title" }, network.hidden ? "Another network" : asWritten(network.ssid)),
+      name ? h("label", { class: "field-label" }, "Name") : null,
       name,
-      password ? h("label", { class: "field-label" }, "password") : null,
+      password ? h("label", { class: "field-label" }, "Password") : null,
       password,
       go,
     ];
@@ -190,7 +191,7 @@ export function wifi(ctx: Ctx): View {
     ctx.focus.set(name ?? password ?? go);
   };
 
-  const row = (network: Parameters<typeof networkRow>[0]) => networkRow(network, { other: "another network", pick });
+  const row = (network: Parameters<typeof networkRow>[0]) => networkRow(network, { other: "Another network", pick });
 
   void setup.networks().then(
     (networks) => {
@@ -200,5 +201,5 @@ export function wifi(ctx: Ctx): View {
     () => list.replaceChildren(row(null)),
   );
 
-  return { el, info: "↑↓ move · ↵ pick · esc back" };
+  return { el };
 }

@@ -86,7 +86,7 @@ test("T7.1 each screen's status bar says its step of setup's 12, as blocks and \
       assert.equal(step, `${entry.n} of 12 · ${entry.name}`, entry.step);
       assert.equal(await page.locator(".bar .bar-block").count(), 12, `${entry.step}: a block for each of the 12`);
       assert.equal(await page.locator(".bar .bar-block.done").count(), entry.n, `${entry.step}: the steps done and this one filled`);
-      assert.equal(await page.locator(".bar .bar-blocks").getAttribute("aria-label"), `step ${entry.n} of 12`);
+      assert.equal(await page.locator(".bar .bar-blocks").getAttribute("aria-label"), `Step ${entry.n} of 12`);
       seen.push(step ?? "");
     } finally {
       await page.close();
@@ -123,7 +123,7 @@ test("T7.1 no setup screen lists the steps ahead: the bar's blocks are the only 
     const page = await tv();
     try {
       const text = (await page.locator(".setup-page").innerText()).toLowerCase();
-      for (const later of ["who watches", "theme and background", "of 12"]) assert.ok(!text.includes(later), `${step} says "${later}"`);
+      for (const later of ["who's watching", "who watches", "theme and background", "of 12"]) assert.ok(!text.includes(later), `${step} says "${later}"`);
     } finally {
       await page.close();
     }
@@ -135,7 +135,7 @@ test("with setup's own switch off, the bar is phase 1's, with no blocks", async 
   at("country");
   const page = await tv();
   try {
-    assert.equal(await page.locator(".bar .bar-step").textContent(), "1/6 country");
+    assert.equal(await page.locator(".bar .bar-step").textContent(), "1/6 location");
     assert.equal(await page.locator(".bar .bar-block").count(), 0);
     assert.equal(await page.locator(".bar.counted").count(), 0);
   } finally {
@@ -150,9 +150,9 @@ test("the goal says the pick only sets up the first home, and OK on a card picks
   const page = await tv();
   try {
     await page.waitForSelector(".goal-cards");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "what's it for, mostly?");
-    assert.equal(await page.locator(".setup-line").textContent(), "this only sets up your first home. you can still use everything.");
-    assert.deepEqual(await page.locator(".goal-card-name").allTextContents(), ["streaming", "music", "media", "gaming"]);
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "What's it for, mostly?");
+    assert.equal(await page.locator(".setup-line").textContent(), "It only arranges your home. Everything still works.");
+    assert.deepEqual(await page.locator(".goal-card-name").allTextContents(), ["Streaming", "Music", "Media", "Gaming"]);
     assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue after one pick");
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
@@ -175,7 +175,7 @@ test("with the box check on, gaming says what to expect on this box", async () =
   try {
     await page.goto(`${url}/`);
     await page.waitForSelector(".goal-cards");
-    assert.equal(await page.locator('[data-goal="gaming"] .goal-card-note').textContent(), "light games on this box");
+    assert.equal(await page.locator('[data-goal="gaming"] .goal-card-note').textContent(), "Fine for light games");
   } finally {
     await page.close();
     switches(true);
@@ -196,7 +196,7 @@ test("Q226 theme and background are one screen: home in each theme, the backgrou
   await page.goto(`${url}/`);
   try {
     await page.waitForSelector(".theme2 .tb-theme.focused");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a theme.");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick a theme");
     assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue or done");
     const frames = page.locator(".tb-theme iframe");
     assert.ok((await frames.count()) >= 2, "a preview for each theme");
@@ -268,7 +268,7 @@ test("Q226 who watches is one headline and the row, with no adult pin switch, an
   const page = await tv();
   try {
     await page.waitForSelector(".people2 .person.done.focused");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "who watches?");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Who's watching?");
     assert.equal(await page.locator(".pin-switch, .pin-line").count(), 0, "the PIN is asked for when a child is added");
     assert.equal(await page.locator('[data-action="continue"]').count(), 0, "no continue under the row");
     assert.equal(await page.locator(".people > :last-child").getAttribute("data-action"), "done");
@@ -288,7 +288,7 @@ test("Q226 getting ready is one headline, one line and one bar, and moves on by 
   let page = await tv();
   try {
     await page.waitForSelector(".ready2 .ready-bar .blocks");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "getting ready.");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Getting ready");
     assert.equal(await page.locator(".setup-page .prompt").textContent(), "~ $ agentv update");
     assert.match((await page.locator(".setup-line").textContent()) ?? "", /is up to date$/);
     assert.equal(await page.locator(".ready-list, [data-action='continue']").count(), 0, "no checklist and no continue");
@@ -320,7 +320,7 @@ test("Q226 the welcome screen is hi., one line and the code, with no keyboard bu
   const page = await tv();
   try {
     await page.waitForSelector(".welcome2 .qr[src]");
-    assert.equal(await page.locator(".welcome2 .welcome-line").textContent(), "scan the code with your phone to pair it.");
+    assert.equal(await page.locator(".welcome2 .welcome-line").textContent(), "Scan the code with your phone to pair it");
     assert.equal(await page.locator("[data-action='enter']").count(), 0, "no use a keyboard instead");
     assert.ok(!(await page.locator(".setup-page").innerText()).includes("keyboard"));
     await page.keyboard.press("Enter");

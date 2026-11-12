@@ -29,7 +29,7 @@ export interface SmoothState {
 
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(path, { cache: "no-store" });
-  if (!response.ok) throw new Error(`${path} didn't answer`);
+  if (!response.ok) throw new Error("Couldn't check your setup");
   return (await response.json()) as T;
 }
 
@@ -47,7 +47,7 @@ export const box = {
   async saveSmooth(run: SmoothRun): Promise<SmoothState> {
     const response = await fetch("/api/box/smooth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(run) });
     const data = await response.json();
-    if (!response.ok || data.ok === false) throw new Error(data.error ?? "the 4k test's result wasn't kept");
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't save the 4K check");
     return data as SmoothState;
   },
 };
