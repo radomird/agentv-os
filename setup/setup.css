@@ -1344,14 +1344,16 @@ body.counted .player-note {
   text-align: left;
 }
 
-.setup-look .setup-look-name.picked {
-  border-color: var(--accent);
-}
-
+/* The look in use has the same mark by its name as in Settings, and on
+   the focused name it takes the name's colour. */
 .setup-look .setup-look-name.focused {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--background);
+}
+
+.setup-look .setup-look-name.focused .look-card-name::after {
+  background: currentColor;
 }
 
 .setup-look .look-card-name {

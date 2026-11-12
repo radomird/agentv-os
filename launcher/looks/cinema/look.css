@@ -993,10 +993,11 @@ body.with-backdrop {
   font-size: 72px;
 }
 
-/* The looks' previews, in Settings and setup: rounded, and the one in use
-   ringed in the words' colour. */
+/* The looks' previews, in Settings: rounded, the card's corners following
+   the preview's out to the focus ring, and the one in use marked with a
+   round dot in the quieter words' colour. */
 .look-card {
-  border-radius: 24px;
+  border-radius: 36px;
 }
 
 .look-frame {
@@ -1004,9 +1005,9 @@ body.with-backdrop {
   border-radius: 20px;
 }
 
-.look-card.picked .look-frame {
-  outline: 3px solid var(--bright-foreground);
-  outline-offset: 4px;
+.look-card.picked .look-card-name::after {
+  border-radius: 50%;
+  background: var(--foreground);
 }
 
 /* --- What's loading (loading.ts): three short bars ------------------------ */
