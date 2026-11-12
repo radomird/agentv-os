@@ -237,7 +237,7 @@ run() {
 
   device=$(wifi_device)
   if [[ -z $device ]]; then
-    state_set '.on = false | .error = "this box has no wi-fi"'
+    state_set '.on = false | .error = "this tv has no wi-fi"'
     echo "agentv-hotspot: NetworkManager has no Wi-Fi device" >&2
     exit 1
   fi
@@ -387,9 +387,9 @@ join() {
   [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1 || true)
   JOIN_CLOSED_HOTSPOT=$was_on
   trap join_ended EXIT
-  # When it started and whether it closed the hotspot, for the watch: a join
-  # killed outright never says how it went (join_stale).
-  state_set '.joining = $ssid | .joining_since = (now | floor) | .joining_reopens = ($reopens == "true") | .error = null | .why = null' --arg ssid "$ssid" --arg reopens "$was_on"
+  # When it started, whether it closed the hotspot and which ask it answers,
+  # for the watch: a join killed outright never says how it went (join_stale).
+  state_set '.joining = $ssid | .joining_since = (now | floor) | .joining_reopens = ($reopens == "true") | .joining_ask = $asked | .error = null | .why = null' --arg ssid "$ssid" --arg reopens "$was_on"
   systemctl stop agentv-hotspot.service
 
   [[ $(jq -r --arg ssid "$ssid" 'map(select(.ssid == $ssid))[0].sae // false' "$RUN/networks.json" 2>/dev/null) == "true" ]] && keymgmt=sae
@@ -548,7 +548,8 @@ join_stale() {
   (( $(date +%s) - since > JOIN_STALE )) || return 0
   reopens=$(state_get .joining_reopens)
   echo "agentv-hotspot: the join of $ssid never said how it went" >&2
-  state_set '.joining = null | .joining_since = null | .joining_reopens = null | .error = $error | .why = "failed"' --arg error "the tv couldn't join $ssid"
+  # The page that asked waits for its own answer.
+  state_set '.answered = (if (.joining_ask // "") == "" then .answered else .joining_ask end) | .joining = null | .joining_since = null | .joining_reopens = null | .joining_ask = null | .error = $error | .why = "failed"' --arg error "the tv couldn't join $ssid"
   links
   if [[ $reopens == "true" ]] && (( ! ONLINE )); then
     systemctl start --no-block agentv-hotspot.service || true

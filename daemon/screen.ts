@@ -1284,6 +1284,7 @@ export class Screen {
       }
       const home = this.homeWindow();
       if (home && front?.address === home.address) {
+        await this.homeOnTv(home);
         await this.inHome("window.agentvHome?.()");
       } else if (home) {
         await this.toFront(home.address);
@@ -1665,6 +1666,21 @@ export class Screen {
     this.ambientFrom = null;
     await this.inHome("window.agentvAmbient?.(false)");
     if (back) await this.toFront(back);
+    else {
+      const front = this.front();
+      if (front?.role === "home") await this.homeOnTv(front);
+    }
+  }
+
+  // Home said to be in front, but its window isn't on the TV: a compositor
+  // call that should have put it there failed, perhaps twice on a locked TV
+  // with the game already out of sight. Then nothing is on the TV, and home
+  // and its PIN pad come back to it.
+  private async homeOnTv(home: Window): Promise<void> {
+    const client = (await this.hypr.clients()).find((c) => c.address === home.address);
+    if (!client || client.workspace.name === TV_WORKSPACE) return;
+    this.log("home is in front but its window isn't on the TV; putting it there");
+    await this.toFront(home.address);
   }
 
   private pollTv(): void {
@@ -1705,6 +1721,8 @@ export class Screen {
       this.dark = false;
       if (this.outputOff) await this.output(true, "the TV is on");
       void this.inHome(`window.agentvTv?.("on")`);
+      const front = this.front();
+      if (front?.role === "home") await this.homeOnTv(front).catch((error: Error) => this.log(`home couldn't be put in front: ${error.message}`));
     }).then(() => ({ ok: true }));
   }
 
