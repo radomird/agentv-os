@@ -296,6 +296,13 @@ for (const look of LOOKS) {
     await page.keyboard.type("short");
     await page.keyboard.press("Enter");
     await page.waitForFunction((want) => document.querySelector('[data-line="wifi"]')?.textContent === want, words(look, "Wi-Fi passwords have at least 8 characters"));
+    // Too long, or with a character Wi-Fi can't use: the line says which.
+    for (const [typed, line] of [["x".repeat(70), "Wi-Fi passwords have at most 63 characters"], ["pässword1", "Wi-Fi passwords use plain letters, numbers and symbols"]]) {
+      await page.keyboard.press("Control+a");
+      await page.keyboard.type(typed);
+      await page.keyboard.press("Enter");
+      await page.waitForFunction((want) => document.querySelector('[data-line="wifi"]')?.textContent === want, words(look, line));
+    }
     assert.equal(asked.length, sent);
     await page.keyboard.press("Escape");
     await page.waitForSelector('.wifi-panel .network.current[data-ssid="Cafe 5G"]');
