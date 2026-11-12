@@ -357,7 +357,11 @@ if [[ -f $POLICY_DIR/ui-text ]]; then
       my $json = $file =~ /\.json$/;
       my $html = $file =~ /\.html?$/;
       open(my $in, "<:encoding(UTF-8)", $file) or do { warn "cannot read $file: $!\n"; $failed = 1; next };
+      my $doc = 0;
       while (my $line = <$in>) {
+        # A docstring is for whoever reads the code.
+        my $quotes = () = $line =~ /"""|\x27\x27\x27/g;
+        if ($doc || $quotes) { $doc = !$doc if $quotes % 2; next }
         # Comments, imports and what goes to a log are for whoever reads the code.
         next if $line =~ m{^\s*(?://|/?\*|\#(?!\s*\S+\s*["\x27`])|<!--|import\s)};
         next if $line =~ /\bconsole\.\w+\(|\blog\(|\.debug\(|journal/;
