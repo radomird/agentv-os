@@ -16,7 +16,7 @@ import type { Provider } from "../ai.ts";
 import { GROK_BUILT_INS, SIGN_IN_RAN_OUT as RAN_OUT_WORDS } from "../../builder/providers.ts";
 import type { Answer, Ask, Backend } from "../router.ts";
 import { ProviderError } from "./http.ts";
-import { NO_ANSWER, NOT_SIGNED_IN, SIGN_IN_RAN_OUT } from "./no-answer.ts";
+import { GETTING_READY, NO_ANSWER, NOT_SIGNED_IN, SIGN_IN_RAN_OUT } from "./no-answer.ts";
 import { ROUTER_MODELS } from "./index.ts";
 
 // The plans whose CLI can route: the ones a box offers (daemon/ai.ts).
@@ -248,9 +248,12 @@ export const runCli: CliRunner = (run, timeoutMs) =>
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
       if (stderr.length < 4096) stderr += chunk;
     });
+    // A CLI that isn't there yet is on its way: root fetches it once the
+    // plan is picked, and the daemon asks again when it hears this. The
+    // screen says so plainly; the log says which one.
     child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
-      reject(new ProviderError(error.code === "ENOENT" ? `${run.command.split("/").pop()} isn't on the box yet: it comes with the first app that's made` : error.message));
+      reject(error.code === "ENOENT" ? new ProviderError(GETTING_READY, undefined, `${run.command.split("/").pop()} isn't fetched yet`) : new ProviderError(error.message));
     });
     child.on("close", (code) => {
       clearTimeout(timer);
