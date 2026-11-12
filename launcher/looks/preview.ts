@@ -12,8 +12,10 @@ export function previewAddress(look: LookId, size: SizeId, theme?: string | null
   return `/?preview&${params}`;
 }
 
-// The frame, at the size's own canvas, scaled to width pixels wide.
-export function previewFrame(look: LookId, size: SizeId, width: number, theme?: string | null): HTMLElement {
+// The frame, at the size's own canvas, scaled to width pixels wide. With no
+// width it fills the width it's given, and the page scales to fit each time
+// that width changes, as the look cards do in Settings.
+export function previewFrame(look: LookId, size: SizeId, width: number | null, theme?: string | null): HTMLElement {
   const canvas = CANVAS[size];
   const frame = h("iframe", {
     class: "look-frame-page",
@@ -25,20 +27,26 @@ export function previewFrame(look: LookId, size: SizeId, width: number, theme?: 
     title: `${look} preview`,
     "aria-hidden": "true",
   });
-  const box = h("span", { class: "look-frame" }, frame);
+  const box = h("span", { class: `look-frame${width === null ? " fill" : ""}` }, frame);
+  if (width === null) {
+    // The width inside its border, unrounded and before the page's zoom.
+    new ResizeObserver(([seen]) => box.style.setProperty("--preview-scale", String(seen.contentBoxSize[0].inlineSize / canvas.width))).observe(box);
+    return box;
+  }
   box.style.setProperty("--preview-width", `${width}px`);
   box.style.setProperty("--preview-scale", String(width / canvas.width));
   return box;
 }
 
-// A card for each look: its preview and its name (D2, D3). OK on one picks
-// it; the one in use is marked.
-export function lookCards(looks: LookInfo[], current: string | null, size: SizeId, width: number, pick: (look: LookInfo) => void, theme?: string | null): HTMLElement[] {
+// A card for each look: its preview and its name (D2, D3), three across the
+// width they're given. OK on one picks it. The one in use has a small mark
+// by its name (launcher.css), so the focus ring is the only ring.
+export function lookCards(looks: LookInfo[], current: string | null, size: SizeId, pick: (look: LookInfo) => void, theme?: string | null): HTMLElement[] {
   return looks.map((look) =>
     h(
       "button",
       { class: `look-card${look.id === current ? " picked" : ""}`, "data-focus": true, "data-action": `look-${look.id}`, "data-look": look.id, onclick: () => pick(look) },
-      previewFrame(look.id, size, width, theme),
+      previewFrame(look.id, size, null, theme),
       h("span", { class: "look-card-name" }, look.name),
     ),
   );
