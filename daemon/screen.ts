@@ -2459,7 +2459,24 @@ const CHROMIUM_FLAGS = [
   "--noerrdialogs",
   "--disable-session-crashed-bubble",
   "--password-store=basic",
+  // Nothing of Google's a TV doesn't use: no sync, no pings when a link is
+  // followed, no reports on Google's own sites, and no hints, models or
+  // clock checks fetched in the background.
+  "--disable-sync",
+  "--no-pings",
+  "--disable-domain-reliability",
 ];
+
+// Turned off in every Chromium the TV shows, as one --disable-features:
+// Chromium reads only the last one it's given.
+const QUIET_FEATURES = ["OptimizationGuideModelDownloading", "OptimizationHintsFetching", "OptimizationTargetPrediction", "OptimizationHints", "NetworkTimeServiceQuerying"];
+
+// Home goes out only through the daemon's filter, which refuses Google's
+// own hosts, so it doesn't ask for them at all: no component updates, no
+// background requests, no phishing model and no casting. Home needs none of
+// them; a page app reaches only the origins it declared. The services'
+// Chromium keeps component updates, since its Widevine comes that way.
+const HOME_QUIET = ["--disable-background-networking", "--disable-component-update", "--disable-client-side-phishing-detection", `--disable-features=${[...QUIET_FEATURES, "MediaRouter"].join(",")}`];
 
 // The home screen's sounds play without waiting for a first key press.
 // Home reaches the internet only through the daemon's filter, which
@@ -2478,8 +2495,15 @@ export function homeArguments(profile = HOME_PROFILE, url = HOME_URL, proxy = HO
     "--autoplay-policy=no-user-gesture-required",
     `--proxy-server=${proxy}`,
     "--enable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
+    ...HOME_QUIET,
     ...NO_WEBRTC,
   ];
+}
+
+// The services' Chromium, or the share browser's: arrows the page doesn't
+// take move its focus (daemon/remote-page.ts).
+export function pageArguments(profile: string, url: string): string[] {
+  return [...CHROMIUM_FLAGS, `--disable-features=${QUIET_FEATURES.join(",")}`, SPATIAL_NAVIGATION, `--user-data-dir=${profile}`, `--app=${url}`, "--remote-debugging-pipe"];
 }
 
 function track(role: Role, child: ChildProcess, group = false, cdp?: CdpPipe): App {
@@ -2567,8 +2591,7 @@ export const launcher: Launcher = {
 
   web(url) {
     promptsOff(SERVICES_PROFILE, "the services' Chromium's");
-    // Arrows the page doesn't take move its focus (daemon/remote-page.ts).
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SERVICES_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    const child = spawn(chromium(), pageArguments(SERVICES_PROFILE, url), {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);
@@ -2578,7 +2601,7 @@ export const launcher: Launcher = {
   shareBrowser(url) {
     promptsOff(SHARE_PROFILE, "the share browser's");
     // The d-pad moves through a shared page as through an app's.
-    const child = spawn(chromium(), [...CHROMIUM_FLAGS, SPATIAL_NAVIGATION, `--user-data-dir=${SHARE_PROFILE}`, `--app=${url}`, "--remote-debugging-pipe"], {
+    const child = spawn(chromium(), pageArguments(SHARE_PROFILE, url), {
       stdio: ["ignore", "ignore", "inherit", "pipe", "pipe"],
     });
     const cdp = new CdpPipe(child.stdio[3] as Writable, child.stdio[4] as Readable);

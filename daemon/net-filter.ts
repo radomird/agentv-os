@@ -26,6 +26,11 @@ export interface NetFilterOptions {
   // whose sites are on this box.
   resolve?: (host: string) => Promise<string>;
   forbid?: (address: string) => boolean;
+  // Each host's refusals logged at most once in this long, for a client
+  // that keeps asking for the same hosts, as home's Chromium does. Every
+  // one is logged without it.
+  logEveryMs?: number;
+  now?: () => number;
 }
 
 // This box and nowhere: loopback, unspecified and link-local addresses, and
@@ -51,6 +56,8 @@ export class NetFilter {
   readonly server: Server;
   private options: NetFilterOptions;
   private log: (line: string) => void;
+  // When each host's last refusal was logged.
+  private refused = new Map<string, number>();
 
   constructor(options: NetFilterOptions) {
     this.options = options;
@@ -81,12 +88,28 @@ export class NetFilter {
     return { address };
   }
 
+  private refuse(host: string, line: string): void {
+    const every = this.options.logEveryMs;
+    if (every === undefined) {
+      this.log(line);
+      return;
+    }
+    const now = (this.options.now ?? Date.now)();
+    const last = this.refused.get(host);
+    if (last !== undefined && now - last < every) return;
+    if (this.refused.size >= 1000) {
+      for (const [name, at] of this.refused) if (now - at >= every) this.refused.delete(name);
+    }
+    this.refused.set(host, now);
+    this.log(line);
+  }
+
   private async tunnel(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     socket.on("error", () => {});
     const to = target(request.url ?? "");
     const found = to ? await this.address(to.host, to.port, "https") : { why: "that isn't host:port" };
     if (!to || !found.address) {
-      this.log(`refused CONNECT ${request.url}: ${found.why}`);
+      this.refuse(to?.host ?? String(request.url), `refused CONNECT ${request.url}: ${found.why}`);
       socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
       return;
     }
@@ -121,7 +144,7 @@ export class NetFilter {
     const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
     const found = await this.address(host, port, "http");
     if (!found.address) {
-      this.log(`refused ${request.method} ${url.origin}: ${found.why}`);
+      this.refuse(host, `refused ${request.method} ${url.origin}: ${found.why}`);
       fail(403, "not allowed\n");
       return;
     }

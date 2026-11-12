@@ -16,7 +16,7 @@ import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { Sleep } from "../../../daemon/sleep.ts";
 import { NO_WEBRTC } from "../../../apps/contract/page.ts";
-import { homeArguments, HELD_WORKSPACE, HOME_PROFILE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { homeArguments, pageArguments, HELD_WORKSPACE, HOME_PROFILE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,6 +29,27 @@ test("M2 home's Chromium goes out only through the filter, WebRTC too", () => {
   assert.deepEqual(NO_WEBRTC, ["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]);
   for (const flag of NO_WEBRTC) assert.ok(args.includes(flag), flag);
   assert.ok(args.includes("--user-data-dir=/var/lib/agentv/chromium-home") && args.includes("--app=http://127.0.0.1:3000/"));
+});
+
+// The filter refuses Google's own hosts, and a Chromium that isn't told
+// otherwise asks for them every few seconds.
+test("home's Chromium doesn't ask for Google's updates, sync, hints or casting; the services' keeps its updates for Widevine", () => {
+  const home = homeArguments();
+  for (const flag of ["--disable-background-networking", "--disable-component-update", "--disable-sync", "--no-pings", "--disable-domain-reliability", "--disable-client-side-phishing-detection"]) {
+    assert.ok(home.includes(flag), flag);
+  }
+  // Chromium reads only the last --disable-features.
+  const off = home.filter((flag) => flag.startsWith("--disable-features="));
+  assert.equal(off.length, 1, off.join(" "));
+  for (const feature of ["OptimizationGuideModelDownloading", "OptimizationHintsFetching", "OptimizationTargetPrediction", "OptimizationHints", "MediaRouter", "NetworkTimeServiceQuerying"]) {
+    assert.ok(off[0].split("=")[1].split(",").includes(feature), feature);
+  }
+  for (const [profile, args] of [[SERVICES_PROFILE, pageArguments(SERVICES_PROFILE, "https://tv.example/")], [SHARE_PROFILE, pageArguments(SHARE_PROFILE, "https://tv.example/")]] as const) {
+    assert.ok(args.includes(`--user-data-dir=${profile}`) && args.includes("--app=https://tv.example/") && args.includes("--enable-spatial-navigation"), profile);
+    for (const flag of ["--disable-sync", "--no-pings", "--disable-domain-reliability"]) assert.ok(args.includes(flag), `${profile} ${flag}`);
+    assert.ok(!args.includes("--disable-component-update") && !args.includes("--disable-background-networking"), `${profile} gets its Widevine`);
+    assert.equal(args.filter((flag) => flag.startsWith("--disable-features=")).length, 1);
+  }
 });
 
 // Home has password fields of its own (a key, the Wi-Fi's password), and a
