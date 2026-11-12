@@ -237,7 +237,7 @@ run() {
 
   device=$(wifi_device)
   if [[ -z $device ]]; then
-    state_set '.on = false | .error = "this box has no wi-fi"'
+    state_set '.on = false | .error = "this tv has no wi-fi"'
     echo "agentv-hotspot: NetworkManager has no Wi-Fi device" >&2
     exit 1
   fi
