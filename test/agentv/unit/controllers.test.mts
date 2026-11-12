@@ -251,6 +251,23 @@ test("T16.1 a controller paired here that comes back as a keyboard later is remo
   controllers.stop();
 });
 
+test("T16.1 a controller that turns out to type as a read of BlueZ fails is read again, and removed, with no other change to wait for", async () => {
+  let changed = () => {};
+  const { bluez, controllers, logged } = standIn([XBOX], { checkMs: 5, changes: (so: () => void) => ((changed = so), () => {}) });
+  controllers.watch();
+  await controllers.handle({ kind: "look", on: true });
+  assert.equal((await controllers.handle({ kind: "pair", id: XBOX.address })).ok, true);
+  const run = bluez.run;
+  let fails = 1;
+  (controllers as unknown as { o: { run: typeof run } }).o.run = async (command, args, ms) => (args.includes("GetManagedObjects") && fails-- > 0 ? { code: null, out: "", err: "" } : run(command, args, ms));
+  bluez.devices[0].presents = "keyboard";
+  changed();
+  await sleep(300);
+  assert.match(logged.join("\n"), /BlueZ didn't say where it is/, "the read failed");
+  assert.equal(bluez.devices[0].paired, false, "it's removed all the same");
+  controllers.stop();
+});
+
 test("T16.1 a device that types and can't be removed is said to be still there, and can't come back by itself", async () => {
   const { bluez, controllers } = standIn([{ ...XBOX, presents: "keyboard" }]);
   const run = bluez.run;
