@@ -625,6 +625,7 @@ export class Daemon {
     // when one moves on.
     this.buildsTimer = setInterval(() => void this.watchBuilds(), 2000);
     this.buildsTimer.unref();
+    void this.fetchAiCli("the daemon started");
     const lan = this.lan;
     const captive = this.captive;
     const phones = Promise.all([
@@ -1119,8 +1120,22 @@ export class Daemon {
   // The router this box's setup chose (daemon/router-client.ts), through
   // its services' sockets.
   private boxRoute(sentence: string, apps: RouterApp[]): Promise<Routed> {
-    this.routing ??= boxRouter({ ai: () => this.ai.read(), key: () => this.key.status() });
+    this.routing ??= boxRouter({ ai: () => this.ai.read(), key: () => this.key.status(), fetchCli: () => void this.fetchAiCli("an ask found it missing") });
     return this.routing(sentence, apps);
+  }
+
+  // The AI's own CLI, which a plan routes through and every build runs,
+  // fetched as soon as the AI is connected rather than with the first app
+  // that's made: a plan or a key whose terms an adult accepted. Root only
+  // fetches it when it's missing (builder/sandbox/hand-over.ts), so asking
+  // again at start-up, or after an ask found it missing, costs nothing.
+  private async fetchAiCli(why: string): Promise<void> {
+    try {
+      const ai = await this.ai.read();
+      if (await this.planSignIn.fetchCli(ai)) this.log(`asked root for ${OFFERS[ai.provider!].cliName}, if it's missing: ${why}`);
+    } catch (error) {
+      this.log(`couldn't ask root for the AI's CLI: ${(error as Error).message}`);
+    }
   }
 
   private saidNow(): object | null {
@@ -1823,6 +1838,7 @@ export class Daemon {
       }
       this.log(`${viewer.name} accepted ${result.state.provider}'s terms for ${result.state.path === "plan" ? "a plan" : "a key"}, on ${phone.name}`);
       this.broadcast("ai", result.state);
+      void this.fetchAiCli("its terms were accepted");
       this.json(response, 200, { ok: true, accepted: result.state.accepted });
       return;
     }
@@ -1849,6 +1865,7 @@ export class Daemon {
       }
       this.log(`a key for ${ai.provider} is kept, root's alone, from ${phone.name}`);
       this.broadcast("key", { set: true, provider: ai.provider });
+      void this.fetchAiCli("a key was kept");
       this.json(response, 200, { ok: true, provider: ai.provider });
       return;
     }
@@ -2933,6 +2950,7 @@ export class Daemon {
       if (set && typeof provider === "string" && Object.hasOwn(OFFERS, provider)) {
         const chosen = await this.ai.choose(provider, "key");
         if (chosen.state) this.broadcast("ai", chosen.state);
+        void this.fetchAiCli("a key was kept");
       }
       this.broadcast("key", { set, provider: this.key.status().provider });
       this.json(response, 200, { ok: true, ...(await this.keyState()) });
@@ -2984,6 +3002,7 @@ export class Daemon {
       }
       this.log(`builds use the ${provider} plan now, from settings`);
       this.broadcast("ai", chosen.state);
+      void this.fetchAiCli("a plan was picked");
       this.json(response, 200, { ok: true, ...chosen.state });
       return;
     }
@@ -3017,6 +3036,7 @@ export class Daemon {
         return;
       }
       this.broadcast("ai", result.state);
+      void this.fetchAiCli("an AI was picked");
       this.json(response, 200, { ok: true, ...result.state });
       return;
     }
