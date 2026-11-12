@@ -24,6 +24,10 @@ export interface StandInDevice {
   presents?: "keyboard" | "mouse";
   // Says something else about itself once it's connected.
   becomes?: { icon?: string; appearance?: number };
+  // BlueZ won't remove it.
+  stays?: boolean;
+  // BlueZ's Blocked: it can't connect.
+  blocked?: boolean;
 }
 
 // What the devices in these tests say about themselves, as BlueZ reads it.
@@ -130,6 +134,7 @@ export class StandInBluez {
     if (verb === "call" && iface === "org.bluez.Adapter1" && member === "RemoveDevice") {
       const device = this.at(rest[1]);
       if (!device) return failed("Does Not Exist");
+      if (device.stays) return failed("Failed");
       // Still in pairing mode, a look that's running finds it again.
       if (!this.scanning) this.seen.delete(device.address);
       if (device.nearby) Object.assign(device, { paired: false, trusted: false, connected: false });
@@ -140,6 +145,11 @@ export class StandInBluez {
     if (!device || !this.known(device)) return failed("Method \"" + member + "\" with signature \"\" on interface \"" + iface + "\" doesn't exist");
     if (verb === "set-property" && member === "Trusted") {
       device.trusted = rest[1] === "true";
+      return ok();
+    }
+    if (verb === "set-property" && member === "Blocked") {
+      device.blocked = rest[1] === "true";
+      if (device.blocked) device.connected = false;
       return ok();
     }
     if (verb === "call" && member === "Pair") {
@@ -153,7 +163,7 @@ export class StandInBluez {
       return ok();
     }
     if (verb === "call" && member === "Connect") {
-      if (!device.paired) return failed("Not Ready");
+      if (!device.paired || device.blocked) return failed("Not Ready");
       device.connected = true;
       Object.assign(device, device.becomes ?? {});
       return ok();

@@ -189,6 +189,14 @@ on:
       release-key:
         type: boolean
         default: false
+    # AgenTV's key, which the nightly run passes by name. Its value only
+    # ever comes from the "release" environment, in the jobs that set it
+    # (when release-key is on): GitHub hands a called workflow an
+    # environment secret only when the caller passes it. Never required, so
+    # every other caller hands over nothing.
+    secrets:
+      AGENTV_SIGNING_KEY:
+        required: false
 
 permissions:
   contents: write

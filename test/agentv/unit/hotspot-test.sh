@@ -72,6 +72,8 @@ cat >"$SCRATCH/bin/systemctl" <<'EOF'
 echo "systemctl $*" >>"$FAKE/calls"
 [[ $1 == "is-active" ]] && exit "${FAKE_ACTIVE:-3}"
 [[ $1 == "stop" && -n ${FAKE_STOP_FAILS:-} ]] && exit 1
+# A join killed outright, as by the kernel when memory runs out: no trap runs.
+[[ $1 == "stop" && -n ${FAKE_STOP_KILLS:-} ]] && kill -9 "$PPID"
 exit 0
 EOF
 cat >"$SCRATCH/bin/iw" <<'EOF'
@@ -569,7 +571,7 @@ if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone";
 # under way for the rest of the boot.
 set_state '.joining_since = (now | floor) - 600'
 tick
-jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+jq -e '.joining == null and .why == "failed" and .error == "Couldn'"'"'t join home wi-fi"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
   fail "a join that's older than any join can be is over, and says it didn't work" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 opened || fail "and the hotspot it had closed opens again" "$(cat "$FAKE/calls")"
 echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
@@ -578,6 +580,15 @@ tick
 [[ $(state .joining) == "null" ]] || fail "during setup too"
 if opened; then fail "a join from Settings that was killed opens no hotspot by that alone"; fi
 echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+# The page that asked for the join waits for its own answer, so the watch
+# answers that ask when it ends the join.
+printf '%s' '{"join":{"ssid":"home wi-fi","password":"correct horse","hidden":false},"id":"2233445566778899"}' >"$AGENTV_HOTSPOT_DROP"
+FAKE_STOP_KILLS=1 hotspot drop || true
+[[ $(state .joining) == "home wi-fi" ]] || fail "a join killed outright still reads as joining" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+set_state '.joining_since = (now | floor) - 600'
+tick
+jq -e '.joining == null and .why == "failed" and .answered == "2233445566778899"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join killed outright is answered when the watch ends it" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 unset AGENTV_HOTSPOT_LOST_AFTER AGENTV_HOTSPOT_RETRY_AFTER AGENTV_HOTSPOT_REJOIN_WAIT FAKE_KNOWN
 pass "the watch leaves a join that's under way alone, and ends one that was killed before it said how it went"
 

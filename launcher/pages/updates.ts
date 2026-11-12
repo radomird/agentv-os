@@ -132,7 +132,8 @@ async function chooseLater(ctx: Ctx, leave: boolean): Promise<void> {
   }
 }
 
-// Install now, Tonight and Later, for the Updates page and What's new.
+// Install now, Tonight and Later, for What's new: its own screen, and its
+// page a level under Updates.
 function choices(ctx: Ctx, route: string): HTMLElement[] {
   if (!ready(ctx.updates.status)) return [];
   const on = tonight(ctx.updates);
@@ -174,17 +175,6 @@ async function install(ctx: Ctx): Promise<void> {
   } else ctx.sounds.play("confirm");
 }
 
-function row(name: string, now: string | null, next: string | null): HTMLElement {
-  return h(
-    "div",
-    { class: "update-row" },
-    h("span", { class: "update-name" }, name),
-    h("span", {}, shown(now)),
-    next ? h("span", { class: "update-arrow" }, "→") : null,
-    next ? h("span", { class: "update-next" }, shown(next)) : h("span", { class: "update-same" }, "Up to date"),
-  );
-}
-
 // The value of This TV's "Updates" row, and what the page's title says.
 export function updatesValue(ctx: Ctx): string {
   const status = ctx.updates.status;
@@ -195,51 +185,68 @@ export function updatesValue(ctx: Ctx): string {
   return pending(status) ? "Ready" : "Up to date";
 }
 
-// The page's one line: what happens next, or how updates reach this TV.
-function line(ctx: Ctx, status: UpdateStatus): string {
+// The page's one line, only when something is waiting or went wrong.
+function line(ctx: Ctx, status: UpdateStatus): string | null {
   if (held(ctx)) return "Waited for your game. Updates tonight.";
   if (tonight(ctx.updates)) return "It installs tonight between 2 and 5";
   if (status.waiting && pending(status)) return "It's still being tested";
   if (!status.ok) return `Last check failed, ${when(status.checked_at)}`;
-  if (status.packages > 0) return `Plus ${status.packages} system update${status.packages === 1 ? "" : "s"}`;
-  return status.channel === "edge" ? "Early updates: less tested" : "Tested before it reaches you";
+  return null;
 }
 
-// The Updates row's page in Settings.
-export function updatesPanel(ctx: Ctx): HTMLElement[] {
+// A row of the page: its name, then its value.
+function updateRow(action: string, label: string, value: string, onclick?: () => void): HTMLElement {
+  const parts = [h("span", {}, label), h("span", { class: "button-value" }, value)];
+  if (!onclick) return h("div", { class: "panel-row", "data-row": action }, ...parts);
+  return h("button", { class: "button", "data-focus": true, "data-action": action, onclick }, ...parts);
+}
+
+// The row the Updates page puts the focus on as it opens: Install now, when
+// there's something to install.
+export function updatesStart(ctx: Ctx): string | undefined {
+  return ready(ctx.updates.status) ? "install" : undefined;
+}
+
+// The Updates row's page in Settings: Check now first, the version this TV
+// is on, Install now with the new one when there is one, its notes a level
+// deeper (open shows a page in the panel), and updating overnight. Nothing
+// else, unless something waits or went wrong.
+export function updatesPanel(ctx: Ctx, open: (page: string) => void): HTMLElement[] {
   const status = ctx.updates.status;
-  const checkNow = (last: string) => h("button", { class: "button", "data-focus": true, "data-action": "check", onclick: () => void check(ctx) }, h("span", {}, "Check now"), h("span", { class: "button-value" }, last));
+  const checkNow = (last: string) => updateRow("check", "Check now", last, () => void check(ctx));
+  const overnightRow = updateRow("overnight", "Update overnight", ctx.state.settings.updateOvernight ? "On" : "Off", () => void overnight(ctx));
   if (!status) {
-    return [h("div", { class: "panel-title" }, "Updates"), h("div", { class: "panel-big" }, `AgenTV ${ctx.state.version}`), h("div", { class: "panel-note" }, "Not checked yet"), checkNow("")];
+    return [h("div", { class: "panel-title" }, "Updates"), checkNow(""), updateRow("version", "Version", shown(ctx.state.version)), h("div", { class: "panel-note" }, "Not checked yet"), overnightRow];
   }
   const value = updatesValue(ctx);
   const title = `Updates · ${value.charAt(0).toLowerCase()}${value.slice(1)}`;
   const go = goBack(ctx.updates);
+  const next = status.agentv.available;
+  const says = line(ctx, status);
   const parts: (HTMLElement | null)[] = [
     h("div", { class: `panel-title${status.security ? " security" : ""}` }, status.security ? `${title} · security` : title),
-    h(
-      "div",
-      { class: "update-rows" },
-      row("AgenTV", status.agentv.installed, status.agentv.available),
-      row("Omarchy", status.omarchy.installed, status.omarchy.available),
-    ),
-    h("div", { class: `panel-note${held(ctx) ? " held-note" : tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, line(ctx, status)),
-    h(
-      "div",
-      { class: "update-choices" },
-      ...choices(ctx, "settings/updates"),
-      status.notes.agentv.length || status.notes.omarchy.length
-        ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "What's new")
-        : null,
-    ),
-    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go.from.agentv)}`) : null,
-    h(
-      "button",
-      { class: "button wide", "data-focus": true, "data-action": "overnight", onclick: () => void overnight(ctx) },
-      h("span", {}, "Update overnight"),
-      h("span", { class: "button-value" }, ctx.state.settings.updateOvernight ? "On" : "Off"),
-    ),
     checkNow(status.ok ? when(status.checked_at) : ""),
+    updateRow("version", "Version", shown(status.agentv.installed)),
+    ready(status) ? updateRow("install", "Install now", next ? shown(next) : "", () => void install(ctx)) : next ? updateRow("new-version", "New version", shown(next)) : null,
+    next && status.notes.agentv.length ? updateRow("whats-new", "What's new", "", () => open("whats-new")) : null,
+    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go.from.agentv)}`) : null,
+    says ? h("div", { class: `panel-note${held(ctx) ? " held-note" : tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, says) : null,
+    overnightRow,
+  ];
+  return parts.filter((part): part is HTMLElement => part !== null);
+}
+
+// What's new, a level under Updates: the notes the release carries, then
+// Install now, Tonight and Later while it can be installed.
+export function notesPanel(ctx: Ctx): HTMLElement[] {
+  const status = ctx.updates.status;
+  const next = status?.agentv.available;
+  const date = status?.notes.agentv_date ? ` · ${new Date(status.notes.agentv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` : "";
+  const parts: (HTMLElement | null)[] = [
+    h("div", { class: "panel-title" }, "What's new"),
+    next ? h("div", { class: "section" }, `AgenTV ${shown(next)}${date}`) : null,
+    status?.notes.agentv.length ? h("ul", { class: "notes" }, ...status.notes.agentv.map((item) => h("li", {}, h("b", {}, "+ "), item))) : h("div", { class: "empty" }, "No notes for this one"),
+    ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "settings/whats-new"), tonightNote(ctx)) : null,
   ];
   return parts.filter((part): part is HTMLElement => part !== null);
 }

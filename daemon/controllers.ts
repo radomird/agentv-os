@@ -326,6 +326,8 @@ export class Controllers {
   private unwatch?: () => void;
   private checkTimer?: ReturnType<typeof setTimeout>;
   private checking: Promise<void> = Promise.resolve();
+  // Reads of BlueZ in a row that didn't say where such a device is.
+  private missed = 0;
 
   constructor(options: ControllersOptions = {}) {
     this.o = { run, look, log: (line) => console.log(line), keepMs: 10_000, settleMs: 6000, inputs, changes, checkMs: 300, ...options };
@@ -357,11 +359,25 @@ export class Controllers {
         const bad = [...mine].filter((address) => typesOrPoints(made, address) === true);
         if (!bad.length) return;
         const found = await this.read();
+        let missed = false;
         for (const address of bad) {
           const device = found.devices.find((d) => d.address === address);
           if (device) await this.drop(device);
-          else this.o.log("a controller paired here can type or point, and BlueZ didn't say where it is; it's read again when the input devices change");
+          else missed = true;
         }
+        // A read that failed is tried again a few times, since nothing else
+        // may change to start one.
+        this.missed = missed ? this.missed + 1 : 0;
+        if (!missed) return;
+        if (this.missed > 5) {
+          this.o.log("a controller paired here can type or point, and BlueZ didn't say where it is; it's read again when the input devices change");
+          this.missed = 0;
+          return;
+        }
+        this.o.log("a controller paired here can type or point, and BlueZ didn't say where it is; it's read again in a moment");
+        clearTimeout(this.checkTimer);
+        this.checkTimer = setTimeout(() => void this.check(), this.o.checkMs * 10);
+        this.checkTimer.unref?.();
       })
       .catch((error: Error) => this.o.log(`couldn't check the controllers paired here: ${error.message}`));
     return this.checking;
@@ -380,6 +396,9 @@ export class Controllers {
     }
     this.o.log(`a bluetooth device that can type or point wasn't removed: ${removed.code === null ? "no answer in time" : removed.err.trim().slice(0, 200)}`);
     await this.bus(["set-property", "org.bluez", device.path, "org.bluez.Device1", "Trusted", "b", "false"]);
+    // Blocked too, or another Bluetooth agent on the TV, as the desktop's,
+    // would let it connect again.
+    await this.bus(["set-property", "org.bluez", device.path, "org.bluez.Device1", "Blocked", "b", "true"]);
     await this.bus(["call", "org.bluez", device.path, "org.bluez.Device1", "Disconnect"], 10_000);
     found = await this.read();
     await this.note(found, device.address, true);
