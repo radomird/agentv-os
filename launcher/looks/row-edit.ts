@@ -40,6 +40,9 @@ export function rowEdit(ctx: Ctx, focusOn?: string): View {
       hint.textContent = HINT;
       hint.classList.add("edit-hint");
     }
+    // An app has no details while editing, as on Terminal's grid, so OK
+    // picks it up as the key goes down rather than waiting to see a hold.
+    for (const tile of inner.el.querySelectorAll<HTMLElement>("[data-details]")) delete tile.dataset.details;
     el.replaceChildren(inner.el);
     for (const tile of el.querySelectorAll<HTMLElement>("[data-id]")) tile.classList.toggle("held", tile.dataset.id === held?.id);
     // The app asked for, or the first: editing starts on an app, never on
