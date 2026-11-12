@@ -189,11 +189,9 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  position: relative;
-  overflow: hidden;
 }
 
-/* OK held on home: it fills as Back does, and the phone sends the hold when
+/* OK held on an app's tile: it fills as Back does, and the phone sends the hold when
    it's full. It stays full until the finger lifts. */
 .r2-ok::before {
   content: "";
@@ -261,6 +259,9 @@
   color: var(--r2-on-accent);
   font-size: 22px;
   font-weight: 800;
+  /* The fill is the button's own size, and stays inside its shape. */
+  position: relative;
+  overflow: hidden;
   /* Held, it opens an app's details on the TV, so a long press selects
      nothing and brings up no menu on the phone. */
   user-select: none;
@@ -774,26 +775,6 @@ body[data-look="cinema"] .r2-handle {
   border-radius: 2px;
 }
 
-/* Words start with a capital in these two looks, as on the TV. */
-body[data-look="glass"] .r2-hint > span::first-letter,
-body[data-look="cinema"] .r2-hint > span::first-letter,
-body[data-look="glass"] .r2-key > span::first-letter,
-body[data-look="cinema"] .r2-key > span::first-letter,
-body[data-look="glass"] .r2-ask::first-letter,
-body[data-look="cinema"] .r2-ask::first-letter,
-body[data-look="glass"] .r2-ask > span::first-letter,
-body[data-look="cinema"] .r2-ask > span::first-letter,
-body[data-look="glass"] .r2-notice-text::first-letter,
-body[data-look="cinema"] .r2-notice-text::first-letter,
-body[data-look="glass"] .r2-label::first-letter,
-body[data-look="cinema"] .r2-label::first-letter,
-body[data-look="glass"] .r2-row > span::first-letter,
-body[data-look="cinema"] .r2-row > span::first-letter,
-body[data-look="glass"] .r2-who > span::first-letter,
-body[data-look="cinema"] .r2-who > span::first-letter {
-  text-transform: uppercase;
-}
-
 /* The Ask sheet (ADR-068, D5): the box with no send button, suggestions
    under it, and what your agent is on. */
 .ask-label {
@@ -824,11 +805,4 @@ body[data-look="cinema"] .r2-who > span::first-letter {
   display: block;
   height: 100%;
   background: var(--accent);
-}
-
-body[data-look="glass"] .ask-waiting h1::first-letter,
-body[data-look="cinema"] .ask-waiting h1::first-letter,
-body[data-look="glass"] .ask-chips .chip::first-letter,
-body[data-look="cinema"] .ask-chips .chip::first-letter {
-  text-transform: uppercase;
 }

@@ -51,9 +51,46 @@ body.pointer-hidden * {
   cursor: none;
 }
 
+/* Terminal writes its words in lower case, as part of its look. The words
+   themselves are written in sentence case with real names, the same in every
+   look, and Glass and Cinema show them as written. TV setup is drawn in
+   Terminal's style, so it's lower case too. */
+:root:not([data-look="glass"]):not([data-look="cinema"]) body {
+  text-transform: lowercase;
+}
+
+:root:not([data-look="glass"]):not([data-look="cinema"]) ::placeholder {
+  text-transform: lowercase;
+}
+
+/* What keeps its capitals in every look: what someone typed, a code or a
+   password to copy, a person's or an app's initials, an app's own words on
+   its tile, an update's notes, a picture's credit, and anything a page marks
+   with data-own-case. */
+input,
+textarea,
+code,
+.pair-code,
+.logo,
+.avatar,
+.person-face,
+.app-face,
+.entry-label,
+.entry-caption,
+.tile-head-label,
+.notes,
+.ambient-credit,
+.build-said,
+[data-own-case] {
+  text-transform: none;
+}
+
+/* A button doesn't take the page's case by itself, so Terminal's lower case
+   is passed on to it here. */
 button {
   font: inherit;
   color: inherit;
+  text-transform: inherit;
   background: none;
   border: none;
   padding: 0;

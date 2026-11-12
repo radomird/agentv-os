@@ -67,7 +67,7 @@ test("a provider's answer counts only as WAV: Google's comes base64 in its last 
   assert.deepEqual(gemini.wav, WAV);
   assert.deepEqual(await speak("grok", KEY, "hi", { fetch: answer("<html>no</html>") }), { ok: false, error: "the voice's answer wasn't wav" });
   assert.deepEqual(await speak("grok", KEY, "hi", { fetch: answer("{}", 401) }), { ok: false, error: "the voice answered 401" });
-  assert.deepEqual(await speak("claude", KEY, "hi"), { ok: false, error: "this provider has no voice" });
+  assert.deepEqual(await speak("claude", KEY, "hi"), { ok: false, error: "Claude has no voice" });
 });
 
 test("the router's service speaks with the key, a line at a time, and logs how long, never the words", async () => {
@@ -262,7 +262,7 @@ test("S7.3 every answer the TV shows is said aloud, 'i didn't get that' included
   await say.hear("turn the lights off", "iphone");
   const choose = await say.hear("play frozen", "iphone");
   await say.pick(choose.n, 0);
-  assert.deepEqual(spoken, ["i didn't get that", "which one?", "frozen, on kino"]);
+  assert.deepEqual(spoken, ["Didn't get that", "Which one?", "Frozen, on Kino"]);
 });
 
 // --- The TV session plays it -------------------------------------------------------------------

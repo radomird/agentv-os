@@ -19,9 +19,12 @@ name: Omarchy release candidate
 # run opens an issue, or adds to the one that candidate has, and a run that
 # passes closes it.
 #
-# It passes no secrets. The image workflow signs what it builds here with a
-# throwaway key it makes in the run, as it does for every run that
-# publishes nothing.
+# It passes no secrets. The image workflow builds this commit's packages
+# and signs them with a throwaway key it makes in the run, as it does for
+# every run that publishes nothing, and the night's box takes them the way
+# a pull request's run puts its packages on it. Edge's published packages
+# wouldn't do: a box that has only those trusts AgenTV's own key alone, and
+# the newer agentv it updates to here is signed with the throwaway one.
 
 on:
   schedule:
@@ -76,9 +79,10 @@ jobs:
     uses: ./.github/workflows/image.yml
     with:
       ref: ${{ github.sha }}
-      packages: edge
+      packages: build
       update-test: true
       from-disk: true
+      own-repo: true
       checks: omarchy-update
       shards: 1
       omarchy-channel: rc

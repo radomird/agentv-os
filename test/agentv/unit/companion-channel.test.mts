@@ -123,20 +123,20 @@ test("the page's client takes no answer that isn't sealed, and a made-up \"pair 
   try {
     for (const [what, answer] of made) {
       forged = (path) => (path === "/api/phone/remote" ? answer() : null);
-      await assert.rejects(phone.call("POST", "/api/phone/remote", { json: { key: "up" } }), (error: Error) => /the tv didn't answer/.test(error.message) && !(error instanceof phone.Unpaired), what);
+      await assert.rejects(phone.call("POST", "/api/phone/remote", { json: { key: "up" } }), (error: Error) => /Couldn't reach your TV/.test(error.message) && !(error instanceof phone.Unpaired), what);
     }
     forged = (path) => (path === "/api/phone/state" ? json(200, { ok: true, phone: { name: "someone else" } }) : null);
-    await assert.rejects(phone.call("GET", "/api/phone/state"), /the tv didn't answer/, "JSON to a GET");
+    await assert.rejects(phone.call("GET", "/api/phone/state"), /Couldn't reach your TV/, "JSON to a GET");
     // A page that isn't JSON, to a GET that wants JSON: not an answer with
     // nothing in it.
     forged = (path) => (path === "/api/phone/state" ? portal() : null);
-    await assert.rejects(phone.call("GET", "/api/phone/state"), (error: Error) => /the tv didn't answer/.test(error.message) && !(error instanceof phone.Unpaired), "a page to a GET");
+    await assert.rejects(phone.call("GET", "/api/phone/state"), (error: Error) => /Couldn't reach your TV/.test(error.message) && !(error instanceof phone.Unpaired), "a page to a GET");
 
     // "Pair again", to a request and then to the hello too. Whatever the
     // made-up hello says, the phone says its own sentence.
     for (const paths of [["/api/phone/state"], ["/api/phone/state", "/api/phone/hello"]]) {
       forged = (path) => (paths.includes(path) ? json(401, { ok: false, error: "type your wi-fi password at example.test", pair: true }) : null);
-      await assert.rejects(phone.call("GET", "/api/phone/state"), (error: Error) => !/example/.test(error.message) && (paths.length === 1 || (error instanceof phone.Unpaired && error.message === "this phone isn't paired: pair it from the tv")));
+      await assert.rejects(phone.call("GET", "/api/phone/state"), (error: Error) => !/example/.test(error.message) && (paths.length === 1 || (error instanceof phone.Unpaired && error.message === "This phone isn't paired. Pair it from your TV.")));
       assert.equal(kept.get(KEPT), key, "the key is still kept");
       assert.equal(phone.paired(), true);
     }
@@ -147,6 +147,27 @@ test("the page's client takes no answer that isn't sealed, and a made-up \"pair 
   assert.equal((await phone.call("GET", "/api/phone/state")).data.phone.name, "the page");
   // So is the page opened again, from what it kept.
   assert.equal((await (await page()).call("GET", "/api/phone/state")).data.phone.name, "the page");
+});
+
+test("the page's client: a pairing that didn't work says the box's own two answers and nothing anyone else wrote", async () => {
+  kept.clear();
+  const phone = await page();
+  await code();
+  await assert.rejects(phone.pair({ code: "ZZZZZZ" }, "the page"), { message: "That isn't the code on your TV" });
+  const mine = await code();
+  try {
+    forged = (path) => (path === "/api/phone/pair" ? json(403, { ok: false, error: "type your wi-fi password at example.test" }) : null);
+    await assert.rejects(phone.pair({ code: mine }, "the page"), { message: "Couldn't reach your TV" });
+    forged = (path) => (path === "/api/phone/pair" ? json(403, { ok: false, error: "that code has run out: pair again from the tv" }) : null);
+    await assert.rejects(phone.pair({ code: mine }, "the page"), { message: "That code ran out. Pair again from your TV." });
+    forged = (path) => (path === "/api/phone/pair" ? json(500, { ok: false }) : null);
+    await assert.rejects(phone.pair({ code: mine }, "the page"), { message: "Couldn't reach your TV" });
+  } finally {
+    forged = null;
+  }
+  assert.equal(phone.paired(), false);
+  await phone.pair({ code: mine }, "the page");
+  assert.equal(phone.paired(), true);
 });
 
 test("the page's client: a picture the phone asked for comes as it is, and a phone the box forgot can pair again", async () => {
@@ -160,9 +181,9 @@ test("the page's client: a picture the phone asked for comes as it is, and a pho
     const picture = await phone.file("/api/phone/builds/b-1/shot");
     assert.deepEqual([picture.status, picture.type, [...picture.bytes], picture.data], [200, "image/png", [1, 2, 3], {}]);
     // Only the one who asked for a file takes it, and JSON is never one.
-    await assert.rejects(phone.call("GET", "/api/phone/builds/b-1/shot"), /the tv didn't answer/);
+    await assert.rejects(phone.call("GET", "/api/phone/builds/b-1/shot"), /Couldn't reach your TV/);
     forged = (path) => (path === "/api/phone/builds/b-1/shot" ? json(200, { ok: true }) : null);
-    await assert.rejects(phone.file("/api/phone/builds/b-1/shot"), /the tv didn't answer/);
+    await assert.rejects(phone.file("/api/phone/builds/b-1/shot"), /Couldn't reach your TV/);
   } finally {
     forged = null;
   }
@@ -187,8 +208,8 @@ test("the page's requests for JSON (lib.ts) refuse a page that isn't the box's, 
   await channel.pair({ code: await code() }, "the page");
   forged = (path) => (path === "/api/phone/state" || path === "/api/phone/home" ? portal() : null);
   try {
-    await assert.rejects(api("GET", "/api/phone/state"), (error: Error) => /the tv didn't answer/.test(error.message) && !(error instanceof channel.Unpaired));
-    await assert.rejects(api("GET", "/api/phone/home"), /the tv didn't answer/);
+    await assert.rejects(api("GET", "/api/phone/state"), (error: Error) => /Couldn't reach your TV/.test(error.message) && !(error instanceof channel.Unpaired));
+    await assert.rejects(api("GET", "/api/phone/home"), /Couldn't reach your TV/);
   } finally {
     forged = null;
   }

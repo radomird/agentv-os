@@ -92,7 +92,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   hotspotIs({ on: true });
   const page = await phone();
   await page.waitForSelector("button.network");
-  assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+  assert.equal(await page.locator("h1").innerText(), "Pick your Wi-Fi");
   assert.deepEqual(await page.locator("button.network").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-ssid"))), ["home wi-fi", "cafe", "neighbours"]);
   assert.match(await page.locator('button.network[data-ssid="home wi-fi"]').innerText(), /home wi-fi[\s\S]*█/);
   assert.equal(await page.locator('button.network[data-ssid="home wi-fi"] .glyph-lock').count(), 1, "a network with a password shows the lock");
@@ -110,15 +110,50 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
 
   await page.locator('input[type="password"]').fill("correct horse");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining home wi-fi$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.match(await page.locator(".page").innerText(), /scan the new code on your TV$/);
-  assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
+  const first = JSON.parse(readFileSync(drop(), "utf8"));
+  assert.deepEqual(first.join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
   rmSync(drop());
 
   // The password was wrong: the hotspot comes back, and so does the reason.
-  hotspotIs({ on: true, error: "that password didn't work for home wi-fi" });
+  hotspotIs({ on: true, error: "that password didn't work for home wi-fi", answered: first.id });
   await page.waitForFunction(() => /that password didn't work for home wi-fi/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
-  assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+  assert.equal(await page.locator("h1").innerText(), "Pick your Wi-Fi");
+
+  // Another try. Until the TV says how this one went, the first try's
+  // reason is still the last thing it said, and it isn't shown for this one.
+  await page.locator('button.network[data-ssid="home wi-fi"]').tap();
+  await page.locator('input[type="password"]').fill("correct horse 2");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => /Joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  const second = JSON.parse(readFileSync(drop(), "utf8"));
+  rmSync(drop());
+  await page.waitForResponse((response) => response.url().includes("/api/setup/state"));
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
+  assert.equal(await page.locator("h1").innerText(), "Joining home wi-fi", "the try before's reason isn't this try's");
+  hotspotIs({ on: true, error: "the tv can't see home wi-fi from here", answered: second.id });
+  await page.waitForFunction(() => /the tv can't see home wi-fi from here/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.close();
+});
+
+test("the hotspot's page says it's still open while it's on screen, so the hotspot isn't closed under someone finding their password", async () => {
+  hotspotIs({ on: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
+  await page.goto(`${captive}/`);
+  await page.waitForSelector("button.network");
+  await page.locator('button.network[data-ssid="home wi-fi"]').tap();
+  await page.waitForSelector('input[type="password"]');
+  let requests = 0;
+  page.on("request", () => requests++);
+  // Five minutes on the password's page, asking for nothing by hand.
+  await page.clock.runFor(5 * 60_000);
+  const end = Date.now() + 5000;
+  while (requests < 4 && Date.now() < end) await new Promise((done) => setTimeout(done, 20));
+  assert.ok(requests >= 4 && requests <= 6, `about one a minute, and no more: ${requests}`);
+  assert.equal(await page.locator('input[type="password"]').count(), 1, "and the page is as it was");
   await page.close();
 });
 
@@ -130,19 +165,19 @@ test("stage 4 an open network needs no password, and one that hides its name is 
   await page.waitForSelector('[data-action="join"]');
   assert.equal(await page.locator('input[type="password"]').count(), 0);
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /joining cafe/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining cafe$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "cafe", password: "", hidden: false });
   rmSync(drop());
 
   await page.goto(`${captive}/`);
   await page.waitForSelector("button.network");
   await page.locator('button[data-ssid=""]').tap();
-  await page.waitForSelector('input[aria-label="the network\'s name"]');
-  assert.equal(await page.locator("h1").innerText(), "another network");
-  await page.locator('input[aria-label="the network\'s name"]').fill("attic");
+  await page.waitForSelector('input[aria-label="Network name"]');
+  assert.equal(await page.locator("h1").innerText(), "Another network");
+  await page.locator('input[aria-label="Network name"]').fill("attic");
   await page.locator('input[type="password"]').fill("upstairs1");
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /joining attic/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining attic$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "attic", password: "upstairs1", hidden: true });
   rmSync(drop());
   await page.close();
@@ -196,26 +231,26 @@ test("stage 4 the welcome screen shows the hotspot's QR code, then the code that
   await page.waitForSelector(".welcome");
   assert.equal(await textOf(page, ".prompt"), "~ $ tv setup");
   assert.equal(await page.locator("svg.hi").getAttribute("aria-label"), "hi.");
-  await page.waitForFunction(() => /scan the code with your phone to pair it/.test(document.querySelector(".welcome-line")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /^Scan the code with your phone to pair it$/.test(document.querySelector(".welcome-line")?.textContent ?? ""), null, { timeout: 5000 });
 
   hotspotIs({ on: true });
-  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "scan the code with your phone.", null, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "Scan the code with your phone", null, { timeout: 5000 });
   await page.waitForFunction(() => {
     const qr = document.querySelector(".welcome-qr .qr") as HTMLImageElement;
     return /^\/api\/hotspot\/qr/.test(qr.getAttribute("src") ?? "") && qr.complete && qr.naturalWidth > 0;
   });
-  assert.equal(await textOf(page, ".qr-label"), "wifi AgenTV-3f9a · password k7m2xpqr4n");
-  assert.match(await textOf(page, ".bar"), /setup[\s\S]*1\/6 connect[\s\S]*wifi hotspot · phone waiting/);
+  assert.equal(await textOf(page, ".qr-label"), "wi-fi AgenTV-3f9a · password k7m2xpqr4n");
+  assert.match(await textOf(page, ".bar"), /setup[\s\S]*1\/6 connect[\s\S]*wi-fi hotspot · phone waiting/);
 
   hotspotIs({ on: true, error: "that password didn't work for home wi-fi" });
-  await page.waitForFunction(() => /that password didn't work for home wi-fi\. scan the code to try again\./.test(document.querySelector(".welcome-line")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /that password didn't work for home wi-fi\. Scan the code to try again\./.test(document.querySelector(".welcome-line")?.textContent ?? ""), null, { timeout: 5000 });
 
   hotspotIs({ on: false, joining: "home wi-fi" });
-  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "joining home wi-fi.", null, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "Joining home wi-fi…", null, { timeout: 5000 });
   assert.ok(await page.locator(".welcome-qr.away").count(), "no QR code while it joins");
 
   hotspotIs({ on: false, joined: { ssid: "home wi-fi", address: "127.0.0.1" } });
-  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "scan the code with your phone to pair it.", null, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "Scan the code with your phone to pair it", null, { timeout: 5000 });
   await page.waitForFunction(() => {
     const qr = document.querySelector(".welcome-qr .qr") as HTMLImageElement;
     return /^\/api\/phones\/qr/.test(qr.getAttribute("src") ?? "") && qr.complete && qr.naturalWidth > 0;
@@ -226,7 +261,7 @@ test("stage 4 the welcome screen shows the hotspot's QR code, then the code that
 
   // A phone pairs with it, and setup moves on to getting ready.
   await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, pairing.code, "iphone");
-  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "iphone is paired.", null, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector(".welcome-line")?.textContent === "iphone is paired", null, { timeout: 5000 });
   await page.waitForSelector(".ready-list", { timeout: 5000 });
   const setup = (await (await fetch(`${url}/api/setup`)).json()).setup;
   assert.deepEqual([setup.step, setup.keyboard], ["ready", false]);
@@ -239,10 +274,10 @@ test("the keyboard's way: Enter with no network lists the Wi-Fi the box saw, and
   hotspotIs({ on: true });
   const page = await tv();
   await page.waitForSelector(".welcome");
-  assert.match(await textOf(page, ".enter"), /↵ enter[\s\S]*(use a keyboard instead|carry on)/);
+  assert.match(await textOf(page, ".enter"), /^enter(\s+continue)?$/, "the key's name, and no words about a keyboard");
   await page.keyboard.press("Enter");
   await page.waitForSelector("button.network");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick your wi-fi.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick your Wi-Fi");
   assert.deepEqual(await page.locator("button.network").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-ssid"))), ["home wi-fi", "cafe", "neighbours", ""]);
   await page.keyboard.press("Enter");
   await page.waitForSelector('input[type="password"].focused');
@@ -322,9 +357,9 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   await page.waitForSelector(".welcome");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".ready-list");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "getting ready.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Getting ready");
   await requested(page, "update-check");
-  assert.match(await textOf(page, ".ready-list"), /\[x\] ethernet[\s\S]*\[x\] paired · iphone[\s\S]*\[>\] checking for a newer agentv/);
+  assert.match(await textOf(page, ".ready-list"), /\[x\] cable[\s\S]*\[x\] paired · iphone[\s\S]*\[>\] checking for updates/);
   assert.match(await textOf(page, ".bar"), /1\/6 getting ready/);
 
   // Back waits while the box brings itself up to date.
@@ -337,7 +372,7 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   const install = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; grant?: string }[] }).screenRequests.find((r) => r.cmd === "update-install"));
   assert.equal(install?.grant, "", "a new box has no PIN to ask for");
   writeFileSync(join(updates, "progress.json"), JSON.stringify({ state: "running", step: "packages", percent: 62, detail: "3 of 5", at: now(), from: { agentv: "0.2.1-1", omarchy: "4.0.6-1" }, to: { agentv: "0.3.0-1" } }));
-  await page.waitForFunction(() => /\[>\] agentv 0\.2\.1 → 0\.3\.0/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 10_000 });
+  await page.waitForFunction(() => /\[>\] AgenTV 0\.2\.1 to 0\.3\.0/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 10_000 });
   await page.waitForFunction(() => document.querySelector(".blocks")?.getAttribute("aria-label") === "62 percent", null, { timeout: 5000 });
 
   // The install restarts AgenTV, and the page loads again from the new
@@ -345,7 +380,7 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   await page.reload();
   await page.waitForSelector(".ready-list");
   writeFileSync(join(updates, "progress.json"), JSON.stringify({ state: "done", step: "restart", percent: 100, detail: "", at: now(), from: { agentv: "0.2.1-1", omarchy: "4.0.6-1" }, to: { agentv: "0.3.0-1" } }));
-  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "Up to date", null, { timeout: 10_000 });
   assert.match(await textOf(page, ".ready-list"), /\[x\] agentv 0\.3\.0/);
   // Then on, by itself, to where the TV is (ADR-055).
   await page.waitForSelector(COUNTRY, { timeout: 5000 });
@@ -361,7 +396,7 @@ test("S5.6 getting ready that loads again with the update in already moves on by
   await post("/api/setup/ready", { update: "checking" });
   await post("/api/setup/ready", { update: "done", from: "0.2.1-1", to: "0.3.0-1" });
   const page = await tv();
-  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "up to date. on we go.", null, { timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "Up to date", null, { timeout: 10_000 });
   await page.waitForSelector(COUNTRY, { timeout: 5000 });
   await page.close();
 });
@@ -372,7 +407,7 @@ test("getting ready carries on with the version it has when there's nothing newe
   await page.keyboard.press("Enter");
   await requested(page, "update-check");
   writeFileSync(join(updates, "status.json"), JSON.stringify({ checked_at: now(), ok: true, channel: "stable", waiting: true, agentv: { installed: "0.2.1-1", available: "0.3.0-1" }, omarchy: { installed: "4.0.6-1", available: null }, packages: 0, security: false, notes: { agentv: [], agentv_date: null, omarchy: [] } }));
-  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "already up to date.", null, { timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelector(".ready-line")?.textContent === "Up to date", null, { timeout: 10_000 });
   assert.match(await textOf(page, ".ready-list"), /\[x\] agentv 0\.2\.1 · up to date/, "an update the nightly run hasn't passed waits");
   await page.waitForSelector(COUNTRY, { timeout: 5000 });
   await page.close();
@@ -382,7 +417,7 @@ test("getting ready carries on with the version it has when there's nothing newe
   await again.keyboard.press("Enter");
   await requested(again, "update-check");
   writeFileSync(join(updates, "status.json"), JSON.stringify({ checked_at: now(), ok: false, channel: "stable", agentv: { installed: "0.2.1-1", available: null }, omarchy: { installed: null, available: null }, packages: 0, security: false, notes: { agentv: [], agentv_date: null, omarchy: [] } }));
-  await again.waitForFunction(() => /couldn't update/.test(document.querySelector(".ready-line")?.textContent ?? ""), null, { timeout: 10_000 });
+  await again.waitForFunction(() => /^Couldn't update\. Try later in Settings\.$/.test(document.querySelector(".ready-line")?.textContent ?? ""), null, { timeout: 10_000 });
   assert.match(await textOf(again, ".ready-list"), /\[!\] agentv 0\.2\.1 · couldn't update/);
   // Enter carries on at once.
   await again.keyboard.press("Enter");
@@ -430,10 +465,11 @@ test("what the tv is for: OK on one picks it, and setup moves on to its apps", a
   await post("/api/setup/finish", { step: "people" });
   const page = await tv();
   await page.waitForSelector(".goals");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick one.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick one");
   assert.deepEqual(await page.locator(".goal .goal-name").allInnerTexts(), ["streaming", "music", "photos", "gaming"]);
   assert.equal(await page.locator(".goal.focused").getAttribute("data-goal"), "streaming");
-  assert.match(await textOf(page, ".bar"), /4\/6 goal[\s\S]*←↑↓→ move · ↵ pick/);
+  assert.match(await textOf(page, ".bar"), /4\/6 goal/);
+  assert.doesNotMatch(await textOf(page, ".bar"), /move|pick|↵|esc/, "no key hints in the bar");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowRight");
   assert.equal(await page.locator(".goal.focused").getAttribute("data-goal"), "gaming");
@@ -483,7 +519,7 @@ test("setup's motion only moves transform and opacity, headings type out, and re
   await post("/api/setup/finish", { step: "ready" });
   await post("/api/setup/finish", { step: "country" });
   await page.waitForSelector(".providers");
-  await page.waitForFunction(() => document.querySelector(".setup-headline")?.textContent === "pick one.", null, { timeout: 2000 });
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.textContent === "Pick one", null, { timeout: 2000 });
   assert.deepEqual(await check(page), []);
   await page.close();
 
@@ -493,7 +529,7 @@ test("setup's motion only moves transform and opacity, headings type out, and re
   await still.keyboard.press("Enter");
   await still.waitForSelector(".ready-list");
   assert.equal(await still.evaluate(() => getComputedStyle(document.querySelector(".setup-screen")!).animationName), "fade-in");
-  assert.equal(await still.evaluate(() => document.querySelector(".setup-headline")?.textContent), "getting ready.", "no typing");
+  assert.equal(await still.evaluate(() => document.querySelector(".setup-headline")?.textContent), "Getting ready", "no typing");
   await still.close();
   await post("/api/setup", { done: true });
 });
@@ -514,7 +550,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   await toAi();
   const page = await tv();
   await page.waitForSelector(".providers");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick one.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick one");
   assert.deepEqual(await page.locator(".provider-name").allInnerTexts(), ["claude", "chatgpt", "gemini", "grok", "muse"]);
   assert.match(await textOf(page, ".bar"), /2\/6 ai/);
   await page.keyboard.press("Enter");
@@ -534,7 +570,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   await page.keyboard.press("Enter");
   await page.waitForSelector(".terms-list");
   assert.deepEqual(await page.locator(".terms-list [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["anthropic-commercial-terms", "anthropic-usage-policy", "claude-code-legal"]);
-  assert.match(await textOf(page, ".terms-left"), /an adult accepts them on the phone\. nothing installs before that\./);
+  assert.match(await textOf(page, ".terms-left"), /an adult accepts them on the phone$/);
   await page.waitForFunction(() => /^\/api\/phones\/qr/.test(document.querySelector(".terms .qr")?.getAttribute("src") ?? ""));
   assert.equal(await screenAsked(page, "cli-install"), 0, "nothing installs before the terms are accepted");
 
@@ -556,27 +592,27 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   await page.waitForSelector(".key-row", { timeout: 5000 });
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "cli-install"));
   const ai = await (await fetch(`${url}/api/ai`)).json();
-  assert.deepEqual([ai.accepted.provider, ai.accepted.path, ai.accepted.by.phone], ["claude", "key", "iphone"]);
+  assert.deepEqual([ai.accepted.provider, ai.accepted.path, ai.accepted.by.phone], ["claude", "key", "iPhone"]);
   assert.match(ai.accepted.at, /^\d{4}-/);
 
   // The key, pasted on the phone (board 05).
   await phone.waitForSelector("#api-key");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude api key");
-  assert.match(await phone.locator(".limits").innerText(), /\$5 per app it builds, \$20 a month/);
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude API key");
+  assert.match(await phone.locator(".limits").innerText(), /^Spending limits\n*\$5 an app, \$20 a month$/);
   await phone.locator("#api-key").fill(`sk-ant-${"k".repeat(40)}`);
   await phone.locator('[data-action="save-key"]').tap();
   await page.waitForSelector('[data-action="continue"]', { timeout: 10_000 });
-  assert.match(await textOf(page, ".ready-list"), /\[x\] terms accepted · [\s\S]* on iphone[\s\S]*\[x\] key kept · root's alone[\s\S]*claude code installing/);
+  assert.match(await textOf(page, ".ready-list"), /\[x\] terms accepted · [\s\S]* on iphone[\s\S]*\[x\] key saved[\s\S]*setting up claude…/);
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 30_000 });
   assert.equal(await phone.locator("#api-key").count(), 0);
   await phone.close();
 
   // The CLI's first run, as the screen daemon tells it.
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
-  await page.waitForFunction(() => /claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /claude is ready · 2\.1\.30/i.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   await page.keyboard.press("Enter");
   await page.waitForSelector(".people");
-  assert.match(await textOf(page, ".bar"), /claude code ready/, "the CLI's state stays in the bar");
+  assert.match(await textOf(page, ".bar"), /claude is ready/, "the AI's state stays in the bar");
   await page.close();
 });
 
@@ -586,12 +622,12 @@ test("Q103 with Claude's plan, once its terms are accepted and the CLI is in, th
   await daemon.ai.accept("claude", "plan", { phone: "iphone", viewer: "radomir" });
   const page = await tv();
   await page.waitForSelector('[data-action="continue"]');
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "ready.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Ready");
   const plan = page.locator('[data-plan="sign-in"]');
-  assert.match(await plan.innerText(), /^\[ \] claude pro or max · you'll sign in to it the first time agentv builds an app$/);
+  assert.match(await plan.innerText(), /^\[ \] claude pro or max · you sign in when you first build an app$/);
   assert.match((await plan.getAttribute("class")) ?? "", /mark-todo/);
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
-  await page.waitForFunction(() => /\[x\] claude code ready · 2\.1\.30/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /\[x\] claude is ready · 2\.1\.30/i.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   assert.doesNotMatch(await textOf(page, ".ready-list"), /signed in/);
   await page.close();
 });
@@ -626,7 +662,7 @@ test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's
   await page.locator('[data-path="key"]').click();
   await page.waitForSelector(".terms-list");
   assert.deepEqual(await terms(), ["xai-enterprise-terms", "xai-acceptable-use-policy"]);
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "the terms first.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "First, the terms");
 
   // Muse, beside it.
   await page.keyboard.press("Escape");
@@ -758,7 +794,7 @@ test("who watches: a child's profile asks for the adult PIN first, chosen twice 
   await toPeople();
   const page = await tv();
   await page.waitForSelector(".people");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "who watches?");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Who's watching?");
   assert.match(await textOf(page, ".bar"), /3\/6 people/);
   assert.equal(await page.locator(".person[data-viewer]").count(), 1, "the box's owner");
   assert.equal(await textOf(page, ".pin-switch"), "□ off");
@@ -770,26 +806,26 @@ test("who watches: a child's profile asks for the adult PIN first, chosen twice 
 
   await page.locator('[data-action="add"]').click();
   await page.waitForSelector(".person-field.focused");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "someone new.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "New profile");
   // The name's field takes the phone's keyboard.
   await waitFor(async () => (await phoneTv()).view === "keyboard");
   await page.keyboard.type("Mia");
   await page.keyboard.press("Enter");
   assert.equal(await page.locator(".focused").getAttribute("data-action"), "role");
   await page.keyboard.press("ArrowRight");
-  assert.match(await textOf(page, '[data-action="role"]'), /‹ child ›/);
+  assert.equal(await textOf(page, '[data-action="role"] .button-value'), "child", "the value alone, with no arrows in the words");
   assert.equal(await page.locator('[data-action="lock"].hidden').count(), 1, "a child's profile doesn't lock");
   await page.locator('[data-action="save"]').click();
 
   // The PIN first, twice.
   await page.waitForSelector(".pin-pad");
-  assert.equal(await textOf(page, ".pin-pad h1"), "set the adult pin");
-  await waitFor(async () => (await phoneTv()).pin?.title === "set the adult pin");
+  assert.equal(await textOf(page, ".pin-pad h1"), "set an adult pin");
+  await waitFor(async () => (await phoneTv()).pin?.title === "Set an adult PIN");
   assert.equal((await phoneTv()).view, "pin");
   await page.keyboard.type("2468");
-  await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "the same pin again");
+  await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "Enter it again");
   await page.keyboard.type("1357");
-  await page.waitForFunction(() => /that's not the same pin/.test(document.querySelector(".pin-message")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Those don't match\.?$/.test(document.querySelector(".pin-message")?.textContent ?? ""));
   await page.keyboard.type("2468");
   await page.waitForSelector(".people");
   await page.waitForFunction(() => document.querySelectorAll(".person[data-viewer]").length === 2);
@@ -810,9 +846,9 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   await page.locator('[data-action="pin"]').click();
   await page.waitForSelector(".pin-pad");
   await page.keyboard.type("2468");
-  await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "the same pin again");
+  await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "Enter it again");
   await page.keyboard.type("2468");
-  await page.waitForFunction(() => document.querySelector(".pin-switch")?.textContent === "■ on");
+  await page.waitForFunction(() => document.querySelector(".pin-switch")?.textContent === "■ On");
   await page.reload();
   await page.waitForSelector(".people");
 
@@ -820,7 +856,7 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   await page.locator(".person[data-viewer]").first().click();
   await page.waitForSelector('[data-action="lock"]');
   await page.locator('[data-action="lock"]').click();
-  assert.match(await textOf(page, '[data-action="lock"]'), /‹ yes ›/);
+  assert.equal(await textOf(page, '[data-action="lock"] .button-value'), "yes");
   await page.locator('[data-action="save"]').click();
   await page.waitForSelector(".pin-pad");
   assert.equal(await textOf(page, ".pin-pad h1"), "enter the adult pin");
@@ -836,6 +872,26 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   await page.waitForSelector(".people");
   await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
   assert.equal(await page.locator(".pin-pad").count(), 0);
+
+  // The TV ends every grant, as when it has been off for a while, and setup
+  // doesn't know. The next change asks for the PIN again and goes through.
+  // It used to be refused with no pad, on every try.
+  assert.equal((await post("/api/pin/lock", { reason: "tv-off" })).status, 200);
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".pin-pad");
+  assert.equal(await page.locator(".toast.fail").count(), 0);
+  await page.keyboard.type("2468");
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 1);
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".goals");
   await page.close();
@@ -854,16 +910,21 @@ test("apps: the goal's official apps come first, the ticked ones install past th
   assert.equal((await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
   const page = await tv();
   await page.waitForSelector(".apps-page .app-pick");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick your apps.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick your apps");
   assert.match(await textOf(page, ".apps-page .prompt"), /tv apps --for media/);
   assert.deepEqual(await page.locator(".app-head").allInnerTexts(), ["# for photos", "# more"]);
   const row = (n: number) => page.locator(".app-row").nth(n);
-  assert.match(await row(0).locator(".app-add").innerText(), /\+ add your own\s+your tv builds it/);
   assert.deepEqual(await row(0).locator(".app-pick .app-name").allInnerTexts(), ["jellyfin", "immich"]);
+  // One way to build: the last tile of the grid, shaped like an app's.
+  assert.equal(await page.locator(".app-add").count(), 1);
+  assert.match(await row(1).locator(":scope > :last-child.app-add").innerText(), /^can't find it\?\s+build your own$/);
+  const size = (selector: string) => page.locator(selector).evaluate((el) => [(el as HTMLElement).offsetWidth, (el as HTMLElement).offsetHeight]);
+  assert.deepEqual(await size(".app-add"), await size('[data-app="agentv.steam"]'), "the same shape as the app before it");
   // This box has no built-in apps; the daemon's tests have Music among them.
   assert.deepEqual(await row(1).locator(".app-pick .app-name").allInnerTexts(), ["steam"]);
   assert.match(await row(0).locator('[data-app="agentv.jellyfin"]').innerText(), /\[ \][\s\S]*your own server/);
-  assert.match(await textOf(page, ".bar"), /5\/6 apps[\s\S]*←↑↓→ move · ↵ tick/);
+  assert.match(await textOf(page, ".bar"), /5\/6 apps/);
+  assert.doesNotMatch(await textOf(page, ".bar"), /move|tick|↵|esc/, "no key hints in the bar");
   assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.jellyfin");
 
   // Immich ticked, Steam ticked and unticked again.
@@ -871,7 +932,10 @@ test("apps: the goal's official apps come first, the ticked ones install past th
   await page.keyboard.press("Enter");
   await page.waitForSelector('[data-app="agentv.immich"].on');
   assert.match(await page.locator('[data-app="agentv.immich"]').innerText(), /\[x\]/);
+  // Down from Immich is the build tile under it, and Steam is beside that.
   await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator(".focused").getAttribute("data-action"), "add");
+  await page.keyboard.press("ArrowLeft");
   assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.steam");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
@@ -896,16 +960,20 @@ test("apps: add your own asks what to add, keeps it for the TV's agent, and noth
   const page = await tv();
   await page.waitForSelector(".apps-page .app-pick");
   assert.deepEqual(await page.locator(".app-row").nth(0).locator(".app-pick .app-name").allInnerTexts(), ["jellyfin"], "Plex isn't in the index yet");
-  await page.keyboard.press("ArrowLeft");
+  // Down to more, and along it to its last tile.
+  await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 4 && (await page.locator(".focused").getAttribute("data-action")) !== "add"; i++) await page.keyboard.press("ArrowRight");
   assert.equal(await page.locator(".focused").getAttribute("data-action"), "add");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".wish-field");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "add your own.");
-  assert.match(await textOf(page, ".setup-page"), /what should I add\?[\s\S]*\$5 cap/);
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Build your own");
+  assert.match(await textOf(page, ".setup-page"), /tv apps add[\s\S]*built after setup, for \$5 at most$/);
+  assert.doesNotMatch(await textOf(page, ".setup-page"), /type here|not this|esc/, "no line of instructions, and no back button");
+  assert.equal(await page.locator(".wish-field").getAttribute("placeholder"), "A puzzle game", "an example of what to ask for is in the field");
   await page.keyboard.type("A radio app");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".apps-page .app-note");
-  await page.waitForFunction(() => /kept for later: a radio app/.test(document.querySelector(".app-note")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Saved for later: A radio app$/.test(document.querySelector(".app-note")?.textContent ?? ""));
   assert.deepEqual((await (await fetch(`${url}/api/setup`)).json()).setup.wishes, ["A radio app"]);
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".looks", { timeout: 10_000 });
@@ -937,7 +1005,7 @@ test("S5.2 S5.7 the look: every Omarchy theme in its own colours, Tokyo Night fi
   const shipped = readdirSync(join(ROOT, "themes")).sort();
   const page = await tv();
   await page.waitForSelector(".looks .look");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a look.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick a look");
   assert.match(await textOf(page, ".setup-page .prompt"), /omarchy theme/);
   const names = await page.locator(".look .look-name").allInnerTexts();
   assert.equal(names.length, shipped.length + 1, "every one of Omarchy's themes, and describe your own");
@@ -974,8 +1042,8 @@ test("S5.2 S5.7 the look: every Omarchy theme in its own colours, Tokyo Night fi
   // Describe your own is kept for the TV's agent to make (S6.4).
   await page.locator('[data-theme="own"]').click();
   await page.waitForSelector(".wish-field");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "describe your own.");
-  assert.equal(await page.locator(".wish-field").getAttribute("placeholder"), "a calm forest at dusk");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Describe a theme");
+  assert.equal(await page.locator(".wish-field").getAttribute("placeholder"), "A calm forest at dusk");
   await page.locator(".wish-field").fill("a calm forest at dusk");
   await page.locator('[data-action="keep"]').click();
   await page.waitForSelector(".looks .look");
@@ -1013,7 +1081,7 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   await post("/api/backgrounds", { source: "field" });
   const page = await tv();
   await page.waitForSelector(".backs .back");
-  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick a background.");
+  assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick a background");
   assert.deepEqual(await page.locator(".back .look-name").allInnerTexts(), ["the theme's", "pixel field", "your photos", "shared folder", "art", "made for you"]);
   assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "field");
   assert.match(await textOf(page, ".bar"), /6\/6 look/);
@@ -1026,7 +1094,7 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   const had = (await (await fetch(`${url}/api/backgrounds`)).json()).items.length;
   if (had === 0) {
     await page.locator('[data-background="photos"]').click();
-    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "send a photo.");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Send a photo");
     const code = (await (await post("/api/phones/pair", {})).json()).pairing.code;
     const token = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
     const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
@@ -1073,11 +1141,11 @@ test("S5.8 the background: the theme's own first, as on Omarchy's desktop, and p
   assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "theme");
   assert.equal(await page.locator(".back.focused").getAttribute("data-background"), "theme");
   assert.equal(await page.locator('[data-background="theme"] .back-shot img').getAttribute("data-id"), id, "it shows the one Omarchy shows");
-  assert.equal(await textOf(page, ".setup-note"), "tokyo night's own, as on omarchy's desktop. it changes with the theme.");
+  assert.equal(await textOf(page, ".setup-note"), "comes with the theme");
   // A theme without any: the pixel field, and it says so.
   await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "plain", current: null, files: [] }) });
   await page.waitForSelector('[data-background="theme"] .back-shot .pixel-field', { timeout: 5000 });
-  assert.equal(await textOf(page, ".setup-note"), "plain has no backgrounds of its own, so it's the pixel field for now.");
+  assert.equal(await textOf(page, ".setup-note"), "this theme has none, so you get a plain pattern");
   await post("/api/backgrounds", { source: "field" });
   await page.close();
 });
@@ -1090,11 +1158,11 @@ test("the background: art from a museum archive, searched through the daemon and
   const page = await tv();
   await page.waitForSelector(".backs .back");
   await page.locator('[data-background="art"]').click();
-  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a work.");
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Pick a picture");
   assert.deepEqual(await page.locator(".archive").allInnerTexts(), ["the met", "art institute of chicago", "wikimedia commons"]);
   assert.equal(await page.locator(".archive.picked").getAttribute("data-archive"), "met");
   // The first words find nothing in the stand-in; the page says so.
-  await page.waitForFunction(() => /nothing from the met for that/.test(document.querySelector(".setup-note")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Nothing found\. Try other words\.$/.test(document.querySelector(".setup-note")?.textContent ?? ""));
 
   // Words of your own, typed here: Enter looks.
   await page.locator('[data-action="words"]').fill("sea");
@@ -1103,7 +1171,7 @@ test("the background: art from a museum archive, searched through the daemon and
   await page.waitForFunction(() => document.querySelectorAll(".works .work").length === 6);
   assert.deepEqual(await page.locator(".work .look-name").allInnerTexts(), ["ensuranai", "the sea", "sea storms", "sea monster", "calm sea", "sea monster"]);
   assert.deepEqual((await page.locator(".work .look-note").allInnerTexts()).slice(0, 2), ["sea dayaks (iban), 19th century", "gustave courbet, 1865 or later"]);
-  assert.match(await textOf(page, ".setup-note"), /6 works from the met, free to show/);
+  assert.match(await textOf(page, ".setup-note"), /^6 works from the met, free to show$/);
   // Thumbnails come through the daemon.
   await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".work-shot img")].every((img) => img.complete && img.naturalWidth > 0));
   assert.ok((await page.locator(".work-shot img").first().getAttribute("src"))?.startsWith("/api/art/met/"));
@@ -1112,7 +1180,7 @@ test("the background: art from a museum archive, searched through the daemon and
   await page.locator('[data-archive="commons"]').click();
   await page.waitForFunction(() => document.querySelector('.works .work[data-work="commons/37658477"]') !== null);
   await page.locator('[data-work="commons/37658477"]').click();
-  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Pick a background");
   await page.waitForSelector('.back.picked[data-background="art"]');
   assert.match(await textOf(page, ".setup-note"), /Sète Harbour Sunset 04 · Christian Ferrer, 2014 · cc by 4\.0 · wikimedia commons/);
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
@@ -1135,10 +1203,10 @@ test("the background: a folder, a usb drive or a share, its pictures copied over
   const page = await tv({ replies: { "music:sources": { ok: true, sources }, "music:add-share": { ok: true }, "background-folder": { ok: true, count: 1 } } });
   await page.waitForSelector(".backs .back");
   await page.locator('[data-background="folder"]').click();
-  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a folder.");
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Pick a folder");
   // Only the ones that are there, and the first has the focus.
   await page.waitForSelector("[data-folder]");
-  assert.deepEqual(await page.locator("[data-folder]").allInnerTexts(), ["folder · pictures", "share · nas/photos"]);
+  assert.deepEqual(await page.locator("[data-folder]").allInnerTexts(), ["folder · pictures", "network folder · nas/photos"]);
   assert.equal(await page.locator(".focused").getAttribute("data-folder"), "folder:/home/owner/Pictures");
 
   // A share added here, as in Music → sources: the password leaves the page.
@@ -1153,9 +1221,9 @@ test("the background: a folder, a usb drive or a share, its pictures copied over
   assert.equal((await fetch(`${url}/api/backgrounds/folder?from=nas%2Fphotos&first=1`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array(jpeg) })).status, 200);
   await page.locator('[data-folder="share:smb://nas/photos"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; source?: string }[] }).screenRequests.some((r) => r.cmd === "background-folder" && r.source === "share:smb://nas/photos"));
-  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
+  await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Pick a background");
   await page.waitForSelector('.back.picked[data-background="folder"]');
-  assert.match(await textOf(page, ".setup-note"), /1 picture from nas\/photos\./);
+  assert.match(await textOf(page, ".setup-note"), /^1 picture from nas\/photos$/);
   await post("/api/backgrounds", { source: "field" });
   await page.close();
 });
@@ -1169,7 +1237,7 @@ test("the background: an immich album through its shared link, with no account o
     await post("/api/backgrounds", { source: "field" });
     const page = await tv({ replies: { "music:sources": { ok: true, sources: [] } } });
     await page.waitForSelector(".backs .back");
-    assert.match(await textOf(page, '[data-background="folder"] .look-note'), /nas or immich/);
+    assert.match(await textOf(page, '[data-background="folder"] .look-note'), /^a drive or immich$/);
     await page.locator('[data-background="folder"]').click();
     await page.waitForSelector('[data-action="immich"]');
     // The phone's keyboard opens for a link.
@@ -1182,9 +1250,9 @@ test("the background: an immich album through its shared link, with no account o
 
     await page.locator('[data-action="immich"]').fill(immich.link);
     await page.locator('[data-action="use-album"]').click();
-    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
+    await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "Pick a background");
     await page.waitForSelector('.back.picked[data-background="folder"]');
-    assert.match(await textOf(page, ".setup-note"), /2 pictures from Autumn · immich\./);
+    assert.match(await textOf(page, ".setup-note"), /^2 pictures from Autumn · immich$/);
     await post("/api/backgrounds", { source: "field" });
     await page.close();
   } finally {
@@ -1199,7 +1267,7 @@ test("S5.4 the soundtrack plays from the welcome screen with its player, the equ
   await post("/api/setup/music", { muted: false });
   const page = await tv();
   await page.waitForSelector(".player");
-  assert.match(await textOf(page, ".player"), /setup soundtrack[\s\S]*m to mute/);
+  assert.equal((await textOf(page, ".player")).trim(), "setup soundtrack", "its name alone while it plays: no key hint");
   assert.equal(await page.locator(".eq .eq-bar").count(), 7);
   // The track itself, setup/audio/setup-soundtrack-v1.mp3, plays: the bars
   // rise with it.
@@ -1216,7 +1284,7 @@ test("S5.4 the soundtrack plays from the welcome screen with its player, the equ
   // M mutes it, and setup keeps that.
   await page.keyboard.press("m");
   await page.waitForSelector(".player.muted");
-  assert.match(await textOf(page, ".player"), /muted · m to play/);
+  assert.match(await textOf(page, ".player"), /^setup soundtrack\s+muted\s*$/);
   await page.waitForFunction(() => (window as unknown as { agentvSetup: { music: { levels(): number[] } } }).agentvSetup.music.levels().every((level) => level <= 0.12));
   await waitFor(async () => (await (await fetch(`${url}/api/setup`)).json()).setup.muted === true);
 
@@ -1263,7 +1331,7 @@ test("the phone's remote says which setup step the TV is on", async () => {
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector(".setup-step");
-  assert.equal(await phone.locator(".setup-step").innerText(), "tv setup · 1/6 getting ready");
+  assert.equal(await phone.locator(".setup-step").innerText(), "TV setup · 1/6 getting ready");
   await post("/api/setup", { done: true });
   await phone.waitForFunction(() => !document.querySelector(".setup-step"), null, { timeout: 30_000 });
   await phone.close();

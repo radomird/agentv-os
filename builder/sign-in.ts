@@ -171,7 +171,7 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
   }
   const said = scriptSaid.replace(ESCAPES, "").split("\n").map((line) => line.trim()).find(Boolean)?.slice(0, 200);
   if (!status.url && exit !== 0) log(`${provider}'s sign-in stopped before its link showed: its terminal exited ${exit}${said ? `, saying "${said}"` : ""}`);
-  return set({ state: "failed", url: undefined, code: undefined, reason: why || (exit === 0 ? "the sign-in didn't finish" : `the sign-in stopped before it finished${!status.url && said ? `: ${said}` : ""}`) });
+  return set({ state: "failed", url: undefined, code: undefined, reason: why || (exit === 0 ? "Couldn't finish the sign-in" : `the sign-in stopped before it finished${!status.url && said ? `: ${said}` : ""}`) });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {

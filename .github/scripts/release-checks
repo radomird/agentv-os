@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Which agentv-iso commit an AgenTV release was tagged with, so the nightly
+# run checks the release with the image checks it shipped with, and not
+# with tonight's, which can be for work the release doesn't have.
+#
+# A release's tag is agentv-v1.0.0 from 1.0 on, and v0.2.0 for a 0.x
+# release, the same in agentv-os and agentv-iso. A plain v tag only counts
+# for a 0.x version: in agentv-os, v1.1.0 to v4.5.0 are Omarchy's own. When
+# a 0.x release is tagged both ways, the agentv-v tag stands for it.
+#
+# It hands back the commit, not the tag's name: a name can also be a
+# branch's, and a checkout by name takes the branch.
+#
+# Usage: .github/scripts/release-checks <version> <agentv-iso>
+#   version     the stable release, like 1.0.0
+#   agentv-iso  anything git can list the tags of
+#
+# Writes to $GITHUB_OUTPUT (or stdout): tag (the release's tag in
+# agentv-iso) and checks (the commit that tag is on).
+#
+# Exits 0 when it found the tag, 3 when agentv-iso has no tag for that
+# release, saying which names it looked for, and 1 when it couldn't ask or
+# the version isn't a release's.
+
+set -euo pipefail
+
+version=${1:?the stable release, like 1.0.0}
+iso_url=${2:?agentv-iso to list the tags of}
+out=${GITHUB_OUTPUT:-/dev/stdout}
+
+if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "release-checks: $version isn't a release's version, like 1.0.0" >&2
+  exit 1
+fi
+
+names=("agentv-v$version")
+[[ $version != 0.* ]] || names+=("v$version")
+
+for name in "${names[@]}"; do
+  # A tag with a message of its own is listed twice, and the line that ends
+  # in ^{} has the commit.
+  if ! listed=$(git ls-remote "$iso_url" "refs/tags/$name" "refs/tags/$name^{}"); then
+    echo "release-checks: couldn't list agentv-iso's tags" >&2
+    exit 1
+  fi
+  commit=$(awk -v tag="refs/tags/$name" '$2 == tag "^{}" { peeled = $1 } $2 == tag { plain = $1 } END { print (peeled != "" ? peeled : plain) }' <<<"$listed")
+  if [[ $commit =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'tag=%s\nchecks=%s\n' "$name" "$commit" >>"$out"
+    exit 0
+  fi
+done
+
+looked=${names[0]}
+(( ${#names[@]} == 1 )) || looked+=" or ${names[1]}"
+echo "release-checks: agentv-iso has no $looked tag" >&2
+exit 3

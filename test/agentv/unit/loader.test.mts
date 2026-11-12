@@ -4,7 +4,7 @@
 // limit and fails with a typed error.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { type ChildProcess, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { homedir, tmpdir } from "node:os";
@@ -343,35 +343,45 @@ test("a worker that ends by itself after a call timed out isn't stopped again as
   assert.deepEqual(lines.filter((line) => /stuck/.test(line)), []);
 });
 
-test("an answer that comes for an app already stopped isn't logged as its sandbox not starting", async () => {
+test("an answer that comes for an app already stopped isn't sent to its worker, with bubblewrap or without", async () => {
   // The app's request is still out when the app is stopped, and its answer
   // comes after. There's no worker to hand it to, which says nothing about
-  // the sandbox.
-  const lines: string[] = [];
-  let asked = () => {};
-  const waiting = new Promise<void>((resolve) => (asked = resolve));
-  let answer = () => {};
-  const slow = createServer((_request, response) => {
-    answer = () => response.end("late");
-    asked();
-  });
-  await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
-  try {
-    const slowUrl = `http://127.0.0.1:${(slow.address() as { port: number }).port}`;
-    const dir = app(tileApp("await fetch(ctx.settings.serverUrl + '/slow'); return {};"));
-    const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
-    const h = new AppHost({ dir, manifest, settings: { serverUrl: slowUrl }, harness, log: (line) => lines.push(line) });
-    hosts.push(h);
-    const call = h.call(viewer, "tile", "s");
-    await waiting;
-    h.stop();
-    await fails(call, "crashed", /Sample stopped/);
-    answer();
-    await new Promise((done) => setTimeout(done, 300));
-    assert.deepEqual(lines.filter((line) => /sandbox/.test(line)), []);
-  } finally {
-    slow.closeAllConnections();
-    slow.close();
+  // the sandbox. Sending it anyway was an error on the worker, logged as the
+  // sandbox not starting under bubblewrap and said nowhere without it, so
+  // the worker's own errors are watched here, in both.
+  for (const bare of noSandbox === null ? [true, false] : [true]) {
+    const lines: string[] = [];
+    const errors: string[] = [];
+    let asked = () => {};
+    const waiting = new Promise<void>((resolve) => (asked = resolve));
+    let answer = () => {};
+    const slow = createServer((_request, response) => {
+      answer = () => response.end("late");
+      asked();
+    });
+    await new Promise<void>((resolve) => slow.listen(0, "127.0.0.1", resolve));
+    try {
+      const slowUrl = `http://127.0.0.1:${(slow.address() as { port: number }).port}`;
+      const dir = app(tileApp("await fetch(ctx.settings.serverUrl + '/slow'); return {};"));
+      const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+      const h = new AppHost({ dir, manifest, settings: { serverUrl: slowUrl }, harness: { thisBox: true, noSandbox: bare }, log: (line) => lines.push(line) });
+      hosts.push(h);
+      const call = h.call(viewer, "tile", "s");
+      await waiting;
+      const worker = (h as unknown as { child?: ChildProcess }).child;
+      assert.ok(worker, "the worker is up while its request is out");
+      worker.on("error", (error) => errors.push(error.message));
+      h.stop();
+      await fails(call, "crashed", /Sample stopped/);
+      answer();
+      await new Promise((done) => setTimeout(done, 300));
+      const how = bare ? "without bubblewrap" : "with bubblewrap";
+      assert.deepEqual(errors, [], how);
+      assert.deepEqual(lines.filter((line) => /sandbox|channel/i.test(line)), [], how);
+    } finally {
+      slow.closeAllConnections();
+      slow.close();
+    }
   }
 });
 

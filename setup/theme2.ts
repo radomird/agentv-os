@@ -21,14 +21,15 @@ import type { Ctx, View } from "./main.ts";
 type Back = "theme" | "photos" | "folder" | "made";
 
 const BACKS: { id: Back; name: string; icon: Glyph }[] = [
-  { id: "photos", name: "your photos", icon: "photo" },
-  { id: "folder", name: "a shared folder", icon: "grid" },
-  { id: "made", name: "made for you", icon: "spark" },
+  { id: "photos", name: "Your photos", icon: "photo" },
+  { id: "folder", name: "A shared folder", icon: "grid" },
+  { id: "made", name: "Made for you", icon: "spark" },
 ];
 
 const LOOKS: LookId[] = ["terminal", "glass", "cinema"];
 const empty = (): Backgrounds => ({ source: "theme", current: null, items: [] });
-const lower = (name: string | null | undefined) => (name ?? "").replace(/[-_]+/g, " ").toLowerCase();
+// A theme's or a look's name as it's read: "tokyo-night" is "tokyo night".
+const plain = (name: string | null | undefined) => (name ?? "").replace(/[-_]+/g, " ");
 
 export async function themeBackground(ctx: Ctx): Promise<View> {
   const [found, looked, display] = await Promise.all([
@@ -45,14 +46,14 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
   let leaving = false;
   const look = LOOKS.includes(looked.look as LookId) ? (looked.look as LookId) : "terminal";
   const size = display?.size ?? "standard";
-  const lookName = lower(looked.looks?.find((one) => one.id === look)?.name ?? look);
+  const lookName = plain(looked.looks?.find((one) => one.id === look)?.name ?? look);
 
   const themeCard = (one: ThemePreview) =>
     h(
       "button",
       { class: "tb-theme", "data-focus": true, "data-theme": one.id, onclick: () => void pickTheme(one) },
       previewFrame(look, size, 326, one.id),
-      h("span", { class: "tb-theme-name" }, lower(one.name)),
+      h("span", { class: "tb-theme-name" }, plain(one.name)),
     );
   let themeCards = themes.map(themeCard);
   const themeRow = h("div", { class: "tb-themes", "data-scroll": true }, ...themeCards);
@@ -71,9 +72,9 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
   const pictureCard = (id: string | null, i: number) =>
     h(
       "button",
-      { class: "tb-back", "data-focus": true, "data-background": "theme", ...(id ? { "data-picture": id, "aria-label": `the theme's background ${i + 1}` } : {}), onclick: () => void pickBack("theme", id ?? undefined) },
+      { class: "tb-back", "data-focus": true, "data-background": "theme", ...(id ? { "data-picture": id, "aria-label": `The theme's background ${i + 1}` } : {}), onclick: () => void pickBack("theme", id ?? undefined) },
       h("span", { class: "tb-back-shot" }, id ? h("img", { src: `/api/backgrounds/${id}`, alt: "" }) : field()),
-      h("span", { class: "tb-back-name" }, id ? "" : "the theme's own"),
+      h("span", { class: "tb-back-name" }, id ? "" : "The theme's own"),
     );
   let pictureCards: HTMLElement[] = [];
   const backsRow = h("div", { class: "tb-backs", "data-scroll": true });
@@ -87,7 +88,7 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
       card.classList.toggle("picked", card.dataset.theme === current);
       card.classList.toggle("setting", card.dataset.theme === setting);
     }
-    const name = lower(themes.find((one) => one.id === current)?.name ?? now.theme?.name);
+    const name = plain(themes.find((one) => one.id === current)?.name ?? now.theme?.name);
     label.textContent = name ? `# ${name}'s backgrounds` : "# backgrounds";
     // The theme's pictures again when they change, as when the theme does,
     // with the focus where it was.
@@ -122,13 +123,13 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
     }
     setting = one.id;
     draw();
-    ctx.status(`setting ${lower(one.name)}`);
+    ctx.status(`Setting ${plain(one.name)}…`);
     const reply = await screen.setTheme(one.id);
     setting = null;
-    ctx.status("←↑↓→ move · ↵ pick");
+    ctx.status("");
     if (!reply.ok) {
       ctx.sounds.play("failure");
-      ctx.toast(reply.error ?? `${lower(one.name)} didn't set`, "fail");
+      ctx.toast(reply.error ?? `Couldn't use ${plain(one.name)}`, "fail");
       draw();
       return;
     }
@@ -144,7 +145,7 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
     if (setting || leaving) return;
     if (id === "made") {
       ctx.sounds.play("failure");
-      ctx.toast("your tv's agent will draw backgrounds soon", "fail");
+      ctx.toast("Made-to-order backgrounds are coming soon", "fail");
       return;
     }
     if (id === "photos" && !now.items.some((item) => item.kind === "photo")) return ctx.open("background/photos");
@@ -153,7 +154,7 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
     try {
       if (picture && picture !== now.theme?.current) {
         const reply = await screen.setBackground(picture);
-        if (!reply.ok) throw new Error(reply.error ?? "that background didn't change");
+        if (!reply.ok) throw new Error(reply.error ?? "Couldn't change the background");
       }
       now = await daemon.chooseBackground(id);
       draw();
@@ -169,13 +170,13 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
   };
 
   draw();
-  const top = heading("omarchy theme", "pick a theme.", ctx.reduced());
+  const top = heading("omarchy theme", "Pick a theme", ctx.reduced());
   const el = h(
     "div",
     { class: "setup-page d3 theme2" },
     ...top,
     // The look is named only once one was picked, a step before this.
-    ctx.info.setup.finished.look ? h("p", { class: "setup-line" }, `shown in ${lookName}, the look you picked`) : "",
+    ctx.info.setup.finished.look ? h("p", { class: "setup-line" }, `Shown in ${lookName}, the look you picked`) : "",
     themeRow,
     label,
     backsRow,
@@ -185,7 +186,6 @@ export async function themeBackground(ctx: Ctx): Promise<View> {
   return {
     el,
     first: picked ?? themeCards.find((card) => card.dataset.theme === current) ?? themeCards[0] ?? backOf("theme"),
-    info: "←↑↓→ move · ↵ pick",
     heard(event, data) {
       if (event === "background") {
         now = data as Backgrounds;

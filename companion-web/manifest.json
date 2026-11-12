@@ -1,0 +1,14 @@
+{
+  "name": "AgenTV",
+  "short_name": "AgenTV",
+  "description": "The remote for your TV",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#1a1b26",
+  "theme_color": "#1a1b26",
+  "icons": [
+    { "src": "/companion-web/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/companion-web/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

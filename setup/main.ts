@@ -19,7 +19,7 @@ import { listen as listenInput, type Action } from "../launcher/input.ts";
 import { pad as pinPad, type Pad, type PadOptions } from "../launcher/pages/pin.ts";
 import { Sounds } from "../launcher/sounds.ts";
 import { cliLine } from "./ai.ts";
-import { setup, type AiInfo, type Installs, type SetupInfo, type Step } from "./api.ts";
+import { NEEDS_PIN, setup, type AiInfo, type Installs, type SetupInfo, type Step } from "./api.ts";
 import { installLine } from "./apps.ts";
 import { bar, field } from "./frame.ts";
 import { Soundtrack } from "./music.ts";
@@ -73,6 +73,11 @@ export interface Ctx {
   // from the PIN entered earlier in setup while it lasts, or the PIN asked
   // for now on its pad. Null when it wasn't entered.
   grant(what: string): Promise<string | null>;
+  // An adult action, sent with its grant. When the TV says the grant kept
+  // from earlier is no good any more (the TV locked, or it started again),
+  // the grant is forgotten and the PIN asked for on its pad, then the action
+  // is sent once more. Null when the PIN wasn't entered: nothing was done.
+  guarded<T>(what: string, send: (grant?: string) => Promise<T>): Promise<{ value: T } | null>;
   // Keeps a grant for the rest of setup, as after the PIN was just chosen.
   hold(grant: string, until: string): void;
   // A PIN pad over the page, as choosing the adult PIN. True once submit
@@ -216,8 +221,8 @@ const ctx: Ctx = {
     let grant: string | null = null;
     const ok = await openPad({
       command: "tv setup · pin",
-      title: "enter the adult pin",
-      note: `for ${what}.`,
+      title: "Enter the adult PIN",
+      note: `For ${what}`,
       cancel: true,
       submit: async (pin) => {
         const reply = await daemon.checkPin(pin);
@@ -227,6 +232,21 @@ const ctx: Ctx = {
       },
     });
     return ok ? grant : null;
+  },
+  async guarded(what, send) {
+    let grant = await ctx.grant(what);
+    if (grant === null) return null;
+    try {
+      return { value: await send(grant || undefined) };
+    } catch (error) {
+      if ((error as Error).message.toLowerCase() !== NEEDS_PIN) throw error;
+    }
+    // The TV asked for the PIN, so there is one, whatever this page knew.
+    held = null;
+    ctx.info.pin = true;
+    grant = await ctx.grant(what);
+    if (grant === null) return null;
+    return { value: await send(grant || undefined) };
   },
   hold(grant, until) {
     held = { token: grant, until: Date.parse(until) };

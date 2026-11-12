@@ -25,6 +25,8 @@ interface Joining {
   on: boolean;
   joining: string | null;
   error: string | null;
+  // Whether the TV has answered the join this page asked for.
+  answered?: boolean;
 }
 
 let networks: Network[] = [];
@@ -33,16 +35,25 @@ let watching = 0;
 // which a join then needs.
 let after = false;
 let needsPin = false;
+// How often a page that's on screen says so. The TV counts a page as in use
+// for five minutes after it last asked for something.
+const STILL_HERE_MS = 60_000;
+
+const UNREACHED = "Couldn't reach your TV";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // A request that never arrived says so in the page's own words, not the
+  // browser's.
   const response = await fetch(path, {
     method,
     cache: "no-store",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+  }).catch(() => {
+    throw new Error(UNREACHED);
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw Object.assign(new Error(data.error ?? "the tv didn't answer"), { pin: data.pin === true, wait: Number(data.wait) || 0 });
+  if (!response.ok || data.ok === false) throw Object.assign(new Error(data.error ?? UNREACHED), { pin: data.pin === true, wait: Number(data.wait) || 0 });
   return data as T;
 }
 
@@ -58,7 +69,7 @@ function list(note?: string): void {
       glyph("wifi", 24),
       h("span", { class: "network-name" }, network.ssid),
       network.secure ? glyph("lock", 18) : null,
-      h("span", { class: "viewer-role", "aria-label": `signal ${network.signal}%` }, bars(network.signal)),
+      h("span", { class: "viewer-role", "aria-label": `Signal ${network.signal}%` }, bars(network.signal)),
     ),
   );
   app.replaceChildren(
@@ -66,10 +77,10 @@ function list(note?: string): void {
       "div",
       { class: "page" },
       prompt("tv wi-fi"),
-      h("h1", {}, "pick your wi-fi"),
-      h("p", { class: `note${note ? " bad" : ""}` }, note ?? "the tv joins it, and your phone goes back to it after."),
+      h("h1", {}, "Pick your Wi-Fi"),
+      h("p", { class: `note${note ? " bad" : ""}` }, note ?? "Your TV will join it"),
       ...rows,
-      h("button", { class: "button", type: "button", "data-ssid": "", onclick: () => form(null) }, glyph("plus", 20), h("span", {}, "another network")),
+      h("button", { class: "button", type: "button", "data-ssid": "", onclick: () => form(null) }, glyph("plus", 20), h("span", {}, "Another network")),
     ),
   );
 }
@@ -78,29 +89,30 @@ function list(note?: string): void {
 function form(network: Network | null): void {
   const name = network
     ? null
-    : (h("input", { class: "field", type: "text", autocapitalize: "none", autocomplete: "off", spellcheck: "false", maxlength: "32", placeholder: "its name", "aria-label": "the network's name" }) as HTMLInputElement);
+    : (h("input", { class: "field", type: "text", autocapitalize: "none", autocomplete: "off", spellcheck: "false", maxlength: "32", placeholder: "Name", "aria-label": "Network name" }) as HTMLInputElement);
   const password =
     network && !network.secure
       ? null
-      : (h("input", { class: "field", type: "password", autocapitalize: "none", autocomplete: "off", spellcheck: "false", maxlength: "64", placeholder: "its password", "aria-label": "the wi-fi password" }) as HTMLInputElement);
+      : (h("input", { class: "field", type: "password", autocapitalize: "none", autocomplete: "off", spellcheck: "false", maxlength: "64", placeholder: "Password", "aria-label": "Wi-Fi password" }) as HTMLInputElement);
   const pin = needsPin
     ? (h("input", { class: "field", type: "password", inputmode: "numeric", autocomplete: "off", maxlength: "4", placeholder: "Adult PIN", "aria-label": "Adult PIN", "data-field": "pin" }) as HTMLInputElement)
     : null;
   const join = async () => {
     const ssid = network?.ssid ?? name!.value.trim();
     const typed = password?.value ?? "";
-    if (!ssid) return toast("type the network's name");
+    if (!ssid) return toast("Type the network's name");
     if (password && network?.secure && typed.length < 8) return toast("Wi-Fi passwords have at least 8 characters");
     if (pin && !/^\d{4}$/.test(pin.value)) return toast("The adult PIN has 4 digits");
+    let ask: string | undefined;
     try {
-      await call("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) });
+      ({ ask } = await call<{ ask?: string }>("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) }));
     } catch (error) {
       const refused = error as Error & { pin?: boolean; wait?: number };
       if (!refused.pin) return toast(refused.message);
       pin!.value = "";
-      return toast(refused.wait ? `Too many tries. Try again in ${refused.wait} ${refused.wait === 1 ? "second" : "seconds"}.` : "Wrong PIN");
+      return toast(refused.wait ? `Too many tries. Wait ${refused.wait} ${refused.wait === 1 ? "second" : "seconds"}.` : "Wrong PIN");
     }
-    joining(ssid);
+    joining(ssid, ask);
   };
   for (const field of [name, password, pin]) {
     field?.addEventListener("keydown", (event) => {
@@ -112,35 +124,38 @@ function form(network: Network | null): void {
       "div",
       { class: "page" },
       prompt("tv wi-fi"),
-      h("h1", { class: "with-icon" }, glyph("wifi", 26), h("span", {}, network?.ssid ?? "another network")),
-      h("p", { class: "note" }, "your phone leaves this network while the tv joins."),
+      h("h1", { class: "with-icon" }, glyph("wifi", 26), h("span", {}, network?.ssid ?? "Another network")),
+      h("p", { class: "note" }, "Your phone will disconnect for a moment"),
       name,
       password,
       pin,
-      h("button", { class: "button primary", type: "button", "data-action": "join", onclick: () => void join() }, "join"),
-      h("button", { class: "button", type: "button", onclick: () => list() }, glyph("back", 20), h("span", {}, "back")),
+      h("button", { class: "button primary", type: "button", "data-action": "join", onclick: () => void join() }, "Join"),
+      h("button", { class: "button", type: "button", onclick: () => list() }, glyph("back", 20), h("span", {}, "Back")),
     ),
   );
   (name ?? password)?.focus();
 }
 
-// The box is joining it. If this page hears back, it didn't work.
-function joining(ssid: string): void {
+// The box is joining it. If this page hears back, it didn't work. With the
+// id of its own join, it waits for the answer to that one, so the reason
+// the try before didn't work isn't shown for this try.
+function joining(ssid: string, ask?: string): void {
   app.replaceChildren(
     h(
       "div",
       { class: "page" },
       h("div", { class: "pair-icons" }, glyph("tv", 40), glyph("right", 24), glyph("wifi", 40)),
       prompt("tv wi-fi"),
-      h("h1", {}, `joining ${ssid}`),
+      h("h1", {}, `Joining ${ssid}`),
       h("p", { class: "note" }, after ? "Once it's on, go back to that Wi-Fi" : "Once it's on, go back to that Wi-Fi and scan the new code on your TV"),
     ),
   );
   clearInterval(watching);
   watching = window.setInterval(() => {
-    call<Joining>("GET", "/api/setup/state")
+    call<Joining>("GET", ask ? `/api/setup/state?ask=${ask}` : "/api/setup/state")
       .then((state) => {
         if (state.joining || !state.error) return;
+        if (ask && !state.answered) return;
         list(state.error);
       })
       .catch(() => {
@@ -162,8 +177,18 @@ async function start(): Promise<void> {
     needsPin = found.pin === true;
     if (state.joining) joining(state.joining);
     else list(state.error ?? undefined);
+    // While the page is on screen it asks now and then, so the TV knows
+    // someone is using it and keeps the hotspot open: picking a network and
+    // typing its password ask for nothing by themselves.
+    const here = () => {
+      if (document.visibilityState === "visible") void call("GET", "/api/setup/state").catch(() => {});
+    };
+    window.setInterval(here, STILL_HERE_MS);
+    document.addEventListener("visibilitychange", here);
   } catch (error) {
-    app.replaceChildren(h("div", { class: "page" }, prompt("tv wi-fi"), h("h1", {}, "the tv isn't answering"), h("p", { class: "note bad" }, (error as Error).message)));
+    // What the TV said, when it said something more than the headline.
+    const said = (error as Error).message === UNREACHED ? "" : (error as Error).message;
+    app.replaceChildren(h("div", { class: "page" }, prompt("tv wi-fi"), h("h1", {}, "Can't reach your TV"), said ? h("p", { class: "note bad" }, said) : null));
   }
 }
 

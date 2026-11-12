@@ -9,8 +9,9 @@
 
 import { h } from "../launcher/dom.ts";
 import { previewFrame } from "../launcher/looks/preview.ts";
-import { named, type LookId, type LookInfo, type SizeId } from "../launcher/looks/looks.ts";
+import type { LookId, LookInfo, SizeId } from "../launcher/looks/looks.ts";
 import { loadSizes, setSize, SIZE_NAMES } from "../launcher/size.ts";
+import { NEEDS_PIN } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
@@ -24,12 +25,17 @@ export async function look(ctx: Ctx): Promise<View> {
   let current = found.look ?? "terminal";
   const looks = (found.looks ?? []).filter((one): one is LookInfo => ["terminal", "glass", "cinema"].includes(one.id as LookId));
   const pick = async (one: LookInfo) => {
-    const grant = await ctx.grant("the look");
-    if (grant === null) return;
-    const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ look: one.id }) }).catch(() => null);
-    if (!response?.ok) {
+    const put = await ctx
+      .guarded("the look", async (grant) => {
+        const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ look: one.id }) }).catch(() => null);
+        if (response?.status === 403 && ((await response.json().catch(() => null)) as { pin?: boolean } | null)?.pin) throw new Error(NEEDS_PIN);
+        return Boolean(response?.ok);
+      })
+      .catch(() => ({ value: false }));
+    if (!put) return;
+    if (!put.value) {
       ctx.sounds.play("failure");
-      ctx.toast(`${one.name.toLowerCase()} didn't set`, "fail");
+      ctx.toast(`Couldn't use ${one.name}`, "fail");
       return;
     }
     current = one.id;
@@ -43,7 +49,7 @@ export async function look(ctx: Ctx): Promise<View> {
     h(
       "button",
       { class: `look-card setup-look-name${one.id === current ? " picked" : ""}`, "data-focus": true, "data-action": `look-${one.id}`, "data-look": one.id, onclick: () => void pick(one) },
-      h("span", { class: "look-card-name" }, named(one.name)),
+      h("span", { class: "look-card-name" }, one.name),
     ),
   );
 
@@ -73,7 +79,7 @@ export async function look(ctx: Ctx): Promise<View> {
     if (!display || display.sizes.length < 2) return sizesBox.replaceChildren();
     const at = display.size;
     sizesBox.replaceChildren(
-      h("span", { class: "setup-look-sizes-label" }, "size"),
+      h("span", { class: "setup-look-sizes-label" }, "Size"),
       ...display.sizes.map((one) => h("button", { class: `chip${one === at ? " picked" : ""}`, "data-focus": true, "data-action": `size-${one}`, onclick: () => void pickSize(one) }, SIZE_NAMES[one])),
     );
   };
@@ -82,12 +88,18 @@ export async function look(ctx: Ctx): Promise<View> {
       ctx.sounds.play("confirm");
       return;
     }
-    const grant = await ctx.grant("the size");
-    if (grant === null) return;
-    const set = await setSize(one, grant || undefined);
+    const asked = await ctx
+      .guarded("the size", async (grant) => {
+        const answer = await setSize(one, grant);
+        if (answer.error?.toLowerCase() === NEEDS_PIN) throw new Error(NEEDS_PIN);
+        return answer;
+      })
+      .catch((error: Error) => ({ value: { error: error.message } as Awaited<ReturnType<typeof setSize>> }));
+    if (!asked) return;
+    const set = asked.value;
     if (!set.state) {
       ctx.sounds.play("failure");
-      ctx.toast(set.error ?? `${SIZE_NAMES[one]} didn't set`, "fail");
+      ctx.toast(set.error ?? `Couldn't use ${SIZE_NAMES[one]}`, "fail");
       return;
     }
     display = set.state;
@@ -103,14 +115,13 @@ export async function look(ctx: Ctx): Promise<View> {
   const el = h(
     "div",
     { class: "setup-page d3 setup-look" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading("tv look", "pick a look.", ctx.reduced()))),
+    h("div", { class: "setup-top" }, h("div", {}, ...heading("tv look", "Pick a look", ctx.reduced()))),
     h("div", { class: "setup-look-list" }, ...names),
     h("div", { class: "setup-look-right" }, stage, sizesBox),
   );
   return {
     el,
     first: names.find((name) => name.dataset.look === current) ?? names[0],
-    info: "↑↓ move · ↵ pick",
     // The preview follows the look with the focus, and stays on it while the
     // focus is on a size.
     focused(target) {
