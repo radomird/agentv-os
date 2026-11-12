@@ -250,6 +250,9 @@ export interface TvContext {
   pin: { title: string; for: string; digits: number; error: string | null } | null;
   field: (Omit<Field, "label"> & { label?: string; app?: string }) | null;
   screen: "home" | "menu" | "ambient";
+  // The focus is on an app's tile on home or Apps, where a hold opens its
+  // details (ADR-089).
+  details: boolean;
   front: "home" | "app";
   playing: boolean;
   desktop: boolean;
@@ -379,7 +382,7 @@ export class Daemon {
   // What's on the TV for the phones (ADR-037), and a count that goes up with
   // every change the phones should hear, which their asks for the state wait
   // on.
-  private tv: TvContext = { pin: null, field: null, screen: "home", front: "home", playing: false, desktop: false };
+  private tv: TvContext = { pin: null, field: null, screen: "home", details: false, front: "home", playing: false, desktop: false };
   private phoneVersion = 1;
   private phoneWaiters = new Set<() => void>();
   // The provider whose terms a key from Settings → AI waits for (Q104), which
@@ -978,6 +981,7 @@ export class Daemon {
     // none.
     if (change.field !== undefined) this.homeField = cleanField(change.field);
     if (change.screen === "home" || change.screen === "menu" || change.screen === "ambient") next.screen = change.screen;
+    if (typeof change.details === "boolean") next.details = change.details;
     if (change.front === "home" || change.front === "app") {
       next.front = change.front;
       const field = cleanField(change.appField);
@@ -2369,17 +2373,26 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/setup") {
-      const body = (await this.body(request)) as { done?: unknown } | undefined;
+      const body = (await this.body(request)) as { done?: unknown; pin?: unknown } | undefined;
       if (typeof body?.done !== "boolean") {
         this.json(response, 400, { ok: false, error: 'send {"done": true} or {"done": false} as JSON' });
         return;
       }
       const was = (await this.setup()).done;
+      // agentv setup reset sends the PIN with its ask. It allows this and
+      // nothing more: no grant comes of it, a locked TV stays locked and the
+      // pad's own wrong tries stand, as on the hotspot's page.
+      const byPin = was && !body.done && body.pin !== undefined && this.pin.status().set ? this.pin.right(body.pin, "setup-reset") : null;
+      if (byPin && !byPin.ok) {
+        this.log("a wrong pin for starting setup again");
+        this.json(response, 403, { ok: false, error: byPin.error, pin: true, wrong: true });
+        return;
+      }
       // Starting setup again is an adult's, past the PIN when one is set,
       // because a TV in setup asks for less: its pages pair a phone and
       // change the Wi-Fi with no PIN. Without this, "not done" would be a
       // way round the PIN for anything on the TV that can ask.
-      if (was && !body.done && (!this.guarded(request, response, "starting setup again") || !(await this.adult(request, response, "starting setup again")))) return;
+      if (was && !body.done && !byPin && (!this.guarded(request, response, "starting setup again") || !(await this.adult(request, response, "starting setup again")))) return;
       const setup = await this.setupState.mark(body.done);
       this.log(body.done ? "setup marked done" : "setup reset");
       // The setup hotspot closes as setup ends. Root is asked even when it's
@@ -2606,6 +2619,20 @@ export class Daemon {
       const state = await this.updates.read();
       this.broadcast("updates", state);
       this.json(response, 200, { ok: true, tonight: state.tonight });
+      return;
+    }
+
+    // The night's update waited for a game, or it has installed since
+    // (ADR-084): the screen daemon says so, and Settings shows it.
+    if (method === "POST" && path === "/api/updates/held") {
+      const body = (await this.body(request)) as { held?: unknown } | undefined;
+      if (typeof body?.held !== "boolean") {
+        this.json(response, 400, { ok: false, error: 'send {"held": true} or {"held": false} as JSON' });
+        return;
+      }
+      await this.updates.setHeld(body.held);
+      this.broadcast("updates", await this.updates.read());
+      this.json(response, 200, { ok: true });
       return;
     }
 
