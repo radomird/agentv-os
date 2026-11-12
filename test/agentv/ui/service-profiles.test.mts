@@ -92,7 +92,7 @@ test("ADR-009 before an app lists its profiles, its details say to open it once"
   await page.waitForSelector('[data-action="child-profile"]');
   assert.match(await picker(page), /profile for children\s+open it first/);
   await page.locator('[data-action="child-profile"]').click();
-  await page.waitForFunction(() => /open family tv once, signed in, and its profiles show here/.test(document.body.textContent ?? ""));
+  await page.waitForFunction(() => /Sign in to Family TV once to see its profiles/.test(document.body.textContent ?? ""));
   // An app without profiles doesn't have it.
   await go(page, "details/agentv.tube");
   await page.waitForSelector('[data-action="home"]');
@@ -106,21 +106,21 @@ test("ADR-009 an adult picks the profile for children from the ones the app list
   const page = await tv();
   await go(page, "details/local.family");
   await page.waitForSelector('[data-action="child-profile"]');
-  assert.match(await picker(page), /profile for children\s+‹ none ›/);
+  assert.match(await picker(page), /^profile for children\s+none$/);
   await page.locator('[data-action="child-profile"]').click();
   await waitPad(page, true);
   for (const digit of PIN) await page.keyboard.press(digit);
   await waitPad(page, false);
-  await page.waitForFunction(() => /‹ radomir ›/.test(document.querySelector('[data-action="child-profile"]')?.textContent ?? ""));
+  await page.waitForFunction(() => document.querySelector('[data-action="child-profile"] .button-value')?.textContent === "Radomir");
   assert.equal((await send("GET", "/api/apps/local.family/profiles")).forChildren, "Radomir");
   // Each choice moves to the next, then none.
-  for (const want of ["kids", "none"]) {
+  for (const want of ["Kids", "None"]) {
     await page.locator('[data-action="child-profile"]').click();
     if (await page.evaluate(() => document.getElementById("pin")?.classList.contains("on"))) {
       for (const digit of PIN) await page.keyboard.press(digit);
       await waitPad(page, false);
     }
-    await page.waitForFunction((w) => new RegExp(`‹ ${w} ›`).test(document.querySelector('[data-action="child-profile"]')?.textContent ?? ""), want);
+    await page.waitForFunction((w) => document.querySelector('[data-action="child-profile"] .button-value')?.textContent === w, want);
   }
   assert.equal((await send("GET", "/api/apps/local.family/profiles")).forChildren, null);
   assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "child-profile", "the focus stays on it");

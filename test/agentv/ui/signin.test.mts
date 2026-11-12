@@ -68,7 +68,7 @@ test("ADR-032 an app signed out says Sign in on its tile, with its logo, and cho
     logo: el.querySelector(".logo img")?.getAttribute("src"),
     content: el.classList.contains("has-content"),
   }));
-  assert.deepEqual(drawn, { state: "sign in", logo: "/api/apps/agentv.sample/icon", content: false });
+  assert.deepEqual(drawn, { state: "Sign in", logo: "/api/apps/agentv.sample/icon", content: false });
   assert.equal(await page.$eval('.grid .tile[data-id="agentv.tube"] .tile-label', (el) => el.textContent), "streaming");
   await page.locator(sample).hover();
   await page.keyboard.press("Enter");
