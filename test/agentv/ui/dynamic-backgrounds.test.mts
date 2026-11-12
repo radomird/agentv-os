@@ -347,7 +347,10 @@ test("the intro plays again each time home comes back, from an app or from Setti
     assert.equal(await played(), before + 2, "no intro for a redraw of home");
 
     // With Omarchy's intros off, or reduce motion, coming back keeps the still.
+    // Once home has heard they're off: the word comes as an event, and a
+    // coming back before it would still play the intro, rightly.
     await theme("still", due, false);
+    await page.waitForFunction(() => (window as unknown as { agentvLauncher: { backdrop: { state: { backgrounds: { theme?: { intros?: boolean } } | null } } } }).agentvLauncher.backdrop.state.backgrounds?.theme?.intros === false);
     await front(page, true);
     await front(page, false);
     await page.waitForTimeout(800);
