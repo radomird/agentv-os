@@ -10,6 +10,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type DesktopPassword, passwordProblem } from "../desktop-password.ts";
+import { NEEDS_PIN, needsPin } from "../notices.ts";
 
 export interface PasswordKit {
   setup2(): Promise<boolean>;
@@ -24,7 +25,7 @@ export interface PasswordKit {
 }
 
 const PATH = "/api/desktop/password";
-export const KNOWN = "the desktop has its password. change it there: update › password › user.";
+export const KNOWN = "The desktop has its password. Change it there: Update > Password > User.";
 
 export async function desktopPasswordRoute(kit: PasswordKit, request: IncomingMessage, response: ServerResponse, path: string): Promise<boolean> {
   if (path !== PATH) return false;
@@ -43,7 +44,7 @@ export async function desktopPasswordRoute(kit: PasswordKit, request: IncomingMe
   if (!(await kit.adult(request, response, "the desktop's password"))) return true;
   const state = await kit.password.state();
   if (!state.managed) {
-    kit.json(response, 409, { ok: false, error: "this box's password is the one typed when it was installed" });
+    kit.json(response, 409, { ok: false, error: "This TV's password is the one typed when it was installed" });
     return true;
   }
   if (state.known) {
@@ -59,7 +60,7 @@ export async function desktopPasswordRoute(kit: PasswordKit, request: IncomingMe
   const why = await kit.password.set(password as string, kit.grant(request));
   if (why) {
     kit.log(`the desktop's password wasn't set: ${why}`);
-    kit.json(response, why === "that needs the pin" ? 403 : 500, { ok: false, error: why, ...(why === "that needs the pin" ? { pin: true } : {}) });
+    kit.json(response, needsPin(why) ? 403 : 500, { ok: false, error: needsPin(why) ? NEEDS_PIN : why, ...(needsPin(why) ? { pin: true } : {}) });
     return true;
   }
   kit.log("the desktop's password was set");

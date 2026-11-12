@@ -19,7 +19,7 @@ ask='{"done": false}'
 
 status=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d @- "$url/api/setup" <<<"$ask") || status=""
 if [[ $status == "403" && -n ${AGENTV_PIN:-} ]]; then
-  echo "The TV didn't take the PIN in AGENTV_PIN." >&2
+  echo "Wrong PIN in AGENTV_PIN." >&2
   exit 1
 fi
 if [[ $status == "403" ]]; then

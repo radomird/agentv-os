@@ -407,9 +407,9 @@ export async function nfsList(address: string, options: { rpcbind?: number; time
   [100005, 3, 6, 0].forEach((value, at) => args.writeUInt32BE(value, at * 4));
   const port = rpcResult(await tcpRpc(address, options.rpcbind ?? SERVER_PORTS.rpcbind, rpcCall(xid, 100000, 2, 3, args), timeoutMs), xid);
   const mountd = port && port.length >= 4 ? port.readUInt32BE(0) : 0;
-  if (!mountd || mountd > 65535) throw new Error("it has no nfs exports to list");
+  if (!mountd || mountd > 65535) throw new Error("Couldn't list that drive's folders");
   const result = rpcResult(await tcpRpc(address, mountd, rpcCall(xid + 1, 100005, 3, 5), timeoutMs), xid + 1);
-  if (!result) throw new Error("it didn't list its nfs exports");
+  if (!result) throw new Error("Couldn't list that drive's folders");
   return nfsExports(result);
 }
 
@@ -724,9 +724,9 @@ export class Discover {
       });
       const named = wsdName((await response.text()).slice(0, 256 * 1024));
       if (!named || !this.looking) return;
-      this.computers.set(from.address, named.toLowerCase());
+      this.computers.set(from.address, named);
       const entry = this.entries.get(key);
-      if (entry?.via === "wsd") this.add({ ...entry, name: named.toLowerCase() }, from.address, key);
+      if (entry?.via === "wsd") this.add({ ...entry, name: named }, from.address, key);
     } catch {
       // Its address stands in for its name.
     }
@@ -790,7 +790,7 @@ export class Discover {
   // share picked keeps it as Music's sources do.
   async shares(host: string, login?: { user: string; password: string }): Promise<SharesAnswer> {
     const machine = [...this.entries.values()].filter((entry) => (entry.kind === "smb" || entry.kind === "nfs") && (entry.address === host || this.names.get(entry.address) === host));
-    if (!machine.length) return { ok: false, error: `${host.slice(0, 60)} isn't a nas the tv found` };
+    if (!machine.length) return { ok: false, error: `Couldn't find ${host.slice(0, 60)}` };
     const address = machine[0].address;
     const name = this.names.get(address) ?? address;
     const shares: ShareFound[] = [];
@@ -825,7 +825,7 @@ export class Discover {
     if (listed.length) return { shares: listed.map((one) => ({ kind: "smb" as const, name: one.name, uri: `smb://${user}${name}/${encodeURIComponent(one.name)}`, ...(one.note ? { note: one.note } : {}) })) };
     const said = `${result.stdout}\n${result.stderr}`;
     if (/NT_STATUS_(ACCESS_DENIED|LOGON_FAILURE|ACCOUNT_RESTRICTION|WRONG_PASSWORD)/.test(said)) return { login: true };
-    if (/ENOENT|not found/.test(result.stderr) && result.code !== 0 && !result.stdout) return { error: "the tv can't list a nas's shares without smbclient" };
-    return { error: `${name} didn't list its shares` };
+    if (/ENOENT|not found/.test(result.stderr) && result.code !== 0 && !result.stdout) return { error: "Couldn't list that drive's folders" };
+    return { error: `Couldn't list ${name}'s folders` };
   }
 }

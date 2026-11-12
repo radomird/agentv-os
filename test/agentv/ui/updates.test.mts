@@ -207,6 +207,13 @@ test("the Updating screen covers the TV while an install runs, and home comes ba
   assert.match(screen, /\[x\] backup of 0\.2\.1 saved/);
   assert.match(screen, /\[>\] installing\n/);
   assert.match(screen, /\[ \] restart and check/);
+  // An early update's package version means nothing to a person: the
+  // headline leaves it off.
+  write("progress.json", { ...progress("running", "packages", 40, "2 of 4"), to: { agentv: "0.3.0.r12.g7b931248a-1" } });
+  await page.waitForFunction(() => document.querySelector("#updating")?.textContent?.includes("Updating AgenTV"));
+  const early = await page.locator("#updating").innerText();
+  assert.match(early, /^updating agentv$/m);
+  assert.doesNotMatch(early, /r12|7b931248a/);
   // Keys wait while it runs.
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#updating.on").count(), 1);

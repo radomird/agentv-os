@@ -475,7 +475,7 @@ test("T16.1 with a PIN set, pairing, removing and turning Bluetooth on need its 
     for (const bad of [undefined, "made-up"]) {
       const refused = await send(method, path, body, bad);
       assert.equal(refused.status, 403, `${method} ${path}`);
-      assert.deepEqual(refused.data, { ok: false, error: "that needs the pin", pin: true });
+      assert.deepEqual(refused.data, { ok: false, error: "That needs the PIN", pin: true });
     }
   }
   assert.deepEqual(asked, [], "nothing reached the TV session");

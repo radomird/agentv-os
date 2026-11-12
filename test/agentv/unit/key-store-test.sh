@@ -37,7 +37,7 @@ drop '{"provider":"chatgpt","key":"sk-x\nEVIL=1 and some more"}'
 if store; then fail "a key with a new line in it is refused"; fi
 grep -q "^ANTHROPIC_API_KEY=$KEY$" "$AGENTV_ETC/env" || fail "and the key before stays"
 if grep -q EVIL "$AGENTV_ETC/env"; then fail "and nothing of it gets in"; fi
-jq -e '.provider == "claude" and .error == "that doesn'"'"'t look like a key"' "$AGENTV_ETC/key.json" >/dev/null || fail "key.json says why" "$(cat "$AGENTV_ETC/key.json")"
+jq -e '.provider == "claude" and .error == "That doesn'"'"'t look like a key"' "$AGENTV_ETC/key.json" >/dev/null || fail "key.json says why" "$(cat "$AGENTV_ETC/key.json")"
 drop '{"provider":"someone","key":"abc"}'
 if store; then fail "a provider it doesn't know is refused"; fi
 pass "a drop that isn't a key for a provider it knows changes nothing"
@@ -87,7 +87,7 @@ printf '%s' '{"key":"not a key\nEVIL=1"}' >"$TMDB_DROP"
 if store; then fail "a TMDB key with a new line in it is refused"; fi
 grep -qx "TMDB_API_KEY=$TMDB" "$AGENTV_ETC/env" || fail "and the one before stays"
 if grep -q EVIL "$AGENTV_ETC/env"; then fail "and nothing of it gets in"; fi
-jq -e '.set == true and .error == "that doesn'"'"'t look like a tmdb key"' "$AGENTV_ETC/tmdb.json" >/dev/null || fail "tmdb.json says why" "$(cat "$AGENTV_ETC/tmdb.json")"
+jq -e '.set == true and .error == "That doesn'"'"'t look like a TMDB key"' "$AGENTV_ETC/tmdb.json" >/dev/null || fail "tmdb.json says why" "$(cat "$AGENTV_ETC/tmdb.json")"
 printf 'not json' >"$TMDB_DROP"
 if store; then fail "a drop that isn't JSON is refused"; fi
 grep -qx "TMDB_API_KEY=$TMDB" "$AGENTV_ETC/env" || fail "and doesn't take the key off"

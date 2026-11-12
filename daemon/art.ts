@@ -15,9 +15,9 @@ export const ARCHIVE_IDS = ["met", "aic", "commons"] as const;
 export type ArchiveId = (typeof ARCHIVE_IDS)[number];
 
 export const ARCHIVES: { id: ArchiveId; name: string }[] = [
-  { id: "met", name: "the met" },
-  { id: "aic", name: "art institute of chicago" },
-  { id: "commons", name: "wikimedia commons" },
+  { id: "met", name: "The Met" },
+  { id: "aic", name: "Art Institute of Chicago" },
+  { id: "commons", name: "Wikimedia Commons" },
 ];
 
 // Where each archive's API is, and the hosts its pictures come from.
@@ -97,9 +97,9 @@ export function licenceOf(short: string | null): string | null {
   if (!short) return null;
   const text = short.toLowerCase().replace(/\s+/g, " ").trim();
   if (text === "public domain" || text === "pdm" || text.startsWith("pd-")) return "public domain";
-  if (text === "cc0" || text === "cc0 1.0") return "cc0";
+  if (text === "cc0" || text === "cc0 1.0") return "CC0";
   const cc = /^cc by(-sa)? (\d\.\d)$/.exec(text);
-  return cc ? `cc by${cc[1] ?? ""} ${cc[2]}` : null;
+  return cc ? `CC BY${(cc[1] ?? "").toUpperCase()} ${cc[2]}` : null;
 }
 
 // A Commons picture's address without the tracking Commons adds to it
@@ -161,13 +161,13 @@ export class ArtArchives {
   async search(archive: unknown, words: unknown): Promise<{ items?: Art[]; error?: string }> {
     if (!ARCHIVE_IDS.includes(archive as ArchiveId)) return { error: `an archive: ${ARCHIVE_IDS.join(", ")}` };
     const query = plain(words, 80);
-    if (!query) return { error: "say what to look for" };
+    if (!query) return { error: "Say what to look for" };
     let found: Found[];
     try {
       found = await this.find(archive as ArchiveId, query);
     } catch (error) {
       const name = ARCHIVES.find((one) => one.id === archive)!.name;
-      return { error: `${name} didn't answer: ${(error as Error).message}` };
+      return { error: `Couldn't reach ${name}` };
     }
     for (const item of found) this.found.set(`${item.archive}:${item.id}`, item);
     return { items: found.map(({ thumb, image, fallback, ...art }) => art) };
@@ -364,18 +364,17 @@ export class ArtArchives {
   // The whole picture of a work, to keep as a background, with its credit.
   async whole(archive: unknown, id: unknown): Promise<{ body?: Buffer; art?: Art; error?: string }> {
     const work = await this.work(archive, id);
-    if (!work) return { error: "that work isn't in the archive, or can't be shown" };
+    if (!work) return { error: "Couldn't find that picture" };
     let got: { body: Buffer } | null = null;
-    let why = "";
     for (const url of [work.image, work.fallback].filter((one): one is string => Boolean(one))) {
       try {
         got = await this.picture(url, MAX_BYTES, IMAGE_MS);
         break;
-      } catch (error) {
-        why = (error as Error).message;
+      } catch {
+        // The next address, if the work has one.
       }
     }
-    if (!got) return { error: `the picture didn't come: ${why}` };
+    if (!got) return { error: "Couldn't get that picture" };
     const { thumb, image, fallback, ...art } = work;
     return { body: got.body, art };
   }

@@ -62,8 +62,8 @@ test("ADR-045 only a local app is exported, and never one that drives a service'
   const manifest = (runtime: string) => ({ tv: { runtime } }) as unknown as Manifest;
   assert.equal(exportRefusal(manifest("page"), "local"), null);
   assert.equal(exportRefusal(manifest("native"), "local"), null);
-  assert.match(exportRefusal(manifest("web"), "local")!, /drives a service's own site stays on this tv/);
-  assert.match(exportRefusal(manifest("page"), "official")!, /only an app your agent made/);
+  assert.match(exportRefusal(manifest("web"), "local")!, /This app stays on this TV/);
+  assert.match(exportRefusal(manifest("page"), "official")!, /You can only copy apps you made/);
 });
 
 test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doesn't", async () => {
@@ -96,8 +96,8 @@ test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doe
     // in this part, and nothing asks for one.
     const early = await phone("/api/phone/apps/local.blocks/export");
     assert.equal(early.status, 403, "not before the tv offers it");
-    assert.deepEqual(await early.json(), { ok: false, error: "export it from its details on the tv first" });
-    assert.match((await (await send("POST", "/api/apps/local.stand-in/export", {})).json()).error, /drives a service's own site/);
+    assert.deepEqual(await early.json(), { ok: false, error: "Save a copy from its details on your TV first" });
+    assert.match((await (await send("POST", "/api/apps/local.stand-in/export", {})).json()).error, /This app stays on this TV/);
     assert.equal((await send("POST", "/api/apps/local.blocks/export", {})).status, 200);
     assert.deepEqual((await state()).export, { id: "local.blocks", name: manifest.name, version: manifest.version, github: null });
     assert.equal((await phone("/api/phone/apps/local.stand-in/export")).status, 403, "F4: only the app on offer, not another one");

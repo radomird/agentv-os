@@ -123,14 +123,14 @@ test("T7.2 each provider shows its own icon from its site, and one whose site ha
     assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick your AI");
     assert.equal(await page.locator(".setup-line").textContent(), "It answers you and makes your apps");
     assert.equal(await page.locator(".bar .bar-step").textContent(), "6 of 12 · AI");
-    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-name").allTextContents(), ["claude", "chatgpt", "gemini", "grok", "muse"]);
+    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-name").allTextContents(), ["Claude", "ChatGPT", "Gemini", "Grok", "Muse"]);
     // The last card of the row leaves the AI for later.
     assert.deepEqual(await page.locator(".ai-cards > :last-child").evaluate((el) => [el.className, el.getAttribute("data-action"), el.textContent?.trim()]), ["ai-card ai-later", "later", "Later"]);
     assert.equal(await page.locator(".ai-later .ai-name").textContent(), "Later");
     const cards = await page.locator(".ai-card").evaluateAll((all) => all.map((card) => ({ top: (card as HTMLElement).offsetTop, fits: [...card.querySelectorAll<HTMLElement>(".ai-name, .ai-maker")].every((el) => el.scrollWidth <= card.clientWidth) })));
     assert.equal(cards.length, 6);
     assert.ok(cards.every((card) => card.top === cards[0].top && card.fits), "six cards in one row, each with its words inside it");
-    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-maker").allTextContents(), ["anthropic", "openai", "google", "xai", "meta"]);
+    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-maker").allTextContents(), ["Anthropic", "OpenAI", "Google", "xAI", "Meta"]);
     // The icons that came load; the ones that didn't are gone, names left.
     await page.waitForFunction(() => document.querySelectorAll(".ai-icon").length === 2 && [...document.querySelectorAll<HTMLImageElement>(".ai-icon")].every((img) => img.complete && img.naturalWidth > 0));
     assert.deepEqual(await page.locator(".ai-icon").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("data-icon"))), ["claude", "gemini"]);
@@ -233,11 +233,11 @@ test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, s
     // pick, and the line says so without a "soon".
     const google = await ways("gemini");
     assert.deepEqual(google.buttons, ["Use an API key", "Later"]);
-    assert.equal(google.line, "google keeps its plan to its own apps. a key works now");
+    assert.equal(google.line, "Google keeps its plan to its own apps. A key works now.");
     // Meta has been asked, so Muse's is coming soon.
     const muse = await ways("muse");
     assert.deepEqual(muse.buttons, ["Use an API key", "Later"]);
-    assert.equal(muse.line, "a muse code subscription is coming soon. A key works now.");
+    assert.equal(muse.line, "A Muse Code subscription is coming soon. A key works now.");
   } finally {
     writeFileSync(channel, was);
     await page.close();

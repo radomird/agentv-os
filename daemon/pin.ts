@@ -23,6 +23,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { NEEDS_PIN } from "./notices.ts";
 
 const FOUR_DIGITS = /^\d{4}$/;
 // A wait, as a person reads it: "30 seconds", "1 second".
@@ -196,7 +197,7 @@ export class Pin {
   // PIN. Null when it's done, or why not.
   set(pin: unknown, grant: unknown): string | null {
     if (typeof pin !== "string" || !FOUR_DIGITS.test(pin)) return "A PIN has 4 digits";
-    if (!this.allows(grant)) return "that needs the pin";
+    if (!this.allows(grant)) return NEEDS_PIN;
     this.write({ hash: hash(pin), unlockedBoot: this.boot() });
     for (const token of this.grants.keys()) if (token !== grant) this.grants.delete(token);
     return null;
@@ -206,7 +207,7 @@ export class Pin {
   // reason the needed option gives.
   remove(grant: unknown, needed?: string | null): string | null {
     if (!this.read().hash) return "There's no PIN to remove";
-    if (!this.allows(grant)) return "that needs the pin";
+    if (!this.allows(grant)) return NEEDS_PIN;
     const why = needed === undefined ? this.needed() : needed;
     if (why) return why;
     this.write({});

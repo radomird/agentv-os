@@ -164,7 +164,7 @@ test("S8.1 a streaming household's home gets New this week once, at the largest 
     });
     // With no TMDB key, its tile says where to add one.
     const tile = await get("/api/tile/agentv.new/l");
-    assert.equal(tile.tile.headline.caption, "add a tmdb key in settings → new this week");
+    assert.equal(tile.tile.headline.caption, "Set up New this week in Settings");
   } finally {
     for (const { name, text } of kept) {
       if (text === null) rmSync(join(state, name), { force: true });

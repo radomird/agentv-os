@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# agentv:summary=Check every pending update against the nightly run's signed tested.json
+# agentv:summary=Check that every pending update has been tested
 # agentv:args=[--tested <tested.json>] [--pending <checkupdates output>]
 # agentv:hidden=true
 
@@ -60,7 +60,7 @@ fi
 gpg --batch --quiet --dearmor <"$AGENTV_KEYRING" >"$work/agentv.gpg" 2>/dev/null ||
   cp "$AGENTV_KEYRING" "$work/agentv.gpg"
 if ! gpgv --quiet --keyring "$work/agentv.gpg" "$tested.sig" "$tested" 2>/dev/null; then
-  echo "tested.json isn't signed by AgenTV's key, so the update waits. Nothing changed." >&2
+  echo "Couldn't verify the tested updates, so the update waits. Nothing changed." >&2
   exit 1
 fi
 

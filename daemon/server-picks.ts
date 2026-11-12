@@ -84,7 +84,7 @@ export class ServerPicks {
     const setup = await this.options.home.appSetup(app);
     if (!setup) return null;
     const field = setup.fields.find((one) => one.address);
-    if (!field) return { error: "that app doesn't ask for a server" };
+    if (!field) return { error: "That app doesn't need a server" };
     const error = await this.options.home.saveAppSetup(app, { [field.key]: url });
     if (!error) {
       this.log(`${app}: its server is ${url}, picked from the network`);
@@ -104,7 +104,7 @@ export class ServerPicks {
     return this.serial(async () => {
       if (typeof app !== "string" || !ID.test(app)) return { ok: false, status: 400, error: "say which app, by its id" };
       if (typeof url !== "string" || url.length > 500 || !/^https?:\/\/[^\s/]+/.test(url) || this.isTheBox(url)) {
-        return { ok: false, status: 400, error: "the server's address, like http://192.168.1.20:8096" };
+        return { ok: false, status: 400, error: "Type an address like http://192.168.1.20:8096" };
       }
       const filled = await this.fill(app, url);
       const picks = await this.read();

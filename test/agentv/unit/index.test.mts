@@ -104,6 +104,19 @@ async function refused(promise: Promise<unknown>, pattern: RegExp): Promise<void
   });
 }
 
+// A refusal whose one line for the TV is shown, with the detail on stderr.
+async function refusedWith(run: () => Promise<unknown>, shown: RegExp, detail: RegExp): Promise<void> {
+  const said: string[] = [];
+  const before = console.error;
+  console.error = (...args: unknown[]) => void said.push(args.join(" "));
+  try {
+    await refused(run(), shown);
+  } finally {
+    console.error = before;
+  }
+  assert.match(said.join("\n"), detail);
+}
+
 test("S2.1 a sample app installs from a signed test index", async () => {
   const dir = apps();
   const installed = await installFromIndex("agentv.sample", index([sample()]), dir, keyring);
@@ -123,26 +136,26 @@ test("S2.1 a tampered index is refused, and nothing is installed", async () => {
   const source = index([sample()]);
   const text = readFileSync(join(source, "index.json"), "utf8").replace(first, second);
   writeFileSync(join(source, "index.json"), text);
-  await refused(installFromIndex("agentv.sample", source, dir, keyring), /isn't signed by AgenTV's key/);
+  await refused(installFromIndex("agentv.sample", source, dir, keyring), /Couldn't verify the app list/);
   assert.ok(!existsSync(join(dir, "agentv.sample")));
 });
 
 test("an index signed by another key is refused", async () => {
-  await refused(installFromIndex("agentv.sample", index([sample()], otherSigner), apps(), keyring), /isn't signed by AgenTV's key/);
+  await refused(installFromIndex("agentv.sample", index([sample()], otherSigner), apps(), keyring), /Couldn't verify the app list/);
 });
 
 test("an index without a signature is refused", async () => {
   const source = index([sample()]);
   rmSync(join(source, "index.json.sig"));
-  await refused(installFromIndex("agentv.sample", source, apps(), keyring), /has no signature/);
+  await refused(installFromIndex("agentv.sample", source, apps(), keyring), /Couldn't verify the app list/);
 });
 
 test("the box's key has to be there", async () => {
-  await refused(loadIndex(index([sample()]), join(scratch, "missing.asc")), /AgenTV's key isn't on this box/);
+  await refused(loadIndex(index([sample()]), join(scratch, "missing.asc")), /Couldn't verify the app list/);
 });
 
 test("an app that isn't in the index isn't installed", async () => {
-  await refused(installFromIndex("agentv.other", index([sample()]), apps(), keyring), /isn't in the app index/);
+  await refused(installFromIndex("agentv.other", index([sample()]), apps(), keyring), /Couldn't find agentv\.other in the app list/);
 });
 
 test("an app that fails the contract's checks isn't installed, and leaves nothing behind", async () => {
@@ -153,11 +166,11 @@ test("an app that fails the contract's checks isn't installed, and leaves nothin
 });
 
 test("the manifest has to be the app and version the index names", async () => {
-  await refused(installFromIndex("agentv.sample", index([sample(first, "2.0.0")]), apps(), keyring), /says agentv\.sample 1\.0\.0/);
+  await refusedWith(() => installFromIndex("agentv.sample", index([sample(first, "2.0.0")]), apps(), keyring), /^Couldn't install Sample$/, /says agentv\.sample 1\.0\.0/);
 });
 
 test("a commit the repo doesn't have isn't installed", async () => {
-  await refused(installFromIndex("agentv.sample", index([sample("0".repeat(40))]), apps(), keyring), /couldn't fetch agentv\.sample/);
+  await refused(installFromIndex("agentv.sample", index([sample("0".repeat(40))]), apps(), keyring), /Couldn't download Sample/);
 });
 
 test("an app that says it's built in isn't installed from the index, since built-ins come only with AgenTV", async () => {
@@ -225,19 +238,19 @@ test("ADR-036 an app in a repo of several installs from its own folder, without 
 test("ADR-036 a folder the commit doesn't have isn't installed, and leaves nothing behind", async () => {
   const dir = apps();
   const source = index([sample(severalRepo(), "1.0.0", { repo: `file://${several}`, path: "apps/missing" })]);
-  await refused(installFromIndex("agentv.sample", source, dir, keyring), /has no folder apps\/missing/);
+  await refusedWith(() => installFromIndex("agentv.sample", source, dir, keyring), /^Couldn't install Sample$/, /has no folder apps\/missing/);
   assert.deepEqual(inside(dir), []);
 });
 
 test("ADR-036 a folder that's a link isn't followed", async () => {
   const source = index([sample(severalRepo(), "1.0.0", { repo: `file://${several}`, path: "apps/linked" })]);
-  await refused(installFromIndex("agentv.sample", source, apps(), keyring), /has no folder apps\/linked/);
+  await refusedWith(() => installFromIndex("agentv.sample", source, apps(), keyring), /^Couldn't install Sample$/, /has no folder apps\/linked/);
 });
 
 test("the index has to have the shape this box understands", () => {
   const entry = sample() as Record<string, unknown>;
-  assert.throws(() => parseIndex("{"), /isn't valid JSON/);
-  assert.throws(() => parseIndex(JSON.stringify({ schema: 2, apps: [] })), /schema 1/);
+  assert.throws(() => parseIndex("{"), /Couldn't read the app list/);
+  assert.throws(() => parseIndex(JSON.stringify({ schema: 2, apps: [] })), /Couldn't read the app list\. Update AgenTV and try again\./);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, commit: "main" }] })), /exact commit/);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, repo: "http://example.org/x" }] })), /https/);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, tier: "local" }] })), /no tier/);
@@ -390,7 +403,7 @@ test("L4 an older index with a good signature is refused once a newer one was ta
   const monday = index([sample(first, "1.0.0")], signer, {}, "20360102T030000");
   const tuesday = index([sample(second, "1.0.1")], signer, {}, "20360103T030000");
   await installFromIndex("agentv.sample", tuesday, dir, keyring);
-  await refused(installFromIndex("agentv.sample", monday, dir, keyring), /older than the one this box already has/);
+  await refused(installFromIndex("agentv.sample", monday, dir, keyring), /older than the one on this TV/);
   assert.equal((await readInstalled(dir))["agentv.sample"].commit, second, "the newer commit is still the one installed");
   assert.equal((await installFromIndex("agentv.sample", tuesday, dir, keyring)).version, "1.0.1", "the newer one is still fine");
 });
@@ -403,7 +416,7 @@ test("L4 a newer index after an older one is fine, and what was seen doesn't dep
   const later = index([sample(second, "1.0.1")], signer, {}, "20370103T030000");
   await installFromIndex("agentv.sample", sooner, dir, keyring);
   assert.equal((await installFromIndex("agentv.sample", later, dir, keyring)).version, "1.0.1");
-  await refused(installFromIndex("agentv.sample", sooner, dir, keyring), /older than the one this box already has/);
+  await refused(installFromIndex("agentv.sample", sooner, dir, keyring), /older than the one on this TV/);
 });
 
 test("L4 one key's indexes don't hold back another's, and reading an index without a place to remember refuses nothing", async () => {
@@ -413,5 +426,5 @@ test("L4 one key's indexes don't hold back another's, and reading an index witho
   await installFromIndex("agentv.sample", index([sample()], otherSigner, {}, "20360101T030000"), dir, otherKeyring);
   const old = index([sample()], signer, {}, "20360101T030000");
   assert.equal((await loadIndex(old, keyring)).apps.length, 1);
-  await refused(loadIndex(old, keyring, join(dir, ".index-seen.json")), /older than the one this box already has/);
+  await refused(loadIndex(old, keyring, join(dir, ".index-seen.json")), /older than the one on this TV/);
 });

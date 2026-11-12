@@ -679,7 +679,7 @@ for (const screens of SCREENS) {
       await padUp(screen, true);
       for (const digit of PIN) await screen.keyboard.press(digit);
       await padUp(screen, false);
-      await toasted(screen, "a locked profile needs the pin. unlock it in settings → profiles first");
+      await toasted(screen, "Keep the PIN while a profile is locked");
       assert.equal(b.daemon.pin.status().set, true);
       assert.equal((await send(b, "PUT", `/api/viewers/${ana}`, { locked: false }, { grant: (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant })).status, 200);
       await screen.waitForSelector('.settings-panel [data-action="remove-pin"]');

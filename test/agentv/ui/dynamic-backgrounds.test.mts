@@ -1,7 +1,7 @@
 // Omarchy's dynamic backgrounds on home (ADR-064, T6.1), in a real Chromium:
 // a stand-in theme's video background loops behind home, muted, and stops
 // when an app comes in front or the TV goes off; its intro plays once and
-// ends on its still. Both only with the dynamicbg switch on, only where the
+// ends on its still, and again each time home comes back. Both only with the dynamicbg switch on, only where the
 // box decodes the codec in hardware, and never with reduce motion. Omarchy's
 // intros switch stops the intros only. In each look and at each size the
 // video fills the screen, and away from home it waits paused. The TV
@@ -233,7 +233,7 @@ test("T6.1 a video background stays still without hardware decoding for its code
   }
 });
 
-test("T6.1 an intro plays once, muted, and ends on its still; it plays again only when another is due", async () => {
+test("T6.1 an intro plays once, muted, and ends on its still; home loading again doesn't play it, and another that's due does", async () => {
   await dynamic(true);
   const due = "00000000000000000000000000000002";
   await theme("still", due);
@@ -282,15 +282,79 @@ test("T6.1 an intro due while an app is in front waits for home, and with Omarch
     // An app in front partway through: the intro ends there, on its still.
     await front(page, true);
     await page.waitForSelector("#backdrop video", { state: "detached", timeout: 5000 });
+    assert.deepEqual(await introShown(), { due, how: "played", why: null });
+    // Home back in front plays it again, from the start.
     await front(page, false);
-    await page.waitForTimeout(500);
-    assert.equal(await page.locator("#backdrop video").count(), 0, "it isn't due any more");
+    await page.locator("#backdrop video.backdrop-intro").waitFor({ timeout: 5000 });
+    await page.waitForSelector("#backdrop video", { state: "detached", timeout: 10_000 });
 
     const off = "00000000000000000000000000000005";
     await theme("still", off, false);
     await until(async () => (await introShown())?.due === off);
     assert.deepEqual(await introShown(), { due: off, how: "still", why: "intros-off" });
     assert.equal(await page.locator("#backdrop video").count(), 0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the intro plays again each time home comes back, from an app or from Settings, and not when home only draws again", async () => {
+  await dynamic(true);
+  const due = "00000000000000000000000000000007";
+  await theme("still", due);
+  const page = await tv();
+  const played = () => page.evaluate(() => (window as unknown as { intros?: number }).intros ?? 0);
+  // Counts each intro that starts, from here on.
+  await page.evaluate(() => {
+    const w = window as unknown as { intros: number };
+    w.intros = 0;
+    new MutationObserver((changes) => {
+      for (const change of changes) for (const node of change.addedNodes) if (node instanceof HTMLElement && node.matches("video.backdrop-intro")) w.intros++;
+    }).observe(document.getElementById("backdrop")!, { childList: true });
+  });
+  const ended = () => page.waitForSelector("#backdrop video", { state: "detached", timeout: 10_000 });
+  try {
+    // The one that's due, as the theme was set.
+    await ended();
+    assert.deepEqual(await introShown(), { due, how: "played", why: null });
+    const before = await played();
+
+    // Back from an app: it plays again, and the daemon still has the first.
+    await front(page, true);
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("#backdrop video").count(), 0, "nothing plays under the app");
+    await front(page, false);
+    await page.locator("#backdrop video.backdrop-intro").waitFor({ timeout: 5000 });
+    assert.equal(await played(), before + 1);
+    await ended();
+    assert.deepEqual(await introShown(), { due, how: "played", why: null }, "a replay isn't reported");
+
+    // Back from Settings: again.
+    await go(page, "settings");
+    await page.waitForSelector("body:not(.on-home)");
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("#backdrop video").count(), 0, "nothing plays behind Settings");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("body.on-home");
+    await page.locator("#backdrop video.backdrop-intro").waitFor({ timeout: 5000 });
+    assert.equal(await played(), before + 2);
+    await ended();
+
+    // Home drawing again, as when what's on it changes, isn't coming back.
+    await go(page, "home");
+    await page.evaluate(() => (window as unknown as { agentvFront: (app: boolean) => void }).agentvFront(false));
+    await page.waitForTimeout(800);
+    assert.equal(await played(), before + 2, "no intro for a redraw of home");
+
+    // With Omarchy's intros off, or reduce motion, coming back keeps the still.
+    // Once home has heard they're off: the word comes as an event, and a
+    // coming back before it would still play the intro, rightly.
+    await theme("still", due, false);
+    await page.waitForFunction(() => (window as unknown as { agentvLauncher: { backdrop: { state: { backgrounds: { theme?: { intros?: boolean } } | null } } } }).agentvLauncher.backdrop.state.backgrounds?.theme?.intros === false);
+    await front(page, true);
+    await front(page, false);
+    await page.waitForTimeout(800);
+    assert.equal(await played(), before + 2, "no intro with the intros off");
   } finally {
     await page.close();
   }

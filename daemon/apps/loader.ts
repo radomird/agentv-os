@@ -21,6 +21,7 @@ import { lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { boxHost } from "../../apps/contract/address.ts";
 import type { Capability, Manifest } from "../../apps/contract/manifest.ts";
+import { PageError } from "../page.ts";
 import { appHeaders, reach } from "./reach.ts";
 
 export type AppErrorKind = "refused" | "timeout" | "failed" | "crashed";
@@ -277,12 +278,12 @@ export class AppHost {
     return new Promise((resolveStart, rejectStart) => {
       const timer = setTimeout(() => {
         letGo(child);
-        rejectStart(new AppError("timeout", `${this.manifest.name} didn't start in time`));
+        rejectStart(new AppError("timeout", `Couldn't open ${this.manifest.name}`));
       }, START_MS);
       // No sandbox, no app: it never runs outside one instead.
       const unsafe = (why: string) => {
         this.log(`${this.manifest.id}: its sandbox didn't start, so it isn't loaded: ${why}`);
-        return new AppError("failed", `${this.manifest.name} couldn't load: this tv couldn't start it safely`);
+        return new AppError("failed", `Couldn't open ${this.manifest.name}. Restart your TV and try again.`);
       };
       let ready = false;
       // Whether the process started at all. An error before that is
@@ -346,9 +347,15 @@ export class AppHost {
           call.reject(new AppError("crashed", `${this.manifest.name} stopped`));
           this.pending.delete(id);
         }
-        rejectStart(!ready && sandbox ? unsafe(sandbox) : new AppError("crashed", `${this.manifest.name} stopped while starting`));
+        rejectStart(!ready && sandbox ? unsafe(sandbox) : new AppError("crashed", `Couldn't open ${this.manifest.name}`));
       });
     });
+  }
+
+  // What an app said went wrong, with its name in front unless it names
+  // itself: "Couldn't pause Sample" stays as it is.
+  private named(message: string): string {
+    return message.toLowerCase().includes(this.manifest.name.toLowerCase()) ? message : `${this.manifest.name}: ${message}`;
   }
 
   private checkModule(id: string, found: string[]): string | null {
@@ -366,7 +373,7 @@ export class AppHost {
       this.pending.delete(message.id as number);
       clearTimeout(call.timer);
       if (message.type === "result") call.resolve(message.value);
-      else call.reject(new AppError("failed", `${this.manifest.name}: ${String(message.message)}`));
+      else call.reject(new AppError("failed", this.named(String(message.message))));
     } else if (message.type === "fetch") {
       this.fetchFor(message).then(
         (response) => tell(child, { type: "fetched", id: message.id, response }),
@@ -385,7 +392,7 @@ export class AppHost {
   private async pageFor(message: Record<string, unknown>): Promise<{ value: unknown; url: string }> {
     const page = this.page;
     const method = String(message.method);
-    if (!page || this.manifest.tv.runtime !== "web") throw new Error(`${this.manifest.name} has no page open`);
+    if (!page || this.manifest.tv.runtime !== "web") throw new Error(`${this.manifest.name} isn't open yet`);
     if (!PAGE_METHODS.includes(method)) throw new Error(`a page can't ${method} here`);
     const args = Array.isArray(message.args) ? message.args : [];
     const allowed = allowedOrigins(this.manifest, this.settings, this.thisBox);
@@ -405,7 +412,14 @@ export class AppHost {
       this.log(`${this.manifest.id}: refused to send its page to ${origin(String(args[0])) || String(args[0]).slice(0, 80)}`);
       throw new Error(`${origin(String(args[0])) || "that address"} isn't one of the app's origins`);
     }
-    const value = await page.call(method, args);
+    const value = await page.call(method, args).catch((error: Error) => {
+      if (!(error instanceof PageError)) throw error;
+      // The selector or the address goes to the log, and a plain line to
+      // the app, which the screen may show.
+      this.log(`${this.manifest.id}: ${error.message}`.slice(0, 500));
+      const name = this.manifest.name;
+      throw new Error(error.problem === "slow" ? `${name} took too long to load` : error.problem === "closed" ? `${name} isn't open yet` : `Something went wrong in ${name}`);
+    });
     return { value, url: await page.url() };
   }
 
@@ -452,7 +466,8 @@ export class AppHost {
     return new Promise<T>((resolveCall, rejectCall) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        rejectCall(new AppError("timeout", `${this.manifest.name} took too long to answer ${path}`));
+        this.log(`${this.manifest.id}: took too long to answer ${path}`);
+        rejectCall(new AppError("timeout", `${this.manifest.name} took too long`));
         if (child.connected) this.checkAlive(child);
       }, ms);
       this.pending.set(id, { resolve: resolveCall as (value: unknown) => void, reject: rejectCall, timer });

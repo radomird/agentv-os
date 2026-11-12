@@ -85,7 +85,7 @@ pass "ADR-038 a share with a password mounts again as the box starts"
 printf 'mount error(112): Host is down\n' >"$STATE/mount-fail"
 AGENTV_SHARE_TRIES=3 store mount-all || fail "mount-all doesn't fail the boot"
 [[ $(grep -c -- "-t cifs" "$STATE/mount.log") == 5 ]] || fail "it tries a share that isn't there three times" "$(cat "$STATE/mount.log")"
-[[ $(entry .error | jq -r .) == "the NAS at nas didn't answer" ]] || fail "and says the NAS didn't answer" "$(cat "$AGENTV_ETC/shares.json")"
+[[ $(entry .error | jq -r .) == "Couldn't reach nas" ]] || fail "and says the NAS didn't answer" "$(cat "$AGENTV_ETC/shares.json")"
 [[ -f $AGENTV_ETC/shares/$ID.cred ]] || fail "and keeps the password for when it's back"
 : >"$STATE/mount-fail"
 drop "$(jq -cn --arg uri "$URI" '{op: "mount", uri: $uri}')"
@@ -100,7 +100,7 @@ OTHER_ID=$(printf '%s' "$OTHER" | sha1sum | cut -c1-12)
 printf 'mount error(13): Permission denied\nRefer to the mount.cifs(8) manual page (e.g. man mount.cifs) and kernel log messages (dmesg)\n' >"$STATE/mount-fail"
 drop "$(jq -cn --arg uri "$OTHER" '{op: "add", uri: $uri, password: "wrong"}')"
 store
-[[ $(entry .error "$OTHER_ID" | jq -r .) == "the NAS didn't take that user name and password" ]] ||
+[[ $(entry .error "$OTHER_ID" | jq -r .) == "Wrong user name or password" ]] ||
   fail "a password the NAS turns down says so" "$(cat "$AGENTV_ETC/shares.json")"
 [[ $(cat "$STATE/cred-seen") == $'username=radomir\npassword=wrong\ndomain=WORKGROUP' ]] || fail "a domain before a ; goes in the credentials" "$(cat "$STATE/cred-seen")"
 [[ ! -e $AGENTV_ETC/shares/$OTHER_ID.cred ]] || fail "and the password it turned down isn't kept"
@@ -115,7 +115,7 @@ store
 [[ $(entry . ) == null ]] || fail "and shares.json forgets it" "$(cat "$AGENTV_ETC/shares.json")"
 drop "$(jq -cn --arg uri "$URI" '{op: "mount", uri: $uri}')"
 store
-[[ $(entry .error | jq -r .) == "it needs its password again" ]] || fail "a share with no password kept asks for it again" "$(cat "$AGENTV_ETC/shares.json")"
+[[ $(entry .error | jq -r .) == "Type its password again" ]] || fail "a share with no password kept asks for it again" "$(cat "$AGENTV_ETC/shares.json")"
 pass "ADR-038 forgetting a share takes its password and its mount"
 
 # Only what it should take.
@@ -124,11 +124,11 @@ for uri in "smb://nas/music" "smb://radomir@nas" "smb://radomir@nas/../etc" "smb
   drop "$(jq -cn --arg uri "$uri" '{op: "add", uri: $uri, password: "pw"}')"
   store
   bad=$(printf '%s' "$uri" | sha1sum | cut -c1-12)
-  [[ $(entry .error "$bad" | jq -r .) == "that share address won't do here" ]] || fail "$uri isn't taken" "$(cat "$AGENTV_ETC/shares.json")"
+  [[ $(entry .error "$bad" | jq -r .) == "That address won't work" ]] || fail "$uri isn't taken" "$(cat "$AGENTV_ETC/shares.json")"
 done
 drop "$(jq -cn --arg uri "$URI" '{op: "add", uri: $uri, password: "two\nlines"}')"
 store
-[[ $(entry .error | jq -r .) == "that password won't do" ]] || fail "a password with a line break in it isn't taken"
+[[ $(entry .error | jq -r .) == "That password won't work" ]] || fail "a password with a line break in it isn't taken"
 # A link in the drop folder, to a request somewhere else, is thrown away
 # unread, and so is something that isn't a file.
 jq -cn --arg uri "smb://radomir@nas/linked" '{op: "add", uri: $uri, password: "pw"}' >"$SCRATCH/elsewhere.json"

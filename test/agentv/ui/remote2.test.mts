@@ -148,7 +148,7 @@ test("T8.3 the keyboard comes up by itself for a service page's field, and each 
   const hand = await phone(b);
   await context(b, { front: "app", playing: false, appField: { kind: "search", label: "search", value: "", app: "agentv.tube" } });
   await hand.waitForSelector("#tv-text", { timeout: 1500 });
-  assert.equal(await hand.locator(".r2-where").textContent(), "tube · search");
+  assert.equal(await hand.locator(".r2-where").textContent(), "Tube · search");
   assert.equal(await hand.locator(".r2-headline").textContent(), "search");
   assert.equal(await hand.locator("#tv-text").getAttribute("inputmode"), "search");
   assert.equal(await hand.evaluate(() => document.activeElement?.id), "tv-text", "the field has the focus, so the phone's keyboard opens");
@@ -176,7 +176,7 @@ test("T8.3 a password's field is the phone's password field, for its password ma
   const hand = await phone(b, "#tv-text");
   assert.equal(await hand.locator("#tv-text").getAttribute("type"), "password");
   assert.equal(await hand.locator("#tv-text").getAttribute("autocomplete"), "current-password");
-  assert.equal(await hand.locator(".r2-where").textContent(), "tube · sign in");
+  assert.equal(await hand.locator(".r2-where").textContent(), "Tube · sign in");
   assert.equal(await hand.locator(".r2-note").textContent(), "Your password manager can fill it");
   await hand.locator('[data-action="keyboard-done"]').tap();
   await hand.waitForSelector(".r2-surface");
@@ -425,7 +425,7 @@ test("T8.3 play asks the box, and the notice line says why when nothing plays; w
   await context(b, { front: "app", playing: true });
   await until(async () => (await hand.locator('[data-action="playpause"]').getAttribute("data-state")) === "pause");
   await hand.waitForSelector(".r2-card");
-  assert.deepEqual(await hand.locator(".r2-card-text > *").allTextContents(), ["sintel", "my tv · 7 min left"]);
+  assert.deepEqual(await hand.locator(".r2-card-text > *").allTextContents(), ["Sintel", "My TV · 7 min left"]);
   await hand.locator('[data-action="next"]').tap();
   await until(() => b.actions.at(-1) === "next");
   assert.deepEqual(b.actions, ["toggle", "next"]);

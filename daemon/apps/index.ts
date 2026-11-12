@@ -62,14 +62,15 @@ export async function verifySignature(file: string, sig: string, keyring = DEFAU
   const work = await mkdtemp(join(tmpdir(), "agentv-index-"));
   try {
     await access(keyring).catch(() => {
-      throw new IndexError(`AgenTV's key isn't on this box (${keyring})`);
+      console.error(`agentv: AgenTV's key isn't at ${keyring}`);
+      throw new IndexError("Couldn't verify the app list, so nothing was installed");
     });
     const binary = join(work, "keyring.gpg");
     const gnupg = { GNUPGHOME: work };
     await run("gpg", ["--batch", "--quiet", "--yes", "--dearmor", "--output", binary, keyring], gnupg).catch(() =>
       copyFile(keyring, binary),
     );
-    const unsigned = new IndexError("the app index isn't signed by AgenTV's key, so nothing was installed");
+    const unsigned = new IndexError("Couldn't verify the app list, so nothing was installed");
     const { stdout } = await run("gpgv", ["--quiet", "--status-fd", "1", "--keyring", binary, sig, file], gnupg).catch(() => {
       throw unsigned;
     });
@@ -93,11 +94,11 @@ export function parseIndex(text: string): AppIndex {
   try {
     data = JSON.parse(text);
   } catch {
-    throw new IndexError("the app index isn't valid JSON");
+    throw new IndexError("Couldn't read the app list");
   }
   const index = data as Partial<AppIndex>;
   if (typeof data !== "object" || data === null || index.schema !== 1 || !Array.isArray(index.apps)) {
-    throw new IndexError("the app index isn't one this box understands (schema 1)");
+    throw new IndexError("Couldn't read the app list. Update AgenTV and try again.");
   }
   const seen = new Set<string>();
   for (const entry of index.apps as Partial<IndexEntry>[]) {
@@ -136,7 +137,7 @@ async function newestOnly(signed: Signed, seen: string): Promise<void> {
   const had = Number(newest?.[signed.key]) || 0;
   if (signed.at < had) {
     console.error(`agentv: refused an app index signed at ${new Date(signed.at * 1000).toISOString()}, older than the one this box already took (${new Date(had * 1000).toISOString()})`);
-    throw new IndexError("the app index is older than the one this box already has, so nothing was installed");
+    throw new IndexError("The app list is older than the one on this TV, so nothing was installed");
   }
   if (signed.at === had) return;
   await mkdir(dirname(seen), { recursive: true });
@@ -155,15 +156,19 @@ export async function loadIndex(source: string, keyring = DEFAULT_KEYRING, seen?
     if (/^https?:\/\//.test(source)) {
       for (const [name, path] of [["index.json", file], ["index.json.sig", sig]]) {
         const response = await fetch(`${source.replace(/\/$/, "")}/${name}`, { signal: AbortSignal.timeout(30_000) }).catch(() => null);
-        if (!response?.ok) throw new IndexError(`couldn't fetch the app index from ${source}`);
+        if (!response?.ok) {
+          console.error(`agentv: couldn't fetch the app index from ${source}`);
+          throw new IndexError("Couldn't load the app list");
+        }
         await writeFile(path, Buffer.from(await response.arrayBuffer()));
       }
     } else {
       await writeFile(file, await readFile(join(source, "index.json")).catch(() => {
-        throw new IndexError(`there's no app index at ${source}`);
+        console.error(`agentv: there's no app index at ${source}`);
+        throw new IndexError("Couldn't load the app list");
       }));
       await writeFile(sig, await readFile(join(source, "index.json.sig")).catch(() => {
-        throw new IndexError("the app index has no signature, so nothing was installed");
+        throw new IndexError("Couldn't verify the app list, so nothing was installed");
       }));
     }
     const signed = await verifySignature(file, sig, keyring);

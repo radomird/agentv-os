@@ -41,7 +41,7 @@ manifest="$APPS/$id/manifest.json"
 [[ $(jq -r '.tv.runtime // empty' "$manifest" 2>/dev/null) == "native" ]] || fail "it isn't a native app"
 pkg=$(jq -r '.tv.package.pacman // empty' "$manifest" 2>/dev/null || true)
 if [[ -z $pkg ]]; then
-  [[ -n $(jq -r '.tv.package.flatpak // empty' "$manifest" 2>/dev/null) ]] && fail "a flatpak program isn't installed from the tv yet"
+  [[ -n $(jq -r '.tv.package.flatpak // empty' "$manifest" 2>/dev/null) ]] && fail "Can't install this kind of app yet"
   fail "it names no package"
 fi
 [[ $pkg =~ ^[a-z0-9][a-z0-9@._+-]*$ ]] || fail "'$pkg' isn't a package name"
@@ -56,7 +56,7 @@ fi
 # since lists newer than the system can break it.
 SYNC=${AGENTV_PACMAN_SYNC:-/var/lib/pacman/sync}
 for repo in $(pacman-conf --repo-list 2>/dev/null); do
-  [[ -f $SYNC/$repo.db ]] || fail "the box doesn't have its package lists yet: update it from settings, then add the app again"
+  [[ -f $SYNC/$repo.db ]] || fail "Update AgenTV in Settings first, then add the app again"
 done
 
 # What Omarchy's own installer runs first, for the programs it has one for.
@@ -64,8 +64,8 @@ case $pkg in
   steam)
     # omarchy-install-gaming-steam: the lib32 drivers for this box's
     # graphics come before Steam, so Steam doesn't pull in another's.
-    omarchy-install-gaming-gpu-lib32 || fail "the graphics drivers steam needs didn't install"
+    omarchy-install-gaming-gpu-lib32 || fail "Couldn't install this app's graphics drivers"
     ;;
 esac
-omarchy-pkg-add "$pkg" || fail "$pkg didn't install"
+omarchy-pkg-add "$pkg" || fail "Couldn't install $pkg"
 echo "agentv-app-package: installed $pkg for $id"

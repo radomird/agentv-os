@@ -233,7 +233,7 @@ test("M1 an app isn't loaded when its sandbox can't start, and never runs outsid
   for (const bwrap of [refuses, join(scratch, "no-such-bwrap")]) {
     const h = new AppHost({ dir, manifest, settings: { serverUrl }, bwrap, log: (line) => lines.push(line) });
     hosts.push(h);
-    await fails(h.call(viewer, "tile", "s"), "failed", /couldn't load: this tv couldn't start it safely/);
+    await fails(h.call(viewer, "tile", "s"), "failed", /Couldn't open Sample\. Restart your TV and try again\./);
   }
   assert.ok(existsSync(ran), "the stand-in bubblewrap was what was started");
   assert.ok(lines.some((line) => /its sandbox didn't start, so it isn't loaded: bwrap: setting up uid map: Permission denied/.test(line)), lines.join("\n"));

@@ -19,6 +19,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WatchRow } from "../ledger.ts";
+import { NOT_READY, WENT_WRONG } from "../notices.ts";
 import type { RemoteAsk } from "../remote.ts";
 import { barText, type Bar } from "../remote-text.ts";
 
@@ -33,6 +34,8 @@ export interface RemoteAnswer {
   ok: boolean;
   by?: "app" | "page" | "key";
   why?: string;
+  // The TV's screen wasn't there to ask. Never sent on.
+  off?: boolean;
   value?: string;
   kept?: number;
 }
@@ -61,12 +64,12 @@ export function nowPlaying(rows: WatchRow[], name: (app: string) => string, now 
   const row = rows[0];
   if (!row || now - Date.parse(row.updated_at) > 30_000) return null;
   const left = row.duration_s && row.position_s !== null ? Math.max(0, Math.round((row.duration_s - row.position_s) / 60)) : null;
-  return { title: row.title.toLowerCase(), app: name(row.app_id).toLowerCase(), ...(left === null ? {} : { left }) };
+  return { title: row.title, app: name(row.app_id), ...(left === null ? {} : { left }) };
 }
 
 // Only what an answer can carry, within bounds.
 export function cleanAnswer(said: unknown): RemoteAnswer {
-  if (!said || typeof said !== "object") return { ok: false, why: "the tv's answer made no sense" };
+  if (!said || typeof said !== "object") return { ok: false, why: WENT_WRONG };
   const a = said as Record<string, unknown>;
   const answer: RemoteAnswer = { ok: a.ok === true };
   if (a.by === "app" || a.by === "page" || a.by === "key") answer.by = a.by;
@@ -105,7 +108,7 @@ export class PhoneRemote {
     }
     if (method === "POST" && path === "/api/phone/apps") {
       const sent = this.o.send({ cmd: "apps" });
-      this.o.json(response, sent ? 200 : 503, sent ? { ok: true } : { ok: false, error: "the tv session isn't on" });
+      this.o.json(response, sent ? 200 : 503, sent ? { ok: true } : { ok: false, error: NOT_READY });
       return true;
     }
     return false;
@@ -130,7 +133,7 @@ export class PhoneRemote {
 
   // Every ask still waiting gets an answer, as the daemon stops.
   close(): void {
-    for (const done of [...this.waiting.values()]) done({ ok: false, why: "the tv stopped" });
+    for (const done of [...this.waiting.values()]) done({ ok: false, why: NOT_READY });
     this.waiting.clear();
   }
 
@@ -140,7 +143,7 @@ export class PhoneRemote {
     return new Promise((done) => {
       const timer = setTimeout(() => {
         this.waiting.delete(n);
-        done({ ok: false, why: "the tv didn't answer in time" });
+        done({ ok: false, why: NOT_READY });
       }, ms);
       this.waiting.set(n, (answer) => {
         clearTimeout(timer);
@@ -149,7 +152,7 @@ export class PhoneRemote {
       if (!this.o.send({ ask: { n, ...what } })) {
         this.waiting.delete(n);
         clearTimeout(timer);
-        done({ ok: false, why: "the tv session isn't on" });
+        done({ ok: false, why: NOT_READY, off: true });
       }
     });
   }
@@ -169,8 +172,8 @@ export class PhoneRemote {
     const caret = Number.isInteger(body.caret) && (body.caret as number) >= 0 && (body.caret as number) <= value.length ? (body.caret as number) : null;
     const tv = this.o.tv();
     const password = tv.field?.kind === "password";
-    const name = (await this.o.viewer()).name.toLowerCase();
-    const bar: Bar = { from: name === "you" ? "your phone" : `${name}'s phone`, text: barText(value, password), password };
+    const name = (await this.o.viewer()).name;
+    const bar: Bar = { from: name.toLowerCase() === "you" ? "Your phone" : `${name}'s phone`, text: barText(value, password), password };
     // Home draws its own bar; over an app, the screen daemon has the overlay
     // draw it.
     this.o.toPages("typing", tv.front === "home" ? bar : null);
@@ -202,6 +205,7 @@ export class PhoneRemote {
   }
 
   private reply(response: ServerResponse, answer: RemoteAnswer): void {
-    this.o.json(response, answer.why === "the tv session isn't on" ? 503 : 200, answer);
+    const { off, ...said } = answer;
+    this.o.json(response, off ? 503 : 200, said);
   }
 }

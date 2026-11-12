@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# agentv:summary=List the apps on this box, with their version and tier
+# agentv:summary=List the apps on this TV
 
 # One line per app: its id, its version and where it came from (its tier).
 

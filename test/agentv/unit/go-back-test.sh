@@ -52,7 +52,7 @@ check_after() {
 
 touch "$AGENTV_UPDATE_STATE/check-pending"
 check_after || fail "the check passes on a box that's fine" "$(cat "$SCRATCH/after.out")"
-[[ $(jq -c '[.ok, .agentv, [.checks[].name]]' "$after") == '[true,"0.3.0-1",["daemon","home screen","chromium and widevine"]]' ]] ||
+[[ $(jq -c '[.ok, .agentv, [.checks[].name]]' "$after") == '[true,"0.3.0-1",["AgenTV","Home","Web apps"]]' ]] ||
   fail "S2.14 the check looks at the daemon, the home screen and Chromium" "$(cat "$after")"
 [[ ! -f $AGENTV_UPDATE_STATE/check-pending ]] || fail "the check after a restart runs once"
 [[ $(stat -c %a "$after") == 644 ]] || fail "the home screen's daemon can read what the check found"
@@ -60,31 +60,31 @@ pass "S2.14 the check after an update looks at the daemon, the home screen and C
 
 FAKE_APPS='{"ok":true,"apps":[{"id":"agentv.tube","name":"Tube","ok":true},{"id":"someone.jellyfin","name":"Jellyfin","ok":false,"error":"Jellyfin couldn'"'"'t load"}]}' \
   check_after && fail "the check fails when an app won't load"
-[[ $(jq -c '[.ok, [.checks[] | select(.ok | not) | .detail], [.checks[] | select(.ok) | .name]]' "$after") == '[false,["Jellyfin won'"'"'t load"],["daemon","home screen","chromium and widevine","Tube"]]' ]] ||
+[[ $(jq -c '[.ok, [.checks[] | select(.ok | not) | .detail], [.checks[] | select(.ok) | .name]]' "$after") == '[false,["Jellyfin won'"'"'t open"],["AgenTV","Home","Web apps","Tube"]]' ]] ||
   fail "S2.14 an app that won't load is named" "$(cat "$after")"
 pass "S2.14 every installed app is checked, and one that won't load is named"
 
 # Widevine: a box that never had it hasn't lost it.
 echo '{"widevine": true}' >"$AGENTV_UPDATE_STATE/go-back.json"
 check_after && fail "the check fails when Widevine is gone"
-[[ $(jq -r '.checks[] | select(.name == "chromium and widevine") | .detail' "$after") == "chromium has lost widevine" ]] ||
+[[ $(jq -r '.checks[] | select(.name == "Web apps") | .detail' "$after") == "Web apps can't play protected video" ]] ||
   fail "Widevine that was there before the update and isn't now" "$(cat "$after")"
 mkdir -p "$AGENTV_CHROMIUM_STATE/WidevineCdm/4.10"
 echo '{}' >"$AGENTV_CHROMIUM_STATE/WidevineCdm/4.10/manifest.json"
 check_after || fail "Widevine still there passes" "$(cat "$after")"
 FAKE_CHROMIUM=1 check_after && fail "the check fails when Chromium doesn't start"
-[[ $(jq -r '.checks[] | select(.name == "chromium and widevine") | .detail' "$after") == "chromium doesn't start" ]] ||
+[[ $(jq -r '.checks[] | select(.name == "Web apps") | .detail' "$after") == "Web apps don't start" ]] ||
   fail "Chromium that doesn't start" "$(cat "$after")"
 pass "the check fails when Chromium doesn't start, or lost the Widevine it had"
 
 # The update restarts AgenTV's services, so the daemon runs the new version.
 FAKE_RUNNING=0.2.1-1 AGENTV_AFTER_WAIT=0 check_after && fail "the check fails when the daemon still runs the old version"
-[[ $(jq -r '.checks[] | select(.name == "daemon") | .detail' "$after") == "the daemon still runs agentv 0.2.1-1" ]] ||
+[[ $(jq -r '.checks[] | select(.name == "AgenTV") | .detail' "$after") == "AgenTV is still on the version from before" ]] ||
   fail "a daemon still on the version from before the update" "$(cat "$after")"
 pass "the check fails when the daemon still runs the version from before the update"
 
 FAKE_DAEMON=down AGENTV_AFTER_WAIT=0 check_after && fail "the check fails when the daemon is down"
-[[ $(jq -c '[.checks[] | select(.ok | not) | .name]' "$after") == '["daemon","home screen"]' ]] ||
+[[ $(jq -c '[.checks[] | select(.ok | not) | .name]' "$after") == '["AgenTV","Home"]' ]] ||
   fail "a daemon that doesn't answer, and so no home screen" "$(cat "$after")"
 pass "the check fails when the daemon doesn't answer"
 
@@ -182,19 +182,19 @@ refused() {
 }
 setup_disk
 FAKE_AGENTV=0.3.1-1 go_back && fail "a box updated again since can't go back"
-refused "updated again since" "the box has been updated again since"
+refused "updated again since" "A newer update is already installed"
 setup_disk
 rm -rf "$snapshots/7"
 go_back && fail "a snapshot that's gone can't be gone back to"
-refused "the snapshot is gone" "the snapshot from before the update is gone"
+refused "the snapshot is gone" "The backup from before the update is gone"
 setup_disk
 FAKE_LIMINE=1 go_back && fail "a boot menu that won't rebuild stops it"
-refused "the boot menu won't rebuild" "couldn't rebuild the boot menu"
+refused "the boot menu won't rebuild" "Something went wrong"
 setup_disk
 FAKE_FS=ext4 go_back && fail "a disk not laid out as Omarchy's stops it"
-refused "not Omarchy's layout" "this box's disk isn't laid out the way Omarchy installs it"
+refused "not Omarchy's layout" "Going back isn't possible on this disk"
 setup_disk
 rm "$AGENTV_UPDATE_STATE/go-back.json"
 go_back && fail "with no update from the TV there's nothing to go back from"
-refused "no update" "there's no update to go back from"
+refused "no update" "There's no update to go back from"
 pass "Go back stops, with the box as it was, when the box changed since, the snapshot is gone, or the boot menu won't rebuild"

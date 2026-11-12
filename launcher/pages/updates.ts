@@ -16,6 +16,14 @@ export function shown(version: string | null | undefined): string {
   return (version ?? "?").replace(/-\d+$/, "");
 }
 
+// A release's number is worth showing on the Updating screen. An early
+// update's is a package version (0.2.0.r479.g7b931248a), which tells a person
+// nothing, so that screen leaves it off.
+function releaseNumber(version: string | null | undefined): string | null {
+  const v = shown(version);
+  return /^\d+(\.\d+){1,2}$/.test(v) ? v : null;
+}
+
 // The new AgenTV release the check found, if any, once it can be installed.
 export function release(updates: Updates): string | null {
   const next = updates.status?.agentv.available;
@@ -348,14 +356,18 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
   const title = back
     ? failed
       ? "Couldn't go back"
-      : `Going back to AgenTV ${shown(progress.to.agentv)}`
+      : releaseNumber(progress.to.agentv)
+        ? `Going back to AgenTV ${releaseNumber(progress.to.agentv)}`
+        : "Going back"
     : failed
       ? progress.detail === "not tested yet"
         ? "Not tested yet. Nothing changed."
         : progress.detail === "nothing changed"
           ? "Couldn't update. Nothing changed."
           : "The update stopped"
-      : `Updating to AgenTV ${shown(progress.to.agentv || progress.from.agentv)}`;
+      : releaseNumber(progress.to.agentv || progress.from.agentv)
+        ? `Updating to AgenTV ${releaseNumber(progress.to.agentv || progress.from.agentv)}`
+        : "Updating AgenTV";
   const fill = h("div", { class: "updating-fill" });
   fill.style.transform = `scaleX(${Math.max(0.02, Math.min(1, progress.percent / 100))})`;
   el.replaceChildren(

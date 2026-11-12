@@ -6,6 +6,20 @@
 import type { DevTools } from "./cdp.ts";
 import type { PageBroker } from "./apps/loader.ts";
 
+// A page call that didn't work, by what went wrong: the page was too slow,
+// what the app looked for isn't on it, or it isn't open. The message has the
+// selector or the address, which is for the log. The loader gives the app,
+// and so the screen, a plain line instead (apps/loader.ts).
+export type PageProblem = "slow" | "missing" | "closed";
+
+export class PageError extends Error {
+  readonly problem: PageProblem;
+  constructor(problem: PageProblem, message: string) {
+    super(message);
+    this.problem = problem;
+  }
+}
+
 const STEP_MS = 100;
 const WAIT_MS = 10_000;
 
@@ -63,7 +77,7 @@ function present(selector: string, state: string): string {
 export function cdpPage(cdp: Pick<DevTools, "evaluateIn">, target: () => string | undefined): PageBroker {
   const on = async (expression: string) => {
     const id = target();
-    if (!id) throw new Error("the app's page isn't open yet");
+    if (!id) throw new PageError("closed", "the app's page isn't open yet");
     return cdp.evaluateIn(id, expression);
   };
   return {
@@ -91,7 +105,7 @@ export function cdpPage(cdp: Pick<DevTools, "evaluateIn">, target: () => string 
           await sleep(STEP_MS * 2);
           if ((await on(loaded).catch(() => false)) === true) return null;
         }
-        throw new Error(`the page didn't load ${url} in time`);
+        throw new PageError("slow", `the page didn't load ${url} in time`);
       }
       if (method === "waitForSelector") {
         const until = Date.now() + (typeof args[1] === "number" ? args[1] : WAIT_MS);
@@ -100,9 +114,13 @@ export function cdpPage(cdp: Pick<DevTools, "evaluateIn">, target: () => string 
           if ((await on(test).catch(() => false)) === true) return null;
           await sleep(STEP_MS);
         }
-        throw new Error(`nothing on the page matched ${String(args[0])} in time`);
+        throw new PageError("slow", `nothing on the page matched ${String(args[0])} in time`);
       }
-      return on(script(method, args));
+      // A click or a fill on something that isn't there says so from
+      // inside the page (script above).
+      return on(script(method, args)).catch((error: Error) => {
+        throw /nothing on the page matches /.test(error.message) ? new PageError("missing", error.message) : error;
+      });
     },
   };
 }

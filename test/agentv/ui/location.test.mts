@@ -184,7 +184,7 @@ test("T7.1 the captive page and the companion send the phone's own time zone, an
   try {
     await captivePhone.goto(`${captive}/`);
     for (let i = 0; i < 50 && (await (await fetch(`${url}/api/setup/location`)).json()).phoneZone !== "America/Chicago"; i++) await captivePhone.waitForTimeout(100);
-    assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the united states");
+    assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the United States");
   } finally {
     await captivePhone.close();
   }
@@ -195,7 +195,7 @@ test("T7.1 the captive page and the companion send the phone's own time zone, an
   try {
     await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
     for (let i = 0; i < 50 && (await (await fetch(`${url}/api/setup/location`)).json()).phoneZone !== "Europe/Amsterdam"; i++) await phone.waitForTimeout(100);
-    assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the netherlands");
+    assert.equal((await (await fetch(`${url}/api/setup/location`)).json()).start?.called, "the Netherlands");
   } finally {
     await phone.close();
   }

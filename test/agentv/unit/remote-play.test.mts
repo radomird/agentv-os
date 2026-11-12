@@ -50,14 +50,14 @@ test("T8.2 an app without its own pause falls to the page's video, and with none
   assert.deepEqual(await playback.toggle(), { ok: true, by: "page" });
   assert.deepEqual(shown.ran, ["state", "toggle"]);
   const empty = new PhonePlayback({ front: () => ({ kind: "page", id: "x", ...page({ playing: false, any: false }) }), keys: async () => {} });
-  assert.deepEqual(await empty.toggle(), { ok: false, why: "nothing is playing" });
-  const stuck = new PhonePlayback({ front: () => ({ kind: "page", id: "x", ...page({ playing: true, any: true }, { ok: false, why: "the player didn't pause" }) }), keys: async () => {} });
-  assert.deepEqual(await stuck.toggle(), { ok: false, by: "page", why: "the player didn't pause" });
+  assert.deepEqual(await empty.toggle(), { ok: false, why: "Nothing is playing" });
+  const stuck = new PhonePlayback({ front: () => ({ kind: "page", id: "x", ...page({ playing: true, any: true }, { ok: false, why: "Couldn't pause" }) }), keys: async () => {} });
+  assert.deepEqual(await stuck.toggle(), { ok: false, by: "page", why: "Couldn't pause" });
 });
 
 test("T8.2 a page that doesn't answer says so, and never hangs the phone", async () => {
   const playback = new PhonePlayback({ front: () => ({ kind: "page", id: "x", evaluate: () => new Promise(() => {}) }), keys: async () => {}, ms: 50 });
-  assert.deepEqual(await playback.toggle(), { ok: false, why: "nothing is playing" });
+  assert.deepEqual(await playback.toggle(), { ok: false, why: "Nothing is playing" });
 });
 
 test("T8.2 with home in front: a shared video in home's player first, then Music", async () => {
@@ -78,7 +78,7 @@ test("T8.2 with home in front: a shared video in home's player first, then Music
   assert.deepEqual(await playback.next(), { ok: true, by: "app" });
   assert.deepEqual(music.at(-1), { op: "next" });
   now = null;
-  assert.deepEqual(await playback.toggle(), { ok: false, why: "nothing is playing" });
+  assert.deepEqual(await playback.toggle(), { ok: false, why: "Nothing is playing" });
 });
 
 test("T8.2 a native app gets the media key, and next goes to the app's own next", async () => {
@@ -93,9 +93,9 @@ test("T8.2 a native app gets the media key, and next goes to the app's own next"
   assert.deepEqual(await playback.next(), { ok: true, by: "app" });
   assert.deepEqual(calls, ["playback.next"]);
   front = { kind: "page", id: "x", ...page({ playing: true, any: true }) };
-  assert.deepEqual(await playback.next(), { ok: false, why: "this app has no next" });
+  assert.deepEqual(await playback.next(), { ok: false, why: "This app can't skip" });
   front = null;
-  assert.deepEqual(await playback.toggle(), { ok: false, why: "nothing is playing" });
+  assert.deepEqual(await playback.toggle(), { ok: false, why: "Nothing is playing" });
 });
 
 test("T8.2 what plays is found through shadow roots and frames, so the phone switches to playback on a service's player", () => {
@@ -108,8 +108,8 @@ test("T8.3 what's playing for the phone's card is the ledger's newest row while 
   const { nowPlaying } = await import("../../../daemon/routes/remote.ts");
   const row = { id: 1, viewer_id: "radomir", app_id: "local.mytv", kind: "film" as const, title: "Sintel", season: null, episode: null, position_s: 480, duration_s: 888, started_at: "2026-11-05T10:00:00+00:00", updated_at: "2026-11-05T10:00:20+00:00" };
   const at = Date.parse("2026-11-05T10:00:30Z");
-  assert.deepEqual(nowPlaying([row], () => "My TV", at), { title: "sintel", app: "my tv", left: 7 });
-  assert.deepEqual(nowPlaying([{ ...row, duration_s: null }], () => "My TV", at), { title: "sintel", app: "my tv" });
+  assert.deepEqual(nowPlaying([row], () => "My TV", at), { title: "Sintel", app: "My TV", left: 7 });
+  assert.deepEqual(nowPlaying([{ ...row, duration_s: null }], () => "My TV", at), { title: "Sintel", app: "My TV" });
   assert.equal(nowPlaying([row], () => "My TV", at + 60_000), null, "a row nothing has read for a while isn't playing");
   assert.equal(nowPlaying([], () => "x", at), null);
 });

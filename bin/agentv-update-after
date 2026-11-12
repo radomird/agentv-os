@@ -49,18 +49,18 @@ while true; do
   sleep 3
 done
 if [[ $daemon != "true" ]]; then
-  add daemon false "the daemon doesn't answer"
+  add AgenTV false "AgenTV didn't start"
 elif [[ $running != "$installed" ]]; then
-  add daemon false "the daemon still runs agentv ${running:-from before the update}"
+  add AgenTV false "AgenTV is still on the version from before"
 else
-  add daemon true
+  add AgenTV true
 fi
 
 # The home screen: its page, and the state it draws.
 if [[ $daemon == "true" ]] && get /launcher/main.ts >/dev/null && get /api/home | jq -e '.ok == true' >/dev/null 2>&1; then
-  add "home screen" true
+  add Home true
 else
-  add "home screen" false "the home screen doesn't load"
+  add Home false "Home doesn't load"
 fi
 
 # The services' Chromium, and its Widevine module when it had one before the
@@ -68,11 +68,11 @@ fi
 # that never had it hasn't lost it.
 had_widevine=$(jq -r '.widevine // false' "$STATE/go-back.json" 2>/dev/null || echo false)
 if ! chromium --version >/dev/null 2>&1; then
-  add "chromium and widevine" false "chromium doesn't start"
+  add "Web apps" false "Web apps don't start"
 elif [[ $had_widevine == "true" ]] && [[ -z $(find "$CHROMIUM_STATE/WidevineCdm" -name manifest.json 2>/dev/null) ]]; then
-  add "chromium and widevine" false "chromium has lost widevine"
+  add "Web apps" false "Web apps can't play protected video"
 else
-  add "chromium and widevine" true
+  add "Web apps" true
 fi
 
 # Every installed app, as the daemon loads it.
@@ -83,7 +83,7 @@ if [[ $daemon == "true" ]]; then
     if [[ $ok == "true" ]]; then
       add "$name" true
     else
-      add "$name" false "$name won't load"
+      add "$name" false "$name won't open"
     fi
   done < <(jq -r '.[] | [.name, (.ok | tostring)] | @tsv' <<<"$apps")
 fi

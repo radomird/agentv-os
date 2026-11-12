@@ -130,7 +130,7 @@ test("ADR-045 the app is pushed as the person's commit, in a folder of its own, 
   git(["clone", "-q", `file://${bare}/person/blocks.git`, look]);
   assert.equal(readFileSync(join(look, "local.blocks", "LICENSE"), "utf8"), "MIT\n");
   assert.ok(existsSync(join(look, "local.blocks", "web", "index.html")));
-  assert.equal(git(["log", "-1", "--format=%an <%ae> %s"], look), "A Person <person@example.com> Blocks 1.0.0, made by my agent on AgenTV");
+  assert.equal(git(["log", "-1", "--format=%an <%ae> %s"], look), "A Person <person@example.com> Blocks 1.0.0, made on my TV with AgenTV");
   assert.equal(git(["rev-parse", "--abbrev-ref", "HEAD"], look), "main");
 
   // The same version again changes nothing, and pushes nothing.
@@ -169,7 +169,7 @@ test("ADR-045 with only an SSH key, the repo has to be there, and nobody signed 
   const ask: PushAsk = { kind: "push", id: "local.blocks", name: "Blocks", version: "1.0.0", repo: { owner: "someone", name: "nothing-here" }, files: blocks() };
   const missing = await pushApp(ask, { remote, home: join(scratch, "home"), hosts: async () => HOSTS });
   assert.equal(missing.ok, false);
-  assert.match(missing.error!, /the repo isn't there, or your SSH key can't reach it: make it on GitHub first/);
+  assert.match(missing.error!, /Couldn't reach the repo. Make it on GitHub first./);
   assert.ok(!existsSync(join(bare, "someone", "nothing-here.git")), "an SSH key doesn't make repos");
 
   const nobody = join(scratch, "nobody");
@@ -263,7 +263,7 @@ test("ADR-045 the phone offers a push only when the box is signed in, asks for t
     assert.ok(paths.includes("manifest.json"));
     assert.ok(!paths.some((path) => path.startsWith("fixtures/")), "a service's saved pages never leave the box");
     assert.equal(await offered(), null, "the offer goes once it's pushed");
-    assert.match((await (await phone("/api/phone/apps/local.blocks/push", { repo: "blocks" }, await pin())).json()).error, /export it from its details on the tv first/);
+    assert.match((await (await phone("/api/phone/apps/local.blocks/push", { repo: "blocks" }, await pin())).json()).error, /Save a copy from its details on your TV first/);
 
     // A child watching can't push.
     assert.equal((await send("POST", "/api/apps/local.blocks/export", {})).status, 200);

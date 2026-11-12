@@ -156,7 +156,7 @@ test("temperatures in whole degrees, and in Fahrenheit where the country uses it
   assert.deepEqual(placeSettings("Europe/Amsterdam", tab.get("Europe/Amsterdam")!), {
     timeZone: "Europe/Amsterdam",
     units: "c",
-    place: "amsterdam",
+    place: "Amsterdam",
     lat: "52.37",
     lon: "4.9",
   });

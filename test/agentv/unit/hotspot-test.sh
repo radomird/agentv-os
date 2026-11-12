@@ -155,7 +155,7 @@ hotspot down || fail "it closes" "$(cat "$SCRATCH/out")"
 grep -qx "nmcli connection delete $own" "$FAKE/calls" || fail "and its network goes"
 [[ $(state .on) == "false" && $(state .ssid) == "$ssid" ]] || fail "state.json says it's off"
 SERVICE_RESULT=exit-code "$ROOT/bin/agentv-hotspot" down >/dev/null 2>&1
-[[ $(state .error) == "the setup hotspot stopped" ]] || fail "when it failed, state.json says so" "$(state .error)"
+[[ $(state .error) == "The setup Wi-Fi stopped" ]] || fail "when it failed, state.json says so" "$(state .error)"
 pass "closing it takes its network and holes out, however it stopped"
 
 # Two of root's processes change state.json at once: the second waits for
@@ -203,11 +203,11 @@ if FAKE_UP_FAILS="Error: Connection activation failed: Secrets were required, bu
 [[ -z $(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*') ]] || fail "and leaves no connection behind"
 grep -q "^nmcli connection delete uuid " "$FAKE/calls" || fail "NetworkManager forgets it"
 grep -qx "systemctl start agentv-hotspot.service" "$FAKE/calls" || fail "the hotspot opens again"
-[[ $(state .error) == "that password didn't work for new:net" && $(state .joining) == "null" ]] || fail "state.json says why" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+[[ $(state .error) == "Wrong password for new:net" && $(state .joining) == "null" ]] || fail "state.json says why" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 [[ $(state .answered) == "0a1b2c3d4e5f6071" ]] || fail "and names the ask it answers" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 printf '%s' '{"join":{"ssid":"far away","password":"long enough","hidden":true}}' >"$AGENTV_HOTSPOT_DROP"
 FAKE_UP_FAILS="Error: Connection activation failed: The Wi-Fi network could not be found." hotspot drop || true
-[[ $(state .error) == "the tv can't see far away from here" ]] || fail "and a network out of reach says so" "$(state .error)"
+[[ $(state .error) == "Can't find far away from here" ]] || fail "and a network out of reach says so" "$(state .error)"
 pass "a wrong password opens the hotspot again, with the reason, and nothing of it stays"
 
 # A join cut short, as when one of its commands fails: it doesn't stay
@@ -216,7 +216,7 @@ hotspot run >/dev/null || true
 : >"$FAKE/calls"
 printf '%s' '{"join":{"ssid":"home wi-fi","password":"correct horse","hidden":false},"id":"1122334455667788"}' >"$AGENTV_HOTSPOT_DROP"
 if FAKE_STOP_FAILS=1 hotspot drop; then fail "a join whose command fails doesn't pass for joined"; fi
-jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi" and .answered == "1122334455667788"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+jq -e '.joining == null and .why == "failed" and .error == "Couldn'"'"'t join home wi-fi" and .answered == "1122334455667788"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
   fail "a join cut short says it didn't work, and answers its ask" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 grep -qx "systemctl start --no-block agentv-hotspot.service" "$FAKE/calls" || fail "and the hotspot it was closing opens again" "$(cat "$FAKE/calls")"
 pass "a join cut short says so, and leaves nothing reading as still joining"
@@ -275,13 +275,13 @@ pass "on first boot it opens only with setup not done and no network"
 
 
 hotspot status
-[[ $(cat "$SCRATCH/out") == "The setup hotspot is closed. The box joined new:net at 192.168.77.23."$'\n'"The last try said: that isn't a wi-fi network and password." ]] ||
+[[ $(cat "$SCRATCH/out") == "The setup hotspot is closed. The box joined new:net at 192.168.77.23."$'\n'"The last try said: That isn't a Wi-Fi network and password." ]] ||
   fail "status says where the box is, and the last try's reason" "$(cat "$SCRATCH/out")"
 hotspot run >/dev/null || true
-jq '.error = "that password didn'"'"'t work for new:net"' "$AGENTV_HOTSPOT_RUN/state.json" >"$SCRATCH/state"
+jq '.error = "Wrong password for new:net"' "$AGENTV_HOTSPOT_RUN/state.json" >"$SCRATCH/state"
 mv "$SCRATCH/state" "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot status
-[[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $(state .ssid), password $(state .password). Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: that password didn't work for new:net." ]] ||
+[[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $(state .ssid), password $(state .password). Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: Wrong password for new:net." ]] ||
   fail "and while it's on, its name, password and the last try's reason" "$(cat "$SCRATCH/out")"
 pass "status says how it stands"
 
@@ -393,7 +393,7 @@ kept=$(find "$AGENTV_NM_CONNECTIONS" -name 'agentv-*.nmconnection')
 printf '%s\n' 'yes:cafe' >"$FAKE/on-wifi"
 printf '%s' '{"join":{"ssid":"home wi-fi","password":"not this one","hidden":false}}' >"$AGENTV_HOTSPOT_DROP"
 if FAKE_PREVIOUS=1111-old FAKE_UP_FAILS="Error: Connection activation failed: Secrets were required, but not provided." hotspot drop; then fail "a wrong password doesn't join"; fi
-jq -e '.joining == null and .why == "password" and .error == "that password didn'"'"'t work for home wi-fi" and .wifi == "cafe" and .on != true' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+jq -e '.joining == null and .why == "password" and .error == "Wrong password for home wi-fi" and .wifi == "cafe" and .on != true' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
   fail "state.json says why, and that the TV is back on the network from before" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 grep -qx "nmcli --wait 30 connection up uuid 1111-old ifname wlan0" "$FAKE/calls" || fail "it goes back to the network it was on" "$(cat "$FAKE/calls")"
 if grep -q "systemctl start" "$FAKE/calls"; then fail "a join from Settings that fails opens no hotspot" "$(cat "$FAKE/calls")"; fi

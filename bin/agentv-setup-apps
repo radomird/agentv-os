@@ -76,7 +76,7 @@ for id in "${wanted[@]}"; do
       echo "agentv-setup-apps: installing the program $id opens"
       if ! install_program "$id"; then
         why=$(head -n 1 "$PACKAGE_ERRORS/$id.error" 2>/dev/null | cut -c1-200 || true)
-        [[ -n $why ]] || why="its program didn't install"
+        [[ -n $why ]] || why="Couldn't install it"
         set_state "$id" failed "$why"
         echo "agentv-setup-apps: the program $id opens didn't install: $why" >&2
         continue
@@ -84,9 +84,11 @@ for id in "${wanted[@]}"; do
     fi
     set_state "$id" installed
   else
-    # The installer's own last line says why, as "Couldn't do it: ...".
-    why=$(printf '%s\n' "$out" | grep -v '^\s*$' | tail -n 1 | sed -E 's/^(Couldn.t do it|Something went wrong): //; s/\.$//' | cut -c1-200)
-    [[ -n $why ]] || why="it didn't install"
+    # The installer's own last line says why. A lone sentence loses its
+    # full stop, as a notice on the TV has none.
+    why=$(printf '%s\n' "$out" | grep -v '^\s*$' | tail -n 1 | sed -E 's/^(Couldn.t do it|Something went wrong): //' | cut -c1-200)
+    [[ $why == *". "* ]] || why=${why%.}
+    [[ -n $why ]] || why="Couldn't install it"
     set_state "$id" failed "$why"
     echo "agentv-setup-apps: $id didn't install: $why" >&2
   fi

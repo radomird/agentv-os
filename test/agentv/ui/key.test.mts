@@ -144,7 +144,7 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector("#tv-ask");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "Claude terms");
   await phone.locator('[data-action="accept"]').tap();
   await page.waitForFunction(() => /Claude key saved/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
@@ -162,7 +162,7 @@ test("Q104 a key for a provider whose terms nobody here accepted waits for them:
   await addKey(1);
   await page.waitForFunction(() => /ChatGPT's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
   await phone.waitForSelector("#tv-ask");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "chatgpt terms");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "ChatGPT terms");
   await page.keyboard.press("Escape");
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
   await phone.close();
@@ -191,7 +191,7 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector("#tv-ask");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "Claude terms");
   await phone.locator('[data-action="accept"]').tap();
   await page.waitForFunction(() => /Now using your Claude plan/.test(document.body.textContent ?? ""), null, { timeout: 10_000 });
   await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
@@ -227,7 +227,7 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
     await page.waitForFunction(() => /Grok's terms come first/.test(document.querySelector(".profile-form")?.textContent ?? ""));
     assert.deepEqual(await page.locator(".profile-form [data-terms]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-terms"))), ["xai-consumer-terms", "xai-acceptable-use-policy"]);
     await phone.waitForSelector("#tv-ask");
-    assert.equal(await phone.locator("#tv-ask h1").innerText(), "grok terms");
+    assert.equal(await phone.locator("#tv-ask h1").innerText(), "Grok terms");
     // Back: the phone stops asking, and builds keep Claude's plan.
     await page.keyboard.press("Escape");
     await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });

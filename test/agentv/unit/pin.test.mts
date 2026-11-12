@@ -64,10 +64,10 @@ test("S4.5 a guarded action needs a grant, which the right PIN gives and which r
 
 test("S4.5 changing or taking off the PIN needs a grant, and a child's profile keeps it on", () => {
   let children = false;
-  const { pin } = box(() => (children ? "a child's profile needs the pin, so it stays" : null));
+  const { pin } = box(() => (children ? "Keep the PIN while there's a child's profile" : null));
   pin.set("4826", undefined);
-  assert.equal(pin.set("1111", undefined), "that needs the pin");
-  assert.equal(pin.remove("made-up"), "that needs the pin");
+  assert.equal(pin.set("1111", undefined), "That needs the PIN");
+  assert.equal(pin.remove("made-up"), "That needs the PIN");
   const grant = granted(pin.check("4826"));
   // Grants earned with the PIN before, the TV's and a phone's.
   const other = granted(pin.check("4826"));
@@ -77,7 +77,7 @@ test("S4.5 changing or taking off the PIN needs a grant, and a child's profile k
   assert.deepEqual([pin.allows(other), pin.allows(phones, "phone-1")], [false, false], "and so are the grants it gave");
   assert.equal(pin.allows(grant), true, "the one that changed it holds");
   children = true;
-  assert.equal(pin.remove(grant), "a child's profile needs the pin, so it stays");
+  assert.equal(pin.remove(grant), "Keep the PIN while there's a child's profile");
   children = false;
   assert.equal(pin.remove(grant), null);
   assert.equal(pin.status().set, false);
@@ -206,7 +206,7 @@ test("S4.5 the daemon refuses a guarded request without the PIN's grant, and nev
 
     // Installing tonight, and updating overnight, need it now.
     const refused = await send("POST", "/api/updates/tonight", { version: "0.3.1" });
-    assert.deepEqual(refused, { status: 403, data: { ok: false, error: "that needs the pin", pin: true } });
+    assert.deepEqual(refused, { status: 403, data: { ok: false, error: "That needs the PIN", pin: true } });
     assert.equal((await send("POST", "/api/updates/tonight", { version: null })).status, 200, "clearing it after the night's install doesn't");
     assert.equal((await send("POST", "/api/settings", { updateOvernight: true })).status, 403);
     assert.equal((await send("POST", "/api/settings", { sleepWhenOff: true })).status, 403, "and sleep, which the phone can't wake (T13.2)");
