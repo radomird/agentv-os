@@ -58,7 +58,8 @@ function pick(ctx: Ctx): View {
     );
   });
   // The last card leaves it for Settings: the TV plays films without an AI.
-  const later = h("button", { class: "ai-card ai-later", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, h("span", { class: "ai-text" }, h("span", { class: "ai-name" }, "Later")));
+  // Its empty second line keeps "Later" level with the AIs' names.
+  const later = h("button", { class: "ai-card ai-later", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, h("span", { class: "ai-text" }, h("span", { class: "ai-name" }, "Later"), h("span", { class: "ai-maker" }, "\u00a0")));
   const el = page(ctx, "agentv ai", "Pick your AI", h("p", { class: "setup-line" }, "It answers you and makes your apps"), h("div", { class: "ai-cards" }, ...cards, later));
   return { el, first: cards[0], info: info(ctx) };
 }

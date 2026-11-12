@@ -125,11 +125,12 @@ test("T7.2 each provider shows its own icon from its site, and one whose site ha
     assert.equal(await page.locator(".bar .bar-step").textContent(), "6 of 12 · AI");
     assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-name").allTextContents(), ["claude", "chatgpt", "gemini", "grok", "muse"]);
     // The last card of the row leaves the AI for later.
-    assert.deepEqual(await page.locator(".ai-cards > :last-child").evaluate((el) => [el.className, el.getAttribute("data-action"), el.textContent]), ["ai-card ai-later", "later", "Later"]);
-    const cards = await page.locator(".ai-card").evaluateAll((all) => all.map((card) => ({ top: card.getBoundingClientRect().top, fits: [...card.querySelectorAll<HTMLElement>(".ai-name, .ai-maker")].every((el) => el.scrollWidth <= card.clientWidth) })));
+    assert.deepEqual(await page.locator(".ai-cards > :last-child").evaluate((el) => [el.className, el.getAttribute("data-action"), el.textContent?.trim()]), ["ai-card ai-later", "later", "Later"]);
+    assert.equal(await page.locator(".ai-later .ai-name").textContent(), "Later");
+    const cards = await page.locator(".ai-card").evaluateAll((all) => all.map((card) => ({ top: (card as HTMLElement).offsetTop, fits: [...card.querySelectorAll<HTMLElement>(".ai-name, .ai-maker")].every((el) => el.scrollWidth <= card.clientWidth) })));
     assert.equal(cards.length, 6);
     assert.ok(cards.every((card) => card.top === cards[0].top && card.fits), "six cards in one row, each with its words inside it");
-    assert.deepEqual(await page.locator(".ai-card .ai-maker").allTextContents(), ["anthropic", "openai", "google", "xai", "meta"]);
+    assert.deepEqual(await page.locator(".ai-card[data-provider] .ai-maker").allTextContents(), ["anthropic", "openai", "google", "xai", "meta"]);
     // The icons that came load; the ones that didn't are gone, names left.
     await page.waitForFunction(() => document.querySelectorAll(".ai-icon").length === 2 && [...document.querySelectorAll<HTMLImageElement>(".ai-icon")].every((img) => img.complete && img.naturalWidth > 0));
     assert.deepEqual(await page.locator(".ai-icon").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("data-icon"))), ["claude", "gemini"]);

@@ -216,6 +216,13 @@ export async function apps(ctx: Ctx): Promise<View> {
   return {
     el,
     first: picked ? go : (el.querySelector<HTMLElement>(".app-group:not(.hidden) .app-pick") ?? add),
+    // Down from continue goes to the first app, not to whichever tile sits
+    // nearest under the button.
+    act(action) {
+      if (action !== "down" || ctx.focus.get() !== go) return false;
+      ctx.focus.set(el.querySelector<HTMLElement>(".app-group:not(.hidden) .app-pick") ?? add);
+      return true;
+    },
     heard(event, data) {
       if (event !== "setup-apps") return;
       ctx.installs = data as Installs;

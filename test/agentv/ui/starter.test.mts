@@ -111,7 +111,7 @@ bothWays("starter", "T9.2 on Streaming, setup's apps start with the starter pack
     assert.equal(await page.locator(".app-add").count(), 1);
     assert.equal(await add.locator(".app-face .glyph-spark").count(), 1);
     assert.equal(await add.locator(".app-note-line").count(), 0);
-    const box = (selector: string) => page.locator(selector).evaluate((el) => [el.getBoundingClientRect().width, el.getBoundingClientRect().height, el.scrollHeight <= el.clientHeight + 1]);
+    const box = (selector: string) => page.locator(selector).evaluate((el) => [(el as HTMLElement).offsetWidth, (el as HTMLElement).offsetHeight, el.scrollHeight <= el.clientHeight + 1]);
     assert.deepEqual(await box(".app-add"), await box('[data-app="agentv.steam"]'), "the same shape, and its words fit it");
     assert.equal((await box(".app-add"))[2], true);
     // The apps are picked already, so the focus starts on continue: the

@@ -790,7 +790,7 @@ test("who watches: a child's profile asks for the adult PIN first, chosen twice 
   await page.keyboard.type("2468");
   await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "Enter it again");
   await page.keyboard.type("1357");
-  await page.waitForFunction(() => /^Those don't match$/.test(document.querySelector(".pin-message")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Those don't match\.?$/.test(document.querySelector(".pin-message")?.textContent ?? ""));
   await page.keyboard.type("2468");
   await page.waitForSelector(".people");
   await page.waitForFunction(() => document.querySelectorAll(".person[data-viewer]").length === 2);
@@ -863,7 +863,7 @@ test("apps: the goal's official apps come first, the ticked ones install past th
   // One way to build: the last tile of the grid, shaped like an app's.
   assert.equal(await page.locator(".app-add").count(), 1);
   assert.match(await row(1).locator(":scope > :last-child.app-add").innerText(), /^can't find it\?\s+build your own$/);
-  const size = (selector: string) => page.locator(selector).evaluate((el) => [el.getBoundingClientRect().width, el.getBoundingClientRect().height]);
+  const size = (selector: string) => page.locator(selector).evaluate((el) => [(el as HTMLElement).offsetWidth, (el as HTMLElement).offsetHeight]);
   assert.deepEqual(await size(".app-add"), await size('[data-app="agentv.steam"]'), "the same shape as the app before it");
   // This box has no built-in apps; the daemon's tests have Music among them.
   assert.deepEqual(await row(1).locator(".app-pick .app-name").allInnerTexts(), ["steam"]);
@@ -877,7 +877,10 @@ test("apps: the goal's official apps come first, the ticked ones install past th
   await page.keyboard.press("Enter");
   await page.waitForSelector('[data-app="agentv.immich"].on');
   assert.match(await page.locator('[data-app="agentv.immich"]').innerText(), /\[x\]/);
+  // Down from Immich is the build tile under it, and Steam is beside that.
   await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator(".focused").getAttribute("data-action"), "add");
+  await page.keyboard.press("ArrowLeft");
   assert.equal(await page.locator(".app-pick.focused").getAttribute("data-app"), "agentv.steam");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
