@@ -147,7 +147,7 @@ test("S4.2 who's watching, from the phone: the TV follows within a second, and a
   assert.match(await hand.locator(".overlay").innerText(), /enter the adult pin[\s\S]*for watching as radomir\./);
   assert.equal(await hand.locator('.overlay [data-pin="delete"] svg.glyph-backspace').count(), 1);
   for (const digit of "0000") await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
-  await hand.waitForFunction(() => /that's not the pin\./.test(document.querySelector(".overlay")?.textContent ?? ""));
+  await hand.waitForFunction(() => /Wrong PIN/.test(document.querySelector(".overlay")?.textContent ?? ""));
   for (const digit of PIN) await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
   await screen.waitForFunction(() => document.querySelector(".bar-right span")?.textContent === "radomir");
   await screen.close();

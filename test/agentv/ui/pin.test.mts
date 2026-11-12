@@ -146,7 +146,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.keyboard.press("Enter");
   await waitPad(page, true);
   await type(page, "0000");
-  await page.waitForFunction(() => /that's not the pin\./.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Wrong PIN$/.test(document.querySelector("#pin .pin-message")?.textContent ?? "") && /./.test(document.getElementById("pin")?.textContent ?? ""));
   assert.equal(await padUp(page), true);
   await type(page, PIN);
   await waitPad(page, false);
