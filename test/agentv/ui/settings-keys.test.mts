@@ -129,3 +129,43 @@ test("Terminal: Settings' panel runs down to the bar, as the list does, and Appe
   }
   assert.deepEqual(problems, []);
 });
+
+for (const look of LOOKS) {
+  test(`${look}: the theme list takes the whole rows its page has room for, more than two, at each size, dark and light`, async () => {
+    await useLook(look);
+    const problems: string[] = [];
+    for (const theme of THEMES) {
+      await useTheme(theme);
+      for (const size of Object.keys(SIZES) as (keyof typeof SIZES)[]) {
+        const page = await tv(size);
+        try {
+          await go(page, "settings/theme");
+          await page.waitForSelector('.settings-panel[data-page="theme"] .look-item');
+          await page.waitForTimeout(400);
+          const seen = await page.evaluate(() => {
+            const list = document.querySelector<HTMLElement>(".look-list")!;
+            const panel = document.querySelector<HTMLElement>(".settings-panel")!;
+            const row = parseFloat(getComputedStyle(list).getPropertyValue("--look-row"));
+            const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+            const box = list.getBoundingClientRect();
+            const shown = Math.round((box.height + gap) / (row + gap));
+            const last = [...panel.children].at(-1)!.getBoundingClientRect().bottom;
+            const left = panel.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(panel).paddingBottom) || 0) - last;
+            const cut = [...list.querySelectorAll(".look-item")].some((item) => {
+              const r = item.getBoundingClientRect();
+              return r.top < box.bottom - 1 && r.bottom > box.bottom + 1;
+            });
+            return { shown, left, row, gap, cut };
+          });
+          const at = `${theme}, ${size}`;
+          if (seen.shown <= 2) problems.push(`${at}: the list shows ${seen.shown} rows`);
+          if (seen.left >= seen.row + seen.gap) problems.push(`${at}: ${Math.round(seen.left)} px left under the page, room for another row`);
+          if (seen.cut) problems.push(`${at}: a row is cut in half`);
+        } finally {
+          await page.close();
+        }
+      }
+    }
+    assert.deepEqual(problems, []);
+  });
+}
