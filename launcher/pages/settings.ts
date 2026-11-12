@@ -732,10 +732,19 @@ export function settings(ctx: Ctx, open?: string): View {
     );
     new ResizeObserver(mark).observe(list);
     // On the theme's own page the list takes as many whole rows as the panel
-    // has room for, in every look and at every size, rather than two.
-    requestAnimationFrame(() => {
+    // has room for, in every look and at every size, rather than two. It's
+    // measured once the page is laid out, and again whenever the list or the
+    // panel changes size, since a frame after drawing can come before that.
+    let watched: HTMLElement | null = null;
+    const fit = () => {
       const page = wrap.closest<HTMLElement>('.settings-panel[data-page="theme"]');
-      if (!page) return;
+      if (!page || !page.isConnected) return;
+      if (watched !== page) {
+        watched = page;
+        sizes.observe(page);
+      }
+      const box = page.getBoundingClientRect();
+      if (!box.height) return;
       const style = getComputedStyle(list);
       const row = parseFloat(style.getPropertyValue("--look-row"));
       const gap = parseFloat(style.rowGap) || 0;
@@ -743,11 +752,14 @@ export function settings(ctx: Ctx, open?: string): View {
       // The room from the list's top to the panel's bottom, less what comes
       // after the list.
       const after = [...page.children].filter((el) => el !== wrap && el.getBoundingClientRect().top >= wrap.getBoundingClientRect().bottom - 1).reduce((sum, el) => sum + el.getBoundingClientRect().height + (parseFloat(getComputedStyle(page).rowGap) || 0), 0);
-      const room = page.getBoundingClientRect().bottom - inside - list.getBoundingClientRect().top - after;
+      const room = box.bottom - inside - list.getBoundingClientRect().top - after;
       const rows = Math.max(2, Math.floor((room + gap) / (row + gap)));
-      if (Number.isFinite(rows)) list.style.maxHeight = `${rows * row + (rows - 1) * gap}px`;
+      const height = `${rows * row + (rows - 1) * gap}px`;
+      if (Number.isFinite(rows) && list.style.maxHeight !== height) list.style.maxHeight = height;
       mark();
-    });
+    };
+    const sizes = new ResizeObserver(fit);
+    sizes.observe(wrap);
     return wrap;
   }
   const setLook = async (look: ThemePreview) => {
