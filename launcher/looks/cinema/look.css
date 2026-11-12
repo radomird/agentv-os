@@ -762,11 +762,90 @@ body.with-backdrop {
 /* --- Overlays ------------------------------------------------------------- */
 
 .toast,
-.notice-card,
-.pin-pad {
+.notice-card {
   border: none;
   border-radius: 28px;
   background: var(--card);
+}
+
+/* --- The adult PIN (pin.ts) ------------------------------------------------- */
+
+/* Centred, in Cinema's bold type, on the theme's background. Four dots fill
+   as the digits come, and the keys are rounded cards, filled in the words'
+   colour when they have the focus, as a button is. No panel and no boxes. */
+.pin-pad {
+  width: auto;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.pin-pad .headline {
+  font-size: 72px;
+  font-weight: 700;
+  letter-spacing: -2.5px;
+}
+
+.pin-message {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.pin-boxes {
+  width: auto;
+  gap: 24px;
+  margin: 24px 0 28px;
+}
+
+.pin-box {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: var(--card-lit);
+}
+
+.pin-box.filled {
+  background: var(--bright-foreground);
+}
+
+.pin-keys {
+  width: auto;
+  grid-template-columns: repeat(3, 160px);
+  gap: 18px;
+}
+
+.pin-key {
+  --lift: 0;
+  height: 96px;
+  border: none;
+  border-radius: var(--round);
+  background: var(--card);
+  font-size: 44px;
+  font-weight: 600;
+}
+
+.pin-key.focused {
+  background: var(--bright-foreground);
+  color: var(--background);
+}
+
+.pin-delete {
+  background: transparent;
+}
+
+/* Delete in the same line drawing as the look's other icons, rather than
+   Terminal's pixel glyph. */
+.pin-delete > svg {
+  display: none;
+}
+
+.pin-delete::before {
+  content: "";
+  width: 52px;
+  height: 52px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6-7z'/%3E%3Cpath d='M12.5 9.5l5 5M17.5 9.5l-5 5'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 /* --- The ambient screen ---------------------------------------------------- */
