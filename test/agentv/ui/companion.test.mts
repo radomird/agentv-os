@@ -189,7 +189,7 @@ test("S4.7 arrange home on the phone: tap a tile, then where it goes, and the TV
   const hand = await phone();
   await hand.locator('[data-mode="home"]').tap();
   await hand.waitForSelector(".mini-grid");
-  assert.match(await hand.locator(".page").innerText(), /arrange home[\s\S]*for radomir/);
+  assert.match(await hand.locator(".page").innerText(), /Edit home[\s\S]*For radomir/);
   const layout = (await (await fetch(`${url}/api/home`)).json()).layout as { id: string; x: number; y: number }[];
   const apps = layout.find((t) => t.id === "apps")!;
   const empty = await hand.locator(".mini-empty").first().getAttribute("data-cell");
@@ -197,7 +197,7 @@ test("S4.7 arrange home on the phone: tap a tile, then where it goes, and the TV
   const [x, y] = empty!.split(",").map(Number);
   const before = await screen.locator('.grid .tile[data-id="apps"]').boundingBox();
   await hand.locator('.mini-tile[data-id="apps"]').tap();
-  assert.match(await hand.locator(".sizes").innerText(), /size · all apps/);
+  assert.match(await hand.locator(".sizes").innerText(), /Size · All apps/);
   const at = Date.now();
   await hand.locator(`.mini-empty[data-cell="${empty}"]`).tap();
   await until(async () => {
@@ -449,24 +449,28 @@ test("S5.10 the phone shares a link, a photo and a video to the TV, each with wh
     await hand.locator('button[data-action="share"]').tap();
     await hand.waitForSelector(".share-page");
     for (const action of ["share-link", "share-photo", "share-video"]) assert.equal(await hand.locator(`[data-action="${action}"]`).isDisabled(), true, `nothing for ${action} before it's picked`);
-    const toastSays = (text: RegExp) => hand.waitForFunction((source) => new RegExp(source).test(document.getElementById("toast")?.textContent ?? ""), text.source);
+    // The toast is emptied once it's read, since the next one may say the same.
+    const toastSays = async (text: RegExp) => {
+      await hand.waitForFunction((source) => new RegExp(source).test(document.getElementById("toast")?.textContent ?? ""), text.source);
+      await hand.evaluate(() => void (document.getElementById("toast")!.textContent = ""));
+    };
     // A link.
     await hand.locator("#share-link").fill("https://www.example.org/watch?v=1");
     await hand.locator('[data-action="share-link"]').tap();
-    await toastSays(/the tv is asking about the link now/);
+    await toastSays(/^Sent\. Check your TV\.$/);
     // A photo, drawn again first, with who took it.
     await hand.locator("#share-photo").setInputFiles({ name: "red.png", mimeType: "image/png", buffer: RED_PNG });
     await hand.waitForSelector(".share-page .photo-preview:not(.hidden)");
     await hand.locator("#share-credit").fill("ana's photo, día 1");
     await hand.locator('[data-action="share-photo"]').tap();
-    await toastSays(/the tv is asking about the photo now/);
+    await toastSays(/^Sent\. Check your TV\.$/);
     // A video, as it is, while something plays on the TV: it waits.
     await post("/api/tv/context", { front: "app", playing: true });
     const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from("ftypisom"), Buffer.alloc(4), Buffer.from("isomiso2"), Buffer.alloc(2000, 7)]);
     await hand.locator("#share-video").setInputFiles({ name: "ana's día.mp4", mimeType: "video/mp4", buffer: MP4 });
-    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /ana's día\.mp4, 1 mb/);
+    assert.match(await hand.locator(".share-page .note:not(.hidden)").last().innerText(), /ana's día\.mp4, 1 MB/);
     await hand.locator('[data-action="share-video"]').tap();
-    await toastSays(/the tv has the video\. it'll ask once nothing's playing\./);
+    await toastSays(/^Sent\. Your TV asks when nothing's playing\.$/);
     await post("/api/tv/context", { front: "home", playing: false });
 
     const shared = await (await fetch(`${url}/api/shared`)).json();
@@ -495,7 +499,7 @@ test("S5.3 a photo shared from the phone becomes the TV's background, with its c
   await hand.waitForSelector(".photo-preview:not(.hidden)");
   await hand.locator("#photo-credit").fill("the layer 4 test's photo, día 2");
   await hand.locator('[data-action="send-photo"]').tap();
-  await hand.waitForFunction(() => /background now/.test(document.getElementById("toast")?.textContent ?? ""));
+  await hand.waitForFunction(() => /^It's on your TV now$/.test(document.getElementById("toast")?.textContent ?? ""));
 
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "photos");
