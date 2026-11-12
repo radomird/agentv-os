@@ -37,7 +37,7 @@ export async function choosePin(ctx: Ctx, why: string): Promise<boolean> {
   let first = "";
   const chosen = await ctx.pad({
     command: "tv setup · pin",
-    title: "set the adult pin",
+    title: "Set an adult PIN",
     note: why,
     submit: async (pin) => {
       first = pin;
@@ -47,10 +47,10 @@ export async function choosePin(ctx: Ctx, why: string): Promise<boolean> {
   if (!chosen) return false;
   return ctx.pad({
     command: "tv setup · pin",
-    title: "the same pin again",
-    note: "so a slip of the finger doesn't lock you out.",
+    title: "Enter it again",
+    note: "So a typo doesn't lock you out",
     submit: async (pin) => {
-      if (pin !== first) return "that's not the same pin";
+      if (pin !== first) return "Those don't match";
       await daemon.setPin(pin);
       const reply = await daemon.checkPin(pin);
       ctx.hold(reply.grant, reply.until);
@@ -70,10 +70,10 @@ function tile(viewer: Viewer, go: () => void): HTMLElement {
       "span",
       { class: `person-face avatar-${AVATARS.includes(viewer.avatar) ? viewer.avatar : "blue"}` },
       viewer.name.slice(0, 1).toUpperCase(),
-      viewer.role === "child" ? h("span", { class: "person-tag" }, "child") : null,
+      viewer.role === "child" ? h("span", { class: "person-tag" }, "Child") : null,
       viewer.locked ? h("span", { class: "person-lock" }, glyph("lock", 32)) : null,
     ),
-    h("span", { class: "person-name" }, viewer.name.toLowerCase()),
+    h("span", { class: "person-name" }, viewer.name),
   );
 }
 
@@ -86,8 +86,8 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
   const pinValue = h("span", { class: "pin-state" });
   const pinButton = h("button", { class: "pin-switch", "data-focus": true, "data-action": "pin", onclick: () => void togglePin() }, pinValue);
   const go = phase2
-    ? h("button", { class: "person done", "data-focus": true, "data-action": "done", onclick: () => void ctx.finish("people") }, h("span", { class: "person-face" }, glyph("check", 96)), h("span", { class: "person-name" }, "done"))
-    : h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("people") }, "↵ continue");
+    ? h("button", { class: "person done", "data-focus": true, "data-action": "done", onclick: () => void ctx.finish("people") }, h("span", { class: "person-face" }, glyph("check", 96)), h("span", { class: "person-name" }, "Done"))
+    : h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("people") }, "Continue");
 
   const draw = (now: Household) => {
     // The tile with the focus stays focused when the row is drawn again.
@@ -95,10 +95,10 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
     const which = had && row.contains(had) ? (had.dataset.viewer ?? had.dataset.action) : null;
     row.replaceChildren(
       ...now.viewers.map((viewer) => tile(viewer, () => ctx.open(`people/${viewer.id}`))),
-      h("button", { class: "person add", "data-focus": true, "data-action": "add", onclick: () => ctx.open("people/new") }, h("span", { class: "person-face" }, "+"), h("span", { class: "person-name" }, "add")),
+      h("button", { class: "person add", "data-focus": true, "data-action": "add", onclick: () => ctx.open("people/new") }, h("span", { class: "person-face" }, "+"), h("span", { class: "person-name" }, "Add")),
       phase2 ? go : "",
     );
-    pinValue.textContent = ctx.info.pin ? "■ on" : "□ off";
+    pinValue.textContent = ctx.info.pin ? "■ On" : "□ Off";
     pinButton.classList.toggle("on", ctx.info.pin);
     const again = which ? row.querySelector<HTMLElement>(`[data-viewer="${CSS.escape(which)}"], [data-action="${CSS.escape(which)}"]`) : null;
     if (again) ctx.focus.set(again, false);
@@ -107,13 +107,13 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
 
   const togglePin = async () => {
     if (!ctx.info.pin) {
-      if (await choosePin(ctx, "4 digits, for settings, builds and the desktop.")) {
-        ctx.toast("the pin is set", "ok");
+      if (await choosePin(ctx, "4 digits, for settings, new apps and the desktop")) {
+        ctx.toast("PIN set", "ok");
         draw(await household());
       }
       return;
     }
-    const grant = await ctx.grant("taking the pin off");
+    const grant = await ctx.grant("removing the PIN");
     if (grant === null) return;
     try {
       await daemon.removePin(grant);
@@ -122,26 +122,25 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
     }
     ctx.info.pin = false;
     ctx.sounds.play("confirm");
-    ctx.toast("the pin is off", "ok");
+    ctx.toast("PIN removed", "ok");
     draw(await household());
   };
 
   draw(home);
   const el = phase2
-    ? h("div", { class: "setup-page d3 people2" }, ...heading("agentv people", "who watches?", ctx.reduced()), row)
+    ? h("div", { class: "setup-page d3 people2" }, ...heading("agentv people", "Who's watching?", ctx.reduced()), row)
     : h(
         "div",
         { class: "setup-page" },
-        h("div", {}, ...heading("who watches?", "who watches?", ctx.reduced())),
+        h("div", {}, ...heading("tv setup · who's watching", "Who's watching?", ctx.reduced())),
         row,
-        h("div", { class: "setup-foot" }, h("span", { class: "pin-line" }, h("span", {}, "adult pin"), pinButton, h("span", { class: "setup-note" }, "needed for children")), go),
+        h("div", { class: "setup-foot" }, h("span", { class: "pin-line" }, h("span", {}, "Adult PIN"), pinButton, h("span", { class: "setup-note" }, "Needed for children")), go),
       );
   return {
     el,
     // With setup's own switch on, done has the focus: the household as it
     // is, and on.
     first: phase2 ? go : (row.querySelector<HTMLElement>(".person") ?? go),
-    info: "←→ move · ↵ pick",
     heard(event) {
       if (event === "viewers" || event === "pin") void household().then(draw, () => {});
     },
@@ -159,20 +158,20 @@ export async function person(ctx: Ctx, id: string): Promise<View> {
     avatar: found?.avatar ?? AVATARS.find((a) => !home.viewers.some((v) => v.avatar === a)) ?? "blue",
     locked: found?.locked ?? false,
   };
-  const name = h("input", { class: "text-field person-field", "data-focus": true, "data-action": "name", type: "text", value: found?.name ?? "", maxlength: "20", placeholder: "their name", "aria-label": "their name", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const name = h("input", { class: "text-field person-field", "data-focus": true, "data-action": "name", type: "text", value: found?.name ?? "", maxlength: "20", placeholder: "Their name", "aria-label": "Their name", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   const face = h("span", { class: "person-face" });
   const value = () => h("span", { class: "button-value" });
   const roleValue = value();
   const colourValue = value();
   const lockValue = value();
-  const role = h("button", { class: "button", "data-focus": true, "data-action": "role", onclick: () => step("role", 1) }, h("span", {}, "role"), roleValue);
-  const colour = h("button", { class: "button", "data-focus": true, "data-action": "avatar", onclick: () => step("avatar", 1) }, h("span", {}, "colour"), colourValue);
-  const lock = h("button", { class: "button", "data-focus": true, "data-action": "lock", onclick: () => step("lock", 1) }, h("span", { class: "with-icon" }, glyph("lock", 24), h("span", {}, "ask for the pin to open")), lockValue);
+  const role = h("button", { class: "button", "data-focus": true, "data-action": "role", onclick: () => step("role", 1) }, h("span", {}, "Role"), roleValue);
+  const colour = h("button", { class: "button", "data-focus": true, "data-action": "avatar", onclick: () => step("avatar", 1) }, h("span", {}, "Colour"), colourValue);
+  const lock = h("button", { class: "button", "data-focus": true, "data-action": "lock", onclick: () => step("lock", 1) }, h("span", { class: "with-icon" }, glyph("lock", 24), h("span", {}, "Lock with PIN")), lockValue);
 
   const draw = () => {
-    roleValue.textContent = `‹ ${draft.role} ›`;
-    colourValue.textContent = `‹ ${draft.avatar} ›`;
-    lockValue.textContent = `‹ ${draft.locked ? "yes" : "no"} ›`;
+    roleValue.textContent = draft.role === "child" ? "Child" : "Adult";
+    colourValue.textContent = draft.avatar.slice(0, 1).toUpperCase() + draft.avatar.slice(1);
+    lockValue.textContent = draft.locked ? "Yes" : "No";
     lock.classList.toggle("hidden", draft.role === "child");
     face.className = `person-face avatar-${draft.avatar}`;
     face.textContent = (name.value.trim() || "?").slice(0, 1).toUpperCase();
@@ -200,14 +199,14 @@ export async function person(ctx: Ctx, id: string): Promise<View> {
   const save = async () => {
     const change = { name: name.value.trim(), role: draft.role, avatar: draft.avatar, locked: draft.role === "adult" && draft.locked };
     if (!change.name) {
-      ctx.toast("a name first", "fail");
+      ctx.toast("A name first", "fail");
       ctx.sounds.play("failure");
       ctx.focus.set(name);
       return;
     }
     // A child's profile, or a locked one, needs the adult PIN to exist.
     if ((change.role === "child" || change.locked) && !ctx.info.pin) {
-      const why = change.role === "child" ? "a child's profile needs one. 4 digits, for settings, builds and the desktop." : "a locked profile needs one. 4 digits.";
+      const why = change.role === "child" ? "A child's profile needs one. 4 digits." : "A locked profile needs one. 4 digits.";
       if (!(await choosePin(ctx, why))) return;
     }
     const grant = await ctx.grant("changing profiles");
@@ -219,7 +218,7 @@ export async function person(ctx: Ctx, id: string): Promise<View> {
       return failed(ctx, error);
     }
     ctx.sounds.play("confirm");
-    ctx.toast(fresh ? `${change.name.toLowerCase()} is here now` : `${change.name.toLowerCase()} is saved`, "ok");
+    ctx.toast(fresh ? `Added ${change.name}` : "Saved", "ok");
     ctx.back();
   };
   const remove = async () => {
@@ -234,19 +233,18 @@ export async function person(ctx: Ctx, id: string): Promise<View> {
     ctx.back();
   };
 
-  const add = h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, fresh ? "↵ add" : "↵ save");
-  const off = !fresh && found && home.viewers.length > 1 ? h("button", { class: "button", "data-focus": true, "data-action": "remove", onclick: () => void remove() }, `take ${found.name.toLowerCase()} off`) : null;
+  const add = h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, fresh ? "Add" : "Save");
+  const off = !fresh && found && home.viewers.length > 1 ? h("button", { class: "button", "data-focus": true, "data-action": "remove", onclick: () => void remove() }, `Remove ${found.name}`) : null;
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", { class: "person-head" }, face, h("div", {}, ...heading("tv setup · who watches", fresh ? "someone new." : `${(found?.name ?? "").toLowerCase()}.`, ctx.reduced()))),
+    h("div", { class: "person-head" }, face, h("div", {}, ...heading("tv setup · who's watching", fresh ? "New profile" : (found?.name ?? ""), ctx.reduced()))),
     h("div", { class: "person-form" }, name, role, colour, lock, h("div", { class: "person-actions" }, add, off)),
   );
   draw();
   return {
     el,
     first: fresh ? name : add,
-    info: "←→ change · ↵ select · esc back",
     act(action) {
       const current = ctx.focus.get();
       if ((action === "left" || action === "right") && (current === role || current === colour || current === lock)) {

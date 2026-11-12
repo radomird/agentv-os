@@ -13,7 +13,7 @@
 // is done or isn't needed. Back to it later, it waits for OK.
 
 import { screen, type UpdateProgress, type UpdateStatus } from "../launcher/api.ts";
-import { h } from "../launcher/dom.ts";
+import { asWritten, h } from "../launcher/dom.ts";
 import { setup, type SetupInfo } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
@@ -38,8 +38,11 @@ function versions(from: string | null, to: string | null): [string, string] {
 
 const fresh = (at: string | undefined, asked: string | null) => Boolean(at && asked && Date.parse(at) >= Date.parse(asked) - 2000);
 
-function row(mark: "x" | ">" | " " | "!", text: string, extra?: HTMLElement): HTMLElement {
-  return h("span", { class: `ready-row mark-${mark === " " ? "todo" : mark === "x" ? "done" : mark === ">" ? "now" : "bad"}` }, h("span", {}, h("b", {}, `[${mark}]`), ` ${text}`), extra ?? "");
+// A row of the checklist. A network's name comes as its own piece, so it
+// keeps its capitals.
+function row(mark: "x" | ">" | " " | "!", text: string | (string | Node)[], extra?: HTMLElement): HTMLElement {
+  const words = typeof text === "string" ? [text] : text;
+  return h("span", { class: `ready-row mark-${mark === " " ? "todo" : mark === "x" ? "done" : mark === ">" ? "now" : "bad"}` }, h("span", {}, h("b", {}, `[${mark}]`), " ", ...words), extra ?? "");
 }
 
 // A bar of 16 blocks, as the install dashboard draws one.
@@ -52,12 +55,12 @@ function blocks(percent: number): HTMLElement {
 export const ready2 = (ctx: Ctx): View => ready(ctx, true);
 
 export function ready(ctx: Ctx, phase2 = false): View {
-  const line = h("p", { class: phase2 ? "setup-line" : "ready-line" }, phase2 ? "checking for a newer agentv" : "bringing setup up to date first.");
+  const line = h("p", { class: phase2 ? "setup-line" : "ready-line" }, phase2 ? "Checking for updates" : "Updating first");
   const list = h("div", { class: phase2 ? "ready-bar" : "ready-list" });
-  const go = h("button", { class: "button primary ready-go hidden", "data-focus": true, "data-action": "continue", onclick: () => void next() }, "↵ continue");
+  const go = h("button", { class: "button primary ready-go hidden", "data-focus": true, "data-action": "continue", onclick: () => void next() }, "Continue");
   const el = phase2
-    ? h("div", { class: "setup-page d3 ready2" }, ...heading("agentv update", "getting ready.", ctx.reduced()), line, list)
-    : h("div", { class: "setup-page center" }, h("div", { class: "ready-head" }, ...heading("tv setup", "getting ready.", ctx.reduced()), line), list, go);
+    ? h("div", { class: "setup-page d3 ready2" }, ...heading("agentv update", "Getting ready", ctx.reduced()), line, list)
+    : h("div", { class: "setup-page center" }, h("div", { class: "ready-head" }, ...heading("tv setup", "Getting ready", ctx.reduced()), line), list, go);
   // With setup's own switch on, OK moves on once there's nothing left to do.
   let done = false;
 
@@ -93,31 +96,29 @@ export function ready(ctx: Ctx, phase2 = false): View {
     const phone = about.phones[about.phones.length - 1];
     const rows = [
       about.network.online
-        ? row("x", about.network.via === "ethernet" ? "ethernet" : `wifi · ${about.network.name ?? "on"}`)
-        : row(">", "waiting for the network"),
-      phone ? row("x", `paired · ${phone}`) : row(" ", "phone · pair one in settings → phones"),
+        ? row("x", about.network.via === "ethernet" ? "Cable" : ["Wi-Fi · ", about.network.name ? asWritten(about.network.name) : "on"])
+        : row(">", "Waiting for the network"),
+      phone ? row("x", `Paired · ${phone}`) : row(" ", "Phone · pair one later in Settings"),
     ];
     const [from, to] = versions(r.from ?? about.running, r.to ?? status?.agentv.available ?? null);
-    if (!about.network.online || r.update === null || r.update === "checking") rows.push(row(">", "checking for a newer agentv"));
+    if (!about.network.online || r.update === null || r.update === "checking") rows.push(row(">", "Checking for updates"));
     else if (r.update === "installing") {
       const now = fresh(progress?.at, r.asked) ? progress : null;
-      rows.push(now?.state === "restarting" ? row(">", `agentv ${to} · restarting the box`) : row(">", `agentv ${from} → ${to}`, blocks(now?.percent ?? 0)));
-    } else if (r.update === "done") rows.push(row("x", `agentv ${to}`));
-    else if (r.update === "none") rows.push(row("x", `agentv ${from} · up to date`));
-    else if (r.update === "failed") rows.push(row("!", `agentv ${from} · couldn't update`));
-    else rows.push(row("x", `agentv ${from} · updates are in settings`));
+      rows.push(now?.state === "restarting" ? row(">", `AgenTV ${to} · restarting`) : row(">", `AgenTV ${from} to ${to}`, blocks(now?.percent ?? 0)));
+    } else if (r.update === "done") rows.push(row("x", `AgenTV ${to}`));
+    else if (r.update === "none") rows.push(row("x", `AgenTV ${from} · up to date`));
+    else if (r.update === "failed") rows.push(row("!", `AgenTV ${from} · couldn't update`));
+    else rows.push(row("x", `AgenTV ${from} · update later in Settings`));
     list.replaceChildren(...rows);
 
     const finished = r.update !== null && !["checking", "installing"].includes(r.update);
     if (!finished) ran = true;
     line.textContent = !finished
-      ? "bringing setup up to date first."
-      : r.update === "done"
-        ? "up to date. on we go."
-        : r.update === "failed"
-          ? "couldn't update. setup carries on, and settings has it later."
-          : "already up to date.";
-    ctx.status(finished ? "↵ continue" : phone ? "phone paired · setup carries on after the update" : "setup carries on after the update");
+      ? "Updating first"
+      : r.update === "failed"
+        ? "Couldn't update. Try later in Settings."
+        : "Up to date";
+    ctx.status(finished ? (phone ? "Phone paired" : "") : phone ? "Phone paired · setup continues after the update" : "Setup continues after the update");
     if (finished && go.classList.contains("hidden")) {
       go.classList.remove("hidden");
       ctx.focus.set(go, false);
@@ -136,24 +137,24 @@ export function ready(ctx: Ctx, phase2 = false): View {
     const [from, to] = versions(r.from ?? about.running, r.to ?? status?.agentv.available ?? null);
     const finished = about.network.online && r.update !== null && !["checking", "installing"].includes(r.update);
     let percent = 0;
-    if (!about.network.online) line.textContent = "waiting for the network";
-    else if (r.update === null || r.update === "checking") line.textContent = "checking for a newer agentv";
+    if (!about.network.online) line.textContent = "Waiting for the network";
+    else if (r.update === null || r.update === "checking") line.textContent = "Checking for updates";
     else if (r.update === "installing") {
       const now = fresh(progress?.at, r.asked) ? progress : null;
       percent = now?.percent ?? 0;
-      line.textContent = now?.state === "restarting" ? `agentv ${to} is in. the box restarts` : `updating agentv ${from} to ${to}`;
+      line.textContent = now?.state === "restarting" ? `AgenTV ${to} installed. Restarting…` : `Updating AgenTV ${from} to ${to}`;
     } else {
       percent = 100;
-      line.textContent = r.update === "done" ? `agentv ${to}. on we go` : r.update === "failed" ? "couldn't update. settings has it later" : `agentv ${from} is up to date`;
+      line.textContent = r.update === "done" ? `AgenTV ${to} is ready` : r.update === "failed" ? "Couldn't update. Try later in Settings." : `AgenTV ${from} is up to date`;
     }
     list.replaceChildren(blocks(percent));
     if (!finished) ran = true;
-    ctx.status(phone ? "phone paired" : "setup carries on after the update");
+    ctx.status(phone ? "Phone paired" : "Setup continues after the update");
     if (finished && !done) {
       done = true;
       ctx.sounds.play("confirm");
       if (ran || !about.setup.finished.ready) leaving = window.setTimeout(() => void next(), ON_MS);
-      else ctx.status("↵ carry on");
+      else ctx.status("Continue");
     }
   }
 
@@ -216,7 +217,7 @@ export function ready(ctx: Ctx, phase2 = false): View {
 
   return {
     el,
-    info: "setup carries on after the update",
+    info: "Setup continues after the update",
     // With setup's own switch on, OK carries on once it's done.
     act: phase2
       ? (action) => {

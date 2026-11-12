@@ -1394,10 +1394,11 @@ body.counted .player-score {
 /* The AI (design page D3): a card for each provider with its own icon, or
    its name alone, then the ways in on the left and the sign-in's code to
    scan on the right. */
+/* Five AIs and "Later", in one row. */
 .ai-cards {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 40px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 32px;
   margin-top: 120px;
 }
 

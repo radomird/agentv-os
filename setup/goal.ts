@@ -10,10 +10,10 @@ import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
 const GOALS: { goal: Goal; name: string; note: string; icon: Glyph }[] = [
-  { goal: "streaming", name: "streaming", note: "films and shows", icon: "film" },
-  { goal: "music", name: "music", note: "albums and playlists", icon: "music" },
-  { goal: "media", name: "photos", note: "photos and videos", icon: "photo" },
-  { goal: "gaming", name: "gaming", note: "steam and more", icon: "gamepad" },
+  { goal: "streaming", name: "Streaming", note: "Films and shows", icon: "film" },
+  { goal: "music", name: "Music", note: "Albums and playlists", icon: "music" },
+  { goal: "media", name: "Photos", note: "Photos and videos", icon: "photo" },
+  { goal: "gaming", name: "Gaming", note: "Your games", icon: "gamepad" },
 ];
 
 export function goal(ctx: Ctx): View {
@@ -36,14 +36,14 @@ export function goal(ctx: Ctx): View {
       glyph(g.icon, 120),
     ),
   );
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void pick(chosen()) }, "↵ continue");
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void pick(chosen()) }, "Continue");
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading("what is this tv for?", "pick one.", ctx.reduced())), go),
+    h("div", { class: "setup-top" }, h("div", {}, ...heading("What is this TV for?", "Pick one", ctx.reduced())), go),
     h("div", { class: "goals" }, ...cards),
   );
-  return { el, first: cards.find((card) => card.dataset.goal === chosen()), info: "←↑↓→ move · ↵ pick" };
+  return { el, first: cards.find((card) => card.dataset.goal === chosen()) };
 }
 
 // The goal with setup's own switch on (design page D3, step 8 of 12): one
@@ -52,17 +52,17 @@ export function goal(ctx: Ctx): View {
 // and moves on, with no continue. With the box check on, gaming says what
 // to expect on this box.
 const CARDS: { goal: Goal; name: string; note: string; icon: Glyph }[] = [
-  { goal: "streaming", name: "streaming", note: "films and shows", icon: "film" },
-  { goal: "music", name: "music", note: "albums and playlists", icon: "music" },
-  { goal: "media", name: "media", note: "your own server and photos", icon: "photo" },
-  { goal: "gaming", name: "gaming", note: "steam and more", icon: "gamepad" },
+  { goal: "streaming", name: "Streaming", note: "Films and shows", icon: "film" },
+  { goal: "music", name: "Music", note: "Albums and playlists", icon: "music" },
+  { goal: "media", name: "Media", note: "Your own server and photos", icon: "photo" },
+  { goal: "gaming", name: "Gaming", note: "Your games", icon: "gamepad" },
 ];
 
 // What the box check says about games, as gaming's line.
 const GAMES: Record<string, string> = {
-  good: "games run well on this box",
-  light: "light games on this box",
-  none: "not much for games on this box",
+  good: "Games run well here",
+  light: "Fine for light games",
+  none: "Not made for games",
 };
 
 async function games(): Promise<string | null> {
@@ -94,14 +94,14 @@ export async function goal2(ctx: Ctx): Promise<View> {
       h("span", { class: "goal-card-text" }, h("span", { class: "goal-card-name" }, card.name), h("span", { class: "goal-card-note" }, card.goal === "gaming" && gaming ? gaming : card.note)),
     ),
   );
-  const [prompt, headline] = heading("agentv goal", "what's it for, mostly?", ctx.reduced());
+  const [prompt, headline] = heading("agentv goal", "What's it for, mostly?", ctx.reduced());
   const el = h(
     "div",
     { class: "setup-page d3" },
     prompt,
     headline,
-    h("p", { class: "setup-line" }, "this only sets up your first home. you can still use everything."),
+    h("p", { class: "setup-line" }, "It only arranges your home. Everything still works."),
     h("div", { class: "goal-cards" }, ...cards),
   );
-  return { el, first: cards.find((card) => card.dataset.goal === chosen), info: ctx.info.phones.length ? "phone paired" : "" };
+  return { el, first: cards.find((card) => card.dataset.goal === chosen), info: ctx.info.phones.length ? "Phone paired" : "" };
 }

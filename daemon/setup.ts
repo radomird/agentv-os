@@ -14,7 +14,8 @@ import { HOTSPOT_ADDRESS, type HotspotState } from "./hotspot.ts";
 // One screen of setup's order: its id, its place among setup's 12 steps
 // (ADR-071), what the status bar calls that step, and the switch it waits
 // for, when it has one. A step whose switch is off isn't shown, and setup
-// goes past it.
+// goes past it. A name follows the step's number in the bar ("5 of 12 ·
+// location"), so it starts in lower case unless it's a name itself.
 export interface StepEntry {
   step: string;
   n: number;
@@ -35,10 +36,10 @@ export interface StepEntry {
 export const ORDER = [
   { step: "welcome", n: 3, name: "getting ready" },
   { step: "ready", n: 3, name: "getting ready" },
-  { step: "box", n: 4, name: "your box", feature: "boxcheck" },
+  { step: "box", n: 4, name: "your setup", feature: "boxcheck" },
   { step: "country", n: 5, name: "location" },
-  { step: "ai", n: 6, name: "ai" },
-  { step: "people", n: 7, name: "who watches" },
+  { step: "ai", n: 6, name: "AI" },
+  { step: "people", n: 7, name: "who's watching" },
   { step: "goal", n: 8, name: "goal" },
   // 9, apps: the starter pack (track 9) is a group on it, and the servers
   // found (track 10) a page of it, in setup/steps.ts.
@@ -59,8 +60,8 @@ export const STEPS: readonly Step[] = ORDER.map((entry) => entry.step);
 export const PARTS: Partial<Record<Step, string>> = {
   welcome: "1/6 connect",
   ready: "1/6 getting ready",
-  country: "1/6 country",
-  ai: "2/6 ai",
+  country: "1/6 location",
+  ai: "2/6 AI",
   people: "3/6 people",
   goal: "4/6 goal",
   apps: "5/6 apps",
@@ -172,6 +173,11 @@ export class Setup {
     this.order = options.order ?? ORDER;
   }
 
+  // What a person reads for a step: its name in the bar, not its id.
+  private called(step: Step): string {
+    return this.order.find((entry) => entry.step === step)?.name ?? step;
+  }
+
   // The steps shown, in order: every step whose switch, if it has one, is on.
   async steps(): Promise<Step[]> {
     const shown: Step[] = [];
@@ -257,7 +263,7 @@ export class Setup {
     const state = await this.read();
     const open = steps.findIndex((s) => !state.finished[s]);
     const to = steps.indexOf(step as Step);
-    if (open >= 0 && to > open) return { error: `${steps[open]} isn't finished yet` };
+    if (open >= 0 && to > open) return { error: `Finish ${this.called(steps[open])} first` };
     state.step = step as Step;
     return { state: await this.save(state) };
   }
@@ -270,8 +276,8 @@ export class Setup {
     const state = await this.read();
     const at = steps.indexOf(step as Step);
     const open = steps.findIndex((s) => !state.finished[s]);
-    if (open >= 0 && at > open) return { error: `${steps[open]} isn't finished yet` };
-    if (step === "goal" && !state.goal) return { error: "pick what the tv is for first" };
+    if (open >= 0 && at > open) return { error: `Finish ${this.called(steps[open])} first` };
+    if (step === "goal" && !state.goal) return { error: "Pick what your TV is for first" };
     state.finished[step as Step] = now();
     if (step === "welcome" && typeof change.keyboard === "boolean") state.keyboard = change.keyboard;
     state.step = steps[Math.min(at + 1, steps.length - 1)];
@@ -305,10 +311,10 @@ export class Setup {
   // twice are kept once.
   async wish(text: unknown): Promise<{ state?: SetupState; error?: string }> {
     const words = typeof text === "string" ? text.trim().replace(/\s+/g, " ") : "";
-    if (!WISH.test(words)) return { error: "a few words, up to 80 letters, for the app to add" };
+    if (!WISH.test(words)) return { error: "Use a few words, up to 80 letters" };
     const state = await this.read();
     if (!state.wishes.some((w) => w.toLowerCase() === words.toLowerCase())) {
-      if (state.wishes.length >= WISHES) return { error: `that's ${WISHES} for later already` };
+      if (state.wishes.length >= WISHES) return { error: `That's ${WISHES} saved already` };
       state.wishes.push(words);
     }
     return { state: await this.save(state) };
