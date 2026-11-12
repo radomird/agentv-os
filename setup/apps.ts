@@ -82,7 +82,7 @@ export async function apps(ctx: Ctx): Promise<View> {
   // before it, with Ask's sparkle where an app has its letter.
   const add = h(
     "button",
-    { class: "app-pick app-add", "data-focus": true, "data-action": "add", onclick: () => ctx.open("apps/add") },
+    { class: "app-add", "data-focus": true, "data-action": "add", onclick: () => ctx.open("apps/add") },
     h("span", { class: "app-face avatar-green" }, glyph("spark", 40)),
     h("span", { class: "app-text" }, h("span", { class: "app-ask" }, "Can't find it?"), h("span", { class: "app-name" }, "Build your own")),
   );
@@ -215,7 +215,7 @@ export async function apps(ctx: Ctx): Promise<View> {
   const picked = packed && goal === "streaming" && pack().some((app) => ticked.has(app.id) || app.installed || app.state);
   return {
     el,
-    first: picked ? go : (el.querySelector<HTMLElement>(".app-pick") ?? add),
+    first: picked ? go : (el.querySelector<HTMLElement>(".app-group:not(.hidden) .app-pick") ?? add),
     heard(event, data) {
       if (event !== "setup-apps") return;
       ctx.installs = data as Installs;

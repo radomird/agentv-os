@@ -643,7 +643,11 @@
   gap: 24px;
 }
 
-.app-pick {
+/* An app's tile, and "Can't find it? Build your own" (design page D11): the
+   last tile of the grid, the same shape as the apps before it, with Ask's
+   sparkle where an app has its letter. */
+.app-pick,
+.app-add {
   display: flex;
   align-items: center;
   gap: 24px;
@@ -656,9 +660,7 @@
   color: var(--bright-foreground);
 }
 
-/* "Can't find it? Build your own" (design page D11): the last tile of the
-   grid, the same shape as the apps before it, with Ask's sparkle where an
-   app has its letter. The question is the small line, over the name. */
+/* The question is the small line, over the name. */
 .app-add .app-name {
   font-size: 32px;
   line-height: 1.1;
@@ -670,7 +672,8 @@
   color: var(--foreground);
 }
 
-.app-pick.focused {
+.app-pick.focused,
+.app-add.focused {
   border-color: var(--accent);
 }
 
@@ -739,7 +742,8 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
-.apps-page.pack .app-pick {
+.apps-page.pack .app-pick,
+.apps-page.pack .app-add {
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-areas: "face mark" "text text";
