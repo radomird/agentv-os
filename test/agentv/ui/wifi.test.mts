@@ -309,13 +309,16 @@ for (const look of LOOKS) {
     await page.waitForSelector('.wifi-join input[type="text"].focused');
     assert.equal(await text(page, ".wifi-join .headline"), words(look, "Another network"));
     assert.equal(await page.locator(".wifi-join input").evaluateAll((inputs) => inputs.map((i) => i.getAttribute("placeholder")).join("|")), `${words(look, "Network name")}|${words(look, "Password")}`);
-    await page.keyboard.type("attic");
+    // Its name has "$&" in it, which means something to a replacement and
+    // is only a name here.
+    await page.keyboard.type("attic $&");
     await page.keyboard.press("Tab");
     await pick(page, '.wifi-join input[type="password"]');
     await page.keyboard.type("upstairs1");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => /attic$/.test(document.querySelector('[data-line="online"]')?.textContent ?? ""));
-    assert.deepEqual(await joinAsked("attic"), { join: { ssid: "attic", password: "upstairs1", hidden: true } });
+    await page.waitForFunction((want) => document.querySelector(".wifi-join .headline")?.textContent === want, `${words(look, "Joining")} attic $&…`);
+    await page.waitForFunction(() => (document.querySelector('[data-line="online"]')?.textContent ?? "").endsWith("attic $&"));
+    assert.deepEqual(await joinAsked("attic $&"), { join: { ssid: "attic $&", password: "upstairs1", hidden: true } });
     await page.close();
   });
 
