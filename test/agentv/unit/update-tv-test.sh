@@ -300,7 +300,7 @@ progress="$AGENTV_UPDATE_STATE/progress.json"
 grep -q "^Running migration" "$AGENTV_UPDATE_STATE/update.log" || fail "the update's output is kept"
 [[ $(jq -c '[.snapshot, .from.agentv, .widevine]' "$AGENTV_UPDATE_STATE/go-back.json") == '[3,"0.2.1-1",false]' ]] ||
   fail "S2.14 Go back returns to the first snapshot the update took" "$(cat "$AGENTV_UPDATE_STATE/go-back.json")"
-[[ $(jq -c '[.checks[0].name, .checks[0].ok]' "$AGENTV_UPDATE_STATE/after.json") == '["daemon",false]' ]] ||
+[[ $(jq -c '[.checks[0].name, .checks[0].ok]' "$AGENTV_UPDATE_STATE/after.json") == '["AgenTV",false]' ]] ||
   fail "S2.14 the check runs after the update" "$(cat "$AGENTV_UPDATE_STATE/after.json" 2>&1)"
 [[ $(jq -r '.agentv.available' "$status") == "null" ]] || fail "the check runs again after" "$(cat "$status")"
 ! grep -q reboot "$calls" || fail "no restart without a new kernel" "$(cat "$calls")"

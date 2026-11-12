@@ -1938,7 +1938,8 @@ export class Screen {
     try {
       return await this.sound.handle(request);
     } catch (error) {
-      return { ok: false, error: (error as Error).message };
+      this.log(`sound: ${(error as Error).message}`);
+      return { ok: false, error: "Couldn't change the sound" };
     }
   }
 

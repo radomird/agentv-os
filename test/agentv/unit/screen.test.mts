@@ -1039,7 +1039,7 @@ test("S2.19 Settings → Sound and agentv screen audio reach the box's sound out
   const { screen } = await tv({ sound });
   assert.deepEqual(await screen.fromHome({ cmd: "audio", volume: 0.6 }), { ok: true, output: "hdmi", volume: 0.6 });
   assert.deepEqual(await screen.handle({ cmd: "audio", output: "analog" }), { ok: true, output: "hdmi", volume: 1 });
-  assert.deepEqual(await screen.handle({ cmd: "audio", volume: 2 }), { ok: false, error: "pactl set-sink-volume: no such sink" });
+  assert.deepEqual(await screen.handle({ cmd: "audio", volume: 2 }), { ok: false, error: "Couldn't change the sound" });
   assert.deepEqual(asked.map((r) => r.volume ?? r.output), [0.6, "analog", 2]);
   const { screen: none } = await tv();
   assert.deepEqual(await none.fromHome({ cmd: "audio" }), { ok: false, error: "Sound isn't available" });
