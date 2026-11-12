@@ -8,7 +8,7 @@ import { avatar, time } from "../chrome.ts";
 import { icon } from "../icons.ts";
 import { keyHints, sections } from "../parts.ts";
 
-export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | string)[]): HTMLElement {
+export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | string)[], hint = ""): HTMLElement {
   const all = sections(ctx);
   const tab = (key: string) => {
     const section = all.find((one) => one.key === key);
@@ -29,7 +29,7 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
     h(
       "div",
       { class: "bar-right" },
-      note ? h("span", { class: "bar-note" }, note) : null,
+      note ? h("span", { class: "bar-note" }, note) : hint ? h("span", { class: "bar-note bar-hint" }, hint) : null,
       h(
         "button",
         { class: `bar-link bar-icon${mode === "settings" ? " on" : ""}`, "data-focus": true, "data-action": "bar-settings", "aria-label": settings.label, onclick: settings.open },

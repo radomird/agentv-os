@@ -16,9 +16,9 @@ import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
 import { buildNotice, homeBuildTile } from "./build.ts";
 import { openPage } from "./page-app.ts";
-import { bar } from "./parts.ts";
+import { bar, HOLD_HINT } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
-import { currentGrid, lookId, named, preview } from "../looks/looks.ts";
+import { currentGrid, lookId, preview } from "../looks/looks.ts";
 import { showcasePicture } from "../looks/showcase.ts";
 
 export const CLOCK = "agentv.clock";
@@ -53,10 +53,10 @@ export function logo(app: App, big = false): HTMLElement {
 function state(ctx: Ctx, app: App): HTMLElement {
   if (preview()) return h("span", { class: "tile-label" }, app.category);
   const open = ctx.running.get(app.id);
-  if (open?.game) return h("span", { class: "tile-state" }, "running");
-  if (open) return h("span", { class: "tile-state" }, open.paused ? "paused" : "open");
-  if (app.needsSetup) return h("span", { class: "tile-state" }, "set up");
-  if (app.signIn === "needed") return h("span", { class: "tile-state tile-sign-in" }, "sign in");
+  if (open?.game) return h("span", { class: "tile-state" }, "Running");
+  if (open) return h("span", { class: "tile-state" }, open.paused ? "Paused" : "Open");
+  if (app.needsSetup) return h("span", { class: "tile-state" }, "Set up");
+  if (app.signIn === "needed") return h("span", { class: "tile-state tile-sign-in" }, "Sign in");
   return h("span", { class: "tile-label" }, app.category);
 }
 
@@ -66,10 +66,10 @@ export async function quit(ctx: Ctx, app: App): Promise<void> {
   const reply = await screen.quit(app.id);
   if (reply.ok) {
     ctx.sounds.play("confirm");
-    ctx.toast(`${app.name.toLowerCase()} closed`, "ok");
+    ctx.toast(`${app.name} closed`, "ok");
   } else {
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? `${app.name} didn't close`, "fail");
+    ctx.toast(reply.error ?? `Couldn't close ${app.name}`, "fail");
   }
 }
 
@@ -78,7 +78,7 @@ export async function quit(ctx: Ctx, app: App): Promise<void> {
 function progressBar(progress: number): HTMLElement {
   const done = h("span", { class: "entry-progress-done" });
   done.style.width = `${(progress * 100).toFixed(1)}%`;
-  return h("span", { class: "entry-progress", role: "img", "aria-label": `watched ${Math.round(progress * 100)} percent` }, done);
+  return h("span", { class: "entry-progress", role: "img", "aria-label": `Watched ${Math.round(progress * 100)} percent` }, done);
 }
 
 function entry(app: App, item: TileEntry, size: Placed["size"], at: number): HTMLElement {
@@ -86,7 +86,9 @@ function entry(app: App, item: TileEntry, size: Placed["size"], at: number): HTM
   const progress = typeof item.progress === "number" ? Math.max(0, Math.min(1, item.progress)) : null;
   return h(
     "div",
-    { class: `entry${icon ? " entry-icon" : ""}${item.item ? " entry-item" : ""}`, "data-entry": item.item ? at : undefined },
+    // An app's own words keep their capitals in every look. AgenTV's own
+    // apps are written like the rest of the TV, so Terminal lowers them.
+    { class: `entry${icon ? " entry-icon" : ""}${item.item ? " entry-item" : ""}`, "data-entry": item.item ? at : undefined, "data-own-case": app.tier !== "built-in" },
     item.label ? h("span", { class: "entry-label" }, item.label) : null,
     item.image ? h("img", { src: daemon.image(app.id, item.image), alt: item.label ?? "" }) : null,
     icon,
@@ -103,13 +105,14 @@ function entry(app: App, item: TileEntry, size: Placed["size"], at: number): HTM
 }
 
 // The row along a tile's top once it shows content: the app's name, and on
-// the right what the content is of, such as the weather's city.
+// the right what the content is of, such as the weather's city. That's the
+// app's own words, as its entries are.
 function head(app: App, right: string): HTMLElement {
   return h(
     "div",
     { class: "tile-head" },
-    h("span", { class: `tile-head-name ink-${app.tier === "built-in" ? 4 : tint(app.id)}` }, named(app.name)),
-    right ? h("span", { class: "tile-head-label" }, right) : null,
+    h("span", { class: `tile-head-name ink-${app.tier === "built-in" ? 4 : tint(app.id)}` }, app.name),
+    right ? h("span", { class: "tile-head-label", "data-own-case": app.tier !== "built-in" }, right) : null,
   );
 }
 
@@ -132,7 +135,7 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
     headline && (headline.value || headline.caption || icon)
       ? h(
           "div",
-          { class: "tile-now" },
+          { class: "tile-now", "data-own-case": app.tier !== "built-in" },
           icon,
           h(
             "span",
@@ -168,7 +171,7 @@ export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: 
 // New this week's credit: TMDB's and JustWatch's, or, for the open movies
 // a look's preview stands in with, Blender Studio's (looks/showcase.ts).
 function credit(app: App, entries: TileEntry[]): string {
-  return entries.some((entry) => entry.image && showcasePicture(app.id, entry.image, preview() !== null)) ? "open movies by blender studio · cc by" : "from tmdb · where to watch from justwatch";
+  return entries.some((entry) => entry.image && showcasePicture(app.id, entry.image, preview() !== null)) ? "Open movies by Blender Studio · CC BY" : "From TMDB · where to watch from JustWatch";
 }
 
 // Clock's tile: the time, kept ticking here, with the date on the small
@@ -177,10 +180,10 @@ function credit(app: App, entries: TileEntry[]): string {
 export function drawClock(el: HTMLElement, app: App, size: Placed["size"], place = ""): void {
   const draw = () => {
     const date = new Date();
-    const short = date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "").toLowerCase();
+    const short = date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
     const time = h("span", { class: "clock-time" }, clock(date));
-    const day = h("span", { class: "clock-day" }, date.toLocaleDateString("en-GB", { weekday: "long" }).toLowerCase());
-    const full = h("span", { class: "clock-date" }, date.toLocaleDateString("en-GB", { day: "numeric", month: "long" }).toLowerCase());
+    const day = h("span", { class: "clock-day" }, date.toLocaleDateString("en-GB", { weekday: "long" }));
+    const full = h("span", { class: "clock-date" }, date.toLocaleDateString("en-GB", { day: "numeric", month: "long" }));
     replaceKeeping(
       el,
       head(app, size === "s" ? short : place),
@@ -214,7 +217,7 @@ async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promi
   el.classList.add("has-content", "music-tile");
   replaceKeeping(
     el,
-    head(app, now ? (now.playing ? "now playing" : "paused") : "played last"),
+    head(app, now ? (now.playing ? "Now playing" : "Paused") : "Last played"),
     h(
       "div",
       { class: "tile-content" },
@@ -226,8 +229,8 @@ async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promi
             h(
               "span",
               { class: "tile-now-text" },
-              h("span", { class: "music-title" }, now.title.toLowerCase()),
-              h("span", { class: "headline-caption" }, `${now.artist.toLowerCase()} · ${now.album.toLowerCase()}`),
+              h("span", { class: "music-title" }, now.title),
+              h("span", { class: "headline-caption" }, `${now.artist} · ${now.album}`),
               now.duration > 0 ? progressBar(now.position / now.duration) : null,
             ),
           )
@@ -236,7 +239,7 @@ async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promi
         ? h(
             "div",
             { class: `entries entries-${Math.min(4, recent.length)}` },
-            ...recent.slice(0, 4).map((album) => h("div", { class: "entry" }, art(album.id), h("span", { class: "entry-label" }, album.title.toLowerCase()))),
+            ...recent.slice(0, 4).map((album) => h("div", { class: "entry" }, art(album.id), h("span", { class: "entry-label" }, album.title))),
           )
         : null,
     ),
@@ -296,7 +299,7 @@ export async function openEntry(ctx: Ctx, app: App, item: Item): Promise<void> {
     return;
   }
   const reply = await screen.openItem(app.id, item);
-  if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open ${item.title}`, "fail");
+  if (!reply.ok) ctx.toast(reply.error ?? `Couldn't open ${item.title}`, "fail");
 }
 
 // Opens an app from its tile, in every look: a built-in here, a page app in
@@ -318,11 +321,11 @@ export async function openApp(ctx: Ctx, app: App): Promise<void> {
   }
   if (app.signIn === "needed") {
     const reply = await screen.signIn(app.id);
-    if (!reply.ok) ctx.toast(reply.error ?? `${app.name} can't sign in from here`, "fail");
+    if (!reply.ok) ctx.toast(reply.error ?? `Couldn't sign in to ${app.name}`, "fail");
     return;
   }
   const reply = await screen.open(app.id);
-  if (!reply.ok) ctx.toast(reply.error ?? `${app.name} didn't open`, "fail");
+  if (!reply.ok) ctx.toast(reply.error ?? `Couldn't open ${app.name}`, "fail");
 }
 
 function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElement {
@@ -349,7 +352,7 @@ function appTile(ctx: Ctx, app: App, placed: Placed, editing: boolean): HTMLElem
           },
     },
     h("div", { class: "tile-top" }, logo(app), editing ? state({ ...ctx, running: new Map() }, app) : state(ctx, app)),
-    h("div", { class: "tile-body" }, h("span", { class: "tile-name" }, named(app.name))),
+    h("div", { class: "tile-body" }, h("span", { class: "tile-name" }, app.name)),
   );
   void fill(el, app, placed);
   return el;
@@ -360,7 +363,7 @@ function appsTile(ctx: Ctx, count: number, editing: boolean): HTMLElement {
     "button",
     { class: "tile tile-apps size-s", "data-focus": true, "data-id": ctx.state.appsTile, onclick: editing ? undefined : () => ctx.go("apps") },
     h("div", { class: "tile-top" }, h("span", { class: "tile-count" }, count === 1 ? "1 installed" : `${count} installed`)),
-    h("span", { class: "tile-name" }, "all apps →"),
+    h("span", { class: "tile-name" }, "All apps"),
   );
 }
 
@@ -398,9 +401,9 @@ export function home(ctx: Ctx): View {
   // A new release says so in the bar (ADR-025, board 31), until Later, and
   // a build that's going or waiting says so after it.
   const next = release(ctx.updates);
-  const update = !next ? "" : tonight(ctx.updates) ? `agentv ${next} installs tonight` : later(ctx.updates) ? "" : `agentv ${next} is ready · settings → updates`;
+  const update = !next ? "" : tonight(ctx.updates) ? `AgenTV ${next} installs tonight` : later(ctx.updates) ? "" : `AgenTV ${next} is ready, in Settings`;
   const notice = update || buildNotice();
-  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice));
+  const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice, undefined, HOLD_HINT));
   return {
     el,
     first: grid.querySelector<HTMLElement>("[data-focus]") ?? undefined,

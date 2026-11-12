@@ -4,7 +4,7 @@
 // Its address is /?preview&look=<id>&size=<size>&theme=<name>.
 
 import { h } from "../dom.ts";
-import { CANVAS, named, type LookId, type LookInfo, type SizeId } from "./looks.ts";
+import { CANVAS, type LookId, type LookInfo, type SizeId } from "./looks.ts";
 
 export function previewAddress(look: LookId, size: SizeId, theme?: string | null): string {
   const params = new URLSearchParams({ look, size });
@@ -39,7 +39,7 @@ export function lookCards(looks: LookInfo[], current: string | null, size: SizeI
       "button",
       { class: `look-card${look.id === current ? " picked" : ""}`, "data-focus": true, "data-action": `look-${look.id}`, "data-look": look.id, onclick: () => pick(look) },
       previewFrame(look.id, size, width, theme),
-      h("span", { class: "look-card-name" }, named(look.name)),
+      h("span", { class: "look-card-name" }, look.name),
     ),
   );
 }

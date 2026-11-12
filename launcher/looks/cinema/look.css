@@ -525,6 +525,11 @@ body.with-backdrop {
   font-weight: 700;
 }
 
+/* The "# " before a section's name is Terminal's. */
+.section-hash {
+  display: none;
+}
+
 .empty {
   color: var(--foreground);
 }
