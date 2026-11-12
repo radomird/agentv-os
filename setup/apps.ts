@@ -174,10 +174,10 @@ export async function apps(ctx: Ctx): Promise<View> {
   const next = async () => {
     const wanted = [...ticked].filter((id) => listed().some((app) => app.id === id && !app.installed && !app.state));
     if (wanted.length) {
-      const grant = await ctx.grant("installing apps");
-      if (grant === null) return;
       try {
-        ctx.installs = await setup.install(wanted, grant || undefined);
+        const asked = await ctx.guarded("installing apps", (grant) => setup.install(wanted, grant));
+        if (!asked) return;
+        ctx.installs = asked.value;
       } catch (error) {
         ctx.toast((error as Error).message, "fail");
         ctx.sounds.play("failure");

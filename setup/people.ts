@@ -113,10 +113,8 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
       }
       return;
     }
-    const grant = await ctx.grant("removing the PIN");
-    if (grant === null) return;
     try {
-      await daemon.removePin(grant);
+      if (!(await ctx.guarded("removing the PIN", (grant) => daemon.removePin(grant)))) return;
     } catch (error) {
       return failed(ctx, error);
     }
@@ -209,11 +207,8 @@ export async function person(ctx: Ctx, id: string): Promise<View> {
       const why = change.role === "child" ? "A child's profile needs one. 4 digits." : "A locked profile needs one. 4 digits.";
       if (!(await choosePin(ctx, why))) return;
     }
-    const grant = await ctx.grant("changing profiles");
-    if (grant === null) return;
     try {
-      if (fresh) await daemon.addViewer(change, grant || undefined);
-      else await daemon.editViewer(id, change, grant || undefined);
+      if (!(await ctx.guarded("changing profiles", (grant) => (fresh ? daemon.addViewer(change, grant) : daemon.editViewer(id, change, grant))))) return;
     } catch (error) {
       return failed(ctx, error);
     }
@@ -222,10 +217,8 @@ export async function person(ctx: Ctx, id: string): Promise<View> {
     ctx.back();
   };
   const remove = async () => {
-    const grant = await ctx.grant("changing profiles");
-    if (grant === null) return;
     try {
-      await daemon.removeViewer(id, grant || undefined);
+      if (!(await ctx.guarded("changing profiles", (grant) => daemon.removeViewer(id, grant)))) return;
     } catch (error) {
       return failed(ctx, error);
     }

@@ -11,6 +11,7 @@ import { h } from "../launcher/dom.ts";
 import { previewFrame } from "../launcher/looks/preview.ts";
 import type { LookId, LookInfo, SizeId } from "../launcher/looks/looks.ts";
 import { loadSizes, setSize, SIZE_NAMES } from "../launcher/size.ts";
+import { NEEDS_PIN } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
@@ -24,10 +25,15 @@ export async function look(ctx: Ctx): Promise<View> {
   let current = found.look ?? "terminal";
   const looks = (found.looks ?? []).filter((one): one is LookInfo => ["terminal", "glass", "cinema"].includes(one.id as LookId));
   const pick = async (one: LookInfo) => {
-    const grant = await ctx.grant("the look");
-    if (grant === null) return;
-    const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ look: one.id }) }).catch(() => null);
-    if (!response?.ok) {
+    const put = await ctx
+      .guarded("the look", async (grant) => {
+        const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ look: one.id }) }).catch(() => null);
+        if (response?.status === 403 && ((await response.json().catch(() => null)) as { pin?: boolean } | null)?.pin) throw new Error(NEEDS_PIN);
+        return Boolean(response?.ok);
+      })
+      .catch(() => ({ value: false }));
+    if (!put) return;
+    if (!put.value) {
       ctx.sounds.play("failure");
       ctx.toast(`Couldn't use ${one.name}`, "fail");
       return;
@@ -82,9 +88,15 @@ export async function look(ctx: Ctx): Promise<View> {
       ctx.sounds.play("confirm");
       return;
     }
-    const grant = await ctx.grant("the size");
-    if (grant === null) return;
-    const set = await setSize(one, grant || undefined);
+    const asked = await ctx
+      .guarded("the size", async (grant) => {
+        const answer = await setSize(one, grant);
+        if (answer.error?.toLowerCase() === NEEDS_PIN) throw new Error(NEEDS_PIN);
+        return answer;
+      })
+      .catch((error: Error) => ({ value: { error: error.message } as Awaited<ReturnType<typeof setSize>> }));
+    if (!asked) return;
+    const set = asked.value;
     if (!set.state) {
       ctx.sounds.play("failure");
       ctx.toast(set.error ?? `Couldn't use ${SIZE_NAMES[one]}`, "fail");

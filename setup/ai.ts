@@ -46,9 +46,8 @@ export function again(ctx: Ctx): boolean {
       ctx.open("ai", "back");
       return;
     }
-    const grant = await ctx.grant("your AI");
-    if (grant === null) return;
-    await setup.choose(null, undefined, grant || undefined).then(() => ctx.open("ai", "back"), () => {});
+    const done = await ctx.guarded("your AI", (grant) => setup.choose(null, undefined, grant)).catch(() => null);
+    if (done) ctx.open("ai", "back");
   })();
   return true;
 }
@@ -79,10 +78,10 @@ function pick(ctx: Ctx): View {
 export function path(ctx: Ctx, provider: Provider): View {
   const offer = ctx.ai!.offers[provider];
   const choose = async (how: Path) => {
-    const grant = await ctx.grant("your AI");
-    if (grant === null) return;
     try {
-      ctx.ai = await setup.choose(provider, how, grant || undefined);
+      const chosen = await ctx.guarded("your AI", (grant) => setup.choose(provider, how, grant));
+      if (!chosen) return;
+      ctx.ai = chosen.value;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
@@ -179,18 +178,18 @@ export function key(ctx: Ctx, ai: AiInfo): View {
     // Enter reaches this twice, from the field and from the button.
     if (!field.value || asking) return;
     // Keeping a key is past the PIN, once there is one, as picking the
-    // provider is. The key stays in the field if the PIN isn't given.
+    // provider is. The key stays in the field until the TV has it: if the
+    // PIN isn't given, or the TV wouldn't keep it, it's still there.
     asking = true;
-    const grant = await ctx.grant("your AI").finally(() => (asking = false));
-    if (grant === null || !field.value) return;
     const typed = field.value;
-    field.value = "";
     try {
-      await setup.key(ai.provider!, typed, grant || undefined);
+      const kept = await ctx.guarded("your AI", (grant) => setup.key(ai.provider!, typed, grant));
+      if (kept && field.value === typed) field.value = "";
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
-      return;
+    } finally {
+      asking = false;
     }
   };
   field.addEventListener("keydown", (event) => {

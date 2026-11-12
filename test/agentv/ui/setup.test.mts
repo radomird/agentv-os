@@ -837,6 +837,26 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   await page.waitForSelector(".people");
   await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
   assert.equal(await page.locator(".pin-pad").count(), 0);
+
+  // The TV ends every grant, as when it has been off for a while, and setup
+  // doesn't know. The next change asks for the PIN again and goes through.
+  // It used to be refused with no pad, on every try.
+  assert.equal((await post("/api/pin/lock", { reason: "tv-off" })).status, 200);
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".pin-pad");
+  assert.equal(await page.locator(".toast.fail").count(), 0);
+  await page.keyboard.type("2468");
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 1);
+  await page.locator(".person[data-viewer]").first().click();
+  await page.waitForSelector('[data-action="lock"]');
+  await page.locator('[data-action="lock"]').click();
+  await page.locator('[data-action="save"]').click();
+  await page.waitForSelector(".people");
+  await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 0);
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".goals");
   await page.close();
