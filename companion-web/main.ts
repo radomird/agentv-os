@@ -23,7 +23,7 @@ import { buildBanner, buildNotices, buildPage, exportBanner, type Offer, type Ph
 import { feelOn, listen as listenFeel, setFeel } from "./feel.ts";
 import { pair as pairWith } from "./channel.ts";
 import { api, avatar, h, paired, prompt, toast, Unpaired, type Viewer } from "./lib.ts";
-import { askPin, pinIs, withPin, withPinWords } from "./pad.ts";
+import { askPin, withPin } from "./pad.ts";
 import { photoPage } from "./photo.ts";
 import { Remote2 } from "./remote2.ts";
 import { sayAnswer, sayBox, type Said } from "./say.ts";
@@ -113,10 +113,10 @@ const shown = (version: string) => version.replace(/\.r\d+\.g[0-9a-f]+/, "").rep
 // What the phone is called on the TV's list.
 function phoneName(): string {
   const agent = navigator.userAgent;
-  if (/iPhone/.test(agent)) return "iphone";
-  if (/iPad/.test(agent)) return "ipad";
-  if (/Android/.test(agent)) return "android phone";
-  return "phone";
+  if (/iPhone/.test(agent)) return "iPhone";
+  if (/iPad/.test(agent)) return "iPad";
+  if (/Android/.test(agent)) return "Android phone";
+  return "Phone";
 }
 
 // The new remote (remote2.ts), drawn when its switch is on.
@@ -139,7 +139,7 @@ const failed = (error: unknown) => {
     pairView();
     return;
   }
-  toast(`${(error as Error).message}.`);
+  toast((error as Error).message);
 };
 
 // --- Pairing ------------------------------------------------------------------
@@ -153,13 +153,13 @@ async function pair(how: { secret: string } | { code: string }): Promise<boolean
     void api("POST", "/api/phone/zone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
     return true;
   } catch (error) {
-    toast(`${(error as Error).message}.`);
+    toast((error as Error).message);
     return false;
   }
 }
 
 function pairView(): void {
-  const field = h("input", { class: "field code", type: "text", autocapitalize: "characters", autocomplete: "one-time-code", maxlength: "7", placeholder: "ABC123", "aria-label": "the code on the tv" }) as HTMLInputElement;
+  const field = h("input", { class: "field code", type: "text", autocapitalize: "characters", autocomplete: "one-time-code", maxlength: "7", placeholder: "ABC123", "aria-label": "The code from your TV" }) as HTMLInputElement;
   const go = async () => {
     if (await pair({ code: field.value })) void start();
   };
@@ -172,10 +172,10 @@ function pairView(): void {
       { class: "page" },
       h("div", { class: "pair-icons" }, glyph("phone", 40), glyph("right", 24), glyph("tv", 40)),
       prompt("tv pair"),
-      h("h1", {}, "pair with the tv"),
-      h("p", { class: "note" }, "type the code on the tv. it's in settings → phones → pair a phone."),
+      h("h1", {}, "Pair with your TV"),
+      h("p", { class: "note" }, "Type the code from your TV"),
       field,
-      h("button", { class: "button primary", type: "button", onclick: () => void go() }, "pair"),
+      h("button", { class: "button primary", type: "button", onclick: () => void go() }, "Pair"),
     ),
   );
 }
@@ -204,7 +204,7 @@ function iconButton(icon: Glyph, label: string, props: Record<string, unknown>, 
   return h("button", { type: "button", ...props }, glyph(icon, size), label ? h("span", {}, label) : null);
 }
 
-function key(name: string, icon: Glyph | null, label: string, extra = "", aria = name): HTMLButtonElement {
+function key(name: string, icon: Glyph | null, label: string, extra = "", aria = name.replace(/^./, (first) => first.toUpperCase())): HTMLButtonElement {
   return icon
     ? iconButton(icon, label, { class: `pad-key ${extra}`, "aria-label": aria, "data-key": name, onclick: () => void send({ key: name }) }, label ? 24 : 36)
     : h("button", { class: `pad-key ${extra}`, type: "button", "aria-label": aria, "data-key": name, onclick: () => void send({ key: name }) }, label);
@@ -216,7 +216,7 @@ function settingsKey(): HTMLButtonElement | null {
   if (state?.viewer.role !== "adult") return null;
   return iconButton("settings", "", {
     class: "pad-key wide",
-    "aria-label": "settings",
+    "aria-label": "Settings",
     "data-action": "settings",
     onclick: () => void api("POST", "/api/phone/settings").catch(failed),
   }, 28);
@@ -232,11 +232,11 @@ function feelSwitch(): HTMLElement {
       "data-action": "feel",
       onclick: () => {
         setFeel(!feelOn());
-        button.querySelector(".feel-value")!.textContent = feelOn() ? "on" : "off";
+        button.querySelector(".feel-value")!.textContent = feelOn() ? "On" : "Off";
       },
     },
-    h("span", {}, "click and buzz on each press"),
-    h("span", { class: "feel-value" }, feelOn() ? "on" : "off"),
+    h("span", {}, "Click and buzz on each press"),
+    h("span", { class: "feel-value" }, feelOn() ? "On" : "Off"),
   );
   return button;
 }
@@ -259,13 +259,13 @@ function remote(): HTMLElement {
       key("up", "up", ""),
       h("span", {}),
       key("left", "left", ""),
-      key("enter", null, "ok", "ok"),
+      key("enter", null, "OK", "ok", "OK"),
       key("right", "right", ""),
       h("span", {}),
       key("down", "down", ""),
       h("span", {}),
     ),
-    h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), key("playpause", "play-pause", "", "wide", "play or pause"), settingsKey()),
+    h("div", { class: "row" }, key("back", "back", "Back", "wide"), key("home", "home", "Home", "wide"), key("playpause", "play-pause", "", "wide", "Play or pause"), settingsKey()),
     feelSwitch(),
   );
 }
@@ -276,9 +276,9 @@ function playback(): HTMLElement {
     "div",
     { class: "remote" },
     asking(),
-    h("p", { class: "label" }, "playing on the tv"),
-    h("div", { class: "row play" }, key("playpause", "play-pause", "", "big", "play or pause"), key("next", "next", "", "big", "next")),
-    h("div", { class: "row" }, key("back", "back", "back", "wide"), key("home", "home", "home", "wide"), settingsKey()),
+    h("p", { class: "label" }, "Playing on your TV"),
+    h("div", { class: "row play" }, key("playpause", "play-pause", "", "big", "Play or pause"), key("next", "next", "", "big", "Next")),
+    h("div", { class: "row" }, key("back", "back", "Back", "wide"), key("home", "home", "Home", "wide"), settingsKey()),
     feelSwitch(),
   );
 }
@@ -286,7 +286,7 @@ function playback(): HTMLElement {
 // Omarchy's desktop (ADR-008): drag to move the pointer, tap to click, and
 // buttons for a right click and scrolling.
 function trackpad(): HTMLElement {
-  const area = h("div", { class: "trackpad", role: "application", "aria-label": "trackpad", "data-action": "trackpad" });
+  const area = h("div", { class: "trackpad", role: "application", "aria-label": "Trackpad", "data-action": "trackpad" });
   let last: { x: number; y: number } | null = null;
   let travelled = 0;
   let downAt = 0;
@@ -329,8 +329,8 @@ function trackpad(): HTMLElement {
     "div",
     { class: "remote" },
     area,
-    h("div", { class: "row" }, button("click", "click", { click: "left" }), button("right click", "right-click", { click: "right" })),
-    h("div", { class: "row" }, button("scroll up", "scroll-up", { scroll: 3 }), button("scroll down", "scroll-down", { scroll: -3 })),
+    h("div", { class: "row" }, button("Click", "click", { click: "left" }), button("Right click", "right-click", { click: "right" })),
+    h("div", { class: "row" }, button("Scroll up", "scroll-up", { scroll: 3 }), button("Scroll down", "scroll-down", { scroll: -3 })),
   );
 }
 
@@ -340,20 +340,20 @@ function trackpad(): HTMLElement {
 function tvPad(pin: NonNullable<Tv["pin"]>): HTMLElement {
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "delete", "0", "ok"];
   const boxes = Array.from({ length: 4 }, (_, i) => h("span", { class: `pin-box${i < pin.digits ? " filled" : ""}` }));
-  const note = h("p", { class: `note${pin.error ? " bad" : ""}` }, pin.error ? `${pin.error}.` : pin.for);
+  const note = h("p", { class: `note${pin.error ? " bad" : ""}` }, pin.error || pin.for);
   const press = (k: string) => {
     if (k === "delete") void send({ key: "backspace" });
     // The TV's pad checks the PIN at its fourth digit; OK only says so.
     else if (k === "ok") {
       if (pin.digits < 4) {
-        note.textContent = "4 digits.";
+        note.textContent = "4 digits";
         note.classList.add("bad");
       }
     } else void send({ key: k });
   };
   return h(
     "div",
-    { class: "overlay", id: "tv-pin", role: "dialog", "aria-label": "the adult pin, for the tv" },
+    { class: "overlay", id: "tv-pin", role: "dialog", "aria-label": "Adult PIN" },
     h(
       "div",
       { class: "page" },
@@ -366,11 +366,11 @@ function tvPad(pin: NonNullable<Tv["pin"]>): HTMLElement {
         { class: "pin-keys" },
         ...keys.map((k) =>
           k === "delete"
-            ? h("button", { type: "button", class: "pin-key pin-delete", "aria-label": "delete", "data-pin": "delete", onclick: () => press(k) }, glyph("backspace", 28))
-            : h("button", { type: "button", class: `pin-key${k === "ok" ? " pin-ok" : ""}`, "data-pin": k, onclick: () => press(k) }, k),
+            ? h("button", { type: "button", class: "pin-key pin-delete", "aria-label": "Delete", "data-pin": "delete", onclick: () => press(k) }, glyph("backspace", 28))
+            : h("button", { type: "button", class: `pin-key${k === "ok" ? " pin-ok" : ""}`, "data-pin": k, onclick: () => press(k) }, k === "ok" ? "OK" : k),
         ),
       ),
-      h("button", { type: "button", class: "button", "data-action": "back", onclick: () => void send({ key: "back" }) }, "back"),
+      h("button", { type: "button", class: "button", "data-action": "back", onclick: () => void send({ key: "back" }) }, "Back"),
     ),
   );
 }
@@ -383,7 +383,7 @@ function termsPage(ask: Ask): HTMLElement {
     try {
       const done = await withPin("accepting the terms", (grant) => api("POST", "/api/phone/terms", { provider: ask.provider, path: ask.path }, grant));
       if (done === null) return;
-      toast("accepted. the tv carries on.", true);
+      toast("Accepted. Back to your TV.", true);
       await refresh(true);
     } catch (error) {
       failed(error);
@@ -396,23 +396,23 @@ function termsPage(ask: Ask): HTMLElement {
     h("h1", {}, `${ask.name} terms`),
     h("p", { class: "note" }, ask.summary),
     h("ul", { class: "terms" }, ...ask.terms.map((t) => h("li", {}, h("a", { href: t.url, target: "_blank", rel: "noopener noreferrer", "data-terms": t.id }, t.name)))),
-    h("button", { class: "button primary", type: "button", "data-action": "accept", onclick: () => void accept() }, glyph("check", 20), h("span", {}, "i accept")),
-    h("p", { class: "note" }, `you accept them as ${state?.viewer.name ?? "an adult"}. the tv keeps who, on which phone, and when.`),
+    h("button", { class: "button primary", type: "button", "data-action": "accept", onclick: () => void accept() }, glyph("check", 20), h("span", {}, "I accept")),
+    h("p", { class: "note" }, `You accept as ${state?.viewer.name ?? "an adult"}. Your TV notes who, when and on which phone.`),
   );
 }
 
 // The key (board 05): pasted here, kept where only root can read it, and
 // never shown again.
 function keyPage(ask: Ask): HTMLElement {
-  const field = h("input", { class: "field", id: "api-key", type: "password", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "paste it here" }) as HTMLInputElement;
+  const field = h("input", { class: "field", id: "api-key", type: "password", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "Paste your key" }) as HTMLInputElement;
   const save = async () => {
     if (!field.value) return;
     const key = field.value;
     field.value = "";
     try {
-      const done = await withPin("the provider key", (grant) => api("POST", "/api/phone/key", { key }, grant));
+      const done = await withPin("saving your key", (grant) => api("POST", "/api/phone/key", { key }, grant));
       if (done === null) return;
-      toast("the key is kept.", true);
+      toast("Key saved", true);
       await refresh(true);
     } catch (error) {
       failed(error);
@@ -425,19 +425,19 @@ function keyPage(ask: Ask): HTMLElement {
   // network isn't; the field takes a long-press paste either way.
   const clipboard = (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
   const paste = window.isSecureContext && clipboard?.readText
-    ? h("button", { class: "button", type: "button", "data-action": "paste", onclick: () => void clipboard.readText().then((text) => (field.value = text.trim()), () => {}) }, "paste")
+    ? h("button", { class: "button", type: "button", "data-action": "paste", onclick: () => void clipboard.readText().then((text) => (field.value = text.trim()), () => {}) }, "Paste")
     : null;
   return h(
     "div",
     { class: "page" },
     prompt("tv setup · ai"),
-    h("h1", {}, `${ask.name} api key`),
-    h("p", { class: "note" }, "stays on your tv. nobody sees it again, not even you."),
-    h("label", { for: "api-key", class: "label" }, "key"),
+    h("h1", {}, `${ask.name} API key`),
+    h("p", { class: "note" }, "It stays on your TV"),
+    h("label", { for: "api-key", class: "label" }, "Key"),
     h("div", { class: "key-row" }, field, paste),
-    h("a", { href: ask.keyUrl, target: "_blank", rel: "noopener noreferrer", class: "link" }, "get a key →"),
-    h("div", { class: "limits" }, h("b", {}, "ai spending limits"), h("span", {}, "$5 per app it builds, $20 a month. your streaming subscriptions aren't affected.")),
-    h("button", { class: "button primary", type: "button", "data-action": "save-key", onclick: () => void save() }, glyph("lock", 20), h("span", {}, "save key")),
+    h("a", { href: ask.keyUrl, target: "_blank", rel: "noopener noreferrer", class: "link" }, "Get a key"),
+    h("div", { class: "limits" }, h("b", {}, "Spending limits"), h("span", {}, "$5 an app, $20 a month")),
+    h("button", { class: "button primary", type: "button", "data-action": "save-key", onclick: () => void save() }, glyph("lock", 20), h("span", {}, "Save")),
   );
 }
 
@@ -449,20 +449,20 @@ function signIn(name: string): HTMLElement {
   const form = h(
     "form",
     { class: "typing", method: "post", action: "#" },
-    h("p", { class: "label" }, `signing in to ${name.toLowerCase()} on the tv`),
-    h("label", { for: "username", class: "label" }, "email or name"),
+    h("p", { class: "label" }, `Signing in to ${name} on your TV`),
+    h("label", { for: "username", class: "label" }, "Email or name"),
     user,
-    h("label", { for: "password", class: "label" }, "password"),
+    h("label", { for: "password", class: "label" }, "Password"),
     pass,
-    h("button", { class: "button primary", type: "submit", "data-action": "sign-in" }, glyph("lock", 20), h("span", {}, "sign in on the tv")),
-    h("p", { class: "note" }, "your phone's password manager can fill these. agentv never keeps them."),
+    h("button", { class: "button primary", type: "submit", "data-action": "sign-in" }, glyph("lock", 20), h("span", {}, "Sign in")),
+    h("p", { class: "note" }, "Your password manager can fill these. AgenTV never saves them."),
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const body = { username: user.value, password: pass.value };
     pass.value = "";
     void api("POST", "/api/phone/sign-in", body).then(
-      () => toast("sent to the tv.", true),
+      () => toast("Sent", true),
       (error) => failed(error),
     );
   });
@@ -481,7 +481,7 @@ function typing(): HTMLElement {
     autocomplete: kind === "password" ? "current-password" : "off",
     autocapitalize: "off",
     spellcheck: "false",
-    placeholder: kind === "number" ? "type a number" : "type or dictate",
+    placeholder: kind === "number" ? "Type a number" : "Type or dictate",
   }) as HTMLInputElement;
   const go = async () => {
     if (!field.value) return;
@@ -495,16 +495,16 @@ function typing(): HTMLElement {
   return h(
     "div",
     { class: "typing" },
-    h("label", { for: "tv-text", class: "label" }, "typing on tv"),
+    h("label", { for: "tv-text", class: "label" }, "Typing on TV"),
     field,
-    iconButton("tv", "send to tv", { class: "button primary", "data-action": "send", onclick: () => void go() }, 20),
+    iconButton("tv", "Send to TV", { class: "button primary", "data-action": "send", onclick: () => void go() }, 20),
     h(
       "div",
       { class: "row" },
-      iconButton("backspace", "", { class: "pad-key wide", "aria-label": "delete", "data-key": "backspace", onclick: () => void send({ key: "backspace" }) }, 28),
-      iconButton("enter", "", { class: "pad-key wide", "aria-label": "enter", "data-key": "enter", onclick: () => void send({ key: "enter" }) }, 28),
+      iconButton("backspace", "", { class: "pad-key wide", "aria-label": "Delete", "data-key": "backspace", onclick: () => void send({ key: "backspace" }) }, 28),
+      iconButton("enter", "", { class: "pad-key wide", "aria-label": "Enter", "data-key": "enter", onclick: () => void send({ key: "enter" }) }, 28),
     ),
-    h("p", { class: "note with-icon" }, glyph("mic", 16), h("span", {}, "the keyboard's microphone works here too.")),
+    h("p", { class: "note with-icon" }, glyph("mic", 16), h("span", {}, "Your keyboard's microphone works here too")),
   );
 }
 
@@ -524,8 +524,8 @@ function who(): HTMLElement {
   return h(
     "div",
     { class: "typing" },
-    prompt("who watches?"),
-    h("h1", {}, "who's watching?"),
+    prompt("tv who"),
+    h("h1", {}, "Who's watching?"),
     ...(state?.viewers ?? []).map((viewer) =>
       h(
         "button",
@@ -533,11 +533,11 @@ function who(): HTMLElement {
         avatar(viewer),
         h("span", {}, viewer.name),
         viewer.locked ? glyph("lock", 18) : null,
-        h("span", { class: "viewer-role" }, [viewer.role === "child" ? "child" : "", viewer.id === state?.viewer.id ? "watching" : ""].filter(Boolean).join(" · ")),
+        h("span", { class: "viewer-role" }, [viewer.role === "child" ? "Child" : "", viewer.id === state?.viewer.id ? "Watching" : ""].filter(Boolean).join(" · ")),
       ),
     ),
     // With no PIN, a switch needs nothing, so nothing says it does (ADR-087).
-    state?.pin.set ? h("p", { class: "note" }, "from a child's profile to an adult's, or to a locked one, needs the adult pin.") : null,
+    state?.pin.set ? h("p", { class: "note" }, "An adult's or a locked profile needs the PIN") : null,
   );
 }
 
@@ -553,25 +553,25 @@ function updatePage(update: Update): HTMLElement {
       failed(error);
     }
   };
-  const name = update.version === "packages" ? "updates are ready" : `agentv ${shown(update.version)} is ready`;
+  const name = update.version === "packages" ? "Updates are ready" : `AgenTV ${shown(update.version)} is ready`;
   const parts: (HTMLElement | null)[] = [
     prompt("tv updates"),
     h("h1", {}, name),
-    update.omarchy ? h("p", { class: "note" }, `it comes with omarchy ${shown(update.omarchy)}, tested last night.`) : null,
-    update.notes.length ? h("p", { class: "label" }, "what's new") : null,
+    update.omarchy ? h("p", { class: "note" }, `Includes Omarchy ${shown(update.omarchy)}`) : null,
+    update.notes.length ? h("p", { class: "label" }, "What's new") : null,
     update.notes.length ? h("ul", { class: "notes" }, ...update.notes.map((note) => h("li", {}, h("b", {}, "+"), ` ${note}`))) : null,
   ];
   if (update.installing) {
-    parts.push(h("p", { class: "note" }, "it's installing now. the tv shows how it's going."));
+    parts.push(h("p", { class: "note" }, "Installing now. Watch it on your TV."));
   } else {
     parts.push(
-      update.tonight ? h("p", { class: "note" }, "it installs tonight, between 2 and 5.") : null,
+      update.tonight ? h("p", { class: "note" }, "It installs tonight between 2 and 5") : null,
       update.tonight
-        ? h("button", { class: "button", type: "button", "data-action": "not-tonight", onclick: () => void act("", "/api/phone/updates/tonight", { version: null }) }, "not tonight")
-        : iconButton("clock", "install tonight", { class: "button primary", "data-action": "tonight", onclick: () => void act("installing tonight", "/api/phone/updates/tonight", { version: update.version }, true) }, 20),
+        ? h("button", { class: "button", type: "button", "data-action": "not-tonight", onclick: () => void act("", "/api/phone/updates/tonight", { version: null }) }, "Not tonight")
+        : iconButton("clock", "Install tonight", { class: "button primary", "data-action": "tonight", onclick: () => void act("installing tonight", "/api/phone/updates/tonight", { version: update.version }, true) }, 20),
       iconButton(
         "download",
-        withPinWords("install now"),
+        "Install now",
         { class: "button", "data-action": "install", onclick: () => void act("installing the update", "/api/phone/updates/install", undefined, true) },
         20,
       ),
@@ -587,7 +587,7 @@ function updatePage(update: Update): HTMLElement {
               draw();
             }),
         },
-        "later",
+        "Later",
       ),
     );
   }
@@ -609,11 +609,11 @@ function draw(): void {
     "div",
     { class: "tabs" },
     ...([
-      ["remote", "remote", "remote"],
-      ["type", "keyboard", "type"],
-      ["play", "play-pause", "play"],
-      ["mouse", "pointer", "mouse"],
-      ["home", "grid", "home"],
+      ["remote", "remote", "Remote"],
+      ["type", "keyboard", "Type"],
+      ["play", "play-pause", "Play"],
+      ["mouse", "pointer", "Mouse"],
+      ["home", "grid", "Home"],
     ] as const).map(([m, icon, label]) =>
       iconButton(
         icon,
@@ -633,7 +633,7 @@ function draw(): void {
   const banners: HTMLElement[] = [];
   // During TV setup, where the TV is: the remote and the keyboard drive it.
   if (state.setup) {
-    banners.push(h("p", { class: "note with-icon setup-step", "data-setup": state.setup.step }, glyph("tv", 16), h("span", {}, `tv setup · ${state.setup.part}`)));
+    banners.push(h("p", { class: "note with-icon setup-step", "data-setup": state.setup.step }, glyph("tv", 16), h("span", {}, `TV setup · ${state.setup.part}`)));
   }
   // The setup soundtrack, muted from here or playing again (S5.4).
   if (state.setup) {
@@ -652,7 +652,7 @@ function draw(): void {
             ),
         },
         glyph("music", 18),
-        h("span", {}, muted ? "play the setup music ›" : "mute the setup music ›"),
+        h("span", {}, muted ? "Play setup music" : "Mute setup music"),
       ),
     );
   }
@@ -671,7 +671,7 @@ function draw(): void {
           },
         },
         glyph("photo", 18),
-        h("span", {}, "send a photo for the tv's background ›"),
+        h("span", {}, "Send a photo for the background"),
       ),
     );
   }
@@ -684,17 +684,16 @@ function draw(): void {
           class: "banner",
           "data-action": "unlock",
           onclick: () =>
-            void askPin("unlocking the tv").then(async (grant) => {
+            void askPin("unlocking your TV").then(async (grant) => {
               if (grant !== null) await refresh(true);
             }),
         },
         glyph("lock", 18),
-        h("span", {}, "the tv is locked · unlock ›"),
+        h("span", {}, "Unlock your TV"),
       ),
     );
   }
   if (state.update && !state.update.later && mode !== "update") {
-    const label = state.update.version === "packages" ? "updates are ready ›" : `agentv ${shown(state.update.version)} is ready ›`;
     banners.push(
       h(
         "button",
@@ -708,7 +707,7 @@ function draw(): void {
           },
         },
         glyph("download", 18),
-        h("span", {}, label),
+        h("span", {}, "Update ready"),
       ),
     );
   }
@@ -763,7 +762,7 @@ function draw(): void {
             },
           },
           glyph("photo", 18),
-          h("span", {}, "send a photo for the background ›"),
+          h("span", {}, "Send a photo for the background"),
         ),
         // A link, a photo or a video for the TV to open (ADR-050).
         h(
@@ -778,7 +777,7 @@ function draw(): void {
             },
           },
           glyph("tv", 18),
-          h("span", {}, "share a link, a photo or a video ›"),
+          h("span", {}, "Send a link, photo or video"),
         ),
       ),
     );
@@ -842,7 +841,7 @@ function drawAsk(): void {
   if (!ask) return;
   const page = ask.ask === "terms" ? termsPage(ask) : keyPage(ask);
   page.classList.add("ask");
-  document.body.append(h("div", { class: "overlay", id: "tv-ask", role: "dialog", "aria-label": ask.ask === "terms" ? `${ask.name}'s terms` : `the ${ask.name} api key` }, page));
+  document.body.append(h("div", { class: "overlay", id: "tv-ask", role: "dialog", "aria-label": ask.ask === "terms" ? `${ask.name}'s terms` : `${ask.name} API key` }, page));
 }
 
 // Who's watching, the lock, a sign-in, an update and what's on the TV. With
@@ -877,12 +876,11 @@ function took(next: State, before: State | null, force: boolean): void {
   const { version: _then, ...was } = before ?? ({} as State);
   const { version: _now, ...now } = next;
   const changed = JSON.stringify(now) !== JSON.stringify(was);
-  pinIs(next.pin.set);
   // A build that moved on says so here as it does on the TV.
   buildNotices(before?.builds, next.builds);
   // A page app's new notice shows here as it does on the TV.
   const notice = next.notices?.[0];
-  if (before && notice && notice.at !== before.notices?.[0]?.at) toast(`${notice.name.toLowerCase()}: ${notice.text}`, true);
+  if (before && notice && notice.at !== before.notices?.[0]?.at) toast(`${notice.name}: ${notice.text}`, true);
   // The new remote follows the TV from the first state on, and draws again
   // only what changed under a field being typed in.
   if (next.features?.remote2) {
