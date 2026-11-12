@@ -820,10 +820,12 @@ export function settings(ctx: Ctx, open?: string): View {
         void save({ sound: { ...s.sound, volume } }, "sound", "volume");
         return true;
       }
-      // Up and down stay in the panel, or go on to the bar. They never
-      // cross to the list, which would put a page away.
+      // Up and down stay in the panel. They never cross to the list, which
+      // would put a page away. Down on the last row stays there, so one
+      // press too many never skips past it; up from the first goes on to
+      // the bar, in the looks that have it at the top.
       if ((action === "up" || action === "down") && inside) {
-        if (!ctx.focus.move(action, panel)) ctx.focus.move(action, links);
+        if (!ctx.focus.move(action, panel) && action === "up") ctx.focus.move(action, links);
         return true;
       }
       // From the bar back toward Settings, with a page open: into the page,
