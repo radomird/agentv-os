@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# agentv:summary=Check this box for the current stage's NUC checks and say pass or fail for each
+# agentv:summary=Check this TV and say pass or fail for each part
 # agentv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]
 # agentv:examples=agentv selftest | agentv selftest S3 | agentv selftest S2 | agentv selftest S1.5 | agentv selftest S0.2 S0.3 | agentv selftest S7.4 | agentv selftest S8.2 --show "<a show you watch>"
 # agentv:requires-sudo=true
@@ -119,7 +119,40 @@ AGENTV_PATH=${AGENTV_PATH:-/usr/share/agentv}
 OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 
 usage() {
-  echo "Usage: agentv selftest [S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]"
+  cat <<'USAGE'
+Usage: agentv selftest [check…] [--app <id>] [--item <json>] [--show <name>]
+
+With no check it runs them all. S2, S3, S4, S7 and S8 run their whole group.
+  S0.2   the disk, the login and the welcome page
+  S0.3   the Wi-Fi that setup opens
+  S1.1   the TV starts on its own
+  S1.2   protected video
+  S1.5   how smoothly home draws
+  S1.6   a new window stays behind home
+  S1.7   no browser prompts
+  S2.8   whether the TV is on
+  S2.9   keys reach home
+  S2.10  motion on home
+  S2.11  menu sounds
+  S2.15  the Home key
+  S2.16  Home over an app
+  S2.18  restart and shut down
+  S2.19  the volume
+  S3.2   an app opens a title (--app, --item)
+  S3.3   where you got to in a title
+  S3.4   the children's profile in an app (--app)
+  S3.6   music from a drive and a network folder
+  S3.8   the small weather tile
+  S3.9   the larger weather tiles
+  S3.10  continue watching
+  S4.5   the adult PIN
+  S4.6   the API key
+  S7.3   asking the TV
+  S7.4   a Claude plan
+  S7.5   the listening bar
+  S8.1   New this week
+  S8.2   new episodes (--show)
+USAGE
 }
 
 STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)

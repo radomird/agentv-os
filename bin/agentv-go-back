@@ -77,21 +77,22 @@ progress() {
   mv "$STATE/progress.json.new" "$STATE/progress.json"
 }
 
+# fail <what the TV says> [<what the log says>]
 fail() {
-  echo "Couldn't go back: $1." >&2
+  echo "Couldn't go back: ${2:-$1}." >&2
   progress failed 0 "$1"
   unmount_top
   exit 1
 }
 
 snapshot=$(jq -r '.snapshot // empty' <<<"$go")
-[[ $snapshot =~ ^[0-9]+$ && -n $back_agentv ]] || fail "there's no update to go back from"
+[[ $snapshot =~ ^[0-9]+$ && -n $back_agentv ]] || fail "There's no update to go back from"
 # Updated again since, from a terminal: that snapshot is two updates back.
-[[ $now_agentv == "$(jq -r '.to.agentv // empty' <<<"$go")" ]] || fail "the box has been updated again since"
+[[ $now_agentv == "$(jq -r '.to.agentv // empty' <<<"$go")" ]] || fail "A newer update is already installed"
 source="$SNAPSHOTS/$snapshot/snapshot"
-btrfs subvolume show "$source" >/dev/null 2>&1 || fail "the snapshot from before the update is gone"
+btrfs subvolume show "$source" >/dev/null 2>&1 || fail "The backup from before the update is gone"
 if [[ $(findmnt -no FSTYPE /) != "btrfs" ]] || ! findmnt -no OPTIONS / | grep -q "subvol=/@\(,\|$\)"; then
-  fail "this box's disk isn't laid out the way Omarchy installs it"
+  fail "Going back isn't possible on this disk"
 fi
 
 progress going-back 10
@@ -102,11 +103,11 @@ log="$STATE/go-back.log"
 # goes at the restart.
 systemctl mask --runtime --now limine-snapper-sync.service limine-snapper-sync.path >>"$log" 2>&1 || true
 
-mount_top || fail "couldn't reach the disk's subvolumes"
+mount_top || fail "Something went wrong" "couldn't reach the disk's subvolumes"
 delete_old
 next="$TOP/$NEXT"
 [[ -d $next ]] && btrfs subvolume delete --recursive "$next" >>"$log" 2>&1
-btrfs subvolume snapshot "$source" "$next" >>"$log" 2>&1 || fail "couldn't copy the snapshot"
+btrfs subvolume snapshot "$source" "$next" >>"$log" 2>&1 || fail "Something went wrong" "couldn't copy the snapshot"
 progress going-back 40
 
 # What the TV knows after the restart: that it went back, and from where.
@@ -121,9 +122,9 @@ rm -f "$next/var/lib/agentv/update/"{go-back.json,after.json,check-pending,progr
 # The boot files from inside the copy, so its kernel and modules match, as
 # Omarchy's factory reset does.
 esp=$(awk '$3 == "vfat" && $2 ~ /^\/(boot|efi)/ { print $2; exit }' "$next/etc/fstab")
-[[ -n $esp ]] || fail "the snapshot has no boot partition in its fstab"
+[[ -n $esp ]] || fail "Something went wrong" "the snapshot has no boot partition in its fstab"
 mounts=("$next$esp")
-mount --bind "$esp" "$next$esp" >>"$log" 2>&1 || fail "couldn't reach the boot partition"
+mount --bind "$esp" "$next$esp" >>"$log" 2>&1 || fail "Something went wrong" "couldn't reach the boot partition"
 for dir in proc sys dev run; do
   mount --rbind "/$dir" "$next/$dir" >>"$log" 2>&1 && mount --make-rslave "$next/$dir" >>"$log" 2>&1
   mounts+=("$next/$dir")
@@ -133,16 +134,16 @@ built=$?
 for (( i = ${#mounts[@]} - 1; i >= 0; i-- )); do
   umount -R "${mounts[i]}" >>"$log" 2>&1 || true
 done
-(( built == 0 )) || fail "couldn't rebuild the boot menu"
+(( built == 0 )) || fail "Something went wrong" "couldn't rebuild the boot menu"
 progress going-back 80
 
 # The copy becomes @ for the next boot. The running root stays mounted until
 # then, under its new name.
 old="@agentv-old-$(date +%s)"
-mv "$TOP/@" "$TOP/$old" || fail "couldn't set the current system aside"
+mv "$TOP/@" "$TOP/$old" || fail "Something went wrong" "couldn't set the current system aside"
 if ! mv "$next" "$TOP/@"; then
   mv "$TOP/$old" "$TOP/@"
-  fail "couldn't put the snapshot in place"
+  fail "Something went wrong" "couldn't put the snapshot in place"
 fi
 sync
 unmount_top

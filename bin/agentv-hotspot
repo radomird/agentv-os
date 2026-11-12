@@ -215,7 +215,7 @@ run() {
 
   device=$(wifi_device)
   if [[ -z $device ]]; then
-    state_set '.on = false | .error = "this box has no wi-fi"'
+    state_set '.on = false | .error = "This TV has no Wi-Fi"'
     echo "agentv-hotspot: NetworkManager has no Wi-Fi device" >&2
     exit 1
   fi
@@ -247,7 +247,7 @@ run() {
     wifi-sec.pmf disable wifi-sec.psk "$password" \
     ipv4.method manual ipv4.addresses "$ADDRESS/24" ipv6.method disabled >/dev/null
   if ! nmcli --wait 45 connection up "$CONNECTION" >/dev/null; then
-    state_set '.on = false | .error = "the setup hotspot didn'"'"'t come up"'
+    state_set '.on = false | .error = "Couldn'"'"'t start the setup Wi-Fi"'
     echo "agentv-hotspot: NetworkManager didn't bring up the hotspot; journalctl -u NetworkManager says why" >&2
     exit 1
   fi
@@ -274,7 +274,7 @@ down() {
   if [[ ${SERVICE_RESULT:-success} == "success" ]]; then
     state_set '.on = false'
   else
-    state_set '.on = false | .error = (.error // "the setup hotspot stopped")'
+    state_set '.on = false | .error = (.error // "The setup Wi-Fi stopped")'
   fi
 }
 
@@ -333,7 +333,7 @@ join_ended() {
   ssid=$(state_get .joining)
   [[ -n $ssid ]] || return 0
   echo "agentv-hotspot: the join of $ssid ended before it was done" >&2
-  state_set '.joining = null | .error = $error | .why = "failed" | .answered = $asked' --arg error "the tv couldn't join $ssid" || true
+  state_set '.joining = null | .error = $error | .why = "failed" | .answered = $asked' --arg error "Couldn't join $ssid" || true
   if [[ $JOIN_CLOSED_HOTSPOT == "true" ]]; then
     systemctl start --no-block agentv-hotspot.service || true
   fi
@@ -392,15 +392,15 @@ join() {
   [[ -n ${output:-} ]] || output="NetworkManager wouldn't load it"
   case $output in
     *"Secrets were required"*)
-      error="that password didn't work for $ssid"
+      error="Wrong password for $ssid"
       why=password
       ;;
     *"could not be found"* | *"No network with SSID"*)
-      error="the tv can't see $ssid from here"
+      error="Can't find $ssid from here"
       why=missing
       ;;
     *)
-      error="the tv couldn't join $ssid"
+      error="Couldn't join $ssid"
       why=failed
       ;;
   esac
@@ -443,7 +443,7 @@ drop() {
   password=$(jq -r '.join.password // empty' <<<"$request" 2>/dev/null || true)
   hidden=$(jq -r '.join.hidden // false' <<<"$request" 2>/dev/null || true)
   if ! valid_ssid "$ssid" || ! valid_password "$password"; then
-    state_set '.error = "that isn'"'"'t a wi-fi network and password" | .answered = $asked'
+    state_set '.error = "That isn'"'"'t a Wi-Fi network and password" | .answered = $asked'
     echo "agentv-hotspot: that isn't a Wi-Fi network's name and password; nothing changed" >&2
     return 1
   fi

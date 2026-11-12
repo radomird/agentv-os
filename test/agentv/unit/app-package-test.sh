@@ -83,13 +83,13 @@ refused agentv.web "it isn't a native app"
 app agentv.odd official "$(native pacman '--overwrite=*')"
 refused agentv.odd "'--overwrite=*' isn't a package name"
 app agentv.plex official "$(native flatpak tv.plex.PlexHTPC)"
-refused agentv.plex "a flatpak program isn't installed from the tv yet"
+refused agentv.plex "Can't install this kind of app yet"
 pass "only an official native app names a package, by a package name, and a refusal says why"
 
 # A box that hasn't fetched its package lists yet says to update it first.
 rm "$AGENTV_PACMAN_SYNC/multilib.db"
 app agentv.later official "$(native pacman later-game)"
-refused agentv.later "the box doesn't have its package lists yet: update it from settings, then add the app again"
+refused agentv.later "Update AgenTV in Settings first, then add the app again"
 touch "$AGENTV_PACMAN_SYNC/multilib.db"
 pass "a box without its package lists says to update it, and fetches none on the side"
 
@@ -97,7 +97,7 @@ app agentv.broken official "$(native pacman broken-game)"
 if package agentv.broken; then
   fail "a program that doesn't install fails"
 fi
-[[ $(cat "$AGENTV_APP_PACKAGE_ERRORS/agentv.broken.error") == "broken-game didn't install" ]] || fail "and says so" "$(cat "$AGENTV_APP_PACKAGE_ERRORS/agentv.broken.error")"
+[[ $(cat "$AGENTV_APP_PACKAGE_ERRORS/agentv.broken.error") == "Couldn't install broken-game" ]] || fail "and says so" "$(cat "$AGENTV_APP_PACKAGE_ERRORS/agentv.broken.error")"
 package agentv.game || fail "a later one"
 [[ ! -e $AGENTV_APP_PACKAGE_ERRORS/agentv.game.error ]] || fail "leaves no reason behind when it worked"
 pass "a program that doesn't install says so for the TV"

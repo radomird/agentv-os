@@ -18,7 +18,7 @@ if [[ -n ${AGENTV_PIN:-} ]]; then
   token=$(jq -nc --arg pin "$AGENTV_PIN" '{pin: $pin}' |
     curl -sS --max-time 5 -H 'Content-Type: application/json' -d @- "$url/api/pin/check" | jq -r '.grant // empty') || token=""
   if [[ -z $token ]]; then
-    echo "The TV didn't take the PIN in AGENTV_PIN." >&2
+    echo "Wrong PIN in AGENTV_PIN." >&2
     exit 1
   fi
   grant=(-H "X-AgenTV-Grant: $token")

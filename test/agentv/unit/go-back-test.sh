@@ -182,19 +182,19 @@ refused() {
 }
 setup_disk
 FAKE_AGENTV=0.3.1-1 go_back && fail "a box updated again since can't go back"
-refused "updated again since" "the box has been updated again since"
+refused "updated again since" "A newer update is already installed"
 setup_disk
 rm -rf "$snapshots/7"
 go_back && fail "a snapshot that's gone can't be gone back to"
-refused "the snapshot is gone" "the snapshot from before the update is gone"
+refused "the snapshot is gone" "The backup from before the update is gone"
 setup_disk
 FAKE_LIMINE=1 go_back && fail "a boot menu that won't rebuild stops it"
-refused "the boot menu won't rebuild" "couldn't rebuild the boot menu"
+refused "the boot menu won't rebuild" "Something went wrong"
 setup_disk
 FAKE_FS=ext4 go_back && fail "a disk not laid out as Omarchy's stops it"
-refused "not Omarchy's layout" "this box's disk isn't laid out the way Omarchy installs it"
+refused "not Omarchy's layout" "Going back isn't possible on this disk"
 setup_disk
 rm "$AGENTV_UPDATE_STATE/go-back.json"
 go_back && fail "with no update from the TV there's nothing to go back from"
-refused "no update" "there's no update to go back from"
+refused "no update" "There's no update to go back from"
 pass "Go back stops, with the box as it was, when the box changed since, the snapshot is gone, or the boot menu won't rebuild"
