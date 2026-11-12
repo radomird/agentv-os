@@ -29,7 +29,9 @@ version=${1:?the stable release, like 1.0.0}
 iso_url=${2:?agentv-iso to list the tags of}
 out=${GITHUB_OUTPUT:-/dev/stdout}
 
-if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+# No number starts with a zero: agentv-v01.0.0 isn't a release tag.
+n='(0|[1-9][0-9]*)'
+if [[ ! $version =~ ^$n\.$n\.$n$ ]]; then
   echo "release-checks: $version isn't a release's version, like 1.0.0" >&2
   exit 1
 fi

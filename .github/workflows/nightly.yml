@@ -185,13 +185,10 @@ jobs:
       keep-disk: ${{ matrix.iso && inputs.checks == '' }}
       lanes: ${{ matrix.lanes }}
       # The one caller that signs with AgenTV's own key: what a channel's
-      # box updates to, and tested.json. image.yml reads it through the
-      # "release" environment, which only agentv may use. Handed over here
-      # too for as long as the key is still a secret of the repo. Never
-      # beside an agentv-iso ref someone typed in.
+      # box updates to, and tested.json. image.yml reads it in its jobs in
+      # the "release" environment, which only agentv may use, so nothing is
+      # handed over here. Never beside an agentv-iso ref someone typed in.
       release-key: ${{ inputs.checks == '' }}
-    secrets:
-      AGENTV_SIGNING_KEY: ${{ inputs.checks == '' && secrets.AGENTV_SIGNING_KEY || '' }}
 
   # A release with no tag in agentv-iso was checked with tonight's checks.
   # That's said by failing the night, so it's in the issue below and not
