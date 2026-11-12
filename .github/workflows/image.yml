@@ -189,11 +189,6 @@ on:
       release-key:
         type: boolean
         default: false
-    # Only a caller that sets release-key hands it over, and only until the
-    # key lives in the "release" environment, where the jobs read it from.
-    secrets:
-      AGENTV_SIGNING_KEY:
-        required: false
 
 permissions:
   contents: write
