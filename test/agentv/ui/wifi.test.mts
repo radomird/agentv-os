@@ -192,9 +192,12 @@ async function pick(page: Page, selector: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-// Terminal writes its words in lower case, and Glass and Cinema as they're
-// written. A network's name is the same in each.
-const words = (look: Look, sentence: string, ssid = "") => (look === "terminal" ? sentence.toLowerCase() : sentence).replace("%s", ssid);
+// The words are written the same in every look, and Terminal shows them in
+// lower case with its own CSS rule. A network's name is never changed.
+const words = (_look: Look, sentence: string, ssid = "") => sentence.replace("%s", ssid);
+// The notice on home (launcher/offline.ts) still lowers its own words for
+// Terminal as it draws them.
+const noticeWords = (look: Look, sentence: string) => (look === "terminal" ? sentence.toLowerCase() : sentence);
 
 // What's on the page outside the screen.
 function offScreen(page: Page, selector: string): Promise<string[]> {
@@ -214,8 +217,9 @@ function offScreen(page: Page, selector: string): Promise<string[]> {
   }, selector);
 }
 
+// Settings, Network's Wi-Fi row opens this page.
 async function settingsNetwork(page: Page): Promise<void> {
-  await go(page, "settings/network");
+  await go(page, "settings/wifi");
   await page.waitForSelector(".wifi-panel button.network");
 }
 
@@ -227,12 +231,21 @@ for (const look of LOOKS) {
     rootSays({ wifi: "Home" });
     asked.length = 0;
     const page = await tv();
-    await settingsNetwork(page);
 
-    // How the TV is online, on Settings' row and at the top of its panel.
+    // How the TV is online, on Network's row: one line, with the network's
+    // name as its value, which keeps its capitals where Terminal lowers the
+    // words. OK on it opens the page.
+    await go(page, "settings/network");
+    await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="wifi"] .button-value')?.textContent === "Home");
+    assert.match(await page.locator('.settings-panel [data-action="wifi"]').innerText(), look === "terminal" ? /^wi-fi\s+Home$/ : /^Wi-Fi\s+Home$/);
+    assert.equal(await page.locator(".settings-panel .panel-note").count(), 0);
+    await pick(page, '.settings-panel [data-action="wifi"]');
+    await page.waitForSelector(".wifi-panel button.network");
+
+    // And at the top of its page.
     const on = `${words(look, "Wi-Fi")} · Home`;
     await page.waitForFunction((want) => document.querySelector('[data-line="online"]')?.textContent === want, on);
-    assert.equal(await text(page, '.menu-item[data-key="network"] .menu-value'), on);
+    assert.equal(await page.locator('[data-line="online"]').innerText(), look === "terminal" ? "wi-fi · Home" : "Wi-Fi · Home");
     // Strongest first, the one the TV is on marked, a lock on each with a
     // password, and a row for one that hides its name.
     assert.deepEqual(await page.locator(".wifi-panel [data-ssid]").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-ssid"))), ["Home", "Cafe 5G", "café open", "neighbours", ""]);
@@ -361,8 +374,8 @@ for (const look of LOOKS) {
     online = false;
     rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
     await page.waitForSelector("#offline", { timeout: 8000 });
-    assert.equal(await text(page, "#offline .offline-title"), words(look, "Your TV is offline"));
-    assert.equal(await text(page, "#offline .offline-line"), words(look, "Scan to pick your Wi-Fi"));
+    assert.equal(await text(page, "#offline .offline-title"), noticeWords(look, "Your TV is offline"));
+    assert.equal(await text(page, "#offline .offline-line"), noticeWords(look, "Scan to pick your Wi-Fi"));
     await page.waitForFunction(() => {
       const qr = document.querySelector("#offline img") as HTMLImageElement | null;
       return Boolean(qr && /^\/api\/hotspot\/qr/.test(qr.getAttribute("src") ?? "") && qr.complete && qr.naturalWidth > 0);
@@ -389,7 +402,7 @@ for (const look of LOOKS) {
     assert.equal(await page.locator('[data-action="look"]').count(), 0);
     // A pick from the phone that didn't work says so.
     rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true, error: "that password didn't work for Home", why: "password" });
-    await page.waitForFunction((want) => document.querySelector("#offline .offline-line")?.textContent === want, words(look, "Couldn't join. Scan to try again."), { timeout: 8000 });
+    await page.waitForFunction((want) => document.querySelector("#offline .offline-line")?.textContent === want, noticeWords(look, "Couldn't join. Scan to try again."), { timeout: 8000 });
     await page.keyboard.press("Escape");
     await page.waitForSelector("#offline", { state: "visible" });
     assert.deepEqual(await offScreen(page, "#offline, #offline *"), []);
@@ -401,7 +414,7 @@ for (const look of LOOKS) {
   });
 }
 
-test("T16.1 with a PIN set, changing the Wi-Fi asks for it first, and a child's profile sees how the TV is online and can't change it", async () => {
+test("T16.1 with a PIN set, changing the Wi-Fi asks for it first, and a child's profile has no Network and can't change it", async () => {
   await useLook("glass");
   online = true;
   rootSays({ wifi: "Home" });
@@ -430,8 +443,7 @@ test("T16.1 with a PIN set, changing the Wi-Fi asks for it first, and a child's 
   assert.equal(asked.filter((request) => request.join).length, sent + 1);
   await page.close();
 
-  // A child's profile: Settings is behind the PIN, and network shows how
-  // the TV is online and nothing to pick.
+  // A child's profile: Settings is behind the PIN, and it has no Network.
   const grant = (await send("POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
   const adult = (await send("GET", "/api/viewers")).data.active as string;
   const child = (await send("POST", "/api/viewers", { name: "mila", role: "child" }, grant)).data.profile;
@@ -440,8 +452,11 @@ test("T16.1 with a PIN set, changing the Wi-Fi asks for it first, and a child's 
   await go(kid, "settings/network");
   await kid.waitForSelector("#pin.on");
   await kid.keyboard.type("4826");
-  await kid.waitForFunction(() => /Cafe 5G$/.test(document.querySelector('[data-line="online"]')?.textContent ?? ""));
-  assert.equal(await kid.locator(".wifi-panel [data-focus]").count(), 0, "nothing to pick, and no looking again");
+  await kid.waitForSelector(".page.settings .menu-item");
+  assert.equal(await kid.locator('.menu-item[data-key="network"]').count(), 0);
+  await go(kid, "settings/wifi");
+  await kid.waitForSelector(".page.settings .menu-item");
+  assert.equal(await kid.locator(".wifi-panel").count(), 0, "nor the page with the networks to pick");
   const held = (await send("POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
   assert.deepEqual((await send("POST", "/api/network/join", { ssid: "café open", password: "" }, held)).data, { ok: false, error: "child" });
   assert.deepEqual((await send("POST", "/api/network/scan", undefined, held)).data, { ok: false, error: "child" });

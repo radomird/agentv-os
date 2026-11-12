@@ -177,7 +177,7 @@ test("T8.1 typed on the phone, home's focused field holds each change within 300
   await go(screen, "profile/new");
   await screen.waitForSelector(".profile-name.focused");
   await until(async () => (await phoneState()).tv.view === "keyboard");
-  assert.deepEqual((await phoneState()).tv.field, { kind: "text", label: "their name" });
+  assert.deepEqual((await phoneState()).tv.field, { kind: "text", label: "name" });
   front = { kind: "page", id: "home", overlay: false, evaluate: (expression) => screen.evaluate(expression) };
   const took = await typeAll(CHANGES, () => screen.evaluate(() => (document.querySelector(".profile-name") as HTMLInputElement).value));
   assert.ok(took.every((ms) => ms < WITHIN_MS), `each change within ${WITHIN_MS} ms: ${took.join(", ")}`);

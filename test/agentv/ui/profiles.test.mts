@@ -92,9 +92,10 @@ test("S4.2 Settings → Profiles lists who watches, and a profile's page switche
   const page = await tv();
   assert.equal(await barName(page), "radomir");
   await go(page, "settings/profiles");
-  await page.waitForSelector('.menu-item.open[data-key="profiles"]');
-  assert.match(await page.locator('.menu-item[data-key="profiles"]').innerText(), /profiles\s+2/);
-  assert.match(await page.locator(".panel").innerText(), /who watches\?\s+r\s+radomir\s+watching\s+a\s+ana[\s\S]*add a profile/);
+  await page.waitForSelector('.settings-panel[data-page="profiles"]');
+  assert.equal(await page.locator(".panel .profile-row").count(), 2);
+  // One row a person, with adult or child, then adding one and the adult PIN.
+  assert.match(await page.locator(".panel").innerText(), /^R\s+radomir\s+adult · watching\s+A\s+ana\s+adult\s+add a profile\s+adult pin\s+off$/);
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowDown");
   const ana = await byName("ana");
@@ -105,7 +106,7 @@ test("S4.2 Settings → Profiles lists who watches, and a profile's page switche
   assert.match(await page.locator(".page.profile .headline").innerText(), /^ana$/);
   const at = Date.now();
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
+  await page.waitForFunction(() => /Watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
   assert.ok(Date.now() - at < 1000, `the switch showed in ${Date.now() - at} ms`);
   assert.equal((await send("GET", "/api/viewer")).viewer.id, ana.id);
   // Back on home, it's ana's.
@@ -137,26 +138,26 @@ test("S4.2 a profile is added on the TV: a typed name, then its role and colour 
   await page.keyboard.press("ArrowDown");
   assert.equal(await focused(page), "role");
   await page.keyboard.press("ArrowRight");
-  assert.match(await page.locator('[data-action="role"]').innerText(), /‹ child ›/);
+  assert.match(await page.locator('[data-action="role"]').innerText(), /^role\s+child$/);
   // The colour starts on the next one no one has, and right goes on.
-  assert.match(await page.locator('[data-action="avatar"]').innerText(), /‹ magenta ›/);
+  assert.match(await page.locator('[data-action="avatar"]').innerText(), /^colour\s+magenta$/);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowRight");
-  assert.match(await page.locator('[data-action="avatar"]').innerText(), /‹ yellow ›/);
-  assert.equal(await page.locator(".profile-head .avatar.avatar-yellow").innerText(), "l");
+  assert.match(await page.locator('[data-action="avatar"]').innerText(), /^colour\s+yellow$/);
+  assert.equal(await page.locator(".profile-head .avatar.avatar-yellow").innerText(), "L");
   // With no PIN, a child's profile can't be added, and the TV says why.
   await page.locator('[data-action="save"]').click();
-  await page.waitForFunction(() => /needs an adult pin/.test(document.querySelector(".toast")?.textContent ?? ""));
+  await page.waitForFunction(() => /adult pin/i.test(document.querySelector(".toast")?.textContent ?? ""));
   assert.equal((await viewers()).length, 2);
 
   // With one, it asks for it first.
   await send("PUT", "/api/pin", { pin: PIN });
   await page.locator('[data-action="save"]').click();
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for changing profiles\./);
+  assert.match(await page.locator("#pin").innerText(), /for changing profiles/);
   await type(page, PIN);
   await waitPad(page, false);
-  await page.waitForFunction(() => /leo is here now/.test(document.body.textContent ?? ""));
+  await page.waitForFunction(() => /Added leo/.test(document.body.textContent ?? ""));
   const leo = await byName("leo");
   assert.deepEqual([leo.role, (leo as unknown as { avatar: string }).avatar], ["child", "yellow"]);
   await page.close();
@@ -181,17 +182,20 @@ test("S4.2 S4.5 on a child's profile: only children's apps, the apps children ca
   await waitPad(page, false);
   await page.locator(".bar-link", { hasText: "settings" }).click();
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for settings\./);
+  assert.match(await page.locator("#pin").innerText(), /for settings/);
   await type(page, PIN);
   await waitPad(page, false);
   await page.waitForSelector(".page.settings");
   // Power isn't there on a child's profile, even past the PIN.
-  assert.equal(await page.locator('.menu-item[data-key="power"]').count(), 0);
+  assert.deepEqual(await page.locator(".menu-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-key"))), ["look", "sound", "home", "profiles", "phones", "tv"], "a child's profile has no AI and no Network");
+  await go(page, "settings/tv");
+  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  assert.equal(await page.locator('.panel [data-action="restart"], .panel [data-action="shutdown"]').count(), 0, "nor Restart and Shut down");
   // Back to an adult, in the same visit: the PIN already entered does.
   await go(page, `profile/radomir`);
   await page.waitForSelector('.page.profile [data-action="watch"]');
   await page.locator('[data-action="watch"]').click();
-  await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
+  await page.waitForFunction(() => /Watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
   assert.equal((await send("GET", "/api/viewer")).viewer.id, "radomir");
   assert.equal(await page.locator("#pin.on").count(), 0, "no second pad");
   await page.close();
@@ -209,7 +213,7 @@ test("S4.2 the same switch heard twice, as the events' catch-up and the switch's
   // the page where it is.
   await send("POST", "/api/viewer", { id: leo.id });
   await send("POST", "/api/viewer", { id: "radomir" }, await grant());
-  await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""), undefined, { timeout: 5000 });
+  await page.waitForFunction(() => /Watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""), undefined, { timeout: 5000 });
   assert.equal((await sent(page, "viewer")).length, 2, "the screen daemon hears each switch once");
   assert.equal(await page.locator(".page.profile").count(), 1, "the page stays where it was");
   await page.close();
@@ -239,14 +243,14 @@ test("ADR-034 an adult locks their profile on its page: a lock on its row, the P
   const page = await tv();
   await go(page, `profile/${ana.id}`);
   await page.waitForSelector(".page.profile");
-  assert.match(await page.locator('[data-action="lock"]').innerText(), /ask for the pin to open\s+‹ no ›/);
+  assert.match(await page.locator('[data-action="lock"]').innerText(), /^lock with pin\s+off$/);
   await page.locator('[data-action="lock"]').click();
-  assert.match(await page.locator('[data-action="lock"]').innerText(), /‹ yes ›/);
+  assert.match(await page.locator('[data-action="lock"]').innerText(), /^lock with pin\s+on$/);
   await page.locator('[data-action="save"]').click();
   await waitPad(page, true);
   await type(page, PIN);
   await waitPad(page, false);
-  await page.waitForFunction(() => /ana is saved/.test(document.body.textContent ?? ""));
+  await page.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some((toast) => toast.textContent === "Saved"));
   assert.equal(((await byName("ana")) as unknown as { locked: boolean }).locked, true);
 
   // Settings → Profiles shows the lock on her row, and only hers.
@@ -260,9 +264,9 @@ test("ADR-034 an adult locks their profile on its page: a lock on its row, the P
   await page.waitForSelector('.page.profile [data-action="watch"]');
   await page.locator('[data-action="watch"]').click();
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for watching as ana\./);
+  assert.match(await page.locator("#pin").innerText(), /for watching as ana/);
   await type(page, PIN);
-  await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
+  await page.waitForFunction(() => /Watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
   assert.equal((await send("GET", "/api/viewer")).viewer.id, ana.id);
 
   // After the box starts again, a TV on ana's profile opens on the pad.

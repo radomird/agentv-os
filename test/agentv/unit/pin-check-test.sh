@@ -63,7 +63,7 @@ if type -P script >/dev/null; then
   }
   terminal 4826 || fail "the pin typed in a terminal lets an action through" "$(cat "$SCRATCH/out")"
   terminal 0000 1111 2222 && fail "three wrong pins in a terminal don't" "$(cat "$SCRATCH/out")"
-  grep -q "That's not the pin" "$SCRATCH/out" || fail "and it says so" "$(cat "$SCRATCH/out")"
+  grep -q "Wrong PIN" "$SCRATCH/out" || fail "and it says so" "$(cat "$SCRATCH/out")"
   pass "S4.5 in a terminal, agentv-pin-check asks for the PIN there"
 fi
 

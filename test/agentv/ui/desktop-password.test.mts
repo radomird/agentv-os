@@ -88,7 +88,7 @@ const lastToast = (text: RegExp) => (page: Page) => page.waitForFunction((source
 // Settings → Omarchy desktop, once the panel knows about the password.
 async function desktopPanel(page: Page, line: RegExp | null): Promise<void> {
   await go(page, "settings/desktop");
-  await page.waitForSelector('.menu-item.open[data-key="desktop"]');
+  await page.waitForSelector('.settings-panel[data-page="desktop"]');
   await page.waitForSelector('[data-action="desktop"]');
   if (line) {
     await page.waitForSelector('[data-note="desktop-password"]');
@@ -97,7 +97,10 @@ async function desktopPanel(page: Page, line: RegExp | null): Promise<void> {
     // Long enough for the ask to have come back.
     await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-note="desktop-password"]').count(), 0);
+    // The page's one line is then how to come back.
+    assert.equal(await page.locator(".settings-panel .panel-note").innerText(), "super + ctrl + home brings you back");
   }
+  assert.equal(await page.locator(".settings-panel .panel-note").count(), 1, "one line, and only one");
 }
 
 test("Q225 the first switch to Omarchy's desktop asks for a password, typed twice, sets it, then switches", async () => {
@@ -106,7 +109,7 @@ test("Q225 the first switch to Omarchy's desktop asks for a password, typed twic
   handed.length = 0;
   const page = await tv();
   try {
-    await desktopPanel(page, /the first time, it asks for a password, typed on your phone/);
+    await desktopPanel(page, /^the first time, you set a password on your phone$/);
     await page.locator('[data-action="desktop"]').click();
     await page.waitForSelector(".desktop-password");
     assert.deepEqual(await sent(page), [], "nothing switches before the password");
@@ -117,7 +120,7 @@ test("Q225 the first switch to Omarchy's desktop asks for a password, typed twic
     await page.fill('[data-action="password"]', PASSWORD);
     await page.fill('[data-action="password-again"]', `${PASSWORD}!`);
     await page.locator('[data-action="set-password"]').click();
-    await lastToast(/the two don't match/)(page);
+    await lastToast(/Those don't match/)(page);
     await page.fill('[data-action="password"]', "short");
     await page.fill('[data-action="password-again"]', "short");
     await page.locator('[data-action="set-password"]').click();
@@ -136,11 +139,11 @@ test("Q225 the first switch to Omarchy's desktop asks for a password, typed twic
     await page.close();
   }
 
-  // The next switch goes straight there, and the panel says where the
-  // password changes.
+  // The next switch goes straight there, and the page no longer says a
+  // password comes first.
   const again = await tv();
   try {
-    await desktopPanel(again, /to change its password there: update › password › user/);
+    await desktopPanel(again, null);
     await again.locator('[data-action="desktop"]').click();
     await again.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "desktop"));
     assert.equal(await again.locator(".desktop-password").count(), 0);
