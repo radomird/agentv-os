@@ -6,15 +6,18 @@
 // that talks too much can't spend the key.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { OFFERS, type AiState } from "../../../daemon/ai.ts";
 import { boxRouter, viaSocket } from "../../../daemon/router-client.ts";
+import { cliBackend } from "../../../daemon/providers/cli.ts";
+import { GETTING_READY } from "../../../daemon/providers/no-answer.ts";
 import { cliPolicy, PER_MINUTE, routeRequest, routeServer } from "../../../daemon/router-serve.ts";
-import { NONE, type Routed } from "../../../daemon/router.ts";
+import { NONE, Router, type Routed } from "../../../daemon/router.ts";
+import { Say } from "../../../daemon/say.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const scratch = mkdtempSync(join(tmpdir(), "agentv-router-box-"));
@@ -77,6 +80,58 @@ test("the daemon asks the back end setup chose, and says what's missing until it
   assert.equal((await route("play frozen", [])).via, "cli", "a plan needs no key");
   state = ai({ provider: "muse", path: "plan", accepted: { ...accepted, provider: "muse", path: "plan" } });
   assert.equal(await why(), `${OFFERS.muse.plan.name} can't do this yet`);
+});
+
+test("an ask right after a plan is connected, on a TV that never made an app, says the AI is getting ready and fetches its CLI, then works once it's there", async () => {
+  // The builder's home as a new TV has it: no CLI in it yet.
+  const home = join(scratch, "fresh-home");
+  mkdirSync(join(home, ".local/bin"), { recursive: true });
+  const path = join(scratch, "fresh-cli.sock");
+  const server = routeServer({ route: async ({ provider, sentence, apps }) => new Router(cliBackend(provider as "claude", { home, work: scratch })).route(sentence, apps) });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(path, () => resolve()));
+  let fetches = 0;
+  const route = boxRouter({ ai: async () => ai({ provider: "claude", path: "plan", accepted: { ...accepted, path: "plan" } }), key: () => ({ set: false, provider: null }), sockets: { api: join(scratch, "no-api.sock"), cli: path }, fetchCli: () => fetches++ });
+  const shown: string[] = [];
+  const logged: string[] = [];
+  const say = new Say({
+    route,
+    viewer: async () => ({ id: "radomir", name: "Radomir", role: "adult" as const }),
+    apps: async () => [],
+    rows: () => [],
+    ask: async () => ({ ok: true }),
+    changed: (said) => said?.outcome && shown.push(said.outcome.say),
+    log: (line) => logged.push(line),
+  });
+  const said = await say.hear("play frozen", "iphone");
+  assert.equal(said.outcome?.say, GETTING_READY);
+  assert.equal(said.outcome?.say, "Getting your AI ready. Try again in a minute.");
+  assert.equal(fetches, 1, "the ask starts the fetch");
+  // What the TV and the phone see, and the log, never name the tool or the box.
+  assert.doesNotMatch(JSON.stringify({ shown, said }), /claude|box|agent|daemon|builder|cli/i);
+  assert.doesNotMatch(logged.join("\n"), /on the box/);
+
+  // The fetch lands: the same ask goes through the plan's CLI.
+  const claude = join(home, ".local/bin/claude");
+  const answer = { intent: "continue", query: null, kind: null, app: null, season: null, episode: null };
+  writeFileSync(claude, `#!${process.execPath}\nconsole.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "", structured_output: ${JSON.stringify(answer)} }));\n`);
+  chmodSync(claude, 0o755);
+  const routed = await route("continue", []);
+  assert.deepEqual([routed.via, routed.none, routed.error, routed.route.intent], ["cli", undefined, undefined, "continue"]);
+  assert.equal(fetches, 1, "nothing more to fetch");
+});
+
+test("with a key, an ask works straight away on a TV that never made an app, for every provider: the key's own API answers, and no CLI is needed", async () => {
+  const heard: unknown[] = [];
+  const sockets = { api: await service("fresh-api", "api", heard), cli: join(scratch, "no-cli.sock") };
+  for (const provider of ["claude", "chatgpt", "gemini", "grok", "muse"] as const) {
+    let fetches = 0;
+    const route = boxRouter({ ai: async () => ai({ provider, path: "key", accepted: { ...accepted, provider } }), key: () => ({ set: true, provider }), sockets, fetchCli: () => fetches++ });
+    const routed = await route("continue", []);
+    assert.deepEqual([routed.via, routed.none, routed.error], ["api", undefined, undefined], provider);
+    assert.equal(fetches, 0, provider);
+  }
+  assert.equal(heard.length, 5);
 });
 
 test("a router that isn't running, or doesn't answer in time, is none, failed, with why", async () => {

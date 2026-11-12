@@ -20,10 +20,13 @@ export const SIGN_IN_RAN_OUT = "Your plan's sign-in expired. Sign in again.";
 export const TOOK_TOO_LONG = "That took too long. Try again.";
 export const CANT_ANSWER = "Can't answer right now";
 export const TOO_MANY = "Too many requests. Try again in a minute.";
+// A plan's own tool, still on its way to the TV: it's fetched once the plan
+// is picked, and again at start-up if it's missing (daemon/plan-sign-in.ts).
+export const GETTING_READY = "Getting your AI ready. Try again in a minute.";
 
 export const COULDNT_ANSWER = "Couldn't answer just now";
 
-const AS_IT_IS = new Set([NOT_SIGNED_IN, SIGN_IN_RAN_OUT, TOOK_TOO_LONG, CANT_ANSWER, TOO_MANY]);
+const AS_IT_IS = new Set([NOT_SIGNED_IN, SIGN_IN_RAN_OUT, TOOK_TOO_LONG, CANT_ANSWER, TOO_MANY, GETTING_READY]);
 
 // The line for a sentence that got no answer, from why the router says it
 // failed. Only a line from this file is ever shown.
