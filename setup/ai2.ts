@@ -128,9 +128,9 @@ export function ways(ctx: Ctx, provider: Provider): View {
 
   const start = async () => {
     try {
-      const grant = await ctx.grant("the plan's sign-in");
-      if (grant === null) return;
-      now = (await setup.startSignIn(grant || undefined)).signIn;
+      const started = await ctx.guarded("the plan's sign-in", (grant) => setup.startSignIn(grant));
+      if (!started) return;
+      now = started.value.signIn;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
@@ -140,18 +140,23 @@ export function ways(ctx: Ctx, provider: Provider): View {
     follow();
   };
 
+  // Enter reaches this twice, from the field and from the button.
+  let sending = false;
   const sendCode = async () => {
     const code = field.value.trim();
-    if (!code) return;
-    field.value = "";
+    if (!code || sending) return;
+    // The code stays in the field until the TV has it, as a typed key does.
+    sending = true;
     try {
-      const grant = await ctx.grant("the plan's sign-in");
-      if (grant === null) return;
-      await setup.signInCode(code, grant || undefined);
+      const sent = await ctx.guarded("the plan's sign-in", (grant) => setup.signInCode(code, grant));
+      if (!sent) return;
+      if (field.value.trim() === code) field.value = "";
       ctx.toast("signing in…", "ok");
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
+    } finally {
+      sending = false;
     }
   };
   field.addEventListener("keydown", (event) => {
@@ -168,10 +173,10 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const choose = async (how: "plan" | "key") => {
     const ai = ctx.ai!;
     if (ai.provider !== provider || ai.path !== how) {
-      const grant = await ctx.grant("the ai");
-      if (grant === null) return;
       try {
-        ctx.ai = await setup.choose(provider, how, grant || undefined);
+        const chosen = await ctx.guarded("the ai", (grant) => setup.choose(provider, how, grant));
+        if (!chosen) return;
+        ctx.ai = chosen.value;
       } catch (error) {
         ctx.toast((error as Error).message, "fail");
         ctx.sounds.play("failure");
