@@ -19,6 +19,13 @@ name: Nightly
 # agentv, so that update is checked with agentv-iso's agentv branch, the
 # checks that go with what it updates to.
 #
+# The release's tag in agentv-iso is agentv-v1.0.0 from 1.0 on, and v0.2.0
+# for a 0.x release (.github/scripts/release-checks). The run is handed the
+# commit that tag is on, not its name. When agentv-iso has no tag for the
+# release, the release is still checked, with agentv-iso's agentv branch,
+# but the night fails and its issue says why: checked that way for long, a
+# release would be held to checks for work it doesn't have.
+#
 # Edge is checked the same way, with the agentv-iso that goes with its
 # package (.github/scripts/nightly-checks). agentv-pkgs' Build publishes
 # edge on GitHub's schedule, which can run hours late, so on a busy day
@@ -76,6 +83,7 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       runs: ${{ steps.which.outputs.runs }}
+      untagged: ${{ steps.which.outputs.untagged }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,15 +126,32 @@ jobs:
           fi
 
           if [[ -n $stable ]]; then
+            # The agentv-iso the release was tagged with, as the commit its
+            # tag is on. With no tag for it, tonight's checks stand in, and
+            # the night says so out loud (the untagged job below).
             checks=$next
-            if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" "refs/tags/v$stable" >/dev/null 2>&1; then
-              checks="v$stable"
+            with=$next
+            found=0
+            GITHUB_OUTPUT="$RUNNER_TEMP/release" .github/scripts/release-checks "$stable" \
+              "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" 2>"$RUNNER_TEMP/release.err" || found=$?
+            if (( found == 0 )); then
+              checks=$(sed -n 's/^checks=//p' "$RUNNER_TEMP/release")
+              with="$(sed -n 's/^tag=//p' "$RUNNER_TEMP/release") (${checks:0:9})"
+            elif (( found == 3 )); then
+              why=$(sed 's/^release-checks: //' "$RUNNER_TEMP/release.err")
+              untagged="AgenTV $stable is the stable release, and $why. So tonight it was checked with agentv-iso's agentv branch, which has checks for work the release doesn't have. Tag agentv-iso for the release, on the commit it was built from."
+              echo "untagged=$untagged" >>"$GITHUB_OUTPUT"
+              echo "::warning::$untagged"
+            else
+              cat "$RUNNER_TEMP/release.err" >&2
+              echo "::error::Couldn't find out which agentv-iso AgenTV $stable was tagged with, so nothing is tested tonight."
+              exit 1
             fi
             update=""
             [[ $checks == "$next" ]] || update=$next
             runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 2},
               {packages: "edge", tested: false, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
-            echo "Testing AgenTV's stable release $stable with agentv-iso $checks, two VMs at a time with S1.3 on its own, and making the edge ISO with agentv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
+            echo "Testing AgenTV's stable release $stable with agentv-iso $with, two VMs at a time with S1.3 on its own, and making the edge ISO with agentv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
           else
             runs=$(jq -cn --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "edge", tested: true, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
             echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $edge_checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
@@ -155,7 +180,9 @@ jobs:
       update-checks: ${{ matrix.update }}
       nightly: ${{ matrix.tested && inputs.checks == '' }}
       keep-iso: ${{ matrix.iso && inputs.checks == '' }}
-      keep-disk: ${{ matrix.iso }}
+      # The night's box is what later runs start from, so it's never one
+      # that ran an agentv-iso ref someone typed in either.
+      keep-disk: ${{ matrix.iso && inputs.checks == '' }}
       lanes: ${{ matrix.lanes }}
       # The one caller that signs with AgenTV's own key: what a channel's
       # box updates to, and tested.json. image.yml reads it through the
@@ -166,11 +193,29 @@ jobs:
     secrets:
       AGENTV_SIGNING_KEY: ${{ inputs.checks == '' && secrets.AGENTV_SIGNING_KEY || '' }}
 
+  # A release with no tag in agentv-iso was checked with tonight's checks.
+  # That's said by failing the night, so it's in the issue below and not
+  # only in a summary nobody reads.
+  untagged:
+    name: The release's own checks weren't found
+    needs: which
+    if: needs.which.outputs.untagged != ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          UNTAGGED: ${{ needs.which.outputs.untagged }}
+        run: |
+          echo "$UNTAGGED" >>"$GITHUB_STEP_SUMMARY"
+          echo "::error::$UNTAGGED"
+          exit 1
+
   # The issue names each failed leg's failed checks and the line that says
   # why, from the legs' logs (.github/scripts/nightly-broke).
   issue:
     name: Say what broke
-    needs: image
+    needs: [which, image, untagged]
     if: failure()
     runs-on: ubuntu-26.04
     steps:
@@ -188,11 +233,21 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          UNTAGGED: ${{ needs.which.outputs.untagged }}
+          IMAGE: ${{ needs.image.result }}
         run: |
           {
-            echo "An image run failed tonight, so tested.json, the edge ISO or both weren't updated. Boxes stay where they are."
-            echo
-            .github/scripts/nightly-broke legs || echo "What broke couldn't be read from the logs."
+            if [[ -n $UNTAGGED ]]; then
+              echo "$UNTAGGED"
+              echo
+            fi
+            if [[ $IMAGE == "success" ]]; then
+              echo "Every image check passed otherwise."
+            else
+              echo "An image run failed tonight, so tested.json, the edge ISO or both weren't updated. Boxes stay where they are."
+              echo
+              .github/scripts/nightly-broke legs || echo "What broke couldn't be read from the logs."
+            fi
             echo "Screenshots and logs: $RUN"
           } >body.md
           gh issue create -R "$GITHUB_REPOSITORY" --title "Nightly run failed on $(date -u +%Y-%m-%d)" --body-file body.md
@@ -201,8 +256,8 @@ jobs:
   # list only ever shows what's still broken.
   fixed:
     name: Say it's fixed
-    needs: image
-    if: success()
+    needs: [image, untagged]
+    if: ${{ !cancelled() && needs.image.result == 'success' && needs.untagged.result == 'skipped' }}
     runs-on: ubuntu-26.04
     steps:
       - env:
