@@ -2622,6 +2622,20 @@ export class Daemon {
       return;
     }
 
+    // The night's update waited for a game, or it has installed since
+    // (ADR-084): the screen daemon says so, and Settings shows it.
+    if (method === "POST" && path === "/api/updates/held") {
+      const body = (await this.body(request)) as { held?: unknown } | undefined;
+      if (typeof body?.held !== "boolean") {
+        this.json(response, 400, { ok: false, error: 'send {"held": true} or {"held": false} as JSON' });
+        return;
+      }
+      await this.updates.setHeld(body.held);
+      this.broadcast("updates", await this.updates.read());
+      this.json(response, 200, { ok: true });
+      return;
+    }
+
     // Apps → add an app (ADR-042): the official apps that aren't on the TV,
     // and one picked, handed to root as setup's are, past the PIN once there
     // is one. A child's profile doesn't add apps.

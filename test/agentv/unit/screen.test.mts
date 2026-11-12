@@ -384,6 +384,12 @@ class FakeLauncher implements Launcher {
     this.tonightCleared++;
     if (this.night) this.night.tonight = null;
   }
+  // Each note that the night's update waited for a game, or that it's over.
+  holds: boolean[] = [];
+  async holdNight(on: boolean) {
+    this.holds.push(on);
+    if (this.night) this.night.held = on ? { at: new Date(Date.now()).toISOString() } : null;
+  }
   minutes: number | null = 10;
   async idleMinutes() {
     return this.minutes;
@@ -2317,32 +2323,70 @@ test("S2.12 something playing holds the night's update off, and so do the hours 
   assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "05:00 is too late");
 });
 
-test("T16.2 an open game holds the night's update off, Steam or a game made on this TV, until it's closed", async () => {
-  let clock = at(2, 0);
+// A night with overnight updates on and one waiting, looked at twice: the
+// check, then its answer. What was started, and whether it waited.
+async function nightOf(t: Awaited<ReturnType<typeof tv>>, set: (ms: number) => void, day: number, hours = 2, minutes = 40) {
+  const DAY = 24 * 60 * 60_000;
+  set(at(2, 0) + day * DAY);
+  await t.screen.night();
+  set(at(hours, minutes) + day * DAY);
+  t.launcher.night!.status.checked_at = new Date(at(2, 1) + day * DAY).toISOString();
+  await t.screen.night();
+}
+
+test("T16.2 a game in front holds the night's update off for one night, and the next night it installs anyway", async () => {
+  let clock = at(1, 0);
+  const t = await tv({ now: () => clock });
+  t.launcher.night = { status: { ...READY }, progress: null, tonight: null, overnight: true };
+  await withSteam(t);
+  await nightOf(t, (ms) => (clock = ms), 0);
+  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "Steam in front at 02:40 holds it off");
+  assert.deepEqual(t.launcher.holds, [true], "and it's noted, once");
+  await t.screen.night();
+  assert.deepEqual(t.launcher.holds, [true]);
+  assert.ok(t.lines.includes("night: a game is being played, so the update waits for tomorrow night"), t.lines.join("\n"));
+  // The next night the game is still in front. A new daemon knows the
+  // update waited from what was kept, and installs.
+  const again = await tv({ now: () => clock });
+  again.launcher.night = { ...t.launcher.night!, status: { ...READY } };
+  await withSteam(again);
+  await nightOf(again, (ms) => (clock = ms), 1);
+  assert.deepEqual(again.launcher.units, ["agentv-update-check.service", "agentv-update-tv.service"]);
+  assert.deepEqual(again.launcher.holds, [false], "and the note goes");
+  t.screen.stop();
+  again.screen.stop();
+});
+
+test("T16.2 Steam idling behind home doesn't hold the night's update off, nor a game made on this TV that's paused behind it", async () => {
+  let clock = at(1, 0);
   const t = await tv({ now: () => clock });
   t.launcher.night = { status: { ...READY }, progress: null, tonight: null, overnight: true };
   await withSteam(t);
   await t.screen.home();
-  await t.screen.night();
-  clock = at(2, 40);
-  t.launcher.night!.status.checked_at = new Date(at(2, 1)).toISOString();
-  await t.screen.night();
-  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "Steam open behind home at 02:40 holds it off");
-  // Steam is closed, and a game made on this TV is open on home.
-  await t.screen.quit("agentv.games");
-  let open = true;
-  t.launcher.homeBrowser.answer = (expression) => (expression.includes("agentvGameOpen") ? { open } : undefined);
-  clock = at(3, 20);
-  await t.screen.night();
-  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "so does that one");
-  open = false;
-  clock = at(3, 45);
-  await t.screen.night();
-  assert.deepEqual(t.launcher.units, ["agentv-update-check.service"], "only 25 minutes since it closed");
-  clock = at(3, 51);
-  await t.screen.night();
+  // A made game is open too, behind home: home says none is in front.
+  t.launcher.homeBrowser.answer = (expression) => (expression.includes("agentvGame") ? { game: null } : undefined);
+  await nightOf(t, (ms) => (clock = ms), 0);
   assert.deepEqual(t.launcher.units, ["agentv-update-check.service", "agentv-update-tv.service"]);
+  assert.deepEqual(t.launcher.holds, []);
   t.screen.stop();
+});
+
+test("T16.2 a game played in the last two hours holds the night's update off, and one played before that doesn't", async () => {
+  for (const [played, held] of [[at(0, 50), true], [at(0, 30), false]] as const) {
+    let clock = played;
+    const t = await tv({ now: () => clock });
+    t.launcher.night = { status: { ...READY }, progress: null, tonight: null, overnight: true };
+    // A game made on this TV in front as the minute's look comes by, then
+    // home.
+    let game: string | null = "local.blocks";
+    t.launcher.homeBrowser.answer = (expression) => (expression.includes("agentvGame") ? { game } : undefined);
+    await t.screen.night();
+    game = null;
+    await nightOf(t, (ms) => (clock = ms), 0);
+    assert.deepEqual(t.launcher.units, held ? ["agentv-update-check.service"] : ["agentv-update-check.service", "agentv-update-tv.service"], `in front at ${new Date(played).toTimeString().slice(0, 5)}, looked at 02:40`);
+    assert.deepEqual(t.launcher.holds, held ? [true] : []);
+    t.screen.stop();
+  }
 });
 
 test("S2.12 at night, nothing installs without Tonight or overnight, while waiting for the nightly run, or with nothing new", async () => {

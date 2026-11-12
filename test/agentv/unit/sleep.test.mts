@@ -196,6 +196,25 @@ test("T13.2 a wake is noticed, and the box stays up an hour before it sleeps aga
   assert.equal(t.suspends, 2, "then it sleeps again");
 });
 
+test("a night whose update waits lets a box the alarm woke sleep again at once, unless someone has used it since", async () => {
+  for (const used of [false, true]) {
+    const { t, sleep } = box({ overnight: true });
+    t.pass(2 * HOUR);
+    sleep.tv(false);
+    t.pass(HOUR);
+    await sleep.tick();
+    t.sleepFor(5 * HOUR);
+    t.pass(15_000);
+    await sleep.tick();
+    const wokeAt = t.wall;
+    t.pass(3 * 60_000);
+    // The screen daemon says the update waits, and when it last saw input.
+    sleep.nothingTonight(used ? wokeAt + 60_000 : wokeAt - 6 * HOUR);
+    await sleep.tick();
+    assert.equal(t.suspends, used ? 1 : 2, used ? "someone's there: it stays up its hour" : "nothing to stay up for");
+  }
+});
+
 test("T13.2 a sleep cut short by the power button still counts as a wake", async () => {
   const { t, sleep } = box();
   t.pass(2 * HOUR);
