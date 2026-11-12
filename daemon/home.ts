@@ -124,6 +124,16 @@ const CREDITS: Record<string, string> = {
 };
 
 const WEATHER = "agentv.weather";
+
+// A city's name as people write it, from its time zone: "Amsterdam", "Port
+// of Spain". The tiles and Settings show it, and Terminal lowers it there.
+function cityWritten(zone: string): string {
+  return (zone.split("/").pop() ?? zone).replace(/_/g, " ");
+}
+
+function written(city: City | null): City | null {
+  return city ? { ...city, name: cityWritten(city.zone) } : null;
+}
 const CLOCK = "agentv.clock";
 // The built-ins on every home from the start (ADR-015). Music joins them
 // when it's the household's goal, which setup asks (ADR-017), and New this
@@ -658,9 +668,9 @@ export class Home {
   async appSettings(): Promise<Record<string, Record<string, string>>> {
     const saved = await readJson<Record<string, Record<string, string>>>(join(this.state, "app-settings.json"), {});
     const zone = await boxZone();
-    const box = placeSettings(zone, await cityOf(zone));
+    const box = placeSettings(zone, written(await cityOf(zone)));
     const weather = saved[WEATHER] ?? {};
-    const picked = weather.zone ? await cityOf(weather.zone) : null;
+    const picked = written(weather.zone ? await cityOf(weather.zone) : null);
     const units = weather.units === "c" || weather.units === "f" ? weather.units : undefined;
     // A test points the forecast at its own server, with a package whose
     // origins say so; nothing on a box sets forecastUrl.
@@ -683,7 +693,7 @@ export class Home {
     const region = zone.split("/")[0];
     const all = [...(await cities()).values()].sort((a, b) => a.name.localeCompare(b.name));
     const near = all.filter((city: City) => city.zone.split("/")[0] === region);
-    const list = (near.length ? near : all).map((city) => ({ zone: city.zone, name: city.name }));
+    const list = (near.length ? near : all).map((city) => ({ zone: city.zone, name: cityWritten(city.zone) }));
     return {
       zone,
       name: settings.place ?? "",
