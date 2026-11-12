@@ -109,7 +109,7 @@ test("the box's own client: the same name reaches the box", async () => {
 // sealed, since they don't have the session's keys.
 const made: [string, () => Response][] = [
   ["a 200 with a state in it", () => json(200, { ok: true, phone: { name: "someone else" }, viewer: { id: "x", role: "adult" } })],
-  ["a 403 that asks for the PIN", () => json(403, { ok: false, error: "that needs the pin", pin: true })],
+  ["a 403 that asks for the PIN", () => json(403, { ok: false, error: "That needs the PIN", pin: true })],
   ["a 401 with nothing in it", () => json(401, { ok: false })],
   ["a 200 that isn't JSON, to something sent", () => new Response("ok", { status: 200, headers: { "Content-Type": "text/plain" } })],
 ];

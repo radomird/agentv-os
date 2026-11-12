@@ -58,9 +58,10 @@ import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
+import { NEEDS_PIN, NOT_READY, NO_APP, WENT_WRONG, needsPin } from "./notices.ts";
 import type { ExecBuilds } from "./executors/make.ts";
 import { Pin, type PinStatus } from "./pin.ts";
-import { Profiles, type Profile } from "./profiles.ts";
+import { NO_PROFILE, Profiles, type Profile } from "./profiles.ts";
 import { NetFilter } from "./net-filter.ts";
 import { pageAppId, PageApps } from "./page-apps.ts";
 import { network, Setup, type SetupState } from "./setup.ts";
@@ -264,6 +265,12 @@ export function remoteView(tv: TvContext, signingIn: boolean): "trackpad" | "pin
   return "remote";
 }
 
+// Whether a key's refusal is the TV's own trouble saving it, and not the
+// key that was typed.
+function notSaved(why: string): boolean {
+  return /^(the key couldn't|couldn't save)/i.test(why);
+}
+
 function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
 }
@@ -337,12 +344,12 @@ export class Daemon {
   // Stage B's asks of the services' Chromium, for the screen daemon.
   readonly pageAsks = new PageAsks();
   // Export's asks of the person's GitHub sign-in, for the screen daemon.
-  readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: "the TV didn't answer in time: is its session running?" } });
+  readonly exportAsks = new Asks<GitHubAsk, GitHubAnswer>({ clean: cleanGitHub, late: { ok: false, error: NOT_READY } });
   // A made theme's asks, for the screen daemon to hand it to Omarchy (S6.4).
-  readonly themeAsks = new Asks<ThemeAsk, ThemeAnswer>({ clean: cleanTheme, late: { ok: false, error: "the TV didn't answer in time: is its session running?", late: true } });
+  readonly themeAsks = new Asks<ThemeAsk, ThemeAnswer>({ clean: cleanTheme, late: { ok: false, error: NOT_READY, late: true } });
   // A sentence's asks of the TV session: looking X up in the apps, and
   // opening what was chosen (daemon/say.ts).
-  readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?" } });
+  readonly sayAsks = new Asks<SayAsk, SayAnswer>({ clean: cleanSayAnswer, late: { ok: false, error: NOT_READY } });
   // What was said to the TV, routed and done (ADR-023).
   readonly say: Say;
   // The phone's box, open and its words, as the TV shows them (ADR-054).
@@ -579,7 +586,7 @@ export class Daemon {
       this.lan = createServer((request, response) => {
         this.handlePhone(request, response).catch((error: Error) => {
           this.log(`error: phone ${request.method} ${new URL(request.url ?? "/", "http://phone").pathname}: ${error.message}`);
-          if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
+          if (!response.headersSent) this.json(response, 500, { ok: false, error: WENT_WRONG });
           else response.end();
         });
       });
@@ -588,7 +595,7 @@ export class Daemon {
       this.captive = createServer((request, response) => {
         this.handleCaptive(request, response).catch((error: Error) => {
           this.log(`error: setup page ${request.method} ${new URL(request.url ?? "/", "http://setup").pathname}: ${error.message}`);
-          if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
+          if (!response.headersSent) this.json(response, 500, { ok: false, error: WENT_WRONG });
           else response.end();
         });
       });
@@ -602,7 +609,7 @@ export class Daemon {
     this.server = createServer((request, response) => {
       this.handle(request, response).catch((error: Error) => {
         this.log(`error: ${request.method} ${request.url}: ${error.message}`);
-        if (!response.headersSent) this.json(response, 500, { ok: false, error: "something went wrong" });
+        if (!response.headersSent) this.json(response, 500, { ok: false, error: WENT_WRONG });
         else response.end();
       });
     });
@@ -807,10 +814,10 @@ export class Daemon {
   // a key's path.
   private async builderAi(): Promise<{ ai?: { provider: BuildProvider; path: "plan" | "key" }; error?: string }> {
     const ai = await this.ai.read();
-    if (!ai.provider || !ai.path || !ai.accepted) return { error: "pick the AI in Settings → AI, and accept its terms on the phone, first" };
+    if (!ai.provider || !ai.path || !ai.accepted) return { error: "Set up AI in Settings first" };
     if (ai.path === "key") {
       const key = this.key.status();
-      if (!key.set || key.provider !== ai.provider) return { error: "there's no key for the AI yet: add one in Settings → AI" };
+      if (!key.set || key.provider !== ai.provider) return { error: "Add an API key in Settings first" };
     }
     return { ai: { provider: ai.provider, path: ai.path } };
   }
@@ -831,7 +838,7 @@ export class Daemon {
     };
     const viewer = await this.profiles.active();
     if (viewer.role !== "adult") {
-      this.json(response, 403, { ok: false, error: "an adult asks the builder" });
+      this.json(response, 403, { ok: false, error: "Only adults can build apps" });
       return true;
     }
     if (method === "GET" && path === base) {
@@ -966,7 +973,7 @@ export class Daemon {
       const pin = change.pin as Record<string, unknown>;
       if (typeof pin.for === "string") {
         next.pin = {
-          title: typeof pin.title === "string" ? pin.title.slice(0, 60) : "enter the adult pin",
+          title: typeof pin.title === "string" ? pin.title.slice(0, 60) : "Enter the adult PIN",
           for: pin.for.slice(0, 120),
           digits: Math.max(0, Math.min(4, Number(pin.digits) || 0)),
           error: typeof pin.error === "string" ? pin.error.slice(0, 120) : null,
@@ -1018,9 +1025,9 @@ export class Daemon {
   private async shareTarget(phone: { name: string }): Promise<{ from: string; to: string } | { error: string }> {
     const viewer = await this.profiles.active();
     if (viewer.role === "child" && !(await this.shared.allowed()).includes(viewer.id)) {
-      return { error: `${viewer.name.toLowerCase()}'s profile doesn't take shares. an adult can allow it in settings → profiles` };
+      return { error: `${viewer.name}'s profile doesn't accept things from phones` };
     }
-    return { from: `${viewer.name.toLowerCase()} on ${phone.name}`, to: viewer.id };
+    return { from: `${viewer.name} on ${phone.name}`, to: viewer.id };
   }
 
   // A share is in: the TV asks about it now if nothing's playing, or else
@@ -1100,7 +1107,7 @@ export class Daemon {
   private async named(field: TvContext["field"]): Promise<(TvContext["field"] & { name?: string }) | null> {
     if (!field?.app) return field;
     const found = (await this.home.manifests().catch(() => [])).find(({ manifest }) => manifest.id === field.app);
-    return { ...field, name: (found?.manifest.name ?? field.app).toLowerCase() };
+    return { ...field, name: found?.manifest.name ?? field.app };
   }
 
   // The router this box's setup chose (daemon/router-client.ts), through
@@ -1120,8 +1127,8 @@ export class Daemon {
   // Why the TV won't take a sentence now, or null: setup isn't done, or
   // the TV is locked behind the PIN (ADR-034).
   private async sayRefusal(): Promise<string | null> {
-    if (!(await this.setup()).done) return "the tv takes requests once setup is done";
-    if (this.pin.status((await this.profiles.active()).locked).locked) return "the tv is locked: unlock it first";
+    if (!(await this.setup()).done) return "Finish setup on your TV first";
+    if (this.pin.status((await this.profiles.active()).locked).locked) return "Your TV is locked. Unlock it first.";
     return null;
   }
 
@@ -1134,7 +1141,7 @@ export class Daemon {
     }
     const body = (await this.body(request)) as { sentence?: unknown } | undefined;
     if (typeof body?.sentence !== "string" || !body.sentence.trim()) {
-      this.json(response, 400, { ok: false, error: "say something" });
+      this.json(response, 400, { ok: false, error: "Say something" });
       return;
     }
     this.json(response, 200, { ok: true, said: await this.say.hear(body.sentence, from) });
@@ -1449,7 +1456,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/hello") {
       const hello = this.phoneChannel.hello(await this.body(request));
       if (hello) this.json(response, 200, { ok: true, ...hello });
-      else this.json(response, 401, { ok: false, error: "this phone isn't paired: pair it from the tv", pair: true });
+      else this.json(response, 401, { ok: false, error: "This phone isn't paired. Pair it from your TV.", pair: true });
       return;
     }
 
@@ -1505,7 +1512,7 @@ export class Daemon {
     // A child's profile doesn't have it.
     if (method === "POST" && path === "/api/phone/settings") {
       if ((await this.profiles.active()).role !== "adult") {
-        this.json(response, 403, { ok: false, error: "settings aren't on a child's profile" });
+        this.json(response, 403, { ok: false, error: "A child's profile has no settings" });
         return;
       }
       this.broadcast("page", { route: "settings" });
@@ -1577,7 +1584,7 @@ export class Daemon {
     // while setup is on.
     if (method === "POST" && path === "/api/phone/setup-music") {
       if ((await this.setup()).done) {
-        this.json(response, 409, { ok: false, error: "setup is done" });
+        this.json(response, 409, { ok: false, error: "Setup is done" });
         return;
       }
       const result = await this.setupState.setMuted(((await this.body(request)) as { muted?: unknown } | undefined)?.muted);
@@ -1596,7 +1603,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/background") {
       const viewer = await this.profiles.active();
       if (viewer.role !== "adult") {
-        this.json(response, 403, { ok: false, error: "an adult changes the tv's background" });
+        this.json(response, 403, { ok: false, error: "Only adults can change the background" });
         return;
       }
       let body: Buffer;
@@ -1606,7 +1613,7 @@ export class Daemon {
         this.json(response, 413, { ok: false, error: (error as Error).message });
         return;
       }
-      const result = await this.backgrounds.add(body, { text: url.searchParams.get("credit"), from: `${viewer.name.toLowerCase()} on ${phone.name}` });
+      const result = await this.backgrounds.add(body, { text: url.searchParams.get("credit"), from: `${viewer.name} on ${phone.name}` });
       if (!result.state) {
         this.json(response, 400, { ok: false, error: result.error });
         return;
@@ -1640,7 +1647,7 @@ export class Daemon {
         result = await this.shared.addPhoto(body, url.searchParams.get("credit"), target);
       } else {
         if (Number(request.headers["content-length"]) > MAX_VIDEO) {
-          this.json(response, 413, { ok: false, error: `that video is too big: ${MAX_VIDEO / 1024 ** 3} gb at most` });
+          this.json(response, 413, { ok: false, error: `That video is too big. ${MAX_VIDEO / 1024 ** 3} GB at most.` });
           return;
         }
         result = await this.shared.addVideo(request, url.searchParams.get("name"), target);
@@ -1659,17 +1666,17 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/sign-in") {
       const body = (await this.body(request)) as { username?: unknown; password?: unknown } | undefined;
       if (!this.signingIn) {
-        this.json(response, 409, { ok: false, error: "nothing is signing in on the tv" });
+        this.json(response, 409, { ok: false, error: "Nothing is signing in on your TV" });
         return;
       }
       const fits = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 200;
       if (!fits(body?.username) || !fits(body?.password)) {
-        this.json(response, 400, { ok: false, error: "a name and a password, of up to 200 characters each" });
+        this.json(response, 400, { ok: false, error: "Names and passwords can be up to 200 characters" });
         return;
       }
       const sent = [{ text: body!.username }, { key: "tab" }, { text: body!.password }, { key: "enter" }].every((event) => this.remote(event as Record<string, unknown>));
       if (!sent) {
-        this.json(response, 503, { ok: false, error: "the tv session isn't on" });
+        this.json(response, 503, { ok: false, error: NOT_READY });
         return;
       }
       this.json(response, 200, { ok: true });
@@ -1695,7 +1702,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/updates/install") {
       if (!this.guarded(request, response, "install now from a phone")) return;
       if (!this.remote({ cmd: "update-install" })) {
-        this.json(response, 503, { ok: false, error: "the tv session isn't on" });
+        this.json(response, 503, { ok: false, error: NOT_READY });
         return;
       }
       this.log(`the update installs now, from ${phone.name}`);
@@ -1706,7 +1713,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/updates/later") {
       const update = (await this.phoneUpdate()) as { version: string } | null;
       if (!update) {
-        this.json(response, 404, { ok: false, error: "there's no update" });
+        this.json(response, 404, { ok: false, error: "Couldn't find that update" });
         return;
       }
       await this.updates.setTonight({ version: null });
@@ -1734,7 +1741,7 @@ export class Daemon {
         return;
       }
       if (!this.remote(event)) {
-        this.json(response, 503, { ok: false, error: "the tv session isn't on" });
+        this.json(response, 503, { ok: false, error: NOT_READY });
         return;
       }
       this.json(response, 200, { ok: true });
@@ -1747,7 +1754,7 @@ export class Daemon {
       const body = (await this.body(request)) as { id?: unknown } | undefined;
       const target = (await this.profiles.list()).find((p) => p.id === body?.id);
       if (!target) {
-        this.json(response, 404, { ok: false, error: "there's no such profile" });
+        this.json(response, 404, { ok: false, error: NO_PROFILE });
         return;
       }
       const now = await this.profiles.active();
@@ -1767,7 +1774,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/phone/terms") {
       const viewer = await this.profiles.active();
       if (viewer.role !== "adult") {
-        this.json(response, 403, { ok: false, error: "an adult accepts the terms" });
+        this.json(response, 403, { ok: false, error: "Only adults can accept the terms" });
         return;
       }
       if (!this.guarded(request, response, "accepting the provider's terms from a phone")) return;
@@ -1815,20 +1822,20 @@ export class Daemon {
     // root's alone, as from Settings → AI (S4.6).
     if (method === "POST" && path === "/api/phone/key") {
       if ((await this.profiles.active()).role !== "adult") {
-        this.json(response, 403, { ok: false, error: "the key is an adult's" });
+        this.json(response, 403, { ok: false, error: "Only adults can change the key" });
         return;
       }
       if (!this.guarded(request, response, "the provider key from a phone")) return;
       const ai = await this.ai.read();
       if (!ai.provider || !ai.accepted) {
-        this.json(response, 409, { ok: false, error: "accept the provider's terms first" });
+        this.json(response, 409, { ok: false, error: ai.provider ? `Accept ${OFFERS[ai.provider].name}'s terms first` : "Set up AI in Settings first" });
         return;
       }
       const body = (await this.body(request)) as { key?: unknown } | undefined;
       const why = await this.key.store(ai.provider, body?.key);
       if (why) {
         this.log(`the provider key from ${phone.name} wasn't kept: ${why}`);
-        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        this.json(response, notSaved(why) ? 500 : 400, { ok: false, error: why });
         return;
       }
       this.log(`a key for ${ai.provider} is kept, root's alone, from ${phone.name}`);
@@ -1844,16 +1851,16 @@ export class Daemon {
     const exporting = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/export$/.exec(path);
     if (method === "GET" && exporting) {
       if ((await this.profiles.active()).role !== "adult") {
-        this.json(response, 403, { ok: false, error: "an adult exports an app" });
+        this.json(response, 403, { ok: false, error: "Only adults can save a copy" });
         return;
       }
       // Only the app the TV is offering now, as the push below.
       if (this.exportOffer?.id !== exporting[1] || this.exportOffer.until <= Date.now()) {
-        this.json(response, 403, { ok: false, error: "export it from its details on the tv first" });
+        this.json(response, 403, { ok: false, error: "Save a copy from its details on your TV first" });
         return;
       }
       const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === exporting[1]);
-      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : NO_APP;
       if (!found || refusal) {
         this.json(response, 400, { ok: false, error: refusal });
         return;
@@ -1879,21 +1886,21 @@ export class Daemon {
     if (method === "POST" && pushing) {
       const viewer = await this.profiles.active();
       if (viewer.role !== "adult") {
-        this.json(response, 403, { ok: false, error: "an adult exports an app" });
+        this.json(response, 403, { ok: false, error: "Only adults can save a copy" });
         return;
       }
       if (!this.guarded(request, response, "pushing an app to GitHub")) return;
       const offer = this.exportOffer;
       if (!offer || offer.id !== pushing[1] || offer.until <= Date.now()) {
-        this.json(response, 400, { ok: false, error: "export it from its details on the tv first" });
+        this.json(response, 400, { ok: false, error: "Save a copy from its details on your TV first" });
         return;
       }
       if (!offer.github) {
-        this.json(response, 400, { ok: false, error: "this box isn't signed in to GitHub" });
+        this.json(response, 400, { ok: false, error: "This TV isn't signed in to GitHub" });
         return;
       }
       const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === offer.id);
-      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : NO_APP;
       if (!found || refusal) {
         this.json(response, 400, { ok: false, error: refusal });
         return;
@@ -1951,9 +1958,9 @@ export class Daemon {
       ready: async () => {
         const ai = await this.ai.read();
         if (!ai.provider || !ai.path) return NO_AI;
-        if (!ai.accepted) return `an adult accepts ${OFFERS[ai.provider].name}'s terms on a phone first`;
+        if (!ai.accepted) return `Accept ${OFFERS[ai.provider].name}'s terms first`;
         const key = this.key.status();
-        if (ai.path === "key" && !(key.set && key.provider === ai.provider)) return `add ${OFFERS[ai.provider].name}'s key in settings → ai first`;
+        if (ai.path === "key" && !(key.set && key.provider === ai.provider)) return `Add your ${OFFERS[ai.provider].name} key in Settings first`;
         return null;
       },
       make: async (what) => {
@@ -2055,7 +2062,7 @@ export class Daemon {
   private guarded(request: IncomingMessage, response: ServerResponse, what: string): boolean {
     if (this.pin.allows(this.grant(request), this.signedBy.get(request))) return true;
     this.log(`refused ${what}: it needs the pin`);
-    this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
+    this.json(response, 403, { ok: false, error: NEEDS_PIN, pin: true });
     return false;
   }
 
@@ -2136,24 +2143,24 @@ export class Daemon {
   private async newTileContent(viewer: Viewer, size: Size): Promise<{ content: unknown; failed: boolean }> {
     const apps = await this.home.apps(viewer);
     const feed = await this.news.forViewer(viewer.role, apps.map((app) => app.id));
-    const name = (id: string) => (apps.find((app) => app.id === id)?.name ?? id).toLowerCase();
+    const name = (id: string) => apps.find((app) => app.id === id)?.name ?? id;
     if (!feed.ok) {
       const adult = viewer.role === "adult";
       const why: Record<string, string> = {
-        "no-key": adult ? "add a tmdb key in settings → new this week" : "an adult adds a tmdb key in settings",
-        "no-region": adult ? "pick a region in settings → new this week" : "an adult picks a region in settings",
-        "no-services": `tmdb doesn't list your apps' services in ${(feed.region ?? "your region").toLowerCase()}`,
+        "no-key": adult ? "Set up New this week in Settings" : "Ask an adult to set up New this week",
+        "no-region": adult ? "Pick your location in Settings" : "Ask an adult to pick your location",
+        "no-services": `Can't see what's new on your apps in ${feed.region ?? "your location"}`,
       };
-      return { content: { headline: { label: "", caption: why[feed.why ?? ""] ?? "tmdb didn't answer" }, refreshMins: 30 }, failed: feed.why === "failed" };
+      return { content: { headline: { label: "", caption: why[feed.why ?? ""] ?? "Couldn't check just now" }, refreshMins: 30 }, failed: feed.why === "failed" };
     }
     // The region on the right of the tile's head, as Weather has its city.
-    const region = ((await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "").toLowerCase();
-    if (!feed.titles.length) return { content: { headline: { label: region, caption: "nothing new on your apps this week" }, refreshMins: 180 }, failed: false };
+    const region = (await this.news.regions()).regions.find((r) => r.code === feed.region)?.name ?? feed.region ?? "";
+    if (!feed.titles.length) return { content: { headline: { label: region, caption: "Nothing new on your apps this week" }, refreshMins: 180 }, failed: false };
     if (size === "s") return { content: { headline: { label: "", value: String(feed.titles.length) }, refreshMins: 180 }, failed: false };
     const content = {
       headline: { label: region },
       entries: feed.titles.slice(0, 8).map((title) => ({
-        label: title.title.toLowerCase(),
+        label: title.title,
         caption: `${name(title.app)}${title.season ? ` · season ${title.season}` : ""}`,
         ...(title.poster ? { image: title.poster } : {}),
         item: newItem(title),
@@ -2192,7 +2199,7 @@ export class Daemon {
     let size = 0;
     for await (const chunk of request) {
       size += (chunk as Buffer).length;
-      if (size > limit) throw new Error(`that's too big: ${Math.round(limit / 1024 / 1024)} mb at most`);
+      if (size > limit) throw new Error(`That's too big. ${Math.round(limit / 1024 / 1024)} MB at most.`);
       chunks.push(chunk as Buffer);
     }
     return Buffer.concat(chunks);
@@ -2212,7 +2219,7 @@ export class Daemon {
   private async sendShared(request: IncomingMessage, response: ServerResponse, id: string): Promise<void> {
     const file = await this.shared.file(id);
     if (!file) {
-      this.json(response, 404, { ok: false, error: "that share's file isn't here" });
+      this.json(response, 404, { ok: false, error: "That's no longer on your TV" });
       return;
     }
     const headers = { "Content-Type": file.type, "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff" };
@@ -2421,7 +2428,7 @@ export class Daemon {
     const setupChange = /^\/api\/setup\/(step|finish|goal|ready)$/.exec(path);
     if (method === "POST" && setupChange) {
       if ((await this.setup()).done) {
-        this.json(response, 409, { ok: false, error: "setup is done" });
+        this.json(response, 409, { ok: false, error: "Setup is done" });
         return;
       }
       const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
@@ -2458,7 +2465,7 @@ export class Daemon {
     // The setup soundtrack muted with the TV's M, or playing again.
     if (method === "POST" && path === "/api/setup/music") {
       if ((await this.setup()).done) {
-        this.json(response, 409, { ok: false, error: "setup is done" });
+        this.json(response, 409, { ok: false, error: "Setup is done" });
         return;
       }
       const result = await this.setupState.setMuted(((await this.body(request)) as { muted?: unknown } | undefined)?.muted);
@@ -2473,7 +2480,7 @@ export class Daemon {
 
     if (method === "POST" && (path === "/api/setup/apps" || path === "/api/setup/wish")) {
       if ((await this.setup()).done) {
-        this.json(response, 409, { ok: false, error: "setup is done" });
+        this.json(response, 409, { ok: false, error: "Setup is done" });
         return;
       }
       const body = ((await this.body(request)) ?? {}) as { install?: unknown; text?: unknown };
@@ -2506,7 +2513,7 @@ export class Daemon {
     // can't and a join needs the PIN (/api/network).
     if ((path === "/api/setup/networks" || path === "/api/setup/wifi") && (await this.setup()).done) {
       this.log(`refused ${method} ${path}: setup is done`);
-      this.json(response, 403, { ok: false, error: "setup is done. the wi-fi changes in settings" });
+      this.json(response, 403, { ok: false, error: "Setup is done. Change Wi-Fi in Settings." });
       return;
     }
 
@@ -2614,7 +2621,7 @@ export class Daemon {
     // is one. A child's profile doesn't add apps.
     if (path === "/api/apps/add" && (method === "GET" || method === "POST")) {
       if ((await this.profiles.active()).role === "child") {
-        this.json(response, 403, { ok: false, error: "only an adult adds apps" });
+        this.json(response, 403, { ok: false, error: "Only adults can add apps" });
         return;
       }
       if (method === "POST") {
@@ -2701,7 +2708,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/pin/allows") {
       const body = (await this.body(request)) as { grant?: unknown } | undefined;
       if (!this.pin.allows(body?.grant)) {
-        this.json(response, 403, { ok: false, error: "that needs the pin", pin: true });
+        this.json(response, 403, { ok: false, error: NEEDS_PIN, pin: true });
         return;
       }
       this.json(response, 200, { ok: true });
@@ -2715,7 +2722,7 @@ export class Daemon {
       const first = method === "PUT" && !this.pin.status().set;
       const why = method === "PUT" ? this.pin.set(body?.pin, this.grant(request)) : this.pin.remove(this.grant(request), await this.profiles.needPin());
       if (why) {
-        this.json(response, why === "that needs the pin" ? 403 : 400, { ok: false, error: why });
+        this.json(response, needsPin(why) ? 403 : 400, { ok: false, error: why });
         return;
       }
       // A first PIN starts with no profile locked (ADR-087).
@@ -2796,7 +2803,7 @@ export class Daemon {
     if (method === "DELETE" && phone) {
       if (!this.guarded(request, response, "forgetting a phone") || !(await this.adult(request, response, "forgetting a phone"))) return;
       if (!this.phones.forget(phone[1])) {
-        this.json(response, 404, { ok: false, error: "there's no such phone" });
+        this.json(response, 404, { ok: false, error: "Couldn't find that phone" });
         return;
       }
       this.phoneChannel.forget(phone[1]);
@@ -2878,13 +2885,13 @@ export class Daemon {
           this.keyTerms = provider as Provider;
           this.phonesChanged();
         }
-        this.json(response, 409, { ok: false, error: `${offer.name}'s terms come first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.key, summary: offer.summary.key } });
+        this.json(response, 409, { ok: false, error: `Accept ${offer.name}'s terms first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.key, summary: offer.summary.key } });
         return;
       }
       const why = await this.key.store(provider, body?.key);
       if (why) {
         this.log(`the provider key wasn't kept: ${why}`);
-        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        this.json(response, notSaved(why) ? 500 : 400, { ok: false, error: why });
         return;
       }
       const { set } = this.key.status();
@@ -2935,7 +2942,7 @@ export class Daemon {
           this.planTerms = provider as Provider;
           this.phonesChanged();
         }
-        this.json(response, 409, { ok: false, error: `${offer.name}'s terms come first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.plan, summary: offer.summary.plan } });
+        this.json(response, 409, { ok: false, error: `Accept ${offer.name}'s terms first`, terms: { provider, name: offer.name, maker: offer.maker, terms: offer.terms.plan, summary: offer.summary.plan } });
         return;
       }
       const chosen = await this.ai.choose(provider, "plan");
@@ -3015,7 +3022,7 @@ export class Daemon {
       const all = await this.profiles.list();
       const target = all.find((p) => p.id === body?.id);
       if (!target) {
-        this.json(response, 404, { ok: false, error: "there's no such profile" });
+        this.json(response, 404, { ok: false, error: NO_PROFILE });
         return;
       }
       const now = await this.profiles.active();
@@ -3037,11 +3044,11 @@ export class Daemon {
       if (!this.guarded(request, response, "changing profiles")) return;
       const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
       if (method !== "DELETE" && body.role === "child" && !this.pin.status().set) {
-        this.json(response, 400, { ok: false, error: "a child's profile needs an adult pin. set one in settings → adult pin first" });
+        this.json(response, 400, { ok: false, error: "Set an adult PIN first. A child's profile needs one." });
         return;
       }
       if (method !== "DELETE" && body.locked === true && !this.pin.status().set) {
-        this.json(response, 400, { ok: false, error: "a locked profile needs an adult pin. set one in settings → adult pin first" });
+        this.json(response, 400, { ok: false, error: "Set an adult PIN first. A locked profile needs one." });
         return;
       }
       const locked = (await this.pinStatus()).locked;
@@ -3060,7 +3067,7 @@ export class Daemon {
         await this.shared.allow(profile.id, profile.role === "child" && body.shares === true);
       }
       if (error) {
-        this.json(response, error === "there's no such profile" ? 404 : 400, { ok: false, error });
+        this.json(response, error === NO_PROFILE ? 404 : 400, { ok: false, error });
         return;
       }
       this.log(method === "POST" ? `a profile was added, ${profile!.role === "child" ? "a child" : "an adult"}` : method === "PUT" ? "a profile was changed" : "a profile was taken off");
@@ -3080,7 +3087,7 @@ export class Daemon {
         return;
       }
       if (!(await this.home.setForChildren(forChildren[1], body.allowed))) {
-        this.json(response, 404, { ok: false, error: "that isn't an app here" });
+        this.json(response, 404, { ok: false, error: NO_APP });
         return;
       }
       this.broadcast("apps", {});
@@ -3095,7 +3102,7 @@ export class Daemon {
     if (method === "GET" && appSetup) {
       const setup = await this.home.appSetup(appSetup[1]);
       if (!setup) {
-        this.json(response, 404, { ok: false, error: "that isn't an app here with a setup" });
+        this.json(response, 404, { ok: false, error: NO_APP });
         return;
       }
       this.json(response, 200, { ok: true, setup });
@@ -3106,7 +3113,7 @@ export class Daemon {
       const body = (await this.body(request)) as { values?: unknown } | undefined;
       const why = await this.home.saveAppSetup(appSetup[1], body?.values);
       if (why) {
-        this.json(response, why.startsWith("that isn't") ? 404 : 400, { ok: false, error: why });
+        this.json(response, /^(that isn't|couldn't find)/i.test(why) ? 404 : 400, { ok: false, error: why });
         return;
       }
       this.log(`${appSetup[1]}: its setup fields are filled in`);
@@ -3165,7 +3172,7 @@ export class Daemon {
     if (method === "POST" && offer) {
       if (!(await this.adult(request, response, "exporting an app"))) return;
       const found = (await this.home.manifests()).find(({ manifest }) => manifest.id === offer[1]);
-      const refusal = found ? exportRefusal(found.manifest, found.tier) : "there's no such app";
+      const refusal = found ? exportRefusal(found.manifest, found.tier) : NO_APP;
       if (!found || refusal) {
         this.json(response, 400, { ok: false, error: refusal });
         return;
@@ -3185,7 +3192,7 @@ export class Daemon {
         return;
       }
       if (!(await this.home.signedIn(signedIn[1], body.signedIn))) {
-        this.json(response, 404, { ok: false, error: "that isn't an app here that signs in" });
+        this.json(response, 404, { ok: false, error: NO_APP });
         return;
       }
       this.json(response, 200, { ok: true });
@@ -3200,7 +3207,7 @@ export class Daemon {
     if (method === "GET" && profiles) {
       const found = await this.home.serviceProfiles(profiles[1]);
       if (!found) {
-        this.json(response, 404, { ok: false, error: "that isn't an app here with profiles" });
+        this.json(response, 404, { ok: false, error: NO_APP });
         return;
       }
       this.json(response, 200, { ok: true, ...found });
@@ -3394,7 +3401,7 @@ export class Daemon {
       const apps = (await this.home.apps(viewer)).map((app) => app.id);
       const title = (await this.news.forViewer(viewer.role, apps)).titles.find((t) => `tmdb:${t.kind}:${t.id}` === body?.id);
       if (!title) {
-        this.json(response, 404, { ok: false, error: "that isn't new this week any more" });
+        this.json(response, 404, { ok: false, error: "That isn't new this week any more" });
         return;
       }
       const route: Route = { ...NONE, intent: "play", query: title.title, kind: title.kind, app: title.app, season: title.season ?? null };
@@ -3453,7 +3460,7 @@ export class Daemon {
       const why = await this.tmdbKey.store(method === "DELETE" ? null : (body?.key ?? ""));
       if (why) {
         this.log(`the tmdb key wasn't kept: ${why}`);
-        this.json(response, why.startsWith("the key couldn't") ? 500 : 400, { ok: false, error: why });
+        this.json(response, notSaved(why) ? 500 : 400, { ok: false, error: why });
         return;
       }
       const kept = this.tmdbKey.status().set;
@@ -3535,7 +3542,7 @@ export class Daemon {
     if (method === "GET" && launch) {
       const target = await this.home.launch(launch[1], await this.profiles.active());
       if (!target) {
-        this.json(response, 404, { ok: false, error: "that app can't be opened yet" });
+        this.json(response, 404, { ok: false, error: "Can't open that app yet" });
         return;
       }
       this.json(response, 200, { ok: true, ...target });
@@ -3574,7 +3581,7 @@ export class Daemon {
     if (shared) {
       const share = (await this.sharesFor(await this.profiles.active())).find((one) => one.id === shared[1]);
       if (!share) {
-        this.json(response, 404, { ok: false, error: "that share isn't here" });
+        this.json(response, 404, { ok: false, error: "That's no longer on your TV" });
         return;
       }
       if (method === "GET" && shared[2] === "file") {
@@ -3602,7 +3609,7 @@ export class Daemon {
       if (method === "POST" && shared[2] === "background") {
         if (!(await this.adult(request, response, "a shared photo as the background"))) return;
         const file = await this.shared.file(share.id);
-        const result = share.kind === "photo" && file ? await this.backgrounds.add(await readFile(file.path), { text: share.credit ?? null, from: share.from }) : { error: "only a photo can be the background" };
+        const result = share.kind === "photo" && file ? await this.backgrounds.add(await readFile(file.path), { text: share.credit ?? null, from: share.from }) : { error: "Only a photo can be the background" };
         if (!result.state) {
           this.json(response, 400, { ok: false, error: result.error });
           return;
@@ -3762,7 +3769,7 @@ export class Daemon {
     if (method === "POST" && path === "/api/backgrounds/immich") {
       if (!(await this.adult(request, response, "the background"))) return;
       if (this.immichBusy) {
-        this.json(response, 409, { ok: false, error: "an album's photos are still coming" });
+        this.json(response, 409, { ok: false, error: "Still getting the last album's photos" });
         return;
       }
       const body = ((await this.body(request)) ?? {}) as { link?: unknown };

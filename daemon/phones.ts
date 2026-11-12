@@ -119,11 +119,11 @@ export class Phones {
   // the network.
   pair(request: PairRequest | undefined): Paired | { error: string } {
     const pending = this.pending;
-    if (!pending || pending.until <= this.now()) return { error: "that code has run out: pair again from the tv" };
+    if (!pending || pending.until <= this.now()) return { error: "That code expired. Get a new one on your TV." };
     const wrong = () => {
       pending.tries++;
       if (pending.tries >= CODE_TRIES) this.pending = null;
-      return { error: "that isn't the code on the tv" };
+      return { error: "That's not the code on your TV" };
     };
     const theirs = unb64u(request?.key, 32);
     const proof = unb64u(request?.proof, 32);

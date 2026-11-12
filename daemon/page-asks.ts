@@ -8,6 +8,7 @@
 // origins only.
 
 import { type Asked, Asks, AskWatch } from "./asks.ts";
+import { NOT_READY } from "./notices.ts";
 
 export interface PageAsk extends Asked {
   url: string;
@@ -32,7 +33,7 @@ export const ANSWER_MAX = 6 * 1024 * 1024;
 // Only what a page answer has, within bounds.
 export function cleanPage(said: unknown): PageAnswer {
   const a = (typeof said === "object" && said !== null ? said : {}) as Record<string, unknown>;
-  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "the TV couldn't show it" };
+  if (a.ok !== true) return { ok: false, error: typeof a.error === "string" ? a.error.slice(0, 300) : "Couldn't show that" };
   return {
     ok: true,
     url: typeof a.url === "string" ? a.url.slice(0, 2000) : "",
@@ -46,7 +47,7 @@ export function cleanPage(said: unknown): PageAnswer {
 export class PageAsks {
   private asks = new Asks<{ url: string; origins: string[] }, PageAnswer>({
     clean: cleanPage,
-    late: { ok: false, error: "the TV didn't answer in time: is its session running?" },
+    late: { ok: false, error: NOT_READY },
   });
 
   // An ask from the build, answered by the screen daemon, or not in time.

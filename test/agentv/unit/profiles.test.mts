@@ -43,17 +43,17 @@ test("S4.2 profiles have a name, a colour and a role, in the order they came", a
   assert.deepEqual((await profiles.list()).map((p) => p.name), ["radomir", "Ana", "mila"]);
   assert.equal(await profiles.children(), true);
   for (const [input, error] of [
-    [{}, "a name of up to 20 characters"],
-    [{ name: "  " }, "a name of up to 20 characters"],
-    [{ name: "x".repeat(21) }, "a name of up to 20 characters"],
-    [{ name: "ANA" }, "someone here has that name already"],
+    [{}, "Names can be up to 20 characters"],
+    [{ name: "  " }, "Names can be up to 20 characters"],
+    [{ name: "x".repeat(21) }, "Names can be up to 20 characters"],
+    [{ name: "ANA" }, "That name is taken"],
     [{ name: "leo", role: "teen" }, "adult or child"],
     [{ name: "leo", avatar: "pink" }, "a colour: blue, green, magenta, yellow, cyan, orange, red"],
   ] as const) {
     assert.deepEqual(await profiles.add(input), { error }, JSON.stringify(input));
   }
   assert.equal((await profiles.edit(mila.id, { name: "Mila", avatar: "cyan" })).profile!.avatar, "cyan");
-  assert.deepEqual(await profiles.edit("v-none", { name: "x" }), { error: "there's no such profile" });
+  assert.deepEqual(await profiles.edit("v-none", { name: "x" }), { error: "Couldn't find that profile" });
 });
 
 test("S4.2 one viewer watches at a time, and the box always keeps an adult", async () => {
@@ -62,15 +62,15 @@ test("S4.2 one viewer watches at a time, and the box always keeps an adult", asy
   assert.equal((await profiles.switchTo(mila.id))!.id, mila.id);
   assert.equal((await profiles.active()).id, mila.id);
   assert.equal(await profiles.switchTo("v-none"), null);
-  assert.equal(await profiles.remove("radomir"), "the box needs an adult");
-  assert.deepEqual(await profiles.edit("radomir", { role: "child" }), { error: "the box needs an adult" });
+  assert.equal(await profiles.remove("radomir"), "Keep at least one adult");
+  assert.deepEqual(await profiles.edit("radomir", { role: "child" }), { error: "Keep at least one adult" });
   // A profile taken off goes with what it watched, and whoever was watching
   // falls back to the first adult.
   ledger.record(mila.id, "agentv.sample", "film", { title: "Spring", position: 10, duration: 464, playing: true });
   assert.equal(await profiles.remove(mila.id), null);
   assert.deepEqual(ledger.recent(mila.id), []);
   assert.equal((await profiles.active()).id, "radomir");
-  assert.equal(await profiles.remove(mila.id), "there's no such profile");
+  assert.equal(await profiles.remove(mila.id), "Couldn't find that profile");
 });
 
 test("ADR-034 an adult's profile can ask for the PIN to open, and a child's can't", async () => {
@@ -78,12 +78,12 @@ test("ADR-034 an adult's profile can ask for the PIN to open, and a child's can'
   const ana = (await profiles.add({ name: "ana", role: "adult", locked: true })).profile!;
   assert.equal(ana.locked, true);
   assert.equal((await profiles.list()).find((p) => p.id === "radomir")!.locked, false, "the owner doesn't, until they say so");
-  assert.equal((await profiles.add({ name: "mila", role: "child", locked: true })).error, "only an adult's profile locks");
+  assert.equal((await profiles.add({ name: "mila", role: "child", locked: true })).error, "Only an adult's profile can be locked");
   assert.equal((await profiles.edit(ana.id, { locked: "yes" })).error, "locked is true or false");
-  assert.equal(await profiles.needPin(), "a locked profile needs the pin. unlock it in settings → profiles first");
+  assert.equal(await profiles.needPin(), "Keep the PIN while a profile is locked");
   // A profile that becomes a child's stops asking.
   assert.equal((await profiles.edit(ana.id, { role: "child" })).profile!.locked, false);
-  assert.equal((await profiles.edit(ana.id, { role: "child", locked: true })).error, "only an adult's profile locks");
+  assert.equal((await profiles.edit(ana.id, { role: "child", locked: true })).error, "Only an adult's profile can be locked");
   assert.equal((await profiles.edit(ana.id, { role: "adult", locked: true })).profile!.locked, true);
   assert.equal((await profiles.edit("radomir", { locked: true })).profile!.locked, true);
   assert.equal(await profiles.remove(ana.id), null);
@@ -134,7 +134,7 @@ test("S4.2 S4.5 a child's profile needs an adult PIN, and changing profiles need
   const ana = await send("POST", "/api/viewers", { name: "ana", role: "adult" });
   assert.equal(ana.status, 200, "with no pin, an adult's profile is added");
   const child = await send("POST", "/api/viewers", { name: "mila", role: "child" });
-  assert.deepEqual(child, { status: 400, data: { ok: false, error: "a child's profile needs an adult pin. set one in settings → adult pin first" } });
+  assert.deepEqual(child, { status: 400, data: { ok: false, error: "Set an adult PIN first. A child's profile needs one." } });
   assert.equal((await send("PUT", `/api/viewers/${ana.data.profile.id}`, { role: "child" })).status, 400, "nor can an adult become a child");
 
   assert.equal((await send("PUT", "/api/pin", { pin: "4826" })).status, 200);
@@ -143,7 +143,7 @@ test("S4.2 S4.5 a child's profile needs an adult PIN, and changing profiles need
   assert.equal(mila.status, 200);
   assert.deepEqual(mila.data.viewers.map((v: any) => v.name), ["radomir", "ana", "mila"]);
   // The PIN stays on while there's a child's profile.
-  assert.deepEqual((await send("DELETE", "/api/pin", undefined, await grant())).data, { ok: false, error: "a child's profile needs the pin, so it stays" });
+  assert.deepEqual((await send("DELETE", "/api/pin", undefined, await grant())).data, { ok: false, error: "Keep the PIN while there's a child's profile" });
   assert.ok(events.includes("viewers"));
 });
 
@@ -195,7 +195,7 @@ test("S4.2 each viewer keeps their own layout, and one taken off takes theirs", 
   assert.equal((await send("DELETE", `/api/viewers/${ana.id}`)).status, 403, "with a pin set, it needs it");
   assert.equal((await send("DELETE", `/api/viewers/${ana.id}`, undefined, await grant())).status, 200);
   assert.equal((await send("POST", "/api/viewer", { id: ana.id })).status, 404);
-  assert.equal((await send("DELETE", "/api/viewers/radomir", undefined, await grant())).data.error, "the box needs an adult");
+  assert.equal((await send("DELETE", "/api/viewers/radomir", undefined, await grant())).data.error, "Keep at least one adult");
 });
 
 test("ADR-034 S4.5 only a locked profile asks for the PIN after the box starts, after the TV has been off and to switch to it", async () => {
@@ -207,7 +207,7 @@ test("ADR-034 S4.5 only a locked profile asks for the PIN after the box starts, 
 
   // A locked profile needs a PIN, and locking one needs it.
   assert.equal((await send("PUT", "/api/viewers/radomir", { locked: true })).status, 403);
-  assert.deepEqual((await send("PUT", `/api/viewers/${mila.id}`, { locked: true }, await grant())).data, { ok: false, error: "only an adult's profile locks" });
+  assert.deepEqual((await send("PUT", `/api/viewers/${mila.id}`, { locked: true }, await grant())).data, { ok: false, error: "Only an adult's profile can be locked" });
   const locked = await send("PUT", "/api/viewers/radomir", { locked: true }, await grant());
   assert.equal(locked.status, 200);
   assert.deepEqual((await viewers()).map((v) => [v.name, v.locked]), [["radomir", true], ["mila", false], ["noor", false]]);
@@ -224,7 +224,7 @@ test("ADR-034 S4.5 only a locked profile asks for the PIN after the box starts, 
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.ok(events.slice(before).includes("pin"), "the TV hears it's unlocked");
   // Back to the locked one needs the PIN.
-  assert.deepEqual((await send("POST", "/api/viewer", { id: "radomir" })).data, { ok: false, error: "that needs the pin", pin: true });
+  assert.deepEqual((await send("POST", "/api/viewer", { id: "radomir" })).data, { ok: false, error: "That needs the PIN", pin: true });
   assert.equal((await send("POST", "/api/viewer", { id: "radomir" }, await grant())).status, 200);
   assert.equal(await pinNow(), false);
 

@@ -31,10 +31,10 @@ export interface PasswordState {
 
 // Why a password won't do, or null. Root checks it again.
 export function passwordProblem(password: unknown): string | null {
-  if (typeof password !== "string" || password.length === 0) return "type a password first";
-  if ([...password].length < MIN) return `the password needs ${MIN} characters or more`;
-  if ([...password].length > MAX) return `the password can be ${MAX} characters at most`;
-  if (/[\u0000-\u001f\u007f]/.test(password)) return "the password can't have a line break in it";
+  if (typeof password !== "string" || password.length === 0) return "Type a password first";
+  if ([...password].length < MIN) return `Passwords need ${MIN} characters or more`;
+  if ([...password].length > MAX) return `Passwords can be up to ${MAX} characters`;
+  if (/[\u0000-\u001f\u007f]/.test(password)) return "Passwords can't have a line break";
   return null;
 }
 
@@ -71,22 +71,22 @@ export class DesktopPassword {
         done(why);
       };
       const connection = createConnection(this.socket);
-      const timer = setTimeout(() => finish("the box didn't answer in time"), this.waitMs);
+      const timer = setTimeout(() => finish("Couldn't set the password. Try again."), this.waitMs);
       connection.setEncoding("utf8");
       connection.on("connect", () => connection.write(`${JSON.stringify({ password, grant: grant ?? "" })}\n`));
       connection.on("data", (chunk: string) => {
         answer += chunk;
-        if (answer.length > 4096) finish("the box's answer made no sense");
+        if (answer.length > 4096) finish("Couldn't set the password. Try again.");
         if (!answer.includes("\n")) return;
         try {
           const reply = JSON.parse(answer.slice(0, answer.indexOf("\n"))) as { ok?: unknown; error?: unknown };
-          finish(reply.ok === true ? null : typeof reply.error === "string" ? reply.error : "the password didn't take");
+          finish(reply.ok === true ? null : typeof reply.error === "string" ? reply.error : "Couldn't set the password");
         } catch {
-          finish("the box's answer made no sense");
+          finish("Couldn't set the password. Try again.");
         }
       });
-      connection.on("error", () => finish("the box can't set passwords: is agentv-password.socket on?"));
-      connection.on("close", () => finish("the box stopped before it answered"));
+      connection.on("error", () => finish("Couldn't set the password. Restart your TV and try again."));
+      connection.on("close", () => finish("Couldn't set the password. Try again."));
     });
   }
 }
