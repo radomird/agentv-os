@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -205,4 +206,56 @@ test("S2.12 home hears about an update even when the update folder comes after t
   writeFileSync(join(dir, "after.json"), '{"ok": false}');
   assert.ok(await until(() => heard > before), "and what's written after");
   updates.stop();
+});
+
+// systemd gives the daemon 5 s to stop, then kills it. The screen daemon
+// keeps its stream of the phone's keys open, a request can be stuck halfway
+// through its body, and one can come in on a connection that's still busy
+// while the daemon stops.
+test("the daemon stops well inside 5 s with a request stuck open, and one that comes in during the stop is turned away, not broken", async () => {
+  const stopper = new Daemon({ root, state: join(scratch, "stopping"), port: 0, log: (line) => lines.push(`stopping: ${line}`) });
+  const at = await stopper.listen();
+  const host = `127.0.0.1:${at}`;
+  const sockets: Socket[] = [];
+  const open = () =>
+    new Promise<{ socket: Socket; got: () => string }>((resolve) => {
+      let got = "";
+      const socket = connect(at, "127.0.0.1", () => resolve({ socket, got: () => got }));
+      socket.on("data", (chunk) => (got += chunk));
+      socket.on("error", () => {});
+      sockets.push(socket);
+    });
+  const until = async (done: () => boolean, ms = 3000) => {
+    for (let waited = 0; waited < ms && !done(); waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
+    return done();
+  };
+  const body = '{"themes": []}';
+  const put = `PUT /api/themes HTTP/1.1\r\nHost: ${host}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n`;
+  try {
+    // The screen daemon's stream.
+    const remote = await open();
+    remote.socket.write(`GET /api/remote HTTP/1.1\r\nHost: ${host}\r\nX-Agentv-Screen: 1\r\n\r\n`);
+    assert.ok(await until(() => remote.got().includes("agentv remote")));
+    // A body that never finishes coming, and one that finishes during the stop.
+    const stuck = await open();
+    stuck.socket.write(`${put}${body.slice(0, 5)}`);
+    const busy = await open();
+    busy.socket.write(`${put}${body.slice(0, 5)}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const started = Date.now();
+    let stopped = 0;
+    const closed = stopper.close().then(() => (stopped = Date.now() - started));
+    // The rest of the body, and the next request on the same connection.
+    busy.socket.write(`${body.slice(5)}GET /api/themes HTTP/1.1\r\nHost: ${host}\r\n\r\n`);
+    assert.ok(await until(() => (busy.got().match(/HTTP\/1\.1 /g) ?? []).length === 2), busy.got());
+    assert.match(busy.got(), /HTTP\/1\.1 200 OK[\s\S]*HTTP\/1\.1 503 /, busy.got());
+    assert.ok(remote.got().endsWith("0\r\n\r\n"), "the stream ends with the stop");
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 4000))]);
+    assert.ok(stopped > 0 && stopped < 2500, `it stopped after ${stopped || "more than 4000"} ms`);
+    assert.ok(!lines.some((line) => line.startsWith("stopping: error")), lines.filter((line) => line.startsWith("stopping:")).join("\n"));
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    stopper.server.closeAllConnections();
+  }
 });
