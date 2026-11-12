@@ -9,7 +9,7 @@ import { request } from "node:http";
 import { OFFERS, type AiState, type Provider } from "./ai.ts";
 import { AI_NAMES } from "../builder/reasons.ts";
 import { isCliProvider } from "./providers/cli.ts";
-import { CANT_ANSWER, TOOK_TOO_LONG } from "./providers/no-answer.ts";
+import { CANT_ANSWER, GETTING_READY, TOOK_TOO_LONG } from "./providers/no-answer.ts";
 import { NONE, type Routed, type RouterApp } from "./router.ts";
 
 export const ROUTER_SOCKETS = { api: "/run/agentv-router/router.sock", cli: "/run/agentv-router-cli/route.sock" };
@@ -51,6 +51,9 @@ export interface BoxRouterOptions {
   ai: () => Promise<AiState>;
   key: () => { set: boolean; provider: string | null };
   sockets?: { api: string; cli: string };
+  // The plan's CLI isn't there yet: ask root to fetch it (again, if a fetch
+  // failed), while the sentence comes back with the plain line.
+  fetchCli?: () => void;
 }
 
 // The router the box's own setup chose.
@@ -70,6 +73,8 @@ export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterA
       return viaSocket(sockets.api, { provider, sentence, apps });
     }
     if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't do this yet`, "plan");
-    return viaSocket(sockets.cli, { provider, sentence, apps });
+    const routed = await viaSocket(sockets.cli, { provider, sentence, apps });
+    if (routed.error === GETTING_READY) o.fetchCli?.();
+    return routed;
   };
 }
