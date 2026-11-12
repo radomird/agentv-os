@@ -2373,17 +2373,26 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/setup") {
-      const body = (await this.body(request)) as { done?: unknown } | undefined;
+      const body = (await this.body(request)) as { done?: unknown; pin?: unknown } | undefined;
       if (typeof body?.done !== "boolean") {
         this.json(response, 400, { ok: false, error: 'send {"done": true} or {"done": false} as JSON' });
         return;
       }
       const was = (await this.setup()).done;
+      // agentv setup reset sends the PIN with its ask. It allows this and
+      // nothing more: no grant comes of it, a locked TV stays locked and the
+      // pad's own wrong tries stand, as on the hotspot's page.
+      const byPin = was && !body.done && body.pin !== undefined && this.pin.status().set ? this.pin.right(body.pin, "setup-reset") : null;
+      if (byPin && !byPin.ok) {
+        this.log("a wrong pin for starting setup again");
+        this.json(response, 403, { ok: false, error: byPin.error, pin: true, wrong: true });
+        return;
+      }
       // Starting setup again is an adult's, past the PIN when one is set,
       // because a TV in setup asks for less: its pages pair a phone and
       // change the Wi-Fi with no PIN. Without this, "not done" would be a
       // way round the PIN for anything on the TV that can ask.
-      if (was && !body.done && (!this.guarded(request, response, "starting setup again") || !(await this.adult(request, response, "starting setup again")))) return;
+      if (was && !body.done && !byPin && (!this.guarded(request, response, "starting setup again") || !(await this.adult(request, response, "starting setup again")))) return;
       const setup = await this.setupState.mark(body.done);
       this.log(body.done ? "setup marked done" : "setup reset");
       // The setup hotspot closes as setup ends. Root is asked even when it's
