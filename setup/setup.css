@@ -691,8 +691,6 @@
   color: var(--red);
 }
 
-/* An app's first letter keeps its capital where setup's words are drawn in
-   lower case. */
 .app-face {
   display: flex;
   align-items: center;
@@ -703,7 +701,6 @@
   font-size: 30px;
   font-weight: 800;
   color: var(--background);
-  text-transform: none;
 }
 
 .app-text {

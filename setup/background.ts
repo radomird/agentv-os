@@ -67,13 +67,19 @@ export async function background(ctx: Ctx): Promise<View> {
     }
     const photos = now.items.filter((item) => item.kind === "photo").length;
     const shown = shownPictures(now);
+    // A work's credit is its maker's name and its title, as they write them.
+    const credit = now.source === "art" ? shown.find((item) => item.id === now.current)?.credit.text : undefined;
+    if (credit) {
+      line.replaceChildren(asWritten(credit));
+      return;
+    }
     line.textContent =
       now.source === "theme"
         ? own
           ? "Comes with the theme"
           : "This theme has none, so you get a plain pattern"
         : now.source === "art"
-        ? (shown.find((item) => item.id === now.current)?.credit.text ?? "Art from museums")
+        ? "Art from museums"
         : now.source === "folder"
           ? `${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from ${shown[0]?.credit.from ?? "a folder"}`
           : photos
