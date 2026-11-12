@@ -136,6 +136,8 @@ test("a child's System has no Power", async () => {
     await page.waitForSelector('.settings-panel[data-page="tv"] [data-action="updates"]');
     assert.deepEqual(await rows(page), ["country", "updates", "desktop", "about"]);
   } finally {
+    // Its stand-in for /api/home may still be answering as the page closes.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.close();
   }
 });
