@@ -48,7 +48,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 <p align="center">
   <img alt="The phone as the remote: a big area to swipe, with Back, Home, Play and Ask under it" src="../branding/readme/phone-remote.png" width="240">
   <img alt="The phone while a film plays: what's on, pause, and the same buttons" src="../branding/readme/phone-playing.png" width="240">
-  <img alt="Typing a search on the phone's own keyboard" src="../branding/readme/phone-typing.png" width="240">
+  <img alt="Typing a search on the phone: what you type shows on the TV as you type" src="../branding/readme/phone-typing.png" width="240">
 </p>
 
 ### Yours to change
@@ -64,13 +64,13 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 | | | |
 | --- | --- | --- |
-| <img alt="Home in the Terminal look: tiles like windows, in a mono font" src="../branding/readme/home-terminal.jpg"> | <img alt="Home in the Glass look, with a light theme and a row of games" src="../branding/readme/home-glass-light.jpg"> | <img alt="Home in the Cinema look: a film up top, then rows of apps, games and shows" src="../branding/readme/home-cinema.jpg"> |
+| <img alt="Home in the Terminal look: tiles like windows, in a mono font" src="../branding/readme/home-terminal.jpg"> | <img alt="Home in the Glass look, with a light theme and a row of games" src="../branding/readme/home-glass-light.jpg"> | <img alt="Home in the Cinema look: a new film up top, then your apps and games" src="../branding/readme/home-cinema.jpg"> |
 
 <p align="center"><i>Terminal, Glass and Cinema. Each one follows your theme.</i></p>
 
 <p align="center">
   <img alt="Ask on the TV, with the words make me a puzzle game typed from the phone" src="../branding/readme/ask.jpg" width="49%">
-  <img alt="The new game's page on the TV, with one button to make it" src="../branding/readme/make-it.jpg" width="49%">
+  <img alt="The new game's page on the TV: Make Blocks?, what it costs, and a button to make it" src="../branding/readme/make-it.jpg" width="49%">
 </p>
 
 ### Good for games
