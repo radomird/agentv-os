@@ -826,6 +826,11 @@ export function settings(ctx: Ctx, open?: string): View {
         if (!ctx.focus.move(action, panel)) ctx.focus.move(action, links);
         return true;
       }
+      // From the bar back toward Settings, with a page open: into the page,
+      // not the list, which would put the page away.
+      if ((action === "up" || action === "down") && shown.page && current && links.contains(current) && !ctx.focus.move(action, links)) {
+        return ctx.focus.move(action, panel);
+      }
       if (action === "left" && inside) {
         // Left along a row of cards first, then back: from a page to its
         // section's rows, from the rows to the list.

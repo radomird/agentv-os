@@ -472,6 +472,24 @@ test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", as
   }
 });
 
+test("Up from the bar goes back into the Settings page it left, and doesn't put the page away", async () => {
+  const page = await tv();
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="tv"]').click();
+    await page.locator('.panel [data-action="updates"]').click();
+    await page.waitForSelector('.settings-panel[data-page="updates"] [data-focus]');
+    await page.keyboard.press("ArrowDown");
+    for (let i = 0; i < 10 && !(await page.evaluate(() => Boolean(document.querySelector(".bar .focused")))); i++) await page.keyboard.press("ArrowDown");
+    assert.equal(await page.evaluate(() => Boolean(document.querySelector(".settings-panel .focused"))), false, "down from the page's last row is the bar");
+    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.locator('.settings-panel[data-page="updates"]').count(), 1, "the page is still open");
+    assert.equal(await page.evaluate(() => Boolean(document.querySelector(".settings-panel .focused"))), true, "and the focus is back in it");
+  } finally {
+    await page.close();
+  }
+});
+
 test("T17.1 Settings has no screensaver row: the ambient screen is the one idle screen, and only its wait is a setting", async () => {
   const page = await tv();
   try {
