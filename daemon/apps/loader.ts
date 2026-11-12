@@ -56,6 +56,7 @@ const CALLS: Record<string, { capability: Capability; ms: number }> = {
   "signIn.open": { capability: "signIn", ms: 30_000 },
   search: { capability: "search", ms: 10_000 },
   "playback.open": { capability: "playback", ms: 30_000 },
+  "playback.show": { capability: "playback", ms: 30_000 },
   "playback.readPlaybackState": { capability: "playback", ms: 5_000 },
   "playback.next": { capability: "playback", ms: 10_000 },
   "playback.pause": { capability: "playback", ms: 10_000 },
@@ -209,6 +210,8 @@ export class AppHost {
   private thisBox: boolean;
   private noSandbox: boolean;
   private bwrap: string;
+  // The optional calls the module has, once it's started.
+  private optional = new Set<string>();
 
   constructor(options: AppHostOptions) {
     this.manifest = options.manifest;
@@ -311,11 +314,13 @@ export class AppHost {
         if (message.type === "ready") {
           ready = true;
           clearTimeout(timer);
-          const problem = this.checkModule(String(message.id), message.capabilities as string[]);
+          const optional = (message.optional ?? { has: [], broken: [] }) as { has: string[]; broken: string[] };
+          const problem = this.checkModule(String(message.id), message.capabilities as string[], optional);
           if (problem) {
             letGo(child);
             rejectStart(new AppError("refused", problem));
           } else {
+            this.optional = new Set(optional.has);
             resolveStart();
           }
         } else if (message.type === "failed") {
@@ -358,12 +363,26 @@ export class AppHost {
     return message.toLowerCase().includes(this.manifest.name.toLowerCase()) ? message : `${this.manifest.name}: ${message}`;
   }
 
-  private checkModule(id: string, found: string[]): string | null {
+  private checkModule(id: string, found: string[], optional: { has: string[]; broken: string[] }): string | null {
     if (id !== this.manifest.id) return `${this.manifest.name}'s module says it's ${id}, not ${this.manifest.id}`;
     for (const capability of this.manifest.tv.capabilities) {
       if (!found.includes(capability)) return `${this.manifest.name} says it can ${capability}, but its module doesn't`;
     }
+    // An optional call, when there is one, is a function, and part of a
+    // capability the app declares.
+    if (optional.broken.length) return `${this.manifest.name}'s ${optional.broken[0]} isn't a function`;
+    for (const path of optional.has) {
+      const capability = CALLS[path]?.capability;
+      if (capability && !this.manifest.tv.capabilities.includes(capability)) return `${this.manifest.name} has ${path}, but its manifest doesn't list ${capability}`;
+    }
     return null;
+  }
+
+  // Whether the module has one of the contract's optional calls, such as
+  // playback.show. It starts the worker to know.
+  async has(path: string): Promise<boolean> {
+    await this.start();
+    return this.optional.has(path);
   }
 
   private onMessage(child: ChildProcess, message: Record<string, unknown>): void {

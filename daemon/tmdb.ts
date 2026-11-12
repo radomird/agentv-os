@@ -105,6 +105,7 @@ export interface NewTitle {
   id: number; // TMDB's
   title: string;
   date?: string; // the day it came out or its season started, when TMDB says
+  year?: number; // the year the film or the show first came out, so its app finds the right one
   season?: number; // a new season of a show
   poster?: string;
   app: string; // the app on this box it's on
@@ -207,6 +208,7 @@ interface Found {
   id: number;
   title: string;
   date?: string;
+  year?: number;
   poster?: string;
   popularity: number;
 }
@@ -220,7 +222,8 @@ function results(data: unknown, kind: "film" | "series"): Found[] {
     if (!Number.isInteger(v.id) || typeof title !== "string" || !title.trim() || v.adult === true) return [];
     const date = kind === "film" ? v.release_date : v.first_air_date;
     const poster = typeof v.poster_path === "string" && /^\/[\w.-]{1,80}$/.test(v.poster_path) ? `${TMDB_POSTERS}${v.poster_path}` : undefined;
-    return [{ id: v.id as number, title: title.trim().slice(0, 120), ...(typeof date === "string" && DAY.test(date) ? { date } : {}), ...(poster ? { poster } : {}), popularity: typeof v.popularity === "number" ? v.popularity : 0 }];
+    const day = typeof date === "string" && DAY.test(date) ? date : undefined;
+    return [{ id: v.id as number, title: title.trim().slice(0, 120), ...(day ? { date: day, year: Number(day.slice(0, 4)) } : {}), ...(poster ? { poster } : {}), popularity: typeof v.popularity === "number" ? v.popularity : 0 }];
   });
 }
 
@@ -450,10 +453,10 @@ export class News {
         get(`/discover/tv?${base}${shows}&air_date.gte=${from}&air_date.lte=${to}`),
       ]);
       for (const f of [...results(digital.data, "film"), ...results(premiere.data, "film")]) {
-        add({ kind: "film", id: f.id, title: f.title, ...(f.date && f.date >= from && f.date <= to ? { date: f.date } : {}), ...(f.poster ? { poster: f.poster } : {}), app: service.app, popularity: f.popularity });
+        add({ kind: "film", id: f.id, title: f.title, ...(f.date && f.date >= from && f.date <= to ? { date: f.date } : {}), ...(f.year ? { year: f.year } : {}), ...(f.poster ? { poster: f.poster } : {}), app: service.app, popularity: f.popularity });
       }
       const newShows = results(started.data, "series").filter((s) => !s.date || (s.date >= from && s.date <= to));
-      for (const s of newShows) add({ kind: "series", id: s.id, title: s.title, ...(s.date ? { date: s.date } : {}), ...(s.poster ? { poster: s.poster } : {}), app: service.app, popularity: s.popularity });
+      for (const s of newShows) add({ kind: "series", id: s.id, title: s.title, ...(s.date ? { date: s.date } : {}), ...(s.year ? { year: s.year } : {}), ...(s.poster ? { poster: s.poster } : {}), app: service.app, popularity: s.popularity });
       // Of the shows with an episode out, the ones whose season began this
       // week: TMDB's season dates, from each show's own page.
       const ongoing = results(airing.data, "series").filter((s) => !newShows.some((n) => n.id === s.id)).slice(0, SEASON_CHECKS);
@@ -463,7 +466,7 @@ export class News {
         if (!page?.latest) return;
         const season = page.seasons.find((x) => x.season === page.latest!.season);
         if (!season?.date || season.season < 2 || season.date < from || season.date > to) return;
-        add({ kind: "series", id: s.id, title: s.title, season: season.season, date: season.date, ...(s.poster ? { poster: s.poster } : {}), app: service.app, popularity: s.popularity });
+        add({ kind: "series", id: s.id, title: s.title, season: season.season, date: season.date, ...(s.year ? { year: s.year } : {}), ...(s.poster ? { poster: s.poster } : {}), app: service.app, popularity: s.popularity });
       });
     }
     if (errors && !titles.size) return { ...this.empty("failed", region, all, error), at: null };

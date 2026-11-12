@@ -15,7 +15,7 @@ import type { Item } from "../../apps/contract/contract.ts";
 import { AI_NAMES } from "../../builder/reasons.ts";
 import type { WatchRow } from "../ledger.ts";
 import { noAnswer } from "../providers/no-answer.ts";
-import type { Route, Routed } from "../router.ts";
+import { NONE, type Route, type Routed } from "../router.ts";
 import type { EpisodeAnswer, Feed } from "../tmdb.ts";
 import { continueItem, toContinue } from "./continue.ts";
 import { change, make, type ExecBuilds } from "./make.ts";
@@ -66,6 +66,10 @@ export interface ExecApp {
 
 export type Opened = { ok: true } | { ok: false; error?: string };
 
+// What showing a title's own page in its app came to: its page, the app's
+// own search for it, or an app with no way to show one.
+export type Shown = "title" | "search" | "unsupported";
+
 // TMDB for who's watching (daemon/tmdb.ts): what's new on the apps they can
 // open, and a show's air dates against their ledger.
 export interface ExecNews {
@@ -78,6 +82,8 @@ export interface ExecContext {
   rows: () => WatchRow[]; // their ledger, newest first
   search: (query: string, apps: string[]) => Promise<Found[]>;
   open: (app: string, item?: Item) => Promise<Opened>;
+  // A title's own page in its app, without playing it (ADR-097).
+  show?: (app: string, item: Item) => Promise<{ ok: true; shown: Shown } | { ok: false; error?: string }>;
   news?: ExecNews;
   // The builder, for make and change, when the askbuilds switch is on.
   builds?: ExecBuilds;
@@ -155,6 +161,24 @@ export async function run(route: Route, ctx: ExecContext): Promise<Outcome> {
   const name = (id: string) => ctx.apps.find((a) => a.id === id)?.name ?? id;
   if ("one" in chosen) return opening(ctx, ctx.apps.find((a) => a.id === chosen.one.app)!, toOpen(chosen.one.item, route));
   if ("some" in chosen) return { kind: "choose", say: "Which one?", candidates: chosen.some.map((r) => ({ app: r.app, name: name(r.app), item: toOpen(r.item, route) })) };
+  // An app that opened to look with its page is on its own search for it
+  // now, which is the best place to leave the person.
+  const searched = found.find((f) => f.opened && !f.error);
+  if (searched) return { kind: "opened", app: searched.app, say: `Searched ${name(searched.app)} for ${route.query}` };
   const failed = found.filter((f) => f.error).map((f) => `${lower(name(f.app))}: ${f.error}`);
   return { kind: "none", why: "not-found", say: `Couldn't find ${route.query}`, ...(failed.length ? { detail: failed.join("; ").slice(0, 200) } : {}) };
+}
+
+// A title chosen on New this week (ADR-097): its app opens on the title's
+// own page, found by TMDB's name, kind and year, where Play is one press
+// away. One the app can't find leaves it on its own search for the title.
+// An app with no way to show a title's page plays it, as "play it on that
+// app" would.
+export async function openNew(item: Item, app: ExecApp, ctx: ExecContext): Promise<Outcome> {
+  const shown = ctx.show ? await ctx.show(app.id, item) : ({ ok: true, shown: "unsupported" } as const);
+  if (!shown.ok) return { kind: "none", why: "not-opened", say: `Couldn't open ${item.title}`, ...(shown.error ? { detail: shown.error } : {}) };
+  if (shown.shown === "title") return { kind: "opened", app: app.id, item, say: `${itemWords(item)}, on ${app.name}` };
+  if (shown.shown === "search") return { kind: "opened", app: app.id, say: `Searched ${app.name} for ${item.title}` };
+  const route: Route = { ...NONE, intent: "play", query: item.title, kind: item.kind === "film" ? "film" : "series", app: app.id, season: item.season ?? null };
+  return run(route, ctx);
 }

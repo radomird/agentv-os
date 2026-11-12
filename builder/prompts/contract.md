@@ -7,6 +7,7 @@ A streaming app is a TypeScript module the TV's daemon loads in a worker of its 
 - `signIn.open(ctx)` brings the page to the service's sign-in form.
 - `search(ctx, query)` finds titles with the site's own search: `[{ id, kind, title, season, episode, poster }]`.
 - `playback.open(ctx, item)` starts an item and resolves once it plays. It may use the site's search, never its continue watching row.
+- `playback.show(ctx, item)`, if you write it, brings the page to a title's own page without playing it, so Play is one press away. A title chosen on New this week comes here, as TMDB knows it: `{ id, kind, title, year, season }`, where `kind` is `film` or `series`, `year` is there when TMDB has one, and `id` isn't the service's. Use the year and the kind so a remake or another show with the same name isn't picked. Resolve `true` once the page is on the title's page, and `false` when the service doesn't have it, with the page left on the service's own search for the title. Without it, the TV finds the title with `search` and plays it with `playback.open`.
 - `playback.readPlaybackState(ctx)` reads the title, season and episode from the address and the page, and the position, duration and playing from the `<video>` element. Never from pixels. Null when nothing plays.
 - `playback.next(ctx)` uses the site's own next episode control.
 - `playback.pause(ctx)` and `playback.resume(ctx)`, if you write them, press the player's own pause and play, and resolve once the video says so. Without them, the box pauses the video on the page itself.
