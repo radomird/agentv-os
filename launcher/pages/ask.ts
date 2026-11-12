@@ -166,7 +166,7 @@ export function askPage(ctx: Ctx): View {
           {
             label: `Change ${newest.name}`,
             run: () => {
-              field.value = `change ${newest.name.toLowerCase()}: `;
+              field.value = `change ${newest.name}: `;
               example.sync();
               ctx.focus.set(field);
             },

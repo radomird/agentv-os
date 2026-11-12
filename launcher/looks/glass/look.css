@@ -424,12 +424,26 @@ body:has(#offline) .glass-bar .bar-hint {
   padding: var(--safe-y) var(--safe-x) 0;
 }
 
+/* A headline is as wide as its words, and stops short of the glass bar at
+   the top right: a long one goes on to a second line first. */
 .headline {
+  width: fit-content;
+  max-width: calc(100% - 420px);
   margin: 0;
   font-size: 80px;
   font-weight: 800;
   letter-spacing: -2.5px;
   line-height: 1.1;
+}
+
+/* The PIN pad is a narrow column in the middle, and New this week's
+   headline sits in a box only as wide as its words, so the room the bar
+   needs would wrap their headlines and push the pad and the posters off the
+   screen. Neither is under the bar. */
+.pin-pad > .headline,
+.new-week .page-head .headline {
+  width: auto;
+  max-width: none;
 }
 
 .page-line {

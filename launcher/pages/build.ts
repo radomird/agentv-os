@@ -13,6 +13,7 @@ import { daemon, type App, type BuildsState, type BuildView } from "../api.ts";
 import { h } from "../dom.ts";
 import { firstFree } from "../layout.ts";
 import { currentGrid } from "../looks/looks.ts";
+import { mark } from "../looks/words.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, placeTile } from "./home.ts";
 import { bar, heading } from "./parts.ts";
@@ -246,7 +247,7 @@ function steps(b: BuildView): HTMLElement {
   return h(
     "div",
     { class: "updating-steps build-steps" },
-    ...b.steps.map((s: StepView) => h("div", { class: `updating-step${s.state === "running" ? " now" : ""}${s.state === "failed" ? " bad" : ""}` }, h("b", {}, MARKS[s.state]), ` ${stepName(s)}`)),
+    ...b.steps.map((s: StepView) => h("div", { class: `updating-step${s.state === "running" ? " now" : ""}${s.state === "failed" ? " bad" : ""}` }, h("b", {}, mark(MARKS[s.state])), ` ${stepName(s)}`)),
   );
 }
 
@@ -536,7 +537,7 @@ export function builtActions(ctx: Ctx, id: string): HTMLElement[] {
   const button = (label: string, action: string, onclick: () => void) => h("button", { class: "button", "data-focus": true, "data-action": action, onclick }, label);
   return [
     // With the Ask box, the change is said in it (D5): "change blocks: ...".
-    button("Change it", "change", () => (askBuilds() ? askWith(ctx, `change ${name.toLowerCase()}: `) : ctx.go(`change/${id}`))),
+    button("Change it", "change", () => (askBuilds() ? askWith(ctx, `change ${name}: `) : ctx.go(`change/${id}`))),
     button("Make it again", "rebuild", () => void again()),
     ...(kept ? [button(`Back to ${kept.version}`, "rollback", () => void back())] : []),
     ...(web ? [] : [button("Save a copy", "export", () => void exported())]),
@@ -565,7 +566,7 @@ async function removeBuilt(ctx: Ctx, id: string, name: string): Promise<void> {
 // on home.
 export function buildChange(ctx: Ctx, id: string): View {
   const now = builds().find((b) => b.id === id && b.state === "installed");
-  const name = now ? nameOf(now) : id;
+  const name = now ? nameOf(now) : (ctx.state.apps.find((app) => app.id === id)?.name ?? id);
   const field = h("input", {
     class: "music-search build-ask",
     "data-focus": true,

@@ -42,7 +42,7 @@ after(async () => {
 function route(sentence: string): Route {
   if (sentence === "make me a game like tetris") return { ...NONE, intent: "make", what: "blocks" };
   if (sentence === "make me a game with unicorns") return { ...NONE, intent: "make", what: "a game with unicorns" };
-  if (/^change blocks: /.test(sentence)) return { ...NONE, intent: "change", app: "local.blocks", what: sentence.replace(/^change blocks: /, "") };
+  if (/^change Blocks: /.test(sentence)) return { ...NONE, intent: "change", app: "local.blocks", what: sentence.replace(/^change Blocks: /, "") };
   return { ...NONE };
 }
 
@@ -188,12 +188,12 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     await page.reload();
     await page.waitForSelector(".grid .tile.focused");
 
-    // Its details' "change it" starts the Ask box with "change blocks: ".
+    // Its details' "change it" starts the Ask box with "change Blocks: ".
     await go(page, "details/local.blocks");
     await page.locator('[data-action="change"]').click();
     await page.waitForSelector(".ask-page");
-    assert.equal(await page.locator(".ask-field").inputValue(), "change blocks: ");
-    await typeAsk(page, "change blocks: make the pieces fall faster");
+    assert.equal(await page.locator(".ask-field").inputValue(), "change Blocks: ");
+    await typeAsk(page, "change Blocks: make the pieces fall faster");
     await page.waitForSelector(".ask-change", { timeout: 10_000 });
     assert.match(await page.locator(".ask-change").innerText(), /change blocks\?[\s\S]*it stays on this tv/);
     assert.equal(existsSync(join(state, "build-drop", "start.json")), false, "nothing starts before the ok");

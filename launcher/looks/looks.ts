@@ -15,7 +15,6 @@
 
 import { h } from "../dom.ts";
 import { features } from "../features.ts";
-import { writeInSentenceCase } from "./words.ts";
 import { GRID, GRID_MORE, type Grid } from "../layout.ts";
 
 export const LOOKS = ["terminal", "glass", "cinema"] as const;
@@ -108,8 +107,6 @@ export function applyLook(look: LookId | null = state.look, size: SizeId = state
   state.look = look;
   state.size = size;
   const root = document.documentElement;
-  // Glass and Cinema write the launcher's words in sentence case.
-  writeInSentenceCase(look === "glass" || look === "cinema");
   if (look) {
     root.dataset.look = look;
     root.dataset.size = size;
@@ -129,19 +126,6 @@ export function applyLook(look: LookId | null = state.look, size: SizeId = state
     document.head.insertBefore(link, document.getElementById("theme"));
   }
   link.setAttribute("href", href);
-}
-
-// A name as the look writes it: Terminal writes everything in lower case,
-// as phase 1 did, and Glass and Cinema keep a name's own capitals.
-export function named(name: string): string {
-  return state.look === null || state.look === "terminal" ? name.toLowerCase() : name;
-}
-
-// Words the launcher writes itself, in lower case in the code: Terminal
-// keeps them so, and Glass and Cinema start them with a capital.
-export function said(text: string): string {
-  if (state.look === null || state.look === "terminal") return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 // A preview of a theme the box doesn't have on yet, as setup's look step

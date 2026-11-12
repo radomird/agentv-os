@@ -6,6 +6,7 @@
 
 import { daemon, screen } from "../api.ts";
 import { h } from "../dom.ts";
+import { mark } from "../looks/words.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, openBuiltin, quit } from "./home.ts";
 import { builtActions } from "./build.ts";
@@ -30,7 +31,7 @@ export function details(ctx: Ctx, id: string): View {
       },
     },
     h("span", {}, "On home"),
-    h("span", { class: "button-value" }, onHome ? "[x]" : "[ ]"),
+    h("span", { class: "button-value" }, mark(onHome ? "[x]" : "[ ]")),
   );
 
   // Whether a child's profile can open it, past the PIN once there is one.
@@ -59,7 +60,7 @@ export function details(ctx: Ctx, id: string): View {
             },
           },
           h("span", {}, "For children"),
-          h("span", { class: "button-value" }, app.forChildren ? "[x]" : "[ ]"),
+          h("span", { class: "button-value" }, mark(app.forChildren ? "[x]" : "[ ]")),
         )
       : null;
 

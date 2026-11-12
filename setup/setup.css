@@ -626,6 +626,12 @@
   gap: 40px;
 }
 
+/* The launcher's Apps page scrolls (launcher.css), and its class is this
+   one's too. Setup's apps step doesn't: it ends above the status bar. */
+.setup-page.apps-page {
+  overflow: visible;
+}
+
 .app-group {
   display: flex;
   flex-direction: column;
