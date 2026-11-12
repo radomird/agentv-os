@@ -280,6 +280,12 @@ function now(): string {
 
 export class Daemon {
   readonly server: Server;
+  // The port it listens on, kept from listen(): once close() starts, the
+  // server has no address, and a request on a connection still open would
+  // have none to check its Host against.
+  private port = 0;
+  // Set once close() starts: a request after that is turned away.
+  private closing = false;
   private options: DaemonOptions;
   private log: (line: string) => void;
   private welcome = { shownAt: null as string | null, lastShownAt: null as string | null, count: 0 };
@@ -612,6 +618,13 @@ export class Daemon {
     this.updates.watch(() => void this.updates.read().then((state) => this.broadcast("updates", state)));
     this.home.watchApps();
     this.server = createServer((request, response) => {
+      // A client that reconnects at once, as the screen daemon does, would
+      // otherwise open a new long wait the stop then has to sit out.
+      if (this.closing) {
+        response.writeHead(503, { "Content-Type": "application/json; charset=utf-8", Connection: "close" });
+        response.end(JSON.stringify({ ok: false, error: "the TV's server is stopping" }));
+        return;
+      }
       this.handle(request, response).catch((error: Error) => {
         this.log(`error: ${request.method} ${request.url}: ${error.message}`);
         if (!response.headersSent) this.json(response, 500, { ok: false, error: WENT_WRONG });
@@ -637,7 +650,8 @@ export class Daemon {
       () =>
         new Promise((resolve) => {
           this.server.listen(this.options.port, this.options.host ?? "127.0.0.1", () => {
-            resolve((this.server.address() as { port: number }).port);
+            this.port = (this.server.address() as { port: number }).port;
+            resolve(this.port);
           });
         }),
     );
@@ -661,13 +675,16 @@ export class Daemon {
     return this.openLedger;
   }
 
-  close(): Promise<void> {
+  // systemd gives the daemon 5 s to stop (agentv-daemon.service). Idle
+  // connections go at once; one still busy, such as a phone's or the screen
+  // daemon's long wait, gets a second to finish, and is then cut.
+  close(graceMs = 1000): Promise<void> {
+    this.closing = true;
     clearInterval(this.buildsTimer);
     this.discover.close();
     for (const stream of this.streams) stream.end();
     for (const stream of this.remotes) stream.end();
-    this.lan?.close();
-    this.captive?.close();
+    for (const server of [this.lan, this.captive]) if (server) void stopServer(server, graceMs);
     void this.homeProxy?.close();
     this.home.stop();
     this.updates.stop();
@@ -681,7 +698,7 @@ export class Daemon {
     this.displayRoutes.close();
     this.network.close();
     this.controllerRoutes.close();
-    return new Promise((resolve) => this.server.close(() => resolve()));
+    return stopServer(this.server, graceMs);
   }
 
   // --- State --------------------------------------------------------------
@@ -1218,7 +1235,7 @@ export class Daemon {
   // anything that changes state has to come from one of its own pages or from
   // no page at all.
   private allowed(request: IncomingMessage): { ok: boolean; why?: string } {
-    const port = (this.server.address() as { port: number }).port;
+    const port = this.port;
     const names = [`127.0.0.1:${port}`, `localhost:${port}`];
     if (!names.includes(String(request.headers.host))) return { ok: false, why: "unknown host" };
     if (request.method === "GET" || request.method === "HEAD") return { ok: true };
@@ -2331,7 +2348,7 @@ export class Daemon {
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     // A page app's own origin gets its files and the kit, and nothing else
     // of the daemon's (ADR-043).
-    const port = (this.server.address() as { port: number }).port;
+    const port = this.port;
     const page = pageAppId(request.headers.host, port);
     if (page) {
       await this.pageApps.serve(page, request, response, port);
@@ -3955,6 +3972,28 @@ export class Daemon {
   }
 }
 
+// A server's close, which waits for every connection: idle ones are closed
+// at once, and busy ones after graceMs.
+function stopServer(server: Server, graceMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const cut = setTimeout(() => server.closeAllConnections(), graceMs);
+    server.close(() => {
+      clearTimeout(cut);
+      resolve();
+    });
+    server.closeIdleConnections();
+  });
+}
+
+// One line for the log on the way out. A signal doesn't say who sent it;
+// an update from the TV says it's running in its progress, and the rest
+// (an update from a terminal, a restart, a shutdown) looks the same here.
+async function stopping(daemon: Daemon, signal: string): Promise<void> {
+  const progress = (await daemon.updates.read().catch(() => null))?.progress as { state?: unknown } | null | undefined;
+  const why = progress?.state === "running" ? ", while an update installs" : progress?.state === "restarting" ? ", as an update restarts the TV" : "";
+  console.log(`agentv daemon stopping on ${signal}${why}`);
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const at = args.indexOf("--port");
@@ -3975,7 +4014,7 @@ async function main(): Promise<void> {
   const captive = daemon.setupPort ? `, and for the setup hotspot on port ${daemon.setupPort}` : "";
   console.log(`agentv daemon on http://127.0.0.1:${listening}/${phones}${captive}`);
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
-    process.on(signal, () => void daemon.close().then(() => process.exit(0)));
+    process.on(signal, () => void stopping(daemon, signal).then(() => daemon.close().then(() => process.exit(0))));
   }
 }
 
