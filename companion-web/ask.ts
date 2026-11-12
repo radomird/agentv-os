@@ -18,17 +18,18 @@ export type AskView =
   | { kind: "build"; n: number; build: string; app: string | null; what: string; state: string; phase: string; name: string | null; recipe: string | null; says: string | null; done: number; steps: number }
   | { kind: "change"; n: number; app: string; name: string; what: string; recipe: string | null };
 
-const recipeLine = (recipe: string | null) => (recipe ? `recipe: ${recipe}` : "no recipe yet: a plan for your ok");
+// A request that's new to the TV gets its steps checked before it's made.
+const STEPS_FIRST = "You'll check the steps first";
 
 export function askSheet(said: Said | null | undefined, ask: AskView | null | undefined, adult: boolean, failed: (error: unknown) => void, done: () => void): HTMLElement[] {
   let value = "";
-  const box = () => sayBox(said, failed, done, { bare: true, placeholder: adult ? "make me a game like tetris" : "continue my show", value });
+  const box = () => sayBox(said, failed, done, { bare: true, placeholder: adult ? "make me a puzzle game" : "continue my show", value });
   let field = box();
   const send = (sentence: string) => {
     void api("POST", "/api/phone/say", { sentence }).then(done, failed);
   };
-  // A suggestion that needs more words fills the box and leaves the
-  // keyboard up for them.
+  // A suggestion to make something fills the box and leaves the keyboard
+  // up, to change it or send it.
   const fill = (text: string) => {
     value = text;
     const fresh = box();
@@ -39,16 +40,16 @@ export function askSheet(said: Said | null | undefined, ask: AskView | null | un
     input?.setSelectionRange(text.length, text.length);
   };
   const chips = [
-    h("button", { type: "button", class: "chip", "data-suggestion": "continue", onclick: () => send("continue") }, "continue"),
-    h("button", { type: "button", class: "chip", "data-suggestion": "what's new", onclick: () => send("what's new") }, "what's new"),
-    adult ? h("button", { type: "button", class: "chip", "data-suggestion": "make a game", onclick: () => fill("make a game like ") }, "make a game") : null,
+    h("button", { type: "button", class: "chip", "data-suggestion": "continue", onclick: () => send("continue") }, "Continue my show"),
+    h("button", { type: "button", class: "chip", "data-suggestion": "what's new", onclick: () => send("what's new") }, "What's new this week?"),
+    adult ? h("button", { type: "button", class: "chip", "data-suggestion": "make a game", onclick: () => fill("make a puzzle game") }, "Make a puzzle game") : null,
   ];
   requestAnimationFrame(() => field.querySelector("input")?.focus());
   return [
-    h("p", { class: "r2-label ask-label" }, icon("ask", 16), h("span", {}, "ask")),
-    h("h1", {}, "what do you want?"),
+    h("p", { class: "r2-label ask-label" }, icon("ask", 16), h("span", {}, "Ask")),
+    h("h1", {}, "What would you like?"),
     field,
-    h("p", { class: "note" }, "shows on the tv as you type · the keyboard's mic works too"),
+    h("p", { class: "note" }, "Shows on your TV as you type · your keyboard's mic works too"),
     h("div", { class: "ask-chips" }, ...chips),
     ...(ask && adult ? [waiting(ask, failed, done)] : []),
   ].filter((el): el is HTMLElement => el !== null);
@@ -71,18 +72,17 @@ function waiting(ask: AskView, failed: (error: unknown) => void, done: () => voi
       "div",
       { class: "build-buttons" },
       h("button", { type: "button", class: "button primary", "data-action": "ask-confirm", onclick: answer("confirm") }, yes),
-      h("button", { type: "button", class: "button", "data-action": "ask-cancel", onclick: answer("cancel") }, "not this"),
+      h("button", { type: "button", class: "button", "data-action": "ask-cancel", onclick: answer("cancel") }, "Not this"),
     );
   if (ask.kind === "change") {
-    const name = ask.name.toLowerCase();
-    return h("div", { class: "ask-waiting", "data-ask": "change" }, h("p", { class: "r2-label" }, "made by your agent"), h("h1", {}, `change ${name}?`), h("p", { class: "note" }, `${ask.what.toLowerCase()} · ${recipeLine(ask.recipe)}`), buttons("build it"));
+    return h("div", { class: "ask-waiting", "data-ask": "change" }, h("p", { class: "r2-label" }, "Your own app"), h("h1", {}, `Change ${ask.name}?`), h("p", { class: "note" }, ask.what), ask.recipe ? null : h("p", { class: "note" }, STEPS_FIRST), buttons("Make it"));
   }
-  const name = (ask.name ?? ask.what).toLowerCase();
+  const name = ask.name ?? ask.what;
   if (ask.state === "confirm") {
-    return h("div", { class: "ask-waiting", "data-ask": "confirm" }, h("p", { class: "r2-label" }, "made by your agent"), h("h1", {}, `make ${name}?`), h("p", { class: "note" }, `${recipeLine(ask.recipe)} · it stays on this tv`), buttons("build it"));
+    return h("div", { class: "ask-waiting", "data-ask": "confirm" }, h("p", { class: "r2-label" }, "Your own app"), h("h1", {}, `Make ${name}?`), h("p", { class: "note" }, ask.recipe ? "It stays on this TV" : STEPS_FIRST), buttons("Make it"));
   }
   if ((ask.state === "starting" || ask.state === "running") && ask.phase === "understand") {
-    return h("div", { class: "ask-waiting", "data-ask": "reading" }, h("p", { class: "r2-label" }, "made by your agent"), h("p", { class: "note" }, "your agent is reading what you asked"));
+    return h("div", { class: "ask-waiting", "data-ask": "reading" }, h("p", { class: "r2-label" }, "Your own app"), h("p", { class: "note" }, "Working out what you'd like…"));
   }
   if (ask.state === "starting" || ask.state === "running") {
     const bar = h("div", { class: "ask-bar", role: "img", "aria-label": `${ask.done} of ${ask.steps} steps done` }, h("span", {}));
@@ -90,13 +90,13 @@ function waiting(ask: AskView, failed: (error: unknown) => void, done: () => voi
     return h(
       "div",
       { class: "ask-waiting", "data-ask": "building" },
-      h("p", { class: "r2-label" }, "made by your agent"),
-      h("h1", {}, `building ${name}`),
+      h("p", { class: "r2-label" }, "Your own app"),
+      h("h1", {}, `Making ${name}`),
       bar,
-      h("p", { class: "note" }, ask.steps ? `${ask.done} of ${ask.steps} steps · you'll get a notice when it's ready for your ok` : "you'll get a notice when it's ready for your ok"),
+      h("p", { class: "note" }, ask.steps ? `${ask.done} of ${ask.steps} steps. You'll hear when it's ready.` : "You'll hear when it's ready"),
     );
   }
   // A plan or a finished app waits for the PIN in its notice, and a build
   // that failed says why on the TV.
-  return h("div", { class: "ask-waiting", "data-ask": ask.state }, h("p", { class: "note" }, ask.state === "failed" ? `${name} didn't build: see the tv` : `${name}: see your notices`));
+  return h("div", { class: "ask-waiting", "data-ask": ask.state }, h("p", { class: "note" }, ask.state === "failed" ? `Couldn't make ${name}. See your TV.` : `${name}: see your notices`));
 }

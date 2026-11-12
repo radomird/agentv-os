@@ -235,12 +235,12 @@ test("T11.2 on the phone's remote, Ask is the same box, and a make your agent re
     await hand.waitForSelector(".r2");
     await hand.locator(".r2-ask").first().tap();
     await hand.waitForSelector("#r2-sheet .ask-chips");
-    assert.equal(await hand.locator("#r2-sheet h1").first().textContent(), "what do you want?");
-    assert.deepEqual(await hand.locator("#r2-sheet .ask-chips .chip").allTextContents(), ["continue", "what's new", "make a game"]);
+    assert.equal(await hand.locator("#r2-sheet h1").first().textContent(), "What would you like?");
+    assert.deepEqual(await hand.locator("#r2-sheet .ask-chips .chip").allTextContents(), ["Continue my show", "What's new this week?", "Make a puzzle game"]);
     assert.equal(await hand.locator('#r2-sheet [data-action="say"]').count(), 0, "no send button: the keyboard's send key asks");
-    // "make a game" fills the box and leaves the keyboard up for the rest.
+    // "Make a puzzle game" fills the box and leaves the keyboard up, to change it or send it.
     await hand.locator('#r2-sheet [data-suggestion="make a game"]').tap();
-    assert.equal(await hand.locator("#say-text").inputValue(), "make a game like ");
+    assert.equal(await hand.locator("#say-text").inputValue(), "make a puzzle game");
     await hand.locator("#say-text").fill("make me a game like tetris");
     await hand.locator("#say-text").press("Enter");
     for (let i = 0; i < 100 && !existsSync(join(state, "build-drop", "start.json")); i++) await new Promise((done) => setTimeout(done, 50));
@@ -248,7 +248,7 @@ test("T11.2 on the phone's remote, Ask is the same box, and a make your agent re
     // The sheet stays up after the send, and shows what the agent read.
     status(builds, start.build, "1.0.0", { state: "confirm", understood: UNDERSTOOD });
     await hand.waitForSelector('#r2-sheet [data-ask="confirm"]', { timeout: 10_000 });
-    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /make blocks\?[\s\S]*recipe: game · it stays on this tv/);
+    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /^Your own app\n+Make Blocks\?\n+It stays on this TV\n+Make it\n+Not this$/);
     await hand.locator('#r2-sheet [data-action="ask-confirm"]').tap();
     for (let i = 0; i < 100 && !existsSync(join(state, "build-drop", "start.json")); i++) await new Promise((done) => setTimeout(done, 50));
     assert.deepEqual([rootTakes(state).phase], ["build"]);

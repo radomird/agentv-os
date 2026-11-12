@@ -125,7 +125,7 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   assert.equal(await screen.evaluate(() => document.querySelector("#said .focused")?.textContent), "frozen · film · sample");
   // The phone: the same two, under its box.
   await hand.waitForSelector('[data-said="choose"]');
-  assert.deepEqual(await hand.locator(".said-choice").allTextContents(), ["frozen · film · sample", "frozen · album · sample"]);
+  assert.deepEqual(await hand.locator(".said-choice").allTextContents(), ["Frozen · film · Sample", "Frozen · album · Sample"]);
   // The soundtrack, picked with the remote on the TV.
   asks.length = 0;
   await screen.keyboard.press("ArrowDown");

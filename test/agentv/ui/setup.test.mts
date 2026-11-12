@@ -92,7 +92,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   hotspotIs({ on: true });
   const page = await phone();
   await page.waitForSelector("button.network");
-  assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+  assert.equal(await page.locator("h1").innerText(), "Pick your Wi-Fi");
   assert.deepEqual(await page.locator("button.network").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-ssid"))), ["home wi-fi", "cafe", "neighbours"]);
   assert.match(await page.locator('button.network[data-ssid="home wi-fi"]').innerText(), /home wi-fi[\s\S]*█/);
   assert.equal(await page.locator('button.network[data-ssid="home wi-fi"] .glyph-lock').count(), 1, "a network with a password shows the lock");
@@ -110,7 +110,7 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
 
   await page.locator('input[type="password"]').fill("correct horse");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining home wi-fi$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.match(await page.locator(".page").innerText(), /scan the new code on your TV$/);
   const first = JSON.parse(readFileSync(drop(), "utf8"));
   assert.deepEqual(first.join, { ssid: "home wi-fi", password: "correct horse", hidden: false });
@@ -119,19 +119,19 @@ test("stage 4 the captive page lists the networks the box saw, and the one picke
   // The password was wrong: the hotspot comes back, and so does the reason.
   hotspotIs({ on: true, error: "that password didn't work for home wi-fi", answered: first.id });
   await page.waitForFunction(() => /that password didn't work for home wi-fi/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
-  assert.equal(await page.locator("h1").innerText(), "pick your wi-fi");
+  assert.equal(await page.locator("h1").innerText(), "Pick your Wi-Fi");
 
   // Another try. Until the TV says how this one went, the first try's
   // reason is still the last thing it said, and it isn't shown for this one.
   await page.locator('button.network[data-ssid="home wi-fi"]').tap();
   await page.locator('input[type="password"]').fill("correct horse 2");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /Joining home wi-fi/.test(document.querySelector("h1")?.textContent ?? ""));
   const second = JSON.parse(readFileSync(drop(), "utf8"));
   rmSync(drop());
   await page.waitForResponse((response) => response.url().includes("/api/setup/state"));
   await page.evaluate(() => new Promise((done) => setTimeout(done, 200)));
-  assert.equal(await page.locator("h1").innerText(), "joining home wi-fi", "the try before's reason isn't this try's");
+  assert.equal(await page.locator("h1").innerText(), "Joining home wi-fi", "the try before's reason isn't this try's");
   hotspotIs({ on: true, error: "the tv can't see home wi-fi from here", answered: second.id });
   await page.waitForFunction(() => /the tv can't see home wi-fi from here/.test(document.querySelector(".note.bad")?.textContent ?? ""), null, { timeout: 5000 });
   await page.close();
@@ -165,19 +165,19 @@ test("stage 4 an open network needs no password, and one that hides its name is 
   await page.waitForSelector('[data-action="join"]');
   assert.equal(await page.locator('input[type="password"]').count(), 0);
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /joining cafe/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining cafe$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "cafe", password: "", hidden: false });
   rmSync(drop());
 
   await page.goto(`${captive}/`);
   await page.waitForSelector("button.network");
   await page.locator('button[data-ssid=""]').tap();
-  await page.waitForSelector('input[aria-label="the network\'s name"]');
-  assert.equal(await page.locator("h1").innerText(), "another network");
-  await page.locator('input[aria-label="the network\'s name"]').fill("attic");
+  await page.waitForSelector('input[aria-label="Network name"]');
+  assert.equal(await page.locator("h1").innerText(), "Another network");
+  await page.locator('input[aria-label="Network name"]').fill("attic");
   await page.locator('input[type="password"]').fill("upstairs1");
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /joining attic/.test(document.querySelector("h1")?.textContent ?? ""));
+  await page.waitForFunction(() => /^Joining attic$/.test(document.querySelector("h1")?.textContent ?? ""));
   assert.deepEqual(JSON.parse(readFileSync(drop(), "utf8")).join, { ssid: "attic", password: "upstairs1", hidden: true });
   rmSync(drop());
   await page.close();
@@ -592,13 +592,13 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   await page.waitForSelector(".key-row", { timeout: 5000 });
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "cli-install"));
   const ai = await (await fetch(`${url}/api/ai`)).json();
-  assert.deepEqual([ai.accepted.provider, ai.accepted.path, ai.accepted.by.phone], ["claude", "key", "iphone"]);
+  assert.deepEqual([ai.accepted.provider, ai.accepted.path, ai.accepted.by.phone], ["claude", "key", "iPhone"]);
   assert.match(ai.accepted.at, /^\d{4}-/);
 
   // The key, pasted on the phone (board 05).
   await phone.waitForSelector("#api-key");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude api key");
-  assert.match(await phone.locator(".limits").innerText(), /\$5 per app it builds, \$20 a month/);
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude API key");
+  assert.match(await phone.locator(".limits").innerText(), /^Spending limits\n*\$5 an app, \$20 a month$/);
   await phone.locator("#api-key").fill(`sk-ant-${"k".repeat(40)}`);
   await phone.locator('[data-action="save-key"]').tap();
   await page.waitForSelector('[data-action="continue"]', { timeout: 10_000 });
@@ -1331,7 +1331,7 @@ test("the phone's remote says which setup step the TV is on", async () => {
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector(".setup-step");
-  assert.equal(await phone.locator(".setup-step").innerText(), "tv setup · 1/6 getting ready");
+  assert.equal(await phone.locator(".setup-step").innerText(), "TV setup · 1/6 getting ready");
   await post("/api/setup", { done: true });
   await phone.waitForFunction(() => !document.querySelector(".setup-step"), null, { timeout: 30_000 });
   await phone.close();

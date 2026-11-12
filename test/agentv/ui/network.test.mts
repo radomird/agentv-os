@@ -378,8 +378,9 @@ bothWays("discover", "the phone shows what's on your network while the TV does, 
     }
     // One line a find, and typing under them, with the remote on one screen.
     await phone.waitForSelector('.r2-network [data-found="jellyfin http://127.0.0.1:8096"]');
-    assert.equal(await phone.locator(".r2-network-head span").first().innerText(), "on your network");
-    assert.deepEqual(await phone.locator(".r2-network-row").allInnerTexts(), ["living room · nas.local", "type an address"]);
+    assert.equal(await phone.locator(".r2-network-head span").first().innerText(), "On your network");
+    // A server's row has its address beside its name, from its own link.
+    assert.deepEqual(await phone.locator(".r2-network-row").allInnerTexts(), ["living room · 127.0.0.1:8096", "Type its address"]);
     assert.ok(await phone.evaluate(() => document.documentElement.scrollHeight <= innerHeight), "nothing scrolls");
     // "Type an address" opens the TV's field, and the phone's keyboard comes.
     await phone.locator('.r2-network [data-found="typed"]').tap();

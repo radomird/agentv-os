@@ -21,15 +21,15 @@ export async function arrange(root: HTMLElement): Promise<void> {
   try {
     home = await api<Home>("GET", "/api/phone/home");
   } catch (error) {
-    toast(`${(error as Error).message}.`);
+    toast((error as Error).message);
     return;
   }
   let picked: string | null = null;
-  const name = (id: string) => (id === home.appsTile ? "all apps" : (home.apps.find((app) => app.id === id)?.name ?? id)).toLowerCase();
+  const name = (id: string) => id === home.appsTile ? "All apps" : (home.apps.find((app) => app.id === id)?.name ?? id);
 
   const save = async (next: Placed[] | null) => {
     if (!next) {
-      toast("there's no room for that on home.");
+      toast("Home is full. Make room first.");
       return;
     }
     try {
@@ -38,7 +38,7 @@ export async function arrange(root: HTMLElement): Promise<void> {
       home.layout = reply.layout;
       navigator.vibrate?.(8);
     } catch (error) {
-      toast(`${(error as Error).message}.`);
+      toast((error as Error).message);
     }
     draw();
   };
@@ -72,7 +72,7 @@ export async function arrange(root: HTMLElement): Promise<void> {
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLUMNS; x++) {
         if (covered.has(`${x},${y}`)) continue;
-        const el = h("button", { type: "button", class: "mini-empty", "data-cell": `${x},${y}`, onclick: () => tap(x, y) }, "empty");
+        const el = h("button", { type: "button", class: "mini-empty", "data-cell": `${x},${y}`, onclick: () => tap(x, y) }, "Empty");
         el.style.gridColumn = `${x + 1}`;
         el.style.gridRow = `${y + 1}`;
         grid.append(el);
@@ -85,31 +85,31 @@ export async function arrange(root: HTMLElement): Promise<void> {
         ? h(
             "div",
             { class: "sizes" },
-            h("p", { class: "label" }, `size · ${name(picked)}`),
+            h("p", { class: "label" }, `Size · ${name(picked)}`),
             ...(app
               ? choices(home.layout, picked, app.sizes.map((s) => s.size)).map(({ size, room }) =>
                   h(
                     "button",
                     { type: "button", class: `chip${current.size === size ? " on" : ""}`, "data-size": size, disabled: !room, onclick: () => void save(resize(home.layout, picked!, size)) },
-                    `${size} ${app.sizes.find((s) => s.size === size)?.label ?? ""}${room ? "" : " · no room"}`,
+                    `${size.toUpperCase()} ${app.sizes.find((s) => s.size === size)?.label ?? ""}${room ? "" : " · no room"}`,
                   ),
                 )
               : []),
             picked !== home.appsTile
-              ? h("button", { type: "button", class: "chip", "data-action": "unpin", onclick: () => ((picked = null), void save(unpin(home.layout, current.id))) }, glyph("minus", 14), h("span", {}, "unpin"))
+              ? h("button", { type: "button", class: "chip", "data-action": "unpin", onclick: () => ((picked = null), void save(unpin(home.layout, current.id))) }, glyph("minus", 14), h("span", {}, "Remove"))
               : null,
           )
         : null;
     const off = home.apps.filter((a) => !home.layout.some((t) => t.id === a.id));
     const parts: (HTMLElement | null)[] = [
       prompt("tv home --edit"),
-      h("h1", {}, "arrange home"),
-      h("p", { class: "note" }, `for ${home.viewer.name}`),
+      h("h1", {}, "Edit home"),
+      h("p", { class: "note" }, `For ${home.viewer.name}`),
       grid,
       sizes,
-      h("p", { class: "note" }, picked ? "now tap where it goes. the tv follows live." : "tap a tile, then where it goes. the tv follows live."),
-      off.length ? h("p", { class: "label" }, "# not on home") : null,
-      ...off.map((a) => h("div", { class: "off" }, h("span", {}, a.name.toLowerCase()), h("button", { type: "button", class: "chip", "data-pin": a.id, onclick: () => void save(pin(home.layout, a.id)) }, glyph("plus", 14), h("span", {}, "pin")))),
+      h("p", { class: "note" }, picked ? "Now tap where it goes" : "Tap a tile, then tap where it goes"),
+      off.length ? h("p", { class: "label" }, "# Not on home") : null,
+      ...off.map((a) => h("div", { class: "off" }, h("span", {}, a.name), h("button", { type: "button", class: "chip", "data-pin": a.id, onclick: () => void save(pin(home.layout, a.id)) }, glyph("plus", 14), h("span", {}, "Add")))),
     ];
     root.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null));
   };
