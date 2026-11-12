@@ -27,7 +27,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BuildStatus, Understood } from "../builder/build.ts";
-import { loadRecipes, signedInPage, type Kind, type Plan, type Recipe } from "../builder/recipe.ts";
+import { AI_NAMES, plainReason } from "../builder/reasons.ts";
+import { loadRecipes, signedInPage, stepLabel, type Kind, type Plan, type Recipe } from "../builder/recipe.ts";
 
 export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
 
@@ -51,7 +52,10 @@ export interface BuildView {
   state: BuildStatus["state"] | "starting";
   phase: BuildStatus["phase"];
   step?: string;
+  // Each step with the label a screen shows for it.
   steps: BuildStatus["steps"];
+  // Why it failed or wasn't installed, in one plain line (builder/reasons.ts).
+  // The builder's own reason stays in the build's folder and the log.
   reason?: string;
   spent?: number;
   understood?: Understood;
@@ -114,6 +118,12 @@ interface Asked {
 }
 
 const SENTENCE_MAX = 300;
+
+// What the daemon says when an adult asks for something a build can't do.
+const NO_APP = "Couldn't find that app";
+const NOT_YOURS = "That isn't one of your own apps";
+const ONE_AT_A_TIME = "One at a time. Wait for the other app.";
+const TOO_LONG = `Keep it under ${SENTENCE_MAX} characters`;
 const ID = /^local\.[a-z0-9][a-z0-9-]*$/;
 
 // The id an app gets from what was asked: local. and its first words.
@@ -207,8 +217,8 @@ export class Builds {
     const now = await this.settings();
     const dollars = (value: unknown, fallback: number) => (value === undefined ? fallback : typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1000 ? Math.round(value * 100) / 100 : NaN);
     const cap = { build: dollars(c.cap?.build, now.cap.build), month: dollars(c.cap?.month, now.cap.month) };
-    if (Number.isNaN(cap.build) || Number.isNaN(cap.month)) return { error: "a cap is a number of dollars, up to 1000" };
-    if (cap.build > cap.month) return { error: "a build's cap is no more than the month's" };
+    if (Number.isNaN(cap.build) || Number.isNaN(cap.month)) return { error: "A limit is a number of dollars, up to 1000" };
+    if (cap.build > cap.month) return { error: "The limit per app can't be more than the month's" };
     if (c.safeguards !== undefined && typeof c.safeguards !== "boolean") return { error: "the safeguards are on or off" };
     const settings = { cap, safeguards: typeof c.safeguards === "boolean" ? c.safeguards : now.safeguards };
     await this.writeJson(this.settingsPath, settings);
@@ -270,6 +280,7 @@ export class Builds {
   async list(): Promise<BuildView[]> {
     const answer = this.answer();
     const waiting = this.waiting();
+    const cap = (await this.settings()).cap.build;
     const views: BuildView[] = [];
     for (const asked of [...(await this.asked())].reverse()) {
       const status = this.status(asked.id, asked.version);
@@ -285,6 +296,9 @@ export class Builds {
       const starting = waiting === asked.build || (fresh?.action === "start" && fresh.started);
       const notInstalled = fresh?.action === "install" && !fresh.started ? fresh.reason : undefined;
       const recipe = this.recipe(mine?.understood?.recipe);
+      // Why, for a screen: the plain line for its kind, never the raw reason.
+      const raw = refused ?? notInstalled ?? (mine?.state === "failed" ? mine.reason : undefined);
+      const told = { ai: AI_NAMES[asked.provider], ...(asked.path === "key" ? { cap } : {}), ...(!refused && !notInstalled && mine?.why ? { why: mine.why } : {}) };
       views.push({
         build: asked.build,
         id: asked.id,
@@ -296,8 +310,8 @@ export class Builds {
         state: refused ? "failed" : starting ? "starting" : (mine?.state ?? "starting"),
         phase: mine?.phase ?? "understand",
         step: mine?.step,
-        steps: mine?.steps ?? [],
-        reason: refused ?? notInstalled ?? mine?.reason,
+        steps: (mine?.steps ?? []).map((step) => ({ ...step, label: stepLabel(step) })),
+        ...(raw ? { reason: plainReason(raw, told) } : {}),
         spent: this.spentBy(asked.build) ?? mine?.spent,
         understood: mine?.understood,
         plan: mine?.plan,
@@ -411,10 +425,10 @@ export class Builds {
   // The code the provider's page gave the person, for the CLI's prompt.
   async signInCode(build: unknown, code: unknown): Promise<{ error?: string }> {
     const view = await this.find(build);
-    if (!view) return { error: "there's no such build" };
-    if (view.state !== "plan-sign-in" || view.signIn?.state !== "waiting" || !view.signIn.pastes) return { error: "nothing is waiting for a code" };
+    if (!view) return { error: NO_APP };
+    if (view.state !== "plan-sign-in" || view.signIn?.state !== "waiting" || !view.signIn.pastes) return { error: "Nothing is waiting for a code" };
     const text = typeof code === "string" ? code.trim() : "";
-    if (!/^[\x21-\x7e]{1,512}$/.test(text)) return { error: "paste the code the page gave you" };
+    if (!/^[\x21-\x7e]{1,512}$/.test(text)) return { error: "Paste the code the page gave you" };
     await this.drop("sign-in-code", { code: text });
     return {};
   }
@@ -454,8 +468,8 @@ export class Builds {
   // A sentence, for a new app: the agent says what it understood first.
   async ask(sentence: unknown, ai: { provider: Provider; path: "plan" | "key" }, installed: string[] = []): Promise<{ build?: BuildView; error?: string }> {
     const words = typeof sentence === "string" ? sentence.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
-    if (!words || words.length > SENTENCE_MAX) return { error: `say what you'd like in up to ${SENTENCE_MAX} characters` };
-    if (await this.running()) return { error: "another build is going; one runs at a time" };
+    if (!words || words.length > SENTENCE_MAX) return { error: TOO_LONG };
+    if (await this.running()) return { error: ONE_AT_A_TIME };
     const all = await this.asked();
     const at = this.o.now().toISOString();
     const asked: Asked = { build: `b${this.o.now().getTime()}`, id: idFor(words, (id) => this.taken(id, all, installed)), version: "1.0.0", sentence: words, provider: ai.provider, path: ai.path, at };
@@ -469,8 +483,8 @@ export class Builds {
   async confirm(build: unknown): Promise<{ build?: BuildView; error?: string }> {
     const view = await this.find(build);
     const asked = (await this.asked()).find((a) => a.build === view?.build);
-    if (!view || !asked) return { error: "there's no such build" };
-    if (view.state !== "confirm" || !view.understood) return { error: "this build isn't waiting to be confirmed" };
+    if (!view || !asked) return { error: NO_APP };
+    if (view.state !== "confirm" || !view.understood) return { error: "That app isn't waiting to be confirmed" };
     const u = view.understood;
     if (u.recipe === null) await this.start(asked, "plan", { name: u.name });
     else await this.start(asked, "build", { recipe: u.recipe, name: u.name });
@@ -481,8 +495,8 @@ export class Builds {
   async approvePlan(build: unknown): Promise<{ build?: BuildView; error?: string }> {
     const view = await this.find(build);
     const asked = (await this.asked()).find((a) => a.build === view?.build);
-    if (!view || !asked) return { error: "there's no such build" };
-    if (view.state !== "plan" || !view.plan) return { error: "this build has no plan waiting" };
+    if (!view || !asked) return { error: NO_APP };
+    if (view.state !== "plan" || !view.plan) return { error: "That app has no steps waiting" };
     await this.start(asked, "build", { recipe: null, name: view.plan.name, plan: view.plan });
     return { build: (await this.find(asked.build))! };
   }
@@ -490,8 +504,8 @@ export class Builds {
   // An adult's yes to the app, on the phone behind the PIN: root installs it.
   async approve(build: unknown): Promise<{ build?: BuildView; error?: string }> {
     const view = await this.find(build);
-    if (!view) return { error: "there's no such build" };
-    if (view.state !== "approve") return { error: "this app isn't waiting for approval" };
+    if (!view) return { error: NO_APP };
+    if (view.state !== "approve") return { error: "That app isn't waiting for approval" };
     await this.drop("install", { build: view.build, id: view.id, version: view.version });
     return { build: view };
   }
@@ -500,9 +514,9 @@ export class Builds {
   async retry(build: unknown): Promise<{ build?: BuildView; error?: string }> {
     const view = await this.find(build);
     const asked = (await this.asked()).find((a) => a.build === view?.build);
-    if (!view || !asked) return { error: "there's no such build" };
-    if (view.state !== "failed") return { error: "only a build that failed is tried again" };
-    if (await this.running()) return { error: "another build is going; one runs at a time" };
+    if (!view || !asked) return { error: NO_APP };
+    if (view.state !== "failed") return { error: "There's nothing to try again" };
+    if (await this.running()) return { error: ONE_AT_A_TIME };
     await this.start(asked, view.phase, this.again(view));
     return { build: (await this.find(asked.build))! };
   }
@@ -521,10 +535,10 @@ export class Builds {
   // version of the app is left.
   async forget(build: unknown): Promise<{ error?: string }> {
     const view = await this.find(build);
-    if (!view) return { error: "there's no such build" };
-    if (view.state === "running") return { error: "stop it first" };
-    if (view.state === "installed" || view.state === "kept") return { error: "that version is on the tv: remove the app instead" };
-    if (view.phase === "stage-b") return { error: "its app is on the tv: try again, or remove the app" };
+    if (!view) return { error: NO_APP };
+    if (view.state === "running") return { error: "Stop it first" };
+    if (view.state === "installed" || view.state === "kept") return { error: "That version is on your TV. Remove the app instead." };
+    if (view.phase === "stage-b") return { error: "Its app is on your TV. Try again, or remove the app." };
     if (view.state === "starting" || view.state === "plan-sign-in") await this.stop();
     const left = (await this.asked()).filter((a) => a.build !== view.build);
     await this.writeJson(this.askedPath, left);
@@ -535,15 +549,15 @@ export class Builds {
   // An app's next version: a change to it, or the same again from its recipe.
   async next(id: unknown, change: unknown, ai: { provider: Provider; path: "plan" | "key" }): Promise<{ build?: BuildView; error?: string }> {
     if (typeof id !== "string" || !ID.test(id)) return { error: "which app" };
-    if (await this.running()) return { error: "another build is going; one runs at a time" };
+    if (await this.running()) return { error: ONE_AT_A_TIME };
     const all = await this.asked();
     const mine = all.filter((a) => a.id === id);
     const views = (await this.list()).filter((b) => b.id === id);
     const current = views.find((b) => b.state === "installed");
     const first = mine[0];
-    if (!first || !current) return { error: "that app isn't one the builder made, or it isn't installed" };
+    if (!first || !current) return { error: NOT_YOURS };
     const words = typeof change === "string" ? change.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
-    if (change !== undefined && (!words || words.length > SENTENCE_MAX)) return { error: `say the change in up to ${SENTENCE_MAX} characters` };
+    if (change !== undefined && (!words || words.length > SENTENCE_MAX)) return { error: TOO_LONG };
     const asked: Asked = {
       build: `b${this.o.now().getTime()}`,
       id,
@@ -563,7 +577,7 @@ export class Builds {
   async rollback(id: unknown): Promise<{ build?: BuildView; error?: string }> {
     const views = (await this.list()).filter((b) => b.id === id);
     const kept = views.find((b) => b.state === "kept");
-    if (!kept) return { error: "there's no version before this one to go back to" };
+    if (!kept) return { error: "There's no earlier version" };
     await this.drop("install", { build: kept.build, id: kept.id, version: kept.version });
     return { build: kept };
   }
@@ -572,7 +586,7 @@ export class Builds {
   async remove(id: unknown): Promise<{ error?: string }> {
     if (typeof id !== "string" || !ID.test(id)) return { error: "which app" };
     const all = await this.asked();
-    if (!all.some((a) => a.id === id)) return { error: "that app isn't one the builder made" };
+    if (!all.some((a) => a.id === id)) return { error: NOT_YOURS };
     await this.drop("remove", { id });
     await this.writeJson(this.askedPath, all.filter((a) => a.id !== id));
     return {};
