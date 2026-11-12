@@ -51,7 +51,7 @@ interface FullBuild {
   shot: boolean;
 }
 
-const named = (b: { name?: string; sentence?: string }) => b.name ?? b.sentence ?? "your app";
+const nameOf = (b: { name?: string; sentence?: string }) => b.name ?? b.sentence ?? "your app";
 // Each AI by its name, where the TV sends its id.
 const AI: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", grok: "Grok", muse: "Muse" };
 const ai = (provider: string) => AI[provider] ?? provider;
@@ -146,7 +146,7 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
       page.replaceChildren(prompt("tv app approve"), h("p", { class: "note" }, "Nothing to approve right now"), h("button", { class: "button", type: "button", onclick: back }, "Back"));
       return;
     }
-    const name = named(b);
+    const name = nameOf(b);
     const plan = b.state === "plan";
     // A theme your agent made (S6.4) becomes the TV's and the desktop's.
     const theme = b.understood?.recipe === "theme";
@@ -229,7 +229,7 @@ export function buildPage(build: string, back: () => void, failed: (error: unkno
 // the code it gives, typed into the CLI's prompt on the box. Its tokens stay
 // in the CLI's own files there; this page never sees them.
 function signInPage(b: FullBuild, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
-  const name = named(b);
+  const name = nameOf(b);
   const provider = ai(b.provider);
   const s = b.signIn;
   const head = [
