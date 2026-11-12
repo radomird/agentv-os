@@ -295,7 +295,7 @@ test("S4.10 when the TV asks for the PIN, the phone shows a pad within 1 s, and 
   const shown = Date.now();
   await hand.waitForSelector("#tv-pin", { timeout: 1000 });
   assert.ok(Date.now() - shown <= 1000, `the pad took ${Date.now() - shown} ms`);
-  assert.deepEqual([await hand.locator("#tv-pin h1").innerText(), await hand.locator("#tv-pin .note").innerText()], ["enter the adult pin", "for omarchy's desktop."]);
+  assert.deepEqual([await hand.locator("#tv-pin h1").innerText(), await hand.locator("#tv-pin .note").innerText()], ["Enter the adult PIN", "For Omarchy's desktop"]);
   // A digit and Delete, then two digits: the phone's boxes follow the TV's.
   let from = remote.length;
   for (const k of ["9", "delete", PIN[0], PIN[1]]) await hand.locator(`#tv-pin [data-pin="${k}"]`).tap();
