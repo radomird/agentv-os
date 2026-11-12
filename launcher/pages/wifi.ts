@@ -63,7 +63,7 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
 // A sentence with a network's name in it: the words as the look writes
 // them, and the name as it is.
 function withName(sentence: string, ssid: string): string {
-  return named(sentence).replace("%s", ssid);
+  return named(sentence).replace("%s", () => ssid);
 }
 
 // How the TV is online, in a few words.
