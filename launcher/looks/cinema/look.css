@@ -485,8 +485,13 @@ body.with-backdrop {
   letter-spacing: 0;
 }
 
+.cinema-posters {
+  gap: 44px;
+}
+
 .cinema-posters .poster-card {
-  width: 220px;
+  width: calc(220px + 2 * var(--room));
+  scroll-margin: 100px var(--safe-x) 60px;
 }
 
 /* --- Logos ---------------------------------------------------------------- */
@@ -729,18 +734,23 @@ body.with-backdrop {
   background: var(--card-lit);
 }
 
-/* New this week: posters with rounded corners, the app under each. */
+/* New this week: posters with rounded corners, the app under each. The
+   card has room around the poster and its two lines, so the focus ring sits
+   clear of them, and the negative margin keeps the posters where they were. */
 .poster-row {
-  gap: 28px;
+  gap: 44px;
   overflow: visible;
 }
 
 .poster-card {
   --lift: 0.04;
-  padding: 0;
+  --room: 16px;
+  padding: var(--room);
+  margin: calc(-1 * var(--room));
   border: none;
+  border-radius: calc(16px + var(--room));
   background: none;
-  width: 232px;
+  width: calc(232px + 2 * var(--room));
 }
 
 .poster-image {
