@@ -1,6 +1,6 @@
 // Edit mode (ADR-015, ADR-016): the viewer's home grid, where tiles move,
-// change size and come off. With the keyboard, Enter picks a tile up, the
-// arrows carry it and Enter puts it down; + and - step through the sizes its
+// change size and come off. With the remote, OK picks a tile up, the
+// arrows carry it and OK puts it down; + and - step through the sizes its
 // app lists, and Delete takes it off home. With a mouse, drag a tile, drag
 // its corner, or click it for the size bar. Every change is saved as it
 // happens, and the tiles it moves glide to their new cells.
@@ -52,12 +52,12 @@ export function edit(ctx: Ctx, focusOn?: string): View {
   const sizebar = h("div", { class: "sizebar" });
 
   function sizesOf(id: string): SizeChoice[] {
-    if (id === ctx.state.appsTile) return [{ size: "s", label: "all apps" }];
+    if (id === ctx.state.appsTile) return [{ size: "s", label: "All apps" }];
     return ctx.state.apps.find((app) => app.id === id)?.sizes ?? [{ size: "s", label: "logo" }];
   }
 
   function nameOf(id: string): string {
-    return id === ctx.state.appsTile ? "all apps" : (ctx.state.apps.find((app) => app.id === id)?.name.toLowerCase() ?? id);
+    return id === ctx.state.appsTile ? "All apps" : (ctx.state.apps.find((app) => app.id === id)?.name ?? id);
   }
 
   function dress(el: HTMLElement, placed: Placed): void {
@@ -101,7 +101,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLUMNS; x++) {
         if (at(layout, x, y)) continue;
-        const empty = h("div", { class: "empty-cell" }, "empty");
+        const empty = h("div", { class: "empty-cell" }, "Empty");
         empty.style.gridColumn = String(x + 1);
         empty.style.gridRow = String(y + 1);
         grid.prepend(empty);
@@ -152,17 +152,17 @@ export function edit(ctx: Ctx, focusOn?: string): View {
           disabled: !room,
           onclick: () => void setSize(id, size),
         },
-        h("b", {}, size),
+        h("b", {}, size.toUpperCase()),
         ` · ${labels.get(size)}${room ? "" : " · no room"}`,
       ),
     );
     sizebar.replaceChildren(
-      h("div", { class: "sizebar-head" }, h("span", {}, "size · ", h("span", { class: "sizebar-name" }, nameOf(id))), h("button", { class: "chip done", onclick: () => ctx.back() }, "esc done")),
+      h("div", { class: "sizebar-head" }, h("span", {}, "Size · ", h("span", { class: "sizebar-name" }, nameOf(id)))),
       h(
         "div",
         { class: "sizebar-chips" },
         ...chips,
-        id === ctx.state.appsTile ? null : h("button", { class: "chip unpin", onclick: () => void remove(id) }, "del unpin"),
+        id === ctx.state.appsTile ? null : h("button", { class: "chip unpin", onclick: () => void remove(id) }, "Remove from home"),
       ),
     );
     // Where the tile ends up, not where it is while it glides there, in the
@@ -222,7 +222,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
 
   async function remove(id: string): Promise<void> {
     if (id === ctx.state.appsTile) {
-      ctx.toast("all apps stays on home");
+      ctx.toast("All apps stays on home");
       ctx.sounds.play("failure");
       return;
     }
@@ -283,7 +283,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
       return;
     }
     placeTile(marker, placed);
-    marker.textContent = room ? "moved here" : "no room";
+    marker.textContent = room ? "Moved here" : "No room";
     marker.classList.toggle("no-room", !room);
     marker.classList.add("on");
   }
@@ -398,15 +398,8 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     { class: "screen" },
     grid,
     sizebar,
-    bar(
-      ctx,
-      "edit home",
-      `+/- size · del unpin · saved for ${ctx.state.viewer.name}`,
-      [
-        h("button", { class: "bar-link", "data-focus": true, "data-action": "done", onclick: () => ctx.back() }, "esc done"),
-        h("span", { class: "bar-step" }, "drag with the mouse · or ←↑↓→ then ↵"),
-      ],
-    ),
+    // Back leaves, as everywhere: there's no button for it (ui/REVIEW.md).
+    bar(ctx, "edit home", `Saved for ${ctx.state.viewer.name}`, [h("span", { class: "bar-step" }, "Move with the arrows, then OK")]),
   );
   draw();
 

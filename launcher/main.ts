@@ -161,7 +161,7 @@ const ctx: Ctx = {
       return;
     }
     if (ctx.state.viewer.role !== "adult") {
-      ctx.toast("only an adult can edit home", "fail");
+      ctx.toast("Only adults can edit home", "fail");
       sounds.play("failure");
       return;
     }
@@ -298,8 +298,8 @@ async function askShared(): Promise<void> {
     if (open) await openShare(ctx, share);
     void askShared();
   };
-  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "share-open", onclick: () => void answer(true) }, "open");
-  const no = h("button", { class: "button", "data-focus": true, "data-action": "share-later", onclick: () => void answer(false) }, "not now");
+  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "share-open", onclick: () => void answer(true) }, "Open");
+  const no = h("button", { class: "button", "data-focus": true, "data-action": "share-later", onclick: () => void answer(false) }, "Not now");
   const card = h("div", { class: "notice-card" }, h("div", { class: "notice-title" }, `${share.from} sent ${shareWhat(share)}`), h("div", { class: "notice-buttons" }, yes, no));
   noticeEl.replaceChildren(card);
   noticeEl.classList.add("on");
@@ -340,7 +340,7 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   if (!ctx.state.pin?.set) return "";
   let grant: string | null = null;
   const ok = await openPad(
-    { command: "tv pin", title: "enter the adult pin", note: `for ${what}.`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
+    { command: "tv pin", title: "Enter the adult PIN", note: `For ${what}`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
     undefined,
     options.one ? undefined : holding,
   );
@@ -359,7 +359,7 @@ function setLock(locked: boolean): void {
     held = null;
     const viewer = ctx.state.viewer;
     void openPad(
-      { command: "tv locked", title: "enter the adult pin", note: viewer.locked ? `${viewer.name}'s profile asks for it to open.` : "the tv is locked.", cancel: false, submit: checkPin(false) },
+      { command: "tv locked", title: "Enter the adult PIN", note: viewer.locked ? `To open ${viewer.name}'s profile` : "This TV is locked", cancel: false, submit: checkPin(false) },
       (pad) => (lockPad = pad),
       // Unlocked elsewhere while it waited its turn.
       () => ctx.state.pin?.locked !== true,
@@ -376,7 +376,7 @@ function setLock(locked: boolean): void {
 
 // What agentv-pin-check asks on the TV, by action.
 const ACTIONS: Record<string, string> = {
-  desktop: "omarchy's desktop",
+  desktop: "Omarchy's desktop",
   power: "restarting or shutting down",
   update: "installing an update",
   "go-back": "going back",
@@ -510,7 +510,7 @@ function setAmbient(on: boolean): void {
   tell({ screen: on ? "ambient" : history[history.length - 1] === "home" ? "home" : "menu" });
   ambientPointer = null;
   if (on) {
-    const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }).toLowerCase();
+    const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const time = h("div", { class: "ambient-time" }, clock());
     const pictures = h("div", { class: "ambient-pictures" });
     const credit = h("div", { class: "ambient-credit" });
@@ -608,7 +608,7 @@ function checkAfterUpdate(): void {
   const went = ctx.updates.wentBack;
   if (went && ctx.updates.seen?.wentBack !== went.at && route === "home") {
     ctx.updates.seen = { kept: null, ...ctx.updates.seen, wentBack: went.at };
-    ctx.toast(`back on agentv ${shown(went.to.agentv)}. the update is still in settings → updates.`, "ok");
+    ctx.toast(`Back on AgenTV ${shown(went.to.agentv)}. The update is still in Settings.`, "ok");
     void daemon.seen({ wentBack: went.at }).catch(() => {});
   }
 }
@@ -627,7 +627,7 @@ function toastRelease(): void {
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
   toastedHere = version;
   ctx.updates.toasted = version;
-  ctx.toast(`agentv ${version} is ready · settings → updates`, "ok");
+  ctx.toast(`AgenTV ${version} is ready, in Settings`, "ok");
   void daemon.toasted(version).catch(() => {});
 }
 
@@ -926,7 +926,7 @@ async function start(): Promise<void> {
     // A page app's notice, declared in its manifest.
     notice: (data) => {
       const notice = data as { name?: string; text?: string };
-      if (notice.text) ctx.toast(`${(notice.name ?? "an app").toLowerCase()}: ${notice.text}`, "ok");
+      if (notice.text) ctx.toast(`${notice.name ?? "An app"}: ${notice.text}`, "ok");
     },
     // An app added from Apps, or picked in setup, is installing.
     "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),

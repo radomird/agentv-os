@@ -43,7 +43,7 @@ function show(next: typeof state, text: string): void {
   bar.dataset.state = next;
   bar.classList.add("on");
   words!.textContent = tail(text);
-  says!.textContent = next === "thinking" ? "thinking" : "";
+  says!.textContent = next === "thinking" ? "Thinking" : "";
 }
 
 // The newest words, as many as fit on the bar at the TV's size.
@@ -73,7 +73,7 @@ export function listeningHeard(heard: Heard): void {
   // A new box after a sentence: listening again, and what comes of the
   // last one is a toast.
   sentence = 0;
-  show("listening", heard.state === "words" ? heard.text.toLowerCase() : "listening");
+  show("listening", heard.state === "words" ? heard.text : "Listening");
 }
 
 // A sentence as the daemon tells it. True when the bar showed it, so it
@@ -86,7 +86,7 @@ export function barTakes(said: Said | null): boolean {
   if (said.state === "routing") {
     if (state !== "listening") return false;
     sentence = said.n;
-    show("thinking", said.sentence.toLowerCase());
+    show("thinking", said.sentence);
     return true;
   }
   if (sentence !== said.n || !said.outcome) return false;

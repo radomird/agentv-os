@@ -7,7 +7,8 @@ import { daemon, type TileData, type TileEntry } from "../api.ts";
 import { h } from "../dom.ts";
 import { keepAsking, showLoading } from "../loading.ts";
 import { hasIcon, icon } from "../looks/icons.ts";
-import { lookId, said } from "../looks/looks.ts";
+import { placeName } from "../looks/cards.ts";
+import { lookId } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { WEATHER } from "./home.ts";
 import { bar, heading } from "./parts.ts";
@@ -20,7 +21,7 @@ export function weatherIcon(name: string | undefined, size: number): SVGSVGEleme
   return icon(hasIcon(name) ? name : "cloudy", size);
 }
 
-// "h 13° · l 10°" and "cloudy\nh 13° · l 10°", as Weather writes them, read
+// "h 13° · l 10°" and "Cloudy\nh 13° · l 10°", as Weather writes them, read
 // back as their parts.
 function condition(caption: string | undefined): string {
   return (caption ?? "").split("\n")[0] ?? "";
@@ -30,7 +31,7 @@ function day(entry: TileEntry, at: number): HTMLElement {
   return h(
     "button",
     { class: "forecast-day", "data-focus": true, "data-action": `day-${at}` },
-    h("span", { class: "forecast-name" }, said(entry.label ?? "")),
+    h("span", { class: "forecast-name" }, entry.label ?? ""),
     weatherIcon(entry.icon, 84),
     h("span", { class: "forecast-temps" }, h("span", { class: "forecast-high" }, entry.value ?? ""), h("span", { class: "forecast-low" }, entry.caption ?? "")),
   );
@@ -44,15 +45,17 @@ export function forecast(ctx: Ctx): View {
     const now = data?.headline;
     const words = condition(now?.caption);
     const place = (now?.label ?? "").replace(/ · 7 days$/, "");
-    const title = now?.value ? (terminal ? `${now.value} ${words}.` : `${now.value} and ${words}`) : said(terminal ? "the weather." : "the weather");
-    const line = data?.entries?.length ? said(place) : said(now?.caption?.replace("\n", " ") ?? "the forecast is on its way");
+    const title = now?.value ? `${now.value} ${words}` : "Weather";
+    // The city, with "offline" after it when the forecast is an older one.
+    const [city, ...rest] = place.split(" · ");
+    const line = data?.entries?.length ? [placeName(city), ...rest].join(" · ") : (now?.caption?.replace("\n", " ") ?? "Loading the forecast…");
     head.replaceChildren(h("div", {}, ...heading("tv weather", title), h("p", { class: "page-line" }, line)));
     week.replaceChildren(...(data?.entries ?? []).slice(0, 7).map(day));
   };
   draw(last);
   const app = ctx.state.apps.find((one) => one.id === WEATHER);
   // Terminal's cards need no heading; Glass and Cinema label the row.
-  const section = terminal ? null : h("div", { class: "section" }, said("this week"));
+  const section = terminal ? null : h("div", { class: "section" }, "This week");
   const el = h("div", { class: "screen" }, h("div", { class: "page forecast" }, head, section, week), bar(ctx, "weather"));
   if (app) {
     // With no forecast from an earlier visit, the week says it's loading.

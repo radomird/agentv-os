@@ -260,7 +260,7 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json();
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? `${method} ${path} failed`);
+  if (!response.ok || data.ok === false) throw new Error(data.error ?? "Something went wrong");
   return data as T;
 }
 
@@ -317,7 +317,7 @@ export interface Art {
 
 // What the ambient screen says under a picture.
 export function creditLine(item: Background): string {
-  return item.credit.text ?? (item.kind === "photo" ? `photo · ${item.credit.from}` : item.credit.from);
+  return item.credit.text ?? (item.kind === "photo" ? `Photo · ${item.credit.from}` : item.credit.from);
 }
 
 // The pictures the chosen source shows: the theme's own, the photos, the art
@@ -402,7 +402,7 @@ export type Outcome =
   // From the Ask box (ADR-068): a build it started, or a change waiting for an adult's ok.
   | { kind: "build"; say: string; build: string; what: string; app?: string }
   | { kind: "change"; say: string; app: string; name: string; what: string; recipe: string | null }
-  | { kind: "none"; say: string; why: string; detail?: string };
+  | { kind: "none"; say: string; why: string };
 
 // What the Ask box waits on (daemon/routes/ask.ts).
 export type AskView =
@@ -483,7 +483,7 @@ export const daemon = {
     const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
     const data = await response.json();
     if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
-    if (!response.ok || data.ok === false) throw new Error(data.error ?? "PUT /api/key failed");
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't save the key");
     return data as KeyState;
   },
   // Settings → AI stopped waiting for a key's terms.
@@ -494,7 +494,7 @@ export const daemon = {
     const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
     const data = await response.json();
     if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
-    if (!response.ok || data.ok === false) throw new Error(data.error ?? "PUT /api/ai/plan failed");
+    if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't use your plan");
     return data as { provider: string; path: "plan" };
   },
   stopPlanTerms: () => call<{ ok: boolean }>("DELETE", "/api/ai/plan/terms"),
@@ -551,7 +551,8 @@ export interface BuildView {
   state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
   phase: "understand" | "plan" | "build" | "stage-b";
   step?: string;
-  steps: { id: string; state: "waiting" | "running" | "done" | "failed" }[];
+  // Each step, with its name as the TV says it ("Designing", "Testing").
+  steps: { id: string; label?: string; state: "waiting" | "running" | "done" | "failed" }[];
   reason?: string;
   spent?: number;
   understood?: { name: string; recipe: string | null; says: string; address?: string; category?: string };
@@ -583,7 +584,7 @@ export interface BuildsState {
   settings: BuilderSettings;
   spend: { month: string; spent: number; cap: BuilderSettings["cap"] };
   warnings: { id: string; version: string; build: string; malware: string[]; serious: string[]; since: string }[];
-  wishes: string[]; // what setup's "+ add your own" kept
+  wishes: string[]; // what setup's "Build your own" saved for later
   // Each theme your agent made that the TV handed to Omarchy, or why not.
   themes?: Record<string, { version: string; name?: string; error?: string }>;
 }
@@ -629,15 +630,19 @@ let next = 0;
   waiting.delete(id);
 };
 
+// What an ask says when the page isn't on the TV itself, as in a browser on
+// another computer. A page that knows a better line looks for this one.
+export const ONLY_ON_TV = "That works on the TV";
+
 function ask(request: Record<string, unknown>, ms = 30_000): Promise<Reply> {
   const binding = (window as ScreenWindow).agentvScreen;
-  if (!binding) return Promise.resolve({ ok: false, error: "that works on the TV" });
+  if (!binding) return Promise.resolve({ ok: false, error: ONLY_ON_TV });
   const id = ++next;
   return new Promise((resolve) => {
     waiting.set(id, resolve);
     binding(JSON.stringify({ ...request, id }));
     setTimeout(() => {
-      if (waiting.delete(id)) resolve({ ok: false, error: "the TV didn't answer" });
+      if (waiting.delete(id)) resolve({ ok: false, error: "Couldn't reach your TV" });
     }, ms);
   });
 }
@@ -660,7 +665,7 @@ export const screen = {
   // from a slow NAS takes a while.
   kit: async (app: string, name: string, args: unknown[]) => {
     const reply = await ask({ cmd: "kit", app, call: name, args }, 60_000);
-    if (!reply.ok) throw new Error(reply.error ?? "that didn't work");
+    if (!reply.ok) throw new Error(reply.error ?? "Something went wrong");
     return reply.value;
   },
   // A key on the ambient screen: back to what was in front.

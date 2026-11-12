@@ -47,8 +47,8 @@ export function showcaseTile(tile: TileData | null, size: Size): TileData | null
   return {
     headline: { label: "" },
     entries: FILMS.map(([title, year, file]) => ({
-      label: title.toLowerCase(),
-      caption: `blender studio · ${year}`,
+      label: title,
+      caption: `Blender Studio · ${year}`,
       image: `/launcher/looks/showcase/poster-${file}.jpg`,
       item: { id: `showcase-${file}`, kind: "film", title },
     })),

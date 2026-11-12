@@ -13,12 +13,12 @@ import { h } from "../../dom.ts";
 import type { Ctx, View } from "../../main.ts";
 import { buildTile, underway } from "../../pages/build.ts";
 import { logo, NEW, openApp, openEntry } from "../../pages/home.ts";
-import { bar } from "../../pages/parts.ts";
+import { bar, HOLD_HINT } from "../../pages/parts.ts";
 import { cardContent, featured, tileData, type Featured } from "../cards.ts";
 import { GAMES, openWords, shelves } from "../games.ts";
 import { ordered } from "../glass/home.ts";
 import { icon } from "../icons.ts";
-import { named, preview, said } from "../looks.ts";
+import { preview } from "../looks.ts";
 
 // How many featured titles the carousel goes through.
 const MOST = 5;
@@ -30,8 +30,8 @@ function state(ctx: Ctx, app: App): string {
   if (preview()) return "";
   const open = openWords(ctx, app);
   if (open) return open;
-  if (app.needsSetup) return said("set up");
-  if (app.signIn === "needed") return said("sign in");
+  if (app.needsSetup) return "Set up";
+  if (app.signIn === "needed") return "Sign in";
   return "";
 }
 
@@ -41,7 +41,7 @@ function appCard(ctx: Ctx, app: App, size: string): HTMLElement {
     "button",
     { class: `tile cinema-card size-${size}`, "data-focus": true, "data-id": app.id, "data-details": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
     cardContent(app, logo(app), true),
-    h("span", { class: "cinema-card-name" }, named(app.name)),
+    h("span", { class: "cinema-card-name" }, app.name),
     words ? h("span", { class: "cinema-card-state" }, words) : null,
   );
 }
@@ -83,16 +83,16 @@ export function home(ctx: Ctx): View {
       },
     },
     icon("play", 30),
-    h("span", { class: "cinema-play-word" }, said("play")),
+    h("span", { class: "cinema-play-word" }, "Play"),
   );
   const show = () => {
     const slide = slides[at];
     const first = apps[0];
     kicker.replaceChildren(...(slide ? [logo(slide.app), h("span", {}, slide.line)] : []));
-    name.textContent = slide?.title ?? (first ? named(first.name) : said("your home"));
+    name.textContent = slide?.title ?? (first ? first.name : "Your home");
     meta.textContent = slide?.meta ?? "";
     const word = play.querySelector(".cinema-play-word")!;
-    word.textContent = said(slide?.item ? "play" : "open");
+    word.textContent = slide?.item ? "Play" : "Open";
     dots.replaceChildren(...slides.map((_, i) => h("span", { class: `cinema-dot${i === at ? " on" : ""}` })));
     if (slide?.image) {
       poster.src = slide.image;
@@ -116,7 +116,7 @@ export function home(ctx: Ctx): View {
   // New this week's row, posters with the app each is on.
   const newApp = ctx.state.apps.find((app) => app.id === NEW && app.tier === "built-in");
   const newRow = h("div", { class: "cinema-row cinema-posters", "data-scroll": true });
-  const newSection = h("div", { class: "section cinema-section" }, said("new this week"));
+  const newSection = h("div", { class: "section cinema-section" }, "New this week");
   newSection.hidden = true;
   if (newApp) {
     void tileData(newApp, "l").then((data) => {
@@ -153,12 +153,12 @@ export function home(ctx: Ctx): View {
     "div",
     { class: "cinema-body", "data-scroll": true },
     hero,
-    ...(cards.length ? [h("div", { class: "section cinema-section" }, said("your apps")), h("div", { class: "cinema-row", "data-scroll": true }, ...cards)] : []),
+    ...(cards.length ? [h("div", { class: "section cinema-section" }, "Your apps"), h("div", { class: "cinema-row", "data-scroll": true }, ...cards)] : []),
     ...(games.length ? [h("div", { class: "section cinema-section cinema-games-name" }, GAMES), h("div", { class: "cinema-row cinema-games", "data-scroll": true }, ...games)] : []),
     newSection,
     newRow,
   );
-  const el = h("div", { class: "screen cinema-home" }, backdrop, bar(ctx, "home"), body);
+  const el = h("div", { class: "screen cinema-home" }, backdrop, bar(ctx, "home", "", undefined, HOLD_HINT), body);
   // Once the rows have come up, the featured title makes way for them, and
   // it's back when the focus goes up to Play.
   body.addEventListener("scroll", () => el.classList.toggle("cinema-scrolled", body.scrollTop > 0));
