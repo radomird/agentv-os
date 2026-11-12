@@ -14,10 +14,9 @@ import { h } from "../../dom.ts";
 import type { Ctx, View } from "../../main.ts";
 import { buildTile, underway } from "../../pages/build.ts";
 import { logo, openApp } from "../../pages/home.ts";
-import { bar } from "../../pages/parts.ts";
+import { bar, HOLD_HINT } from "../../pages/parts.ts";
 import { cardContent, featured, type Featured } from "../cards.ts";
 import { GAMES, openWords, shelves } from "../games.ts";
-import { named } from "../looks.ts";
 
 const PER_ROW = 6;
 
@@ -36,7 +35,7 @@ function glassTile(ctx: Ctx, app: App): HTMLElement {
     "button",
     { class: "tile glass-tile", "data-focus": true, "data-id": app.id, "data-details": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
     cardContent(app, logo(app, true), false),
-    h("span", { class: "glass-label" }, named(app.name)),
+    h("span", { class: "glass-label" }, app.name),
   );
 }
 
@@ -87,7 +86,7 @@ export function home(ctx: Ctx): View {
     void featured(app).then((found: Featured[]) => {
       if (n !== asked || !el.isConnected) return;
       const first = found[0];
-      name.textContent = first?.title ?? named(app.name);
+      name.textContent = first?.title ?? app.name;
       line.textContent = openWords(ctx, app) || (first?.line ?? "");
       if (!first?.image) {
         for (const still of stills) still.classList.remove("on");
@@ -105,7 +104,7 @@ export function home(ctx: Ctx): View {
   };
 
   const grid = h("div", { class: "glass-rows", "data-scroll": true }, ...rows);
-  const el = h("div", { class: "screen glass-home" }, stage, title, grid, bar(ctx, "home"));
+  const el = h("div", { class: "screen glass-home" }, stage, title, grid, bar(ctx, "home", "", undefined, HOLD_HINT));
   const first = tiles[0] ?? games[0];
   if (first) feature(first);
   return {

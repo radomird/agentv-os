@@ -119,10 +119,10 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   await ask(hand, "play frozen");
   // The TV: a card with the two and "none of these", the first focused.
   await screen.waitForSelector("#said.on .said-choice");
-  assert.deepEqual(await screen.locator("#said .said-choice").allTextContents(), ["frozen · film · sample", "frozen · album · sample"]);
+  assert.deepEqual(await screen.locator("#said .said-choice").allTextContents(), ["Frozen · film · Sample", "Frozen · album · Sample"]);
   assert.equal(await screen.locator("#said .notice-title").textContent(), "Which one?");
   assert.equal(await screen.locator("#said .said-heard").textContent(), '"play frozen"');
-  assert.equal(await screen.evaluate(() => document.querySelector("#said .focused")?.textContent), "frozen · film · sample");
+  assert.equal(await screen.evaluate(() => document.querySelector("#said .focused")?.textContent), "Frozen · film · Sample");
   // The phone: the same two, under its box.
   await hand.waitForSelector('[data-said="choose"]');
   assert.deepEqual(await hand.locator(".said-choice").allTextContents(), ["Frozen · film · Sample", "Frozen · album · Sample"]);
@@ -301,7 +301,7 @@ test("ADR-054 the phone's box brings a listening bar to the TV, and its words sh
   const states = await watchBar(screen);
   await hand.focus("#say-text");
   await screen.waitForSelector('#listening.on[data-state="listening"]');
-  assert.equal(await screen.locator(".listening-words").textContent(), "listening");
+  assert.equal(await screen.locator(".listening-words").textContent(), "Listening");
   assert.equal(await screen.locator(".listening-dots span").count(), 3);
   // As the dictation fills the box: a fifth of a second after the last
   // change, the TV has the words so far.
@@ -312,7 +312,7 @@ test("ADR-054 the phone's box brings a listening bar to the TV, and its words sh
   // Closed on the phone, unsent: the bar goes.
   await hand.evaluate(() => (document.getElementById("say-text") as HTMLInputElement).blur());
   await screen.waitForFunction(() => !document.querySelector("#listening.on"));
-  assert.deepEqual((await states()).filter((s) => !s.startsWith("listening: play f") || s === "listening: play fro"), ["listening: listening", "listening: play fro", "off"]);
+  assert.deepEqual((await states()).filter((s) => !s.startsWith("listening: play f") || s === "listening: play fro"), ["listening: Listening", "listening: play fro", "off"]);
   await screen.close();
   await hand.close();
 });
@@ -351,7 +351,7 @@ test("ADR-054 what opened is on the bar, and a box opened again while a sentence
   // phone's box keep its words, and what came of the last is a toast.
   await ask(hand, SLOW);
   await screen.waitForSelector('#listening.on[data-state="thinking"]');
-  assert.equal(await screen.locator(".listening-says").textContent(), "thinking");
+  assert.equal(await screen.locator(".listening-says").textContent(), "Thinking");
   await hand.waitForSelector('[data-said="routing"]');
   await hand.type("#say-text", "continue my show");
   await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="listening"] .listening-words')?.textContent === "continue my show");

@@ -96,9 +96,9 @@ test("S2.13 a new release shows one toast on home, and the bar says so until it'
   write("status.json", STATUS);
   const page = await tv();
   await page.waitForSelector(".toast");
-  assert.equal(await page.locator(".toast").innerText(), "agentv 0.3.0 is ready · settings → updates");
+  assert.equal(await page.locator(".toast").innerText(), "agentv 0.3.0 is ready, in settings");
   assert.match(await page.locator(".bar").innerText(), /settings ●/);
-  assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 is ready · settings → updates/);
+  assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 is ready, in settings/);
   // Home tells the box it showed the toast as it shows it. The page closes
   // only once the box has it, as the TV's page never closes that quickly.
   await until(async () => (await (await fetch(`${url}/api/updates`)).json()).toasted === "0.3.0");
@@ -134,7 +134,7 @@ test("S2.13 two answers from before the toast was shown still show it once", asy
     for (let tries = 0; asked < 2 && tries < 250; tries++) await new Promise((resolve) => setTimeout(resolve, 20));
     assert.ok(asked >= 2, "home asked for the updates twice");
     await page.waitForTimeout(500);
-    assert.deepEqual(await page.locator(".toast").allInnerTexts(), ["agentv 0.3.1 is ready · settings → updates"]);
+    assert.deepEqual(await page.locator(".toast").allInnerTexts(), ["agentv 0.3.1 is ready, in settings"]);
   } finally {
     await page.close();
   }
@@ -207,6 +207,13 @@ test("the Updating screen covers the TV while an install runs, and home comes ba
   assert.match(screen, /\[x\] backup of 0\.2\.1 saved/);
   assert.match(screen, /\[>\] installing\n/);
   assert.match(screen, /\[ \] restart and check/);
+  // An early update's package version means nothing to a person: the
+  // headline leaves it off.
+  write("progress.json", { ...progress("running", "packages", 40, "2 of 4"), to: { agentv: "0.3.0.r12.g7b931248a-1" } });
+  await page.waitForFunction(() => document.querySelector("#updating")?.textContent?.includes("Updating AgenTV"));
+  const early = await page.locator("#updating").innerText();
+  assert.match(early, /^updating agentv$/m);
+  assert.doesNotMatch(early, /r12|7b931248a/);
   // Keys wait while it runs.
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#updating.on").count(), 1);
@@ -307,7 +314,7 @@ test("S2.14 going back covers the TV until the restart, and home says so after",
   write("status.json", STATUS);
   write("went-back.json", { at: "2026-10-23T22:06:00Z", from: { agentv: "0.3.0-1", omarchy: "4.0.6-1" }, to: { agentv: "0.2.1-1" } });
   const back = await tv();
-  await back.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => t.textContent?.startsWith("back on agentv 0.2.1")));
+  await back.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => t.textContent?.startsWith("Back on AgenTV 0.2.1")));
   await back.close();
   const later = await tv();
   await later.waitForTimeout(800);

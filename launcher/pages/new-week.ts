@@ -6,19 +6,16 @@
 import { daemon, type TileData, type TileEntry } from "../api.ts";
 import { h } from "../dom.ts";
 import { keepAsking, showLoading, SHOWN_MS } from "../loading.ts";
-import { lookId, named, said } from "../looks/looks.ts";
 import type { Ctx, View } from "../main.ts";
 import { NEW, openEntry } from "./home.ts";
 import { bar, heading } from "./parts.ts";
 
 let last: TileData | null = null;
 
-const COUNT = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight"];
-
 function card(ctx: Ctx, entry: TileEntry, at: number): HTMLElement {
   const app = ctx.state.apps.find((one) => one.id === NEW);
-  // The item keeps the title's own capitals; Terminal writes it in lower case.
-  const title = named(entry.item?.title ?? entry.label ?? "");
+  // The item has the title's own capitals.
+  const title = entry.item?.title ?? entry.label ?? "";
   return h(
     "button",
     {
@@ -29,23 +26,22 @@ function card(ctx: Ctx, entry: TileEntry, at: number): HTMLElement {
     },
     entry.image && app ? h("img", { class: "poster-image", src: daemon.image(app.id, entry.image), alt: "" }) : h("span", { class: "poster-image poster-none" }),
     h("span", { class: "poster-title" }, title),
-    entry.caption ? h("span", { class: "poster-caption" }, said(entry.caption)) : null,
+    entry.caption ? h("span", { class: "poster-caption" }, entry.caption) : null,
   );
 }
 
 export function newWeek(ctx: Ctx): View {
-  const terminal = lookId() === "terminal";
   const head = h("div", { class: "page-head" });
   const row = h("div", { class: "poster-row", "data-scroll": true });
   const draw = (data: TileData | null) => {
     const entries = (data?.entries ?? []).filter((entry) => entry.item);
     const n = entries.length;
-    const line = n ? `${terminal ? String(n) : COUNT[n] ?? String(n)} new across your apps` : (data?.headline?.caption ?? "looking for what's new");
-    head.replaceChildren(h("div", {}, ...heading("tv new", "new this week."), h("p", { class: "page-line" }, said(line))));
+    const line = n ? `${n} new across your apps` : (data?.headline?.caption ?? "Finding what's new…");
+    head.replaceChildren(h("div", {}, ...heading("tv new", "New this week"), h("p", { class: "page-line" }, line)));
     row.replaceChildren(...entries.map((entry, at) => card(ctx, entry, at)));
-    // With no key or no region yet, an adult goes to its settings from here.
+    // With no key or no location yet, an adult goes to its settings from here.
     if (!n && ctx.state.viewer.role === "adult" && data?.headline?.caption) {
-      row.append(h("button", { class: "button", "data-focus": true, "data-action": "new-settings", onclick: () => ctx.go("settings/tmdb") }, said("set it up in settings →")));
+      row.append(h("button", { class: "button", "data-focus": true, "data-action": "new-settings", onclick: () => ctx.go("settings/tmdb") }, "Set it up in Settings"));
     }
   };
   draw(last);

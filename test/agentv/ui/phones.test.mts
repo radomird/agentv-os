@@ -247,7 +247,7 @@ test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Set
   await go(screen, "settings/phones");
   await screen.locator('[data-action="pair"]').click();
   await screen.waitForSelector(".pin-pad");
-  assert.match(await screen.locator(".pin-pad").innerText(), /enter the adult pin[\s\S]*for settings/);
+  assert.match(await screen.locator(".pin-pad").innerText(), /enter the adult pin[\s\S]*for settings$/m);
   await screen.keyboard.press("Escape");
   await screen.waitForSelector(".pin-pad", { state: "detached" });
   assert.equal(await screen.locator(".page.pair").count(), 0, "still on Settings → Phones");

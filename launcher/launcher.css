@@ -64,9 +64,9 @@ body.pointer-hidden * {
 }
 
 /* What keeps its capitals in every look: what someone typed, a code or a
-   password to copy, a person's or an app's initials, an app's own words on
-   its tile, an update's notes, a picture's credit, and anything a page marks
-   with data-own-case. */
+   password to copy, a person's or an app's initials, an update's notes, a
+   picture's credit, and anything a page marks with data-own-case, as home
+   does for an app's own words on its tile. */
 input,
 textarea,
 code,
@@ -75,9 +75,6 @@ code,
 .avatar,
 .person-face,
 .app-face,
-.entry-label,
-.entry-caption,
-.tile-head-label,
 .notes,
 .ambient-credit,
 .build-said,
@@ -178,6 +175,18 @@ button {
   color: var(--bright-foreground);
 }
 
+/* The hint for the tile in focus, on home and in Apps. It shows only while
+   the focus is on a tile whose details a hold on OK opens, before who's
+   watching in the bar. */
+.bar-hint {
+  display: none;
+  order: -1;
+}
+
+.screen:has([data-details].focused) .bar-hint {
+  display: block;
+}
+
 /* --- The home grid (ADR-015, ADR-016) ------------------------------------ */
 
 .grid {
@@ -269,7 +278,7 @@ button {
   text-align: left;
 }
 
-/* Apps → add an app: three to a row, with room for the line. */
+/* The app library, "Add an app": three to a row, with room for the line. */
 .row.add-row {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -303,6 +312,31 @@ button {
 
 .tile-count {
   color: var(--foreground);
+}
+
+/* "Add an app" has a plus where an app has its logo. It's drawn here, so
+   it's never in the tile's words. */
+.logo-plus::before {
+  content: "+";
+  font-size: 2em;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* The library's last tile, "Can't find it? Build your own": Ask's sparkle
+   where an app has its logo. */
+.build-own .logo svg {
+  width: 62%;
+  height: 62%;
+}
+
+.build-own .tile-count {
+  text-align: right;
+}
+
+/* What the library says when it has no apps to show, over that tile. */
+.add-empty {
+  margin-bottom: 24px;
 }
 
 /* An app's logo, or a monogram in the theme's colours (ADR-015). */
@@ -815,8 +849,7 @@ button {
   margin-right: 0.6em;
 }
 
-.chip.current,
-.chip.done {
+.chip.current {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--background);
@@ -835,11 +868,6 @@ button {
 
 .chip.unpin {
   color: var(--red-ink, var(--red));
-}
-
-.chip.done {
-  height: 48px;
-  padding: 0 18px;
 }
 
 .bar-step {
@@ -1611,6 +1639,12 @@ body.with-backdrop.on-home {
   display: inline-flex;
   align-items: center;
   gap: 24px;
+}
+
+/* A find on your network: its address after its name, quieter. */
+.found-address {
+  color: var(--foreground);
+  font-weight: 400;
 }
 
 .profile-head {

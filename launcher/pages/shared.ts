@@ -1,13 +1,13 @@
-// Shared to the TV (ADR-050, S5.10): a link, a photo or a video a paired
+// Sent to the TV (ADR-050, S5.10): a link, a photo or a video a paired
 // phone sent. The TV asks first, with Open and Not now, over home only and
 // never over what's playing (main.ts). Open shows a photo full screen, with
-// its credit and "make it the background" (ADR-012), plays a video in
+// its credit and "Use as background" (ADR-012), plays a video in
 // AgenTV's own player, and opens a link in the app that declares its site
 // or in a browser page of its own, which the TV session does. Each one waits
-// in Apps → Shared until someone takes it off.
+// in Apps, under "From your phones", until someone removes it.
 
 import { daemon, screen, type Share, type SharedState } from "../api.ts";
-import { h } from "../dom.ts";
+import { asWritten, h } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
@@ -39,7 +39,7 @@ export function shareWhat(share: Share): string {
 
 // A photo's line: its credit, and who sent it.
 function photoLine(share: Share): string {
-  return share.credit ? `${share.credit} · ${share.from}` : `photo · ${share.from}`;
+  return share.credit ? `${share.credit} · ${share.from}` : `Photo · ${share.from}`;
 }
 
 // A photo or a video on its own page, a link through the TV session.
@@ -49,7 +49,7 @@ export async function openShare(ctx: Ctx, share: Share): Promise<void> {
     return;
   }
   const reply = await screen.openShare(share.id);
-  if (!reply.ok) ctx.toast(reply.error ?? `${share.title} didn't open`, "fail");
+  if (!reply.ok) ctx.toast(reply.error ?? `Couldn't open ${share.title}`, "fail");
 }
 
 // The PIN is asked for only on a child's profile, as the daemon does.
@@ -59,25 +59,25 @@ async function childGrant(ctx: Ctx, what: string): Promise<string | undefined | 
   return grant === null ? null : grant || undefined;
 }
 
-// Taken off the box, from its page or Apps → Shared.
+// Removed from the TV, from its page or from Apps.
 export async function removeShare(ctx: Ctx, share: Share): Promise<boolean> {
-  const grant = await childGrant(ctx, "taking a share off");
+  const grant = await childGrant(ctx, "removing this");
   if (grant === null) return false;
   try {
     await daemon.removeShare(share.id, grant);
   } catch (error) {
-    if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+    if (/^that needs the pin$/i.test((error as Error).message)) ctx.forgetGrant();
     ctx.sounds.play("failure");
     ctx.toast((error as Error).message, "fail");
     return false;
   }
   await loadShared();
   ctx.sounds.play("confirm");
-  ctx.toast(`${share.kind === "link" ? share.title : `the ${share.kind}`} is off the tv`, "ok");
+  ctx.toast("Removed", "ok");
   return true;
 }
 
-// Its tile in Apps → Shared: the photo itself, or what kind it is.
+// Its tile in Apps: the photo itself, or what kind it is.
 export function sharedTile(ctx: Ctx, share: Share): HTMLElement {
   const top =
     share.kind === "photo"
@@ -87,12 +87,12 @@ export function sharedTile(ctx: Ctx, share: Share): HTMLElement {
     "button",
     { class: "tile size-s tile-shared", "data-focus": true, "data-share": share.id, "aria-label": `${share.from} sent ${shareWhat(share)}`, onclick: () => void openShare(ctx, share) },
     h("div", { class: "tile-top" }, top),
-    h("span", { class: "tile-name" }, share.kind === "photo" ? (share.credit ?? "a photo") : share.title),
+    h("span", { class: "tile-name" }, share.kind === "photo" ? (share.credit ?? "A photo") : share.title),
   );
 }
 
 function gone(ctx: Ctx): View {
-  const el = h("div", { class: "screen" }, h("div", { class: "page" }, h("p", { class: "empty" }, "that share isn't here any more")), bar(ctx, "apps"));
+  const el = h("div", { class: "screen" }, h("div", { class: "page" }, h("p", { class: "empty" }, "That was removed")), bar(ctx, "apps"));
   return { el };
 }
 
@@ -105,7 +105,7 @@ function photoView(ctx: Ctx, share: Share): View {
       "data-focus": true,
       "data-action": "shared-background",
       onclick: async () => {
-        const grant = await childGrant(ctx, "a shared photo as the background");
+        const grant = await childGrant(ctx, "changing the background");
         if (grant === null) return;
         try {
           await daemon.shareBackground(share.id, grant);
@@ -115,16 +115,16 @@ function photoView(ctx: Ctx, share: Share): View {
           return;
         }
         ctx.sounds.play("confirm");
-        ctx.toast("it's the tv's background now", "ok");
+        ctx.toast("Background set", "ok");
       },
     },
-    "make it the background",
+    "Use as background",
   );
-  const remove = h("button", { class: "button", "data-focus": true, "data-action": "shared-remove", onclick: async () => (await removeShare(ctx, share)) && ctx.back() }, "take it off");
+  const remove = h("button", { class: "button", "data-focus": true, "data-action": "shared-remove", onclick: async () => (await removeShare(ctx, share)) && ctx.back() }, "Remove");
   const el = h(
     "div",
     { class: "shared-full" },
-    h("img", { class: "shared-picture", src: `/api/shared/${share.id}/file`, alt: share.credit ?? "a shared photo" }),
+    h("img", { class: "shared-picture", src: `/api/shared/${share.id}/file`, alt: share.credit ?? "A photo from a phone" }),
     h("div", { class: "shared-bar" }, h("span", { class: "shared-line" }, photoLine(share)), h("div", { class: "shared-buttons" }, background, remove)),
   );
   return { el, first: background };
@@ -143,17 +143,17 @@ function clock(seconds: number): string {
 function videoView(ctx: Ctx, share: Share): View {
   const video = h("video", { class: "shared-video", src: `/api/shared/${share.id}/file`, autoplay: true, playsinline: true }) as HTMLVideoElement;
   const time = h("span", { class: "shared-time" }, "0:00");
-  const state = h("span", { class: "shared-state" }, "playing");
+  const state = h("span", { class: "shared-state" }, "Playing");
   const line = h("div", { class: "shared-bar shared-player" }, h("span", { class: "shared-line" }, `${share.title} · ${share.from}`), time, state);
   const draw = () => {
     time.textContent = `${clock(video.currentTime)} / ${clock(video.duration)}`;
-    state.textContent = video.ended ? "ended" : video.paused ? "paused" : "playing";
+    state.textContent = video.ended ? "Ended" : video.paused ? "Paused" : "Playing";
     line.classList.toggle("shown", video.paused);
   };
   for (const event of ["timeupdate", "play", "pause", "ended", "loadedmetadata"]) video.addEventListener(event, draw);
   video.addEventListener("error", () => {
     ctx.sounds.play("failure");
-    state.textContent = "the tv can't play this video";
+    state.textContent = "Can't play this video";
     line.classList.add("shown");
   });
   const el = h("div", { class: "shared-full" }, video, line);
@@ -178,19 +178,20 @@ function videoView(ctx: Ctx, share: Share): View {
 
 // A link: where it goes, and Open, which the TV session does.
 function linkView(ctx: Ctx, share: Share): View {
-  const open = h("button", { class: "button primary", "data-focus": true, "data-action": "shared-open", onclick: () => void openShare(ctx, share) }, "open →");
-  const remove = h("button", { class: "button", "data-focus": true, "data-action": "shared-remove", onclick: async () => (await removeShare(ctx, share)) && ctx.back() }, "take it off");
+  const open = h("button", { class: "button primary", "data-focus": true, "data-action": "shared-open", onclick: () => void openShare(ctx, share) }, "Open");
+  const remove = h("button", { class: "button", "data-focus": true, "data-action": "shared-remove", onclick: async () => (await removeShare(ctx, share)) && ctx.back() }, "Remove");
   const el = h(
     "div",
     { class: "screen" },
     h(
       "div",
       { class: "page" },
-      ...heading(`shared from ${share.from}`, `${share.title}.`),
-      h("p", { class: "shared-url" }, share.url ?? ""),
+      ...heading(`Sent from ${share.from}`, share.title),
+      // A link keeps its own letters in every look.
+      h("p", { class: "shared-url" }, asWritten(share.url ?? "")),
       h("div", { class: "shared-buttons" }, open, remove),
     ),
-    bar(ctx, "apps", "↵ select · esc back"),
+    bar(ctx, "apps"),
   );
   return { el, first: open };
 }

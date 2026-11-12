@@ -118,12 +118,13 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
   try {
     const page = await tv(url);
     if (!on) {
-      // Off: a make is "Didn't get that", and Apps' "+ add your own" is
-      // the old page. The bar's Ask is the look's own, so it stays.
+      // Off: a make is "Didn't get that", and "Build your own" at the end
+      // of the app library is the old page. The bar's Ask is the look's
+      // own, so it stays.
       assert.equal((await send("POST", "/api/say", { sentence: "make me a game like tetris" })).said.outcome.say, "Didn't get that");
       assert.equal(existsSync(join(state, "build-drop", "start.json")), false, "nothing was built");
-      await go(page, "apps");
-      await page.locator('[data-action="build"]').click();
+      await go(page, "add-app");
+      await page.locator('.add-row [data-action="build"]').click();
       await page.waitForSelector(".build-ask");
       assert.match(await page.locator(".page").innerText(), /what do you want to build\?/);
       assert.equal(await page.locator(".ask-examples").count(), 0);
@@ -131,15 +132,12 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
       return;
     }
 
-    // Apps, with nothing the agent made yet, has examples of what to make.
-    await go(page, "apps");
-    await page.waitForSelector(".ask-examples");
-    assert.deepEqual(await page.locator(".ask-examples .button").allTextContents(), ["Make a puzzle game", "Make a quiz night", "Make a photo slideshow"]);
-
-    // "Build your own" opens Ask with "make " typed. The rest of the example
-    // shows in grey after it, and every chip is something to make.
-    await page.locator('[data-action="build"]').click();
-    await page.waitForSelector(".ask-page");
+    // "Build your own", the app library's last tile, opens Ask with "make "
+    // typed. The rest of the example shows in grey after it, and every chip
+    // is something to make.
+    await go(page, "add-app");
+    await page.locator('.add-row [data-action="build"]').click();
+    await page.waitForSelector(".ask-page .ask-field");
     assert.equal(await page.locator(".ask-field").inputValue(), "make ");
     await page.waitForFunction(() => (document.querySelector(".ask-example") as HTMLElement | null)?.style.display === "flex");
     assert.deepEqual(await page.locator(".ask-example span").allTextContents(), ["make ", "me a puzzle game"]);

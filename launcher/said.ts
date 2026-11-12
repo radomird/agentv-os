@@ -16,8 +16,8 @@ import { askBuilds, askHeard, askShowing, changeWaiting } from "./pages/ask.ts";
 const KIND_WORDS: Record<string, string> = { film: "film", series: "show", episode: "episode", track: "song", album: "album", playlist: "playlist", "photo-album": "photos", game: "game" };
 
 function label(c: Candidate): string {
-  const at = [c.item.season !== undefined ? `s${c.item.season}` : "", c.item.episode !== undefined ? `e${c.item.episode}` : ""].filter(Boolean).join(" ");
-  return [`${c.item.title.toLowerCase()}${at ? ` ${at}` : ""}`, KIND_WORDS[c.item.kind] ?? c.item.kind, c.name.toLowerCase()].join(" · ");
+  const at = [c.item.season !== undefined ? `S${c.item.season}` : "", c.item.episode !== undefined ? `E${c.item.episode}` : ""].filter(Boolean).join(" ");
+  return [`${c.item.title}${at ? ` ${at}` : ""}`, KIND_WORDS[c.item.kind] ?? c.item.kind, c.name].join(" · ");
 }
 
 let el: HTMLElement | null = null;
@@ -115,7 +115,7 @@ export function saidHeard(said: Said | null): void {
   if (outcome.kind === "none") {
     if (open) close();
     ctx.sounds.play("failure");
-    if (!barred) ctx.toast(outcome.detail ? `${outcome.say} · ${outcome.detail}` : outcome.say, "fail");
+    if (!barred) ctx.toast(outcome.say, "fail");
     return;
   }
   if (open?.n === said.n || !el) return;
@@ -132,7 +132,7 @@ export function saidHeard(said: Said | null): void {
     close(true);
   };
   const buttons = outcome.candidates.map((c, i) => h("button", { class: "button said-choice", "data-focus": true, "data-action": "said-pick", "data-choice": String(i), onclick: () => void pick(i) }, label(c)));
-  const none = h("button", { class: "button", "data-focus": true, "data-action": "said-none", onclick: () => dismiss() }, "none of these");
+  const none = h("button", { class: "button", "data-focus": true, "data-action": "said-none", onclick: () => dismiss() }, "None of these");
   const card = h("div", { class: "notice-card" }, h("div", { class: "notice-title" }, outcome.say), h("div", { class: "said-heard" }, `"${said.sentence}"`), h("div", { class: "said-choices" }, ...buttons, none));
   const before = ctx.focus.get();
   before?.classList.remove("focused");

@@ -192,12 +192,9 @@ async function pick(page: Page, selector: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-// The words are written the same in every look, and Terminal shows them in
-// lower case with its own CSS rule. A network's name is never changed.
+// The words as the page writes them, the same in every look: Terminal lowers
+// them in CSS, which textContent doesn't see. A network's name goes in as it is.
 const words = (_look: Look, sentence: string, ssid = "") => sentence.replace("%s", ssid);
-// The notice on home (launcher/offline.ts) still lowers its own words for
-// Terminal as it draws them.
-const noticeWords = (look: Look, sentence: string) => (look === "terminal" ? sentence.toLowerCase() : sentence);
 
 // What's on the page outside the screen.
 function offScreen(page: Page, selector: string): Promise<string[]> {
@@ -374,8 +371,8 @@ for (const look of LOOKS) {
     online = false;
     rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
     await page.waitForSelector("#offline", { timeout: 8000 });
-    assert.equal(await text(page, "#offline .offline-title"), noticeWords(look, "Your TV is offline"));
-    assert.equal(await text(page, "#offline .offline-line"), noticeWords(look, "Scan to pick your Wi-Fi"));
+    assert.equal(await text(page, "#offline .offline-title"), words(look, "Your TV is offline"));
+    assert.equal(await text(page, "#offline .offline-line"), words(look, "Scan to pick your Wi-Fi"));
     await page.waitForFunction(() => {
       const qr = document.querySelector("#offline img") as HTMLImageElement | null;
       return Boolean(qr && /^\/api\/hotspot\/qr/.test(qr.getAttribute("src") ?? "") && qr.complete && qr.naturalWidth > 0);
@@ -402,7 +399,7 @@ for (const look of LOOKS) {
     assert.equal(await page.locator('[data-action="look"]').count(), 0);
     // A pick from the phone that didn't work says so.
     rootSays({ on: true, ssid: "AgenTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true, error: "that password didn't work for Home", why: "password" });
-    await page.waitForFunction((want) => document.querySelector("#offline .offline-line")?.textContent === want, noticeWords(look, "Couldn't join. Scan to try again."), { timeout: 8000 });
+    await page.waitForFunction((want) => document.querySelector("#offline .offline-line")?.textContent === want, words(look, "Couldn't join. Scan to try again."), { timeout: 8000 });
     await page.keyboard.press("Escape");
     await page.waitForSelector("#offline", { state: "visible" });
     assert.deepEqual(await offScreen(page, "#offline, #offline *"), []);

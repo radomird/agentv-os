@@ -42,13 +42,13 @@ export function scene(symbol: string, wind = 0): Scene {
   return found;
 }
 
-// MET's symbol in plain words, the way the tile says it: "light rain
-// showers", "clear night". Windy says windy.
+// MET's symbol in plain words, the way the tile says it: "Light rain
+// showers", "Clear night". Windy says windy.
 export function label(symbol: string, wind = 0): string {
-  if (scene(symbol, wind) === "wind") return "windy";
+  if (scene(symbol, wind) === "wind") return "Windy";
   const [base = "", variant = ""] = symbol.split("_");
-  if (base === "clearsky") return variant === "night" ? "clear night" : "clear";
-  if (base === "partlycloudy") return "partly cloudy";
+  if (base === "clearsky") return variant === "night" ? "Clear night" : "Clear";
+  if (base === "partlycloudy") return "Partly cloudy";
   // MET spells two of its thunder codes "lightssleet..." and "lightssnow...".
   const words = base
     .replace(/^lights(?=s)/, "light")
@@ -57,7 +57,7 @@ export function label(symbol: string, wind = 0): string {
     .replace(/^(light|heavy)/, "$1 ")
     .replace(/\s+/g, " ")
     .trim();
-  return words || "cloudy";
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Cloudy";
 }
 
 export interface Step {
@@ -198,7 +198,7 @@ export function degrees(celsius: number, units: "c" | "f" = "c"): string {
   return `${value === 0 ? 0 : value}°`;
 }
 
-// "thu" for a date, in English, as the launcher writes days.
+// "Thu" for a date, in English, as the launcher writes days.
 export function weekday(date: string): string {
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`)).toLowerCase();
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
 }

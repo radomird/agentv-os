@@ -216,7 +216,7 @@ test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Share
     const shown = await page.locator(".shared-picture").evaluate((img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0);
     assert.ok(shown, "the photo is drawn");
     await page.locator('[data-action="shared-background"]').click();
-    await page.waitForFunction(() => /background now/.test(document.getElementById("toasts")?.textContent ?? ""));
+    await page.waitForFunction(() => /^Background set$/.test(document.getElementById("toasts")?.textContent ?? ""));
     const backgrounds = await (await fetch(`${url}/api/backgrounds`)).json();
     assert.equal(backgrounds.items.find((item: { id: string }) => item.id === backgrounds.current).credit.text, "photo by ana");
     // Back closes it.

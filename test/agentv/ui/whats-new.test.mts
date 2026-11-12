@@ -157,7 +157,7 @@ test("S8.1 with a key, New this week shows this week's posters, each with its ap
       ["small hours", "kino"],
       ["paper kites", "lumen"],
     ]);
-    assert.equal(await page.textContent(`${newTile} .new-credit`), "from tmdb · where to watch from justwatch");
+    assert.equal(await page.textContent(`${newTile} .new-credit`), "From TMDB · where to watch from JustWatch");
     assert.ok(poster.loaded, "the poster loads through the daemon");
     assert.ok(Math.abs(poster.h / poster.w - 1.5) < 0.05, `posters are 2:3, ${JSON.stringify(poster)}`);
     await page.click(`${newTile} .entry >> nth=1`);

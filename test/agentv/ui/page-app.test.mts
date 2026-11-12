@@ -238,7 +238,7 @@ test("ADR-043 a page app installed a moment ago opens from the screen daemon bef
   probe("agentv.fresh", "Fresh", {}, null);
   await page.evaluate(() => (window as unknown as { agentvPage: (id: string) => void }).agentvPage("agentv.fresh"));
   await page.waitForSelector(".page-app.on", { timeout: 5000 });
-  assert.doesNotMatch(await page.locator("#toasts").innerText(), /isn't on this tv/);
+  assert.doesNotMatch(await page.locator("#toasts").innerText(), /that app was removed/i);
   await page.close();
 });
 
@@ -299,7 +299,7 @@ test("ADR-043 S6.8 a page that leaves its own page is closed", async () => {
   const frame = await open(page, "agentv.other");
   await frame.evaluate((p) => (window as any).probe.leave(`http://agentv.probe.app.localhost:${p}/`), port).catch(() => {});
   await page.waitForSelector(".page-app", { state: "detached", timeout: 5000 });
-  assert.match(await page.locator(".toast").last().innerText(), /tried to leave its page/);
+  assert.match(await page.locator(".toast").last().innerText(), /^other was closed for safety$/);
   await page.close();
 });
 

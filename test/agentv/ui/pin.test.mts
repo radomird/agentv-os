@@ -143,7 +143,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /enter the adult pin[\s\S]*for omarchy's desktop/);
+  assert.match(await padText(page), /enter the adult pin[\s\S]*for omarchy's desktop$/m);
   await page.keyboard.press("Escape");
   await waitPad(page, false);
   assert.deepEqual(await sent(page, "desktop"), []);
@@ -192,7 +192,7 @@ test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Adu
   await page.waitForSelector('.panel [data-action="lock"]');
   await page.locator('.panel [data-action="lock"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /tv locked[\s\S]*enter the adult pin[\s\S]*the tv is locked\./);
+  assert.match(await padText(page), /tv locked[\s\S]*enter the adult pin[\s\S]*this tv is locked$/m);
   // Back and Home don't get past it.
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");
@@ -261,14 +261,14 @@ test("S4.5 agentv-pin-check's ask on the TV brings up the pad each time, and its
   const ask = (action: string) => page.evaluate((a) => (window as unknown as { agentvLauncher: { askPin(action: string): Promise<{ grant: string | null }> } }).agentvLauncher.askPin(a), action);
   const asked = ask("desktop");
   await waitPad(page, true);
-  assert.match(await padText(page), /for omarchy's desktop\./);
+  assert.match(await padText(page), /for omarchy's desktop$/m);
   await type(page, PIN);
   const { grant } = await asked;
   assert.ok(grant && daemon.pin.allows(grant));
   // Asked again, it asks again.
   const again = ask("power");
   await waitPad(page, true);
-  assert.match(await padText(page), /for restarting or shutting down\./);
+  assert.match(await padText(page), /for restarting or shutting down$/m);
   await page.keyboard.press("Escape");
   assert.equal((await again).grant, null);
   // Nor does it stand in for Settings: Omarchy's desktop there asks.
@@ -287,7 +287,7 @@ test("S4.5 agentv-pin-check's ask on the TV brings up the pad each time, and its
   await page.waitForFunction(() => /tv locked/.test(document.getElementById("pin")?.textContent ?? ""));
   const locked = ask("desktop");
   await type(page, PIN);
-  await page.waitForFunction(() => /for omarchy's desktop\./.test(document.getElementById("pin")?.textContent ?? ""));
+  await page.waitForFunction(() => /For Omarchy's desktop/.test(document.getElementById("pin")?.textContent ?? ""));
   await type(page, PIN);
   const unlocked = await locked;
   assert.ok(unlocked.grant && daemon.pin.allows(unlocked.grant));
@@ -303,7 +303,7 @@ test("S4.5 changing the PIN needs the one before, and so does taking it off", as
   assert.match(await page.locator(".panel").innerText(), /^change pin\s+lock the tv now\s+remove pin$/);
   await page.locator('.panel [data-action="set-pin"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /for changing the pin/);
+  assert.match(await padText(page), /for changing the pin$/m);
   await type(page, PIN);
   await page.waitForFunction(() => /Choose a new PIN/.test(document.getElementById("pin")?.textContent ?? ""));
   await type(page, "1357");
