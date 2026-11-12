@@ -139,7 +139,7 @@ test("T8.3 at 375 × 812 the remote is one screen: the surface, Back, Home and p
     }).length,
   );
   assert.equal(homes, 1);
-  assert.deepEqual(await hand.locator("#r2-sheet .r2-row span:not([class])").allTextContents(), ["edit home", "share", "apps", "settings", "click and buzz"]);
+  assert.deepEqual(await hand.locator("#r2-sheet .r2-row span:not([class])").allTextContents(), ["Edit home", "Send to TV", "Apps", "Settings", "Click and buzz"]);
   await hand.close();
 });
 
@@ -177,7 +177,7 @@ test("T8.3 a password's field is the phone's password field, for its password ma
   assert.equal(await hand.locator("#tv-text").getAttribute("type"), "password");
   assert.equal(await hand.locator("#tv-text").getAttribute("autocomplete"), "current-password");
   assert.equal(await hand.locator(".r2-where").textContent(), "tube · sign in");
-  assert.equal(await hand.locator(".r2-note").textContent(), "your password manager can fill it");
+  assert.equal(await hand.locator(".r2-note").textContent(), "Your password manager can fill it");
   await hand.locator('[data-action="keyboard-done"]').tap();
   await hand.waitForSelector(".r2-surface");
   await hand.close();
@@ -217,17 +217,17 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
     return { down, all: b.keys.slice(at), pointer: await hand.locator(".r2-pointer").count() };
   };
   await context(b, { front: "home", screen: "home" });
-  await until(async () => (await hint()) === "hold for details");
-  assert.equal(await label(), "swipe to move, tap for ok, hold for details");
+  await until(async () => (await hint()) === "Hold for details");
+  assert.equal(await label(), "Swipe to move, tap for OK, hold for details");
   assert.deepEqual(await held(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], pointer: 0 });
   await context(b, { screen: "menu" });
   await wait(150);
-  assert.equal(await hint(), "hold for details");
+  assert.equal(await hint(), "Hold for details");
   assert.deepEqual(await held(), { down: [{ hold: "enter", ms: 700 }], all: [{ hold: "enter", ms: 700 }], pointer: 0 }, "Apps is home's too");
   // A hold with an app in front: the pointer, as it was, and nothing sent.
   await context(b, { front: "app", screen: "home", playing: false });
-  await until(async () => (await hint()) === "hold for the pointer");
-  assert.equal(await label(), "swipe to move, tap for ok, hold for the pointer");
+  await until(async () => (await hint()) === "Hold for the pointer");
+  assert.equal(await label(), "Swipe to move, tap for OK, hold for the pointer");
   const sent = b.keys.length;
   await hand.mouse.move(cx, cy);
   await hand.mouse.down();

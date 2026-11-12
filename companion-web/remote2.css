@@ -774,26 +774,6 @@ body[data-look="cinema"] .r2-handle {
   border-radius: 2px;
 }
 
-/* Words start with a capital in these two looks, as on the TV. */
-body[data-look="glass"] .r2-hint > span::first-letter,
-body[data-look="cinema"] .r2-hint > span::first-letter,
-body[data-look="glass"] .r2-key > span::first-letter,
-body[data-look="cinema"] .r2-key > span::first-letter,
-body[data-look="glass"] .r2-ask::first-letter,
-body[data-look="cinema"] .r2-ask::first-letter,
-body[data-look="glass"] .r2-ask > span::first-letter,
-body[data-look="cinema"] .r2-ask > span::first-letter,
-body[data-look="glass"] .r2-notice-text::first-letter,
-body[data-look="cinema"] .r2-notice-text::first-letter,
-body[data-look="glass"] .r2-label::first-letter,
-body[data-look="cinema"] .r2-label::first-letter,
-body[data-look="glass"] .r2-row > span::first-letter,
-body[data-look="cinema"] .r2-row > span::first-letter,
-body[data-look="glass"] .r2-who > span::first-letter,
-body[data-look="cinema"] .r2-who > span::first-letter {
-  text-transform: uppercase;
-}
-
 /* The Ask sheet (ADR-068, D5): the box with no send button, suggestions
    under it, and what your agent is on. */
 .ask-label {
@@ -824,11 +804,4 @@ body[data-look="cinema"] .r2-who > span::first-letter {
   display: block;
   height: 100%;
   background: var(--accent);
-}
-
-body[data-look="glass"] .ask-waiting h1::first-letter,
-body[data-look="cinema"] .ask-waiting h1::first-letter,
-body[data-look="glass"] .ask-chips .chip::first-letter,
-body[data-look="cinema"] .ask-chips .chip::first-letter {
-  text-transform: uppercase;
 }

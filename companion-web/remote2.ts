@@ -91,7 +91,7 @@ const OK_HOLD_MS = 700;
 // A request whose answer says how it went, whether or not it worked.
 async function post<T extends object>(path: string, body: unknown): Promise<T & { ok: boolean; why?: string; error?: string }> {
   const response = await call("POST", path, { json: body });
-  if (response.status === 401) throw new Unpaired("this phone isn't paired");
+  if (response.status === 401) throw new Unpaired("This phone isn't paired");
   return { ok: false, ...response.data } as T & { ok: boolean; why?: string; error?: string };
 }
 
@@ -149,7 +149,7 @@ class Typing {
     while (this.busy || this.next) await new Promise((wait) => setTimeout(wait, 20));
     try {
       const answer = await post("/api/phone/text", { done: true });
-      if (!answer.ok) this.say(answer.why ?? answer.error ?? "enter didn't reach the tv", true);
+      if (!answer.ok) this.say(answer.why ?? answer.error ?? "Couldn't reach your TV", true);
     } catch (error) {
       this.failed(error);
     }
@@ -179,7 +179,7 @@ class Typing {
         if (now && typeof answer.value === "string" && answer.value !== sent.value) this.field.value = answer.value;
         else if (now && typeof answer.kept === "number" && answer.kept < sent.value.length) this.field.value = sent.value.slice(0, answer.kept);
         if (answer.ok) this.say(this.normal, false);
-        else this.say(answer.why ?? answer.error ?? "the tv didn't take that", true);
+        else this.say(answer.why ?? answer.error ?? "Your TV can't do that", true);
       }
     } finally {
       this.busy = false;
@@ -307,13 +307,13 @@ export class Remote2 {
     return h(
       "div",
       { class: "r2-top" },
-      h("button", { type: "button", class: "r2-who", "data-action": "who", "aria-label": `${state.viewer.name}, the menu`, onclick: () => this.openSheet("menu") }, avatar(state.viewer), h("span", {}, state.viewer.name.toLowerCase())),
+      h("button", { type: "button", class: "r2-who", "data-action": "who", "aria-label": `${state.viewer.name}, menu`, onclick: () => this.openSheet("menu") }, avatar(state.viewer), h("span", {}, state.viewer.name)),
       h(
         "span",
         { class: "r2-top-buttons" },
         this.iconButton("dpad", "", {
           class: `r2-icon${dpad ? " on" : ""}`,
-          "aria-label": "buttons instead of swiping",
+          "aria-label": "Use buttons",
           "aria-pressed": String(dpad),
           "data-action": "dpad",
           onclick: () => {
@@ -322,7 +322,7 @@ export class Remote2 {
             this.draw(true);
           },
         }),
-        this.iconButton("menu", "", { class: "r2-icon", "aria-label": "menu", "data-action": "menu", onclick: () => this.openSheet("menu") }),
+        this.iconButton("menu", "", { class: "r2-icon", "aria-label": "Menu", "data-action": "menu", onclick: () => this.openSheet("menu") }),
       ),
     );
   }
@@ -336,7 +336,7 @@ export class Remote2 {
       "div",
       { class: "r2-card", "data-now": now.title },
       h("span", { class: "r2-card-text" }, h("b", {}, now.title), h("span", {}, `${now.app}${left}`)),
-      this.iconButton("next", "", { class: "r2-icon flat", "aria-label": "next", "data-action": "next", onclick: () => void this.playback("next") }),
+      this.iconButton("next", "", { class: "r2-icon flat", "aria-label": "Next", "data-action": "next", onclick: () => void this.playback("next") }),
     );
   }
 
@@ -345,9 +345,9 @@ export class Remote2 {
   // that's on the surface stays on it.
   private sayHold(): void {
     if (!this.holdHint) return;
-    const what = this.holds() ? "hold for details" : "hold for the pointer";
-    if (this.holdHint.line.textContent !== what) this.holdHint.line.textContent = what;
-    this.holdHint.area.setAttribute("aria-label", `swipe to move, tap for ok, ${what}`);
+    const what = this.holds() ? "details" : "the pointer";
+    if (this.holdHint.line.textContent !== `Hold for ${what}`) this.holdHint.line.textContent = `Hold for ${what}`;
+    this.holdHint.area.setAttribute("aria-label", `Swipe to move, tap for OK, hold for ${what}`);
   }
 
   // The surface: swipes move the focus and a tap is OK. A hold with home or
@@ -358,7 +358,7 @@ export class Remote2 {
     if (state.tv.view === "trackpad" || this.pointer) return this.pointerPad(state.tv.view !== "trackpad");
     if (dpadOn()) return this.dpad();
     const line = h("span", {});
-    const area = h("div", { class: "r2-surface", role: "application", "data-action": "surface" }, h("span", { class: "r2-hint" }, h("span", {}, "swipe to move"), h("span", {}, "tap for OK"), line));
+    const area = h("div", { class: "r2-surface", role: "application", "data-action": "surface" }, h("span", { class: "r2-hint" }, h("span", {}, "Swipe to move"), h("span", {}, "Tap for OK"), line));
     this.holdHint = { area, line };
     this.sayHold();
     let from: { x: number; y: number; at: number } | null = null;
@@ -432,7 +432,7 @@ export class Remote2 {
   // draw itself again under a finger: one press at a time, which ends when
   // its own finger lifts, whichever button is there by then.
   private ok(): HTMLElement {
-    const ok = h("button", { type: "button", class: "r2-ok", "aria-label": "ok", "data-key": "enter" }, "OK");
+    const ok = h("button", { type: "button", class: "r2-ok", "aria-label": "OK", "data-key": "enter" }, "OK");
     if (this.okPress?.filling) ok.classList.add("holding");
     ok.addEventListener("pointerdown", (event) => {
       if (this.okPress) return;
@@ -474,7 +474,7 @@ export class Remote2 {
   }
 
   private dpad(): HTMLElement {
-    const arrow = (name: "up" | "down" | "left" | "right") => this.iconButton(name, "", { class: `r2-arrow r2-${name}`, "aria-label": name, "data-key": name, onclick: () => this.send({ key: name }) }, 36);
+    const arrow = (name: "up" | "down" | "left" | "right") => this.iconButton(name, "", { class: `r2-arrow r2-${name}`, "aria-label": name.replace(/^./, (first) => first.toUpperCase()), "data-key": name, onclick: () => this.send({ key: name }) }, 36);
     return h(
       "div",
       { class: "r2-surface r2-dpad", "data-action": "dpad-pad" },
@@ -492,11 +492,11 @@ export class Remote2 {
     const dot = h("span", { class: "r2-dot", "aria-hidden": "true" });
     const area = h(
       "div",
-      { class: "r2-surface r2-pointer", role: "application", "aria-label": "move to point, tap to click", "data-action": "trackpad" },
+      { class: "r2-surface r2-pointer", role: "application", "aria-label": "Move to point, tap to click", "data-action": "trackpad" },
       h(
         "span",
         { class: "r2-pointer-top" },
-        h("span", { class: "r2-chip" }, icon("pointer", 16), h("span", {}, "pointer")),
+        h("span", { class: "r2-chip" }, icon("pointer", 16), h("span", {}, "Pointer")),
         byHold
           ? h(
               "button",
@@ -509,12 +509,12 @@ export class Remote2 {
                   this.draw(true);
                 },
               },
-              "done",
+              "Done",
             )
           : null,
       ),
       dot,
-      h("span", { class: "r2-hint low" }, "move to point · tap to click"),
+      h("span", { class: "r2-hint low" }, "Move to point · tap to click"),
     );
     let last: { x: number; y: number } | null = null;
     let travelled = 0;
@@ -566,8 +566,8 @@ export class Remote2 {
   // home, and the phone sends the hold.
   private keys(state: Phone, small = false): HTMLElement {
     const size = small ? 22 : 28;
-    const label = h("span", {}, small ? "" : "back");
-    const back = h("button", { type: "button", class: "r2-key", "aria-label": "back, hold for home", "data-key": "back" }, icon("back", size), small ? null : label);
+    const label = h("span", {}, small ? "" : "Back");
+    const back = h("button", { type: "button", class: "r2-key", "aria-label": "Back, hold for home", "data-key": "back" }, icon("back", size), small ? null : label);
     let timer = 0;
     let held = false;
     back.addEventListener("pointerdown", () => {
@@ -575,7 +575,7 @@ export class Remote2 {
       back.classList.add("holding");
       timer = window.setTimeout(() => {
         held = true;
-        label.textContent = "home…";
+        label.textContent = "Home…";
         if (feelOn()) navigator.vibrate?.(20);
         this.send({ hold: "back", ms: 1100 });
       }, BACK_HOLD_MS);
@@ -584,7 +584,7 @@ export class Remote2 {
       clearTimeout(timer);
       back.classList.remove("holding");
       if (!held && event.type === "pointerup") this.send({ key: "back" });
-      if (held) window.setTimeout(() => (label.textContent = small ? "" : "back"), 600);
+      if (held) window.setTimeout(() => (label.textContent = small ? "" : "Back"), 600);
       held = false;
     };
     back.addEventListener("pointerup", release);
@@ -592,12 +592,12 @@ export class Remote2 {
     back.addEventListener("pointerleave", (event) => back.classList.contains("holding") && release(event));
     // A keyboard's Enter on the button, which has no pointer.
     back.addEventListener("click", (event) => event.detail === 0 && this.send({ key: "back" }));
-    const home = this.iconButton("home", small ? "" : "home", { class: "r2-key", "aria-label": "home", "data-key": "home", onclick: () => this.send({ key: "home" }) }, size);
-    const play = this.iconButton("play", small ? "" : "play", { class: "r2-key", "data-action": "playpause", onclick: () => void this.playback("toggle") }, size);
+    const home = this.iconButton("home", small ? "" : "Home", { class: "r2-key", "aria-label": "Home", "data-key": "home", onclick: () => this.send({ key: "home" }) }, size);
+    const play = this.iconButton("play", small ? "" : "Play", { class: "r2-key", "data-action": "playpause", onclick: () => void this.playback("toggle") }, size);
     this.setPlay(play, state.tv.playing, small);
     this.playKey = play;
     const row = h("div", { class: `r2-keys${small ? " small" : ""}` }, back, home, play);
-    if (small) row.append(this.iconButton("ask", "", { class: "r2-key r2-ask-small", "aria-label": "ask", "data-action": "ask", onclick: () => this.openSheet("ask") }, size));
+    if (small) row.append(this.iconButton("ask", "", { class: "r2-key r2-ask-small", "aria-label": "Ask", "data-action": "ask", onclick: () => this.openSheet("ask") }, size));
     return row;
   }
 
@@ -605,22 +605,22 @@ export class Remote2 {
     const word = playing ? "pause" : "play";
     if (button.dataset.state === word) return;
     button.dataset.state = word;
-    button.setAttribute("aria-label", playing ? "pause" : "play or pause");
-    button.replaceChildren(icon(playing ? "pause" : "play", small ? 22 : 28), small ? "" : h("span", {}, word));
+    button.setAttribute("aria-label", playing ? "Pause" : "Play or pause");
+    button.replaceChildren(icon(playing ? "pause" : "play", small ? 22 : 28), small ? "" : h("span", {}, playing ? "Pause" : "Play"));
   }
 
   // Play and pause ask the box, which says whether it worked.
   private async playback(action: "toggle" | "next"): Promise<void> {
     try {
       const answer = await post("/api/phone/playback", { action });
-      if (!answer.ok) this.say(answer.why ?? answer.error ?? "that didn't work");
+      if (!answer.ok) this.say(answer.why ?? answer.error ?? "Something went wrong");
     } catch (error) {
       this.kit.failed(error);
     }
   }
 
   private askButton(): HTMLElement {
-    return this.iconButton("ask", "ask", { class: "r2-ask", "data-action": "ask", onclick: () => this.openSheet("ask") });
+    return this.iconButton("ask", "Ask", { class: "r2-ask", "data-action": "ask", onclick: () => this.openSheet("ask") });
   }
 
   // --- The notice line --------------------------------------------------------
@@ -643,21 +643,21 @@ export class Remote2 {
   private notices(state: Phone): Notice[] {
     const list: Notice[] = [];
     const from = (el: HTMLElement | null, open?: () => void) => {
-      const text = el?.textContent?.replace(/\s*›\s*$/, "").trim();
+      const text = el?.textContent?.trim();
       if (text) list.push({ text, open: open ?? (el instanceof HTMLButtonElement ? () => el.click() : undefined) });
     };
     if (this.hint) list.push({ text: this.hint });
     if (state.pin.locked) {
       const unlock = async () => {
-        if ((await askPin("unlocking the tv")) !== null) await this.kit.refresh(true);
+        if ((await askPin("unlocking your TV")) !== null) await this.kit.refresh(true);
       };
-      list.push({ text: "the tv is locked · unlock", open: () => void unlock() });
+      list.push({ text: "Unlock your TV", open: () => void unlock() });
     }
     if (state.setup) {
-      list.push({ text: `tv setup · ${state.setup.part}` });
+      list.push({ text: `TV setup · ${state.setup.part}` });
       const muted = state.setup.muted;
-      list.push({ text: muted ? "play the setup music" : "mute the setup music", open: () => void api("POST", "/api/phone/setup-music", { muted: !muted }).then(() => this.kit.refresh(true), this.kit.failed) });
-      if (state.setup.step === "background") list.push({ text: "send a photo for the tv's background", open: () => this.go("photo") });
+      list.push({ text: muted ? "Play setup music" : "Mute setup music", open: () => void api("POST", "/api/phone/setup-music", { muted: !muted }).then(() => this.kit.refresh(true), this.kit.failed) });
+      if (state.setup.step === "background") list.push({ text: "Send a photo for the background", open: () => this.go("photo") });
     }
     from(buildBanner(state.builds, (build) => {
       this.building = build;
@@ -665,10 +665,10 @@ export class Remote2 {
     }));
     from(exportBanner(state.export, this.kit.failed));
     from(pushBanner(state.export, () => this.go("push")));
-    if (state.update && !state.update.later) list.push({ text: state.update.version === "packages" ? "updates are ready" : `agentv ${state.update.version.replace(/\.r\d+\.g[0-9a-f]+/, "").replace(/-\d+$/, "")} is ready`, open: () => this.go("update") });
-    if (state.signIn) list.push({ text: `${state.signIn.name.toLowerCase()} wants you to sign in` });
+    if (state.update && !state.update.later) list.push({ text: "Update ready", open: () => this.go("update") });
+    if (state.signIn) list.push({ text: `Sign in to ${state.signIn.name}` });
     const latest = state.notices?.[0];
-    if (latest) list.push({ text: `${latest.name.toLowerCase()}: ${latest.text}` });
+    if (latest) list.push({ text: `${latest.name}: ${latest.text}` });
     return list;
   }
 
@@ -693,11 +693,11 @@ export class Remote2 {
   private keyboard(state: Phone): HTMLElement[] {
     const field = state.tv.field ?? { kind: state.signIn ? "email" : "text" };
     const kind = field.kind;
-    const where = field.name ?? (state.signIn ? state.signIn.name.toLowerCase() : field.app ? field.app : "home");
+    const where = field.name ?? (state.signIn ? state.signIn.name : field.app ? field.app : "Home");
     const what = kind === "search" ? "search" : kind === "password" || kind === "email" || state.signIn ? "sign in" : field.label || "typing";
-    const words: Record<string, string> = { search: "search", password: "password", email: "email or name", number: "a number", url: "an address" };
-    const headline = field.label || words[kind] || "type";
-    const normal = kind === "password" ? "your password manager can fill it" : "shows on the tv as you type";
+    const words: Record<string, string> = { search: "Search", password: "Password", email: "Email or name", number: "A number", url: "An address" };
+    const headline = field.label || words[kind] || "Type";
+    const normal = kind === "password" ? "Your password manager can fill it" : "Shows on your TV as you type";
     const input = h("input", {
       class: "r2-field",
       id: "tv-text",
@@ -734,7 +734,7 @@ export class Remote2 {
         "div",
         { class: "r2-keyboard-top" },
         h("span", { class: "r2-where" }, icon("tv", 20), h("span", {}, `${where} · ${what}`)),
-        h("button", { type: "button", class: "r2-done", "data-action": "keyboard-done", onclick: done }, "done"),
+        h("button", { type: "button", class: "r2-done", "data-action": "keyboard-done", onclick: done }, "Done"),
       ),
       h("h1", { class: "r2-headline" }, headline),
       h("label", { class: `r2-field-box${kind === "password" ? " secret" : ""}` }, kind === "password" ? icon("lock", 18) : null, input),
@@ -774,7 +774,7 @@ export class Remote2 {
     const body = this.sheet === "menu" ? this.menu(state) : this.sheet === "ask" ? this.ask(state) : this.noticesSheet(state);
     const sheet = h(
       "div",
-      { id: "r2-sheet", class: "r2-sheet-wrap", role: "dialog", "aria-label": this.sheet === "menu" ? "menu" : this.sheet === "ask" ? "ask your tv" : "notices" },
+      { id: "r2-sheet", class: "r2-sheet-wrap", role: "dialog", "aria-label": this.sheet === "menu" ? "Menu" : this.sheet === "ask" ? "Ask your TV" : "Notices" },
       h("div", { class: "r2-scrim", "data-action": "close-sheet", onclick: () => this.closeSheet() }),
       h("div", { class: "r2-sheet" }, h("span", { class: "r2-handle", "aria-hidden": "true" }), ...body),
     );
@@ -812,11 +812,11 @@ export class Remote2 {
         },
       },
       icon("sound", 22),
-      h("span", {}, "click and buzz"),
+      h("span", {}, "Click and buzz"),
       h("span", { class: "r2-switch", "aria-hidden": "true" }),
     );
     const items: (HTMLElement | null)[] = [
-      h("p", { class: "r2-label" }, "who's watching"),
+      h("p", { class: "r2-label" }, "Who's watching"),
       h(
         "div",
         { class: "r2-viewers" },
@@ -825,16 +825,16 @@ export class Remote2 {
             "button",
             { type: "button", class: `r2-viewer${viewer.id === state.viewer.id ? " on" : ""}`, "data-viewer": viewer.id, onclick: () => void watch(viewer) },
             avatar(viewer, true),
-            h("span", {}, viewer.name.toLowerCase()),
-            viewer.role === "child" ? h("span", { class: "r2-role" }, "child") : null,
+            h("span", {}, viewer.name),
+            viewer.role === "child" ? h("span", { class: "r2-role" }, "Child") : null,
           ),
         ),
       ),
       h("hr", { class: "r2-rule" }),
-      row("edit", "edit home", "edit-home", () => this.go("edit")),
-      row("share", "share", "share", () => this.go("share")),
-      row("apps", "apps", "apps", tv("/api/phone/apps")),
-      state.viewer.role === "adult" ? row("settings", "settings", "settings", tv("/api/phone/settings")) : null,
+      row("edit", "Edit home", "edit-home", () => this.go("edit")),
+      row("share", "Send to TV", "share", () => this.go("share")),
+      row("apps", "Apps", "apps", tv("/api/phone/apps")),
+      state.viewer.role === "adult" ? row("settings", "Settings", "settings", tv("/api/phone/settings")) : null,
       feel,
       this.about ? h("p", { class: "r2-about" }, this.about) : null,
     ];
@@ -884,7 +884,7 @@ export class Remote2 {
     const back = h(
       "div",
       { class: "r2-top" },
-      this.iconButton("back", "remote", {
+      this.iconButton("back", "Remote", {
         class: "r2-back",
         "data-action": "to-remote",
         onclick: () => {
@@ -896,7 +896,7 @@ export class Remote2 {
     const body = h("div", { class: "r2-page" });
     if (this.page === "edit") void arrange(body);
     else if (this.page === "share") {
-      this.kept ??= h("div", {}, sharePage(this.kit.failed), h("button", { type: "button", class: "button", "data-action": "photo", onclick: () => this.go("photo") }, "send a photo for the background ›"));
+      this.kept ??= h("div", {}, sharePage(this.kit.failed), h("button", { type: "button", class: "button", "data-action": "photo", onclick: () => this.go("photo") }, "Send a photo for the background"));
       body.append(this.kept);
     } else if (this.page === "photo") body.append((this.kept ??= photoPage(this.kit.failed)));
     else if (this.page === "update") {
