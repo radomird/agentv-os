@@ -234,24 +234,15 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # agentv, a commit agentv already has, or a release's tag on such
-          # a commit. A tag is AgenTV's own, agentv-v1.0.0 or v0.2.0 from
-          # the 0.x days, never one of Omarchy's v1 to v4, and it's written
-          # out, refs/tags/agentv-v1.0.0: a bare name can be a branch's too,
-          # and a checkout takes the branch. Never a branch that isn't
-          # merged.
+          # agentv, or a whole commit agentv already has. No tag is taken
+          # by its name, a release's neither: a branch can be called the
+          # same, and a checkout by name takes the branch. Whoever wants a
+          # release's checks hands over the commit its tag is on, as the
+          # nightly run does. Never a branch that isn't merged.
           merged() {
-            local sha=$2 kind
             [[ $2 == "agentv" ]] && return 0
-            if [[ $2 =~ ^refs/tags/(v0\.[0-9]+\.[0-9]+|agentv-v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?)$ ]]; then
-              read -r kind sha < <(gh api "repos/$OWNER/$1/git/ref/tags/${BASH_REMATCH[1]}" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
-              if [[ $kind == "tag" ]]; then
-                read -r kind sha < <(gh api "repos/$OWNER/$1/git/tags/$sha" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
-              fi
-              [[ $kind == "commit" ]] || return 1
-            fi
-            [[ $sha =~ ^[0-9a-f]{40}$ ]] &&
-              [[ $(gh api "repos/$OWNER/$1/compare/$sha...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+            [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
           }
           all=true
           if [[ $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
@@ -265,7 +256,7 @@ jobs:
             exit 0
           fi
           if [[ $PACKAGES == "build" || $all != "true" ]]; then
-            echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv, a commit agentv has, or a release's tag on such a commit, written out as refs/tags/agentv-v1.0.0. This run gets a throwaway key when release-key is off."
+            echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a whole commit agentv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
             exit 1
           fi
           echo "This run may sign with AgenTV's own key: everything it checks out is merged."
@@ -359,31 +350,23 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # What may be checked out beside AgenTV's own key: agentv, a
-          # commit agentv already has (the nightly run checks edge's package
-          # and the release with the agentv-iso that goes with each), or a
-          # release's tag on such a commit. A tag is AgenTV's own,
-          # agentv-v1.0.0 or v0.2.0 from the 0.x days, never one of
-          # Omarchy's v1 to v4, and it's written out, refs/tags/agentv-v1.0.0:
-          # a bare name can be a branch's too, and a checkout takes the
-          # branch. Never a branch that isn't merged.
+          # What may be checked out beside AgenTV's own key: agentv, or a
+          # whole commit agentv already has. The nightly run checks edge's
+          # package and the release with the agentv-iso that goes with
+          # each, and hands over the commit. No tag is taken by its name,
+          # a release's neither: a branch can be called the same, and a
+          # checkout by name takes the branch. This repo also has Omarchy's
+          # own v1 to v4 tags, which aren't all on agentv. Never a branch
+          # that isn't merged.
           merged() {
-            local sha=$2 kind
             [[ $2 == "agentv" ]] && return 0
-            if [[ $2 =~ ^refs/tags/(v0\.[0-9]+\.[0-9]+|agentv-v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?)$ ]]; then
-              read -r kind sha < <(gh api "repos/$OWNER/$1/git/ref/tags/${BASH_REMATCH[1]}" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
-              if [[ $kind == "tag" ]]; then
-                read -r kind sha < <(gh api "repos/$OWNER/$1/git/tags/$sha" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
-              fi
-              [[ $kind == "commit" ]] || return 1
-            fi
-            [[ $sha =~ ^[0-9a-f]{40}$ ]] &&
-              [[ $(gh api "repos/$OWNER/$1/compare/$sha...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+            [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
           }
           if [[ $RELEASE_KEY == "true" ]]; then
             if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
               ! merged agentv-os "$OS_REF" || ! merged agentv-iso "$ISO_REF" || ! merged agentv-iso "${UPDATE_CHECKS:-agentv}"; then
-              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv, a commit agentv has, or a release's tag on such a commit, written out as refs/tags/agentv-v1.0.0. This run gets a throwaway key when release-key is off."
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a whole commit agentv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
               exit 1
             fi
             echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -821,31 +804,23 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # What may be checked out beside AgenTV's own key: agentv, a
-          # commit agentv already has (the nightly run checks edge's package
-          # and the release with the agentv-iso that goes with each), or a
-          # release's tag on such a commit. A tag is AgenTV's own,
-          # agentv-v1.0.0 or v0.2.0 from the 0.x days, never one of
-          # Omarchy's v1 to v4, and it's written out, refs/tags/agentv-v1.0.0:
-          # a bare name can be a branch's too, and a checkout takes the
-          # branch. Never a branch that isn't merged.
+          # What may be checked out beside AgenTV's own key: agentv, or a
+          # whole commit agentv already has. The nightly run checks edge's
+          # package and the release with the agentv-iso that goes with
+          # each, and hands over the commit. No tag is taken by its name,
+          # a release's neither: a branch can be called the same, and a
+          # checkout by name takes the branch. This repo also has Omarchy's
+          # own v1 to v4 tags, which aren't all on agentv. Never a branch
+          # that isn't merged.
           merged() {
-            local sha=$2 kind
             [[ $2 == "agentv" ]] && return 0
-            if [[ $2 =~ ^refs/tags/(v0\.[0-9]+\.[0-9]+|agentv-v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?)$ ]]; then
-              read -r kind sha < <(gh api "repos/$OWNER/$1/git/ref/tags/${BASH_REMATCH[1]}" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
-              if [[ $kind == "tag" ]]; then
-                read -r kind sha < <(gh api "repos/$OWNER/$1/git/tags/$sha" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
-              fi
-              [[ $kind == "commit" ]] || return 1
-            fi
-            [[ $sha =~ ^[0-9a-f]{40}$ ]] &&
-              [[ $(gh api "repos/$OWNER/$1/compare/$sha...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+            [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
           }
           if [[ $RELEASE_KEY == "true" ]]; then
             if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
               ! merged agentv-os "$OS_REF" || ! merged agentv-iso "$ISO_REF" || ! merged agentv-iso "${UPDATE_CHECKS:-agentv}"; then
-              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv, a commit agentv has, or a release's tag on such a commit, written out as refs/tags/agentv-v1.0.0. This run gets a throwaway key when release-key is off."
+              echo "::error::AgenTV's own key signs only on agentv, with packages from a channel, agentv-pkgs' main, and agentv-os and agentv-iso at agentv or a whole commit agentv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
               exit 1
             fi
             echo "This run signs what the box updates to with AgenTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
@@ -1449,7 +1424,9 @@ jobs:
   finish:
     name: "Which image checks passed"
     needs: [refs, box, checks]
-    if: always() && inputs.shards > 1 && !inputs.nightly && inputs.update-checks == ''
+    # Not after the refs were refused: this job checks out the same ref to
+    # write its report, and a refused run runs nothing of a checkout.
+    if: always() && needs.refs.result == 'success' && inputs.shards > 1 && !inputs.nightly && inputs.update-checks == ''
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
@@ -1594,6 +1571,24 @@ jobs:
             echo "::error::a check failed and the ISO was kept as $ISO_NAME, but no artifact of that name was found to take back"
             exit 1
           fi
+
+      # "Re-run failed jobs" that then passes leaves a green run with no ISO:
+      # the first try took it back, and the job that builds the ISO doesn't
+      # run again. That's safe, and it's said here, since a night like that
+      # gives the morning's publish nothing new.
+      - name: Say when a run that passed has no ISO
+        if: always() && steps.passed.outputs.passed == 'true' && inputs.keep-iso && inputs.checks == ''
+        env:
+          ISO_NAME: ${{ needs.box.outputs.iso-name }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate \
+            --jq '.artifacts[] | [.id, .name] | @tsv' >artifacts.tsv
+          if [[ -n $ISO_NAME ]] && cut -f2 artifacts.tsv | grep -qxF -- "$ISO_NAME"; then
+            echo "The ISO this run kept: $ISO_NAME."
+            exit 0
+          fi
+          echo "::warning title=This run passed and has no ISO::Every check passed, but only after a re-run: the first try failed a check, so its ISO was taken back, and a re-run doesn't build it again. Nothing is published from this run. The next scheduled night makes the ISO."
+          echo "Every check passed, but this run has no ISO: the first try failed a check and its ISO was taken back. Nothing is published from this run." >>"$GITHUB_STEP_SUMMARY"
 
       # The run's box goes once every check passed. When one failed, it stays
       # for the day its artifact lasts, so "Re-run failed jobs" can run the
