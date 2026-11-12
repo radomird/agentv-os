@@ -32,9 +32,9 @@ const ITEMS = 10;
 async function searchOne(app: string, ask: Extract<SayAsk, { kind: "search" }>, deps: SayDeps): Promise<{ app: string; items: Item[]; error?: string }> {
   try {
     if (app === MUSIC) {
-      if (!deps.music) return { app, items: [], error: "music isn't here" };
+      if (!deps.music) return { app, items: [], error: "Music isn't available" };
       const said = (await deps.music.handle({ op: "search", q: ask.query })) as { ok?: boolean; error?: string; results?: { kind: Item["kind"]; id: string; title: string; subtitle: string; away?: boolean }[] };
-      if (!said.ok) return { app, items: [], error: said.error ?? "music didn't look" };
+      if (!said.ok) return { app, items: [], error: said.error ?? "Couldn't search" };
       // What's on a share that isn't there right now can't play.
       const items = (said.results ?? []).filter((r) => !r.away).map((r) => ({ id: r.id, kind: r.kind, title: r.title, subtitle: r.subtitle }));
       return { app, items: items.slice(0, ITEMS) };
@@ -76,12 +76,12 @@ export async function answerSay(ask: SayAsk, deps: SayDeps): Promise<SayAnswer> 
   // Music plays what was found, by its key, or by its name for a row of
   // the ledger, and then shows its page.
   if (ask.app === MUSIC) {
-    if (!deps.music) return { ok: false, error: "music isn't here" };
+    if (!deps.music) return { ok: false, error: "Music isn't available" };
     const item = ask.item;
     if (item) {
       const byName = item.id.startsWith("ledger:");
       const played = (await deps.music.handle(byName ? { op: "play", q: item.title, kind: item.kind } : { op: "play", kind: item.kind, key: item.id })) as { ok?: boolean; error?: string };
-      if (!played.ok) return { ok: false, error: played.error ?? "music didn't play it" };
+      if (!played.ok) return { ok: false, error: played.error ?? "Couldn't play that" };
     }
   }
   const opened = await deps.screen.open(ask.app, ask.item);

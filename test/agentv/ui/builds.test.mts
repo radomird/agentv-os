@@ -105,10 +105,11 @@ test("ADR-046 + add your own asks what to make, and the agent's reading of it is
   await go(page, "add-app");
   await page.locator('.add-row [data-action="build"]').click();
   await page.waitForSelector(".build-ask");
-  assert.match(await page.locator(".page").innerText(), /what should i make\?[\s\S]*type here, or on your phone/);
+  assert.match(await page.locator(".page").innerText(), /what do you want to build\?[\s\S]*keep watching while it's made/);
+  assert.doesNotMatch(await page.locator(".page").innerText(), /type here|your agent/);
   await page.locator(".build-ask").fill("a game like tetris");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /reading what you asked/.test(document.querySelector(".build-page")?.textContent ?? ""));
+  await page.waitForFunction(() => /Getting started/.test(document.querySelector(".build-page")?.textContent ?? ""));
   const start = drop("start");
   assert.deepEqual([start.phase, start.sentence, start.path, start.cap], ["understand", "a game like tetris", "key", { build: 5, month: 20 }]);
 
@@ -119,9 +120,9 @@ test("ADR-046 + add your own asks what to make, and the agent's reading of it is
   assert.match(confirm, /is this what you meant\?/);
   assert.match(confirm, /name\s+blocks/);
   assert.match(confirm, /kind\s+game/);
-  assert.match(confirm, /cost\s+about \$0\.50 to \$3\.00 on your claude key, and never more than \$5\.00/);
+  assert.match(confirm, /cost\s+about \$0\.50 to \$3\.00, never more than \$5\.00/);
   assert.match(confirm, /time\s+about 20 minutes/);
-  assert.match(await toasts(page), /your agent read what you asked/);
+  assert.match(await toasts(page), /got it\. check the details in apps\./);
   await page.locator('[data-action="confirm"]').click();
   await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") === "starting");
   const build = drop("start");
@@ -134,23 +135,25 @@ test("a build shows its steps on its page, its tile in Apps and on home, and hom
   status(listed.id, listed.build, { phase: "build", state: "running", step: "packages", steps: STEPS(1), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
   const page = await tv();
   await page.waitForSelector(".grid .build-tile");
-  assert.match(await page.locator(".grid .build-tile").innerText(), /building[\s\S]*blocks[\s\S]*1 of 4 steps/);
-  assert.match(await page.locator(".bar-right").innerText(), /building blocks/);
+  assert.match(await page.locator(".grid .build-tile").innerText(), /making[\s\S]*blocks[\s\S]*1 of 4 steps/);
+  assert.match(await page.locator(".bar-right").innerText(), /making blocks/);
   await go(page, "apps");
   await page.waitForSelector(".page .build-tile");
   assert.match(await page.locator(".page").innerText(), /# your own[\s\S]*blocks/);
   await page.locator(".page .build-tile").click();
   await page.waitForSelector('.build-page[data-state="running"]');
   const building = await page$(page);
-  assert.match(building, /building blocks\./);
-  assert.match(building, /\[x\] design[\s\S]*\[~\] packages[\s\S]*\[ \] build[\s\S]*\[ \] tests/);
-  assert.match(building, /you can keep using the tv\. it takes about 20 minutes\. when it's done, approve blocks on your phone\./);
+  assert.match(building, /making blocks$/m);
+  // Each step by its label, never its id.
+  assert.match(building, /\[x\] designing[\s\S]*\[~\] adding parts[\s\S]*\[ \] making it[\s\S]*\[ \] testing/);
+  assert.match(building, /about 20 minutes\. approve on your phone after\./);
 
   // The gates passed: it waits for an adult on the phone, and the TV says so.
   status(listed.id, listed.build, { phase: "build", state: "approve", steps: STEPS(4), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
   await page.waitForSelector('.build-page[data-state="approve"]', { timeout: 10_000 });
-  assert.match(await page$(page), /blocks is ready\.[\s\S]*approve it on your phone to put blocks on your home/, "with no PIN, it names none");
-  await page.waitForFunction(() => /blocks is ready: approve it on your phone/.test(document.getElementById("toasts")?.textContent ?? ""));
+  assert.match(await page$(page), /blocks is ready$[\s\S]*tested and ready\. approve on your phone to add it to home\./m);
+  assert.doesNotMatch(await page$(page), /\bpin\b/, "it names no PIN");
+  await page.waitForFunction(() => /Blocks is ready\. Approve on your phone\./.test(document.getElementById("toasts")?.textContent ?? ""));
   await page.close();
 });
 
@@ -158,12 +161,13 @@ test("a build that failed says why, and is tried again or put away", async () =>
   const listed = (await send("GET", "/api/builds")).builds[0];
   status(listed.id, listed.build, { phase: "build", state: "failed", reason: "its tests didn't pass", steps: STEPS(3).map((s) => (s.state === "running" ? { ...s, state: "failed" } : s)), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
   const page = await tv();
-  await page.waitForFunction(() => /couldn't build/.test(document.querySelector(".grid .build-tile")?.textContent ?? ""), undefined, { timeout: 10_000 });
-  assert.match(await page.locator(".grid .build-tile").innerText(), /couldn't build[\s\S]*blocks[\s\S]*✗ its tests didn't pass/);
-  assert.match(await page.locator(".bar-right").innerText(), /couldn't build blocks/);
+  await page.waitForFunction(() => /Couldn't make it/.test(document.querySelector(".grid .build-tile")?.textContent ?? ""), undefined, { timeout: 10_000 });
+  // One plain line for why, never the builder's own reason.
+  assert.match(await page.locator(".grid .build-tile").innerText(), /couldn't make it[\s\S]*blocks[\s\S]*it didn't pass its tests/);
+  assert.match(await page.locator(".bar-right").innerText(), /couldn't make blocks/);
   await page.locator(".grid .build-tile").click();
   await page.waitForSelector('.build-page[data-state="failed"]');
-  assert.match(await page$(page), /couldn't build blocks\.[\s\S]*✗\s+its tests didn't pass[\s\S]*\[!\] tests/);
+  assert.match(await page$(page), /couldn't make blocks$[\s\S]*✗\s+it didn't pass its tests[\s\S]*\[!\] testing/m);
   await page.locator('[data-action="retry"]').click();
   await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") !== "failed");
   assert.deepEqual([drop("start").phase, drop("start").recipe], ["build", "game"]);
@@ -188,7 +192,7 @@ test("ADR-046 what setup's + add your own kept is asked from here with one press
   const page = await tv();
   await go(page, "build");
   await page.waitForSelector('[data-wish="Photos on my NAS"]');
-  assert.match(await page.locator(".page").innerText(), /kept from setup[\s\S]*photos on my nas/);
+  assert.match(await page.locator(".page").innerText(), /saved from setup[\s\S]*photos on my nas/);
   await page.locator('[data-wish="Photos on my NAS"]').click();
   await page.waitForSelector('.build-page[data-state="starting"]');
   assert.equal(drop("start").sentence, "Photos on my NAS");
@@ -197,7 +201,7 @@ test("ADR-046 what setup's + add your own kept is asked from here with one press
   await go(page, "build");
   await page.locator(".build-ask").fill("a quiz");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /another build is going/.test(document.getElementById("toasts")?.textContent ?? ""));
+  await page.waitForFunction(() => /One at a time\. Wait for the other app\./.test(document.getElementById("toasts")?.textContent ?? ""));
   await page.close();
 });
 
@@ -373,7 +377,7 @@ test("Q117 a built app's details ask for a change, build it again, go back a ver
   const page = await tv();
   await go(page, `details/${first.id}`);
   await page.waitForSelector('[data-action="rollback"]', { timeout: 10_000 });
-  assert.deepEqual(await page.locator(".actions .button").allInnerTexts().then((all) => all.slice(-5)), ["change it →", "build it again", "go back to 1.0.0", "export", "remove"]);
+  assert.deepEqual(await page.locator(".actions .button").allInnerTexts().then((all) => all.slice(-5)), ["change it", "make it again", "back to 1.0.0", "save a copy", "remove"]);
 
   // A change in words is a new version from the one on home.
   await page.locator('[data-action="change"]').click();
@@ -393,12 +397,12 @@ test("Q117 a built app's details ask for a change, build it again, go back a ver
   await waitPad(page, true);
   for (const digit of "2468") await page.keyboard.press(digit);
   await waitPad(page, false);
-  await page.waitForFunction(() => /blocks goes back to 1\.0\.0/.test(document.getElementById("toasts")?.textContent ?? ""));
+  await page.waitForFunction(() => /Blocks is back on 1\.0\.0/.test(document.getElementById("toasts")?.textContent ?? ""));
   assert.deepEqual(drop("install"), { build: first.build, id: first.id, version: "1.0.0" });
   // With the remote, as the toast over the corner leaves it.
   await page.evaluate(() => (window as unknown as { agentvLauncher: { focus: { set(el: Element): void } } }).agentvLauncher.focus.set(document.querySelector('[data-action="remove-built"]')!));
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => /blocks is gone, with every version of it/.test(document.getElementById("toasts")?.textContent ?? ""));
+  await page.waitForFunction(() => /Removed Blocks/.test(document.getElementById("toasts")?.textContent ?? ""));
   assert.deepEqual(drop("remove"), { id: first.id });
   await page.close();
 });
@@ -437,8 +441,8 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
     await page.waitForSelector('.build-page[data-state="plan-sign-in"] .build-qr img', { timeout: 10_000 });
     await page.waitForFunction(() => ((document.querySelector(".build-qr img") as HTMLImageElement | null)?.naturalWidth ?? 0) > 0);
     const tvSays = await page$(page);
-    assert.match(tvSays, /sign in to your claude plan\./);
-    assert.match(tvSays, /scan it with your phone's camera and sign in\. then paste the code the page gives you on your phone's agentv page\./);
+    assert.match(tvSays, /sign in to claude$/m);
+    assert.match(tvSays, /scan it with your phone and sign in\. then paste the code it gives you\./);
 
     const hand = await phone();
     await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
@@ -503,9 +507,9 @@ test("ADR-040 a plan whose sign-in ran out asks for it again on the TV and the p
     await go(page, `build/${asked.build}`);
     await page.waitForSelector('.build-page[data-state="plan-sign-in"] .build-qr img', { timeout: 10_000 });
     const tvSays = await page$(page);
-    assert.match(tvSays, /sign in to your claude plan again\./);
-    assert.match(tvSays, /your agent's sign-in to it ran out, so you sign in again\./);
-    assert.doesNotMatch(tvSays, /you sign in once/);
+    assert.match(tvSays, /sign in to claude again$/m);
+    assert.match(tvSays, /your claude sign-in expired\. sign in again to finish /);
+    assert.doesNotMatch(tvSays, /you only do this once/);
 
     const hand = await phone();
     await hand.waitForSelector('[data-action="plan-sign-in"]', { timeout: 10_000 });
@@ -546,13 +550,14 @@ test("ADR-011 a streaming service's app learns the rest after the sign-in, and a
   await go(page, `build/${asked.build}`);
   await page.waitForSelector('.build-page[data-state="running"]', { timeout: 10_000 });
   const learning = await page$(page);
-  assert.match(learning, /learning stand-in\./);
-  assert.match(learning, /you're signed in, so your agent is learning how stand-in searches, starts a title and shows what's playing\./);
+  assert.match(learning, /learning stand-in$/m);
+  // What the signed-in look reads, and which AI it goes to.
+  assert.match(learning, /to finish, your tv looks at a few pages of stand-in while you're signed in, and sends what it reads to claude$/m);
 
   status(asked.id, asked.build, { phase: "stage-b", state: "failed", reason: "study: it stopped", steps: STEPS(1), understood });
   await page.waitForSelector('.build-page[data-state="failed"]', { timeout: 10_000 });
-  assert.deepEqual(await page.locator(".check-actions .button").allInnerTexts(), ["try again", "remove the app"]);
-  assert.match((await send("POST", `/api/builds/${asked.build}/forget`, {})).error, /its app is on the tv/);
+  assert.deepEqual(await page.locator(".check-actions .button").allInnerTexts(), ["try again", "remove"]);
+  assert.match((await send("POST", `/api/builds/${asked.build}/forget`, {})).error, /Its app is on your TV/);
   await page.close();
 });
 
@@ -565,7 +570,7 @@ test("ADR-045 Export from a built app's details offers it to the phone, which sa
   await go(page, `details/${asked.id}`);
   await page.waitForSelector('[data-action="export"]', { timeout: 10_000 });
   await page.locator('[data-action="export"]').click();
-  await page.waitForFunction(() => /save blocks on your phone/.test(document.getElementById("toasts")?.textContent ?? ""));
+  await page.waitForFunction(() => /Open your phone to save Blocks/.test(document.getElementById("toasts")?.textContent ?? ""));
 
   const hand = await phone();
   await hand.waitForSelector('[data-action="save-export"]', { timeout: 10_000 });
@@ -657,7 +662,7 @@ test("S6.4 Look's describe your own asks for a theme, the phone approves it with
     assert.equal(look.at(-1), "theme-own", "describe your own is Look's last");
     await page.locator('[data-action="theme-own"]').click();
     await page.waitForSelector(".build-ask");
-    assert.match(await page.locator(".screen").innerText(), /what should your theme look like\?[\s\S]*for the tv and omarchy's desktop alike/);
+    assert.match(await page.locator(".screen").innerText(), /what should your theme look like\?[\s\S]*you get colours and a background or two/);
     assert.equal(await page.locator(".build-ask").getAttribute("placeholder"), "a calm forest at dusk");
     await page.locator(".build-ask").fill("a calm forest at dusk");
     await page.locator('[data-action="ask"]').click();
@@ -669,7 +674,7 @@ test("S6.4 Look's describe your own asks for a theme, the phone approves it with
     const understood = { name: "Calm forest", recipe: "theme", says: "A calm forest at dusk" };
     status(asked.id, asked.build, { phase: "build", state: "approve", steps: STEPS(4), understood, approval: { reaches: { always: [], declared: [] }, packages: [] } });
     writeFileSync(join(builds, asked.id, "1.0.0", "shot.png"), PNG);
-    await page.waitForFunction(() => /approve it on your phone, with the pin, to make it your theme, on the tv and omarchy's desktop/.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => /Your theme is ready\. Approve on your phone to use it\./.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
     const hand = await phone();
     await hand.waitForSelector('[data-action="approve-build"]', { timeout: 10_000 });
     await hand.locator('[data-action="approve-build"]').tap();
@@ -693,8 +698,8 @@ test("S6.4 Look's describe your own asks for a theme, the phone approves it with
     writeFileSync(join(theme, "backgrounds", "1-scene.png"), PNG);
     placeTheme(theme, themes, { id: asked.id, name: "Calm forest", version: "1.0.0" });
     status(asked.id, asked.build, { phase: "build", state: "installed", steps: STEPS(4), understood });
-    await page.waitForFunction(() => /calm forest is your theme\./.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
-    await page.waitForFunction(() => /it's on the tv and omarchy's desktop/.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => /Calm forest is your theme/.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => /It's on your TV and Omarchy's desktop/.test(document.querySelector(".build-page")?.textContent ?? ""), undefined, { timeout: 10_000 });
     assert.deepEqual(taken, [{ kind: "take", id: asked.id, n: 1 }]);
     assert.ok(await page.locator('[data-action="remove-built"]').isVisible());
 

@@ -196,10 +196,10 @@ export function spokenDay(day: string, today: string): string {
   if (away === -1) return "yesterday";
   const date = atNoon(day);
   const words = date.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", ...(day.slice(0, 4) !== today.slice(0, 4) ? { year: "numeric" } : {}) });
-  return `on ${words.replace(",", "").toLowerCase()}`;
+  return `on ${words.replace(",", "")}`;
 }
 
-const episodeWords = (a: { season: number; episode: number }) => `s${a.season} e${a.episode}`;
+const episodeWords = (a: { season: number; episode: number }) => `S${a.season} E${a.episode}`;
 
 // --- TMDB's answers, held to what's used --------------------------------------
 
@@ -494,21 +494,21 @@ export class News {
     if (!this.o.keySet()) return { ok: false, why: "no-key", say: NO_KEY };
     const shows = rows.filter((r) => r.kind === "series" || r.kind === "episode");
     const named = query?.trim() || shows[0]?.title || "";
-    if (!named) return { ok: false, why: "which", say: "which show? say its name, and i'll check" };
+    if (!named) return { ok: false, why: "which", say: "Which show? Say its name." };
     const searched = await this.o.get(`/search/tv?query=${encodeURIComponent(named).replace(/%20/g, "+")}&include_adult=false`);
-    if (!searched.ok) return { ok: false, why: "failed", error: searched.error, say: "tmdb didn't answer" };
+    if (!searched.ok) return { ok: false, why: "failed", error: searched.error, say: COULDNT_CHECK };
     const best = results(searched.data, "series")
       .map((s) => ({ s, score: match(s.title, named) }))
       .filter((x) => x.score >= 2)
       .sort((a, b) => b.score - a.score || b.s.popularity - a.s.popularity)[0]?.s;
-    if (!best) return { ok: false, why: "not-found", say: `i couldn't find a show called ${named.toLowerCase()}` };
+    if (!best) return { ok: false, why: "not-found", say: `Couldn't find a show called ${named}` };
     const watched = shows.find((r) => match(r.title, best.title) === 3 && r.season !== null && r.episode !== null) ?? null;
     if (role === "child" && !shows.some((r) => match(r.title, best.title) === 3) && !(await this.onTheirApps(best.id, apps))) {
-      return { ok: false, why: "not-theirs", say: `${best.title.toLowerCase()} isn't on your apps` };
+      return { ok: false, why: "not-theirs", say: `${best.title} isn't on your apps` };
     }
     const page = await this.o.get(`/tv/${best.id}`);
     const found = page.ok ? show(page.data) : null;
-    if (!found) return { ok: false, why: "failed", error: page.error, say: "tmdb didn't answer" };
+    if (!found) return { ok: false, why: "failed", error: page.error, say: COULDNT_CHECK };
     return answerEpisode(found, watched, this.today());
   }
 
@@ -525,11 +525,13 @@ export class News {
   }
 }
 
-export const NO_KEY = "add a tmdb key in settings → new this week first";
+export const NO_KEY = "Set up New this week in Settings first";
+// No service's name in an answer: who was asked is in the log.
+const COULDNT_CHECK = "Couldn't check just now";
 
 // The answer, from a show's air dates and the episode they last watched.
 export function answerEpisode(found: Show, watched: Pick<WatchRow, "season" | "episode"> | null, today: string): EpisodeAnswer {
-  const name = found.name.toLowerCase();
+  const name = found.name;
   const latest = found.latest && found.latest.date <= today ? found.latest : null;
   const next = found.next && found.next.date >= today ? found.next : null;
   const ended = /^(ended|canceled|cancelled)$/i.test(found.status);
@@ -541,15 +543,15 @@ export function answerEpisode(found: Show, watched: Pick<WatchRow, "season" | "e
     const theirs = found.seasons.find((s) => s.season === watched.season);
     const after = theirs && watched.episode! >= theirs.episodes && theirs.episodes > 0 ? { season: watched.season! + 1, episode: 1 } : { season: watched.season!, episode: watched.episode! + 1 };
     yes = true;
-    first = `yes: ${name} ${episodeWords(after)} is out`;
+    first = `Yes, ${name} ${episodeWords(after)} is out`;
   } else if (watched) {
-    first = `no: you've seen the newest ${name}`;
+    first = `No, you've seen the newest ${name}`;
   } else if (latest && daysBetween(latest.date, today) <= WINDOW_DAYS) {
     yes = true;
-    first = `yes: ${name} ${episodeWords(latest)} came out ${spokenDay(latest.date, today)}`;
+    first = `Yes, ${name} ${episodeWords(latest)} came out ${spokenDay(latest.date, today)}`;
   } else {
-    first = `no new episode of ${name} this week`;
+    first = `No new episode of ${name} this week`;
   }
-  const then = next ? `the next is ${episodeWords(next)}, ${spokenDay(next.date, today)}` : ended ? "it has ended" : "there's no date for the next one yet";
-  return { ok: true, show: found.name, yes, latest, next, ended, say: `${first}. ${then}` };
+  const then = next ? `The next is ${episodeWords(next)}, ${spokenDay(next.date, today)}` : ended ? "It has ended" : "There's no date for the next one yet";
+  return { ok: true, show: found.name, yes, latest, next, ended, say: `${first}. ${then}.` };
 }

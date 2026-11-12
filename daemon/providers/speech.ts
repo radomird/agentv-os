@@ -17,6 +17,7 @@
 // Nothing here logs the words.
 
 import type { Provider } from "../ai.ts";
+import { AI_NAMES } from "../../builder/reasons.ts";
 
 export const SPEECH: Partial<Record<Provider, { model: string; voice: string }>> = {
   chatgpt: { model: "gpt-4o-mini-tts", voice: "marin" },
@@ -81,7 +82,7 @@ const isWav = (bytes: Buffer) => bytes.length > 44 && bytes.subarray(0, 4).toStr
 export async function speak(provider: Provider, key: string, text: string, options: { base?: string; fetch?: typeof fetch; timeoutMs?: number } = {}): Promise<Speech> {
   const which = SPEECH[provider];
   const asked = speechRequest(provider, key, text.slice(0, SPEECH_MAX), options.base);
-  if (!which || !asked) return { ok: false, error: "this provider has no voice" };
+  if (!which || !asked) return { ok: false, error: `${AI_NAMES[provider]} has no voice` };
   let response: Response;
   try {
     response = await (options.fetch ?? fetch)(asked.url, { ...asked.init, signal: AbortSignal.timeout(options.timeoutMs ?? 20_000) });

@@ -11,7 +11,7 @@ import { after, test } from "node:test";
 import { Build, type BuildRequest } from "../../../builder/build.ts";
 import { stepTools } from "../../../builder/harness/tools.ts";
 import { buildForbidden, buildOriginProblem, canonical, privateAddress } from "../../../builder/origins.ts";
-import { KINDS, loadRecipe, loadRecipes, planProblems, planRecipe, PAGE_TOOLS, type Plan, recipeProblems, signedInPage, writable } from "../../../builder/recipe.ts";
+import { KINDS, loadRecipe, loadRecipes, planProblems, planRecipe, PAGE_TOOLS, type Plan, recipeProblems, signedInPage, stepLabel, writable } from "../../../builder/recipe.ts";
 import { phaseSteps, Runner } from "../../../builder/run.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -74,6 +74,33 @@ test("ADR-046 the five recipes load, and each step lists only the harness's tool
   assert.deepEqual(phaseSteps(streaming, "stage-b").map((s) => s.id), ["study", "playback", "tests", "try"]);
 });
 
+test("each step has a label, the words the TV shows for it, and its id stays what the data has", () => {
+  const LABELS: Record<string, string> = {
+    design: "Designing",
+    api: "Connecting",
+    packages: "Adding parts",
+    build: "Making it",
+    tests: "Testing",
+    try: "Trying it on a TV",
+    site: "Finding the site",
+    "sign-in": "Waiting for sign-in",
+    study: "Learning the screens",
+    playback: "Learning to play",
+    colors: "Picking colours",
+    art: "Drawing backgrounds",
+  };
+  const recipes = loadRecipes(join(ROOT, "builder/recipes"));
+  for (const recipe of recipes.values()) for (const step of recipe.steps) assert.equal(step.label, LABELS[step.id], `${recipe.kind}/${step.id}`);
+  // A recipe's step without one isn't a recipe.
+  const game = recipes.get("game")!;
+  const { label: _, ...bare } = game.steps[0];
+  assert.match(recipeProblems({ ...game, steps: [bare, ...game.steps.slice(1)] }, game.dir).join("; "), /the step design has a label/);
+  // A plan's own steps have none, so the TV shows the id as words. AgenTV's
+  // two steps after them have theirs.
+  const planned = planRecipe({ name: "x", says: "y", steps: [{ id: "draw-the-sky", does: "b" }], permissions: { origins: [], media: [], tile: false, notices: false }, packages: [] }, ROOT);
+  assert.deepEqual(planned.steps.map(stepLabel), ["Draw the sky", "Testing", "Trying it on a TV"]);
+});
+
 test("S6.9 understanding: the agent says what the request is, and the TV asks an adult to confirm", async () => {
   const b = build({ phase: "understand", recipe: null, name: undefined });
   const status = await run(b);
@@ -86,7 +113,7 @@ test("S6.9 a build walks its recipe's steps in order, each offered only that ste
   const b = build();
   const status = await run(b);
   assert.equal(status.state, "approve", status.reason);
-  assert.deepEqual(status.steps, ["design", "packages", "build", "tests", "try"].map((id) => ({ id, state: "done" })));
+  assert.deepEqual(status.steps, [["design", "Designing"], ["packages", "Adding parts"], ["build", "Making it"], ["tests", "Testing"], ["try", "Trying it on a TV"]].map(([id, label]) => ({ id, label, state: "done" })));
   const recipe = loadRecipes(join(ROOT, "builder/recipes")).get("game")!;
   const offered = events(b).filter((e) => e.harness === "started");
   assert.deepEqual(offered.map((e) => e.step), recipe.steps.map((s) => s.id));
@@ -107,6 +134,7 @@ test("a CLI that offers the agent tools of its own is stopped before the agent c
   const status = await run(b, recording({ design: { offer: ["Bash", "WebFetch"], calls: [{ tool: "write", args: { path: "DESIGN.md", content: "made with a shell" } }] } }));
   assert.equal(status.state, "failed");
   assert.match(status.reason ?? "", /^design: the agent's CLI offered tools of its own: Bash, WebFetch/);
+  assert.equal(status.why, "checks", "and the kind of failure a screen shows a line for");
   assert.ok(!events(b).some((e) => e.step === "design" && e.tool === "write"), "it was stopped before it wrote anything");
 });
 
@@ -333,6 +361,7 @@ test("with a key, a build stops at its spend cap", async () => {
   const status = await run(b);
   assert.equal(status.state, "failed");
   assert.match(status.reason ?? "", /spend cap/);
+  assert.equal(status.why, "limit");
   // And the month's cap counts too.
   const month = build({ path: "key", budget: { build: 5, month: 20, spentMonth: 20 } });
   assert.match((await run(month)).reason ?? "", /spend cap/);

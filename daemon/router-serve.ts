@@ -35,8 +35,10 @@ import { join, resolve } from "node:path";
 import type { Provider } from "./ai.ts";
 import { NetFilter, type Policy } from "./net-filter.ts";
 import { cliBackend, CLI_PROVIDERS, isCliProvider } from "./providers/cli.ts";
+import { ProviderError } from "./providers/http.ts";
 import { apiBackend } from "./providers/index.ts";
-import { NONE, Router, type Routed, type RouterApp } from "./router.ts";
+import { TOO_MANY } from "./providers/no-answer.ts";
+import { NONE, Router, type Backend, type Routed, type RouterApp } from "./router.ts";
 import { forward } from "../builder/sandbox/forward.ts";
 import { PLAN_HOSTS } from "../builder/sandbox/net.ts";
 import { keyFrom } from "../builder/sandbox/relay.ts";
@@ -119,7 +121,7 @@ export function routeServer(o: ServeOptions): Server {
     if (request.method === "POST" && request.url === "/tmdb" && o.tmdb) {
       const path = ((await body(request)) as { path?: unknown } | null)?.path;
       tmdbAsks = tmdbAsks.filter((at) => now() - at < 60_000);
-      if (tmdbAsks.length >= TMDB_PER_MINUTE) return answer(429, { ok: false, error: "too many asks of tmdb at once: try again in a minute" });
+      if (tmdbAsks.length >= TMDB_PER_MINUTE) return answer(429, { ok: false, error: TOO_MANY });
       tmdbAsks.push(now());
       const started = now();
       const said = await o.tmdb(path);
@@ -132,7 +134,7 @@ export function routeServer(o: ServeOptions): Server {
       const b = ((await body(request)) ?? {}) as { provider?: unknown; text?: unknown };
       if (!PROVIDERS.includes(b.provider as Provider) || typeof b.text !== "string" || !b.text.trim()) return answer(400, { ok: false, error: "which provider, and what to say" });
       spoken = spoken.filter((at) => now() - at < 60_000);
-      if (spoken.length >= SPEAK_PER_MINUTE) return answer(429, { ok: false, error: "too much to say at once: try again in a minute" });
+      if (spoken.length >= SPEAK_PER_MINUTE) return answer(429, { ok: false, error: TOO_MANY });
       spoken.push(now());
       const started = now();
       const said = await o.speak(b.provider as Provider, text(b.text, SPEECH_MAX));
@@ -143,12 +145,28 @@ export function routeServer(o: ServeOptions): Server {
     const asked = routeRequest(await body(request));
     if (typeof asked === "string") return answer(400, { ok: false, error: asked });
     recent = recent.filter((at) => now() - at < 60_000);
-    if (recent.length >= PER_MINUTE) return answer(429, { ok: false, error: "too many sentences at once: try again in a minute" });
+    if (recent.length >= PER_MINUTE) return answer(429, { ok: false, error: TOO_MANY });
     recent.push(now());
     const routed = await o.route(asked);
     o.log?.(`${routed.provider} ${routed.via} ${routed.model ?? "its own model"}: ${routed.route.intent}${routed.none ? ` (${routed.none})` : ""} in ${routed.ms} ms${routed.spent !== undefined ? `, $${routed.spent.toFixed(5)}` : ""}${routed.error ? `: ${routed.error}` : ""}`);
     answer(200, { ok: true, routed });
   });
+}
+
+// A backend whose failures leave what the provider itself said in this
+// service's log. The line that goes back to the daemon is the plain one.
+export function logged(backend: Backend, log?: (line: string) => void): Backend {
+  return {
+    ...backend,
+    ask: async (ask) => {
+      try {
+        return await backend.ask(ask);
+      } catch (error) {
+        if (error instanceof ProviderError && error.raw) log?.(`${backend.provider} ${backend.via}: ${error.raw}`);
+        throw error;
+      }
+    },
+  };
 }
 
 // The plan CLIs' way out: their providers' own hosts, on 443.
@@ -214,7 +232,7 @@ async function main(): Promise<void> {
         if (!found) {
           return { sentence, route: { ...NONE }, none: "failed", error: "there's no key for this provider on the box", provider, via: "api", model: backend.model, ms: 0 };
         }
-        return new Router(backend).route(sentence, apps);
+        return new Router(logged(backend, log)).route(sentence, apps);
       },
     });
     await listen(server, join(run, "router.sock"));
@@ -232,7 +250,7 @@ async function main(): Promise<void> {
         if (!isCliProvider(provider)) {
           return { sentence, route: { ...NONE }, none: "failed", error: "that plan can't take requests yet", provider, via: "cli", model: null, ms: 0 };
         }
-        return new Router(cliBackend(provider, { home, proxy })).route(sentence, apps);
+        return new Router(logged(cliBackend(provider, { home, proxy }), log)).route(sentence, apps);
       },
     });
     await listen(server, join(run, "route.sock"));

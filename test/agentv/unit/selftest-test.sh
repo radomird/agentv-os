@@ -702,7 +702,7 @@ pass "S4.6 passes only with the key root's alone, mode 600, and the hand-over ru
 
 # --- Stage 7 ---------------------------------------------------------------
 
-echo '{"ok":true,"said":{"n":1,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
+echo '{"ok":true,"said":{"n":1,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"Didn'"'"'t get that"}}}' >"$state/say"
 run1 S7.3 || fail "S7.3 passes when the box says it didn't get it" "$(cat "$SCRATCH/out")"
 grep -qF 'pass S7.3 "the cat sat on the" came back as i didn'"'"'t get that, and nothing opened' "$SCRATCH/out" || fail "it says what came back" "$(cat "$SCRATCH/out")"
 grep -q 'api/say' "$state/curl.log" || fail "it asks the daemon"
@@ -715,7 +715,7 @@ grep -qF "fail S7.3 it wasn't i didn't get that: frozen, on kino" "$SCRATCH/out"
 pass "S7.3 passes only when a sentence that can't be routed comes back as i didn't get that"
 
 # Its spoken half (stage 8, Q146): the TV said it, with which voice.
-echo '{"ok":true,"said":{"n":4,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"i didn'"'"'t get that"}}}' >"$state/say"
+echo '{"ok":true,"said":{"n":4,"state":"done","outcome":{"kind":"none","why":"unroutable","say":"Didn'"'"'t get that"}}}' >"$state/say"
 echo '{"ok":true,"spoken":true,"by":"own","provider":null,"own":"ready","last":{"clip":2,"by":"own","ms":600,"played":true}}' >"$state/voice-before"
 echo '{"ok":true,"spoken":true,"by":"own","provider":null,"own":"ready","last":{"clip":3,"by":"own","ms":640,"played":true}}' >"$state/voice"
 run1 S7.3 || fail "S7.3 passes when the TV said it" "$(cat "$SCRATCH/out")"
