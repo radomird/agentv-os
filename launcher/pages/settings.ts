@@ -738,6 +738,23 @@ export function settings(ctx: Ctx, open?: string): View {
       { passive: true },
     );
     new ResizeObserver(mark).observe(list);
+    // On the theme's own page the list takes as many whole rows as the panel
+    // has room for, in every look and at every size, rather than two.
+    requestAnimationFrame(() => {
+      const page = wrap.closest<HTMLElement>('.settings-panel[data-page="theme"]');
+      if (!page) return;
+      const style = getComputedStyle(list);
+      const row = parseFloat(style.getPropertyValue("--look-row"));
+      const gap = parseFloat(style.rowGap) || 0;
+      const inside = parseFloat(getComputedStyle(page).paddingBottom) || 0;
+      // The room from the list's top to the panel's bottom, less what comes
+      // after the list.
+      const after = [...page.children].filter((el) => el !== wrap && el.getBoundingClientRect().top >= wrap.getBoundingClientRect().bottom - 1).reduce((sum, el) => sum + el.getBoundingClientRect().height + (parseFloat(getComputedStyle(page).rowGap) || 0), 0);
+      const room = page.getBoundingClientRect().bottom - inside - list.getBoundingClientRect().top - after;
+      const rows = Math.max(2, Math.floor((room + gap) / (row + gap)));
+      if (Number.isFinite(rows)) list.style.maxHeight = `${rows * row + (rows - 1) * gap}px`;
+      mark();
+    });
     return wrap;
   }
   const setLook = async (look: ThemePreview) => {
@@ -827,10 +844,12 @@ export function settings(ctx: Ctx, open?: string): View {
         void save({ sound: { ...s.sound, volume } }, "sound", "volume");
         return true;
       }
-      // Up and down stay in the panel, or go on to the bar. They never
-      // cross to the list, which would put a page away.
+      // Up and down stay in the panel. They never cross to the list, which
+      // would put a page away. Down on the last row stays there, so one
+      // press too many never skips past it; up from the first goes on to
+      // the bar, in the looks that have it at the top.
       if ((action === "up" || action === "down") && inside) {
-        if (!ctx.focus.move(action, panel)) ctx.focus.move(action, links);
+        if (!ctx.focus.move(action, panel) && action === "up") ctx.focus.move(action, links);
         return true;
       }
       // From the bar back toward Settings, with a page open: into the page,
