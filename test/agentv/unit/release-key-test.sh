@@ -6,6 +6,13 @@
 # asks for AgenTV's own, and not when it's started by hand with an agentv-iso
 # ref of its own. Inside image.yml the key is read only where release-key
 # says so, only beside merged code, and never handed to a container.
+#
+# Merged code is agentv, or a whole commit agentv has. No tag is taken by
+# its name, a release's neither: a branch can have the same name and a
+# checkout takes the branch, and this repo carries Omarchy's own v1 to v4
+# tags too. The nightly run hands over the commit a release's tag is on
+# (release-checks-test.sh). And only a run whose every checkout is merged
+# leaves anything in the cache for later runs.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -33,6 +40,14 @@ for name in check omarchy-sync omarchy-rc; do
   grep -q 'secrets' <<<"$job" && fail "M3 $name.yml hands image.yml no secrets" "$job"
   grep -q 'release-key' <<<"$job" && fail "M3 $name.yml never asks for AgenTV's own key" "$job"
   pass "M3 $name.yml hands image.yml no secrets, and never asks for AgenTV's own key"
+  # With no key of AgenTV's, the newer agentv a run updates to is signed
+  # with the run's throwaway key. Only a box with the run's own packages
+  # trusts that, so image.yml refuses a channel's packages here.
+  if ! grep -q 'update-test: false' <<<"$job"; then
+    grep -q '^ *packages: build$' <<<"$job" ||
+      fail "$name.yml checks an update with no key of AgenTV's, so it builds its own packages" "$job"
+    pass "$name.yml checks an update with no key of AgenTV's, so it builds its own packages"
+  fi
 done
 
 job=$(code "$(caller "$workflows/nightly.yml")")
@@ -52,11 +67,12 @@ for line in \
   "AGENTV_SIGNING_KEY: \${{ inputs.checks == '' && secrets.AGENTV_SIGNING_KEY || '' }}" \
   "update-test: \${{ inputs.checks == '' }}" \
   "nightly: \${{ matrix.tested && inputs.checks == '' }}" \
-  "keep-iso: \${{ matrix.iso && inputs.checks == '' }}"; do
+  "keep-iso: \${{ matrix.iso && inputs.checks == '' }}" \
+  "keep-disk: \${{ matrix.iso && inputs.checks == '' }}"; do
   grep -qxF "      $line" <<<"$job" ||
-    fail "M3 a nightly run started with its own agentv-iso ref gets no key and keeps no ISO" "missing: $line"$'\n'"$job"
+    fail "M3 a nightly run started with its own agentv-iso ref gets no key and keeps no ISO or box" "missing: $line"$'\n'"$job"
 done
-pass "M3 a nightly run started with its own agentv-iso ref gets no key and keeps no ISO"
+pass "M3 a nightly run started with its own agentv-iso ref gets no key, and keeps no ISO and no box for later runs"
 
 grep -rl 'secrets: inherit' "$workflows" | grep -v '/i18n' >"$SCRATCH/inherit" || true
 [[ ! -s $SCRATCH/inherit ]] || fail "M3 no workflow hands every secret to another" "$(cat "$SCRATCH/inherit")"
@@ -87,16 +103,23 @@ awk -v dir="$SCRATCH" '
   /^      - / { script = 0 }
 ' "$image"
 [[ -s $SCRATCH/guard-2.sh && ! -e $SCRATCH/guard-3.sh ]] || fail "M3 each of the two jobs that sign says which key it gets"
-# GitHub's answer to whether a commit is on agentv-iso's agentv, for two
-# made-up commits: one agentv has, and one that's ahead of it on a branch.
+# GitHub's answer to whether a commit is on agentv's branch, for made-up
+# commits: one agentv-iso's agentv has, one that's ahead of it on a branch,
+# and one agentv-os's agentv has. It also knows where tags are, the way
+# GitHub does, to show that nobody asks: a tag is never taken by its name.
 on=1111111111111111111111111111111111111111
 ahead=2222222222222222222222222222222222222222
+os_on=4444444444444444444444444444444444444444
 mkdir -p "$SCRATCH/bin"
 cat >"$SCRATCH/bin/gh" <<GH
 #!/bin/bash
+echo "\$*" >>"$SCRATCH/gh.calls"
 case "\$*" in
   "api repos/owner/agentv-iso/compare/$on...agentv --jq .status") echo ahead ;;
   "api repos/owner/agentv-iso/compare/$ahead...agentv --jq .status") echo behind ;;
+  "api repos/owner/agentv-os/compare/$os_on...agentv --jq .status") echo identical ;;
+  "api repos/owner/agentv-"*"/git/ref/tags/"*) echo "commit $on" ;;
+  "api repos/owner/agentv-"*"/compare/"*"...agentv --jq .status") echo behind ;;
   *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 GH
@@ -106,11 +129,22 @@ chmod +x "$SCRATCH/bin/gh"
 guard() {
   local os=$1 iso=$2 update=$3
   shift 3
+  : >"$SCRATCH/guard.out"
   env RELEASE_KEY=true PACKAGES=stable PKGS_REF=main GITHUB_REF=refs/heads/agentv GITHUB_STEP_SUMMARY=/dev/null \
-    RUNNER_TEMP="$SCRATCH/none" OS_REF="$os" ISO_REF="$iso" UPDATE_CHECKS="$update" \
+    GITHUB_OUTPUT="$SCRATCH/guard.out" RUNNER_TEMP="$SCRATCH/none" OS_REF="$os" ISO_REF="$iso" UPDATE_CHECKS="$update" \
     OWNER=owner GH_TOKEN=token PATH="$SCRATCH/bin:$PATH" "$@" \
     bash -euo pipefail "$script" >"$SCRATCH/guard.log" 2>&1
 }
+# A tag is never taken by its name, whichever way it's written and whoever
+# it belongs to: a release's, a candidate's, one of Omarchy's own, with
+# refs/tags/ in front or not. A branch can carry the same name.
+tag_names=(
+  "agentv v0.2.0 agentv" "agentv agentv-v1.0.0 agentv" "agentv agentv-v1.0.0-rc1 agentv"
+  "agentv-v1.0.0 agentv ''" "v4.0.6 agentv ''" "v0.2.0 agentv ''" "agentv agentv v0.2.0"
+  "agentv refs/tags/agentv-v1.0.0 agentv" "agentv refs/tags/v0.2.0 agentv" "refs/tags/v4.0.6 agentv ''"
+  "agentv refs/heads/agentv agentv" "agentv tags/agentv-v1.0.0 agentv"
+)
+
 for n in 1 2; do
   script=$SCRATCH/guard-$n.sh
   step=$(cat "$SCRATCH/guard-$n.yml")
@@ -121,21 +155,25 @@ for n in 1 2; do
   grep -q '^ *if: .*inputs\.release-key' <<<"$step" || fail "M3 a run with release-key never skips the step that checks it" "$step"
 
   guard agentv agentv "" || fail "M3 the night's own refs get AgenTV's key" "$(cat "$SCRATCH/guard.log")"
-  guard agentv v0.2.0 agentv || fail "M3 a release's tag, updated to agentv, gets AgenTV's key" "$(cat "$SCRATCH/guard.log")"
   guard agentv "$on" agentv || fail "M3 a commit agentv-iso's agentv has, updated to agentv, gets AgenTV's key" "$(cat "$SCRATCH/guard.log")"
-  for refs in "agentv fix/checks ''" "agentv v0.2.0 fix/checks" "fix/os agentv ''" "agentv v0.2.0-rc1 ''" \
+  guard "$os_on" "$on" agentv || fail "M3 agentv-os at a commit its agentv has gets AgenTV's key" "$(cat "$SCRATCH/guard.log")"
+  : >"$SCRATCH/gh.calls"
+  for refs in "agentv fix/checks ''" "agentv $on fix/checks" "fix/os agentv ''" "agentv v0.2.0-rc1 ''" \
     "agentv 0123456789abcdef0123456789abcdef01234567 ''" "agentv 'agentv x' ''" \
-    "agentv $ahead agentv" "agentv agentv $ahead" "$on agentv ''" "agentv ${on:0:9} agentv"; do
+    "agentv $ahead agentv" "agentv agentv $ahead" "$on agentv ''" "agentv ${on:0:9} agentv" \
+    "${tag_names[@]}"; do
     eval "set -- $refs"
     guard "$@" && fail "M3 AgenTV's key is never beside an unmerged ref" "passed with agentv-os $1, agentv-iso $2, update checks ${3:-none}"
     grep -q "AgenTV's own key signs only" "$SCRATCH/guard.log" ||
       fail "M3 AgenTV's key is never beside an unmerged ref" "$(cat "$SCRATCH/guard.log")"
   done
+  grep -q '/git/' "$SCRATCH/gh.calls" && fail "nobody asks where a tag is: a tag's name is never taken" "$(grep '/git/' "$SCRATCH/gh.calls")"
   guard agentv agentv "" PKGS_REF=fix/pkgs && fail "M3 AgenTV's key signs only with agentv-pkgs' main"
   guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "M3 AgenTV's key signs only on agentv"
   guard agentv agentv "" PACKAGES=build && fail "M3 AgenTV's key never signs packages built in the run"
 done
-pass "M3 AgenTV's key is only ever beside agentv, a release's tag or a commit agentv has, in agentv-os and agentv-iso"
+pass "M3 AgenTV's key is only ever beside agentv or a whole commit agentv has, in agentv-os and agentv-iso"
+pass "no tag is taken by its name, a release's neither, nor one of Omarchy's: whoever wants a release's checks hands over its commit"
 
 grep -q 'required: true' <<<"$(sed -n '/^    secrets:$/,/^$/p' "$image")" &&
   fail "M3 a caller doesn't have to hand image.yml the key"
@@ -184,6 +222,10 @@ take_back=$(awk '
   running { sub(/^          /, ""); print }
 ' "$image")
 [[ -n $take_back ]] || fail "image.yml has a step that takes back the ISO"
+# It runs whenever a check failed and the run was to keep its ISO, after a
+# failed or cancelled step too.
+grep -A1 '^      - name: Take back the ISO$' "$image" | grep -qxF "        if: always() && steps.passed.outputs.passed != 'true' && inputs.keep-iso" ||
+  fail "the take-back runs whenever a check failed and the run was to keep its ISO" "$(grep -A1 '^      - name: Take back the ISO$' "$image")"
 # shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
 grep -q 'ISO_NAME: \${{ needs.box.outputs.iso-name }}' "$image" || fail "the take-back is told the name the box's job kept the ISO under"
 # shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
@@ -232,12 +274,22 @@ for job in image box; do
   body_of=$(awk -v job="  $job:" '$0 == job { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on' "$image")
   grep -qx '    needs: refs' <<<"$body_of" ||
     fail "the $job job, which can be in the release environment, waits for the refs to be checked"
+  # Waiting isn't enough: a job that says always() runs after a job it
+  # needs has failed.
+  grep -E '^    if: ' <<<"$body_of" | grep -qE 'always\(\)|cancelled\(\)|failure\(\)' &&
+    fail "the $job job doesn't run when the refs were refused" "$(grep -E '^    if: ' <<<"$body_of")"
 done
+# The last job writes the report from a checkout of the same ref, with a
+# token that can write. It runs after failed checks, but not after a
+# refusal.
+finish_if=$(awk '$0 == "  finish:" { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ { exit } on && /^    if: / { print; exit }' "$image")
+[[ $finish_if == "    if: always() && needs.refs.result == 'success' && "* ]] ||
+  fail "the last job, which checks the ref out again, doesn't run when the refs were refused" "$finish_if"
 script=$SCRATCH/refs.sh
 awk '/^        run: \|$/ { on = 1; next } on { sub(/^          /, ""); print }' <<<"$refs" >"$script"
 guard agentv agentv "" || fail "the night's own refs pass the job that checks them" "$(cat "$SCRATCH/guard.log")"
 guard agentv "$on" agentv || fail "a commit agentv has passes the job that checks the refs" "$(cat "$SCRATCH/guard.log")"
-for refs_tried in "agentv fix/checks ''" "fix/os agentv ''" "agentv agentv $ahead" "agentv $ahead agentv"; do
+for refs_tried in "agentv fix/checks ''" "fix/os agentv ''" "agentv agentv $ahead" "agentv $ahead agentv" "${tag_names[@]}"; do
   eval "set -- $refs_tried"
   guard "$@" && fail "an unmerged ref stops the run before a job that can hold the key starts" "passed with agentv-os $1, agentv-iso $2, update checks ${3:-none}"
 done
@@ -245,3 +297,78 @@ guard agentv agentv "" PKGS_REF=fix/pkgs && fail "the job that checks the refs w
 guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "the job that checks the refs wants the run on agentv"
 guard fix/os fix/checks "" RELEASE_KEY=false || fail "a run that doesn't ask for the key isn't held up" "$(cat "$SCRATCH/guard.log")"
 pass "a run that asks for AgenTV's key has its refs checked in a job with no environment and no checkout, before the jobs that can hold the key"
+
+# The same job says, for every run, whether everything it checks out is
+# merged. Only then does a run leave its root image's slow part or its box
+# in the cache, where every pull request and the next night start from.
+merged_is() {
+  local want=$1
+  shift
+  guard "$@" || fail "a run that doesn't ask for the key isn't stopped by the job that checks the refs" "$(cat "$SCRATCH/guard.log")"
+  [[ $(cat "$SCRATCH/guard.out") == "merged=$want" ]] ||
+    fail "the job that checks the refs says merged=$want for: $*" "$(cat "$SCRATCH/guard.out" "$SCRATCH/guard.log")"
+}
+merged_is true agentv agentv "" RELEASE_KEY=false
+merged_is true agentv "$on" agentv RELEASE_KEY=false PACKAGES=build
+merged_is true "$os_on" "$on" "" RELEASE_KEY=false
+merged_is false agentv refs/tags/agentv-v1.0.0 agentv RELEASE_KEY=false
+merged_is false fix/os agentv "" RELEASE_KEY=false
+merged_is false agentv fix/checks "" RELEASE_KEY=false
+merged_is false agentv agentv "$ahead" RELEASE_KEY=false
+merged_is false agentv agentv-v1.0.0 "" RELEASE_KEY=false
+merged_is false agentv agentv "" RELEASE_KEY=false PKGS_REF=fix/pkgs
+merged_is false agentv agentv "" RELEASE_KEY=false GITHUB_REF=refs/pull/7/merge
+guard agentv agentv "" && [[ $(cat "$SCRATCH/guard.out") == "merged=true" ]] || fail "a run with the key and merged refs is merged"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
+{
+  grep -qx '      merged: ${{ steps.refs.outputs.merged }}' <<<"$refs" || fail "the job that checks the refs hands on whether they're merged"
+  [[ $(grep -c "inputs.keep-disk && .*needs.refs.outputs.merged == 'true'" "$image") == 2 ]] ||
+    fail "both places that keep the installed box want every checkout merged"
+  grep -qx '    needs: \[refs, box, checks\]' "$image" || fail "the last job, which keeps the night's box, is told whether the refs are merged"
+}
+root_step=$(awk '
+  /^      - name: Which root image it used$/ { found = 1; next }
+  found && /^      - name: / { exit }
+  found && /^        run: \|$/ { running = 1; next }
+  running { sub(/^          /, ""); print }
+' "$image")
+[[ -n $root_step ]] || fail "image.yml has the step that says which root image it used"
+# shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
+grep -q 'MERGED: \${{ needs.refs.outputs.merged }}' "$image" || fail "the step that keeps the root image is told whether the refs are merged"
+mkdir -p "$SCRATCH/root/iso/release/root-cache" "$SCRATCH/root/iso/test-runs"
+echo abc123 >"$SCRATCH/root/iso/release/root-cache/key"
+echo built >"$SCRATCH/root/iso/release/root-cache/how"
+# root_saved <merged> <ref>: does a run that built its own root image keep it?
+root_saved() {
+  : >"$SCRATCH/root.out"
+  (cd "$SCRATCH/root" && env MERGED="$1" GITHUB_REF="$2" HAD="" GITHUB_OUTPUT="$SCRATCH/root.out" GITHUB_STEP_SUMMARY=/dev/null \
+    bash -euo pipefail -c "$root_step") >"$SCRATCH/root.log" 2>&1 || fail "the step that says which root image it used runs" "$(cat "$SCRATCH/root.log")"
+  grep -qx 'save=true' "$SCRATCH/root.out"
+}
+root_saved true refs/heads/agentv || fail "a run on agentv whose checkouts are all merged keeps its root image" "$(cat "$SCRATCH/root.out")"
+root_saved false refs/heads/agentv && fail "a run on agentv with an unmerged checkout keeps no root image for later runs" "$(cat "$SCRATCH/root.log")"
+root_saved "" refs/heads/agentv && fail "a run that wasn't told its refs are merged keeps no root image"
+root_saved true refs/heads/fix && fail "a run on another branch keeps no root image, as before"
+pass "only a run whose every checkout is merged leaves a root image or a box in the cache for later runs"
+
+# "Re-run failed jobs" that then passes leaves a green run with no ISO: the
+# first try took it back. The run says so, where it used to say nothing.
+no_iso=$(awk '
+  /^      - name: Say when a run that passed has no ISO$/ { found = 1; next }
+  found && /^      - name: / { exit }
+  found && /^        run: \|$/ { running = 1; next }
+  running { sub(/^          /, ""); print }
+' "$image")
+[[ -n $no_iso ]] || fail "image.yml says when a run that passed has no ISO"
+grep -A1 '^      - name: Say when a run that passed has no ISO$' "$image" |
+  grep -qxF "        if: always() && steps.passed.outputs.passed == 'true' && inputs.keep-iso && inputs.checks == ''" ||
+  fail "it's said for a run that passed and was to keep its ISO"
+said() {
+  (cd "$fake" && PATH="$fake/bin:$PATH" ARTIFACTS="$fake/artifacts" TAKEN="$fake/taken" GITHUB_REPOSITORY=o/r GITHUB_RUN_ID=7 \
+    GITHUB_STEP_SUMMARY="$fake/summary" ISO_NAME="$1" bash -euo pipefail -c "$no_iso") >"$fake/out" 2>&1 || fail "the step runs" "$(cat "$fake/out")"
+  grep -q '^::warning title=This run passed and has no ISO::' "$fake/out"
+}
+said agentv-0.2.0.r456.g40edb94c6-x86_64 && fail "a run that still has its ISO isn't called one without" "$(cat "$fake/out")"
+said agentv-0.2.0.r999.gabcdef012-x86_64 || fail "a run whose ISO was taken back says it has none" "$(cat "$fake/out")"
+said "" || fail "a run that kept no ISO at all says it has none" "$(cat "$fake/out")"
+pass "a run that only passed on a re-run says it has no ISO, and that nothing is published from it"
