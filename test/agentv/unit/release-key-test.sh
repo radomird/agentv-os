@@ -52,12 +52,17 @@ done
 
 job=$(code "$(caller "$workflows/nightly.yml")")
 grep -q 'release-key: ' <<<"$job" || fail "M3 the nightly run asks for AgenTV's own key" "$job"
-# It hands over no secret at all: image.yml's jobs that sign read the key
-# in the "release" environment, which only agentv may use. A copy handed
-# over came from the repository's own secrets, which any branch's copy of
-# a workflow can read.
-grep -q 'secrets' <<<"$job" && fail "M3 the nightly run hands image.yml no secrets" "$job"
-pass "M3 only the nightly run asks for AgenTV's own key, and it hands over no secret"
+# It passes the key by name and nothing else. The key is a secret of the
+# "release" environment alone, and GitHub hands a called workflow an
+# environment secret only when the caller passes it by name: not passed,
+# it's empty in image.yml's job, with no error (2026-11-12, the Nightly
+# after the repository's copy was deleted). Never every secret.
+grep -q 'secrets: inherit' <<<"$job" && fail "M3 the nightly run never hands over every secret" "$job"
+[[ $(grep -c 'secrets\.' <<<"$job") == 1 ]] || fail "M3 the nightly run passes the signing key and nothing else" "$job"
+# shellcheck disable=SC2016 # the workflow's own expression, not the shell's
+grep -qx '      AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}' <<<"$job" ||
+  fail "M3 the nightly run passes the signing key by name, which is how an environment's secret reaches a called workflow" "$job"
+pass "M3 only the nightly run asks for AgenTV's own key, and it passes that one secret by name and nothing else"
 
 # Started by hand, the nightly run can check with an agentv-iso ref that
 # isn't merged (its checks input). Then it gets no key, so it has nothing to
@@ -175,11 +180,13 @@ done
 pass "M3 AgenTV's key is only ever beside agentv or a whole commit agentv has, in agentv-os and agentv-iso"
 pass "no tag is taken by its name, a release's neither, nor one of Omarchy's: whoever wants a release's checks hands over its commit"
 
-# And image.yml takes no secret from a caller: there's nothing for one to
-# hand over, so the key only ever comes from the environment.
-grep -q '^    secrets:$' <<<"$(sed -n '/^  workflow_call:$/,/^permissions:/p' "$image")" &&
-  fail "M3 image.yml takes no secret from a workflow that calls it"
-pass "M3 image.yml takes no secret from a workflow that calls it"
+# image.yml declares the key, so a caller can pass it, and never requires
+# it, so every other caller hands over nothing. It declares nothing else.
+declared=$(sed -n '/^  workflow_call:$/,/^permissions:/p' "$image" | sed -n '/^    secrets:$/,$p')
+grep -qx '      AGENTV_SIGNING_KEY:' <<<"$declared" || fail "M3 image.yml declares the signing key, so the nightly run can pass it" "$declared"
+grep -qx '        required: false' <<<"$declared" || fail "M3 image.yml never requires the signing key" "$declared"
+[[ $(grep -cE '^      [A-Z_]+:$' <<<"$declared") == 1 ]] || fail "M3 image.yml declares no other secret" "$declared"
+pass "M3 image.yml declares the signing key and nothing else, and never requires it"
 
 # No container gets a key: bin/build signs nothing, and bin/sign runs on its
 # own afterwards.

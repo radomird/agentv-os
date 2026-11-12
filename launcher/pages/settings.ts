@@ -26,7 +26,7 @@ import { controllerRows, controllersPanel, loadControllers } from "./controllers
 import { loadPhones, phoneRows, phones } from "./phones.ts";
 import { loadNetwork, networkPanel, networkRows, watchNetwork } from "./wifi.ts";
 import { profileRows } from "./profiles.ts";
-import { updatesPanel, updatesValue } from "./updates.ts";
+import { notesPanel, updatesPanel, updatesStart, updatesValue } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageRows } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryValue, loadCountry } from "./country.ts";
@@ -51,6 +51,10 @@ interface Page {
   key: string;
   in: string;
   panel: () => HTMLElement[];
+  // The page it's a level under, which Back goes to, if not the section.
+  under?: string;
+  // The row it opens on, when not its first.
+  start?: () => string | undefined;
 }
 
 // Where the sections from before D10 went: the section, and the row OK
@@ -564,7 +568,9 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "wifi", in: "network", panel: () => networkPanel(ctx) },
     { key: "your-ai", in: "ai", panel: () => aiPanel(ctx) },
     { key: "usage", in: "ai", panel: () => usagePanel(ctx) },
-    { key: "updates", in: "tv", panel: () => updatesPanel(ctx) },
+    { key: "updates", in: "tv", panel: () => updatesPanel(ctx, (key) => openPage(key)), start: () => updatesStart(ctx) },
+    // What's new, a level under Updates (ADR-094).
+    { key: "whats-new", in: "tv", under: "updates", panel: () => notesPanel(ctx), start: () => updatesStart(ctx) },
     { key: "desktop", in: "tv", panel: desktopPanel },
     { key: "about", in: "tv", panel: aboutPanel },
   ];
@@ -613,15 +619,16 @@ export function settings(ctx: Ctx, open?: string): View {
     routed = false;
     show(shown.section, page);
     ctx.sounds.play("forward");
-    if (into(action)) return;
+    if (into(action ?? page.start?.())) return;
     landing = true;
     ctx.focus.set(openItem());
   }
-  // Back from a page: its section, with the focus on the page's row.
+  // Back from a page: the page it's under, or its section, with the focus
+  // on the page's row.
   const closePage = () => {
     const from = shown.page;
     if (!from) return;
-    show(shown.section);
+    show(shown.section, pages.find((one) => one.key === from.under) ?? null);
     ctx.sounds.play("back");
     if (!into(from.key)) ctx.focus.set(openItem());
   };
@@ -732,10 +739,19 @@ export function settings(ctx: Ctx, open?: string): View {
     );
     new ResizeObserver(mark).observe(list);
     // On the theme's own page the list takes as many whole rows as the panel
-    // has room for, in every look and at every size, rather than two.
-    requestAnimationFrame(() => {
+    // has room for, in every look and at every size, rather than two. It's
+    // measured once the page is laid out, and again whenever the list or the
+    // panel changes size, since a frame after drawing can come before that.
+    let watched: HTMLElement | null = null;
+    const fit = () => {
       const page = wrap.closest<HTMLElement>('.settings-panel[data-page="theme"]');
-      if (!page) return;
+      if (!page || !page.isConnected) return;
+      if (watched !== page) {
+        watched = page;
+        sizes.observe(page);
+      }
+      const box = page.getBoundingClientRect();
+      if (!box.height) return;
       const style = getComputedStyle(list);
       const row = parseFloat(style.getPropertyValue("--look-row"));
       const gap = parseFloat(style.rowGap) || 0;
@@ -743,11 +759,14 @@ export function settings(ctx: Ctx, open?: string): View {
       // The room from the list's top to the panel's bottom, less what comes
       // after the list.
       const after = [...page.children].filter((el) => el !== wrap && el.getBoundingClientRect().top >= wrap.getBoundingClientRect().bottom - 1).reduce((sum, el) => sum + el.getBoundingClientRect().height + (parseFloat(getComputedStyle(page).rowGap) || 0), 0);
-      const room = page.getBoundingClientRect().bottom - inside - list.getBoundingClientRect().top - after;
+      const room = box.bottom - inside - list.getBoundingClientRect().top - after;
       const rows = Math.max(2, Math.floor((room + gap) / (row + gap)));
-      if (Number.isFinite(rows)) list.style.maxHeight = `${rows * row + (rows - 1) * gap}px`;
+      const height = `${rows * row + (rows - 1) * gap}px`;
+      if (Number.isFinite(rows) && list.style.maxHeight !== height) list.style.maxHeight = height;
       mark();
-    });
+    };
+    const sizes = new ResizeObserver(fit);
+    sizes.observe(wrap);
     return wrap;
   }
   const setLook = async (look: ThemePreview) => {
@@ -777,7 +796,7 @@ export function settings(ctx: Ctx, open?: string): View {
 
   return {
     el,
-    first: (at ? panel.querySelector<HTMLElement>(`[data-action="${at}"]`) : null) ?? openItem(),
+    first: (at ? panel.querySelector<HTMLElement>(`[data-action="${at}"]`) : null) ?? (page?.start?.() ? panel.querySelector<HTMLElement>(`[data-action="${page.start()}"]`) : null) ?? openItem(),
     // The section with focus shows its rows. A page the route opened stays
     // while the focus is still where it arrived.
     focused(target) {

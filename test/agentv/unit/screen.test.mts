@@ -1883,6 +1883,36 @@ test("T16.2 a profile that locks, and home can't be put in front: the game ends 
   t.screen.stop();
 });
 
+test("T16.2 a profile that locks, and home can't be put in front twice: the TV comes back on to home and its PIN pad, not to nothing", async () => {
+  let on = true;
+  const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
+  t.launcher.locking = true;
+  const { steam } = await withSteam(t);
+  // The compositor fails both calls that bring home's window onto the TV
+  // with the TV off: the ambient screen's and the one after the game is out
+  // of sight.
+  let refused = 0;
+  t.hypr.refuse = (expression) => /^hl\.dsp\.window\.move\(\{ window = "address:0xa", workspace = "1"/.test(expression) && refused++ < 2;
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(refused, 2, "both calls failed");
+  assert.equal(steam.stopped, false, "the game stays open");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE, "and out of sight");
+  // The TV comes back on, and a key.
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  t.screen.seatIdle(false);
+  await t.screen.home();
+  await t.screen.idle();
+  assert.deepEqual(t.hypr.onTv(), ["0xa"], "home's window is on the TV, where its PIN pad is");
+  assert.equal(t.hypr.active, "0xa");
+  assert.equal(t.hypr.get("0xf").workspace.name, HELD_WORKSPACE, "the game is still out of reach");
+  assert.equal(t.screen.front()?.role, "home");
+  t.screen.stop();
+});
+
 test("T16.2 a profile that locks, and the compositor keeps failing: the game closes", async () => {
   let on = true;
   const t = await tv({ tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150 });
