@@ -557,7 +557,7 @@ export function settings(ctx: Ctx, open?: string): View {
 
   const pages: Page[] = [
     // The three looks, with a preview of each (ADR-063, D2).
-    { key: "looks", in: "look", panel: () => [h("div", { class: "panel-title" }, "Look"), h("div", { class: "look-cards" }, ...lookCards(looksList(), lookId(), sizeId(), 300, (look) => void pickLook(look.id), looks?.current))] },
+    { key: "looks", in: "look", panel: () => [h("div", { class: "panel-title" }, "Look"), h("div", { class: "look-cards" }, ...lookCards(looksList(), lookId(), sizeId(), (look) => void pickLook(look.id), looks?.current))] },
     { key: "theme", in: "look", panel: themePanel },
     { key: "pictures", in: "look", panel: themePictures },
     { key: "weather", in: "home", panel: weatherPanel },
