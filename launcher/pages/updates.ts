@@ -1,5 +1,5 @@
 // Updates on the TV (ADR-025, boards 29 to 33): the Updates row in Settings,
-// This TV, and its page, What's new, the notice on home, the Updating screen, and Go back when the check
+// System, and its page, What's new, the notice on home, the Updating screen, and Go back when the check
 // after an update finds something off. The daemon passes on what the daily
 // check found, how an install is going and what the check after it found;
 // installing runs as root in agentv-update-tv.service, and going back in
@@ -176,7 +176,7 @@ function row(name: string, now: string | null, next: string | null): HTMLElement
   );
 }
 
-// The value of This TV's "Updates" row, and what the page's title says.
+// The value of System's "Updates" row, and what the page's title says.
 export function updatesValue(ctx: Ctx): string {
   const status = ctx.updates.status;
   if (!status) return "Not checked yet";
@@ -374,7 +374,7 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
             ? progress.detail === "not tested yet"
               ? "Still being tested. Press OK."
               : progress.detail === "nothing changed"
-                ? "Press OK. You can try again in Settings."
+                ? "Press OK. You can try again in Settings, under System."
                 : "Press OK to go back"
             : progress.state === "restarting"
               ? "Restarting. Back in a moment."

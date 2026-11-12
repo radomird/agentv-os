@@ -1,4 +1,4 @@
-// Restart and Shut down, in Settings' This TV, in a real Chromium (ADR-019,
+// Restart and Shut down, on Settings' Power page, in a real Chromium (ADR-019,
 // layer 4; ADR-033, S2.18): each choice asks first, Restart goes right after
 // its question, Shut down counts down 10 seconds that Cancel stops and then
 // asks the TV session to shut down, and neither is there on a child's
@@ -76,8 +76,8 @@ function write(name: string, data: unknown): void {
 test("S2.18 Settings → Power asks first, Restart goes right after its question, and Back or Cancel stops it", async () => {
   const page = await tv();
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
-  assert.equal(await page.locator(".menu-item.open").innerText(), "this tv", "Restart and Shut down are rows in This TV");
+  await page.waitForSelector('.settings-panel[data-page="power"]');
+  assert.equal(await page.locator(".menu-item.open").innerText(), "system", "Power is a page in System");
   assert.match(await page.locator(".panel").innerText(), /restart\s+shut down/);
   // OK on the section goes into it, and OK on Restart asks.
   await page.keyboard.press("Enter");
@@ -89,14 +89,14 @@ test("S2.18 Settings → Power asks first, Restart goes right after its question
   assert.match(await page.locator(".check-actions").innerText(), /^restart\s+cancel$/);
   // Back is Cancel.
   await page.keyboard.press("Escape");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   // So is Cancel itself.
   await go(page, "power/restart");
   await page.waitForSelector(".page.power");
   await page.keyboard.press("ArrowRight");
   assert.equal(await focused(page), "cancel");
   await page.keyboard.press("Enter");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   assert.deepEqual(await powered(page), [], "nothing restarts without its question answered");
   // Restart goes at once.
   await go(page, "power/restart");
@@ -112,7 +112,7 @@ test("S2.18 Settings → Power asks first, Restart goes right after its question
 test("S2.18 Shut down counts down 10 seconds, which Cancel stops, then asks the TV session to shut down", async () => {
   const page = await tv();
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   await go(page, "power/shutdown");
   await page.waitForSelector(".page.power");
   assert.equal(await headline(page), "shut down?");
@@ -132,7 +132,7 @@ test("S2.18 Shut down counts down 10 seconds, which Cancel stops, then asks the 
   }, null, { timeout: 2000 });
   await page.waitForFunction(() => document.querySelector(".power-count")?.textContent === "8", null, { timeout: 4000 });
   await page.keyboard.press("Enter");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   // The second, to the end. A first one that kept counting would ask
   // before this one could.
   await go(page, "power/shutdown");
@@ -155,7 +155,7 @@ test("S2.18 Power isn't on a child's profile or offered while an update runs, an
   const child = await tv("child");
   await go(child, "settings/tv");
   await child.waitForSelector('.settings-panel[data-page="tv"]');
-  assert.equal(await child.locator('.panel [data-action="restart"], .panel [data-action="shutdown"], .panel [data-action="sleep"]').count(), 0);
+  assert.equal(await child.locator('.panel [data-action="power"], .panel [data-action="restart"], .panel [data-action="shutdown"], .panel [data-action="sleep"]').count(), 0);
   await go(child, "power/shutdown");
   await child.waitForSelector(".grid .tile");
   assert.equal(await child.locator(".page.power").count(), 0);
@@ -176,7 +176,7 @@ test("S2.18 Power isn't on a child's profile or offered while an update runs, an
   await page.waitForSelector(".power-count.hidden", { state: "attached", timeout: 3000 });
   assert.equal(await page.locator(".check-summary").innerText(), "an update started, so it stayed on");
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   await page.evaluate(() => document.querySelector<HTMLElement>('.panel [data-action="shutdown"]')!.click());
   await page.waitForFunction(() => [...document.querySelectorAll("#toasts .toast")].some((toast) => toast.textContent === "Not during an update"));
   assert.equal(await page.locator(".page.power").count(), 0, "its question doesn't open");
@@ -189,7 +189,7 @@ test("S2.18 Power isn't on a child's profile or offered while an update runs, an
 test("T2.2 Settings → Power has restart to the boot menu, which asks first, then restarts to it", async () => {
   const page = await tv();
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   // The row shows once the box says it can.
   await page.waitForSelector('.panel [data-action="bootmenu"]:not(.hidden)');
   assert.match(await page.locator(".panel").innerText(), /restart\s+shut down\s+restart to the boot menu/);
@@ -216,7 +216,7 @@ test("T2.2 Settings → Power has restart to the boot menu, which asks first, th
   assert.match(await page.locator(".check-actions").innerText(), /^restart\s+cancel$/);
   // Back is Cancel, and nothing restarts.
   await page.keyboard.press("Escape");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   assert.deepEqual(await powered(page), []);
   // Its question answered, it goes at once.
   await go(page, "power/bootmenu");
@@ -231,7 +231,7 @@ test("T2.2 Settings → Power has restart to the boot menu, which asks first, th
 test("T2.2 a box whose boot loader can't restart to its menu doesn't offer it", async () => {
   const page = await tv("adult", url, false);
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   await page.waitForFunction(() => (window as unknown as { screenRequests: Request[] }).screenRequests.some((r) => r.cmd === "boot-menu"));
   await page.waitForTimeout(200);
   assert.doesNotMatch(await page.locator(".panel").innerText(), /boot menu/);
@@ -241,7 +241,7 @@ test("T2.2 a box whose boot loader can't restart to its menu doesn't offer it", 
 test("T13.2 Settings → Power has sleep beside the boot menu, off by default, and turned on it says what wakes the box", async () => {
   const page = await tv();
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   await page.waitForSelector('[data-action="bootmenu"]:not(.hidden)');
   const value = () => page.locator('[data-action="sleep"] .button-value').innerText();
   assert.match(await page.locator('[data-action="sleep"]').innerText(), /sleep after an hour off\s+off/);

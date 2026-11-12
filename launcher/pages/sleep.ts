@@ -1,4 +1,4 @@
-// This TV's sleep row in Settings (ADR-072): "Sleep after an hour off", off
+// The sleep row on System's Power page in Settings (ADR-072): "Sleep after an hour off", off
 // by default. With it on, the screen daemon suspends the box once the TV has
 // been off that long (daemon/sleep.ts). The phone can't wake a sleeping box,
 // so turning it on says what can. Turning it on or off asks for the adult
@@ -34,5 +34,5 @@ async function toggle(ctx: Ctx): Promise<void> {
   ctx.sounds.play("confirm");
   // The one line about it, said as it's turned on.
   if (on) ctx.toast("Wake it with the power button or a keyboard. Your phone can't.", "ok");
-  ctx.render("settings/tv", "sleep");
+  ctx.render("settings/power", "sleep");
 }

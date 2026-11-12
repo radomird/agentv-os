@@ -151,9 +151,9 @@ test("ADR-055 Settings → country shows where the TV is and changes the same se
   try {
     await page.waitForSelector(".grid .tile.focused");
     await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/country"));
-    // It's the Location row in This TV, with where the TV is as its value.
+    // It's the Location row in System, with where the TV is as its value.
     await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="country"]')?.textContent === "LocationNorway");
-    assert.equal(await page.locator(".menu-item.open").textContent(), "This TV");
+    assert.equal(await page.locator(".menu-item.open").textContent(), "System");
     await page.click('[data-action="country"]');
     await page.waitForSelector(".country-picker");
     assert.equal(await page.locator(".page .headline").textContent(), "Pick your location");

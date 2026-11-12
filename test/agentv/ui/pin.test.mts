@@ -163,7 +163,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   // The rest of this visit to Settings uses the same grant: Power doesn't
   // ask again.
   await go(page, "settings/power");
-  await page.waitForSelector('.settings-panel[data-page="tv"]');
+  await page.waitForSelector('.settings-panel[data-page="power"]');
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".page.power");

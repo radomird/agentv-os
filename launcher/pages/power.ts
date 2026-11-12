@@ -1,4 +1,4 @@
-// Restart and Shut down (ADR-033), rows in Settings, This TV, each asking
+// Restart and Shut down (ADR-033), rows on Settings' Power page, each asking
 // first on a screen of its own. Restart goes right after its question. Shut down counts
 // down 10 seconds, which Cancel stops, then the screen daemon turns the box
 // off through Omarchy's own command. Only an adult gets here, never while an
@@ -25,7 +25,7 @@ export type Power = "restart" | "shutdown" | "bootmenu";
 // and the focus on it, while the box is asked again.
 let bootMenuShown = false;
 
-// This TV's rows for it in Settings: Restart, Shut down, the boot menu on a
+// The Power page's rows in Settings: Restart, Shut down, the boot menu on a
 // box that can, and sleep. While an update runs, each says why not.
 export function powerRows(ctx: Ctx): HTMLElement[] {
   const go = (route: string) => () => {
