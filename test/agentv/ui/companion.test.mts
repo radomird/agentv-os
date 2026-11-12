@@ -276,7 +276,7 @@ test("S4.5 S4.10 the TV locked: the phone says so and shows the TV's pad, and th
   await screen.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
   await hand.waitForSelector("#tv-pin", { timeout: 1500 });
   assert.equal(await hand.locator('[data-action="unlock"] svg.glyph-lock').count(), 1);
-  assert.match(await hand.locator("#tv-pin .note").innerText(), /the tv is locked\.|asks for it to open\./);
+  assert.match(await hand.locator("#tv-pin .note").innerText(), /^(This TV is locked|To open .+'s profile)$/);
   const from = remote.length;
   for (const digit of PIN) await hand.locator(`#tv-pin [data-pin="${digit}"]`).tap();
   await forward(screen, from, 4);
