@@ -15,9 +15,10 @@ function attribute(tag: string, name: string): string | null {
   return found ? (found[1] ?? found[2] ?? found[3] ?? "") : null;
 }
 
-// The icons a page names, best first: an apple-touch-icon, made for a phone's
-// home screen and so the closest to a logo, then the largest of the others.
-// Only http and https addresses, resolved against the page's own.
+// The icons a page names, best first: the largest, so a tile on a big TV is
+// sharp. An apple-touch-icon that says no size is 180 px, as phones take
+// it, and wins a tie, being made for a home screen and so the closest to a
+// logo. Only http and https addresses, resolved against the page's own.
 export function iconLinks(html: string, base: string): string[] {
   const found: { url: string; score: number }[] = [];
   for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
@@ -34,7 +35,7 @@ export function iconLinks(html: string, base: string): string[] {
     const sizes = (attribute(tag, "sizes") ?? "").toLowerCase();
     const size = sizes === "any" ? 512 : Math.max(0, ...sizes.split(/\s+/).map((s) => Number(s.split("x")[0]) || 0));
     const touch = rel.some((r) => r.startsWith("apple-touch-icon"));
-    found.push({ url: url.href, score: (touch ? 10_000 : 0) + (size || (touch ? 180 : 16)) });
+    found.push({ url: url.href, score: (size || (touch ? 180 : 16)) * 2 + (touch ? 1 : 0) });
   }
   return [...new Set(found.sort((a, b) => b.score - a.score).map((link) => link.url))];
 }
@@ -46,43 +47,85 @@ async function limited(response: Response, max: number): Promise<Buffer | null> 
   return body.length > max ? null : body;
 }
 
+// A page's first max bytes: its icons are in its head, however big the
+// rest of it is.
+async function head(response: Response, max: number): Promise<string> {
+  if (!response.body) return "";
+  const chunks: Buffer[] = [];
+  let size = 0;
+  const reader = response.body.getReader();
+  while (size < max) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(Buffer.from(value));
+    size += value.length;
+  }
+  void reader.cancel().catch(() => {});
+  return Buffer.concat(chunks).subarray(0, max).toString("utf8");
+}
+
+function failure(error: unknown): string {
+  const cause = (error as { cause?: { message?: string } })?.cause?.message;
+  return cause ?? (error as Error)?.message ?? String(error);
+}
+
 export interface SiteIconOptions {
   userAgent: string;
   fetch?: typeof fetch;
   // Which addresses an icon may come from, besides the page's own origin.
   allowed?: (url: URL) => boolean;
+  // Why each step came to nothing, for the log: the address and its HTTP
+  // status, or the error.
+  reasons?: string[];
 }
 
 // The site's icon for a home address: the best one its page names, or its
 // /favicon.ico. Null when there's none worth showing.
 export async function siteIcon(home: string, options: SiteIconOptions): Promise<{ type: string; body: Buffer } | null> {
   const get = options.fetch ?? fetch;
+  const why = (reason: string) => options.reasons?.push(reason);
   const headers = { "User-Agent": options.userAgent };
   let page: Response;
   try {
     page = await get(home, { headers: { ...headers, Accept: "text/html" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
-  } catch {
+  } catch (error) {
+    why(`${home}: ${failure(error)}`);
     return null;
   }
   const base = page.url || home;
   const origin = new URL(base).origin;
-  const html = page.ok && /html/.test(page.headers.get("content-type") ?? "") ? ((await limited(page, PAGE_MAX))?.toString("utf8") ?? "") : "";
+  const type = page.headers.get("content-type") ?? "";
+  let html = "";
+  if (!page.ok) why(`${base} answered ${page.status}`);
+  else if (!/html/.test(type)) why(`${base} is ${type || "of no type"}, not a page`);
+  else html = await head(page, PAGE_MAX).catch((error) => (why(`${base}: ${failure(error)}`), ""));
+  if (page.ok && html && !iconLinks(html, base).length) why(`${base} names no icon`);
   const candidates = [...iconLinks(html, base), `${origin}/favicon.ico`];
   for (const candidate of candidates) {
     const url = new URL(candidate);
     // From the site itself, over https, or wherever the app may reach.
-    if (url.origin !== origin && url.protocol !== "https:" && !options.allowed?.(url)) continue;
+    if (url.origin !== origin && url.protocol !== "https:" && !options.allowed?.(url)) {
+      why(`${url.href} is on another site, not over https`);
+      continue;
+    }
     try {
       const response = await get(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        why(`${url.href} answered ${response.status}`);
+        continue;
+      }
       let type = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
       // Many servers send a favicon.ico as anything at all.
       if (!TYPES.test(type) && url.pathname.endsWith(".ico")) type = "image/x-icon";
-      if (!TYPES.test(type)) continue;
+      if (!TYPES.test(type)) {
+        why(`${url.href} is ${type || "of no type"}, not an image`);
+        continue;
+      }
       const body = await limited(response, ICON_MAX);
       if (body && body.length > 0) return { type, body };
-    } catch {
-      // The next one, then.
+      why(`${url.href} is ${body ? "empty" : `over ${ICON_MAX / 1024} KB`}`);
+    } catch (error) {
+      why(`${url.href}: ${failure(error)}`);
     }
   }
   return null;
