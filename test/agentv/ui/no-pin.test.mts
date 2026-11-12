@@ -444,7 +444,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   await say("a built app's details");
   await focusOn(screen, '[data-action="remove-built"]');
   await screen.keyboard.press("Enter");
-  await toasted(screen, "blocks is gone, with every version of it");
+  await toasted(screen, "Removed Blocks");
   assert.deepEqual(drop(b, "remove"), { id: asked.id });
   await say("removing a built app");
   rmSync(join(b.apps, asked.id), { recursive: true, force: true });

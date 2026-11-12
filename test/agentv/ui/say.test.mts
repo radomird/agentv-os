@@ -135,10 +135,10 @@ test("S7.1 'play frozen' from the phone: the TV and the phone both offer the fil
   await screen.waitForFunction(() => !document.querySelector("#said.on"));
   // Asked from the phone's box, so the listening bar says what came of it,
   // in place of a toast (ADR-054).
-  await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "frozen, on sample");
-  assert.equal(await screen.locator(".toast.ok", { hasText: "frozen, on sample" }).count(), 0);
+  await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "Frozen, on Sample");
+  assert.equal(await screen.locator(".toast.ok", { hasText: "Frozen, on Sample" }).count(), 0);
   await hand.waitForSelector('[data-said="opened"]');
-  assert.equal(await hand.locator(".said-say").textContent(), "frozen, on sample");
+  assert.equal(await hand.locator(".said-say").textContent(), "Frozen, on Sample");
   await screen.close();
   await hand.close();
 });
@@ -178,8 +178,8 @@ test("a pick whose reply comes before its outcome keeps the bar on 'which one?' 
   await screen.waitForFunction(() => !document.querySelector("#said.on"));
   assert.equal(await screen.locator('#listening.on[data-state="said"] .listening-words').textContent(), "Which one?");
   await hand.click('[data-action="said-pick"][data-choice="1"]');
-  await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "frozen, on sample");
-  assert.equal(await screen.locator(".toast", { hasText: "frozen, on sample" }).count(), 0);
+  await screen.waitForFunction(() => document.querySelector("#listening.on .listening-words")?.textContent === "Frozen, on Sample");
+  assert.equal(await screen.locator(".toast", { hasText: "Frozen, on Sample" }).count(), 0);
   await screen.close();
   await hand.close();
 });
@@ -342,11 +342,11 @@ test("ADR-054 what opened is on the bar, and a box opened again while a sentence
   const hand = await phone();
   const states = await watchBar(screen);
   await ask(hand, "play the frozen film");
-  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"] .listening-words')?.textContent === "frozen, on sample");
+  await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="said"] .listening-words')?.textContent === "Frozen, on Sample");
   assert.ok((await states()).includes("thinking: play the frozen film"));
   await hand.waitForSelector('[data-said="opened"]');
-  assert.equal(await hand.locator(".said-say").textContent(), "frozen, on sample");
-  assert.equal(await screen.locator(".toast", { hasText: "frozen, on sample" }).count(), 0, "the bar, not a toast");
+  assert.equal(await hand.locator(".said-say").textContent(), "Frozen, on Sample");
+  assert.equal(await screen.locator(".toast", { hasText: "Frozen, on Sample" }).count(), 0, "the bar, not a toast");
   // The next one, begun while the last is thought about: the bar and the
   // phone's box keep its words, and what came of the last is a toast.
   await ask(hand, SLOW);
@@ -355,7 +355,7 @@ test("ADR-054 what opened is on the bar, and a box opened again while a sentence
   await hand.waitForSelector('[data-said="routing"]');
   await hand.type("#say-text", "continue my show");
   await screen.waitForFunction(() => document.querySelector('#listening.on[data-state="listening"] .listening-words')?.textContent === "continue my show");
-  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.ok")].some((t) => t.textContent === "frozen, on sample"));
+  await screen.waitForFunction(() => [...document.querySelectorAll(".toast.ok")].some((t) => t.textContent === "Frozen, on Sample"));
   await hand.waitForSelector('[data-said="opened"]');
   assert.equal(await hand.inputValue("#say-text"), "continue my show");
   assert.equal(await hand.evaluate(() => document.activeElement?.id), "say-text");
