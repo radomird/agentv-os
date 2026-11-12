@@ -746,8 +746,12 @@ export function settings(ctx: Ctx, open?: string): View {
       ctx.sounds.play("confirm");
       if (looks) looks = { ...looks, current: look.id };
     }
-    // Still on Settings, after the few seconds Omarchy takes.
-    if (menu.isConnected) ctx.render("settings/theme", `theme-${look.id}`);
+    // Still on the theme's page, or back on Appearance, after the few
+    // seconds Omarchy takes: it says the theme is on. Omarchy changing the
+    // theme draws Settings again while this waits, so it's the panel on the
+    // screen now that's drawn again, not this one, which is gone by then.
+    const now = document.querySelector<HTMLElement>(".settings-panel")?.dataset.page;
+    if (now === "theme" || now === "look") ctx.render(`settings/${now}`, ctx.focus.get()?.dataset.action ?? (now === "theme" ? `theme-${look.id}` : "theme"));
   };
   // The sizes this TV offers.
   follow(() => sizes(), loadSizes(), "look");
