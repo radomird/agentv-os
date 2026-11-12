@@ -75,3 +75,19 @@ div.metered {
 :root[data-look="cinema"] .meter > span {
   border-radius: 5px;
 }
+
+/* Updates and What's new: a version can be long, as early updates' are. A
+   row's name stays on one line, and the version ends in an ellipsis rather
+   than pushing it over. */
+.settings-panel:is([data-page="updates"], [data-page="whats-new"]) :is(.button, .panel-row) > span:first-child {
+  flex: none;
+  white-space: nowrap;
+}
+
+.settings-panel:is([data-page="updates"], [data-page="whats-new"]) .button-value {
+  min-width: 0;
+  margin-left: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

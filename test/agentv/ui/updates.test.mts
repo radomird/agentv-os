@@ -140,33 +140,57 @@ test("S2.13 two answers from before the toast was shown still show it once", asy
   }
 });
 
-test("S2.12 Settings → Updates shows both versions, the other packages, What's new, and installs", async () => {
+test("S2.12 Settings → Updates has Check now first, the version, Install now with the focus, What's new a level deeper, and installs", async () => {
   write("status.json", STATUS);
   const page = await tv();
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="tv"]').click();
-  // The row says there's one, and opens the page.
+  // The row says there's one, and OK opens the page.
   assert.match(await page.locator('.panel [data-action="updates"]').innerText(), /^updates\s+new version$/);
-  await page.locator('.panel [data-action="updates"]').click();
+  await page.locator('.panel [data-action="updates"]').hover();
+  await page.keyboard.press("Enter");
   await page.waitForSelector('.settings-panel[data-page="updates"]');
+  // Install now has the focus with no press (ADR-094).
+  await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "install");
+  // Only what a person needs: Check now first, the version, the new one,
+  // its notes and updating overnight. No Omarchy, no system updates, and
+  // no line while nothing waits.
+  const rows = await page.locator(".settings-panel [data-action], .settings-panel [data-row]").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.action ?? (el as HTMLElement).dataset.row));
+  assert.deepEqual(rows, ["check", "version", "install", "whats-new", "overnight"]);
   const panel = await page.locator(".panel").innerText();
   assert.match(panel, /updates · new version/);
-  assert.match(panel, /agentv\s+0\.2\.1\s+→\s+0\.3\.0/);
-  assert.match(panel, /omarchy\s+4\.0\.6\s+→\s+4\.5\.0/);
-  assert.match(panel, /plus 46 system updates/);
-  assert.equal(await page.locator(".panel .panel-note").count(), 1, "one line, and only one");
-  await page.locator('[data-action="whats-new"]').click();
-  await page.waitForSelector(".notes");
-  const notes = await page.locator(".page").innerText();
+  assert.match(panel, /version\s+0\.2\.1/);
+  assert.match(panel, /install now\s+0\.3\.0/);
+  assert.doesNotMatch(panel, /omarchy|system update|tonight|later/);
+  assert.equal(await page.locator(".panel .panel-note").count(), 0);
+  // What's new is a level deeper, in the panel, with the release's notes.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.settings-panel[data-page="whats-new"] .notes');
+  const notes = await page.locator(".panel").innerText();
+  assert.match(notes, /what's new/);
   assert.match(notes, /agentv 0\.3\.0 · thu 22 oct/);
-  assert.match(notes, /^[\s\S]*what's new\n/, "the headline has no full stop");
-  assert.match(notes, /\+ tiles come in small, medium and large/);
-  assert.match(notes, /omarchy 4\.5\.0[\s\S]*\+ Faster updates/);
+  assert.match(notes, /\+ tiles come in small, medium and large\n[\s\S]*\+ weather shows heavy rain and wind/);
+  assert.equal(await page.locator(".focused").getAttribute("data-action"), "install", "Install now has the focus here too");
+  // Back is Updates, on What's new.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.settings-panel[data-page="updates"]');
+  await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "whats-new");
   await page.locator('[data-action="install"]').click();
   await requested(page, "update-install");
-  await page.keyboard.press("Escape");
   await page.locator('[data-action="check"]').click();
   await requested(page, "update-check");
+  await page.close();
+});
+
+test("Settings → Updates with nothing new has Check now first, with the focus, the version and updating overnight", async () => {
+  write("status.json", { ...STATUS, agentv: { installed: "0.3.0-1", available: null }, omarchy: { installed: "4.5.0-1", available: null }, packages: 0 });
+  const page = await tv();
+  await openUpdates(page);
+  await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "check");
+  const rows = await page.locator(".settings-panel [data-action], .settings-panel [data-row]").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.action ?? (el as HTMLElement).dataset.row));
+  assert.deepEqual(rows, ["check", "version", "overnight"]);
+  assert.match(await page.locator(".panel").innerText(), /updates · up to date/);
   await page.close();
 });
 
@@ -179,7 +203,8 @@ test("S2.12 an update the nightly run hasn't passed waits: no Install now, no to
   await openUpdates(page);
   const panel = await page.locator(".panel").innerText();
   assert.match(panel, /updates · still being tested/);
-  assert.match(panel, /agentv\s+0\.2\.1\s+→\s+0\.3\.1/);
+  assert.match(panel, /version\s+0\.2\.1/);
+  assert.match(panel, /new version\s+0\.3\.1/);
   assert.match(panel, /it's still being tested/);
   assert.equal(await page.locator('[data-action="install"]').count(), 0);
   await page.locator('[data-action="whats-new"]').click();
@@ -331,15 +356,22 @@ test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it bac
   write("status.json", STATUS);
   const page = await tv();
   await openUpdates(page);
+  // Tonight and Later are a level deeper, under the notes (ADR-094).
+  assert.equal(await page.locator('.panel [data-action="tonight"], .panel [data-action="later"]').count(), 0);
+  await page.locator('.panel [data-action="whats-new"]').click();
+  await page.waitForSelector('.settings-panel[data-page="whats-new"]');
   const choices = await page.locator('.panel [data-action="install"], .panel [data-action="tonight"], .panel [data-action="later"]').allInnerTexts();
   assert.deepEqual(choices, ["install now", "tonight", "later"]);
   await page.locator('.panel [data-action="tonight"]').click();
   await page.waitForSelector(".tonight-note");
   assert.equal((await api(page, "/api/updates")).tonight.version, "0.3.0-1");
   assert.equal(await page.locator(".panel .tonight-note").innerText(), "it installs tonight between 2 and 5");
-  assert.equal(await page.locator(".panel .panel-note").count(), 1, "still one line");
   assert.equal(await page.locator('.panel [data-action="tonight"]').count(), 0, "chosen already");
   assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "later");
+  // Back on Updates, its one line says so too.
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.settings-panel[data-page="updates"] .tonight-note');
+  assert.equal(await page.locator(".panel .panel-note").count(), 1, "one line");
   // The night's update waited for a game: the page says so, until it's in.
   assert.equal(await page.locator(".held-note").count(), 0);
   const held = (on: boolean) => page.evaluate((h) => fetch("/api/updates/held", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ held: h }) }), on);
@@ -357,6 +389,7 @@ test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it bac
   assert.match(await page.locator(".bar").innerText(), /agentv 0\.3\.0 installs tonight/);
   // Later: not tonight, and home stops saying it's ready.
   await openUpdates(page);
+  await page.locator('.panel [data-action="whats-new"]').click();
   await page.locator('.panel [data-action="later"]').click();
   // Later is two requests, and the first one's news redraws Settings, so
   // the note can go before the second lands: wait for both.
@@ -365,7 +398,9 @@ test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it bac
   const after = await api(page, "/api/updates");
   assert.equal(after.tonight, null);
   assert.equal(after.seen.later, "0.3.0-1");
-  await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "tonight");
+  // Later is back on Updates, on Install now.
+  await page.waitForSelector('.settings-panel[data-page="updates"]');
+  await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "install");
   await page.keyboard.press("Home");
   await page.waitForSelector(".grid .tile");
   assert.doesNotMatch(await page.locator(".bar").innerText(), /is ready|installs tonight/);
@@ -398,6 +433,9 @@ test("S2.12 an update the nightly run hasn't passed has no Tonight or Later", as
   write("status.json", { ...STATUS, agentv: { installed: "0.2.1-1", available: "0.3.1-1" }, waiting: true });
   const page = await tv();
   await openUpdates(page);
+  assert.equal(await page.locator('.panel [data-action="tonight"], .panel [data-action="later"]').count(), 0);
+  await page.locator('.panel [data-action="whats-new"]').click();
+  await page.waitForSelector('.settings-panel[data-page="whats-new"]');
   assert.equal(await page.locator('.panel [data-action="tonight"], .panel [data-action="later"]').count(), 0);
   await page.close();
 });
