@@ -1,24 +1,20 @@
-// Settings → About → this box (ADR-061): the same lines as setup's box step,
-// above AgenTV's version and credits. On a 4K TV, "check 4k again" runs the
-// 4K test in front of everything for five seconds, as after a new GPU.
+// Settings → About → your setup (ADR-061): the same lines as setup's box
+// step, above AgenTV's version and credits. On a 4K TV, "Check 4K again" runs
+// the 4K test in front of everything for five seconds, as after a new GPU.
 
 import { box, boxStyles, checkSmooth, drawsFourK } from "../box.ts";
-import { boxLines, properUnits, type SmoothState } from "../box-lines.ts";
+import { boxLines, type SmoothState } from "../box-lines.ts";
 import { h } from "../dom.ts";
-import { lookId, named } from "../looks/looks.ts";
 import type { Ctx } from "../main.ts";
 
 async function fill(ctx: Ctx, el: HTMLElement): Promise<void> {
   if (!(await box.on())) return;
   const [report, check] = await Promise.all([box.report(), box.smooth().catch(() => null)]);
   const smooth: SmoothState = check?.passed ? "passed" : check?.result ? "failed" : "unchecked";
-  // Terminal writes it all in lower case; Glass and Cinema keep names' and
-  // units' own capitals.
-  const units = lookId() === "glass" || lookId() === "cinema" ? properUnits : (text: string) => text;
   const rows = h(
     "div",
     { class: "box-rows" },
-    ...boxLines(report, smooth, named).map((line) => h("div", { class: "box-row", "data-row": line.key }, h("span", { class: "box-label" }, line.label), h("span", { class: "box-value" }, units(line.value)))),
+    ...boxLines(report, smooth).map((line) => h("div", { class: "box-row", "data-row": line.key }, h("span", { class: "box-label" }, line.label), h("span", { class: "box-value" }, line.value))),
   );
   const again = h(
     "button",
@@ -28,21 +24,21 @@ async function fill(ctx: Ctx, el: HTMLElement): Promise<void> {
       "data-action": "box-check",
       onclick: async () => {
         if (!drawsFourK()) {
-          ctx.toast("the tv isn't showing 4k right now, so there's no 4k to check", "fail");
+          ctx.toast("Your TV isn't in 4K right now", "fail");
           return;
         }
-        const state = await checkSmooth({ host: document.body, front: "checking 4k…" });
+        const state = await checkSmooth({ host: document.body, front: "Checking 4K…" });
         if (!state) {
-          ctx.toast("the 4k test didn't finish", "fail");
+          ctx.toast("Couldn't check 4K", "fail");
           return;
         }
-        ctx.toast(state.passed ? "4k stays smooth on this box" : "4k isn't smooth here, so 1080p is the better pick", state.passed ? "ok" : undefined);
+        ctx.toast(state.passed ? "4K plays smoothly here" : "4K stutters here. 1080p looks better.", state.passed ? "ok" : undefined);
         await fill(ctx, el);
       },
     },
-    units(check?.result ? "check 4k again" : "check 4k"),
+    check?.result ? "Check 4K again" : "Check 4K",
   );
-  el.replaceChildren(h("div", { class: "panel-title" }, `this box${report.model ? ` · ${named(report.model)}` : ""}`), rows, ...(report.verdicts.fourK ? [again] : []));
+  el.replaceChildren(h("div", { class: "panel-title" }, `Your setup${report.model ? ` · ${report.model}` : ""}`), rows, ...(report.verdicts.fourK ? [again] : []));
   ctx.focus.refresh();
 }
 

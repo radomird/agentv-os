@@ -7,7 +7,6 @@
 // itself. The card is a toast to each look, so it's drawn as theirs are.
 
 import { h } from "./dom.ts";
-import { named } from "./looks/looks.ts";
 
 export interface OfflineHotspot {
   ssid: string;
@@ -17,7 +16,6 @@ export interface OfflineHotspot {
 
 let el: HTMLElement | null = null;
 let shown: OfflineHotspot | null = null;
-let watching = false;
 
 function draw(): void {
   if (!shown) {
@@ -32,8 +30,8 @@ function draw(): void {
     h(
       "div",
       { class: "offline-text" },
-      h("div", { class: "offline-title" }, named("Your TV is offline")),
-      h("div", { class: "offline-line" }, named(shown.problem ? "Couldn't join. Scan to try again." : "Scan to pick your Wi-Fi")),
+      h("div", { class: "offline-title" }, "Your TV is offline"),
+      h("div", { class: "offline-line" }, shown.problem ? "Couldn't join. Scan to try again." : "Scan to pick your Wi-Fi"),
     ),
   );
   if (el) el.replaceWith(card);
@@ -47,9 +45,4 @@ export function showOffline(hotspot: OfflineHotspot | null): void {
   if (JSON.stringify(next) === JSON.stringify(shown) && Boolean(el) === Boolean(next)) return;
   shown = next;
   draw();
-  // Another look writes the words its own way.
-  if (!watching) {
-    watching = true;
-    new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-look"] });
-  }
 }

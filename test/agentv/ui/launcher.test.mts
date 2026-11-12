@@ -117,7 +117,7 @@ test("S2.3 every tile can be reached with the keyboard alone", async () => {
 
 test("S2.7 no tile shows a tier, on home or in Apps", async () => {
   const page = await tv();
-  const tiers = /official|community|built in|made by|your agent|on this tv only/i;
+  const tiers = /official|community|built in|made by|made on this tv|from agentv|your agent/i;
   assert.doesNotMatch(await page.locator(".grid").innerText(), tiers);
   await page.keyboard.press("ArrowDown");
   await page.goto(`${url}/`);
@@ -131,9 +131,9 @@ test("S2.7 no tile shows a tier, on home or in Apps", async () => {
 test("S2.7 every app's details say who made it", async () => {
   const page = await tv();
   const makers: Record<string, RegExp> = {
-    official: /official · made by agentv/,
-    community: /community · made by someone/,
-    local: /made by your agent · on this tv only/,
+    official: /^from agentv$/,
+    community: /^from the community · someone$/,
+    local: /^made on this tv$/,
   };
   for (const fixture of FIXTURES) {
     await page.goto(`${url}/`);
@@ -251,7 +251,7 @@ test("S2.11 agentv selftest's measurement opens Settings, where arrows down its 
   );
   assert.ok(moves.length >= 1, "the list moved");
   for (let i = 1; i < moves.length; i++) assert.ok(moves[i] - moves[i - 1] >= 59, `two move sounds ${moves[i] - moves[i - 1]} ms apart`);
-  assert.notEqual(await page.evaluate(() => document.querySelector(".menu-item.focused")?.getAttribute("data-key")), "home", "the focus went down the list");
+  assert.notEqual(await page.evaluate(() => document.querySelector(".menu-item.focused")?.getAttribute("data-key")), "look", "the focus went down the list");
   await page.close();
 });
 
@@ -274,8 +274,12 @@ test("Enter on a tile asks the TV session to open its app, and Settings asks for
   const open = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.find((r) => r.cmd === "open-app"));
   assert.deepEqual({ cmd: open?.cmd, app: open?.app }, { cmd: "open-app", app: "agentv.tube" });
 
+  // Settings, This TV, Omarchy's desktop, which opens its page on Switch.
   await page.locator('.bar-link:has-text("settings")').click();
-  await page.locator('.menu-item[data-key="desktop"]').click();
+  await page.locator('.menu-item[data-key="tv"]').click();
+  await page.locator('.panel [data-action="desktop"]').click();
+  await page.waitForSelector('.settings-panel[data-page="desktop"]');
+  assert.equal(await page.locator(".focused").innerText(), "switch");
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "desktop"));
   await page.close();
@@ -423,13 +427,13 @@ test("S2.17 Settings → Look changes how long the ambient screen waits", async 
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="look"]').click();
   await page.locator('[data-action="idle"]').hover();
-  assert.equal(await page.locator('[data-action="idle"] .button-value').innerText(), "10 min");
+  assert.equal(await page.locator('[data-action="idle"]').innerText(), "screen saver\nafter 10 min");
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction(() => document.querySelector('[data-action="idle"] .button-value')?.textContent === "15 min");
+  await page.waitForFunction(() => document.querySelector('[data-action="idle"] .button-value')?.textContent === "After 15 min");
   const minutes = await page.evaluate(async () => (await (await fetch("/api/home")).json()).settings.idleMinutes);
   assert.equal(minutes, 15);
   await page.keyboard.press("ArrowLeft");
-  await page.waitForFunction(() => document.querySelector('[data-action="idle"] .button-value')?.textContent === "10 min");
+  await page.waitForFunction(() => document.querySelector('[data-action="idle"] .button-value')?.textContent === "After 10 min");
   await page.close();
 });
 
@@ -438,6 +442,7 @@ test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", as
   try {
     await page.locator('.bar-link:has-text("settings")').click();
     await page.locator('.menu-item[data-key="look"]').click();
+    await page.locator('.panel [data-action="theme"]').click();
     await page.locator('[data-action="theme-own"]').hover();
     // The list's hidden rows run on under the buttons below it. Scrolled, as
     // by a mouse's wheel, so the first of them is just below the focus.
@@ -448,15 +453,41 @@ test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", as
       if (hidden) list.scrollTop += hidden.top - (own.bottom + 8);
     });
     await page.keyboard.press("ArrowDown");
-    assert.equal(await page.locator(".focused").getAttribute("data-action"), "background", "the next row below, not a theme out of sight");
-    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.locator(".look-item.focused").count(), 0, "it's the page's last row, and the focus doesn't go to a theme out of sight");
+    assert.equal(await page.locator('.settings-panel[data-page="theme"]').count(), 1, "nor across to the list of sections, which would put the page away");
+    // Back on "Make your own theme" with the mouse: off it first, since a
+    // hover where the mouse already is moves nothing.
+    await page.mouse.move(0, 0);
+    await page.locator('[data-action="theme-own"]').hover();
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "theme-own");
     await page.keyboard.press("ArrowUp");
     const sight = await page.evaluate(() => {
       const at = document.querySelector(".look-item.focused")?.getBoundingClientRect();
       const box = document.querySelector(".look-list")!.getBoundingClientRect();
       return Boolean(at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1);
     });
-    assert.ok(sight, "up from describe your own went to a theme out of sight");
+    assert.ok(sight, "up from make your own went to a theme out of sight");
+  } finally {
+    await page.close();
+  }
+});
+
+test("Up from the bar goes back into the Settings page it left, and doesn't put the page away", async () => {
+  const page = await tv();
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="tv"]').click();
+    await page.locator('.panel [data-action="updates"]').click();
+    await page.waitForSelector('.settings-panel[data-page="updates"] [data-focus]');
+    // Down from the page's last row stays on it (ADR-094).
+    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".settings-panel [data-focus]")].at(-1)?.classList.contains("focused")), true, "down stays on the page's last row");
+    // The bar, as a pointer or the arrows from the list reach it.
+    await page.locator(".bar-link").last().hover();
+    await page.waitForFunction(() => Boolean(document.querySelector(".bar .focused")));
+    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.locator('.settings-panel[data-page="updates"]').count(), 1, "the page is still open");
+    assert.equal(await page.evaluate(() => Boolean(document.querySelector(".settings-panel .focused"))), true, "and the focus is back in it");
   } finally {
     await page.close();
   }
@@ -490,6 +521,9 @@ test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first,
   const page = await tv();
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="look"]').click();
+  // Appearance's Theme row says which one, and opens the list.
+  assert.match(await page.locator('.panel [data-action="theme"]').innerText(), /^theme\s+\S/);
+  await page.locator('.panel [data-action="theme"]').click();
   await page.waitForSelector('[data-action="theme-gruvbox"]');
   const names = await page.locator(".look-item-name").allInnerTexts();
   const shipped = readdirSync(join(ROOT, "themes"));
@@ -513,7 +547,7 @@ test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first,
   });
   assert.ok(sight.scrolled > 0 && sight.inSight, JSON.stringify(sight));
   // And last, a theme your agent makes from a few words (S6.4, ADR-048).
-  assert.equal(await page.locator('[data-action^="theme-"] span:first-child').last().innerText(), "describe your own");
+  assert.equal(await page.locator('.panel [data-action^="theme-"]').last().innerText(), "make your own theme");
   await page.locator('[data-action="theme-gruvbox"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
   await page.close();
@@ -525,7 +559,7 @@ test("S5.7 Look drawn again while it waits for the list, as for a build's news, 
   const before = (await (await fetch(`${url}/api/themes`)).json()).themes;
   const handed = (themes: unknown[]) => fetch(`${url}/api/themes`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themes }) });
   try {
-    await go("settings/look");
+    await go("settings/theme");
     await page.waitForSelector('[data-action="theme-gruvbox"]');
     await go("home");
     // A theme installed on the desktop, and the list slow to come.
@@ -535,10 +569,10 @@ test("S5.7 Look drawn again while it waits for the list, as for a build's news, 
       await new Promise((resolve) => setTimeout(resolve, 300));
       await route.continue();
     });
-    await go("settings/look");
+    await go("settings/theme");
     await page.waitForTimeout(100);
     await go("home");
-    await go("settings/look");
+    await go("settings/theme");
     await page.waitForSelector('[data-action="theme-aurora"]', { timeout: 5000 });
   } finally {
     await page.unroute("**/api/themes");
@@ -618,7 +652,9 @@ test("with the looks off, Settings → look takes the background from a phone's 
     assert.match(await page.locator('.panel [data-action="background"]').innerText(), /your photos/);
     // OK on one of the theme's own pictures: Omarchy shows it, and the
     // theme's own is the background again.
+    // The Picture row opens them, each on its own card.
     const card = `.theme-picture[data-action="theme-picture-${files[0].id}"]`;
+    await page.locator('.panel [data-action="pictures"]').click();
     await page.waitForSelector(card);
     await page.locator(card).click();
     await page.waitForFunction((id) => (window as unknown as { screenRequests: { cmd: string; background?: string }[] }).screenRequests.some((r) => r.cmd === "theme-bg-set" && r.background === id), files[0].id);
@@ -646,11 +682,11 @@ test("an app's tile that says set up opens its setup: the server's address, type
     // The field has the focus, and a url keyboard on the phone.
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.dataset.field), "serverUrl");
     assert.equal(await field.getAttribute("type"), "url");
-    assert.equal(await page.locator('[data-action="save"]').innerText(), "save, then sign in");
+    assert.equal(await page.locator('[data-action="save"]').innerText(), "save and sign in");
     // A wrong one says why, and stays.
     await page.keyboard.type("ftp://media.example");
     await page.keyboard.press("Enter");
-    await page.locator('.toast:has-text("server address is an address like")').waitFor();
+    await page.locator('.toast:has-text("Type an address like http://192.168.1.20:8096")').waitFor();
     await field.fill("");
     await field.focus();
     await page.keyboard.type("192.168.1.20:8096");

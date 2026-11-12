@@ -1,19 +1,26 @@
-// Updates on the TV (ADR-025, boards 29 to 33): Settings → Updates, What's
-// new, the notice on home, the Updating screen, and Go back when the check
+// Updates on the TV (ADR-025, boards 29 to 33): the Updates row in Settings,
+// This TV, and its page, What's new, the notice on home, the Updating screen, and Go back when the check
 // after an update finds something off. The daemon passes on what the daily
 // check found, how an install is going and what the check after it found;
 // installing runs as root in agentv-update-tv.service, and going back in
 // agentv-go-back.service, which the screen daemon starts.
 
 import { daemon, screen, type AfterCheck, type GoBack, type UpdateProgress, type Updates, type UpdateStatus } from "../api.ts";
-import { h } from "../dom.ts";
-import { named } from "../looks/looks.ts";
+import { asWritten, h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 
 // A package version as people read it: 0.3.0-1 is 0.3.0.
 export function shown(version: string | null | undefined): string {
   return (version ?? "?").replace(/-\d+$/, "");
+}
+
+// A release's number is worth showing on the Updating screen. An early
+// update's is a package version (0.2.0.r479.g7b931248a), which tells a person
+// nothing, so that screen leaves it off.
+function releaseNumber(version: string | null | undefined): string | null {
+  const v = shown(version);
+  return /^\d+(\.\d+){1,2}$/.test(v) ? v : null;
 }
 
 // The new AgenTV release the check found, if any, once it can be installed.
@@ -44,7 +51,7 @@ async function goBackNow(ctx: Ctx): Promise<void> {
   if (reply.pin) ctx.forgetGrant();
   if (!reply.ok) {
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? "couldn't go back", "fail");
+    ctx.toast(reply.error ?? "Couldn't go back", "fail");
   } else ctx.sounds.play("confirm");
 }
 
@@ -98,12 +105,12 @@ async function chooseTonight(ctx: Ctx, route: string): Promise<void> {
   }
   ctx.updates.tonight = { version, at: new Date().toISOString() };
   ctx.sounds.play("confirm");
-  ctx.toast("it installs tonight, between 2 and 5", "ok");
+  ctx.toast("It installs tonight between 2 and 5", "ok");
   ctx.render(route, "later");
 }
 
 // Not now: Tonight is off again, home stops saying it's ready, and it waits
-// in Settings → Updates.
+// in Settings.
 async function chooseLater(ctx: Ctx, leave: boolean): Promise<void> {
   const version = what(ctx.updates.status);
   try {
@@ -116,7 +123,7 @@ async function chooseLater(ctx: Ctx, leave: boolean): Promise<void> {
   }
   ctx.updates.tonight = null;
   ctx.updates.seen = { kept: null, wentBack: null, ...ctx.updates.seen, later: version };
-  ctx.toast("later, then. it's here in settings → updates.", "ok");
+  ctx.toast("OK. It's here when you're ready.", "ok");
   if (leave) ctx.back();
   else {
     ctx.sounds.play("confirm");
@@ -124,36 +131,35 @@ async function chooseLater(ctx: Ctx, leave: boolean): Promise<void> {
   }
 }
 
-// Install now, Tonight and Later, for Settings → Updates and What's new.
+// Install now, Tonight and Later, for the Updates page and What's new.
 function choices(ctx: Ctx, route: string): HTMLElement[] {
   if (!ready(ctx.updates.status)) return [];
   const on = tonight(ctx.updates);
   const parts: (HTMLElement | null)[] = [
-    h("button", { class: "button primary", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "↵ install now"),
-    on ? null : h("button", { class: "button", "data-focus": true, "data-action": "tonight", onclick: () => void chooseTonight(ctx, route) }, "tonight"),
-    h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void chooseLater(ctx, route === "whats-new") }, "later"),
+    h("button", { class: "button primary", "data-focus": true, "data-action": "install", onclick: () => void install(ctx) }, "Install now"),
+    on ? null : h("button", { class: "button", "data-focus": true, "data-action": "tonight", onclick: () => void chooseTonight(ctx, route) }, "Tonight"),
+    h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void chooseLater(ctx, route === "whats-new") }, "Later"),
   ];
   return parts.filter((part): part is HTMLElement => part !== null);
 }
 
 // The night's update waited because a game was being played. It installs
 // the night after, whatever is open.
-function heldNote(ctx: Ctx): HTMLElement | null {
-  if (!ctx.updates.held || !ready(ctx.updates.status) || !(tonight(ctx.updates) || ctx.state.settings.updateOvernight)) return null;
-  return h("div", { class: "panel-note held-note" }, named("Waited for your game. Updates tonight."));
+function held(ctx: Ctx): boolean {
+  return Boolean(ctx.updates.held && ready(ctx.updates.status) && (tonight(ctx.updates) || ctx.state.settings.updateOvernight));
 }
 
 function tonightNote(ctx: Ctx): HTMLElement | null {
   if (!tonight(ctx.updates)) return null;
-  return h("div", { class: "panel-note tonight-note" }, "it installs tonight, between 2 and 5, once nothing has played for half an hour. later takes that back.");
+  return h("div", { class: "panel-note tonight-note" }, "It installs tonight between 2 and 5");
 }
 
 function when(iso: string | null | undefined): string {
-  if (!iso) return "never";
+  if (!iso) return "Never";
   const at = new Date(iso);
   const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const today = new Date().toDateString() === at.toDateString();
-  return today ? `today ${time}` : `${at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toLowerCase()} ${time}`;
+  return today ? `Today ${time}` : `${at.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })} ${time}`;
 }
 
 async function install(ctx: Ctx): Promise<void> {
@@ -163,7 +169,7 @@ async function install(ctx: Ctx): Promise<void> {
   if (reply.pin) ctx.forgetGrant();
   if (!reply.ok) {
     ctx.sounds.play("failure");
-    ctx.toast(reply.error ?? "the update didn't start", "fail");
+    ctx.toast(reply.error ?? "Couldn't start the update", "fail");
   } else ctx.sounds.play("confirm");
 }
 
@@ -174,67 +180,65 @@ function row(name: string, now: string | null, next: string | null): HTMLElement
     h("span", { class: "update-name" }, name),
     h("span", {}, shown(now)),
     next ? h("span", { class: "update-arrow" }, "→") : null,
-    next ? h("span", { class: "update-next" }, shown(next)) : h("span", { class: "update-same" }, "up to date"),
+    next ? h("span", { class: "update-next" }, shown(next)) : h("span", { class: "update-same" }, "Up to date"),
   );
 }
 
-// The Updates panel in Settings.
+// The value of This TV's "Updates" row, and what the page's title says.
+export function updatesValue(ctx: Ctx): string {
+  const status = ctx.updates.status;
+  if (!status) return "Not checked yet";
+  if (!status.ok) return "Couldn't check";
+  if (status.waiting && pending(status)) return "Still being tested";
+  if (status.agentv.available) return "New version";
+  return pending(status) ? "Ready" : "Up to date";
+}
+
+// The page's one line: what happens next, or how updates reach this TV.
+function line(ctx: Ctx, status: UpdateStatus): string {
+  if (held(ctx)) return "Waited for your game. Updates tonight.";
+  if (tonight(ctx.updates)) return "It installs tonight between 2 and 5";
+  if (status.waiting && pending(status)) return "It's still being tested";
+  if (!status.ok) return `Last check failed, ${when(status.checked_at)}`;
+  if (status.packages > 0) return `Plus ${status.packages} system update${status.packages === 1 ? "" : "s"}`;
+  return status.channel === "edge" ? "Early updates: less tested" : "Tested before it reaches you";
+}
+
+// The Updates row's page in Settings.
 export function updatesPanel(ctx: Ctx): HTMLElement[] {
   const status = ctx.updates.status;
+  const checkNow = (last: string) => h("button", { class: "button", "data-focus": true, "data-action": "check", onclick: () => void check(ctx) }, h("span", {}, "Check now"), h("span", { class: "button-value" }, last));
   if (!status) {
-    return [
-      h("div", { class: "panel-title" }, "updates"),
-      h("div", { class: "panel-big" }, `agentv ${ctx.state.version}`),
-      h("div", { class: "panel-note" }, "the box hasn't checked for updates yet. it does a few minutes after it starts, then once a day."),
-      h("button", { class: "button", "data-focus": true, "data-action": "check", onclick: () => void check(ctx) }, "check now"),
-    ];
+    return [h("div", { class: "panel-title" }, "Updates"), h("div", { class: "panel-big" }, `AgenTV ${ctx.state.version}`), h("div", { class: "panel-note" }, "Not checked yet"), checkNow("")];
   }
-  const title = !status.ok
-    ? "updates · couldn't check"
-    : status.waiting && pending(status)
-      ? "updates · waiting for tonight's tests"
-      : status.agentv.available
-        ? "updates · a new release is out"
-        : pending(status)
-          ? "updates · ready"
-          : "updates · up to date";
-  const tested = status.channel === "edge" ? "on edge: every green build" : "tested by agentv's nightly run";
+  const value = updatesValue(ctx);
+  const title = `Updates · ${value.charAt(0).toLowerCase()}${value.slice(1)}`;
   const go = goBack(ctx.updates);
   const parts: (HTMLElement | null)[] = [
     h("div", { class: `panel-title${status.security ? " security" : ""}` }, status.security ? `${title} · security` : title),
     h(
       "div",
       { class: "update-rows" },
-      row("agentv", status.agentv.installed, status.agentv.available),
-      row("omarchy", status.omarchy.installed, status.omarchy.available),
+      row("AgenTV", status.agentv.installed, status.agentv.available),
+      row("Omarchy", status.omarchy.installed, status.omarchy.available),
     ),
-    h("div", { class: "panel-note" }, status.packages > 0 ? `plus ${status.packages} system package${status.packages === 1 ? "" : "s"} · ${tested}` : tested),
+    h("div", { class: `panel-note${held(ctx) ? " held-note" : tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, line(ctx, status)),
     h(
       "div",
       { class: "update-choices" },
       ...choices(ctx, "settings/updates"),
       status.notes.agentv.length || status.notes.omarchy.length
-        ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "what's new ›")
+        ? h("button", { class: "button", "data-focus": true, "data-action": "whats-new", onclick: () => ctx.go("whats-new") }, "What's new")
         : null,
     ),
-    heldNote(ctx),
-    tonightNote(ctx),
-    status.waiting && pending(status)
-      ? h("div", { class: "panel-note" }, "it waits until agentv's nightly run has tested it. the box looks again tomorrow.")
-      : null,
-    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `go back to ${shown(go.from.agentv)}`) : null,
-    go ? h("div", { class: "panel-note" }, "kept until the next update.") : null,
+    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go.from.agentv)}`) : null,
     h(
       "button",
       { class: "button wide", "data-focus": true, "data-action": "overnight", onclick: () => void overnight(ctx) },
-      h("span", {}, "update overnight on its own"),
-      h("span", { class: "button-value" }, ctx.state.settings.updateOvernight ? "[x]" : "[ ]"),
+      h("span", {}, "Update overnight"),
+      h("span", { class: "button-value" }, ctx.state.settings.updateOvernight ? "On" : "Off"),
     ),
-    ctx.state.settings.updateOvernight
-      ? h("div", { class: "panel-note" }, "tested updates install between 2 and 5, once nothing has played for half an hour.")
-      : null,
-    h("div", { class: "panel-note" }, `last checked ${when(status.checked_at)}${status.ok ? "" : ", and it couldn't look"}.`),
-    h("button", { class: "button", "data-focus": true, "data-action": "check", onclick: () => void check(ctx) }, "check now"),
+    checkNow(status.ok ? when(status.checked_at) : ""),
   ];
   return parts.filter((part): part is HTMLElement => part !== null);
 }
@@ -242,8 +246,9 @@ export function updatesPanel(ctx: Ctx): HTMLElement[] {
 async function overnight(ctx: Ctx): Promise<void> {
   const grant = await ctx.grant("updating overnight");
   if (grant === null) return;
+  const on = !ctx.state.settings.updateOvernight;
   try {
-    await ctx.saveSettings({ updateOvernight: !ctx.state.settings.updateOvernight }, grant);
+    await ctx.saveSettings({ updateOvernight: on }, grant);
   } catch (error) {
     ctx.forgetGrant();
     ctx.sounds.play("failure");
@@ -251,20 +256,22 @@ async function overnight(ctx: Ctx): Promise<void> {
     return;
   }
   ctx.sounds.play("confirm");
+  // The one line about it, said as it's turned on.
+  if (on) ctx.toast("Between 2 and 5, when nothing's playing", "ok");
   ctx.render("settings/updates", "overnight");
 }
 
 async function check(ctx: Ctx): Promise<void> {
   const reply = await screen.checkUpdates();
-  if (reply.ok) ctx.toast("checking for updates", "ok");
-  else ctx.toast(reply.error ?? "couldn't check for updates", "fail");
+  if (reply.ok) ctx.toast("Checking for updates…", "ok");
+  else ctx.toast(reply.error ?? "Couldn't check for updates", "fail");
 }
 
 // What's new (board 30).
 export function whatsNew(ctx: Ctx): View {
   const status = ctx.updates.status;
   const date = status?.notes.agentv_date
-    ? ` · ${new Date(status.notes.agentv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).toLowerCase()}`
+    ? ` · ${new Date(status.notes.agentv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`
     : "";
   const lines = (items: string[]) => h("ul", { class: "notes" }, ...items.map((item) => h("li", {}, h("b", {}, "+ "), item)));
   const el = h(
@@ -273,18 +280,18 @@ export function whatsNew(ctx: Ctx): View {
     h(
       "div",
       { class: "page" },
-      ...heading("tv updates whats-new", "what's new."),
-      status?.agentv.available ? h("div", { class: "section" }, `agentv ${shown(status.agentv.available)}${date}`) : null,
-      status?.agentv.available ? (status.notes.agentv.length ? lines(status.notes.agentv) : h("div", { class: "empty" }, "no notes for this one.")) : null,
-      status?.omarchy.available ? h("div", { class: "section" }, `omarchy ${shown(status.omarchy.available)}`) : null,
+      ...heading("tv updates whats-new", "What's new"),
+      status?.agentv.available ? h("div", { class: "section" }, `AgenTV ${shown(status.agentv.available)}${date}`) : null,
+      status?.agentv.available ? (status.notes.agentv.length ? lines(status.notes.agentv) : h("div", { class: "empty" }, "No notes for this one")) : null,
+      status?.omarchy.available ? h("div", { class: "section" }, `Omarchy ${shown(status.omarchy.available)}`) : null,
       status?.omarchy.available
         ? status.notes.omarchy.length
           ? lines(status.notes.omarchy)
-          : h("div", { class: "empty" }, "omarchy's own notes are on github.com/omacom/omarchy/releases.")
+          : h("div", { class: "empty" }, "Omarchy's notes are at ", asWritten("github.com/omacom/omarchy/releases"))
         : null,
       ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "whats-new"), tonightNote(ctx)) : null,
     ),
-    bar(ctx, "settings", "↵ select · esc back"),
+    bar(ctx, "settings"),
   );
   return { el, first: el.querySelector<HTMLElement>(".page [data-focus]") ?? undefined };
 }
@@ -308,8 +315,8 @@ export function checkView(ctx: Ctx): View {
     h(
       "div",
       { class: "page" },
-      ...heading("tv updates check", "something's off."),
-      h("div", { class: "panel-note check-summary" }, `the update finished, but ${wrong.join(" and ") || "something isn't right"}. go back to ${shown(go?.from.agentv)}?`),
+      ...heading("tv updates check", "Something's off"),
+      h("div", { class: "panel-note check-summary" }, `The update finished, but ${wrong.join(" and ") || "something isn't right"}. Go back to ${shown(go?.from.agentv)}?`),
       h(
         "div",
         { class: "check-rows" },
@@ -320,20 +327,20 @@ export function checkView(ctx: Ctx): View {
       h(
         "div",
         { class: "check-actions" },
-        h("button", { class: "button primary", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `↵ go back to ${shown(go?.from.agentv)}`),
-        h("button", { class: "button", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, `keep ${shown(after?.agentv)}`),
+        h("button", { class: "button primary", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go?.from.agentv)}`),
+        h("button", { class: "button", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, `Keep ${shown(after?.agentv)}`),
       ),
     ),
-    bar(ctx, "updates", "↵ select"),
+    bar(ctx, "updates"),
   );
   return { el, first: el.querySelector<HTMLElement>('[data-action="go-back"]') ?? undefined };
 }
 
 const STEPS: { step: UpdateProgress["step"]; label: (p: UpdateProgress) => string }[] = [
-  { step: "snapshot", label: (p) => `snapshot of ${shown(p.from.agentv)} saved` },
-  { step: "packages", label: (p) => (p.step === "packages" && p.detail ? `installing packages · ${p.detail}` : "installing packages") },
-  { step: "migrations", label: () => "agentv migrations" },
-  { step: "restart", label: () => "restart and check" },
+  { step: "snapshot", label: (p) => `Backup of ${shown(p.from.agentv)} saved` },
+  { step: "packages", label: () => "Installing" },
+  { step: "migrations", label: () => "Finishing up" },
+  { step: "restart", label: () => "Restart and check" },
 ];
 
 // The Updating screen (board 32), drawn into el. Going back after an update
@@ -347,15 +354,19 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
   );
   const title = back
     ? failed
-      ? `couldn't go back: ${progress.detail}.`
-      : `going back to agentv ${shown(progress.to.agentv)}`
+      ? "Couldn't go back"
+      : releaseNumber(progress.to.agentv)
+        ? `Going back to AgenTV ${releaseNumber(progress.to.agentv)}`
+        : "Going back"
     : failed
       ? progress.detail === "not tested yet"
-        ? "not tested yet. nothing changed."
+        ? "Not tested yet. Nothing changed."
         : progress.detail === "nothing changed"
-          ? "couldn't update. nothing changed."
-          : "the update stopped."
-      : `updating to agentv ${shown(progress.to.agentv || progress.from.agentv)}`;
+          ? "Couldn't update. Nothing changed."
+          : "The update stopped"
+      : releaseNumber(progress.to.agentv || progress.from.agentv)
+        ? `Updating to AgenTV ${releaseNumber(progress.to.agentv || progress.from.agentv)}`
+        : "Updating AgenTV";
   const fill = h("div", { class: "updating-fill" });
   fill.style.transform = `scaleX(${Math.max(0.02, Math.min(1, progress.percent / 100))})`;
   el.replaceChildren(
@@ -369,17 +380,17 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
         { class: "updating-note" },
         back
           ? failed
-            ? "nothing changed. any key for home."
-            : "restarting. back in a moment. leave the box on."
+            ? "Nothing changed. Press OK."
+            : "Restarting. Back in a moment."
           : failed
             ? progress.detail === "not tested yet"
-              ? "agentv's nightly run hasn't passed it yet. any key to go back."
+              ? "Still being tested. Press OK."
               : progress.detail === "nothing changed"
-                ? "any key to go back. you can try again from settings → updates."
-                : "agentv update on the box says more. any key to go back."
+                ? "Press OK. You can try again in Settings."
+                : "Press OK to go back"
             : progress.state === "restarting"
-              ? "restarting. back in a moment."
-              : "back in a few minutes. leave the box on.",
+              ? "Restarting. Back in a moment."
+              : "Back in a few minutes",
       ),
       failed || back
         ? null

@@ -1,16 +1,17 @@
-// Settings → new this week (stage 8, S8.1): the household's TMDB key, the
-// region, and which of TMDB's services each streaming app here is. The key
-// is typed or pasted on the TV with the phone's keyboard, handed to root
-// and never shown again, as the provider's is. The region is the box's
-// country, which setup confirmed and Settings → country changes (ADR-055).
-// What's new comes from TMDB, and where a title is on from JustWatch,
-// through TMDB, which the panel and Settings → About credit.
+// New this week in Settings (stage 8, S8.1): a row in Home and apps, and
+// its page, with the household's TMDB key, the location, and which of
+// TMDB's services each streaming app here is. The key is typed or pasted on
+// the TV with the phone's keyboard, handed to root and never shown again, as
+// the AI's is. The location is the TV's own, which setup confirmed and
+// Settings, This TV changes (ADR-055). What's new comes from TMDB, and where
+// a title is on from JustWatch, through TMDB, which Settings, About credits.
 
 import { daemon, type Country, type NewsState } from "../api.ts";
 import { h } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { pinAsked } from "./pin.ts";
 
 // Kept between visits so Settings draws at once, and asked for again each
 // time it opens.
@@ -23,38 +24,28 @@ export async function loadNews(): Promise<void> {
 }
 
 function regionName(code: string | null): string {
-  if (!code) return "no country yet";
-  return (countries.find((c) => c.code === code)?.name ?? code).toLowerCase();
+  if (!code) return "No location yet";
+  return countries.find((c) => c.code === code)?.name ?? code;
 }
 
+// The value of Home and apps' "New this week" row.
 export function newsValue(): string {
   if (!newsState) return "";
-  return newsState.key.set ? regionName(newsState.region) : "no key";
+  return newsState.key.set ? "On" : "Not set up";
 }
 
-// What each streaming app is on TMDB: "kino: kino, kino kids".
-function serviceLine(service: NewsState["services"] extends (infer S)[] | undefined ? S : never): string {
-  const names = service.providers.map((p) => p.name.toLowerCase());
-  return `${service.name.toLowerCase()}: ${names.length ? names.join(", ") : "nothing on tmdb by that name"}`;
-}
-
+// The row's page. Each streaming app is a row of its own: its name, then
+// what it's called on TMDB.
 export function newsPanel(ctx: Ctx): HTMLElement[] {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
   if (!newsState) return [h("div", { class: "panel-big" }, loadingMark())];
   const state = newsState;
   const button = (action: string, label: string, onclick: () => void, primary = false) => h("button", { class: `button${primary ? " primary" : ""}`, "data-focus": true, "data-action": action, onclick }, label);
-  const credit = note("what's new comes from tmdb, and where to watch from justwatch.");
   if (!state.key.set) {
-    return [
-      h("div", { class: "panel-title" }, "what came out this week"),
-      h("div", { class: "panel-big" }, "no key yet"),
-      note("new this week asks tmdb, with a key from your own tmdb account: themoviedb.org → settings → api, on your phone."),
-      button("tmdb-key", "add a tmdb key →", () => ctx.go("tmdb-key"), true),
-      credit,
-    ];
+    return [note("It needs a TMDB key from your own account at themoviedb.org"), button("tmdb-key", "Add a TMDB key", () => ctx.go("tmdb-key"), true)];
   }
   const removeKey = async () => {
-    const grant = await ctx.grant("the tmdb key");
+    const grant = await ctx.grant("the TMDB key");
     if (grant === null) return;
     try {
       newsState = await daemon.removeTmdbKey(grant || undefined);
@@ -64,20 +55,18 @@ export function newsPanel(ctx: Ctx): HTMLElement[] {
       return;
     }
     ctx.sounds.play("confirm");
-    ctx.toast("the tmdb key is off", "ok");
+    ctx.toast("TMDB key removed", "ok");
     ctx.render("settings/tmdb", "tmdb-key");
   };
+  const line = state.error ? "Couldn't reach TMDB" : state.services && !state.services.length ? "Add a streaming app first" : null;
   return [
-    h("div", { class: "panel-title" }, "what came out this week in"),
-    h("div", { class: "panel-big" }, regionName(state.region)),
-    button("country", "another country →", () => ctx.go("country")),
-    ...(state.services ?? []).map((service) => note(serviceLine(service))),
-    ...(state.services && !state.services.length ? [note("there's no streaming app on this tv yet.")] : []),
-    ...(state.error ? [note(`tmdb didn't answer: ${state.error}`)] : []),
-    button("tmdb-key", "replace the key →", () => ctx.go("tmdb-key")),
-    button("remove-tmdb-key", "take the key off", () => void removeKey()),
-    note("the country is the tv's own, so the time follows it too. the key is only the system's, and it's never shown again."),
-    credit,
+    h("button", { class: "button", "data-focus": true, "data-action": "country", onclick: () => ctx.go("country") }, h("span", {}, "Change location"), h("span", { class: "button-value" }, regionName(state.region))),
+    ...(state.services ?? []).map((service) =>
+      h("div", { class: "panel-row", "data-row": "service" }, h("span", {}, service.name), h("span", { class: "button-value" }, service.providers.map((p) => p.name).join(", ") || "Not on TMDB")),
+    ),
+    ...(line ? [note(line)] : []),
+    button("tmdb-key", "Replace key", () => ctx.go("tmdb-key")),
+    button("remove-tmdb-key", "Remove key", () => void removeKey()),
   ];
 }
 
@@ -89,30 +78,30 @@ export function tmdbKeyPage(ctx: Ctx): View {
     "data-focus": true,
     "data-action": "tmdb-key-field",
     type: "password",
-    placeholder: "paste the key",
-    "aria-label": "the tmdb key",
+    placeholder: "Paste the key",
+    "aria-label": "The TMDB key",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
   const save = async () => {
     const key = field.value.trim();
     if (!key) {
-      ctx.toast("paste the key first", "fail");
+      ctx.toast("Paste the key first", "fail");
       return;
     }
-    const grant = await ctx.grant("the tmdb key");
+    const grant = await ctx.grant("the TMDB key");
     if (grant === null) return;
     try {
       newsState = await daemon.saveTmdbKey(key, grant || undefined);
     } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      if (pinAsked(error)) ctx.forgetGrant();
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
       return;
     }
     field.value = "";
     ctx.sounds.play("confirm");
-    ctx.toast("the tmdb key is kept", "ok");
+    ctx.toast("TMDB key saved", "ok");
     ctx.back();
   };
   const el = h(
@@ -121,16 +110,16 @@ export function tmdbKeyPage(ctx: Ctx): View {
     h(
       "div",
       { class: "page profile" },
-      ...heading("tv settings · new this week", "add a tmdb key"),
+      ...heading("tv settings · new this week", "Add a TMDB key"),
       h(
         "div",
         { class: "profile-form" },
         field,
-        h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "save")),
+        h("div", { class: "check-actions" }, h("button", { class: "button primary", "data-focus": true, "data-action": "save", onclick: () => void save() }, "Save")),
       ),
-      h("p", { class: "panel-note" }, "the api key or the read access token, from themoviedb.org → settings → api. only the system can read it, and it's never shown again."),
+      h("p", { class: "panel-note" }, "The API key or read access token from themoviedb.org"),
     ),
-    bar(ctx, "settings", "↵ select · esc back"),
+    bar(ctx, "settings"),
   );
   return { el, first: field, act: () => false };
 }

@@ -214,7 +214,7 @@ test("S2.5 the size bar shows the app's own words for each size, and its corner 
   const page = await editing();
   await tile(page, "local.mytv").click();
   await page.waitForSelector(".sizebar.on");
-  assert.deepEqual(await page.locator(".sizebar .chip[data-size]").allTextContents(), ["s · logo", "m · continue"]);
+  assert.deepEqual(await page.locator(".sizebar .chip[data-size]").allTextContents(), ["S · logo", "M · continue"]);
   await page.locator('.sizebar .chip[data-size="m"]').click();
   await page.waitForTimeout(200);
   assert.equal((await layout())["local.mytv"], "m@2,0");
@@ -268,7 +268,7 @@ test("S2.6 a size with no room can't be picked", async () => {
   await tile(page, "local.mytv").click();
   await page.waitForSelector(".sizebar.on");
   const medium = page.locator('.sizebar .chip[data-size="m"]');
-  assert.equal(await medium.textContent(), "m · continue · no room");
+  assert.equal(await medium.textContent(), "M · continue · no room");
   assert.ok(await medium.isDisabled());
   await page.keyboard.press("+");
   await page.waitForTimeout(150);

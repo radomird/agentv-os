@@ -106,7 +106,7 @@ export interface SayOptions {
   ask: (ask: SayAsk, ms: number) => Promise<SayAnswer>;
   changed: (said: Said | null) => void; // null: put away
   // What came of a sentence, said aloud over HDMI (stage 8, Q146): the
-  // outcome's own line, "i didn't get that" too.
+  // outcome's own line, "Didn't get that" too.
   speak?: (text: string) => void;
   // The listening bar (ADR-054): whether one was up for this sentence,
   // which what came of it then takes over, whether a new box has it now,
@@ -143,7 +143,7 @@ export class Say {
 
   private async search(query: string, apps: string[], viewer: Viewer): Promise<Found[]> {
     const answer = await this.o.ask({ kind: "search", query, apps, viewer }, SEARCH_MS);
-    if (!answer.ok) return apps.map((app) => ({ app, items: [], error: answer.error ?? "the tv didn't look" }));
+    if (!answer.ok) return apps.map((app) => ({ app, items: [], error: answer.error ?? "Couldn't search" }));
     return answer.found ?? [];
   }
 
@@ -170,7 +170,7 @@ export class Say {
     const routed = await this.o.route(said.sentence, heard);
     this.o.log?.(`heard from ${from}: ${routed.route.intent}${routed.none ? ` (${routed.none})` : ""}, routed by ${routed.provider} in ${routed.ms} ms`);
     said.route = routed.route;
-    said.outcome = await execute(routed, this.context(viewer, apps, await this.o.builds?.(viewer)));
+    said.outcome = this.plain(await execute(routed, this.context(viewer, apps, await this.o.builds?.(viewer))));
     said.state = "done";
     said.at = this.now();
     this.show(said);
@@ -186,12 +186,22 @@ export class Say {
     const said: Said = { n: this.next++, sentence: cleanSentence(words), from, viewer: viewer.id, state: "routing", route, at: this.now() };
     this.current = said;
     this.show(said);
-    said.outcome = await run(route, this.context(viewer, await this.o.apps(viewer)));
+    said.outcome = this.plain(await run(route, this.context(viewer, await this.o.apps(viewer))));
     said.state = "done";
     said.at = this.now();
     this.show(said);
     this.tell(said);
     return said;
+  }
+
+  // What came of it, as a screen gets it: the one line, and never the raw
+  // reason behind it, which goes in the log. A reason is an app's or the
+  // AI's own error. It never holds what was said.
+  private plain(outcome: Outcome): Outcome {
+    if (outcome.kind !== "none" || outcome.detail === undefined) return outcome;
+    const { detail, ...shown } = outcome;
+    this.o.log?.(`nothing came of it (${outcome.why}): ${detail}`);
+    return shown;
   }
 
   // What the executors may do for who's watching.
@@ -227,7 +237,7 @@ export class Say {
     const outcome = said.outcome;
     if (!outcome || this.current?.n !== said.n) return;
     this.o.speak?.(outcome.say);
-    const text = outcome.kind === "choose" ? `${outcome.say}${outcome.say.endsWith("?") ? " " : ". "}your phone has them` : outcome.say;
+    const text = outcome.kind === "choose" ? `${outcome.say}${outcome.say.endsWith("?") ? " " : ". "}Pick on your phone.` : outcome.say;
     if (this.barred.delete(said.n) && !this.o.bar?.listening()) {
       this.o.bar?.show("said", text);
       return;
@@ -239,28 +249,30 @@ export class Say {
   // One of the things to choose from, picked on the TV or a phone.
   async pick(n: unknown, choice: unknown): Promise<{ said?: Said; error?: string }> {
     const said = this.current;
-    if (!said || said.n !== n || said.outcome?.kind !== "choose") return { error: "there's nothing to choose from now" };
+    if (!said || said.n !== n || said.outcome?.kind !== "choose") return { error: "There's nothing to choose from now" };
     const candidate = Number.isInteger(choice) ? said.outcome.candidates[choice as number] : undefined;
-    if (!candidate) return { error: "that isn't one of them" };
+    if (!candidate) return { error: "That's not one of them" };
     const viewer = await this.o.viewer();
     const apps = await this.o.apps(viewer);
     const app = apps.find((a) => a.id === candidate.app);
-    if (!app || viewer.id !== said.viewer) return { error: "someone else is watching now" };
+    if (!app || viewer.id !== said.viewer) return { error: "Someone else is watching now" };
     // A title from what's new is TMDB's, not the app's: it's looked up in
     // its app and played, as "play it on that app" would.
     if (fromWhatsNew(candidate.item)) {
       const item = candidate.item;
       const route: Route = { ...NONE, intent: "play", query: item.title, kind: item.kind === "film" ? "film" : "series", app: app.id, season: item.season ?? null };
-      said.outcome = await run(route, this.context(viewer, apps));
+      said.outcome = this.plain(await run(route, this.context(viewer, apps)));
       said.at = this.now();
       this.show(said);
       this.o.speak?.(said.outcome.say);
       return { said };
     }
     const opened = await this.open(app.id, candidate.item);
-    said.outcome = opened.ok
-      ? { kind: "opened", app: app.id, item: candidate.item, say: `${candidate.item.title.toLowerCase()}, on ${app.name.toLowerCase()}` }
-      : { kind: "none", why: "not-opened", say: `${app.name.toLowerCase()} didn't open ${candidate.item.title.toLowerCase()}`, ...(opened.error ? { detail: opened.error } : {}) };
+    said.outcome = this.plain(
+      opened.ok
+        ? { kind: "opened", app: app.id, item: candidate.item, say: `${candidate.item.title}, on ${app.name}` }
+        : { kind: "none", why: "not-opened", say: `Couldn't open ${candidate.item.title}`, ...(opened.error ? { detail: opened.error } : {}) },
+    );
     said.at = this.now();
     this.show(said);
     this.o.speak?.(said.outcome.say);

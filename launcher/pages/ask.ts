@@ -1,8 +1,9 @@
 // The TV's Ask (ADR-068, D5): one box for everything you'd say to the TV.
 // You type in it here, on a keyboard on the box, or on your phone, whose
-// keyboard comes up by itself while the box has focus. "continue" and
-// "what's new" do what they always did, and "make me a game like tetris"
-// or "change blocks: make the pieces fall faster" ask your agent to build.
+// keyboard comes up by itself while the box has focus. "continue my show"
+// and "what's new this week?" do what they always did, and "make me a
+// puzzle game" or "change blocks: make the pieces fall faster" ask your
+// agent to build.
 //
 // What comes of a sentence shows under the box. A make opens its build's
 // page, which shows what your agent understood for you to confirm, and a
@@ -57,18 +58,60 @@ export function askShowing(): boolean {
 // line says it's thinking, then what came of it.
 export function askHeard(said: Said): void {
   if (!askShowing() || !heardLine) return;
-  heardLine.textContent = said.state === "routing" ? "thinking" : line(said.outcome);
+  heardLine.textContent = said.state === "routing" ? THINKING : (said.outcome?.say ?? "");
   // Why nothing happened stands out: a child's "ask a grown-up", or where
   // to set up an AI.
   heardLine.classList.toggle("ask-no", said.state === "done" && said.outcome?.kind === "none");
 }
 
-// Examples of what to make, for Apps with nothing your agent made yet, and
-// the box's own suggestions.
-export const EXAMPLES = ["make a game like tetris", "make a slideshow of the photos on my nas", "make a better weather app"];
+const THINKING = "Thinking…";
+
+// Whole things to say that make an app: the box's suggestions when "Build
+// your own" opened it, and Apps' examples.
+export const EXAMPLES = ["Make a puzzle game", "Make a quiz night", "Make a photo slideshow"];
+
+// The field's own example, in grey, of what to ask. It takes the place of a
+// line of instructions: the phone is what types (design page D11).
+const EXAMPLE = { adult: "make me a puzzle game", child: "continue my show" };
+
+// The rest of the example, in grey after what's typed, while what's typed
+// is the start of it: "make " from "Build your own" shows "me a puzzle
+// game". With nothing typed, the field's own placeholder is the example.
+function exampleAfter(field: HTMLInputElement, example: string): { box: HTMLElement; sync: () => void } {
+  const typed = h("span", {});
+  typed.style.visibility = "hidden";
+  const rest = h("span", {});
+  rest.style.opacity = "0.5";
+  // What's typed keeps its capitals, so the grey words start where it ends.
+  const ghost = h("span", { class: "ask-example", "aria-hidden": "true", "data-own-case": true }, typed, rest);
+  ghost.style.cssText = "position:absolute;display:none;align-items:center;white-space:pre;overflow:hidden;pointer-events:none";
+  const box = h("div", { class: "ask-box" }, field, ghost);
+  box.style.position = "relative";
+  const sync = () => {
+    const value = field.value;
+    const shows = value !== "" && value.length < example.length && example.toLowerCase().startsWith(value.toLowerCase());
+    ghost.style.display = shows && field.isConnected ? "flex" : "none";
+    if (!shows || !field.isConnected) return;
+    const style = getComputedStyle(field);
+    ghost.style.font = style.font;
+    ghost.style.letterSpacing = style.letterSpacing;
+    ghost.style.color = style.color;
+    ghost.style.left = `${field.offsetLeft + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)}px`;
+    ghost.style.top = `${field.offsetTop}px`;
+    ghost.style.height = `${field.offsetHeight}px`;
+    typed.textContent = value;
+    rest.textContent = example.slice(value.length);
+  };
+  field.addEventListener("input", sync);
+  field.addEventListener("focus", sync);
+  requestAnimationFrame(sync);
+  return { box, sync };
+}
 
 export function askPage(ctx: Ctx): View {
   const adult = ctx.state.viewer.role === "adult";
+  // "Build your own" opens it with "make " typed, and things to make.
+  const making = adult && /^make\b/i.test(prefill);
   const field = h("input", {
     class: "music-search build-ask ask-field",
     "data-focus": true,
@@ -76,21 +119,24 @@ export function askPage(ctx: Ctx): View {
     type: "text",
     maxlength: "300",
     value: prefill,
-    placeholder: adult ? "make me a game like tetris" : "continue my show",
-    "aria-label": "what do you want",
+    placeholder: adult ? EXAMPLE.adult : EXAMPLE.child,
+    "aria-label": "What would you like",
     autocomplete: "off",
     spellcheck: "false",
   }) as HTMLInputElement;
   prefill = "";
   // A box that starts with words takes the caret after them.
   field.addEventListener("focus", () => field.setSelectionRange(field.value.length, field.value.length), { once: true });
-  const said = h("p", { class: "panel-note ask-said", "aria-live": "polite" }, adult ? "type here, or on your phone. your agent can make apps too." : "type here, or on your phone.");
+  const example = exampleAfter(field, adult ? EXAMPLE.adult : EXAMPLE.child);
+  // What came of a sentence. Empty until one is asked: the field's example
+  // says what to ask.
+  const said = h("p", { class: "panel-note ask-said", "aria-live": "polite" });
   let asking = false;
   const send = async (sentence: string) => {
     const words = sentence.trim();
     if (!words || asking) return;
     asking = true;
-    said.textContent = "thinking";
+    said.textContent = THINKING;
     said.classList.remove("ask-no");
     let heard: Said;
     try {
@@ -105,21 +151,23 @@ export function askPage(ctx: Ctx): View {
     }
     if (!said.isConnected) return;
     field.value = "";
+    example.sync();
     askHeard(heard);
   };
-  // Your agent's newest app, for "change <it>: ".
+  // The newest app made on this TV, for "change <it>: ".
   const made = ctx.state.apps.filter((app) => app.tier === "local");
   const newest = made[made.length - 1];
+  // Each one is a whole thing you could say, and saying it is what it does.
+  const say = (label: string) => ({ label, run: () => void send(label) });
   const suggestions: { label: string; run: () => void }[] = [
-    { label: "continue", run: () => void send("continue") },
-    { label: "what's new", run: () => void send("what's new") },
-    ...(adult ? [{ label: EXAMPLES[0], run: () => void send(EXAMPLES[0]) }] : []),
+    ...(making ? EXAMPLES.map(say) : [say("Continue my show"), say("What's new this week?"), ...(adult ? [say(EXAMPLES[0])] : [])]),
     ...(adult && newest
       ? [
           {
-            label: `change ${newest.name.toLowerCase()}`,
+            label: `Change ${newest.name}`,
             run: () => {
               field.value = `change ${newest.name.toLowerCase()}: `;
+              example.sync();
               ctx.focus.set(field);
             },
           },
@@ -133,12 +181,12 @@ export function askPage(ctx: Ctx): View {
     h(
       "div",
       { class: "page profile ask-page" },
-      ...heading(adult ? "ask" : `ask · ${ctx.state.viewer.name.toLowerCase()}`, "what do you want?"),
-      field,
+      ...heading(adult ? "ask" : `ask · ${ctx.state.viewer.name}`, "What would you like?"),
+      example.box,
       said,
       h("div", { class: "check-actions ask-suggestions" }, ...chips),
     ),
-    bar(ctx, "ask", "↵ ask · esc back"),
+    bar(ctx, "ask"),
   );
   page = el;
   heardLine = said;
@@ -153,13 +201,6 @@ export function askPage(ctx: Ctx): View {
   };
 }
 
-// What came of it, in the box's own line.
-function line(outcome: Outcome | undefined): string {
-  if (!outcome) return "";
-  if (outcome.kind === "choose") return `${outcome.say} pick one below`;
-  return outcome.say;
-}
-
 // --- A change, waiting for an adult's ok -----------------------------------
 
 let waiting: { n: number; app: string; name: string; what: string; recipe: string | null } | null = null;
@@ -169,18 +210,19 @@ export function changeWaiting(n: number, outcome: Extract<Outcome, { kind: "chan
   waiting = { n, app: outcome.app, name: outcome.name, what: outcome.what, recipe: outcome.recipe };
 }
 
-// The kind of recipe an app is built from, as the confirm says it (ADR-046).
-export function recipeLine(recipe: string | null): string {
-  return recipe ? `recipe: ${recipe}` : "no recipe yet: a plan for your ok";
+// The one line under a confirm (ADR-046): a kind of app AgenTV knows how to
+// make stays on this TV, and something new has steps for you to check first.
+export function confirmLine(recipe: string | null): string {
+  return recipe ? "It stays on this TV" : "You'll check the steps first";
 }
 
 export function askChangePage(ctx: Ctx): View {
   const change = waiting;
   if (!change) {
-    const el = h("div", { class: "screen" }, h("div", { class: "page profile" }, ...heading("agentv change", "nothing to change.")), bar(ctx, "ask", "esc back"));
+    const el = h("div", { class: "screen" }, h("div", { class: "page profile" }, ...heading("agentv change", "Nothing to change")), bar(ctx, "ask"));
     return { el };
   }
-  const name = change.name.toLowerCase();
+  const name = change.name;
   let busy = false;
   const act = async (what: "confirm" | "cancel") => {
     if (busy) return;
@@ -200,18 +242,18 @@ export function askChangePage(ctx: Ctx): View {
     // (said.ts); "not this" goes back.
     if (what === "cancel") ctx.back();
   };
-  const build = h("button", { class: "button primary", "data-focus": true, "data-action": "confirm", onclick: () => void act("confirm") }, "↵ build it");
+  const build = h("button", { class: "button primary", "data-focus": true, "data-action": "confirm", onclick: () => void act("confirm") }, "Make it");
   const el = h(
     "div",
     { class: "screen" },
     h(
       "div",
       { class: "page profile build-page ask-change", "data-state": "confirm" },
-      ...heading(`agentv change ${change.app.replace(/^local\./, "")} "${change.what.toLowerCase()}"`, `change ${name}?`),
-      h("p", { class: "panel-note" }, `${recipeLine(change.recipe)} · it stays on this tv`),
-      h("div", { class: "check-actions" }, build, h("button", { class: "button", "data-focus": true, "data-action": "forget", onclick: () => void act("cancel") }, "not this")),
+      ...heading(`agentv change ${change.app.replace(/^local\./, "")} "${change.what}"`, `Change ${name}?`),
+      h("p", { class: "panel-note" }, confirmLine(change.recipe)),
+      h("div", { class: "check-actions" }, build, h("button", { class: "button", "data-focus": true, "data-action": "forget", onclick: () => void act("cancel") }, "Not this")),
     ),
-    bar(ctx, "ask", "↵ build it · esc back"),
+    bar(ctx, "ask"),
   );
   return { el, first: build };
 }

@@ -158,10 +158,15 @@ const SCREENS: [string, (page: Page) => Promise<void>][] = [
   // Its three previews are home itself, which T5.3 checks to the pixel. Here
   // they're blank, since the checks skip what's in them, and loading three
   // more launchers each time slows every other test running beside this one.
-  ["settings → themes and backgrounds", async (page) => {
+  // Settings' eight sections, with Appearance's rows.
+  ["settings → appearance", (page) => go(page, "settings/look")],
+  ["settings → appearance → look", async (page) => {
     await page.route(/\/\?preview/, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html>" }));
-    await go(page, "settings/look");
+    await go(page, "settings/looks");
   }],
+  ["settings → appearance → theme", (page) => go(page, "settings/theme")],
+  // AI's rows, with the bar on what's spent this month.
+  ["settings → ai", (page) => go(page, "settings/ai")],
   ["weather", (page) => go(page, "weather")],
   ["new this week", (page) => go(page, "new")],
   ["the ambient screen", (page) => page.evaluate(() => (window as unknown as { agentvAmbient(on: boolean): void }).agentvAmbient(true))],
@@ -424,7 +429,10 @@ test("Settings → Themes and backgrounds shows each of the theme's own pictures
   const page = await tv();
   const card = (id: string) => `.theme-picture[data-action="theme-picture-${id}"]`;
   try {
+    // Appearance's Picture row says which, and opens them.
     await go(page, "settings/look");
+    await page.waitForFunction(() => document.querySelector('.panel [data-action="pictures"] .button-value')?.textContent === "1 of 2");
+    await page.locator('.panel [data-action="pictures"]').click();
     await page.waitForSelector(card(files[1].id));
     assert.equal(await page.locator(".theme-picture").count(), 2, "a card for each");
     assert.equal(await page.locator(".theme-picture.picked").getAttribute("data-action"), `theme-picture-${files[0].id}`, "the one Omarchy shows");
@@ -473,7 +481,7 @@ async function ringOn(page: Page, action: string, when: string): Promise<void> {
   assert.fail(`${when}: ${why}`);
 }
 
-test("Settings → Themes and backgrounds keeps the focus ring on the card as each look is picked, and its theme list shows whole rows and that it goes on", async () => {
+test("Settings → Appearance keeps the focus ring on the card as each look is picked, and its theme list shows whole rows and that it goes on", async () => {
   try {
     for (const size of Object.keys(SIZES) as Size[]) {
       for (const from of ["glass", "cinema"] as const) {
@@ -481,7 +489,7 @@ test("Settings → Themes and backgrounds keeps the focus ring on the card as ea
         const page = await tv(size);
         const at = `${from} at ${size}`;
         try {
-          await go(page, "settings/look");
+          await go(page, "settings/looks");
           await settled(page);
           await page.keyboard.press("Enter");
           await ringOn(page, "look-terminal", `${at}, into the panel`);
@@ -509,28 +517,30 @@ test("Settings → Themes and backgrounds keeps the focus ring on the card as ea
               const mark = thumb?.getBoundingClientRect();
               return { cut, shown: rows.filter((r) => r.top >= box.top - 1 && r.bottom <= box.bottom + 1).length, thumb: Boolean(mark?.width && mark.height), down: mark && track ? Math.round(mark.top - track.top) : -1 };
             });
-          await page.keyboard.press("ArrowDown");
-          assert.match((await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "", /^theme-/, `${at}: down from the cards is the theme list`);
-          assert.deepEqual(await list(), { cut: 0, shown: 4, thumb: true, down: 0 }, `${at}: two whole rows of themes, and the thumb at the top`);
-          // The cards' previews load again after a pick. Each is home in a
-          // frame, and what it scrolls is its own: the panel stays where the
-          // focus is.
-          await page.waitForFunction(() => [...document.querySelectorAll<HTMLIFrameElement>(".look-cards iframe")].every((frame) => frame.contentDocument?.querySelector("#page .focused")));
+          // The theme list is the Theme row's page.
+          await go(page, "settings/theme");
+          await settled(page);
+          await page.keyboard.press("Enter");
+          assert.match((await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "", /^theme-/, `${at}: OK goes into the theme list`);
+          // As many whole rows as the page has room for, more than two
+          // (ADR-095), two themes a row.
+          const top = await list();
+          assert.ok(top.cut === 0 && top.shown > 4 && top.shown % 2 === 0 && top.thumb && top.down === 0, `${at}: whole rows of themes filling the page, and the thumb at the top: ${JSON.stringify(top)}`);
           await frames(page);
           const inSight = await page.evaluate(() => {
             const panel = document.querySelector(".settings-panel")!.getBoundingClientRect();
             const row = document.querySelector("#page .focused")!.getBoundingClientRect();
             return row.top >= panel.top - 1 && row.bottom <= panel.bottom + 1;
           });
-          assert.ok(inSight, `${at}: the focused theme is still in sight once the previews have loaded`);
-          for (let row = 0; row < 3; row++) await page.keyboard.press("ArrowDown");
+          assert.ok(inSight, `${at}: the focused theme is in sight`);
+          for (let row = 0; row < top.shown / 2 + 1; row++) await page.keyboard.press("ArrowDown");
           const focused = (await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "";
           assert.match(focused, /^theme-/, `${at}: still in the list`);
           await ringOn(page, focused, `${at}, down the theme list`);
           // The thumb moves with the list's scroll, a frame after the keys.
           await frames(page);
           const down = await list();
-          assert.ok(down.cut === 0 && down.shown === 4 && down.down > 0, `${at}: whole rows still, and the thumb has moved down: ${JSON.stringify(down)}`);
+          assert.ok(down.cut === 0 && down.shown === top.shown && down.down > 0, `${at}: whole rows still, and the thumb has moved down: ${JSON.stringify(down)}`);
         } finally {
           await page.close();
         }

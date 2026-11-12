@@ -67,11 +67,14 @@ test("S3.10 an app with playback and no tile() shows a medium continue tile from
       (entry.querySelector(".entry-progress-done") as HTMLElement | null)?.style.width,
     ]),
   }));
-  assert.deepEqual(drawn.head, ["my tv", "continue"]);
+  assert.deepEqual(drawn.head, ["My TV", "continue"]);
   assert.deepEqual(drawn.entries, [
-    ["Spring", "film · 3 min left", "watched 70 percent", "69.8%"],
-    ["Sintel", "S2 E4 · 6 min left", "watched 59 percent", "59.5%"],
+    ["Spring", "Film · 3 min left", "Watched 70 percent", "69.8%"],
+    ["Sintel", "S2 E4 · 6 min left", "Watched 59 percent", "59.5%"],
   ]);
+  // An app's own words keep their capitals in Terminal, and its name and
+  // the tile's head are lower case like the rest of the TV.
+  assert.match(await page.locator(tile).innerText(), /^my tv\s+continue\s+Spring\s+Film · 3 min left\s+Sintel\s+S2 E4 · 6 min left$/);
   await page.close();
 });
 

@@ -1,21 +1,20 @@
-// Settings, network (ADR-084): how the TV is online, the Wi-Fi nearby with
-// the one it's on marked, and joining another one. A network with a password
-// opens a page with its field, which the paired phone's keyboard types into:
-// the typing bar shows dots, and the password goes from this page to the
-// daemon and on to root, and nowhere else. An open network joins at once.
-// A join that doesn't work leaves the TV on the network it was on, and the
-// page says what didn't happen in one line.
+// Settings, Network (ADR-084): a row that says how the TV is online, and
+// its page: the Wi-Fi nearby with the one it's on marked, and joining
+// another one. A network with a password opens a page with its field, which
+// the paired phone's keyboard types into: the typing bar shows dots, and the
+// password goes from this page to the daemon and on to root, and nowhere
+// else. An open network joins at once. A join that doesn't work leaves the
+// TV on the network it was on, and the page says what didn't happen in one
+// line.
 //
 // Changing the Wi-Fi is an adult's, behind the PIN when one is set, as
-// pairing a phone is. A child's profile sees how the TV is online.
+// pairing a phone is.
 //
-// The words are written in sentence case with real names, and go through
-// named() (looks/looks.ts), so Terminal shows them in lower case and Glass
-// and Cinema as written. A network's name is never changed.
+// The words are written in sentence case with real names. Terminal shows
+// them in lower case with its own CSS rule, and a network's name is marked
+// so it's never changed.
 
-import { h } from "../dom.ts";
-import { named } from "../looks/looks.ts";
-import { asWritten } from "../looks/words.ts";
+import { asWritten, h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { showOffline } from "../offline.ts";
 import { joinFields, networkRow, type Listed, type Picked } from "../wifi-parts.ts";
@@ -60,43 +59,52 @@ async function call<T>(method: string, path: string, body?: unknown, grant?: str
   return data as T;
 }
 
-// A sentence with a network's name in it: the words as the look writes
-// them, and the name as it is.
-function withName(sentence: string, ssid: string): string {
-  return named(sentence).replace("%s", () => ssid);
+// A sentence with a network's name in it: the words as written, and the
+// name marked as its own.
+function withName(sentence: string, ssid = ""): Node[] {
+  const [before, after = ""] = sentence.split("%s");
+  return [before, ssid ? asWritten(ssid) : "", after].filter((part) => part !== "").map((part) => (typeof part === "string" ? document.createTextNode(part) : part));
 }
 
 // How the TV is online, in a few words.
-function online(now: Status | null): string {
-  if (!now) return "";
+function online(now: Status | null): Node[] {
+  if (!now) return [];
   if (now.joining) return withName("Joining %s…", now.joining);
-  if (now.via === "wi-fi") return now.name ? `${named("Wi-Fi")} · ${now.name}` : named("Wi-Fi");
-  if (now.via === "cable") return named("Cable");
-  return named("Offline");
+  if (now.via === "wi-fi") return now.name ? withName("Wi-Fi · %s", now.name) : withName("Wi-Fi");
+  if (now.via === "cable") return withName("Cable");
+  return withName("Offline");
 }
 
 // Why a join didn't work, and what to do, in one line.
-function problemLine(problem: { ssid: string; why: Why }, hidden = false): string {
+function problemLine(problem: { ssid: string; why: Why }, hidden = false): Node[] {
   if (problem.why === "password") return withName("Couldn't join %s. Check the password.", problem.ssid);
   if (problem.why === "missing") return withName(hidden ? "Couldn't find %s. Check the name." : "Couldn't find %s. Try again.", problem.ssid);
   return withName("Couldn't join %s. Try again.", problem.ssid);
 }
 
-// Settings' row for it, which this page keeps up to date itself.
-export function networkValue(): string {
-  return online(status);
+// Settings' rows: how the TV is online. The Wi-Fi row opens its page.
+export function networkRows(open: () => void): HTMLElement[] {
+  const now = status;
+  if (!now) return [];
+  const plain = (label: string, value: string) => h("div", { class: "panel-row", "data-row": "cable" }, h("span", {}, label), h("span", { class: "button-value" }, value));
+  if (now.wifi === false) return [plain("Cable", now.via === "cable" ? "Connected" : "Not connected")];
+  const value = now.joining ? withName("Joining %s…", now.joining) : now.via === "wi-fi" && now.name ? [asWritten(now.name)] : [now.via === "wi-fi" ? "Connected" : "Not connected"];
+  return [
+    ...(now.via === "cable" ? [plain("Cable", "Connected")] : []),
+    h("button", { class: "button wide", "data-focus": true, "data-action": "wifi", onclick: open }, h("span", {}, "Wi-Fi"), h("span", { class: "button-value" }, ...value)),
+  ];
 }
 
-function setValue(): void {
-  const value = document.querySelector<HTMLElement>('.menu-item[data-key="network"] .menu-value');
-  if (!value) return;
-  value.setAttribute("data-own-case", "");
-  value.textContent = networkValue();
+// Settings, while it's on screen, draws its rows again when there's news.
+let rowsHeard: (() => void) | null = null;
+
+export function watchNetwork(heard: () => void): void {
+  rowsHeard = heard;
 }
 
 // The list of networks is for whoever may pick one, so a child's profile
 // isn't given it and doesn't ask.
-async function load(): Promise<void> {
+export async function loadNetwork(): Promise<void> {
   const now = await call<Status>("GET", "/api/network");
   const found = now.change ? await call<{ networks: Listed[] }>("GET", "/api/network/networks") : { networks: [] };
   status = now;
@@ -110,12 +118,12 @@ export function networkHeard(data: unknown): void {
   if (!now || typeof now.online !== "boolean") return;
   status = { ...now, change: status?.change };
   showOffline(now.hotspot);
-  if (redraw) void load().then(() => redraw?.()).catch(() => {});
+  if (redraw) void loadNetwork().then(() => redraw?.()).catch(() => {});
 }
 
 // Asked once as the launcher starts, for the notice.
 export async function followNetwork(): Promise<void> {
-  await load().catch(() => {});
+  await loadNetwork().catch(() => {});
   showOffline(status?.hotspot ?? null);
 }
 
@@ -123,7 +131,7 @@ export async function followNetwork(): Promise<void> {
 // that ran out is asked for once more.
 async function join(ctx: Ctx, ssid: string, password: string): Promise<string | null> {
   for (const again of [false, true]) {
-    const grant = again ? await ctx.grant(named("changing the Wi-Fi")) : (ctx.held() ?? "");
+    const grant = again ? await ctx.grant("changing the Wi-Fi") : (ctx.held() ?? "");
     if (grant === null) return "pin";
     try {
       status = { ...(await call<Status>("POST", "/api/network/join", { ssid, password }, grant || undefined)), change: true };
@@ -139,17 +147,17 @@ async function join(ctx: Ctx, ssid: string, password: string): Promise<string | 
 // What's wrong with a Wi-Fi password, as the TV checks it too
 // (daemon/hotspot.ts): 8 to 63 plain characters, or 64 hex digits.
 function passwordLine(password: string): string | null {
-  if (password.length < 8) return named("Wi-Fi passwords have at least 8 characters");
+  if (password.length < 8) return "Wi-Fi passwords have at least 8 characters";
   if (/^[0-9a-fA-F]{64}$/.test(password)) return null;
-  if (!/^[\x20-\x7e]*$/.test(password)) return named("Wi-Fi passwords use plain letters, numbers and symbols");
-  if (password.length > 63) return named("Wi-Fi passwords have at most 63 characters");
+  if (!/^[\x20-\x7e]*$/.test(password)) return "Wi-Fi passwords use plain letters, numbers and symbols";
+  if (password.length > 63) return "Wi-Fi passwords have at most 63 characters";
   return null;
 }
 
 // What the page says when the daemon wouldn't start a join.
-function refusedLine(why: string, ssid: string, password = ""): string {
-  if (why === "password") return passwordLine(password) ?? named("Wi-Fi passwords have at least 8 characters");
-  if (why === "name") return named("Check the network name");
+function refusedLine(why: string, ssid: string, password = ""): Node[] {
+  if (why === "password") return withName(passwordLine(password) ?? "Wi-Fi passwords have at least 8 characters");
+  if (why === "name") return withName("Check the network name");
   return withName("Couldn't join %s. Try again.", ssid);
 }
 
@@ -162,7 +170,7 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
   // type, gets its page. Either way the PIN first, when one is set.
   const pick = async (network: Picked) => {
     if (!network.hidden && networks.find((one) => one.ssid === network.ssid)?.current) return;
-    const grant = await ctx.grant(named("changing the Wi-Fi"));
+    const grant = await ctx.grant("changing the Wi-Fi");
     if (grant === null || !box.isConnected) return;
     if (network.secure || network.hidden) {
       picked = network;
@@ -173,7 +181,7 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
     if (why === "pin") return;
     if (why) {
       ctx.sounds.play("failure");
-      ctx.toast(asWritten(refusedLine(why, network.ssid)), "fail");
+      ctx.toast(h("span", {}, ...refusedLine(why, network.ssid)), "fail");
       return;
     }
     ctx.sounds.play("confirm");
@@ -191,19 +199,18 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
   };
 
   function draw(): void {
-    setValue();
     const now = status;
     const key = JSON.stringify([now, networks]);
     if (key === drawn) return;
     drawn = key;
     const focused = ctx.focus.get();
     const was = box.contains(focused ?? null) ? (focused?.dataset.action ?? `ssid:${focused?.dataset.ssid ?? ""}`) : null;
-    const parts: (HTMLElement | null)[] = [h("div", { class: "panel-title", "data-own-case": true, "data-line": "online" }, online(now))];
-    if (now?.problem && !now.joining) parts.push(h("p", { class: "panel-note", "data-own-case": true, "data-line": "problem" }, problemLine(now.problem)));
-    if (now?.wifi === false) parts.push(h("p", { class: "panel-note" }, named("Your TV has no Wi-Fi")));
+    const parts: (HTMLElement | null)[] = [h("div", { class: "panel-title", "data-line": "online" }, ...online(now))];
+    if (now?.problem && !now.joining) parts.push(h("p", { class: "panel-note", "data-line": "problem" }, ...problemLine(now.problem)));
+    if (now?.wifi === false) parts.push(h("p", { class: "panel-note" }, "Your TV has no Wi-Fi"));
     else if (now?.change) {
-      const row = (network: Listed | null) => networkRow(network, { other: named("Another network"), class: "button wide network", pick: (one) => void pick(one) });
-      if (networks.length === 0 && !now.looking) parts.push(h("p", { class: "panel-note" }, named("No Wi-Fi found nearby")));
+      const row = (network: Listed | null) => networkRow(network, { other: "Another network", class: "button wide network", pick: (one) => void pick(one) });
+      if (networks.length === 0 && !now.looking) parts.push(h("p", { class: "panel-note" }, "No Wi-Fi found nearby"));
       parts.push(...networks.map(row), row(null));
       // With the hotspot open the radio can't look, so the list is from
       // before it opened.
@@ -212,8 +219,8 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
           h(
             "button",
             { class: "button wide", "data-focus": true, "data-action": "look", onclick: () => void look() },
-            h("span", {}, named("Look again")),
-            h("span", { class: "button-value" }, now.looking ? named("Looking…") : ""),
+            h("span", {}, "Look again"),
+            h("span", { class: "button-value" }, now.looking ? "Looking…" : ""),
           ),
         );
       }
@@ -227,7 +234,7 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
 
   draw();
   redraw = draw;
-  void load()
+  void loadNetwork()
     .then(() => {
       draw();
       // A fresh list when Settings opens, for whoever may change it.
@@ -242,7 +249,7 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
       if (redraw === draw) redraw = null;
       return;
     }
-    void load().then(draw).catch(() => {});
+    void loadNetwork().then(draw).catch(() => {});
   }, 3000);
   return [box];
 }
@@ -250,15 +257,15 @@ export function networkPanel(ctx: Ctx): HTMLElement[] {
 // The page a network with a password, or one that hides its name, opens.
 export function wifiPage(ctx: Ctx): View {
   const network = picked ?? { ssid: "", secure: true, hidden: true };
-  const title = network.hidden ? named("Another network") : withName("Join %s", network.ssid);
-  const [prompt, headline] = heading("tv settings · network", title);
-  headline.setAttribute("data-own-case", "");
-  const line = h("p", { class: "panel-note", "data-own-case": true, "data-line": "wifi" });
+  const title = () => (network.hidden ? withName("Another network") : withName("Join %s", network.ssid));
+  const [prompt, headline] = heading("tv settings · network", "");
+  headline.replaceChildren(...title());
+  const line = h("p", { class: "panel-note", "data-line": "wifi" });
   let sending = false;
   let timer = 0;
 
-  const say = (text: string) => {
-    line.textContent = text;
+  const say = (words: Node[]) => {
+    line.replaceChildren(...words);
     ctx.sounds.play("failure");
   };
 
@@ -271,7 +278,7 @@ export function wifiPage(ctx: Ctx): View {
       return;
     }
     const wrong = fields.password ? passwordLine(password) : null;
-    if (wrong) return say(wrong);
+    if (wrong) return say(withName(wrong));
     sending = true;
     line.textContent = "";
     const why = await join(ctx, name, password);
@@ -281,7 +288,7 @@ export function wifiPage(ctx: Ctx): View {
       return;
     }
     // Joining takes a while. The page says so, then how it went.
-    headline.textContent = withName("Joining %s…", name);
+    headline.replaceChildren(...withName("Joining %s…", name));
     ctx.sounds.play("confirm");
     timer = window.setInterval(() => {
       if (!el.isConnected) {
@@ -299,7 +306,7 @@ export function wifiPage(ctx: Ctx): View {
             return;
           }
           // The password's field again, empty, for another try.
-          headline.textContent = title;
+          headline.replaceChildren(...title());
           if (fields.password) fields.password.value = "";
           say(problemLine(now.problem, network.hidden));
           ctx.focus.set(fields.password ?? fields.name ?? fields.go);
@@ -308,7 +315,7 @@ export function wifiPage(ctx: Ctx): View {
     }, 500);
   };
 
-  const fields = joinFields(network, { name: named("Network name"), password: named("Password"), join: named("Join"), placeholders: true }, (ssid, password) => void send(ssid, password), "music-search");
+  const fields = joinFields(network, { name: "Network name", password: "Password", join: "Join", placeholders: true }, (ssid, password) => void send(ssid, password), "music-search");
   const form = h("div", { class: "profile-form" }, fields.name, fields.password, h("div", { class: "check-actions" }, fields.go));
   const el = h("div", { class: "screen" }, h("div", { class: "page profile wifi-join" }, prompt, headline, line, form), bar(ctx, "settings", ""));
   return { el, first: fields.name ?? fields.password ?? fields.go };

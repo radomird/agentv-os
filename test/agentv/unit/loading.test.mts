@@ -73,7 +73,7 @@ test("T17.1 once the content is there, the tile has it and every home hears \"ti
     answer = await tile("agentv.weather", "s");
   });
   assert.equal(answer.waiting, undefined);
-  assert.equal(answer.tile?.headline?.label, "amsterdam");
+  assert.equal(answer.tile?.headline?.label, "Amsterdam");
   assert.equal(answer.tile?.headline?.value, "12°");
   assert.match(seen, /event: tiles/);
   // It's said once: the next ask finds the tile there, and nothing changed.

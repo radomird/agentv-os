@@ -12,6 +12,7 @@ import { screen } from "../api.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
+import { pinAsked } from "./pin.ts";
 
 interface PasswordState {
   managed: boolean;
@@ -33,7 +34,7 @@ async function call(method: string, body?: unknown, grant?: string): Promise<{ p
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) throw new Error(data.error ?? "that didn't work");
+  if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't set the password");
   return data;
 }
 
@@ -57,26 +58,22 @@ export function needsPassword(): boolean {
   return password?.managed === true && !password.known;
 }
 
-// The desktop panel's line about it: none on a box whose password was
-// typed into Omarchy's installer, or with the switch off.
+// The desktop page's line, while switching still asks for a first
+// password. None once it's known, on a box whose password was typed into
+// Omarchy's installer, or with the switch off: the page then says how to
+// come back.
 export function desktopPasswordNote(): HTMLElement[] {
-  if (!password?.managed) return [];
-  return [
-    h(
-      "p",
-      { class: "panel-note", "data-note": "desktop-password" },
-      password.known ? "to change its password there: update › password › user." : "the first time, it asks for a password, typed on your phone.",
-    ),
-  ];
+  if (!password?.managed || password.known) return [];
+  return [h("p", { class: "panel-note", "data-note": "desktop-password" }, "The first time, you set a password on your phone")];
 }
 
 export function desktopPasswordPage(ctx: Ctx): View {
   const field = (action: string, label: string) =>
     h("input", { class: "music-search", type: "password", "data-focus": true, "data-action": action, "aria-label": label, placeholder: label, autocomplete: "new-password", spellcheck: "false" }) as HTMLInputElement;
-  const first = field("password", "a password");
-  const again = field("password-again", "the same again");
-  const set = h("button", { class: "button primary", "data-focus": true, "data-action": "set-password", onclick: () => void send() }, "set it and switch");
-  const line = h("p", { class: "panel-note", "data-line": "desktop-password" }, `you'll need it for sudo and ssh there. type it on your phone, ${MIN} characters or more.`);
+  const first = field("password", "Password");
+  const again = field("password-again", "Password again");
+  const set = h("button", { class: "button primary", "data-focus": true, "data-action": "set-password", onclick: () => void send() }, "Set and switch");
+  const line = h("p", { class: "panel-note", "data-line": "desktop-password" }, `For admin tasks there. ${MIN} characters or more.`);
   let sending = false;
 
   const send = async () => {
@@ -84,16 +81,16 @@ export function desktopPasswordPage(ctx: Ctx): View {
     const typed = first.value;
     if ([...typed].length < MIN) {
       ctx.sounds.play("failure");
-      ctx.toast(`the password needs ${MIN} characters or more`, "fail");
+      ctx.toast(`The password needs ${MIN} characters or more`, "fail");
       return;
     }
     if (typed !== again.value) {
       ctx.sounds.play("failure");
-      ctx.toast("the two don't match", "fail");
+      ctx.toast("Those don't match", "fail");
       again.value = "";
       return;
     }
-    const grant = await ctx.grant("omarchy's desktop");
+    const grant = await ctx.grant("Omarchy's desktop");
     if (grant === null) return;
     sending = true;
     try {
@@ -101,15 +98,15 @@ export function desktopPasswordPage(ctx: Ctx): View {
       first.value = "";
       again.value = "";
       ctx.sounds.play("confirm");
-      ctx.toast("the desktop's password is set", "ok");
+      ctx.toast("Password set", "ok");
       ctx.back();
       // Then on to the desktop, as the switch was asked for, with the same
       // grant.
       const reply = await screen.desktop(grant);
       if (reply.pin) ctx.forgetGrant();
-      if (!reply.ok) ctx.toast(reply.error ?? "the desktop didn't start", "fail");
+      if (!reply.ok) ctx.toast(reply.error ?? "Couldn't open the desktop", "fail");
     } catch (error) {
-      if ((error as Error).message === "that needs the pin") ctx.forgetGrant();
+      if (pinAsked(error)) ctx.forgetGrant();
       ctx.sounds.play("failure");
       ctx.toast((error as Error).message, "fail");
     } finally {
@@ -128,8 +125,8 @@ export function desktopPasswordPage(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile desktop-password" }, ...heading("tv settings · omarchy desktop", "a password for the desktop"), line, h("div", { class: "profile-form" }, first, again, h("div", { class: "check-actions" }, set))),
-    bar(ctx, "settings", ""),
+    h("div", { class: "page profile desktop-password" }, ...heading("tv settings · omarchy desktop", "A password for the desktop"), line, h("div", { class: "profile-form" }, first, again, h("div", { class: "check-actions" }, set))),
+    bar(ctx, "settings"),
   );
   return { el, first };
 }

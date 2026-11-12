@@ -217,9 +217,10 @@ test("T17.1 Settings, themes and backgrounds has no screensaver row, only how lo
     assert.equal(await page.locator('[data-action="ambient-style"]').count(), 0);
     // "terminal" is still a look's name here. What's gone is the row that
     // picked what the idle screen shows.
-    const rows = await page.locator(".settings-panel .button > span:first-child").allInnerTexts();
-    assert.ok(rows.includes("ambient screen after"), rows.join(", "));
-    assert.ok(!rows.includes("ambient screen"), rows.join(", "));
+    const rows = (await page.locator(".settings-panel .button > span:first-child").allInnerTexts()).map((row) => row.toLowerCase());
+    assert.ok(rows.includes("screen saver"), rows.join(", "));
+    assert.equal(rows.filter((row) => /screen ?saver|ambient/.test(row)).length, 1, rows.join(", "));
+    assert.match(await page.locator('.settings-panel [data-action="idle"] .button-value').innerText(), /^after \d+ min$/i);
     assert.doesNotMatch(await page.locator(".settings-panel").innerText(), /screensaver/i);
     assert.equal(await page.evaluate(async () => "ambient" in (await (await fetch("/api/home")).json()).settings), false);
   } finally {
