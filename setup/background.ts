@@ -74,6 +74,11 @@ export async function background(ctx: Ctx): Promise<View> {
       line.replaceChildren(asWritten(credit));
       return;
     }
+    // So is the name of a folder or an album the pictures came from.
+    if (now.source === "folder" && shown[0]?.credit.from) {
+      line.replaceChildren(`${shown.length === 1 ? "1 picture" : `${shown.length} pictures`} from `, asWritten(shown[0].credit.from), ".");
+      return;
+    }
     line.textContent =
       now.source === "theme"
         ? own
