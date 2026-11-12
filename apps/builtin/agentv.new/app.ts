@@ -14,7 +14,7 @@ const app: TvApp = {
   async launch() {},
 
   async tile(_ctx, size: TileSize): Promise<Tile> {
-    return { headline: { label: size === "s" ? "" : "new this week" }, refreshMins: 180 };
+    return { headline: { label: size === "s" ? "" : "New this week" }, refreshMins: 180 };
   },
 };
 

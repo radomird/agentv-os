@@ -2,7 +2,6 @@
 // one press away from home in every look. Each look draws them its own way.
 
 import type { Ctx } from "../main.ts";
-import { said } from "./looks.ts";
 import { askBuilds } from "../pages/ask.ts";
 
 export interface Section {
@@ -17,10 +16,10 @@ export interface Section {
 export function sections(ctx: Ctx): Section[] {
   const update = ctx.updates.status?.agentv.available && !ctx.updates.status.waiting;
   const all: Section[] = [
-    { key: "home", label: said("home"), open: () => ctx.top("home") },
-    { key: "apps", label: said("apps"), open: () => ctx.top("apps") },
-    { key: "ask", label: said("ask"), open: () => ctx.top("ask") },
-    { key: "settings", label: said(update ? "settings ●" : "settings"), open: () => ctx.top("settings") },
+    { key: "home", label: "Home", open: () => ctx.top("home") },
+    { key: "apps", label: "Apps", open: () => ctx.top("apps") },
+    { key: "ask", label: "Ask", open: () => ctx.top("ask") },
+    { key: "settings", label: update ? "Settings ●" : "Settings", open: () => ctx.top("settings") },
   ];
   return all.filter((section) => section.key !== "ask" || ctx.state.viewer.role === "adult" || askBuilds());
 }

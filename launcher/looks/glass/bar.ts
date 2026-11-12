@@ -8,7 +8,7 @@ import { avatar, time } from "../chrome.ts";
 import { icon } from "../icons.ts";
 import { keyHints, sections } from "../parts.ts";
 
-export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | string)[]): HTMLElement {
+export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | string)[], hint = ""): HTMLElement {
   const all = sections(ctx);
   // Ask, Apps and Settings, in that order (D1).
   const buttons = (["ask", "apps", "settings"] as const)
@@ -27,7 +27,7 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
     "div",
     { class: "bar glass-bar" },
     h("div", { class: "bar-pill" }, ...buttons, time(), avatar(ctx)),
-    note ? h("div", { class: "bar-note" }, note) : null,
+    note ? h("div", { class: "bar-note" }, note) : hint ? h("div", { class: "bar-note bar-hint" }, hint) : null,
     step ? h("div", { class: "bar-step-row" }, ...step) : null,
   );
 }

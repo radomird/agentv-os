@@ -166,7 +166,7 @@ test("S3.6 the medium tile shows what's playing, with its cover and how far in i
     done: (el.querySelector(".entry-progress-done") as HTMLElement | null)?.style.width,
     entries: el.querySelectorAll(".entry").length,
   }));
-  assert.deepEqual(drawn, { label: "now playing", title: "midnight", caption: "pixel band · night shift", done: "25%", entries: 0 });
+  assert.deepEqual(drawn, { label: "Now playing", title: "Midnight", caption: "Pixel Band · Night Shift", done: "25%", entries: 0 });
   await page.close();
 });
 
@@ -179,7 +179,7 @@ test("the large tile adds the albums played last, and with nothing playing it sa
     now: el.querySelector(".tile-now") !== null,
     entries: [...el.querySelectorAll(".entry-label")].map((entry) => entry.textContent),
   }));
-  assert.deepEqual(drawn, { label: "played last", now: false, entries: ["night shift", "test tones"] });
+  assert.deepEqual(drawn, { label: "Last played", now: false, entries: ["Night Shift", "Test Tones"] });
   await page.close();
 });
 
@@ -193,8 +193,8 @@ test("S3.6 the page lists the albums with their covers and the playlists, and a 
     tiles.map((el) => [el.querySelector(".album-title")?.textContent, el.querySelector(".album-artist")?.textContent, el.querySelector("img") !== null]),
   );
   assert.deepEqual(albums, [
-    ["night shift", "pixel band", true],
-    ["test tones", "agentv", false],
+    ["Night Shift", "Pixel Band", true],
+    ["Test Tones", "AgenTV", false],
   ]);
   // An album with no cover isn't asked for one.
   assert.deepEqual((await requests(page, "cover")).map((r) => r.key), ["a1"]);
@@ -226,7 +226,7 @@ test("S3.6 typing on the remote's keyboard searches, and a result plays", async 
   await page.waitForSelector('.music-results[data-q="night"] .music-result');
   assert.deepEqual((await requests(page, "search")).map((r) => r.q), ["n", "night"]);
   assert.deepEqual((await requests(page, "search")).at(-1)?.q, "night");
-  assert.equal(await page.locator(".music-result").first().textContent(), "album · night shiftpixel band");
+  assert.equal(await page.locator(".music-result").first().textContent(), "Album · Night ShiftPixel Band");
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.evaluate(() => document.activeElement === document.body && document.querySelector(".focused")?.classList.contains("music-result")), true);
   await page.keyboard.press("Enter");
@@ -252,11 +252,11 @@ test("an album's page plays it from the top or from a track, and what's playing 
     now: document.querySelector(".now-playing:not(.hidden) .now-text")?.textContent,
   }));
   assert.deepEqual(drawn, {
-    headline: "night shift",
-    maker: "pixel band · 2025 · 3 tracks",
-    tracks: ["01  dusk1:01", "02  midnight2:05", "03  dawn0:03"],
+    headline: "Night Shift",
+    maker: "Pixel Band · 2025 · 3 tracks",
+    tracks: ["01  Dusk1:01", "02  Midnight2:05", "03  Dawn0:03"],
     focused: "play",
-    now: "midnight · pixel band · 0:30 / 2:00",
+    now: "Midnight · Pixel Band · 0:30 / 2:00",
   });
   await page.keyboard.press("Enter");
   await page.locator(".track").nth(2).click();
@@ -277,19 +277,22 @@ test("S3.6 the sources page lists the folder, the USB stick and the share, and a
   await page.locator('[data-action="sources"]').click();
   await page.waitForSelector(".sources .source");
   const listed = await page.$$eval(".sources .source", (rows) => rows.map((row) => row.textContent));
-  // A share root mounts says why it isn't there (ADR-038).
-  assert.deepEqual(listed, ["folder · musicready", "usb · STICKready", "share · nas/musicaway", "share · nas/filmsthe nas didn't take that user name and password"]);
-  // A big share half read says how far it's got, and the page follows it.
-  assert.equal(await page.textContent(".scan-progress"), "reading nas/music · 1,200 of 5,000 files · 40 albums so far");
-  await page.waitForFunction(() => document.querySelector(".scan-progress")?.textContent === "read 5,000 files · 412 albums", null, { timeout: 5000 });
-  // The box keeps the password, so it says a NAS account that can only read is best.
-  assert.match((await page.textContent(".page.music .hint")) ?? "", /a nas account that can only read is best/);
-  await page.fill('[aria-label="a share\'s address"]', "smb://radomir@nas/music");
-  await page.fill('[aria-label="the share\'s password"]', "hunter2");
+  // A network folder root connects says why it isn't there (ADR-038).
+  assert.deepEqual(listed, ["Folder · musicReady", "USB drive · STICKReady", "Network folder · nas/musicOffline", "Network folder · nas/filmsthe NAS didn't take that user name and password"]);
+  // A folder's or a drive's own name keeps its letters in Terminal too, and
+  // the words around it don't.
+  assert.deepEqual(await page.locator(".sources .source").nth(1).innerText(), "usb drive · STICK\nready");
+  // A big folder half read says how far it's got, and the page follows it.
+  assert.equal(await page.textContent(".scan-progress"), "Reading nas/music · 1,200 of 5,000 files · 40 albums so far");
+  await page.waitForFunction(() => document.querySelector(".scan-progress")?.textContent === "5,000 files · 412 albums", null, { timeout: 5000 });
+  // The TV saves the password, so it says a read-only account is safest.
+  assert.equal(await page.textContent(".page.music .hint"), "Your TV saves this password. A read-only account is safest.");
+  await page.fill('[aria-label="Folder address"]', "smb://radomir@nas/music");
+  await page.fill('.page.music input[type="password"]', "hunter2");
   await page.locator('[data-action="add-share"]').click();
   await page.waitForFunction(() => (window as unknown as { screenRequests: { op?: string }[] }).screenRequests.some((r) => r.op === "add-share"));
   // The password isn't left on the page, not even while the share mounts.
-  assert.equal(await page.inputValue('[aria-label="the share\'s password"]'), "");
+  assert.equal(await page.inputValue('.page.music input[type="password"]'), "");
   const [added] = await requests(page, "add-share");
   assert.deepEqual([added.uri, added.password], ["smb://radomir@nas/music", "hunter2"]);
   await page.close();

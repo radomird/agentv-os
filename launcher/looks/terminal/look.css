@@ -173,8 +173,8 @@ body {
 
 /* --- Apps ---------------------------------------------------------------- */
 
-/* A name that doesn't fit ends in an ellipsis (D2), and adding an app or
-   making one takes two cells. */
+/* A name that doesn't fit ends in an ellipsis (D2), and "Add an app" takes
+   two cells. */
 .row .tile-name {
   white-space: nowrap;
   overflow: hidden;
