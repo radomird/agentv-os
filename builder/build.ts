@@ -175,7 +175,11 @@ export function declaredOrigins(build: Build, recipe: Recipe, request: BuildRequ
 // installed.
 export function reachesOf(manifest: Manifest): { always: string[]; declared: string[] } {
   if (manifest.tv.runtime === "page") return pagePermissions(manifest);
-  return { always: [], declared: (manifest.tv.origins ?? []).map((o) => `Connects to ${o.replace(/^https?:\/\//, "")}`) };
+  // These words are compared as they are when root installs or rolls back
+  // (hand-over.ts), against what an approval showed when it was made. So
+  // they stay as they were written: new words would refuse every app
+  // approved before them.
+  return { always: [], declared: (manifest.tv.origins ?? []).map((o) => `the internet, at ${o.replace(/^https?:\/\//, "")}`) };
 }
 
 // --- The app's manifest, as the builder keeps it -------------------------
