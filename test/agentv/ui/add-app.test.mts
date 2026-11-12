@@ -1,7 +1,8 @@
-// Apps → add an app in a real Chromium (ADR-019, layer 4; ADR-042): an adult
-// sees AgenTV's official apps that aren't on the TV, each with its one line,
-// adds one past the PIN, and its tile follows the install until the app is
-// in. A child's profile doesn't see it. Root's side is the test box's
+// The app library, "Add an app", in a real Chromium (ADR-019, layer 4;
+// ADR-042): an adult sees AgenTV's apps that aren't on the TV, each with its
+// one line, adds one past the PIN, and its tile follows the install until
+// the app is in. The library's last tile is "Can't find it? Build your own"
+// (D11). A child's profile doesn't see it. Root's side is the test box's
 // stand-in for agentv-setup-apps; the real one is the image layer's.
 
 import assert from "node:assert/strict";
@@ -84,9 +85,9 @@ test("ADR-042 Apps → add an app adds an official app past the PIN, and its til
   await page.locator('.add-tile[data-id="agentv.steam"]').click();
   await page.waitForSelector(".pin-pad");
   for (const digit of PIN) await page.keyboard.press(digit);
-  await page.waitForFunction(() => /queued|installing|installed/.test(document.querySelector('.add-tile[data-id="agentv.steam"] .add-state')?.textContent ?? ""));
-  await page.waitForFunction(() => /installed/.test(document.querySelector('.add-tile[data-id="agentv.steam"] .add-state')?.textContent ?? ""), null, { timeout: 10_000 });
-  assert.match(await page.locator('.add-tile[data-id="agentv.steam"]').innerText(), /open\s+steam\s+installed, and on your home/);
+  await page.waitForFunction(() => /Waiting…|Installing…|Installed/.test(document.querySelector('.add-tile[data-id="agentv.steam"] .add-state')?.textContent ?? ""));
+  await page.waitForFunction(() => /^Installed$/.test(document.querySelector('.add-tile[data-id="agentv.steam"] .add-state')?.textContent ?? ""), null, { timeout: 10_000 });
+  assert.match(await page.locator('.add-tile[data-id="agentv.steam"]').innerText(), /^ST\s+open\s+steam\s+installed$/);
   assert.match(await page.locator("#toasts").innerText(), /adding steam/);
 
   // It's on the TV now, and it opens from its tile here.
@@ -96,6 +97,48 @@ test("ADR-042 Apps → add an app adds an official app past the PIN, and its til
   await page.waitForFunction(() =>
     (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.some((r) => r.cmd === "open-app" && r.app === "agentv.steam"),
   );
+  await page.close();
+});
+
+test("D11 Apps has one way in to more apps, and the library ends with Build your own, which opens Ask ready to make one", async () => {
+  const page = await tv();
+  await go(page, "apps");
+  await page.waitForSelector(".apps-page .row");
+  // One tile, with a plus for its icon that isn't in its words.
+  assert.equal(await page.locator(".apps-page .tile-apps").count(), 1);
+  assert.equal(await page.locator('.apps-page [data-action="build"], .apps-page .ask-examples').count(), 0, "no second tile, and no examples");
+  const add = page.locator('.apps-page [data-action="add-app"]');
+  assert.equal(await add.innerText(), "add an app");
+  assert.equal(await add.textContent(), "Add an app");
+  assert.equal(await add.locator(".logo-plus").evaluate((el) => getComputedStyle(el, "::before").content), '"+"');
+  assert.deepEqual(await page.locator(".apps-page .section").allTextContents(), ["# On home", "# Not on home"]);
+  await add.click();
+  await page.waitForSelector(".add-row .build-own");
+  assert.match(await page.locator(".headline").innerText(), /^add an app$/);
+  assert.equal(await page.locator(".page .panel-note").count(), 0, "the headline is enough");
+  // The last tile, the same shape as the apps before it.
+  const last = page.locator(".add-row > .tile").last();
+  assert.equal(await last.getAttribute("data-action"), "build");
+  assert.match(await last.innerText(), /^can't find it\?\s+build your own$/);
+  assert.equal(await last.getAttribute("aria-label"), "Can't find it? Build your own");
+  assert.equal(await last.locator(".logo svg.line-ask").count(), 1, "Ask's sparkle is its icon");
+  const sizes = await page.locator(".add-row > .tile").evaluateAll((els) => els.map((el) => `${(el as HTMLElement).offsetWidth}x${(el as HTMLElement).offsetHeight}`));
+  assert.equal(new Set(sizes).size, 1, `every tile is the same size: ${sizes.join(", ")}`);
+  await last.click();
+  await page.waitForSelector(".ask-page .ask-field");
+  assert.equal(await page.locator(".ask-field").inputValue(), "make ");
+  await page.close();
+});
+
+test("D11 with every app on the TV, the library says so and still offers Build your own", async () => {
+  const page = await tv();
+  await page.route(`${url}/api/apps/add`, (route) => route.fulfill({ json: { apps: [] } }));
+  await go(page, "add-app");
+  await page.waitForSelector(".add-row .build-own");
+  assert.equal(await page.locator(".add-empty").textContent(), "You have every app");
+  assert.equal(await page.locator(".add-row > .tile").count(), 1);
+  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "build");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.close();
 });
 

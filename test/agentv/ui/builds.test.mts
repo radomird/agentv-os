@@ -101,8 +101,9 @@ const STEPS = (running: number) =>
 
 test("ADR-046 + add your own asks what to make, and the agent's reading of it is confirmed with its cost and time", async () => {
   const page = await tv();
-  await go(page, "apps");
-  await page.locator('[data-action="build"]').click();
+  // Building your own is the app library's last tile (D11).
+  await go(page, "add-app");
+  await page.locator('.add-row [data-action="build"]').click();
   await page.waitForSelector(".build-ask");
   assert.match(await page.locator(".page").innerText(), /what should i make\?[\s\S]*type here, or on your phone/);
   await page.locator(".build-ask").fill("a game like tetris");
@@ -137,7 +138,7 @@ test("a build shows its steps on its page, its tile in Apps and on home, and hom
   assert.match(await page.locator(".bar-right").innerText(), /building blocks/);
   await go(page, "apps");
   await page.waitForSelector(".page .build-tile");
-  assert.match(await page.locator(".page").innerText(), /# your agent's builds[\s\S]*blocks/);
+  assert.match(await page.locator(".page").innerText(), /# your own[\s\S]*blocks/);
   await page.locator(".page .build-tile").click();
   await page.waitForSelector('.build-page[data-state="running"]');
   const building = await page$(page);
