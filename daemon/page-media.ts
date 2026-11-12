@@ -17,6 +17,7 @@ import { lstat, mkdir, readdir, readFile, realpath, stat } from "node:fs/promise
 import { extname, join, posix, sep } from "node:path";
 import type { Album as KitAlbum, MediaSource, PhotoPage } from "../apps/contract/kit.ts";
 import type { MusicLibrary } from "./music.ts";
+import { NOT_READY } from "./notices.ts";
 import type { Source, Storage } from "./storage.ts";
 
 const PHOTOS = new Map([
@@ -93,7 +94,7 @@ export class PageMedia {
   // One of the kit's calls for app, as home relays it from its frame.
   async handle(app: unknown, call: unknown, args: unknown[]): Promise<{ ok: boolean; value?: unknown; error?: string }> {
     if (typeof app !== "string" || typeof call !== "string") return { ok: false, error: "which app, and what" };
-    const why = await this.options.allowed(app, call).catch(() => "the daemon didn't answer");
+    const why = await this.options.allowed(app, call).catch(() => NOT_READY);
     if (why) return { ok: false, error: why };
     try {
       switch (call) {

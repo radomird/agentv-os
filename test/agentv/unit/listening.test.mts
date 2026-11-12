@@ -194,7 +194,7 @@ function stateFiles(dir: string): string[] {
 test("ADR-054 a box's words take setup done, like a sentence", async () => {
   const early = await phone("/api/phone/say/live", { open: true });
   assert.equal(early.status, 409);
-  assert.equal((await early.json()).error, "the tv takes requests once setup is done");
+  assert.equal((await early.json()).error, "Finish setup on your TV first");
   writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-11-01T18:00:00Z" }));
 });
 
@@ -240,11 +240,11 @@ test("ADR-054 a sentence sent from the box: the bar over an app says it's thinki
   await until(() => heardOnTv().at(-1)?.state === "words");
   asks.length = 0;
   const said = await (await phone("/api/phone/say", { sentence: "play frozen" })).json();
-  assert.equal(said.said.outcome.say, "frozen, on kino");
+  assert.equal(said.said.outcome.say, "Frozen, on Kino");
   await until(() => live().some((a) => a.state === "said"));
   assert.deepEqual(live().map(({ state, text }) => ({ state, text })), [
     { state: "thinking", text: "play frozen" },
-    { state: "said", text: "frozen, on kino" },
+    { state: "said", text: "Frozen, on Kino" },
   ]);
   assert.ok(!asks.some((a) => a.kind === "tell"), "no toast while the bar is up");
   assert.ok(!heardOnTv().slice(-1).some((h) => h.state === "closed"), "the bar wasn't taken away under it");
@@ -265,9 +265,9 @@ test("ADR-054 a box opened again while a sentence is thought about keeps the bar
   // The box opens again on the phone, as it does when it takes the focus.
   await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "continue my show" });
-  assert.equal((await (await said).json()).said.outcome.say, "i didn't get that");
+  assert.equal((await (await said).json()).said.outcome.say, "Didn't get that");
   await until(() => asks.some((a) => a.kind === "tell"));
-  assert.deepEqual(asks.filter((a) => a.kind === "tell").map((a) => a.text), ["i didn't get that"]);
+  assert.deepEqual(asks.filter((a) => a.kind === "tell").map((a) => a.text), ["Didn't get that"]);
   assert.deepEqual(live().map(({ state, text }) => ({ state, text })), [
     { state: "thinking", text: "dim the lights" },
     { state: "open", text: "" },
@@ -283,7 +283,7 @@ test("ADR-054 a locked TV takes no words, as it takes no sentences, and locking 
   await until(() => heardOnTv().at(-1)?.state === "closed");
   const refused = await phone("/api/phone/say/live", { text: "play frozen" });
   assert.equal(refused.status, 409);
-  assert.equal((await refused.json()).error, "the tv is locked: unlock it first");
+  assert.equal((await refused.json()).error, "Your TV is locked. Unlock it first.");
   assert.equal(heardOnTv().at(-1)!.state, "closed");
   assert.equal((await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
   assert.equal((await phone("/api/phone/say/live", { open: true })).status, 200);
@@ -304,6 +304,6 @@ test("ADR-054 on a child's profile the bar is the same, and the sentence is rout
   await until(() => live().some((a) => a.state === "said"));
   assert.deepEqual(live().map(({ state, text }) => ({ state, text })), [
     { state: "thinking", text: "play frozen" },
-    { state: "said", text: said.outcome.kind === "choose" ? "which one? your phone has them" : said.outcome.say },
+    { state: "said", text: said.outcome.kind === "choose" ? "Which one? Pick on your phone." : said.outcome.say },
   ]);
 });

@@ -12,6 +12,7 @@ import { after, test } from "node:test";
 import { Builds, idFor, nextVersion } from "../../../daemon/builds.ts";
 import { validatePackage } from "../../../apps/contract/manifest.ts";
 import { Build, reachesOf } from "../../../builder/build.ts";
+import { plainReason, whyOf } from "../../../builder/reasons.ts";
 import { HandOver } from "../../../builder/sandbox/hand-over.ts";
 import { stopped } from "../../../builder/sandbox/start.ts";
 import { Daemon } from "../../../daemon/server.ts";
@@ -65,8 +66,8 @@ test("a sentence becomes a build: root is asked to understand it first, with the
   assert.equal(start.provider, "claude");
   assert.deepEqual(start.cap, { build: 5, month: 20 }, "with a key, the caps go with it");
   assert.equal(start.safeguards, true);
-  assert.equal((await builds.ask("another", KEY)).error, "another build is going; one runs at a time");
-  assert.match((await builds.ask("", KEY)).error!, /up to 300 characters/);
+  assert.equal((await builds.ask("another", KEY)).error, "One at a time. Wait for the other app.");
+  assert.equal((await builds.ask("", KEY)).error, "Keep it under 300 characters");
   const plan = box();
   await plan.builds.ask("a game like tetris", { provider: "claude", path: "plan" });
   assert.equal(plan.drop("start").cap, undefined, "a plan has its own limits (ADR-045)");
@@ -107,7 +108,8 @@ test("an approved app goes to root to install; a refused start says why; the spe
   writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "start", build: build!.build, started: false, reason: "the box couldn't fetch claude" }));
   const refused = (await builds.list())[0];
   assert.equal(refused.state, "failed");
-  assert.equal(refused.reason, "the box couldn't fetch claude");
+  // One plain line for why. Root's own reason stays in its answer and log.
+  assert.equal(refused.reason, "Couldn't get Claude ready");
 
   status(build!.id, "1.0.0", { build: build!.build, state: "approve", approval: { reaches: { always: [], declared: [] }, packages: [] } });
   writeFileSync(o.spend, JSON.stringify({ month: "2026-10", spent: 3.456, builds: { [build!.build]: 1.234 } }));
@@ -117,7 +119,7 @@ test("an approved app goes to root to install; a refused start says why; the spe
   assert.deepEqual(await builds.spend(), { month: "2026-10", spent: 3.46, cap: { build: 5, month: 20 } });
   await builds.approve(build!.build);
   assert.deepEqual(drop("install"), { build: build!.build, id: build!.id, version: "1.0.0" });
-  assert.match((await builds.approve("b-nope")).error!, /no such build/);
+  assert.match((await builds.approve("b-nope")).error!, /Couldn't find that app/);
 });
 
 test("a build says it's starting until the builder writes, with its recipe's cost and time once it's read", async () => {
@@ -139,7 +141,7 @@ test("a build says it's starting until the builder writes, with its recipe's cos
 test("a build never on home is put away, its folder with it; one going is stopped first, and one on home is removed instead", async () => {
   const { o, builds, drop, status } = box();
   const { build } = await builds.ask("a game like tetris", KEY);
-  assert.match((await builds.forget("b-nope")).error!, /no such build/);
+  assert.match((await builds.forget("b-nope")).error!, /Couldn't find that app/);
   // Still starting: it's stopped, then put away.
   assert.deepEqual(await builds.forget(build!.build), {});
   assert.deepEqual(drop("stop"), {});
@@ -149,9 +151,9 @@ test("a build never on home is put away, its folder with it; one going is stoppe
   const again = (await builds.ask("a game like tetris", KEY)).build!;
   drop("start");
   status(again.id, "1.0.0", { build: again.build, state: "running", at: "2026-10-27T19:00:00.000Z" });
-  assert.match((await builds.forget(again.build)).error!, /stop it first/);
+  assert.match((await builds.forget(again.build)).error!, /Stop it first/);
   status(again.id, "1.0.0", { build: again.build, state: "installed", at: "2026-10-27T19:00:01.000Z" });
-  assert.match((await builds.forget(again.build)).error!, /remove the app instead/);
+  assert.match((await builds.forget(again.build)).error!, /Remove the app instead/);
   // A change that failed is put away, and the app on home stays.
   const next = (await builds.next(again.id, "make it faster", KEY)).build!;
   drop("start");
@@ -172,7 +174,70 @@ test("an install root couldn't do says why, and the app still waits for its yes"
   mkdirSync(o.run, { recursive: true });
   writeFileSync(join(o.run, "answer.json"), JSON.stringify({ action: "install", build: build!.build, started: false, reason: "it couldn't be installed: no room", at: "2026-10-27T18:00:09.000Z" }));
   const view = (await builds.list())[0];
-  assert.deepEqual([view.state, view.reason], ["approve", "it couldn't be installed: no room"]);
+  assert.deepEqual([view.state, view.reason], ["approve", "Couldn't install it. Try again."]);
+});
+
+test("a build that failed shows one plain line for its kind, and never the builder's own reason", async () => {
+  // Each reason the builder, root, the relay or an AI's own tool gives, and
+  // the line a screen shows for it.
+  const lines: [string, string][] = [
+    ["try: the agent stopped (exit 1)", "Something went wrong"],
+    ["the agent ended without a result", "Something went wrong"],
+    ["build: the agent stopped with an error", "Something went wrong"],
+    ["design: the step ran out of turns", "It took too many tries"],
+    ["the build reached its spend cap", "It reached its $5 limit"],
+    ["this month's agent spend reached its cap", "It reached this month's limit"],
+    ["the build took longer than it may", "It took too long"],
+    ["the agent didn't say what it understood", "Couldn't follow that. Try other words."],
+    ["the agent didn't submit a plan", "Couldn't work out the steps"],
+    ["no recipe fits and no plan is approved, so nothing is built", "You didn't approve the steps, so nothing was made"],
+    ["the static checks found: main.js uses eval", "It didn't pass the safety checks"],
+    ["the build declared https://a.example, and the app's manifest doesn't list it", "It didn't pass the safety checks"],
+    ["the app's manifest lists https://a.example, which the build didn't declare", "It didn't pass the safety checks"],
+    ["the agent's CLI offered tools of its own: Bash", "It didn't pass the safety checks"],
+    ['the test "it opens" failed: no canvas', "It didn't pass its tests"],
+    ["its tests didn't pass", "It didn't pass its tests"],
+    ["the claude plan's sign-in didn't take: try again", "Couldn't sign in to Claude"],
+    ["couldn't sign in to the plan: it took longer than 15 minutes", "Couldn't sign in to Claude"],
+    ["couldn't sign in to the plan: you stopped it", "You stopped it"],
+    ["another build is running; one runs at a time", "One at a time. Wait for the other app."],
+    ["the box couldn't fetch claude", "Couldn't get Claude ready"],
+    ["the builder's way out didn't start", "Couldn't start. Restart your TV and try again."],
+    ["the builder didn't start", "Couldn't start. Restart your TV and try again."],
+    ["the relay doesn't know what claude-next costs, so it can't keep the build inside its cap", "Can't track what this AI costs, so it stopped"],
+    ["what the app reaches isn't what its approval showed", "It changed after you approved it"],
+    ["the app's origins changed after they were approved", "It changed after you approved it"],
+    ["the build reached https://cdn.example, which its approval didn't show", "It changed after you approved it"],
+    ["the app this goes on with isn't on home any more", "That app isn't on home any more"],
+    ["claude's plan is coming soon: use a key for it", "Claude's plan is coming soon. Use a key for now."],
+    ['build: API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', "Your Claude key was refused"],
+    ["build: Your credit balance is too low to access the Anthropic API", "Your Claude key is out of credit"],
+    ["you stopped it", "You stopped it"],
+    ["something nobody has seen before", "Something went wrong"],
+  ];
+  for (const [raw, line] of lines) assert.equal(plainReason(raw, { ai: "Claude", cap: 5 }), line, raw);
+  assert.equal(plainReason("the build reached its spend cap"), "It reached its limit", "with no limit to name");
+  assert.equal(plainReason(undefined), "Something went wrong");
+  // A kind the builder gave comes before what its words look like.
+  assert.equal(plainReason("60 frames a second wasn't kept", { why: "tests" }), "It didn't pass its tests");
+  assert.equal(whyOf("the build took longer than it may"), "slow");
+
+  // In the daemon's view: the line, with the AI's name and the limit, while
+  // the build's own status keeps the reason.
+  const { builds, o, status, drop } = box();
+  const { build } = await builds.ask("a game like tetris", KEY);
+  drop("start");
+  status(build!.id, "1.0.0", { build: build!.build, phase: "build", state: "failed", reason: "build: the build reached its spend cap", steps: [{ id: "design", state: "done" }, { id: "draw-the-board", state: "failed" }], understood: { name: "Blocks", recipe: "game", says: "x" }, at: "2026-10-27T19:00:02.000Z" });
+  const view = (await builds.list())[0];
+  assert.deepEqual([view.state, view.reason], ["failed", "It reached its $5 limit"]);
+  assert.match(readFileSync(join(o.builds, build!.id, "1.0.0", "status.json"), "utf8"), /build: the build reached its spend cap/);
+  // And each step has the label a screen shows: its recipe's, or its id as words.
+  assert.deepEqual(view.steps.map((s) => s.label), ["Designing", "Draw the board"]);
+  status(build!.id, "1.0.0", { build: build!.build, phase: "build", state: "failed", reason: "the frame rate fell", why: "tests", steps: [], at: "2026-10-27T19:00:03.000Z" });
+  assert.equal((await builds.list())[0].reason, "It didn't pass its tests");
+  // A build that's going has no reason to show, whatever its status holds.
+  status(build!.id, "1.0.0", { build: build!.build, phase: "build", state: "running", reason: "left over", steps: [], at: "2026-10-27T19:00:04.000Z" });
+  assert.equal((await builds.list())[0].reason, undefined);
 });
 
 test("a build stopped while it was going says so, with the step it was on", () => {
@@ -219,7 +284,7 @@ test("the caps and the safeguards are an adult's to change, within bounds", asyn
   const { builds } = box();
   assert.deepEqual(await builds.settings(), { cap: { build: 5, month: 20 }, safeguards: true });
   assert.deepEqual((await builds.setSettings({ cap: { build: 2.5 }, safeguards: false })).settings, { cap: { build: 2.5, month: 20 }, safeguards: false });
-  assert.match((await builds.setSettings({ cap: { build: 30 } })).error!, /no more than the month's/);
+  assert.match((await builds.setSettings({ cap: { build: 30 } })).error!, /can't be more than the month's/);
   assert.match((await builds.setSettings({ cap: { month: -1 } })).error!, /a number of dollars/);
   assert.match((await builds.setSettings({ safeguards: "off" })).error!, /on or off/);
 });
@@ -351,7 +416,7 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
     const phone = (method: string, path: string, body?: unknown, grant?: string) =>
       token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
 
-    assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /pick the AI/, "nothing's built before the AI is picked and its terms accepted");
+    assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /Set up AI in Settings first/, "nothing's built before the AI is picked and its terms accepted");
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
     const grant = (await (await phone("POST", "/api/phone/pin", { pin: "2468" })).json()).grant;
     // The TV's own pages hold a grant of their own: a phone's is no use to them.

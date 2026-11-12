@@ -210,6 +210,81 @@ test("T16.1 a controller paired here that says something else about itself after
   later.stop();
 });
 
+test("T16.1 a device the kernel hasn't shown yet when it paired is checked when it does, and goes if it types", async () => {
+  const store = join(scratch, "late", "controllers.json");
+  let changed = () => {};
+  const { bluez, controllers, logged } = standIn([{ ...XBOX, presents: "keyboard" }], { store, checkMs: 5, changes: (so: () => void) => ((changed = so), () => {}) });
+  // The kernel has nothing for it for as long as the pairing waits.
+  const real = bluez.inputs;
+  let shown = false;
+  controllers.watch();
+  (controllers as unknown as { o: { inputs: () => Promise<string> } }).o.inputs = async () => (shown ? real() : "");
+  await controllers.handle({ kind: "look", on: true });
+  const paired = await controllers.handle({ kind: "pair", id: XBOX.address });
+  assert.equal(paired.ok, true, "nothing says it isn't a controller yet");
+  assert.match(logged.join("\n"), /the kernel hasn't shown it yet/);
+  // Then its input devices come, and one of them is a keyboard.
+  shown = true;
+  changed();
+  await sleep(80);
+  const device = bluez.devices.find((d) => d.address === XBOX.address);
+  assert.equal(device?.paired, false, "it's removed");
+  assert.equal(device?.trusted, false);
+  assert.deepEqual(JSON.parse(readFileSync(store, "utf8")), []);
+  controllers.stop();
+});
+
+test("T16.1 a controller paired here that comes back as a keyboard later is removed then", async () => {
+  let changed = () => {};
+  const { bluez, controllers } = standIn([XBOX], { checkMs: 5, changes: (so: () => void) => ((changed = so), () => {}) });
+  controllers.watch();
+  await controllers.handle({ kind: "look", on: true });
+  assert.equal((await controllers.handle({ kind: "pair", id: XBOX.address })).ok, true);
+  changed();
+  await sleep(40);
+  assert.equal(bluez.devices[0].paired, true, "a gamepad stays");
+  bluez.devices[0].presents = "keyboard";
+  changed();
+  await sleep(80);
+  assert.equal(bluez.devices[0].paired, false);
+  assert.deepEqual((await controllers.handle({ kind: "list" })).controllers.filter((one) => one.paired), []);
+  controllers.stop();
+});
+
+test("T16.1 a device that types and can't be removed is said to be still there, and can't come back by itself", async () => {
+  const { bluez, controllers } = standIn([{ ...XBOX, presents: "keyboard" }]);
+  const run = bluez.run;
+  const refusing: typeof run = async (command, args, ms) => (args.includes("RemoveDevice") ? { code: 1, out: "", err: "Call failed: Operation not permitted\n" } : run(command, args, ms));
+  (controllers as unknown as { o: { run: typeof run } }).o.run = refusing;
+  await controllers.handle({ kind: "look", on: true });
+  const answer = await controllers.handle({ kind: "pair", id: XBOX.address });
+  assert.equal(answer.ok, false);
+  assert.equal(answer.why, "not-removed", "not the words for a pairing that didn't happen");
+  assert.deepEqual(answer.controllers.map((one) => [one.id, one.paired]), [[XBOX.address, true]], "it shows, so it can be removed by hand");
+  assert.equal(bluez.devices[0].trusted, false);
+  assert.equal(bluez.devices[0].connected, false);
+  controllers.stop();
+});
+
+test("a read of BlueZ that fails doesn't forget which controllers were paired here", async () => {
+  const store = join(scratch, "kept", "controllers.json");
+  mkdirSync(dirname(store), { recursive: true });
+  writeFileSync(store, JSON.stringify([XBOX.address]));
+  const { bluez, controllers } = standIn([{ ...XBOX, paired: true, trusted: true }, DUALSENSE], { store });
+  const run = bluez.run;
+  let connected = false;
+  const failing: typeof run = async (command, args, ms) => {
+    if (connected && args.includes("GetManagedObjects")) return { code: null, out: "", err: "" };
+    connected ||= args.includes("Connect");
+    return run(command, args, ms);
+  };
+  (controllers as unknown as { o: { run: typeof run } }).o.run = failing;
+  await controllers.handle({ kind: "look", on: true });
+  await controllers.handle({ kind: "pair", id: DUALSENSE.address });
+  assert.deepEqual(JSON.parse(readFileSync(store, "utf8")).sort(), [XBOX.address, DUALSENSE.address].sort());
+  controllers.stop();
+});
+
 test("a controller that wants a code fails with that reason, and leaves nothing half paired", async () => {
   const { bluez, controllers } = standIn([{ ...DUALSENSE, wantsCode: true }]);
   await controllers.handle({ kind: "look", on: true });
@@ -400,7 +475,7 @@ test("T16.1 with a PIN set, pairing, removing and turning Bluetooth on need its 
     for (const bad of [undefined, "made-up"]) {
       const refused = await send(method, path, body, bad);
       assert.equal(refused.status, 403, `${method} ${path}`);
-      assert.deepEqual(refused.data, { ok: false, error: "that needs the pin", pin: true });
+      assert.deepEqual(refused.data, { ok: false, error: "That needs the PIN", pin: true });
     }
   }
   assert.deepEqual(asked, [], "nothing reached the TV session");

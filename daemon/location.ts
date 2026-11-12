@@ -36,9 +36,9 @@ export interface Start {
 // them.
 const THE = new Set(["AE", "BS", "CC", "CD", "CF", "CG", "CK", "CZ", "DO", "FK", "FO", "GM", "KM", "KY", "MH", "MP", "MV", "NL", "PH", "SB", "SC", "TC", "UM", "US", "VA", "VG", "VI"]);
 
-// "the netherlands", "norway": as the TV says it.
+// "the Netherlands", "Norway": as the TV says it.
 export function called(code: string, name: string): string {
-  return `${THE.has(code) ? "the " : ""}${name.toLowerCase()}`;
+  return `${THE.has(code) ? "the " : ""}${name}`;
 }
 
 // How many, in a sentence: "six", or 14.
@@ -50,11 +50,9 @@ function part(zone: string, at: Date, style: "longGeneric" | "longOffset"): stri
   return new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: style }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "";
 }
 
-// "Eastern Time" and "Mountain Standard Time" as "eastern" and "mountain".
+// "Eastern Time" and "Mountain Standard Time" as "Eastern" and "Mountain".
 function zoneName(zone: string): string {
-  return part(zone, new Date(), "longGeneric")
-    .replace(/ (standard )?time$/i, "")
-    .toLowerCase();
+  return part(zone, new Date(), "longGeneric").replace(/ (standard )?time$/i, "");
 }
 
 // What the clock does in a zone: its offsets in January and July, and its

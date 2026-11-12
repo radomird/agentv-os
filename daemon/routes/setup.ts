@@ -61,7 +61,7 @@ export class SetupRoutes {
     // is on.
     if (method === "POST" && on !== "tv" && path === `${prefix}/zone`) {
       if ((await this.state()).done) {
-        this.host.json(response, 409, { ok: false, error: "setup is done" });
+        this.host.json(response, 409, { ok: false, error: "Setup is done" });
         return true;
       }
       const zone = await phoneZone(((await this.host.body(request)) as { zone?: unknown } | undefined)?.zone);
@@ -102,11 +102,11 @@ export class SetupRoutes {
       if (!(await this.host.adult(request, response, "the plan's sign-in"))) return true;
       const ai = await this.host.ai().read();
       if (!ai.provider || ai.path !== "plan") {
-        this.host.json(response, 409, { ok: false, error: "pick a plan first" });
+        this.host.json(response, 409, { ok: false, error: "Pick a plan first" });
         return true;
       }
       if (!ai.accepted) {
-        this.host.json(response, 409, { ok: false, error: "an adult accepts the terms on the phone first" });
+        this.host.json(response, 409, { ok: false, error: `Accept ${OFFERS[ai.provider].name}'s terms first` });
         return true;
       }
       await this.host.planSignIn().start(ai.provider);

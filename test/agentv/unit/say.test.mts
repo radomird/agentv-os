@@ -133,13 +133,17 @@ test("S7.3 a sentence that can't be routed is 'i didn't get that', and nothing i
     assert.deepEqual(calls, []);
   }
   const { ctx, calls } = context();
-  assert.deepEqual(await execute(routed({ ...NONE }, { none: "failed", error: "the provider refused the key (401)" }), ctx), { kind: "none", why: "failed", say: "your agent didn't answer", detail: "the provider refused the key (401)" });
+  assert.deepEqual(await execute(routed({ ...NONE }, { none: "failed", error: "the provider refused the key (401)" }), ctx), { kind: "none", why: "failed", say: "Couldn't answer just now", detail: "the provider refused the key (401)" }, "a raw reason is for the log, never the line");
+  // A kind the TV has a plain line for says it, with the AI's name.
+  assert.equal((await execute(routed({ ...NONE }, { none: "failed", error: "That key was refused" }), ctx)).say, "Your Claude key was refused");
+  assert.equal((await execute(routed({ ...NONE }, { none: "failed", error: "Your AI is busy, or the key is out of credit" }), ctx)).say, "Claude is busy, or the key is out of credit");
+  assert.equal((await execute(routed({ ...NONE }, { none: "failed", error: "That took too long. Try again." }), ctx)).say, "That took too long. Try again.");
   assert.deepEqual(calls, []);
 });
 
 test("play: the one clear best opens, a collision is offered, an app named alone opens, and one that isn't here says so", async () => {
   let { ctx, calls } = context();
-  assert.deepEqual(await execute(routed(play("Frozen", { kind: "album" })), ctx), { kind: "opened", app: "agentv.music", item: FOUND[1].items[0], say: "frozen, on music" });
+  assert.deepEqual(await execute(routed(play("Frozen", { kind: "album" })), ctx), { kind: "opened", app: "agentv.music", item: FOUND[1].items[0], say: "Frozen, on Music" });
   assert.deepEqual(calls, ["search Frozen in local.kino,agentv.music", "open agentv.music album Frozen"]);
   ({ ctx, calls } = context());
   const choose = await execute(routed(play("Frozen")), ctx);
@@ -147,9 +151,9 @@ test("play: the one clear best opens, a collision is offered, an app named alone
   assert.deepEqual(choose.kind === "choose" && choose.candidates.map((c) => `${c.name} ${c.item.kind}`), ["Kino film", "Music album"]);
   assert.deepEqual(calls, ["search Frozen in local.kino,agentv.music"], "nothing opens until one is picked");
   ({ ctx, calls } = context());
-  assert.deepEqual(await execute(routed(play(null, { app: "agentv.steam" })), ctx), { kind: "opened", app: "agentv.steam", say: "steam" });
+  assert.deepEqual(await execute(routed(play(null, { app: "agentv.steam" })), ctx), { kind: "opened", app: "agentv.steam", say: "Steam" });
   ({ ctx, calls } = context());
-  assert.deepEqual(await execute(routed(play("Inception", { app: "Moviebox" })), ctx), { kind: "none", why: "missing", say: "there's no moviebox on this tv" });
+  assert.deepEqual(await execute(routed(play("Inception", { app: "Moviebox" })), ctx), { kind: "none", why: "missing", say: "Moviebox isn't on this TV" });
   assert.deepEqual(calls, []);
   // An app named by its name, and only that app is asked.
   ({ ctx, calls } = context());
@@ -159,26 +163,26 @@ test("play: the one clear best opens, a collision is offered, an app named alone
 
 test("play on an app that can't look things up opens it, and says that's all; nothing found says so", async () => {
   let { ctx } = context();
-  assert.deepEqual(await execute(routed(play("Portal 2", { app: "agentv.steam" })), ctx), { kind: "opened", app: "agentv.steam", say: "steam can't look up portal 2, so it's open" });
+  assert.deepEqual(await execute(routed(play("Portal 2", { app: "agentv.steam" })), ctx), { kind: "opened", app: "agentv.steam", say: "Opened Steam. It can't find Portal 2." });
   ({ ctx } = context());
-  assert.deepEqual(await execute(routed(play("Dune")), ctx), { kind: "none", why: "not-found", say: "i couldn't find dune" });
+  assert.deepEqual(await execute(routed(play("Dune")), ctx), { kind: "none", why: "not-found", say: "Couldn't find Dune" });
   ({ ctx } = context([], { ok: false, error: "it isn't signed in" }));
-  assert.deepEqual(await execute(routed(play("Frozen", { kind: "film" })), ctx), { kind: "none", why: "not-opened", say: "kino didn't open frozen", detail: "it isn't signed in" });
+  assert.deepEqual(await execute(routed(play("Frozen", { kind: "film" })), ctx), { kind: "none", why: "not-opened", say: "Couldn't open Frozen", detail: "it isn't signed in" });
 });
 
 test("continue opens from the ledger, and says when there's nothing to continue", async () => {
   let { ctx, calls } = context([row(9, "local.kino", "Severance", { position_s: 2990 })]);
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "continue" }), ctx), { kind: "opened", app: "local.kino", item: { id: "ledger:9", kind: "episode", title: "Severance", season: 2, episode: 4 }, say: "severance s2 e4, on kino" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "continue" }), ctx), { kind: "opened", app: "local.kino", item: { id: "ledger:9", kind: "episode", title: "Severance", season: 2, episode: 4 }, say: "Severance S2 E4, on Kino" });
   assert.deepEqual(calls, ["open local.kino episode Severance e4"]);
   ({ ctx } = context());
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "continue" }), ctx), { kind: "none", why: "not-found", say: "there's nothing to continue yet" });
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "continue", query: "Andor" }), ctx), { kind: "none", why: "not-found", say: "there's nothing called andor to continue" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "continue" }), ctx), { kind: "none", why: "not-found", say: "There's nothing to continue yet" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "continue", query: "Andor" }), ctx), { kind: "none", why: "not-found", say: "Couldn't find Andor to continue" });
 });
 
 test("what's new and new episodes, with no way to ask TMDB, say so plainly and do nothing (tmdb.test.mts has the rest)", async () => {
   const { ctx, calls } = context();
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "soon", say: "i can't tell you what's new on this tv yet" });
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "Severance" }), ctx), { kind: "none", why: "soon", say: "i can't check for new episodes on this tv yet" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "soon", say: "Can't show what's new yet" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "Severance" }), ctx), { kind: "none", why: "soon", say: "Can't check for new episodes yet" });
   assert.deepEqual(calls, []);
 });
 
@@ -265,7 +269,7 @@ const phone = (path: string, body?: unknown) =>
 test("the TV takes a sentence only once setup is done", async () => {
   const early = await phone("/api/phone/say", { sentence: "play frozen" });
   assert.equal(early.status, 409);
-  assert.equal((await early.json()).error, "the tv takes requests once setup is done");
+  assert.equal((await early.json()).error, "Finish setup on your TV first");
   writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-10-29T18:00:00Z" }));
   assert.equal((await phone("/api/phone/say", { sentence: " " })).status, 400);
 });
@@ -284,12 +288,12 @@ test("S7.1 a phone's 'play frozen' hears the apps who's watching can open, and b
   assert.equal(state.said.route, undefined, "the phone gets what happened, not the route");
   // Over an app in front, the TV says the phone has them.
   await until(() => asks.some((ask) => ask.kind === "tell"));
-  assert.ok(asks.some((ask) => ask.kind === "tell" && ask.text === "which one? your phone has them"));
+  assert.ok(asks.some((ask) => ask.kind === "tell" && ask.text === "Which one? Pick on your phone."));
   // The phone picks the soundtrack, and the TV session opens it in Music.
   asks.length = 0;
   const picked = await (await phone("/api/phone/say/pick", { n: said.said.n, choice: 1 })).json();
   assert.equal(picked.said.outcome.kind, "opened");
-  assert.equal(picked.said.outcome.say, "frozen, on music");
+  assert.equal(picked.said.outcome.say, "Frozen, on Music");
   assert.deepEqual(asks, [{ kind: "open", app: "agentv.music", item: FOUND[1].items[0], n: (asks[0] as SayAsk & { n: number }).n }]);
   assert.equal((await phone("/api/phone/say/pick", { n: said.said.n, choice: 0 })).status, 409, "once picked, there's nothing to choose");
 });
@@ -298,17 +302,19 @@ test("S7.3 a sentence the router can't route is 'i didn't get that' on the TV an
   routes = {};
   asks.length = 0;
   const said = await (await phone("/api/phone/say", { sentence: "turn the lights off" })).json();
-  assert.deepEqual(said.said.outcome, { kind: "none", why: "unroutable", say: "i didn't get that" });
+  assert.deepEqual(said.said.outcome, { kind: "none", why: "unroutable", say: "Didn't get that" });
   assert.equal(said.said.route.intent, "none");
   // Only the line over the app in front, if there is one: nothing looked
   // up, nothing opened.
   await until(() => asks.length > 0);
-  assert.deepEqual(asks.map(({ n: _n, ...ask }: SayAsk & { n?: number }) => ask), [{ kind: "tell", text: "i didn't get that" }]);
-  assert.equal((await (await phone("/api/phone/state")).json()).said.outcome.say, "i didn't get that");
-  routes = { "play heat": new Error("the provider is busy, or the key is out of credit (429)") };
+  assert.deepEqual(asks.map(({ n: _n, ...ask }: SayAsk & { n?: number }) => ask), [{ kind: "tell", text: "Didn't get that" }]);
+  assert.equal((await (await phone("/api/phone/state")).json()).said.outcome.say, "Didn't get that");
+  // The AI's own words for why it gave no answer: the TV and the phone get
+  // one plain line, and the raw reason goes no further than the log.
+  routes = { "play heat": new Error("the provider had a problem (500): upstream connect error") };
   asks.length = 0;
   const failed = await (await post("/api/say", { sentence: "play heat" })).json();
-  assert.deepEqual(failed.said.outcome, { kind: "none", why: "failed", say: "your agent didn't answer", detail: "the provider is busy, or the key is out of credit (429)" });
+  assert.deepEqual(failed.said.outcome, { kind: "none", why: "failed", say: "Couldn't answer just now" });
   await until(() => asks.length > 0);
   assert.deepEqual(asks.map((ask) => ask.kind), ["tell"]);
 });
@@ -320,7 +326,7 @@ test("continue opens what who's watching last watched, and Back on the TV puts i
   routes = { "carry on": { ...NONE, intent: "continue" } };
   asks.length = 0;
   const said = await (await post("/api/say", { sentence: "carry on" })).json();
-  assert.equal(said.said.outcome.say, "severance s2 e3, on kino");
+  assert.equal(said.said.outcome.say, "Severance S2 E3, on Kino");
   assert.equal(asks[0].kind === "open" && asks[0].app, "local.kino");
   assert.equal((await (await post("/api/say/dismiss", { n: said.said.n })).json()).ok, true);
   assert.equal((await (await fetch(`${url}/api/say`)).json()).said, null);
@@ -357,8 +363,8 @@ test("with no AI set up yet, the TV says what's missing, not a guess", async () 
   } finally {
     await bare.close();
   }
-  assert.deepEqual(said, { kind: "none", why: "no-ai", say: "set up an ai first: settings → ai" });
-  assert.deepEqual(before, { kind: "none", why: "failed", say: "your agent didn't answer", detail: "set up your agent in settings → ai first" });
+  assert.deepEqual(said, { kind: "none", why: "no-ai", say: "Set up AI in Settings first" });
+  assert.deepEqual(before, { kind: "none", why: "failed", say: "Set up AI in Settings first" });
 });
 
 test("S7.4 the router alone, through the daemon, routes with the apps it's told of and does nothing", async () => {

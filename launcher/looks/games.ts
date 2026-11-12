@@ -7,7 +7,7 @@
 
 import type { App } from "../api.ts";
 import type { Ctx } from "../main.ts";
-import { preview, said } from "./looks.ts";
+import { preview } from "./looks.ts";
 
 // The row's name. Only Glass and Cinema draw it, and both write it as it is.
 export const GAMES = "Games";
@@ -28,6 +28,6 @@ export function openWords(ctx: Ctx, app: App): string {
   if (preview()) return "";
   const open = ctx.running.get(app.id);
   if (!open) return "";
-  if (open.game) return said("running");
-  return said(open.paused ? "paused" : "open");
+  if (open.game) return "Running";
+  return open.paused ? "Paused" : "Open";
 }

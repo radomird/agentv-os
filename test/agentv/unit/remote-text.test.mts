@@ -32,7 +32,7 @@ test("T8.1 a native app takes plain ASCII only, and the phone hears what couldn'
   const sent: Record<string, unknown>[] = [];
   const native = new NativeTyping();
   const answer = await native.type("René 🎬", "0xa", async (request) => void sent.push(request));
-  assert.deepEqual(answer, { ok: false, by: "key", value: "Ren ", why: "this app takes plain letters, so é can't go" });
+  assert.deepEqual(answer, { ok: false, by: "key", value: "Ren ", why: "This app can't take é" });
   assert.deepEqual(sent, [{ text: "Ren " }]);
   native.reset();
   const none: Record<string, unknown>[] = [];
@@ -70,7 +70,7 @@ test("T8.1 the screen daemon types into the page in front, or as keys into a nat
   const bars: (Bar | null)[] = [];
   let front: TypingFront = { kind: "page", id: "home", overlay: false, evaluate: async (expression) => (evaluated.push(expression), { ok: true, by: "page" }) };
   const typing = new PhoneTyping({ front: () => front, keys: async (request) => void keys.push(request), bar: async (bar) => void bars.push(bar) });
-  const bar: Bar = { from: "radomir's phone", text: "si", password: false };
+  const bar: Bar = { from: "Radomir's phone", text: "si", password: false };
   assert.deepEqual(await typing.text("si", 2, bar), { ok: true, by: "page" });
   assert.equal(evaluated.length, 1);
   assert.deepEqual(bars, [], "home draws its own bar");
@@ -97,11 +97,11 @@ test("T8.1 the screen daemon types into the page in front, or as keys into a nat
 test("T8.1 a page that doesn't answer, or nothing to type in, says so", async () => {
   let front: TypingFront = { kind: "page", id: "x", overlay: true, evaluate: () => new Promise(() => {}) };
   const typing = new PhoneTyping({ front: () => front, keys: async () => {}, bar: async () => {}, ms: 50 });
-  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "the tv's page didn't answer" });
+  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "Your TV isn't ready yet" });
   front = null;
-  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "nothing on the tv takes typing now" });
-  front = { kind: "page", id: "x", overlay: true, evaluate: async () => ({ ok: false, by: "page", why: "the tv's field is full", kept: 3, extra: "no" }) };
-  assert.deepEqual(await typing.text("abcd", 4, null), { ok: false, by: "page", why: "the tv's field is full", kept: 3 });
+  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "Nothing to type into right now" });
+  front = { kind: "page", id: "x", overlay: true, evaluate: async () => ({ ok: false, by: "page", why: "That field is full", kept: 3, extra: "no" }) };
+  assert.deepEqual(await typing.text("abcd", 4, null), { ok: false, by: "page", why: "That field is full", kept: 3 });
 });
 
 // The route on a server of its own, with a stand-in for the screen
@@ -152,8 +152,8 @@ async function route(options: { front?: "home" | "app"; field?: { kind: string }
 test("T8.1 each change goes to the screen daemon, and home's bar hears it with whose phone it is", async () => {
   const r = await route();
   assert.deepEqual(await r.post("/api/phone/text", { value: "sinté", caret: 5 }), { status: 200, body: { ok: true, by: "page" } });
-  assert.deepEqual(r.asks, [{ n: 1, kind: "text", value: "sinté", caret: 5, bar: { from: "radomir's phone", text: "sinté", password: false } }]);
-  assert.deepEqual(r.pages, [{ event: "typing", data: { from: "radomir's phone", text: "sinté", password: false } }]);
+  assert.deepEqual(r.asks, [{ n: 1, kind: "text", value: "sinté", caret: 5, bar: { from: "Radomir's phone", text: "sinté", password: false } }]);
+  assert.deepEqual(r.pages, [{ event: "typing", data: { from: "Radomir's phone", text: "sinté", password: false } }]);
   // A caret past the end, or none, is no caret.
   await r.post("/api/phone/text", { value: "ab", caret: 9 });
   assert.equal(r.asks.at(-1)!.caret, null);
@@ -167,7 +167,7 @@ test("T8.1 each change goes to the screen daemon, and home's bar hears it with w
 test("T8.1 a password reaches home's bar as dots only, and over an app the overlay draws it, not home", async () => {
   const r = await route({ field: { kind: "password" }, front: "app", viewer: "you" });
   await r.post("/api/phone/text", { value: "hunter2", caret: 7 });
-  assert.deepEqual(r.asks[0].bar, { from: "your phone", text: "•••••••", password: true });
+  assert.deepEqual(r.asks[0].bar, { from: "Your phone", text: "•••••••", password: true });
   assert.deepEqual(r.pages, [{ event: "typing", data: null }]);
   r.close();
 });
@@ -185,13 +185,13 @@ test("T8.1 only the newest change waits: ones it overtook are answered as done, 
 
 test("T8.1 the route says when there's no TV session, refuses a bad change, and takes answers only from the screen daemon", async () => {
   const off = await route({ session: false });
-  assert.deepEqual(await off.post("/api/phone/text", { value: "a", caret: 1 }), { status: 503, body: { ok: false, why: "the tv session isn't on" } });
+  assert.deepEqual(await off.post("/api/phone/text", { value: "a", caret: 1 }), { status: 503, body: { ok: false, why: "Your TV isn't ready yet" } });
   off.close();
   const r = await route({ answer: () => null });
   assert.equal((await r.post("/api/phone/text", { value: 5 })).status, 400);
   assert.equal((await r.post("/api/phone/text", { value: "é".repeat(501) })).status, 400);
   assert.equal((await r.post("/api/remote/answer/1", { ok: true })).status, 403);
-  assert.deepEqual(await r.post("/api/phone/text", { value: "a", caret: 1 }), { status: 200, body: { ok: false, why: "the tv didn't answer in time" } });
+  assert.deepEqual(await r.post("/api/phone/text", { value: "a", caret: 1 }), { status: 200, body: { ok: false, why: "Your TV isn't ready yet" } });
   assert.equal((await r.post("/api/remote/answer/99", { ok: true }, { "X-AgenTV-Screen": "1" })).status, 404);
   r.close();
 });
@@ -262,7 +262,7 @@ test("T8.1 on Omarchy's desktop, with no screen daemon to type through Chromium,
   say({ ask: { n: 3, kind: "playback", action: "toggle" } });
   while (answers.length < 3) await sleep(10);
   assert.deepEqual(sent, [{ text: "h" }, { key: "enter" }, { key: "playpause" }]);
-  assert.deepEqual(JSON.parse(answers[0]), { ok: false, by: "key", value: "h", why: "this app takes plain letters, so é can't go" });
+  assert.deepEqual(JSON.parse(answers[0]), { ok: false, by: "key", value: "h", why: "This app can't take é" });
   input.stop();
   (stream as ServerResponse).destroy();
   server.close();

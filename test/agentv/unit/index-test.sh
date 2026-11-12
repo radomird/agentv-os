@@ -65,7 +65,7 @@ sed -i.bak 's/"1.0.0"/"9.9.9"/' "$SCRATCH/index/index.json"
 status=0
 out=$(app install agentv.sample --index "$SCRATCH/index" 2>&1) || status=$?
 (( status == 1 )) || fail "S2.1 agentv app install refuses a tampered index" "exit $status: $out"
-[[ $out == "Couldn't do it: the app index isn't signed by AgenTV's key, so nothing was installed." ]] ||
+[[ $out == "Couldn't verify the app list, so nothing was installed." ]] ||
   fail "S2.1 it says why, in plain words" "$out"
 [[ ! -e $SCRATCH/state/apps/agentv.sample ]] || fail "S2.1 nothing is installed from a tampered index"
 pass "S2.1 agentv app install refuses a tampered index and installs nothing"
@@ -74,7 +74,7 @@ pass "S2.1 agentv app install refuses a tampered index and installs nothing"
 status=0
 out=$(unset AGENTV_INDEX_URL; app install agentv.sample 2>&1) || status=$?
 (( status == 1 )) || fail "agentv app install without an index fails" "exit $status: $out"
-[[ $out == "Couldn't do it: this box has no app index set up yet." ]] || fail "agentv app install without an index says so" "$out"
+[[ $out == "Couldn't load the apps." ]] || fail "agentv app install without an index says so" "$out"
 pass "agentv app install without an index says so"
 
 # --- agentv app install --local (ADR-039) --------------------------------------
@@ -127,7 +127,7 @@ PY
 out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || fail "ADR-039 agentv app install --local installs an app built on this box" "$out"
 [[ $out == "Sample 1.0.0 (local.sample), from $SCRATCH/built."*"It can reach the addresses its setup asks you for, and nothing else."* ]] ||
   fail "it says what the app is, where it's from and what it can reach, before it asks" "$out"
-[[ $(tail -n 1 <<<"$out") == "Installed Sample 1.0.0 (local.sample). It's in Apps on the TV, where its details put it on home." ]] ||
+[[ $(tail -n 1 <<<"$out") == "Installed Sample 1.0.0. Open Apps on your TV to add it to home." ]] ||
   fail "it says what it installed, and where to find it on the TV" "$out"
 [[ $(cat "$PIN_LOG") == "app-install" ]] || fail "--yes answers the question, and the adult PIN is still asked for" "$(cat "$PIN_LOG")"
 [[ -f $SCRATCH/state/apps/local.sample/manifest.json && ! -e $SCRATCH/state/apps/local.sample/fixtures ]] ||
@@ -143,7 +143,7 @@ touch "$PIN_NO"
 status=0
 out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || status=$?
 (( status == 1 )) || fail "ADR-039 without the adult PIN, nothing is installed" "exit $status: $out"
-[[ $(tail -n 1 <<<"$out") == "Couldn't do it: that needs the adult PIN, so nothing was installed." ]] || fail "it says the PIN was needed" "$out"
+[[ $(tail -n 1 <<<"$out") == "That needs the adult PIN, so nothing was installed." ]] || fail "it says the PIN was needed" "$out"
 [[ ! -e $SCRATCH/state/apps/local.sample && -z $(app list) ]] || fail "nothing of the app is on the box without the PIN"
 rm -f "$PIN_NO"
 pass "ADR-039 agentv app install --local installs nothing without the adult PIN"

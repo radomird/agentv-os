@@ -33,7 +33,7 @@ function round(value: number): number {
 }
 
 export function cityName(zone: string): string {
-  return (zone.split("/").pop() ?? zone).replace(/_/g, " ").toLowerCase();
+  return (zone.split("/").pop() ?? zone).replace(/_/g, " ");
 }
 
 // Every city in zone.tab, by zone.

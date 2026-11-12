@@ -226,8 +226,9 @@ test("T4.1 home and the built-in apps at 1600, 1920 and 2400 in every look, with
           await go(page, "settings");
           await rest(page);
           const sections = await page.$$eval(".menu [data-key]", (items) => items.map((item) => (item as HTMLElement).dataset.key!));
-          assert.ok(sections.length > 5, "settings has its sections");
-          for (const key of sections) {
+          assert.equal(sections.length, 8, "settings has its eight sections");
+          // Each section's rows, then each page a row opens in the panel.
+          for (const key of [...sections, "looks", "theme", "weather", "tmdb", "pin", "controllers", "wifi", "your-ai", "usage", "updates", "desktop", "about"]) {
             await go(page, `settings/${key}`);
             await check(`settings → ${key}`);
           }
@@ -255,7 +256,7 @@ test("T4.1 the size row in Settings steps through the sizes this TV offers, and 
   try {
     await go(page, "settings/look");
     await rest(page);
-    assert.equal(await value(), "standard");
+    assert.equal(await value(), "Standard");
     await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>('[data-action="size"]')!;
       (window as unknown as { agentvLauncher: { focus: { set(el: HTMLElement): void } } }).agentvLauncher.focus.set(el);
@@ -265,11 +266,11 @@ test("T4.1 the size row in Settings steps through the sizes this TV offers, and 
     await page.waitForFunction(() => document.documentElement.dataset.size === "more", undefined, { timeout: 1000 });
     assert.ok(Date.now() - started < 1000, "the new size applies within a second");
     assert.equal(((await (await fetch(`${url}/api/display`)).json()) as { size: string }).size, "more");
-    await page.waitForFunction(() => document.querySelector('[data-action="size"] .button-value')?.textContent?.trim() === "more on screen");
+    await page.waitForFunction(() => document.querySelector('[data-action="size"] .button-value')?.textContent?.trim() === "More on screen");
     await page.keyboard.press("ArrowRight");
     await rest(page);
     assert.equal(((await (await fetch(`${url}/api/display`)).json()) as { size: string }).size, "more", "right at the last size stays there");
-    for (const want of ["standard", "larger"]) {
+    for (const want of ["Standard", "Larger"]) {
       await page.keyboard.press("ArrowLeft");
       await page.waitForFunction((w) => document.querySelector('[data-action="size"] .button-value')?.textContent?.trim() === w, want);
     }
@@ -289,7 +290,7 @@ test("T4.1 on a 4K TV, Settings puts it on 1080p output and back, and the sizes 
   try {
     await go(page, "settings/look");
     await rest(page);
-    assert.equal(await value("resolution"), "4k");
+    assert.equal(await value("resolution"), "4K");
     await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>('[data-action="resolution"]')!;
       (window as unknown as { agentvLauncher: { focus: { set(el: HTMLElement): void } } }).agentvLauncher.focus.set(el);
@@ -298,9 +299,9 @@ test("T4.1 on a 4K TV, Settings puts it on 1080p output and back, and the sizes 
     await page.waitForFunction(() => document.querySelector('[data-action="resolution"] .button-value')?.textContent?.trim() === "1080p");
     const hd = await display();
     assert.deepEqual([hd.output, hd.mode, hd.scale, hd.size, hd.sizes], ["1080p", "1920x1080@60", 1, "standard", ["larger", "standard"]], "1080p output, where more on screen isn't offered");
-    assert.equal(await value("size"), "standard");
+    assert.equal(await value("size"), "Standard");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelector('[data-action="resolution"] .button-value')?.textContent?.trim() === "4k");
+    await page.waitForFunction(() => document.querySelector('[data-action="resolution"] .button-value')?.textContent?.trim() === "4K");
     const uhd = await display();
     assert.deepEqual([uhd.output, uhd.mode, uhd.scale, uhd.size], ["auto", "3840x2160@60", 1.6, "more"], "back at 4K, more on screen comes back too");
   } finally {
@@ -320,12 +321,12 @@ test("T4.1 setup's look step offers the TV's sizes under the looks, and each loo
     await page.goto(`${url}/`);
     await page.waitForSelector(".setup-look .look-card.focused");
     const chips = () => page.$$eval(".setup-look-sizes .chip", (els) => els.map((el) => `${el.textContent?.trim()}${el.classList.contains("picked") ? " *" : ""}`));
-    assert.deepEqual(await chips(), ["larger", "standard *", "more on screen"]);
+    assert.deepEqual(await chips(), ["Larger", "Standard *", "More on screen"]);
     const previews = () => page.$$eval(".setup-look .look-frame-page", (els) => els.map((el) => new URL((el as HTMLIFrameElement).src).searchParams.get("size")));
     assert.deepEqual(await previews(), ["standard", "standard", "standard"]);
     await page.locator('.setup-look-sizes [data-action="size-more"]').click();
     await page.waitForFunction(() => document.querySelector('.setup-look-sizes [data-action="size-more"]')?.classList.contains("picked"));
-    assert.deepEqual(await chips(), ["larger", "standard", "more on screen *"]);
+    assert.deepEqual(await chips(), ["Larger", "Standard", "More on screen *"]);
     assert.deepEqual(await previews(), ["more", "more", "more"], "each look's preview is home at more on screen");
     assert.equal(((await (await fetch(`${url}/api/display`)).json()) as { size: string }).size, "more");
     assert.equal(((await (await fetch(`${url}/api/setup`)).json()) as { setup: { step: string } }).setup.step, "look", "picking a size stays on the step");
@@ -344,7 +345,7 @@ test("T4.1 with the sizes switched off, there's no size picker and home is at st
     await go(page, "settings/look");
     await rest(page);
     assert.equal(await page.locator('[data-action="size"]').count(), 0);
-    assert.equal((await page.locator('[data-row="size"] .button-value').textContent())?.trim(), "standard");
+    assert.equal((await page.locator('[data-row="size"] .button-value').textContent())?.trim(), "Standard");
     assert.equal((await fetch(`${url}/api/display`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ size: "larger" }) })).status, 409);
   } finally {
     await page.close();

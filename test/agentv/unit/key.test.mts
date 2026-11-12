@@ -56,13 +56,13 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
     // With the plans on offer, the same on every channel, and what builds
     // use: nothing yet.
     const claude = [
-      { provider: "claude", name: "claude pro or max" },
-      { provider: "chatgpt", name: "chatgpt plus or pro" },
-      { provider: "grok", name: "supergrok or x premium+" },
+      { provider: "claude", name: "Claude Pro or Max" },
+      { provider: "chatgpt", name: "ChatGPT Plus or Pro" },
+      { provider: "grok", name: "SuperGrok or X Premium+" },
     ];
     const none = { provider: null, path: null, accepted: false };
     assert.deepEqual((await send("GET", "/api/key")).data, { ok: true, set: false, provider: null, plans: claude, ai: none });
-    assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "claude, chatgpt, gemini, grok or muse" });
+    assert.deepEqual((await send("PUT", "/api/key", { provider: "acme", key: KEY })).data, { ok: false, error: "Claude, ChatGPT, Gemini, Grok or Muse" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: "short" })).data, { ok: false, error: "that doesn't look like a key" });
     assert.deepEqual((await send("PUT", "/api/key", { provider: "claude", key: `${KEY}\nEVIL=1` })).data, { ok: false, error: "that doesn't look like a key" });
 
@@ -100,7 +100,7 @@ test("S4.6 with nothing to move it as root, the key doesn't stay in the daemon's
   try {
     await daemon.ai.record("chatgpt", "key", { phone: "pixel", viewer: "radomir" });
     const reply = await send("PUT", "/api/key", { provider: "chatgpt", key: `sk-proj-${"d".repeat(40)}` }, (await send("POST", "/api/pin/check", { pin: "4826" })).data.grant as string);
-    assert.deepEqual(reply, { status: 500, text: reply.text, data: { ok: false, error: "the key couldn't be kept: agentv-key.path isn't running" } });
+    assert.deepEqual(reply, { status: 500, text: reply.text, data: { ok: false, error: "Couldn't save the key. Restart your TV and try again." } });
     assert.equal(existsSync(join(state, "key-drop", "key.json")), false);
   } finally {
     await daemon.close();

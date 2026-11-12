@@ -27,7 +27,7 @@ export async function yourBox(ctx: Ctx): Promise<View> {
   let stopped = false;
 
   const list = h("div", { class: "box-list" });
-  const draw = () => list.replaceChildren(report ? rows(report, smooth) : h("p", { class: "setup-line" }, "couldn't read the box. setup carries on without it."));
+  const draw = () => list.replaceChildren(report ? rows(report, smooth) : h("p", { class: "setup-line" }, "Couldn't check your setup. Setup continues."));
   const ok = h(
     "button",
     {
@@ -39,16 +39,16 @@ export async function yourBox(ctx: Ctx): Promise<View> {
         void ctx.finish("box");
       },
     },
-    "↵ ok",
+    "OK",
   );
-  const model = report?.model.toLowerCase();
-  const [prompt, headline] = heading("agentv box", "here's your box.", ctx.reduced());
+  const model = report?.model;
+  const [prompt, headline] = heading("agentv box", "Here's your setup", ctx.reduced());
   const el = h(
     "div",
     { class: "setup-page d3 box-step" },
     prompt,
     headline,
-    h("p", { class: "setup-line" }, [model, "setup uses this from here on"].filter(Boolean).join(" · ")),
+    h("p", { class: "setup-line" }, model ? `${model} · the next steps follow it` : "The next steps follow it"),
     list,
     h("div", { class: "setup-actions" }, ok),
   );
@@ -71,7 +71,7 @@ export async function yourBox(ctx: Ctx): Promise<View> {
   return {
     el,
     first: ok,
-    info: ctx.info.phones.length ? "phone paired" : "",
+    info: ctx.info.phones.length ? "Phone paired" : "",
     heard(event) {
       // Something about the box changed, such as Widevine arriving: the
       // lines again, unless the test is still running.

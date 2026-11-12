@@ -123,10 +123,10 @@ const until = async (check: () => boolean, what: string) => {
   }
 };
 
-// Opens Settings at controllers, and waits for the list.
+// Opens Settings at the controllers page, and waits for the list.
 async function open(page: Page): Promise<void> {
   await go(page, "settings/controllers");
-  await page.waitForSelector('.menu-item.open[data-key="controllers"]');
+  await page.waitForSelector('.settings-panel[data-page="controllers"]');
   await page.waitForSelector(".panel [data-note='controllers'], .panel [data-action='bluetooth-on']");
 }
 
@@ -164,7 +164,8 @@ function overflows(page: Page): Promise<string[]> {
 }
 
 for (const look of LOOKS) {
-  // Terminal's words are lower case, and a controller's own name never is.
+  // Terminal shows its words in lower case, and a controller's own name
+  // never is. The words themselves are written the same in every look.
   const said = (text: string) => (look === "terminal" ? text.toLowerCase() : text);
 
   test(`T16.1 controllers in ${look}: the ones nearby show and a keyboard doesn't, OK pairs one, OK again removes it, and it says so with Bluetooth off or none`, async () => {
@@ -184,10 +185,7 @@ for (const look of LOOKS) {
       assert.match(text, new RegExp(`${WIRED}\\s+${said("Plugged in")}`), "the one on a cable needs nothing");
       assert.doesNotMatch(text, /keychron|wh-1000/i, "a keyboard and headphones are never listed");
       assert.equal(await page.locator(".panel [data-controller]").count(), 3);
-      // Settings' own list: the section, and how many are connected, which
-      // the looks keep out of sight.
-      assert.equal(await page.locator('.menu-item[data-key="controllers"] span').first().innerText(), said("Controllers"));
-      assert.equal(await page.locator('.menu-item[data-key="controllers"] .menu-value').textContent(), "1");
+      assert.equal(await page.locator(".menu-item.open").innerText(), said("Phones and controllers"));
 
       // OK on the section goes into it, and OK on a controller pairs it,
       // with no PIN pad when no PIN is set.
@@ -196,19 +194,30 @@ for (const look of LOOKS) {
       await page.keyboard.press("Enter");
       await page.waitForSelector(`${row(XBOX.address)}[data-controller="paired"]`);
       assert.equal(await padUp(page), false);
-      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast")].some((toast) => toast.textContent === want), `${said("Paired")} Xbox Wireless Controller`);
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast")].some((toast) => toast.textContent === want), "Paired Xbox Wireless Controller");
       assert.match(await page.locator(row(XBOX.address)).innerText(), new RegExp(`Xbox Wireless Controller\\s+${said("Connected · Remove")}`));
       assert.equal(await focused(page), `controller-${XBOX.address}`, "the focus stays on it");
       assert.deepEqual(did(/ (Pair|Connect)$|Trusted/).map((call) => call.split(" ").slice(4).join(" ")), ["org.bluez.Device1 Pair", "org.bluez.Device1 Trusted b true", "org.bluez.Device1 Connect"]);
-      assert.equal(await page.locator('.menu-item[data-key="controllers"] .menu-value').textContent(), "2");
       // Paired ones come first.
       assert.equal(await page.locator(".panel [data-controller]").first().getAttribute("data-action"), `controller-${XBOX.address}`);
       if (SHOTS) await page.screenshot({ path: join(SHOTS, `${look}-dark-paired.png`) });
 
+      // Back from the page is Phones and controllers, on "Pair a controller".
+      // Its rows have the paired one and the one on a cable, each on one
+      // line, and OK on the paired one opens the page on it.
+      await page.keyboard.press("Escape");
+      await page.waitForSelector('.settings-panel[data-page="phones"]');
+      assert.equal(await focused(page), "controllers");
+      assert.match(await panel(page), new RegExp(`Xbox Wireless Controller\\s+${said("Connected")}\\s+${WIRED}\\s+${said("Plugged in")}\\s+${said("Pair a controller")}$`));
+      assert.equal(await page.locator(".panel .panel-note").count(), 0, "nothing is explained under a row");
+      await page.locator(`.panel [data-action="controller-${XBOX.address}"]`).click();
+      await page.waitForSelector('.settings-panel[data-page="controllers"]');
+      assert.equal(await focused(page), `controller-${XBOX.address}`);
+
       // OK on a paired one removes it, and it's nearby again.
       await page.keyboard.press("Enter");
       await page.waitForSelector(`${row(XBOX.address)}[data-controller="nearby"]`);
-      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast")].some((toast) => toast.textContent === want), `${said("Removed")} Xbox Wireless Controller`);
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast")].some((toast) => toast.textContent === want), "Removed Xbox Wireless Controller");
       assert.equal(did(/RemoveDevice/).length, 1);
       assert.equal(await focused(page), `controller-${XBOX.address}`);
 
@@ -222,7 +231,7 @@ for (const look of LOOKS) {
       await page.waitForSelector(row(DUALSENSE.address));
       await moveTo(page, DUALSENSE.address, "ArrowUp");
       await page.keyboard.press("Enter");
-      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), said("Couldn't pair {name}. If it asks for a code, use a cable instead.").replace("{name}", "DualSense Wireless Controller"));
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), "Couldn't pair DualSense Wireless Controller. If it asks for a code, use a cable instead.");
       assert.notEqual(bluez.devices.find((device) => device.address === DUALSENSE.address)?.paired, true);
 
       // Bluetooth switched off: one button, which turns it on.
@@ -239,7 +248,7 @@ for (const look of LOOKS) {
 
       // No Bluetooth at all: one plain line, and the cable still works.
       bluez.adapter = false;
-      await page.waitForFunction((want) => document.querySelector(".panel [data-note='controllers']")?.textContent === want, said("Your TV has no Bluetooth. Plug a controller in with a cable."));
+      await page.waitForFunction((want) => document.querySelector(".panel [data-note='controllers']")?.textContent === want, "Your TV has no Bluetooth. Plug a controller in with a cable.");
       text = await panel(page);
       assert.match(text, new RegExp(`${WIRED}\\s+${said("Plugged in")}`));
       assert.equal(await page.locator(".panel [data-focus]").count(), 0, "nothing to pair");
@@ -254,7 +263,7 @@ for (const look of LOOKS) {
       bluez.seen.add(odd.address);
       await page.waitForSelector(row(odd.address));
       await page.locator(row(odd.address)).click();
-      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), said("Couldn't pair {name}. Only game controllers pair here.").replace("{name}", () => odd.name));
+      await page.waitForFunction((want) => [...document.querySelectorAll("#toasts .toast.fail")].some((toast) => toast.textContent === want), `Couldn't pair ${odd.name}. Only game controllers pair here.`);
       assert.equal(bluez.devices.find((device) => device.address === odd.address)?.paired, false, "it isn't left paired");
       assert.equal(bluez.devices.find((device) => device.address === odd.address)?.trusted, false);
       bluez.devices = bluez.devices.filter((device) => device.address !== odd.address);
@@ -353,7 +362,7 @@ test("T16.1 with a PIN set the pad comes before pairing, and a child's profile s
   try {
     await go(kid, "settings/controllers");
     await kid.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
-    assert.equal(await kid.locator('.menu-item[data-key="controllers"]').count(), 0);
+    assert.equal(await kid.locator(".settings-panel").count(), 0);
   } finally {
     await kid.close();
     await send("POST", "/api/controllers/look", { on: false });

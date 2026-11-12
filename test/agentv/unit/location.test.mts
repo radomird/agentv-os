@@ -19,15 +19,15 @@ process.env.AGENTV_ISO3166_TAB = join(ROOT, "test/agentv/fixtures/met/iso3166.ta
 
 test("T7.1 a country's time zones are one choice for each different clock, each with its city", async () => {
   assert.deepEqual(await zoneChoices("US"), [
-    { zone: "America/New_York", name: "eastern", city: "new york" },
-    { zone: "America/Chicago", name: "central", city: "chicago" },
-    { zone: "America/Denver", name: "mountain", city: "denver" },
-    { zone: "America/Phoenix", name: "mountain", city: "phoenix" },
-    { zone: "America/Los_Angeles", name: "pacific", city: "los angeles" },
-    { zone: "Pacific/Honolulu", name: "hawaii-aleutian", city: "honolulu" },
+    { zone: "America/New_York", name: "Eastern", city: "New York" },
+    { zone: "America/Chicago", name: "Central", city: "Chicago" },
+    { zone: "America/Denver", name: "Mountain", city: "Denver" },
+    { zone: "America/Phoenix", name: "Mountain", city: "Phoenix" },
+    { zone: "America/Los_Angeles", name: "Pacific", city: "Los Angeles" },
+    { zone: "Pacific/Honolulu", name: "Hawaii-Aleutian", city: "Honolulu" },
   ]);
-  assert.deepEqual(await zoneChoices("DE"), [{ zone: "Europe/Berlin", name: "central european", city: "berlin" }], "Busingen keeps Berlin's clock, so Germany is one");
-  assert.deepEqual(await zoneChoices("NO"), [{ zone: "Europe/Oslo", name: "central european", city: "oslo" }]);
+  assert.deepEqual(await zoneChoices("DE"), [{ zone: "Europe/Berlin", name: "Central European", city: "Berlin" }], "Busingen keeps Berlin's clock, so Germany is one");
+  assert.deepEqual(await zoneChoices("NO"), [{ zone: "Europe/Oslo", name: "Central European", city: "Oslo" }]);
   assert.deepEqual(await zoneChoices("AQ"), []);
 });
 
@@ -39,10 +39,10 @@ test("the phone's time zone, as zone.tab names it, or as ICU does, and nothing t
 });
 
 test("T7.1 the step starts on the phone's zone's country, else the box's, else on a pick", async () => {
-  assert.deepEqual(await startOn("America/Chicago", { code: null, zone: "UTC" }), { code: "US", name: "United States", called: "the united states", zone: "America/Chicago", from: "phone" });
-  assert.deepEqual(await startOn("Europe/Amsterdam", { code: "NO", zone: "Europe/Oslo" }), { code: "NL", name: "Netherlands", called: "the netherlands", zone: "Europe/Amsterdam", from: "phone" });
-  assert.deepEqual(await startOn(null, { code: "NO", zone: "Europe/Oslo" }), { code: "NO", name: "Norway", called: "norway", zone: "Europe/Oslo", from: "box" });
-  assert.deepEqual(await startOn("UTC", { code: "NO", zone: "Europe/Oslo" }), { code: "NO", name: "Norway", called: "norway", zone: "Europe/Oslo", from: "box" }, "a phone in UTC says nothing of where it is");
+  assert.deepEqual(await startOn("America/Chicago", { code: null, zone: "UTC" }), { code: "US", name: "United States", called: "the United States", zone: "America/Chicago", from: "phone" });
+  assert.deepEqual(await startOn("Europe/Amsterdam", { code: "NO", zone: "Europe/Oslo" }), { code: "NL", name: "Netherlands", called: "the Netherlands", zone: "Europe/Amsterdam", from: "phone" });
+  assert.deepEqual(await startOn(null, { code: "NO", zone: "Europe/Oslo" }), { code: "NO", name: "Norway", called: "Norway", zone: "Europe/Oslo", from: "box" });
+  assert.deepEqual(await startOn("UTC", { code: "NO", zone: "Europe/Oslo" }), { code: "NO", name: "Norway", called: "Norway", zone: "Europe/Oslo", from: "box" }, "a phone in UTC says nothing of where it is");
   assert.equal(await startOn(null, { code: null, zone: "UTC" }), null);
 });
 
@@ -51,16 +51,16 @@ test("Q167 a country picked keeps the phone's zone or the box's when it's in it,
   assert.deepEqual(await decide("US", undefined, null, "America/Denver"), { zone: "America/Denver" }, "the box's own zone is in it");
   const asked = await decide("US", undefined, "Europe/Amsterdam", "UTC");
   assert.ok("ask" in asked);
-  assert.deepEqual([asked.code, asked.called, asked.ask.length], ["US", "the united states", 6]);
+  assert.deepEqual([asked.code, asked.called, asked.ask.length], ["US", "the United States", 6]);
   assert.deepEqual(await decide("US", "America/Phoenix", "Europe/Amsterdam", "UTC"), { zone: "America/Phoenix" }, "the zone picked on the question");
   assert.deepEqual(await decide("DE", undefined, null, "UTC"), { zone: "Europe/Berlin" }, "one clock, so no question");
   assert.deepEqual(await decide("NL", undefined, "America/Chicago", "UTC"), { zone: "Europe/Amsterdam" });
-  assert.match((await decide("US", "Europe/Oslo", null, "UTC") as { error: string }).error, /isn't one of the united states's time zones/);
+  assert.match((await decide("US", "Europe/Oslo", null, "UTC") as { error: string }).error, /isn't one of the United States's time zones/);
   assert.match((await decide("XX", undefined, null, "UTC") as { error: string }).error, /two capital letters/);
 });
 
 test("how the step says a country and a number", () => {
-  assert.deepEqual([called("NL", "Netherlands"), called("NO", "Norway"), called("GB", "Britain (UK)")], ["the netherlands", "norway", "britain (uk)"]);
+  assert.deepEqual([called("NL", "Netherlands"), called("NO", "Norway"), called("GB", "Britain (UK)")], ["the Netherlands", "Norway", "Britain (UK)"]);
   assert.deepEqual([count(2), count(6), count(12), count(14)], ["two", "six", "twelve", "14"]);
 });
 
@@ -115,7 +115,7 @@ test("T7.1 the captive page sends the phone's zone, and the location step starts
   assert.equal((await send(captiveUrl, "POST", "/api/setup/zone", { zone: "Mars/Base" })).status, 400);
   assert.equal((await send(captiveUrl, "POST", "/api/setup/zone", { zone: "America/Chicago" })).status, 200);
   const where = await (await fetch(`${url}/api/setup/location`)).json();
-  assert.deepEqual(where.start, { code: "US", name: "United States", called: "the united states", zone: "America/Chicago", from: "phone" });
+  assert.deepEqual(where.start, { code: "US", name: "United States", called: "the United States", zone: "America/Chicago", from: "phone" });
   assert.ok(where.countries.some((c: { code: string }) => c.code === "NL"));
   assert.equal((await send(captiveUrl, "POST", "/api/setup/location", {})).status, 404, "the captive page only sends the zone");
 });
@@ -128,7 +128,7 @@ test("T7.1 yes keeps the phone's zone, and another country with several zones as
   zone = "UTC";
   await send(captiveUrl, "POST", "/api/setup/zone", { zone: "Europe/Amsterdam" });
   const asked = await (await send(url, "PUT", "/api/setup/location", { code: "US" })).json();
-  assert.deepEqual([asked.ask.called, asked.ask.zones.map((z: { city: string }) => z.city)], ["the united states", ["new york", "chicago", "denver", "phoenix", "los angeles", "honolulu"]]);
+  assert.deepEqual([asked.ask.called, asked.ask.zones.map((z: { city: string }) => z.city)], ["the United States", ["New York", "Chicago", "Denver", "Phoenix", "Los Angeles", "Honolulu"]]);
   assert.equal(zone, "UTC", "nothing moves until a zone is picked");
   const picked = await (await send(url, "PUT", "/api/setup/location", { code: "US", zone: "America/Phoenix" })).json();
   assert.deepEqual([picked.location.zone, zone], ["America/Phoenix", "America/Phoenix"]);
@@ -145,7 +145,7 @@ test("a paired phone sends its zone, picks the location, and the TV's step moves
   const phone = await pairPhone(lanUrl, code, "pixel");
   assert.equal((await phone.call("POST", "/api/phone/zone", { zone: "Europe/Oslo" })).status, 200);
   const where = await phone.json("GET", "/api/phone/location");
-  assert.equal(where.start.called, "norway");
+  assert.equal(where.start.called, "Norway");
   const set = await phone.json("PUT", "/api/phone/location", { code: "NO" });
   assert.deepEqual([set.location.zone, set.setup.step], ["Europe/Oslo", "ai"]);
   assert.equal((await send(lanUrl, "POST", "/api/phone/zone", { zone: "Europe/Oslo" })).status, 401, "only a paired phone");

@@ -279,7 +279,7 @@ export class MusicLibrary {
       return null;
     }
     const { tags, duration, picture } = tagsOf(probe);
-    const artist = tags.album_artist ?? tags.albumartist ?? tags.artist ?? "unknown artist";
+    const artist = tags.album_artist ?? tags.albumartist ?? tags.artist ?? "Unknown artist";
     const album = tags.album ?? basename(dirname(file));
     return {
       picture,
@@ -492,7 +492,7 @@ export function connectMpv(path: string): Promise<MpvLink> {
       reject(error);
     });
     socket.on("close", () => {
-      for (const call of waiting.values()) call.reject(new Error("mpv went away"));
+      for (const call of waiting.values()) call.reject(new Error("Couldn't play that"));
       waiting.clear();
     });
     socket.on("connect", () =>
@@ -503,7 +503,7 @@ export function connectMpv(path: string): Promise<MpvLink> {
             waiting.set(id, { resolve: done, reject: fail });
             socket.write(`${JSON.stringify({ command: args, request_id: id })}\n`);
             setTimeout(() => {
-              if (waiting.delete(id)) fail(new Error("mpv didn't answer"));
+              if (waiting.delete(id)) fail(new Error("Couldn't play that"));
             }, 5000);
           });
         },
@@ -551,7 +551,7 @@ export class MusicPlayer {
             // not listening yet
           }
         }
-        throw new Error("mpv didn't start");
+        throw new Error("Couldn't play that");
       }
     })().catch((error) => {
       this.link = undefined;
@@ -572,7 +572,7 @@ export class MusicPlayer {
   }
 
   async play(tracks: Track[], from = 0): Promise<void> {
-    if (tracks.length === 0) throw new Error("there's nothing to play there");
+    if (tracks.length === 0) throw new Error("Nothing to play there");
     this.queued = tracks;
     await this.send(["loadfile", tracks[from]?.path ?? tracks[0].path, "replace"]);
     for (const track of tracks.slice(from + 1)) await this.send(["loadfile", track.path, "append"]);
@@ -763,7 +763,7 @@ export class MusicApp {
       }
       case "album": {
         const found = await this.library.album(text("key"));
-        return found ? { ok: true, ...found } : { ok: false, error: "that album isn't in the library" };
+        return found ? { ok: true, ...found } : { ok: false, error: "Couldn't find that album" };
       }
       case "cover":
         return { ok: true, cover: await this.library.coverData(text("key")) };
@@ -776,14 +776,14 @@ export class MusicApp {
         let id = text("key");
         if (!id && request.q !== undefined) {
           const best = (await this.library.search(text("q"))).find((result) => !kind || result.kind === kind);
-          if (!best) return { ok: false, error: `nothing in the library matches ${text("q")}` };
+          if (!best) return { ok: false, error: `Couldn't find ${text("q")} in your music` };
           ({ kind, id } = best);
         }
         const tracks = await this.library.queue(kind, id);
-        if (tracks.length === 0) return { ok: false, error: "there's nothing to play there" };
+        if (tracks.length === 0) return { ok: false, error: "Nothing to play there" };
         const library = await this.library.load();
         const awayAlbum = tracks.map((track) => library.albums[track.albumId]).find((album) => album?.away);
-        if (awayAlbum) return { ok: false, error: `${awayAlbum.title} is on a share that isn't there right now` };
+        if (awayAlbum) return { ok: false, error: `${awayAlbum.title} is on a folder that isn't connected` };
         await this.player.play(tracks, Number(request.from) || 0);
         await this.played(tracks[0].albumId);
         this.watch();
@@ -836,7 +836,7 @@ export class MusicApp {
         return { ok: true, source };
       }
       case "remove":
-        return (await this.storage.remove(text("key"))) ? { ok: true } : { ok: false, error: "that isn't one of the sources" };
+        return (await this.storage.remove(text("key"))) ? { ok: true } : { ok: false, error: "Couldn't find that folder" };
       default:
         return { ok: false, error: `music can't ${String(request.op)}` };
     }

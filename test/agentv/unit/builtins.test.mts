@@ -81,25 +81,25 @@ test("Clock, Music, New this week and Weather come with AgenTV, first, and their
   const [clock, music, news, weather] = home.apps;
   for (const app of [clock, music, news, weather]) {
     assert.equal(app.tier, "built-in");
-    assert.equal(app.maker, "built in");
+    assert.equal(app.maker, "Built in");
     assert.equal(app.owner, undefined);
     assert.equal(app.needsSetup, false);
     assert.equal(app.icon, `/api/apps/${app.id}/icon`);
   }
   assert.deepEqual(clock.sizes.map((s: any) => `${s.size} ${s.label}`), ["s time", "m time and date"]);
   assert.deepEqual(weather.sizes.map((s: any) => `${s.size} ${s.label}`), ["s now", "m today and tomorrow", "l 7 days"]);
-  assert.equal(weather.credit, "weather data from met norway, under cc by 4.0");
+  assert.equal(weather.credit, "Weather data from MET Norway, under CC BY 4.0");
   assert.deepEqual(weather.reach, ["127.0.0.1:" + new URL(met.url).port]);
-  assert.deepEqual(clock.reach, ["nothing outside this tv"]);
+  assert.deepEqual(clock.reach, ["Nothing online"]);
   // New this week is TMDB's, through the daemon (S8.1), and credits TMDB and
   // JustWatch as their terms ask.
   assert.deepEqual(news.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m new this week", "l new this week"]);
-  assert.equal(news.credit, "this product uses the tmdb api but is not endorsed or certified by tmdb. where to watch is from justwatch");
+  assert.equal(news.credit, "This product uses the TMDB API but is not endorsed or certified by TMDB. Where to watch is from JustWatch.");
   assert.equal(news.category, "utility", "the router never hears of it as something to play");
   assert.equal(news.forChildren, true);
   assert.deepEqual(music.sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m now playing", "l now playing and recent"]);
   assert.equal(music.category, "music");
-  assert.deepEqual(music.reach, ["nothing outside this tv"]);
+  assert.deepEqual(music.reach, ["Nothing online"]);
 });
 
 test("on a new box Weather is on home first, pinned small, Clock too with the looks off, and Music waits in apps", async () => {
@@ -164,7 +164,7 @@ test("S8.1 a streaming household's home gets New this week once, at the largest 
     });
     // With no TMDB key, its tile says where to add one.
     const tile = await get("/api/tile/agentv.new/l");
-    assert.equal(tile.tile.headline.caption, "add a tmdb key in settings → new this week");
+    assert.equal(tile.tile.headline.caption, "Set up New this week in Settings");
   } finally {
     for (const { name, text } of kept) {
       if (text === null) rmSync(join(state, name), { force: true });
@@ -175,25 +175,25 @@ test("S8.1 a streaming household's home gets New this week once, at the largest 
 
 test("S3.8 the weather tile shows the forecast for the time zone's city, asked for with its coordinates", async () => {
   const { tile } = await get("/api/tile/agentv.weather/s");
-  assert.deepEqual(tile.headline, { label: "amsterdam", icon: "wind", value: "12°", caption: "windy" });
+  assert.deepEqual(tile.headline, { label: "Amsterdam", icon: "wind", value: "12°", caption: "Windy" });
   assert.match(met.seen.at(-1)!.url, /\?lat=52\.37&lon=4\.9$/);
   assert.match(String(met.seen.at(-1)!.headers["user-agent"]), /^AgenTV\/\S+ agentv\.weather\/1\.0\.0$/);
   const clock = await get("/api/tile/agentv.clock/m");
-  assert.equal(clock.tile.headline.label, "amsterdam");
+  assert.equal(clock.tile.headline.label, "Amsterdam");
 });
 
 test("S3.8 S3.9 agentv selftest compares the weather tiles with MET's forecast, fetched again", async () => {
   const now = await weatherCheck("S3.8", met.url);
-  assert.match(now, /^pass S3\.8 the tile shows wind at 12° for amsterdam \(52\.37, 4\.9\), as MET's partlycloudy_day with 11\.2 m\/s of wind does/m);
-  assert.match(now, /^manual S3\.8 on yr\.no, amsterdam's forecast for now says windy/m);
+  assert.match(now, /^pass S3\.8 the tile shows wind at 12° for Amsterdam \(52\.37, 4\.9\), as MET's partlycloudy_day with 11\.2 m\/s of wind does/m);
+  assert.match(now, /^manual S3\.8 on yr\.no, Amsterdam's forecast for now says Windy/m);
   const week = await weatherCheck("S3.9", met.url);
-  assert.match(week, /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+  assert.match(week, /^pass S3\.9 the medium and large weather tiles match MET's forecast for Amsterdam/m);
   // Another forecast than the tile's: Oslo's heavy rain.
   const oslo = await startMet("oslo");
   try {
     // Asking again doesn't help a tile that's wrong for every forecast.
-    assert.match(await weatherCheck("S3.8", oslo.url), /^fail S3\.8 the tile shows wind for amsterdam .*, but MET says heavyrain.* \(asked MET \d+ times/m);
-    assert.match(await weatherCheck("S3.9", oslo.url), /^fail S3\.9 the weather tiles don't match MET for amsterdam.* \(asked MET \d+ times/m);
+    assert.match(await weatherCheck("S3.8", oslo.url), /^fail S3\.8 the tile shows wind for Amsterdam .*, but MET says heavyrain.* \(asked MET \d+ times/m);
+    assert.match(await weatherCheck("S3.9", oslo.url), /^fail S3\.9 the weather tiles don't match MET for Amsterdam.* \(asked MET \d+ times/m);
     assert.ok(Number(/asked MET (\d+) times/.exec(await weatherCheck("S3.9", oslo.url))?.[1]) >= 3, "it asked MET again");
   } finally {
     oslo.close();
@@ -212,7 +212,7 @@ test("S3.9 agentv selftest compares MET's forecast with tiles drawn from it, not
   const kept = (await get("/api/tile/agentv.weather/l")).tile;
   met.serve("oslo");
   try {
-    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for Amsterdam/m);
     assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows heavy-rain at /m);
     assert.notDeepEqual((await get("/api/tile/agentv.weather/l")).tile, kept);
   } finally {
@@ -243,14 +243,14 @@ test("S3.8 S3.9 agentv selftest asks MET again when it hands out another forecas
     // Asking only before and after the tiles, as the check did, fails a box
     // whose tiles are right.
     met.serveNext("oslo", "oslo");
-    assert.match(await weatherCheck("S3.9", met.url, { AGENTV_MET_FOR_MS: "0" }), /^fail S3\.9 the weather tiles don't match MET for amsterdam/m);
+    assert.match(await weatherCheck("S3.9", met.url, { AGENTV_MET_FOR_MS: "0" }), /^fail S3\.9 the weather tiles don't match MET for Amsterdam/m);
     assert.equal(met.seen.length, asked + 2, "the app kept its forecast, and only the check asked MET");
 
     // Asking again finds the forecast the tiles were drawn from.
     met.serveNext("oslo", "oslo");
-    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for Amsterdam/m);
     met.serveNext("oslo", "oslo");
-    assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows wind at 12° for amsterdam/m);
+    assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows wind at 12° for Amsterdam/m);
   } finally {
     // The app asks MET again from here on, as the tests after this expect:
     // the weather moves to Oslo and back, with replies that are good until now.
@@ -273,7 +273,7 @@ test("S3.8 S3.9 a forecast MET publishes while the tiles are drawn still matches
     assert.match(await weatherCheck("S3.8", met.url), /^pass S3\.8 the tile shows heavy-rain at /m);
     met.serve("amsterdam");
     met.serveAfterNext("oslo");
-    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for amsterdam/m);
+    assert.match(await weatherCheck("S3.9", met.url), /^pass S3\.9 the medium and large weather tiles match MET's forecast for Amsterdam/m);
   } finally {
     met.serve("amsterdam");
     for (const size of ["s", "m", "l"]) await get(`/api/tile/agentv.weather/${size}?fresh=1`);
@@ -284,21 +284,21 @@ test("S3.8 S3.9 a forecast MET publishes while the tiles are drawn still matches
 test("Settings → Weather picks another city in the same part of the world, and the units", async () => {
   const place = await get("/api/weather");
   assert.equal(place.zone, "Europe/Amsterdam");
-  assert.equal(place.name, "amsterdam");
+  assert.equal(place.name, "Amsterdam");
   assert.equal(place.units, "c");
   assert.equal(place.chosen, false);
   assert.ok(place.cities.every((city: any) => city.zone.startsWith("Europe/")));
-  assert.ok(place.cities.some((city: any) => city.name === "oslo"));
+  assert.ok(place.cities.some((city: any) => city.name === "Oslo"));
 
   const picked = await post("/api/weather", { zone: "Europe/Oslo" });
   assert.equal(picked.status, 200);
-  assert.equal(picked.data.name, "oslo");
+  assert.equal(picked.data.name, "Oslo");
   assert.equal(picked.data.chosen, true);
   // The tile asks again at once, for the new city.
-  assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.label, "oslo");
+  assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.label, "Oslo");
   assert.match(met.seen.at(-1)!.url, /\?lat=59\.92&lon=10\.75$/);
   // Clock stays on the box's own time zone.
-  assert.equal((await get("/api/tile/agentv.clock/m")).tile.headline.label, "amsterdam");
+  assert.equal((await get("/api/tile/agentv.clock/m")).tile.headline.label, "Amsterdam");
 
   assert.equal((await post("/api/weather", { units: "f" })).data.units, "f");
   assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.value, "53°");
@@ -307,7 +307,7 @@ test("Settings → Weather picks another city in the same part of the world, and
     assert.equal((await post("/api/weather", bad)).status, 400);
   }
   const back = await post("/api/weather", { zone: null, units: null });
-  assert.deepEqual([back.data.name, back.data.units, back.data.chosen], ["amsterdam", "c", false]);
+  assert.deepEqual([back.data.name, back.data.units, back.data.chosen], ["Amsterdam", "c", false]);
 });
 
 test("a new time zone reaches the tiles at once, and one with no city says where to pick one", async () => {
@@ -317,7 +317,7 @@ test("a new time zone reaches the tiles at once, and one with no city says where
     rmSync(link);
     symlinkSync("/usr/share/zoneinfo/UTC", link);
     const { tile } = await get("/api/tile/agentv.weather/s");
-    assert.deepEqual(tile.headline, { label: "no city yet", caption: "pick one in\nsettings → weather" });
+    assert.deepEqual(tile.headline, { label: "No city yet", caption: "Pick one in\nSettings" });
     const place = await get("/api/weather");
     assert.equal(place.zone, "UTC");
     assert.equal(place.lat, undefined);
@@ -328,7 +328,7 @@ test("a new time zone reaches the tiles at once, and one with no city says where
     rmSync(link);
     symlinkSync(amsterdam, link);
   }
-  assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.label, "amsterdam");
+  assert.equal((await get("/api/tile/agentv.weather/s")).tile.headline.label, "Amsterdam");
 });
 
 test("a box from before gets them on its saved home once, and one the viewer unpins stays off", async () => {

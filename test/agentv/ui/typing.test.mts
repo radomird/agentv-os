@@ -177,7 +177,7 @@ test("T8.1 typed on the phone, home's focused field holds each change within 300
   await go(screen, "profile/new");
   await screen.waitForSelector(".profile-name.focused");
   await until(async () => (await phoneState()).tv.view === "keyboard");
-  assert.deepEqual((await phoneState()).tv.field, { kind: "text", label: "their name" });
+  assert.deepEqual((await phoneState()).tv.field, { kind: "text", label: "Name" });
   front = { kind: "page", id: "home", overlay: false, evaluate: (expression) => screen.evaluate(expression) };
   const took = await typeAll(CHANGES, () => screen.evaluate(() => (document.querySelector(".profile-name") as HTMLInputElement).value));
   assert.ok(took.every((ms) => ms < WITHIN_MS), `each change within ${WITHIN_MS} ms: ${took.join(", ")}`);
@@ -200,7 +200,7 @@ test("T8.1 a stand-in streaming site's search opens the phone's keyboard, and ea
   await until(async () => (await phoneState()).tv.field?.app === "agentv.tube");
   assert.equal((await phoneState()).tv.view, "keyboard");
   assert.ok(page.nudges() > 0, "the page said its focus moved");
-  assert.deepEqual((await phoneState()).tv.field, { kind: "search", label: "search", value: "", app: "agentv.tube", name: "tube" });
+  assert.deepEqual((await phoneState()).tv.field, { kind: "search", label: "Search", value: "", app: "agentv.tube", name: "Tube" });
   assert.equal(await page.evaluate(`typeof window.${FOCUS_BINDING}`), "undefined", "the site's own scripts can't reach the nudge");
   front = { kind: "page", id: "agentv.tube", overlay: true, evaluate: page.evaluate };
   bars.length = 0;
@@ -222,7 +222,7 @@ test("T8.1 a field inside a frame and a password inside a shadow root: the keybo
   front = { kind: "page", id: "agentv.tube", overlay: true, evaluate: page.evaluate };
   // The frame's name field.
   await page.evaluate(`document.getElementById("frame").contentDocument.getElementById("name").focus()`);
-  await until(async () => (await phoneState()).tv.field?.label === "your name");
+  await until(async () => (await phoneState()).tv.field?.label === "Your name");
   await typeAll(["é", "éa", "éaж"], () => page.evaluate(`document.getElementById("frame").contentDocument.getElementById("name").value`));
   // The sign-in form's email, then its password, in a shadow root.
   await page.evaluate(`document.getElementById("signin").shadowRoot.getElementById("email").focus()`);

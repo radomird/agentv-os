@@ -11,7 +11,7 @@ import type { Action } from "../input.ts";
 
 export interface PadOptions {
   command: string; // the prompt: "tv settings · pin"
-  title: string; // "enter the adult pin"
+  title: string; // "Enter the adult PIN"
   note: string; // what it's for
   // Four digits, checked: null when they're right, else what to say.
   submit(pin: string): Promise<string | null>;
@@ -32,6 +32,12 @@ export interface Pad {
   // True once the PIN was right, false when it was cancelled or gave up.
   done: Promise<boolean>;
   close(): void;
+}
+
+// Whether a refusal was the daemon asking for the PIN: the one entered for
+// this visit ran out, so what's held of it goes.
+export function pinAsked(error: unknown): boolean {
+  return /^that needs the pin$/i.test((error as Error | undefined)?.message ?? "");
 }
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"];
@@ -73,7 +79,7 @@ export function pad(options: PadOptions, played: (sound: "select" | "confirm" | 
     digits = "";
     error = why;
     draw();
-    message.textContent = `${why}.`;
+    message.textContent = why;
     message.classList.add("bad");
     el.classList.remove("shake");
     void el.offsetWidth;
@@ -93,7 +99,7 @@ export function pad(options: PadOptions, played: (sound: "select" | "confirm" | 
     key
       ? h(
           "button",
-          { class: `pin-key${key === "⌫" ? " pin-delete" : ""}`, "data-focus": true, "data-key": key === "⌫" ? "delete" : key, "aria-label": key === "⌫" ? "delete" : key, onclick: () => type(key) },
+          { class: `pin-key${key === "⌫" ? " pin-delete" : ""}`, "data-focus": true, "data-key": key === "⌫" ? "delete" : key, "aria-label": key === "⌫" ? "Delete" : key, onclick: () => type(key) },
           key === "⌫" ? glyph("backspace", 48) : key,
         )
       : h("span", {}),
@@ -104,7 +110,7 @@ export function pad(options: PadOptions, played: (sound: "select" | "confirm" | 
     h("div", { class: "prompt" }, h("b", {}, "~"), ` $ ${options.command}`),
     h("h1", { class: "headline" }, options.title),
     message,
-    h("div", { class: "pin-boxes", role: "img", "aria-label": "the digits entered" }, ...boxes),
+    h("div", { class: "pin-boxes", role: "img", "aria-label": "The digits entered" }, ...boxes),
     h("div", { class: "pin-keys" }, ...buttons),
   );
   idle();

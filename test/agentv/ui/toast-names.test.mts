@@ -67,10 +67,9 @@ const toasts = (page: Page) => page.$$eval("#toasts .toast", (all) => all.map((t
 for (const look of LOOKS) {
   test(`in ${look}, a toast with a network's or a controller's name in it shows the name as it is`, async () => {
     assert.equal((await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) })).status, 200);
-    const said = (text: string) => (look === "terminal" ? text.toLowerCase() : text);
     const page = await tv();
     try {
-      await go(page, "settings/network");
+      await go(page, "settings/wifi");
       await page.locator(`.panel [data-ssid="${NETWORK}"]`).click();
       await page.waitForSelector("#toasts .toast.fail");
       await go(page, "settings/controllers");
@@ -80,7 +79,9 @@ for (const look of LOOKS) {
       await page.waitForSelector('.panel [data-action="controller-pad"][data-controller="nearby"]');
       // Long enough for the look to have gone over the words.
       await page.waitForTimeout(200);
-      assert.deepEqual(await toasts(page), [said("Couldn't join %s. Try again.").replace("%s", NETWORK), `${said("Paired")} ${PAD}`, `${said("Removed")} ${PAD}`]);
+      // The words are written the same in every look. Terminal shows them
+      // in lower case in CSS, which leaves a name alone too.
+      assert.deepEqual(await toasts(page), [`Couldn't join ${NETWORK}. Try again.`, `Paired ${PAD}`, `Removed ${PAD}`]);
     } finally {
       await page.close();
     }

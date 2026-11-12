@@ -118,37 +118,52 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
   try {
     const page = await tv(url);
     if (!on) {
-      // Off: a make is "i didn't get that", and Apps' "+ add your own" is
-      // the old page. The bar's Ask is the look's own, so it stays.
-      assert.equal((await send("POST", "/api/say", { sentence: "make me a game like tetris" })).said.outcome.say, "i didn't get that");
+      // Off: a make is "Didn't get that", and "Build your own" at the end
+      // of the app library is the old page. The bar's Ask is the look's
+      // own, so it stays.
+      assert.equal((await send("POST", "/api/say", { sentence: "make me a game like tetris" })).said.outcome.say, "Didn't get that");
       assert.equal(existsSync(join(state, "build-drop", "start.json")), false, "nothing was built");
-      await go(page, "apps");
-      await page.locator('[data-action="build"]').click();
+      await go(page, "add-app");
+      await page.locator('.add-row [data-action="build"]').click();
       await page.waitForSelector(".build-ask");
-      assert.match(await page.locator(".page").innerText(), /what should i make\?/);
+      assert.match(await page.locator(".page").innerText(), /what do you want to build\?/);
       assert.equal(await page.locator(".ask-examples").count(), 0);
       await page.close();
       return;
     }
 
-    // Apps, with nothing the agent made yet, has examples of what to make.
-    await go(page, "apps");
-    await page.waitForSelector(".ask-examples");
-    assert.deepEqual(await page.locator(".ask-examples .button").allTextContents(), ["make a game like tetris", "make a slideshow of the photos on my nas", "make a better weather app"]);
+    // "Build your own", the app library's last tile, opens Ask with "make "
+    // typed. The rest of the example shows in grey after it, and every chip
+    // is something to make.
+    await go(page, "add-app");
+    await page.locator('.add-row [data-action="build"]').click();
+    await page.waitForSelector(".ask-page .ask-field");
+    assert.equal(await page.locator(".ask-field").inputValue(), "make ");
+    await page.waitForFunction(() => (document.querySelector(".ask-example") as HTMLElement | null)?.style.display === "flex");
+    assert.deepEqual(await page.locator(".ask-example span").allTextContents(), ["make ", "me a puzzle game"]);
+    assert.deepEqual(await page.locator(".ask-suggestions .button").allTextContents(), ["Make a puzzle game", "Make a quiz night", "Make a photo slideshow"]);
+    // Once what's typed is no longer the start of the example, it goes.
+    await page.locator(".ask-field").fill("make a");
+    assert.equal(await page.locator(".ask-example").isVisible(), false);
 
-    // The bar's Ask, then a make: the build's page reads it, then asks.
+    // The bar's Ask, then a make: the build's page reads it, then asks. The
+    // field's own example says what to ask, and no line under it does.
     await go(page, "home");
     await page.locator('[data-action="bar-ask"]').click();
     await page.waitForSelector(".ask-page");
-    assert.match(await page.locator(".ask-page").innerText(), /ask[\s\S]*what do you want\?[\s\S]*type here, or on your phone/);
-    assert.deepEqual(await page.locator(".ask-suggestions .button").allTextContents(), ["continue", "what's new", "make a game like tetris"]);
+    assert.match(await page.locator(".ask-page").innerText(), /ask[\s\S]*what would you like\?/);
+    assert.doesNotMatch(await page.locator(".ask-page").innerText(), /type here|on your phone/);
+    assert.equal(await page.locator(".ask-field").getAttribute("placeholder"), "make me a puzzle game");
+    assert.equal(await page.locator(".ask-said").textContent(), "");
+    assert.deepEqual(await page.locator(".ask-suggestions .button").allTextContents(), ["Continue my show", "What's new this week?", "Make a puzzle game"]);
     await typeAsk(page, "make me a game like tetris");
     await page.waitForSelector(".build-page", { timeout: 10_000 });
     const start = rootTakes(state);
     assert.deepEqual([start.phase, start.sentence, start.id], ["understand", "blocks", "local.blocks"]);
     status(builds, start.build, "1.0.0", { state: "confirm", understood: UNDERSTOOD });
     await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") === "confirm", undefined, { timeout: 10_000 });
-    assert.match(await page.locator(".build-page").innerText(), /make blocks\?[\s\S]*recipe: game · it stays on this tv · about \$/);
+    assert.match(await page.locator(".build-page").innerText(), /make blocks\?[\s\S]*it stays on this tv · about \$/);
+    assert.doesNotMatch(await page.locator(".build-page").innerText(), /recipe/);
     // The phone has the same confirm, in its Ask.
     const ask = await (await token.fetch(`/api/phone/ask`)).json();
     assert.deepEqual([ask.ask.kind, ask.ask.state, ask.ask.recipe], ["build", "confirm", "game"]);
@@ -157,10 +172,11 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     const built = rootTakes(state);
     assert.deepEqual([built.phase, built.recipe], ["build", "game"]);
 
-    // Building: its tile on home says how far it got and the step it's on.
+    // Building: its tile on home says the step it's on, by its number and
+    // its name.
     status(builds, start.build, "1.0.0", { phase: "build", state: "running", steps: STEPS(1), understood: UNDERSTOOD });
     await go(page, "home");
-    await page.waitForFunction(() => /building 1\/3[\s\S]*draw the board/.test((document.querySelector(".grid .build-tile") as HTMLElement | null)?.innerText ?? ""), undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => /step 2 of 3[\s\S]*draw the board/.test((document.querySelector(".grid .build-tile") as HTMLElement | null)?.innerText ?? ""), undefined, { timeout: 10_000 });
 
     // Approved and installed: Blocks is on the TV, made by the agent.
     status(builds, start.build, "1.0.0", { phase: "build", state: "installed", steps: STEPS(3), understood: UNDERSTOOD });
@@ -179,7 +195,7 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     assert.equal(await page.locator(".ask-field").inputValue(), "change blocks: ");
     await typeAsk(page, "change blocks: make the pieces fall faster");
     await page.waitForSelector(".ask-change", { timeout: 10_000 });
-    assert.match(await page.locator(".ask-change").innerText(), /change blocks\?[\s\S]*recipe: game · it stays on this tv/);
+    assert.match(await page.locator(".ask-change").innerText(), /change blocks\?[\s\S]*it stays on this tv/);
     assert.equal(existsSync(join(state, "build-drop", "start.json")), false, "nothing starts before the ok");
     await page.locator('[data-action="confirm"]').click();
     await page.waitForSelector(".build-page:not(.ask-change)", { timeout: 10_000 });
@@ -196,9 +212,10 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     await page.locator('[data-action="bar-ask"]').click();
     await page.waitForSelector(".ask-page");
     assert.match(await page.locator(".ask-page .prompt").innerText(), /ask · mia/);
-    assert.deepEqual(await page.locator(".ask-suggestions .button").allTextContents(), ["continue", "what's new"]);
+    assert.deepEqual(await page.locator(".ask-suggestions .button").allTextContents(), ["Continue my show", "What's new this week?"]);
+    assert.equal(await page.locator(".ask-field").getAttribute("placeholder"), "continue my show");
     await typeAsk(page, "make me a game with unicorns");
-    await page.waitForFunction(() => document.querySelector(".ask-said.ask-no")?.textContent === "ask a grown-up to make apps", undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector(".ask-said.ask-no")?.textContent === "Ask a grown-up to make apps", undefined, { timeout: 10_000 });
     assert.equal(existsSync(join(state, "build-drop", "start.json")), false, "nothing was built");
     await page.close();
   } finally {
@@ -216,12 +233,12 @@ test("T11.2 on the phone's remote, Ask is the same box, and a make your agent re
     await hand.waitForSelector(".r2");
     await hand.locator(".r2-ask").first().tap();
     await hand.waitForSelector("#r2-sheet .ask-chips");
-    assert.equal(await hand.locator("#r2-sheet h1").first().textContent(), "what do you want?");
-    assert.deepEqual(await hand.locator("#r2-sheet .ask-chips .chip").allTextContents(), ["continue", "what's new", "make a game"]);
+    assert.equal(await hand.locator("#r2-sheet h1").first().textContent(), "What would you like?");
+    assert.deepEqual(await hand.locator("#r2-sheet .ask-chips .chip").allTextContents(), ["Continue my show", "What's new this week?", "Make a puzzle game"]);
     assert.equal(await hand.locator('#r2-sheet [data-action="say"]').count(), 0, "no send button: the keyboard's send key asks");
-    // "make a game" fills the box and leaves the keyboard up for the rest.
+    // "Make a puzzle game" fills the box and leaves the keyboard up, to change it or send it.
     await hand.locator('#r2-sheet [data-suggestion="make a game"]').tap();
-    assert.equal(await hand.locator("#say-text").inputValue(), "make a game like ");
+    assert.equal(await hand.locator("#say-text").inputValue(), "make a puzzle game");
     await hand.locator("#say-text").fill("make me a game like tetris");
     await hand.locator("#say-text").press("Enter");
     for (let i = 0; i < 100 && !existsSync(join(state, "build-drop", "start.json")); i++) await new Promise((done) => setTimeout(done, 50));
@@ -229,7 +246,7 @@ test("T11.2 on the phone's remote, Ask is the same box, and a make your agent re
     // The sheet stays up after the send, and shows what the agent read.
     status(builds, start.build, "1.0.0", { state: "confirm", understood: UNDERSTOOD });
     await hand.waitForSelector('#r2-sheet [data-ask="confirm"]', { timeout: 10_000 });
-    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /make blocks\?[\s\S]*recipe: game · it stays on this tv/);
+    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /^Your own app\n+Make Blocks\?\n+It stays on this TV\n+Make it\n+Not this$/);
     await hand.locator('#r2-sheet [data-action="ask-confirm"]').tap();
     for (let i = 0; i < 100 && !existsSync(join(state, "build-drop", "start.json")); i++) await new Promise((done) => setTimeout(done, 50));
     assert.deepEqual([rootTakes(state).phase], ["build"]);

@@ -45,8 +45,8 @@ export function kindsOf(text: string | null): Kind[] | null {
 export function loginOf(body: unknown): { host: string; user: string; password: string } | string {
   const { host, user, password } = (body ?? {}) as Record<string, unknown>;
   if (typeof host !== "string" || !host || host.length > 255) return "say which nas";
-  if (typeof user !== "string" || !/^[^\s:@/\\%]{1,64}$/.test(user)) return "a user name like the nas has it, with no spaces";
-  if (typeof password !== "string" || password.length > 256 || /[\r\n\0]/.test(password)) return "a password of up to 256 characters, on one line";
+  if (typeof user !== "string" || !/^[^\s:@/\\%]{1,64}$/.test(user)) return "User names can't have spaces";
+  if (typeof password !== "string" || password.length > 256 || /[\r\n\0]/.test(password)) return "Passwords can be up to 256 characters";
   return { host, user, password };
 }
 
@@ -97,7 +97,7 @@ export async function discoverRoute(discover: Discover, method: string | undefin
       return true;
     }
     if (!discover.pick(key)) {
-      json(response, 409, { ok: false, error: "the tv isn't showing what's on your network" });
+      json(response, 409, { ok: false, error: "Your TV isn't showing what's on your network" });
       return true;
     }
     json(response, 200, { ok: true });

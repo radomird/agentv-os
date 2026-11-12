@@ -261,7 +261,7 @@ ShellRoot {
 
       Text {
         anchors.centerIn: parent
-        text: "home"
+        text: "Home"
         color: "#1a1b26"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 32
@@ -354,7 +354,7 @@ ShellRoot {
         anchors.left: parent.left
         anchors.leftMargin: 36
         anchors.verticalCenter: parent.verticalCenter
-        text: root.signingIn.toLowerCase()
+        text: root.signingIn
         color: "#c0caf5"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 36
@@ -369,7 +369,7 @@ ShellRoot {
         anchors.leftMargin: 24
         anchors.verticalCenter: parent.verticalCenter
         visible: signedInButton.x - (signInName.x + signInName.width + 24 + implicitWidth) >= signInHint.implicitWidth + 48
-        text: "sign in"
+        text: "Sign in"
         color: "#a9b1d6"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 26
@@ -386,7 +386,7 @@ ShellRoot {
         anchors.verticalCenter: parent.verticalCenter
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
-        text: "type on your phone or keyboard"
+        text: "Type on your phone or keyboard"
         color: "#a9b1d6"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 26
@@ -405,7 +405,7 @@ ShellRoot {
         Text {
           id: signedInLabel
           anchors.centerIn: parent
-          text: "i'm signed in"
+          text: "I'm signed in"
           color: "#1a1b26"
           font.family: "JetBrainsMono Nerd Font"
           font.pixelSize: 28
@@ -432,7 +432,7 @@ ShellRoot {
         anchors.left: parent.left
         anchors.leftMargin: 32
         anchors.verticalCenter: parent.verticalCenter
-        text: "app setup · " + root.signingIn.toLowerCase()
+        text: "App setup · " + root.signingIn
         color: "#a9b1d6"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 24
@@ -442,7 +442,7 @@ ShellRoot {
         anchors.right: parent.right
         anchors.rightMargin: 32
         anchors.verticalCenter: parent.verticalCenter
-        text: "home stops"
+        text: "Home stops"
         color: "#a9b1d6"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 24
@@ -525,7 +525,7 @@ ShellRoot {
         anchors.rightMargin: 36
         anchors.verticalCenter: parent.verticalCenter
         elide: Text.ElideLeft
-        text: root.listenWords !== "" ? root.listenWords.toLowerCase() : "listening"
+        text: root.listenWords !== "" ? root.listenWords : "Listening"
         color: root.listenForeground
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 36
@@ -537,7 +537,7 @@ ShellRoot {
         anchors.right: parent.right
         anchors.rightMargin: 36
         anchors.verticalCenter: parent.verticalCenter
-        text: root.listenState === "thinking" ? "thinking" : ""
+        text: root.listenState === "thinking" ? "Thinking" : ""
         color: root.listenAccent
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 28

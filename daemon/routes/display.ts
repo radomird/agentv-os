@@ -16,6 +16,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Asks } from "../asks.ts";
+import { NOT_READY } from "../notices.ts";
 import { cleanDisplayAnswer, Display, type DisplayAnswer, type DisplayAsk } from "../display.ts";
 
 // How long a size change waits for the screen daemon to set it.
@@ -40,7 +41,7 @@ export interface DisplayKit {
 export class DisplayRoutes {
   private kit: DisplayKit;
   private model: Display;
-  private asks = new Asks<DisplayAsk, DisplayAnswer>({ clean: cleanDisplayAnswer, late: { ok: false, error: "the tv didn't answer in time: is its session running?", late: true } });
+  private asks = new Asks<DisplayAsk, DisplayAnswer>({ clean: cleanDisplayAnswer, late: { ok: false, error: NOT_READY, late: true } });
   private verdict: { at: number; value: Promise<boolean | null> } | null = null;
 
   constructor(kit: DisplayKit) {

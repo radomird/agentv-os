@@ -125,7 +125,7 @@ test("the daemon's asks wait for the screen daemon, take only what a page answer
   const taking = asks.take(1000);
   const second = asks.ask("https://stand-in.test/b", ["https://stand-in.test"], 30);
   assert.equal((await taking)!.url, "https://stand-in.test/b");
-  assert.match((await second).error!, /didn't answer in time/);
+  assert.match((await second).error!, /^Your TV isn't ready yet$/);
 });
 
 test("ADR-011 the screen daemon's watch takes each ask and answers it with what it read", async () => {
@@ -202,7 +202,7 @@ test("ADR-011 a streaming service's app on home goes on with stage B by itself o
   // never to put away, since its app is on home.
   status(made.id, { build: made.build, phase: "stage-b", state: "failed", reason: "study: it stopped", understood, at: "2026-10-27T18:40:00Z" });
   assert.equal(await tend(), false, "a failed stage B isn't started again by itself");
-  assert.match((await builds.forget(made.build)).error!, /its app is on the tv: try again, or remove the app/);
+  assert.match((await builds.forget(made.build)).error!, /Its app is on your TV\. Try again, or remove the app\./);
   assert.equal((await builds.retry(made.build)).error, undefined);
   assert.equal(take("start").phase, "stage-b");
 });

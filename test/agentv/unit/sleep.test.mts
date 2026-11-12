@@ -16,7 +16,7 @@ after(() => rmSync(scratch, { recursive: true, force: true }));
 
 // A box: its two clocks, its settings, who holds an inhibitor, and what was
 // asked of logind and the wake alarm.
-function box(options: { sleep?: boolean; overnight?: boolean; suspends?: boolean } = {}) {
+function box(options: { sleep?: boolean; overnight?: boolean; suspends?: boolean; counts?: boolean } = {}) {
   const t = {
     wall: 1_800_000_000_000,
     mono: 1000,
@@ -25,6 +25,8 @@ function box(options: { sleep?: boolean; overnight?: boolean; suspends?: boolean
     alarms: [] as boolean[],
     alarmWorks: true,
     suspends: 0,
+    // The kernel's count of suspends it came back from.
+    cameBack: 0,
     woke: 0,
     lines: [] as string[],
     // Time passing while awake moves both clocks; asleep, only the wall's.
@@ -41,6 +43,7 @@ function box(options: { sleep?: boolean; overnight?: boolean; suspends?: boolean
     inhibitors: async () => t.held,
     wakeAlarm: async (on) => (t.alarms.push(on), t.alarmWorks),
     suspend: async () => (t.suspends++, options.suspends ?? true),
+    ...(options.counts ? { suspended: async () => t.cameBack } : {}),
   };
   const sleep = new Sleep({ platform, now: () => t.wall, monotonic: () => t.mono, log: (line) => t.lines.push(line), woke: () => t.woke++ });
   return { t, sleep };
@@ -196,6 +199,25 @@ test("T13.2 a wake is noticed, and the box stays up an hour before it sleeps aga
   assert.equal(t.suspends, 2, "then it sleeps again");
 });
 
+test("a night whose update waits lets a box the alarm woke sleep again at once, unless someone has used it since", async () => {
+  for (const used of [false, true]) {
+    const { t, sleep } = box({ overnight: true });
+    t.pass(2 * HOUR);
+    sleep.tv(false);
+    t.pass(HOUR);
+    await sleep.tick();
+    t.sleepFor(5 * HOUR);
+    t.pass(15_000);
+    await sleep.tick();
+    const wokeAt = t.wall;
+    t.pass(3 * 60_000);
+    // The screen daemon says the update waits, and when it last saw input.
+    sleep.nothingTonight(used ? wokeAt + 60_000 : wokeAt - 6 * HOUR);
+    await sleep.tick();
+    assert.equal(t.suspends, used ? 1 : 2, used ? "someone's there: it stays up its hour" : "nothing to stay up for");
+  }
+});
+
 test("T13.2 a sleep cut short by the power button still counts as a wake", async () => {
   const { t, sleep } = box();
   t.pass(2 * HOUR);
@@ -216,6 +238,28 @@ test("T13.2 a sleep cut short by the power button still counts as a wake", async
   t.pass(15_000);
   await sleep.tick();
   assert.equal(t.woke, 1);
+});
+
+test("T13.2 a wake on a box whose clocks ran through the sleep is noticed by the kernel's count", async () => {
+  const { t, sleep } = box({ counts: true });
+  t.pass(2 * HOUR);
+  sleep.tv(false);
+  t.pass(HOUR);
+  await sleep.tick();
+  assert.equal(t.suspends, 1);
+  // Asleep for a minute, with both clocks running, as suspend to idle can.
+  t.pass(60_000);
+  t.cameBack = 1;
+  await sleep.tick();
+  assert.equal(t.woke, 1, "the screen hears the box is awake");
+  assert.equal(t.suspends, 1, "and it doesn't go straight back to sleep");
+  t.pass(15_000);
+  await sleep.tick();
+  assert.equal(t.woke, 1, "once");
+  assert.equal(t.suspends, 1);
+  t.pass(HOUR);
+  await sleep.tick();
+  assert.equal(t.suspends, 2, "an hour awake later, it sleeps again");
 });
 
 test("T13.2 when logind won't suspend, it tries again 10 minutes later, not every tick", async () => {

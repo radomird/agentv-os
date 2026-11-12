@@ -21,9 +21,13 @@
 //
 // It runs in the screen daemon, which knows when the TV is off. A wake shows
 // as the wall clock jumping ahead of the monotonic one, which stands still
-// while the box sleeps.
+// while the box sleeps. On a box that suspends to idle without stopping its
+// clocks, neither moves apart, so the kernel's own count of suspends it came
+// back from is read too. Missing a wake would put the box straight back to
+// sleep, since the hour awake would look long over.
 
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 
 export const SLEEP_AFTER_MS = 60 * 60_000;
@@ -38,6 +42,9 @@ export interface SleepPlatform {
   wakeAlarm(on: boolean): Promise<boolean>;
   // Asks logind to suspend the box. False when it wouldn't.
   suspend(): Promise<boolean>;
+  // How many suspends the kernel has come back from since it started, or
+  // null when it doesn't say.
+  suspended?(): Promise<number | null>;
 }
 
 interface Options {
@@ -67,6 +74,9 @@ export class Sleep {
   private offSince: number | null = null;
   private awakeSince: number;
   private offset: number;
+  // The kernel's count of suspends at the last look, or null before the
+  // first one and on a kernel that doesn't count.
+  private suspended: number | null = null;
   private busy = false;
   private heldSaid = "";
   private retryAt = 0;
@@ -108,6 +118,14 @@ export class Sleep {
     else if (this.offSince === null) this.offSince = this.now();
   }
 
+  // The night's update waits for another night, so a box the wake alarm
+  // woke for it goes back to sleep at the next look, not an hour later. One
+  // that someone has used since it woke stays up its hour.
+  nothingTonight(lastInput: number): void {
+    if (lastInput >= this.awakeSince) return;
+    this.awakeSince = Math.min(this.awakeSince, this.now() - this.after);
+  }
+
   // For the checks: sleep after this many seconds, not an hour.
   afterSeconds(seconds: number | null): object {
     this.afterOverride = seconds === null ? null : seconds * 1000;
@@ -131,15 +149,21 @@ export class Sleep {
     // Between two looks they drift apart by far less than a second, so 10 s
     // is a sleep, even one cut short by the power button.
     const offset = this.now() - this.monotonic();
-    if (offset - this.offset > 10_000) {
+    const jumped = offset - this.offset;
+    this.offset = offset;
+    // Or the kernel counted a suspend since the last look, on a box whose
+    // clocks ran through it.
+    const count = (await this.platform.suspended?.().catch(() => null)) ?? null;
+    const counted = count !== null && this.suspended !== null && count > this.suspended;
+    if (count !== null) this.suspended = count;
+    if (jumped > 10_000 || counted) {
       this.awakeSince = this.now();
       this.heldSaid = "";
       this.asked = false;
       this.alarmStuck = false;
-      this.log(`the box woke from sleep, ${Math.round((offset - this.offset) / 1000)} s later`);
+      this.log(`the box woke from sleep${jumped > 10_000 ? `, ${Math.round(jumped / 1000)} s later` : ""}`);
       this.woke?.();
     }
-    this.offset = offset;
     if (this.busy) return;
     this.busy = true;
     try {
@@ -224,6 +248,10 @@ export function logindSleep(settings: () => Promise<{ sleep: boolean; overnight:
     },
     async suspend() {
       return (await run("busctl", ["call", ...LOGIND, "Suspend", "b", "false"])).ok;
+    },
+    async suspended() {
+      const count = Number.parseInt(await readFile("/sys/power/suspend_stats/success", "utf8"), 10);
+      return Number.isFinite(count) ? count : null;
     },
   };
 }

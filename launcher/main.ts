@@ -19,7 +19,7 @@ import { details } from "./pages/details.ts";
 import { edit } from "./pages/edit.ts";
 import { home } from "./pages/home.ts";
 import { music } from "./pages/music.ts";
-import { closePagesButGames, gameInFront, gameOpen, hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
+import { closePagesButGames, gameInFront, hidePages, openPage, pageRunning, pageView } from "./pages/page-app.ts";
 import { settings } from "./pages/settings.ts";
 import { power } from "./pages/power.ts";
 import { checkView, drawUpdating, installing, off, release, shown, whatsNew } from "./pages/updates.ts";
@@ -99,9 +99,20 @@ const page = document.getElementById("page")!;
 const sounds = new Sounds();
 const focus = new Focus(document.getElementById("ring")!);
 // A text field with the focus opens the phone's keyboard (ADR-037).
+// Which app's details a hold on OK opens now (ADR-084): the focused tile's.
+// A tile says it has them with data-details; nothing does while something
+// else has the keys.
+const detailsNow = () => {
+  if (preview() || updatingShown || ambient || pinOpen || noticeOpen) return undefined;
+  // A tile left behind by the page before, as under an app made on the TV,
+  // which takes no focus of home's, is no tile.
+  const on = focus.get();
+  return on?.isConnected ? on.dataset.details : undefined;
+};
 focus.onSet = (el) => {
   const field = el instanceof HTMLInputElement ? fieldOf(el) : null;
-  tell({ field });
+  // The phone hears whether a hold has details to open (ADR-089).
+  tell({ field, details: detailsNow() !== undefined });
   typingField(field);
 };
 let history: string[] = ["home"];
@@ -150,7 +161,7 @@ const ctx: Ctx = {
       return;
     }
     if (ctx.state.viewer.role !== "adult") {
-      ctx.toast("only an adult can edit home", "fail");
+      ctx.toast("Only adults can edit home", "fail");
       sounds.play("failure");
       return;
     }
@@ -287,8 +298,8 @@ async function askShared(): Promise<void> {
     if (open) await openShare(ctx, share);
     void askShared();
   };
-  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "share-open", onclick: () => void answer(true) }, "open");
-  const no = h("button", { class: "button", "data-focus": true, "data-action": "share-later", onclick: () => void answer(false) }, "not now");
+  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "share-open", onclick: () => void answer(true) }, "Open");
+  const no = h("button", { class: "button", "data-focus": true, "data-action": "share-later", onclick: () => void answer(false) }, "Not now");
   const card = h("div", { class: "notice-card" }, h("div", { class: "notice-title" }, `${share.from} sent ${shareWhat(share)}`), h("div", { class: "notice-buttons" }, yes, no));
   noticeEl.replaceChildren(card);
   noticeEl.classList.add("on");
@@ -329,7 +340,7 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   if (!ctx.state.pin?.set) return "";
   let grant: string | null = null;
   const ok = await openPad(
-    { command: "tv pin", title: "enter the adult pin", note: `for ${what}.`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
+    { command: "tv pin", title: "Enter the adult PIN", note: `For ${what}`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
     undefined,
     options.one ? undefined : holding,
   );
@@ -348,7 +359,7 @@ function setLock(locked: boolean): void {
     held = null;
     const viewer = ctx.state.viewer;
     void openPad(
-      { command: "tv locked", title: "enter the adult pin", note: viewer.locked ? `${viewer.name}'s profile asks for it to open.` : "the tv is locked.", cancel: false, submit: checkPin(false) },
+      { command: "tv locked", title: "Enter the adult PIN", note: viewer.locked ? `To open ${viewer.name}'s profile` : "This TV is locked", cancel: false, submit: checkPin(false) },
       (pad) => (lockPad = pad),
       // Unlocked elsewhere while it waited its turn.
       () => ctx.state.pin?.locked !== true,
@@ -365,7 +376,7 @@ function setLock(locked: boolean): void {
 
 // What agentv-pin-check asks on the TV, by action.
 const ACTIONS: Record<string, string> = {
-  desktop: "omarchy's desktop",
+  desktop: "Omarchy's desktop",
   power: "restarting or shutting down",
   update: "installing an update",
   "go-back": "going back",
@@ -436,6 +447,7 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     setTimeout(() => focus.release(), 400);
   }
   page.replaceChildren(el);
+  tell({ details: detailsNow() !== undefined });
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
   // Under a share's notice too, which has the keys (ADR-050): the page gets
@@ -498,7 +510,7 @@ function setAmbient(on: boolean): void {
   tell({ screen: on ? "ambient" : history[history.length - 1] === "home" ? "home" : "menu" });
   ambientPointer = null;
   if (on) {
-    const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }).toLowerCase();
+    const day = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     const time = h("div", { class: "ambient-time" }, clock());
     const pictures = h("div", { class: "ambient-pictures" });
     const credit = h("div", { class: "ambient-credit" });
@@ -579,7 +591,7 @@ function setUpdates(updates: Updates): void {
     return;
   }
   // The notice on home: the bar says so, and one toast per release.
-  if (JSON.stringify([before.status, before.tonight, before.seen?.later]) !== JSON.stringify([updates.status, updates.tonight, updates.seen?.later])) {
+  if (JSON.stringify([before.status, before.tonight, before.seen?.later, before.held]) !== JSON.stringify([updates.status, updates.tonight, updates.seen?.later, updates.held])) {
     const route = history[history.length - 1];
     if (route === "home" || route.startsWith("settings")) redraw();
   }
@@ -596,7 +608,7 @@ function checkAfterUpdate(): void {
   const went = ctx.updates.wentBack;
   if (went && ctx.updates.seen?.wentBack !== went.at && route === "home") {
     ctx.updates.seen = { kept: null, ...ctx.updates.seen, wentBack: went.at };
-    ctx.toast(`back on agentv ${shown(went.to.agentv)}. the update is still in settings → updates.`, "ok");
+    ctx.toast(`Back on AgenTV ${shown(went.to.agentv)}. The update is still in Settings.`, "ok");
     void daemon.seen({ wentBack: went.at }).catch(() => {});
   }
 }
@@ -615,7 +627,7 @@ function toastRelease(): void {
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
   toastedHere = version;
   ctx.updates.toasted = version;
-  ctx.toast(`agentv ${version} is ready · settings → updates`, "ok");
+  ctx.toast(`AgenTV ${version} is ready, in Settings`, "ok");
   void daemon.toasted(version).catch(() => {});
 }
 
@@ -854,10 +866,8 @@ async function start(): Promise<void> {
     },
     true,
   );
-  // Holding OK on a tile opens its app's details (ADR-084). A tile says it
-  // has them with data-details; nothing does while something else has the
-  // keys.
-  listenInput(act, () => (preview() || updatingShown || ambient || pinOpen || noticeOpen ? undefined : focus.get()?.dataset.details));
+  // Holding OK on a tile opens its app's details (ADR-084).
+  listenInput(act, detailsNow);
   listen({
     layout: () => void refresh(),
     // Another look was picked, in Settings or on the phone: the page again,
@@ -916,7 +926,7 @@ async function start(): Promise<void> {
     // A page app's notice, declared in its manifest.
     notice: (data) => {
       const notice = data as { name?: string; text?: string };
-      if (notice.text) ctx.toast(`${(notice.name ?? "an app").toLowerCase()}: ${notice.text}`, "ok");
+      if (notice.text) ctx.toast(`${notice.name ?? "An app"}: ${notice.text}`, "ok");
     },
     // An app added from Apps, or picked in setup, is installing.
     "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),
@@ -984,7 +994,6 @@ async function start(): Promise<void> {
     agentvTv: (state: "on" | "off") => void;
     agentvPage: (id: string) => void;
     agentvGame: () => string | null;
-    agentvGameOpen: () => boolean;
     agentvPagesClose: () => string[];
     agentvLauncher: object;
   };
@@ -1012,7 +1021,6 @@ async function start(): Promise<void> {
   // The game made on this TV that's in front, if one is: the TV going off
   // leaves it there (ADR-084).
   w.agentvGame = () => gameInFront(ctx);
-  w.agentvGameOpen = () => gameOpen(ctx);
   // The TV has been off for a while: the apps that are pages on home close
   // too, all but a game.
   w.agentvPagesClose = () => closePagesButGames(ctx);

@@ -424,7 +424,7 @@ export class Backgrounds {
   // One of the theme's pictures the TV session was asked for, or a video's
   // still: only one it offered, and only what it said it is.
   async addThemeFile(id: string, body: Buffer): Promise<{ state?: BackgroundState; error?: string }> {
-    if (body.length > MAX_BYTES) return { error: "that background is too big: 15 mb at most" };
+    if (body.length > MAX_BYTES) return { error: "That background is too big. 15 MB at most." };
     const file = themePictures((await this.kept()).theme.files).find((one) => one.id === id);
     if (!file) return { error: "that background isn't one of the theme's" };
     if (pictureId(body) !== id || imageType(body) !== file.type) return { error: "that isn't the background it said it was" };
@@ -439,9 +439,9 @@ export class Backgrounds {
   // background, newest first; the oldest of its kind goes once there are
   // more than the box keeps.
   async add(body: Buffer, credit: { text?: unknown; from: string }, kind: Background["kind"] = "photo"): Promise<{ item?: Background; state?: BackgroundState; error?: string }> {
-    if (body.length > MAX_BYTES) return { error: "that photo is too big: 15 mb at most" };
+    if (body.length > MAX_BYTES) return { error: "That photo is too big. 15 MB at most." };
     const type = imageType(body);
-    if (!type) return { error: "a photo the tv can show: jpeg, png or webp" };
+    if (!type) return { error: "Use a JPEG, PNG or WebP photo" };
     const state = await this.kept();
     const item: Background = {
       id: randomBytes(8).toString("hex"),
@@ -479,9 +479,9 @@ export class Backgrounds {
   async choose(source: unknown, current?: unknown): Promise<{ state?: BackgroundState; error?: string }> {
     if (!SOURCES.includes(source as Source)) return { error: `a source: ${SOURCES.join(", ")}` };
     const state = await this.kept();
-    if (source === "photos" && !state.items.some((item) => item.kind === "photo")) return { error: "send a photo from your phone first" };
-    if (source === "art" && !state.items.some((item) => item.kind === "art")) return { error: "pick a work from an archive first" };
-    if (source === "folder" && !state.items.some((item) => item.kind === "folder")) return { error: "pick a folder or a share first" };
+    if (source === "photos" && !state.items.some((item) => item.kind === "photo")) return { error: "Send a photo from your phone first" };
+    if (source === "art" && !state.items.some((item) => item.kind === "art")) return { error: "Pick a work from an archive first" };
+    if (source === "folder" && !state.items.some((item) => item.kind === "folder")) return { error: "Pick a folder first" };
     state.source = source as Source;
     if (typeof current === "string" && state.items.some((item) => item.id === current)) state.current = current;
     return { state: await this.save(state) };
@@ -490,7 +490,7 @@ export class Backgrounds {
   async remove(id: unknown): Promise<{ state?: BackgroundState; error?: string }> {
     const state = await this.kept();
     const item = state.items.find((one) => one.id === id);
-    if (!item) return { error: "no such photo" };
+    if (!item) return { error: "Couldn't find that photo" };
     state.items = state.items.filter((one) => one !== item);
     await rm(join(this.dir, `${item.id}.${EXTENSIONS[item.type]}`), { force: true });
     if (state.current === item.id) state.current = state.items[0]?.id ?? null;

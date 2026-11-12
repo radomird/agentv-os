@@ -69,6 +69,6 @@ export class ProviderKey {
     }
     // Nothing took it: it doesn't stay here.
     rmSync(this.drop, { force: true });
-    return "the key couldn't be kept: agentv-key.path isn't running";
+    return "Couldn't save the key. Restart your TV and try again.";
   }
 }

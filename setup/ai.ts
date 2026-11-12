@@ -16,13 +16,14 @@ import type { Ctx, View } from "./main.ts";
 
 const ORDER: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
-// What the CLI's first run says, for a line or the status bar.
+// How the AI's own tool is arriving, for a line or the status bar. It says
+// the AI's name, which is what the household picked.
 export function cliLine(ai: AiInfo): string | null {
   if (!ai.provider || !ai.accepted) return null;
-  const name = ai.offers[ai.provider].cliName;
-  if (!ai.cli || ai.cli.state === "installing") return `${name} installing`;
-  if (ai.cli.state === "ready") return `${name} ready`;
-  return `${name} didn't install`;
+  const name = ai.offers[ai.provider].name;
+  if (!ai.cli || ai.cli.state === "installing") return `Setting up ${name}…`;
+  if (ai.cli.state === "ready") return `${name} is ready`;
+  return `Couldn't set up ${name}`;
 }
 
 // Where the step picks up: the provider to pick, its terms, the key, or a
@@ -45,9 +46,8 @@ export function again(ctx: Ctx): boolean {
       ctx.open("ai", "back");
       return;
     }
-    const grant = await ctx.grant("the ai");
-    if (grant === null) return;
-    await setup.choose(null, undefined, grant || undefined).then(() => ctx.open("ai", "back"), () => {});
+    const done = await ctx.guarded("your AI", (grant) => setup.choose(null, undefined, grant)).catch(() => null);
+    if (done) ctx.open("ai", "back");
   })();
   return true;
 }
@@ -62,15 +62,15 @@ function pick(ctx: Ctx): View {
       h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, offer?.name ?? provider), h("span", { class: "provider-maker" }, offer?.maker ?? "")),
     );
   });
-  const later = h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, "set it up later");
+  const later = h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, "Later");
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading("which ai do you use?", "pick one.", ctx.reduced())),
+    h("div", {}, ...heading("Which AI do you use?", "Pick one", ctx.reduced())),
     h("div", { class: `providers${cards.length > 3 ? " many" : ""}` }, ...cards),
-    h("div", { class: "setup-foot" }, h("span", { class: "setup-note" }, "→ then your plan or an api key, on your phone."), later),
+    h("div", { class: "setup-foot" }, h("span", { class: "setup-note" }, "Then your plan or an API key, on your phone"), later),
   );
-  return { el, first: cards[0], info: "←→ move · ↵ pick" };
+  return { el, first: cards[0] };
 }
 
 // The household's plan, or an API key. A plan only where its maker's terms
@@ -78,10 +78,10 @@ function pick(ctx: Ctx): View {
 export function path(ctx: Ctx, provider: Provider): View {
   const offer = ctx.ai!.offers[provider];
   const choose = async (how: Path) => {
-    const grant = await ctx.grant("the ai");
-    if (grant === null) return;
     try {
-      ctx.ai = await setup.choose(provider, how, grant || undefined);
+      const chosen = await ctx.guarded("your AI", (grant) => setup.choose(provider, how, grant));
+      if (!chosen) return;
+      ctx.ai = chosen.value;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
@@ -94,31 +94,31 @@ export function path(ctx: Ctx, provider: Provider): View {
         "button",
         { class: "provider", "data-focus": true, "data-path": "plan", onclick: () => void choose("plan") },
         h("span", { class: "provider-index" }, "01"),
-        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "my plan"), h("span", { class: "provider-maker" }, offer.plan.name)),
+        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "My plan"), h("span", { class: "provider-maker" }, offer.plan.name)),
       )
     : h(
         "div",
         { class: "provider off", "data-path": "plan" },
         h("span", { class: "provider-index" }, "01"),
-        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "my plan"), h("span", { class: "provider-maker" }, `${offer.plan.name} · ${offer.plan.keyOnly ? "key only" : "coming soon"}`)),
+        h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "My plan"), h("span", { class: "provider-maker" }, `${offer.plan.name} · ${offer.plan.keyOnly ? "key only" : "coming soon"}`)),
       );
   const keyCard = h(
     "button",
     { class: "provider", "data-focus": true, "data-path": "key", onclick: () => void choose("key") },
     h("span", { class: "provider-index" }, "02"),
-    h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "an api key"), h("span", { class: "provider-maker" }, `from your ${offer.maker} account`)),
+    h("span", { class: "provider-text" }, h("span", { class: "provider-name" }, "An API key"), h("span", { class: "provider-maker" }, `From your ${offer.maker} account`)),
   );
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading(`${offer.name} --how`, "plan or key?", ctx.reduced())),
+    h("div", {}, ...heading(`${offer.name} --how`, "Plan or key?", ctx.reduced())),
     h("div", { class: "providers two" }, plan, keyCard),
     // One line: who can't use a plan, where that matters more than voice.
     offer.plan.note
       ? h("span", { class: "setup-note", "data-note": "plan" }, offer.plan.note)
-      : h("span", { class: "setup-note" }, "voice works either way: your phone does the dictation."),
+      : h("span", { class: "setup-note" }, "Voice works either way"),
   );
-  return { el, first: offer.plan.offered ? (plan as HTMLElement) : keyCard, info: "←→ move · ↵ pick · esc back", back: () => again(ctx) };
+  return { el, first: offer.plan.offered ? (plan as HTMLElement) : keyCard, back: () => again(ctx) };
 }
 
 function termsList(ai: AiInfo, done: boolean): HTMLElement {
@@ -139,11 +139,11 @@ export function terms(ctx: Ctx, ai: AiInfo): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading(`${offer.name} terms`, "the terms first.", ctx.reduced())),
+    h("div", {}, ...heading(`${offer.name} terms`, "First, the terms", ctx.reduced())),
     h(
       "div",
       { class: "terms" },
-      h("div", { class: "terms-left" }, termsList(ai, false), h("p", { class: "setup-note" }, "an adult accepts them on the phone. nothing installs before that.")),
+      h("div", { class: "terms-left" }, termsList(ai, false), h("p", { class: "setup-note" }, "An adult accepts them on the phone")),
       h("div", { class: "welcome-qr small" }, h("span", { class: "qr-box" }, qr), label),
     ),
   );
@@ -151,12 +151,12 @@ export function terms(ctx: Ctx, ai: AiInfo): View {
   // paired already shows them by itself.
   void setup.pair().then((code) => {
     if (code?.url) qr.setAttribute("src", `/api/phones/qr?${code.code}`);
-    label.replaceChildren(...(code ? ["pair a phone · code ", asWritten(code.code)] : []));
+    label.replaceChildren(...(code ? ["Pair a phone · code ", asWritten(code.code)] : []));
   });
   let moved = false;
   return {
     el,
-    info: "waiting for an adult on the phone",
+    info: "Waiting for you on the phone",
     back: () => again(ctx),
     heard(event, data) {
       const next = data as AiInfo;
@@ -172,24 +172,24 @@ export function terms(ctx: Ctx, ai: AiInfo): View {
 // The key: pasted on the phone (board 05), or typed here with a keyboard.
 export function key(ctx: Ctx, ai: AiInfo): View {
   const offer = ai.offers[ai.provider!];
-  const field = h("input", { class: "text-field key-field", type: "password", "data-focus": true, "aria-label": `the ${offer.name} api key`, autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const field = h("input", { class: "text-field key-field", type: "password", "data-focus": true, "aria-label": `${offer.name} API key`, autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   let asking = false;
   const save = async () => {
     // Enter reaches this twice, from the field and from the button.
     if (!field.value || asking) return;
     // Keeping a key is past the PIN, once there is one, as picking the
-    // provider is. The key stays in the field if the PIN isn't given.
+    // provider is. The key stays in the field until the TV has it: if the
+    // PIN isn't given, or the TV wouldn't keep it, it's still there.
     asking = true;
-    const grant = await ctx.grant("the ai").finally(() => (asking = false));
-    if (grant === null || !field.value) return;
     const typed = field.value;
-    field.value = "";
     try {
-      await setup.key(ai.provider!, typed, grant || undefined);
+      const kept = await ctx.guarded("your AI", (grant) => setup.key(ai.provider!, typed, grant));
+      if (kept && field.value === typed) field.value = "";
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
-      return;
+    } finally {
+      asking = false;
     }
   };
   field.addEventListener("keydown", (event) => {
@@ -200,19 +200,19 @@ export function key(ctx: Ctx, ai: AiInfo): View {
       setTimeout(() => void save(), 0);
     }
   });
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "save-key", onclick: () => void save() }, "↵ save");
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "save-key", onclick: () => void save() }, "Save");
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading(`${offer.name} key`, "paste your key.", ctx.reduced())),
+    h("div", {}, ...heading(`${offer.name} key`, "Paste your key", ctx.reduced())),
     h("div", { class: "key-row" }, field, go),
-    h("span", { class: "setup-note" }, "on your phone, or type it here. it stays on this tv, and nobody sees it again."),
+    h("span", { class: "setup-note" }, "Paste it on your phone"),
   );
   let moved = false;
   return {
     el,
     first: field,
-    info: cliLine(ai) ?? "waiting for the key",
+    info: cliLine(ai) ?? "Waiting for the key",
     back: () => again(ctx),
     heard(event, data) {
       const next = data as { set?: boolean; provider?: string };
@@ -236,18 +236,18 @@ export function done(ctx: Ctx, ai: AiInfo): View {
   };
   drawCli(ai);
   const accepted = ai.accepted!;
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("ai") }, "↵ continue");
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("ai") }, "Continue");
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading(`${offer.name}`, ai.path === "plan" ? "ready." : "all set.", ctx.reduced())), go),
+    h("div", { class: "setup-top" }, h("div", {}, ...heading(`${offer.name}`, ai.path === "plan" ? "Ready" : "All set", ctx.reduced())), go),
     h(
       "div",
       { class: "ready-list" },
-      h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), ` terms accepted · ${accepted.by.viewer} on ${accepted.by.phone}`)),
+      h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), ` Terms accepted · ${accepted.by.viewer} on ${accepted.by.phone}`)),
       ai.path === "key"
-        ? h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), " key kept · root's alone"))
-        : h("span", { class: "ready-row mark-todo", "data-plan": "sign-in" }, h("span", {}, h("b", {}, "[ ]"), ` ${offer.plan.name} · you'll sign in to it the first time agentv builds an app`)),
+        ? h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), " Key saved"))
+        : h("span", { class: "ready-row mark-todo", "data-plan": "sign-in" }, h("span", {}, h("b", {}, "[ ]"), ` ${offer.plan.name} · you sign in when you first build an app`)),
       cli,
     ),
   );

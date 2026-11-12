@@ -14,6 +14,8 @@
 // Nothing here logs the text, and no answer or error names it, since it can
 // be a password (ADR-032). A password shows as dots on the TV's typing bar.
 
+import { NOT_READY } from "./notices.ts";
+
 // The focused element in a page, through open shadow roots and same-origin
 // frames, and whether it takes typing. For the expressions below.
 const DEEP = `
@@ -74,7 +76,7 @@ export const FIELD = `(() => {${DEEP}
   const by = (el.getAttribute("aria-labelledby") || "").split(/\\s+/).filter(Boolean)
     .map((id) => (root.getElementById ? root.getElementById(id) : null)?.textContent || "").join(" ");
   const label = (el.getAttribute("aria-label") || by || (el.labels && el.labels[0] ? el.labels[0].textContent : "") ||
-    el.getAttribute("placeholder") || el.getAttribute("title") || "").replace(/\\s+/g, " ").trim().toLowerCase().slice(0, 40);
+    el.getAttribute("placeholder") || el.getAttribute("title") || "").replace(/\\s+/g, " ").trim().slice(0, 40);
   if (kind === "password") return { kind, label };
   const value = el.isContentEditable ? el.innerText.replace(/\\n$/, "") : el.value;
   return { kind, label, value: String(value).slice(0, 500) };
@@ -99,7 +101,7 @@ export function cleanField(said: unknown): Field | null {
 export function typeIn(value: string, caret: number | null): string {
   return `((value, caret) => {${DEEP}
   const { el, doc } = deep();
-  if (!typable(el)) return { ok: false, why: "nothing on the tv takes typing now" };
+  if (!typable(el)) return { ok: false, why: "Nothing to type into right now" };
   const win = doc.defaultView || window;
   const read = () => (el.isContentEditable ? el.innerText.replace(/\\n$/, "") : el.value);
   const before = read();
@@ -146,8 +148,8 @@ export function typeIn(value: string, caret: number | null): string {
   }
   const now = read();
   if (now === value) return { ok: true, by: "page" };
-  if (value.startsWith(now)) return { ok: false, by: "page", why: "the tv's field is full", kept: now.length };
-  return { ok: false, by: "page", why: "the tv's field didn't take all of it" };
+  if (value.startsWith(now)) return { ok: false, by: "page", why: "That field is full", kept: now.length };
+  return { ok: false, by: "page", why: "Couldn't type all of it" };
 })(${JSON.stringify(value)}, ${caret === null ? "null" : Math.trunc(caret)})`;
 }
 
@@ -192,7 +194,7 @@ export class NativeTyping {
       this.typed = kept;
     }
     if (!bad) return { ok: true, by: "key" };
-    return { ok: false, by: "key", value: kept, why: `this app takes plain letters, so ${bad} can't go` };
+    return { ok: false, by: "key", value: kept, why: `This app can't take ${bad}` };
   }
 
   // Enter, or the window changed: the next text starts afresh.
@@ -247,7 +249,7 @@ export class PhoneTyping {
   async text(value: string, caret: number | null, bar: Bar | null): Promise<TextAnswer> {
     const front = this.o.front();
     await this.showBar(front, bar);
-    if (!front) return { ok: false, why: "nothing on the tv takes typing now" };
+    if (!front) return { ok: false, why: "Nothing to type into right now" };
     if (front.kind === "native") return this.native.type(value, front.id, this.o.keys);
     this.native.reset();
     const ms = this.o.ms ?? 1000;
@@ -255,7 +257,7 @@ export class PhoneTyping {
       front.evaluate(typeIn(value, caret)).catch(() => null),
       new Promise<null>((done) => setTimeout(() => done(null), ms)),
     ]);
-    return cleanAnswer(answer) ?? { ok: false, why: "the tv's page didn't answer" };
+    return cleanAnswer(answer) ?? { ok: false, why: NOT_READY };
   }
 
   // Enter: the field's own, as a key, and the bar goes.
@@ -267,7 +269,7 @@ export class PhoneTyping {
       await this.o.keys({ key: "enter" });
       return { ok: true, by: front?.kind === "page" ? "page" : "key" };
     } catch {
-      return { ok: false, why: "enter didn't reach the tv" };
+      return { ok: false, why: "Couldn't reach your TV" };
     }
   }
 

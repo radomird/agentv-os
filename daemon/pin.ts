@@ -23,8 +23,11 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { NEEDS_PIN } from "./notices.ts";
 
 const FOUR_DIGITS = /^\d{4}$/;
+// A wait, as a person reads it: "30 seconds", "1 second".
+const seconds = (n: number) => `${n} ${n === 1 ? "second" : "seconds"}`;
 const TRIES = 5;
 const WAIT_FIRST_MS = 30_000;
 const WAIT_MAX_MS = 15 * 60_000;
@@ -146,10 +149,10 @@ export class Pin {
   // that one's count.
   right(pin: unknown, phone?: string): { ok: true } | (Checked & { ok: false }) {
     const stored = this.read();
-    if (!stored.hash) return { ok: false, error: "there's no pin yet" };
+    if (!stored.hash) return { ok: false, error: "There's no PIN yet" };
     const mine = phone === undefined ? stored : (stored.phones?.[phone] ?? {});
     const wait = this.wait(mine);
-    if (wait > 0) return { ok: false, error: `too many tries. try again in ${wait} s`, wait };
+    if (wait > 0) return { ok: false, error: `Too many tries. Wait ${seconds(wait)}.`, wait };
     const { [phone ?? ""]: _mine, ...others } = stored.phones ?? {};
     if (typeof pin !== "string" || !FOUR_DIGITS.test(pin) || !matches(pin, stored.hash)) {
       const fails = (mine.fails ?? 0) + 1;
@@ -157,9 +160,9 @@ export class Pin {
       const waitMs = over >= 0 ? Math.min(WAIT_MAX_MS, WAIT_FIRST_MS * 2 ** over) : 0;
       const count = { fails, waitUntil: waitMs ? this.now() + waitMs : undefined };
       this.write(phone === undefined ? { ...stored, ...count } : { ...stored, phones: { ...others, [phone]: count } });
-      if (waitMs) return { ok: false, error: `that's not the pin. try again in ${waitMs / 1000} s`, wait: waitMs / 1000 };
+      if (waitMs) return { ok: false, error: `Wrong PIN. Try again in ${seconds(waitMs / 1000)}.`, wait: waitMs / 1000 };
       const left = TRIES - fails;
-      return { ok: false, error: left <= 2 ? `that's not the pin. ${left} more ${left === 1 ? "try" : "tries"} before a wait` : "that's not the pin" };
+      return { ok: false, error: left <= 2 ? `Wrong PIN. ${left} ${left === 1 ? "try" : "tries"} left.` : "Wrong PIN" };
     }
     if (phone === undefined) {
       if (stored.fails !== undefined || stored.waitUntil !== undefined) this.write({ ...stored, fails: undefined, waitUntil: undefined });
@@ -193,8 +196,8 @@ export class Pin {
   // gone. The one that made the change stays: whoever holds it chose the new
   // PIN. Null when it's done, or why not.
   set(pin: unknown, grant: unknown): string | null {
-    if (typeof pin !== "string" || !FOUR_DIGITS.test(pin)) return "a pin is 4 digits";
-    if (!this.allows(grant)) return "that needs the pin";
+    if (typeof pin !== "string" || !FOUR_DIGITS.test(pin)) return "A PIN has 4 digits";
+    if (!this.allows(grant)) return NEEDS_PIN;
     this.write({ hash: hash(pin), unlockedBoot: this.boot() });
     for (const token of this.grants.keys()) if (token !== grant) this.grants.delete(token);
     return null;
@@ -203,8 +206,8 @@ export class Pin {
   // Takes the PIN off, with a grant, unless something needs it: why, or the
   // reason the needed option gives.
   remove(grant: unknown, needed?: string | null): string | null {
-    if (!this.read().hash) return "there's no pin to remove";
-    if (!this.allows(grant)) return "that needs the pin";
+    if (!this.read().hash) return "There's no PIN to remove";
+    if (!this.allows(grant)) return NEEDS_PIN;
     const why = needed === undefined ? this.needed() : needed;
     if (why) return why;
     this.write({});

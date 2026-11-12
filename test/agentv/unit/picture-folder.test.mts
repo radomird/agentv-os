@@ -72,8 +72,8 @@ test("a folder's pictures become the background, credited to the folder, in plac
   now = await (await fetch(`${home}api/backgrounds`)).json();
   assert.deepEqual(now.items.map((item: { credit: { from: string } }) => item.credit.from), ["usb stick"]);
 
-  assert.deepEqual(await pictures.send({ name: "empty", path: folderOf("empty", { "readme.txt": "hi" }) }), { ok: false, error: "there are no pictures in empty" });
-  assert.deepEqual(await pictures.send({ name: "bad", path: folderOf("bad", { "x.jpg": "plain text" }) }), { ok: false, error: "none of the pictures in bad can be shown" });
+  assert.deepEqual(await pictures.send({ name: "empty", path: folderOf("empty", { "readme.txt": "hi" }) }), { ok: false, error: "No pictures in empty" });
+  assert.deepEqual(await pictures.send({ name: "bad", path: folderOf("bad", { "x.jpg": "plain text" }) }), { ok: false, error: "Couldn't show the pictures in bad" });
   // The field, then the folder again, which still has its picture.
   assert.equal((await (await fetch(`${home}api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "field" }) })).json()).source, "field");
   assert.equal((await (await fetch(`${home}api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "folder" }) })).json()).source, "folder");

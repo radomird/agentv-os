@@ -95,12 +95,12 @@ entry_of() {
 problem() {
   local said=$1 host=$2 path=$3
   case "$said" in
-    *"error(13)"* | *"Permission denied"*) echo "the NAS didn't take that user name and password" ;;
-    *"error(2)"* | *"No such file or directory"*) echo "the NAS at $host has no share at $path" ;;
+    *"error(13)"* | *"Permission denied"*) echo "Wrong user name or password" ;;
+    *"error(2)"* | *"No such file or directory"*) echo "Couldn't find $path on $host" ;;
     *"error(112)"* | *"error(113)"* | *"error(111)"* | *"error(101)"* | *"could not resolve"* | *"Unable to find suitable address"* | *"timed out"*)
-      echo "the NAS at $host didn't answer" ;;
-    *"error(95)"* | *"Operation not supported"*) echo "the NAS and the box couldn't agree on a version of SMB" ;;
-    *) echo "the share didn't mount: $(tail -n 1 <<<"$said")" ;;
+      echo "Couldn't reach $host" ;;
+    *"error(95)"* | *"Operation not supported"*) echo "$host uses a kind of sharing this TV can't use" ;;
+    *) echo "Couldn't connect to that folder" ;;
   esac
 }
 
@@ -134,11 +134,11 @@ add() {
   local uri=$1 password=$2 owner=$3 id domain user host port path
   id=$(id_of "$uri")
   if ! parse "$uri"; then
-    status "$id" "$(jq -cn --arg uri "$uri" --arg at "$(now)" '{uri: $uri, path: "", mounted: false, error: "that share address won'"'"'t do here", at: $at}')"
+    status "$id" "$(jq -cn --arg uri "$uri" --arg at "$(now)" '{uri: $uri, path: "", mounted: false, error: "That address won'"'"'t work", at: $at}')"
     return 0
   fi
   if [[ -z $password || $password == *$'\n'* || ${#password} -gt 256 ]]; then
-    status "$id" "$(jq -cn --arg uri "$uri" --arg at "$(now)" '{uri: $uri, path: "", mounted: false, error: "that password won'"'"'t do", at: $at}')"
+    status "$id" "$(jq -cn --arg uri "$uri" --arg at "$(now)" '{uri: $uri, path: "", mounted: false, error: "That password won'"'"'t work", at: $at}')"
     return 0
   fi
   # Someone else's share stays theirs.
@@ -174,7 +174,7 @@ remount() {
   id=$(id_of "$uri")
   had=$(entry_of "$id")
   if [[ ! -f $CREDS/$id.cred ]]; then
-    status "$id" "$(jq -cn --arg uri "$uri" --argjson owner "$owner" --arg at "$(now)" '{uri: $uri, path: "", owner: $owner, mounted: false, error: "it needs its password again", at: $at}')"
+    status "$id" "$(jq -cn --arg uri "$uri" --argjson owner "$owner" --arg at "$(now)" '{uri: $uri, path: "", owner: $owner, mounted: false, error: "Type its password again", at: $at}')"
     return 0
   fi
   [[ $(jq -r '.owner // empty' <<<"$had") == "$owner" ]] || return 0

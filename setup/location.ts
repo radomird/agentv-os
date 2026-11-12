@@ -21,8 +21,13 @@ let known: LocationInfo | null = null;
 let asked: ZoneAsk | null = null;
 
 const time = (zone: string) => new Date().toLocaleTimeString("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit" });
-const city = (zone: string) => (zone.split("/").pop() ?? zone).replace(/_/g, " ").toLowerCase();
-const HOW_MANY = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+const city = (zone: string) => (zone.split("/").pop() ?? zone).replace(/_/g, " ");
+// A time zone's name as the daemon sends it, in lower case, with its
+// capitals: "hawaii-aleutian" is "Hawaii-Aleutian". One that has capitals
+// already stays as it is.
+const proper = (text: string) => (/\p{Lu}/u.test(text) ? text : text.replace(/(^|[\s-])\p{L}/gu, (letter) => letter.toUpperCase()));
+// A location as a sentence starts with it: "The Netherlands", "Norway".
+const place = (at: { name: string; called: string }) => (/^the /i.test(at.called) ? `The ${at.name}` : at.name);
 
 async function load(): Promise<LocationInfo | null> {
   known = await setup.location().catch(() => null);
@@ -31,7 +36,7 @@ async function load(): Promise<LocationInfo | null> {
 
 // What the bar says on the right: the phone that's helping, if one is.
 function info(ctx: Ctx): string {
-  return ctx.info.phones.length ? "phone paired" : "";
+  return ctx.info.phones.length ? "Phone paired" : "";
 }
 
 // A page of this step: the prompt, the headline, its one line, and what to
@@ -46,11 +51,11 @@ function page(ctx: Ctx, command: string, title: string, line: string, ...rest: H
 // A country confirmed or picked, or a zone chosen: on to the AI, or to the
 // question of which zone.
 async function choose(ctx: Ctx, code: string, zone?: string): Promise<void> {
-  const grant = await ctx.grant("the location");
-  if (grant === null) return;
   let answer;
   try {
-    answer = await setup.setLocation(code, zone, grant || undefined);
+    const set = await ctx.guarded("changing location", (grant) => setup.setLocation(code, zone, grant));
+    if (!set) return;
+    answer = set.value;
   } catch (error) {
     ctx.toast((error as Error).message, "fail");
     ctx.sounds.play("failure");
@@ -65,36 +70,31 @@ async function choose(ctx: Ctx, code: string, zone?: string): Promise<void> {
 }
 
 function line(start: Start): string {
-  return `from ${start.from === "phone" ? "your phone's" : "this box's"} time zone · ${time(start.zone)} in ${city(start.zone)}`;
+  return `Guessed from ${start.from === "phone" ? "your phone" : "the clock"} · ${time(start.zone)} in ${city(start.zone)}`;
 }
 
 export async function location(ctx: Ctx): Promise<View> {
   const state = await load();
   if (!state?.start) return pickLocation(ctx);
   let start = state.start;
-  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void choose(ctx, start.code) }, "↵ yes");
-  const other = h("button", { class: "button", "data-focus": true, "data-action": "country-other", onclick: () => ctx.open("country/pick") });
-  const label = () => (other.textContent = ctx.info.phones.length ? "pick another on your phone" : "pick another");
-  label();
-  const drawn = page(ctx, "agentv location", `${start.called}?`, line(start), h("div", { class: "setup-actions" }, yes, other));
+  const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void choose(ctx, start.code) }, "Yes");
+  const other = h("button", { class: "button", "data-focus": true, "data-action": "country-other", onclick: () => ctx.open("country/pick") }, "Another location");
+  const drawn = page(ctx, "agentv location", `${place(start)}?`, line(start), h("div", { class: "setup-actions" }, yes, other));
   return {
     el: drawn.el,
     first: yes,
     info: info(ctx),
     heard(event, data) {
       if (event === "phones") {
-        void ctx.refresh().then(() => {
-          label();
-          ctx.status(info(ctx));
-        });
+        void ctx.refresh().then(() => ctx.status(info(ctx)));
       }
       // The phone's zone came after the step was drawn: start from it.
       if (event === "location") {
         const next = (data as { start?: Start | null }).start;
         if (!next || (next.code === start.code && next.zone === start.zone)) return;
         start = next;
-        drawn.headline.textContent = `${start.called}?`;
-        drawn.headline.setAttribute("aria-label", `${start.called}?`);
+        drawn.headline.textContent = `${place(start)}?`;
+        drawn.headline.setAttribute("aria-label", `${place(start)}?`);
         drawn.line.textContent = line(start);
       }
     },
@@ -105,7 +105,7 @@ export async function pickLocation(ctx: Ctx): Promise<View> {
   const state = known ?? (await load());
   const countries: Country[] = state?.countries ?? [];
   const picker = countryPicker(countries, state?.start?.code ?? null, (c) => void choose(ctx, c.code));
-  const drawn = page(ctx, "agentv location --pick", "pick the country.", "type it on your phone, or move with the arrows", picker.el);
+  const drawn = page(ctx, "agentv location --pick", "Pick your location", "Type on your phone, or use the arrows", picker.el);
   return { el: drawn.el, first: picker.first, info: info(ctx) };
 }
 
@@ -120,11 +120,10 @@ export function zoneQuestion(ctx: Ctx): View {
     h(
       "button",
       { class: "zone", "data-focus": true, "data-zone": zone.zone, onclick: () => void choose(ctx, question.code, zone.zone) },
-      h("span", { class: "zone-name" }, zone.name),
-      h("span", { class: "zone-where" }, `${zone.city} · ${time(zone.zone)}`),
+      h("span", { class: "zone-name" }, proper(zone.name)),
+      h("span", { class: "zone-where" }, `${city(zone.zone)} · ${time(zone.zone)}`),
     ),
   );
-  const many = HOW_MANY[question.zones.length] ?? String(question.zones.length);
-  const drawn = page(ctx, "agentv location --zone", "which time zone?", `${question.called} has ${many}`, h("div", { class: "zones" }, ...cards));
+  const drawn = page(ctx, "agentv location --zone", "Which time zone?", `${place(question)} has ${question.zones.length}`, h("div", { class: "zones" }, ...cards));
   return { el: drawn.el, first: cards[0], info: info(ctx) };
 }

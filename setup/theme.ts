@@ -54,10 +54,9 @@ export async function theme(ctx: Ctx): Promise<View> {
       onclick: () => ctx.open("theme/own"),
     },
     h("span", { class: "look-screen look-dashed" }, glyph("spark", 96)),
-    h("span", { class: "look-text" }, h("span", { class: "look-name" }, "describe your own"), h("span", { class: "look-note" }, "your agent will make it")),
+    h("span", { class: "look-text" }, h("span", { class: "look-name" }, "Describe your own"), h("span", { class: "look-note" }, "Made after setup")),
   );
-  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("theme") }, "↵ continue");
-  const line = h("span", { class: "setup-note" }, "every omarchy theme on this tv, and any you install on omarchy's desktop. change it any time in settings.");
+  const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void ctx.finish("theme") }, "Continue");
   // Every theme, more than fit: the grid scrolls as the focus moves, and
   // the ring follows a mouse's wheel.
   const grid = h("div", { class: "looks looks-all", "data-scroll": true }, ...cards, own);
@@ -78,19 +77,19 @@ export async function theme(ctx: Ctx): Promise<View> {
     }
     setting = look.id;
     draw();
-    ctx.status(`setting ${look.name}`);
+    ctx.status(`Setting ${look.name}…`);
     const reply = await screen.setTheme(look.id);
     setting = null;
     if (!reply.ok) {
       ctx.sounds.play("failure");
-      ctx.toast(reply.error ?? `${look.name} didn't set`, "fail");
-      ctx.status("←↑↓→ move · ↵ pick");
+      ctx.toast(reply.error ?? `Couldn't use ${look.name}`, "fail");
+      ctx.status("");
       draw();
       return;
     }
     current = look.id;
     ctx.sounds.play("confirm");
-    ctx.status("←↑↓→ move · ↵ pick");
+    ctx.status("");
     draw();
   };
 
@@ -98,14 +97,12 @@ export async function theme(ctx: Ctx): Promise<View> {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", { class: "setup-top" }, h("div", {}, ...heading("omarchy theme", "pick a look.", ctx.reduced())), go),
+    h("div", { class: "setup-top" }, h("div", {}, ...heading("omarchy theme", "Pick a look", ctx.reduced())), go),
     grid,
-    line,
   );
   return {
     el,
     first: cards.find((card) => card.dataset.theme === current) ?? cards[0] ?? go,
-    info: "←↑↓→ move · ↵ pick",
     heard(event) {
       // The colours came, from here or from Omarchy's desktop: which look
       // the TV has now. A theme installed or removed on the desktop: the

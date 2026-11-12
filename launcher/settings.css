@@ -1,0 +1,77 @@
+/* Settings as design page D10 draws it (pages/settings.ts): eight sections,
+   and rows of one line, a name and then its value. Colours are the theme's,
+   and each look styles .button and .button-value as it does everywhere, so
+   every look and theme draws these its own way. */
+
+/* A row that isn't a choice sits in the list like one that is. */
+.settings-panel .panel-row {
+  max-width: 640px;
+  box-sizing: border-box;
+}
+
+/* It lines up with the buttons around it in the looks that pad theirs
+   differently. */
+:root[data-look="glass"] .settings-panel .panel-row,
+:root[data-look="cinema"] .settings-panel .panel-row {
+  min-height: 76px;
+  padding: 0 36px;
+}
+
+/* A network's name, as the Wi-Fi row's value, can be as long as a name gets:
+   it ends in an ellipsis, never over the row's edge. */
+.settings-panel [data-action="wifi"] .button-value {
+  min-width: 0;
+  margin-left: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The row with a bar under its line: what's spent toward the month's limit
+   (pages/usage.ts). The row is 22px taller than the others, its words sit
+   where theirs do, and the bar takes the colour of the row's value. */
+.button.metered {
+  --row: 80px;
+  --row-pad: 32px;
+  position: relative;
+  min-height: calc(var(--row) + 22px);
+  padding-bottom: 22px;
+}
+
+:root[data-look="glass"] .button.metered,
+:root[data-look="cinema"] .button.metered {
+  --row: 76px;
+  --row-pad: 36px;
+}
+
+.meter {
+  display: block;
+  height: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.button.metered .meter {
+  position: absolute;
+  left: var(--row-pad);
+  right: var(--row-pad);
+  bottom: 14px;
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+
+/* The same bar on the spending row's own page. */
+div.metered {
+  max-width: 640px;
+}
+
+:root[data-look="glass"] .meter,
+:root[data-look="glass"] .meter > span,
+:root[data-look="cinema"] .meter,
+:root[data-look="cinema"] .meter > span {
+  border-radius: 5px;
+}

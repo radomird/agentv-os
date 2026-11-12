@@ -7,7 +7,9 @@
 
 import { request } from "node:http";
 import { OFFERS, type AiState, type Provider } from "./ai.ts";
+import { AI_NAMES } from "../builder/reasons.ts";
 import { isCliProvider } from "./providers/cli.ts";
+import { CANT_ANSWER, TOOK_TOO_LONG } from "./providers/no-answer.ts";
 import { NONE, type Routed, type RouterApp } from "./router.ts";
 
 export const ROUTER_SOCKETS = { api: "/run/agentv-router/router.sock", cli: "/run/agentv-router-cli/route.sock" };
@@ -38,9 +40,9 @@ export function viaSocket(path: string, body: { provider: Provider; sentence: st
     });
     asked.on("timeout", () => {
       asked.destroy();
-      failed("your agent took too long to answer");
+      failed(TOOK_TOO_LONG);
     });
-    asked.on("error", (error: NodeJS.ErrnoException) => failed(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? "your agent's router isn't running" : error.message));
+    asked.on("error", (error: NodeJS.ErrnoException) => failed(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? CANT_ANSWER : error.message));
     asked.end(JSON.stringify(body));
   });
 }
@@ -58,15 +60,16 @@ export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterA
     const ai = await o.ai();
     const provider = ai.provider ?? "claude";
     const via = ai.path === "plan" ? "cli" : "api";
-    if (!ai.provider || !ai.path) return unrouted(sentence, provider, via, "set up your agent in settings → ai first", "ai");
+    if (!ai.provider || !ai.path) return unrouted(sentence, provider, via, "Set up AI in Settings first", "ai");
     const offer = OFFERS[ai.provider];
-    if (!ai.accepted) return unrouted(sentence, provider, via, `an adult accepts ${offer.name}'s terms on a phone first`, "terms");
+    const name = AI_NAMES[ai.provider];
+    if (!ai.accepted) return unrouted(sentence, provider, via, `Accept ${name}'s terms first`, "terms");
     if (ai.path === "key") {
       const key = o.key();
-      if (!key.set || key.provider !== ai.provider) return unrouted(sentence, provider, via, `add ${offer.name}'s key in settings → ai first`, "key");
+      if (!key.set || key.provider !== ai.provider) return unrouted(sentence, provider, via, `Add your ${name} key in Settings first`, "key");
       return viaSocket(sockets.api, { provider, sentence, apps });
     }
-    if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't take requests yet`, "plan");
+    if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't do this yet`, "plan");
     return viaSocket(sockets.cli, { provider, sentence, apps });
   };
 }

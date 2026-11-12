@@ -74,13 +74,13 @@ test("S3.8 windy comes from the wind speed, at 10.8 m/s and up, and rain, heavy 
 });
 
 test("MET's symbols in plain words", () => {
-  assert.equal(label("clearsky_night"), "clear night");
-  assert.equal(label("fair_day"), "fair");
-  assert.equal(label("partlycloudy_day"), "partly cloudy");
-  assert.equal(label("lightrainshowers_day"), "light rain showers");
-  assert.equal(label("heavyrainshowersandthunder_day"), "heavy rain showers and thunder");
-  assert.equal(label("lightssleetshowersandthunder_night"), "light sleet showers and thunder");
-  assert.equal(label("cloudy", 12), "windy");
+  assert.equal(label("clearsky_night"), "Clear night");
+  assert.equal(label("fair_day"), "Fair");
+  assert.equal(label("partlycloudy_day"), "Partly cloudy");
+  assert.equal(label("lightrainshowers_day"), "Light rain showers");
+  assert.equal(label("heavyrainshowersandthunder_day"), "Heavy rain showers and thunder");
+  assert.equal(label("lightssleetshowersandthunder_night"), "Light sleet showers and thunder");
+  assert.equal(label("cloudy", 12), "Windy");
 });
 
 test("S3.8 the weather now is MET's symbol for the current hour, from recorded replies", () => {
@@ -150,13 +150,13 @@ test("temperatures in whole degrees, and in Fahrenheit where the country uses it
   assert.equal(degrees(-0.4), "0°");
   assert.equal(degrees(-2.6), "-3°");
   assert.equal(degrees(20, "f"), "68°");
-  assert.equal(weekday("2026-10-29"), "thu");
+  assert.equal(weekday("2026-10-29"), "Thu");
   const tab = parseZoneTab(readFileSync(join(ROOT, "test/agentv/fixtures/met/zone.tab"), "utf8"));
   assert.equal(placeSettings("America/New_York", tab.get("America/New_York")!).units, "f");
   assert.deepEqual(placeSettings("Europe/Amsterdam", tab.get("Europe/Amsterdam")!), {
     timeZone: "Europe/Amsterdam",
     units: "c",
-    place: "amsterdam",
+    place: "Amsterdam",
     lat: "52.37",
     lon: "4.9",
   });
@@ -172,7 +172,7 @@ test("S3.8 S3.9 small shows now, medium today and tomorrow, large now and seven 
   const week = days(all, reply.zone, at, 7);
 
   const s = tileFor("s", place, current, week, false);
-  assert.deepEqual(s.headline, { label: "amsterdam", icon: "wind", value: "12°", caption: "windy" });
+  assert.deepEqual(s.headline, { label: "amsterdam", icon: "wind", value: "12°", caption: "Windy" });
   assert.deepEqual(s.entries, [{ caption: "h 13° · l 10°" }]);
   assert.equal(s.refreshMins, 30);
 
@@ -181,8 +181,8 @@ test("S3.8 S3.9 small shows now, medium today and tomorrow, large now and seven 
   assert.deepEqual(
     m.entries?.map((entry) => [entry.label, entry.icon, entry.value, entry.caption]),
     [
-      ["today", "wind", "12°", "windy\nh 13° · l 10°"],
-      ["tomorrow", "cloudy", "13°", "cloudy\nh 13° · l 11°"],
+      ["Today", "wind", "12°", "Windy\nh 13° · l 10°"],
+      ["Tomorrow", "cloudy", "13°", "Cloudy\nh 13° · l 11°"],
     ],
   );
 
@@ -191,9 +191,9 @@ test("S3.8 S3.9 small shows now, medium today and tomorrow, large now and seven 
   assert.equal(l.headline?.icon, "wind");
   assert.deepEqual(
     l.entries?.map((entry) => entry.label),
-    ["today", "mon", "tue", "wed", "thu", "fri", "sat"],
+    ["Today", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
   );
-  assert.deepEqual(l.entries?.[1], { label: "mon", icon: "cloudy", value: "13°", caption: "11°" });
+  assert.deepEqual(l.entries?.[1], { label: "Mon", icon: "cloudy", value: "13°", caption: "11°" });
 
   assert.equal(tileFor("s", place, current, week, true).headline?.label, "amsterdam · offline");
 });

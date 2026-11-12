@@ -21,6 +21,6 @@
     { "name": "and now says so", "op": "now", "expect": { "now": { "title": "Midnight" } } },
     { "name": "the album played last comes first", "op": "recent", "expect": { "ok": true, "albums": { "0": { "title": "Night Shift" } } } },
     { "name": "a playlist plays by name", "op": "play", "request": { "kind": "playlist", "q": "evening" }, "expect": { "ok": true, "playing": { "kind": "playlist", "title": "Dusk", "tracks": 2 } } },
-    { "name": "something that isn't there says so", "op": "play", "request": { "q": "nothing like it" }, "expect": { "ok": false, "error": "nothing in the library matches nothing like it" } }
+    { "name": "something that isn't there says so", "op": "play", "request": { "q": "nothing like it" }, "expect": { "ok": false, "error": "Couldn't find nothing like it in your music" } }
   ]
 }

@@ -7,6 +7,7 @@ import type { Provider } from "../ai.ts";
 import type { Answer, Ask } from "../router.ts";
 import { NO_USAGE, type Usage } from "../../builder/sandbox/prices.ts";
 import { json, post, ProviderError, spent, type Call } from "./http.ts";
+import { NO_ANSWER } from "./no-answer.ts";
 
 export function generateBody(ask: Ask): Record<string, unknown> {
   return {
@@ -26,7 +27,7 @@ export async function generate(ask: Ask, call: Call, provider: Provider): Promis
   if (!/^[\w.-]+$/.test(model)) throw new ProviderError("that isn't a model's name");
   const body = await post(call, `/v1beta/models/${model}:generateContent`, { "x-goog-api-key": call.key }, generateBody(ask));
   const candidate = Array.isArray(body.candidates) ? body.candidates[0] : undefined;
-  if (!candidate) throw new ProviderError(body.promptFeedback?.blockReason ? "the model declined to answer" : "the provider's answer had no text");
+  if (!candidate) throw body.promptFeedback?.blockReason ? new ProviderError("the model declined to answer") : new ProviderError(NO_ANSWER.empty(), undefined, "the provider's answer had no text");
   if (candidate.finishReason === "MAX_TOKENS") throw new ProviderError("the model's answer was cut off");
   if (candidate.finishReason === "SAFETY" || candidate.finishReason === "RECITATION") throw new ProviderError("the model declined to answer");
   // The answer's own parts, without its thoughts.

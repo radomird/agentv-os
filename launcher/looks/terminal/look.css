@@ -74,8 +74,11 @@ body {
   bottom: calc(var(--safe-y) + var(--bar) + var(--bar-gap));
 }
 
+/* Settings' panel starts at the top, beside the heading, so it runs down to
+   the bar as the list beside it does, and what's in it isn't cut off short
+   of there. */
 .settings-panel {
-  max-height: calc(var(--canvas-height, 1080px) - 2 * var(--safe-y) - var(--bar) - var(--bar-gap) - 260px);
+  max-height: calc(var(--canvas-height, 1080px) - 2 * var(--safe-y) - var(--bar) - var(--bar-gap));
 }
 
 /* Captions no smaller than 23 px (principle 5): phase 1 had 18 to 22 px on
@@ -170,8 +173,8 @@ body {
 
 /* --- Apps ---------------------------------------------------------------- */
 
-/* A name that doesn't fit ends in an ellipsis (D2), and adding an app or
-   making one takes two cells. */
+/* A name that doesn't fit ends in an ellipsis (D2), and "Add an app" takes
+   two cells. */
 .row .tile-name {
   white-space: nowrap;
   overflow: hidden;

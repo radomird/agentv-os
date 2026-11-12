@@ -71,7 +71,7 @@ test("ADR-070 a plan's sign-in from setup goes to root without a build, and its 
   await signIn.start("claude");
   assert.deepEqual(JSON.parse(readFileSync(join(drop, "sign-in.json"), "utf8")), { build: null, provider: "claude" });
   assert.deepEqual(await signIn.state(), { provider: "claude", signedIn: false, now: { state: "starting" } });
-  assert.match((await signIn.code("abc")).error ?? "", /nothing is waiting/);
+  assert.match((await signIn.code("abc")).error ?? "", /Nothing is waiting/);
 
   const later = () => new Date(Date.now() + 1000).toISOString();
   mkdirSync(join(run, "sign-in"), { recursive: true });
@@ -80,7 +80,7 @@ test("ADR-070 a plan's sign-in from setup goes to root without a build, and its 
   assert.equal((await signIn.state())?.now?.state, "starting");
   writeFileSync(join(run, "sign-in", "status.json"), JSON.stringify({ provider: "claude", state: "waiting", url: "https://claude.ai/oauth/authorize?x=1", pastes: true, at: later() }));
   assert.deepEqual((await signIn.state())?.now, { state: "waiting", url: "https://claude.ai/oauth/authorize?x=1", pastes: true });
-  assert.match((await signIn.code("bad code with spaces")).error ?? "", /paste the code/);
+  assert.match((await signIn.code("bad code with spaces")).error ?? "", /Paste the code/);
   assert.deepEqual(await signIn.code(" good-code#s7Q "), {});
   assert.deepEqual(JSON.parse(readFileSync(join(drop, "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
 
@@ -114,7 +114,7 @@ test("the AI step's routes: icons, and the sign-in only for a plan whose terms a
     assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn, null);
     assert.equal((await post("/api/ai/sign-in")).status, 409, "no plan picked");
     assert.equal((await post("/api/ai", { provider: "claude", path: "plan" })).status, 200);
-    assert.match((await (await post("/api/ai/sign-in")).json()).error, /accepts the terms on the phone first/);
+    assert.match((await (await post("/api/ai/sign-in")).json()).error, /Accept Claude's terms first/);
     await daemon.ai.accept("claude", "plan", { phone: "pixel", viewer: "radomir" });
     const started = await (await post("/api/ai/sign-in")).json();
     assert.deepEqual(started.signIn, { provider: "claude", signedIn: false, now: { state: "starting" } });

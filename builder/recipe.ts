@@ -46,6 +46,7 @@ export const PAGE_TOOLS: Tool[] = ["read", "list", "write", "remove", "npm_info"
 
 export interface Step {
   id: string;
+  label?: string; // what the TV shows while the step runs: "Designing", "Testing"
   does: string; // in plain words: what the agent supplies here
   tools: Tool[];
   writes?: string[]; // where the write and remove tools may write: globs in the build's work folder
@@ -93,6 +94,15 @@ export interface Plan {
 }
 
 const STEP_ID = /^[a-z][a-z0-9-]{0,30}$/;
+
+// A step as a person reads it on the TV: its label, or for a step with none,
+// such as one from a plan, its id as words ("draw-the-board" is "Draw the
+// board"). The id stays what the data and the log have.
+export function stepLabel(step: { id: string; label?: string }): string {
+  if (step.label) return step.label;
+  const words = step.id.replace(/-/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 const PAGE = /^[a-z0-9][a-z0-9_-]{0,30}$/;
 // A language or a country at the front of a path, like /en or /en-gb.
 const LOCALE = /^[a-z]{2}([-_][a-z]{2})?$/;
@@ -131,15 +141,24 @@ export function signedInPage(pages: string[] | undefined, address: URL): boolean
 // names. Two things at the front are skipped, but only with a page after
 // them to name: a language, and index with or without a file ending, as in
 // /index.php/search. Alone, each is the start page: /en, /index.html. So
-// /index.php/account is "account". A lone /me, /my or /id isn't taken for a
-// language, since each is as likely the person's own page.
+// /index.php/account is "account".
+//
+// /me, /my and /id aren't taken for a language when no page follows them,
+// alone or with only index after, as in /me/index.html: each is as likely
+// the person's own page. They're also Montenegro's, Malaysia's and
+// Indonesia's, so a recipe for a service that starts at one of them lists
+// it in signedInPages. That allows /id and /id/index, and /id/account is
+// still "account". The order is fixed, a language and then index, so
+// /index.php/en/browse is refused.
 function named(pages: string[] | undefined, parts: string[]): boolean {
+  const bare = (part: string) => part.replace(/\.[a-z0-9]{1,5}$/, "");
   if (parts.length && LOCALE.test(parts[0])) {
-    if (parts.length === 1) return !OWN_PAGES.includes(parts[0]);
+    const alone = parts.length === 1 || (parts.length === 2 && bare(parts[1]) === "index");
+    if (alone && OWN_PAGES.includes(parts[0])) return (pages ?? []).includes(parts[0]);
+    if (parts.length === 1) return true;
     parts = parts.slice(1);
   }
   if (parts.length === 0) return true;
-  const bare = (part: string) => part.replace(/\.[a-z0-9]{1,5}$/, "");
   if (bare(parts[0]) === "index") {
     if (parts.length === 1) return true;
     parts = parts.slice(1);
@@ -179,6 +198,7 @@ export function recipeProblems(data: unknown, dir: string): string[] {
       }
       if (ids.has(step.id)) problems.push(`the step ${step.id} is there twice`);
       ids.add(step.id);
+      if (!text(step.label, 40)) problems.push(`the step ${step.id} has a label, the few words the TV shows for it`);
       if (!text(step.does, 1200)) problems.push(`the step ${step.id} says what it does`);
       if (!Array.isArray(step.tools) || step.tools.length === 0) problems.push(`the step ${step.id} lists its tools`);
       for (const tool of Array.isArray(step.tools) ? step.tools : []) {
@@ -293,6 +313,7 @@ export function planRecipe(plan: Plan, root: string): Recipe {
       ...plan.steps.map((step): Step => ({ id: step.id, does: step.does, tools: PAGE_TOOLS, writes: work, reads: ["kit", "plan"], turns: 60 })),
       {
         id: "tests",
+        label: "Testing",
         does: "Write tests in tests/ for what the plan says the app does. Use the test API the tests reference describes, and run them with run_tests.",
         tools: ["read", "list", "write", "run_tests"],
         writes: ["tests/**"],
@@ -301,6 +322,7 @@ export function planRecipe(plan: Plan, root: string): Recipe {
       },
       {
         id: "try",
+        label: "Trying it on a TV",
         does: "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only what the plan says.",
         tools: ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
         writes: [...work, "tests/**"],

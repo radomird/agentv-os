@@ -15,8 +15,8 @@ const BYTES_MAX = 50 * 1024 * 1024;
 
 // Why an installed app can't be exported, or null when it can.
 export function exportRefusal(manifest: Manifest, tier: string): string | null {
-  if (tier !== "local") return "only an app your agent made is exported";
-  if (manifest.tv.runtime === "web") return "an app that drives a service's own site stays on this tv";
+  if (tier !== "local") return "You can only copy apps you made";
+  if (manifest.tv.runtime === "web") return "This app stays on this TV";
   return null;
 }
 
@@ -34,7 +34,7 @@ export function packageFiles(dir: string): { path: string; data: Buffer }[] {
       if (stat.isDirectory()) walk(path, rel);
       else if (stat.isFile()) {
         bytes += stat.size;
-        if (found.length >= FILES_MAX || bytes > BYTES_MAX) throw new Error("the app is too big to export");
+        if (found.length >= FILES_MAX || bytes > BYTES_MAX) throw new Error("This app is too big to copy");
         found.push({ path: rel, data: readFileSync(path) });
       }
     }

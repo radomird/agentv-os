@@ -4,8 +4,9 @@
 // sign-in right there (ADR-070), so voice works from the first day: an
 // adult accepts the terms on the phone first, as always (ADR-023), then the
 // TV shows the provider's own sign-in link as a QR code. A key from the
-// phone is the second way, and "later, in settings" leaves it for Settings
-// → AI, where a first build still asks too.
+// phone is the second way, and "Later" leaves it for Settings → AI, where a
+// first build still asks too. "Later" is also the last card of the first
+// screen, so nobody has to pick an AI to get past it.
 //
 // With the switch off, setup/ai.ts is the whole step. This one reuses its
 // terms, key and done screens.
@@ -20,7 +21,7 @@ const ORDER: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
 // What the bar says on the right: the phone that's helping, if one is.
 function info(ctx: Ctx): string {
-  return ctx.info.phones.length ? "phone paired" : "";
+  return ctx.info.phones.length ? "Phone paired" : "";
 }
 
 function page(ctx: Ctx, command: string, title: string, line: HTMLElement, ...rest: HTMLElement[]): HTMLElement {
@@ -56,7 +57,10 @@ function pick(ctx: Ctx): View {
       h("span", { class: "ai-text" }, h("span", { class: "ai-name" }, offer?.name ?? provider), h("span", { class: "ai-maker" }, offer?.maker ?? "")),
     );
   });
-  const el = page(ctx, "agentv ai", "pick your ai.", h("p", { class: "setup-line" }, "it builds your apps and answers what you ask"), h("div", { class: "ai-cards" }, ...cards));
+  // The last card leaves it for Settings: the TV plays films without an AI.
+  // Its empty second line keeps "Later" level with the AIs' names.
+  const later = h("button", { class: "ai-card ai-later", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, h("span", { class: "ai-text" }, h("span", { class: "ai-name" }, "Later"), h("span", { class: "ai-maker" }, "\u00a0")));
+  const el = page(ctx, "agentv ai", "Pick your AI", h("p", { class: "setup-line" }, "It answers you and makes your apps"), h("div", { class: "ai-cards" }, ...cards, later));
   return { el, first: cards[0], info: info(ctx) };
 }
 
@@ -64,15 +68,15 @@ function pick(ctx: Ctx): View {
 function said(offer: AiInfo["offers"][Provider], now: PlanSignIn | null): string {
   // A plan its maker keeps to its own apps says so. One that waits for its
   // maker's yes is coming soon.
-  if (!offer.plan.offered) return offer.plan.keyOnly && offer.plan.note ? offer.plan.note : `${offer.plan.name} is coming soon. a key works now`;
+  if (!offer.plan.offered) return offer.plan.keyOnly && offer.plan.note ? offer.plan.note : `${offer.plan.name} is coming soon. A key works now.`;
   const state = now?.now?.state;
-  if (now?.signedIn) return `you're signed in to ${offer.plan.name}`;
-  if (state === "waiting" && now?.now?.code) return `scan to sign in, then enter ${now.now.code}`;
-  if (state === "waiting" && now?.now?.pastes) return "scan to sign in, then paste the code it gives you";
-  if (state === "waiting") return "scan to sign in with your plan";
-  if (state === "starting") return "getting the sign-in ready";
-  if (state === "failed") return `that didn't work: ${now?.now?.reason ?? "it stopped"}. try again`;
-  return "sign in with your plan, so voice works from today";
+  if (now?.signedIn) return `You're signed in to ${offer.plan.name}`;
+  if (state === "waiting" && now?.now?.code) return `Scan to sign in, then enter ${now.now.code}`;
+  if (state === "waiting" && now?.now?.pastes) return "Scan to sign in, then paste the code it gives you";
+  if (state === "waiting") return "Scan to sign in with your plan";
+  if (state === "starting") return "Getting the sign-in ready…";
+  if (state === "failed") return "Couldn't sign in. Try again.";
+  return "Sign in now and voice works today";
 }
 
 // The ways in for one provider: its plan, signed in right here, a key from
@@ -81,10 +85,10 @@ function said(offer: AiInfo["offers"][Provider], now: PlanSignIn | null): string
 export function ways(ctx: Ctx, provider: Provider): View {
   const offer = ctx.ai!.offers[provider];
   const line = h("p", { class: "setup-line", "data-line": "sign-in" });
-  const qr = h("img", { class: "qr", alt: "the sign-in's code to scan" }) as HTMLImageElement;
+  const qr = h("img", { class: "qr", alt: "The sign-in's code to scan" }) as HTMLImageElement;
   const qrBox = h("div", { class: "ai-qr hidden" }, h("span", { class: "qr-box" }, qr));
-  const field = h("input", { class: "text-field ai-code", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "the code the sign-in gave you", placeholder: "paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
-  const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "↵ send");
+  const field = h("input", { class: "text-field ai-code", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "The code the sign-in gave you", placeholder: "Paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
+  const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "Send");
   const paste = h("div", { class: "ai-paste hidden" }, field, send);
   let now: PlanSignIn | null = null;
   let timer = 0;
@@ -94,7 +98,7 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const draw = () => {
     // The code to enter keeps its capitals.
     const code = now?.now?.state === "waiting" && offer.plan.offered && !now.signedIn ? now.now.code : undefined;
-    if (code) line.replaceChildren("scan to sign in, then enter ", asWritten(code));
+    if (code) line.replaceChildren("Scan to sign in, then enter ", asWritten(code));
     else line.textContent = said(offer, now);
     const url = now?.now?.state === "waiting" ? now.now.url : undefined;
     qrBox.classList.toggle("hidden", !url);
@@ -116,7 +120,7 @@ export function ways(ctx: Ctx, provider: Provider): View {
       moved = true;
       clearInterval(timer);
       ctx.sounds.play("confirm");
-      ctx.toast(`signed in to ${offer.plan.name}`, "ok");
+      ctx.toast(`Signed in to ${offer.plan.name}`, "ok");
       await ctx.finish("ai");
     }
   };
@@ -131,9 +135,9 @@ export function ways(ctx: Ctx, provider: Provider): View {
 
   const start = async () => {
     try {
-      const grant = await ctx.grant("the plan's sign-in");
-      if (grant === null) return;
-      now = (await setup.startSignIn(grant || undefined)).signIn;
+      const started = await ctx.guarded("signing in", (grant) => setup.startSignIn(grant));
+      if (!started) return;
+      now = started.value.signIn;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
@@ -143,18 +147,23 @@ export function ways(ctx: Ctx, provider: Provider): View {
     follow();
   };
 
+  // Enter reaches this twice, from the field and from the button.
+  let sending = false;
   const sendCode = async () => {
     const code = field.value.trim();
-    if (!code) return;
-    field.value = "";
+    if (!code || sending) return;
+    // The code stays in the field until the TV has it, as a typed key does.
+    sending = true;
     try {
-      const grant = await ctx.grant("the plan's sign-in");
-      if (grant === null) return;
-      await setup.signInCode(code, grant || undefined);
-      ctx.toast("signing in…", "ok");
+      const sent = await ctx.guarded("signing in", (grant) => setup.signInCode(code, grant));
+      if (!sent) return;
+      if (field.value.trim() === code) field.value = "";
+      ctx.toast("Signing in…", "ok");
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
       ctx.sounds.play("failure");
+    } finally {
+      sending = false;
     }
   };
   field.addEventListener("keydown", (event) => {
@@ -171,10 +180,10 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const choose = async (how: "plan" | "key") => {
     const ai = ctx.ai!;
     if (ai.provider !== provider || ai.path !== how) {
-      const grant = await ctx.grant("the ai");
-      if (grant === null) return;
       try {
-        ctx.ai = await setup.choose(provider, how, grant || undefined);
+        const chosen = await ctx.guarded("your AI", (grant) => setup.choose(provider, how, grant));
+        if (!chosen) return;
+        ctx.ai = chosen.value;
       } catch (error) {
         ctx.toast((error as Error).message, "fail");
         ctx.sounds.play("failure");
@@ -188,11 +197,11 @@ export function ways(ctx: Ctx, provider: Provider): View {
     await start();
   };
 
-  const plan = offer.plan.offered ? h("button", { class: "button primary", "data-focus": true, "data-path": "plan", onclick: () => void choose("plan") }, "↵ use my plan") : null;
-  const keyButton = h("button", { class: `button${plan ? "" : " primary"}`, "data-focus": true, "data-path": "key", onclick: () => void choose("key") }, "use a key from my phone");
-  const later = h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, "later, in settings");
+  const plan = offer.plan.offered ? h("button", { class: "button primary", "data-focus": true, "data-path": "plan", onclick: () => void choose("plan") }, "Use my plan") : null;
+  const keyButton = h("button", { class: `button${plan ? "" : " primary"}`, "data-focus": true, "data-path": "key", onclick: () => void choose("key") }, "Use an API key");
+  const later = h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, "Later");
   const options = h("div", { class: "ai-options" }, ...(plan ? [plan] : []), keyButton, later, paste);
-  const el = page(ctx, `agentv ai ${offer.name}`, `sign in to ${offer.name}.`, line, options, qrBox);
+  const el = page(ctx, `agentv ai ${offer.name}`, `Sign in to ${offer.name}`, line, options, qrBox);
   draw();
 
   // Back here with the plan picked and its terms accepted: the sign-in

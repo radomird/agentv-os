@@ -93,11 +93,11 @@ function straight(line: string): Promise<{ ok: boolean; error?: string }> {
 }
 
 test("a password the daemon or root refuses, before anything reaches chpasswd", () => {
-  assert.equal(passwordProblem(""), "type a password first");
-  assert.equal(passwordProblem("short"), "the password needs 8 characters or more");
-  assert.equal(passwordProblem("x".repeat(129)), "the password can be 128 characters at most");
-  assert.equal(passwordProblem("two\nlines!"), "the password can't have a line break in it");
-  assert.equal(passwordProblem(42), "type a password first");
+  assert.equal(passwordProblem(""), "Type a password first");
+  assert.equal(passwordProblem("short"), "Passwords need 8 characters or more");
+  assert.equal(passwordProblem("x".repeat(129)), "Passwords can be up to 128 characters");
+  assert.equal(passwordProblem("two\nlines!"), "Passwords can't have a line break");
+  assert.equal(passwordProblem(42), "Type a password first");
   assert.equal(passwordProblem("eight ch"), null);
   assert.equal(passwordProblem("ü".repeat(8)), null, "eight letters, whatever their bytes");
 });
@@ -114,7 +114,7 @@ test("a box installed through Omarchy's own installer keeps the password typed t
   rmSync(marker, { force: true });
   assert.deepEqual((await call("GET")).data.password, { managed: false, name: null, known: true });
   const put = await call("PUT", { password: PASSWORD });
-  assert.deepEqual([put.status, put.data.error], [409, "this box's password is the one typed when it was installed"]);
+  assert.deepEqual([put.status, put.data.error], [409, "This TV's password is the one typed when it was installed"]);
   assert.equal(existsSync(typed), false);
 });
 
@@ -125,17 +125,17 @@ test("Q225 the desktop's first password, past the PIN, reaches chpasswd on stdin
   assert.deepEqual((await call("GET")).data.password, { managed: true, name: "agentv", known: false });
 
   const short = await call("PUT", { password: "short" });
-  assert.deepEqual([short.status, short.data.error], [400, "the password needs 8 characters or more"]);
+  assert.deepEqual([short.status, short.data.error], [400, "Passwords need 8 characters or more"]);
 
   // With a PIN, the daemon wants its grant, and root asks it again.
   assert.equal((await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "4826" }) })).status, 200);
   const refused = await call("PUT", { password: PASSWORD });
-  assert.deepEqual([refused.status, refused.data.error], [403, "that needs the pin"]);
-  assert.deepEqual(await straight(JSON.stringify({ password: PASSWORD, grant: "made-up" })), { ok: false, error: "that needs the pin" }, "root checks the grant itself");
+  assert.deepEqual([refused.status, refused.data.error], [403, "That needs the PIN"]);
+  assert.deepEqual(await straight(JSON.stringify({ password: PASSWORD, grant: "made-up" })), { ok: false, error: "That needs the PIN" }, "root checks the grant itself");
   assert.equal(existsSync(typed), false, "nothing reached chpasswd");
 
   const grant = ((await (await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "4826" }) })).json()) as { grant: string }).grant;
-  assert.deepEqual(await straight(JSON.stringify({ password: "two\nlines!", grant })), { ok: false, error: "the password can't have a line break in it" }, "root checks the password itself");
+  assert.deepEqual(await straight(JSON.stringify({ password: "two\nlines!", grant })), { ok: false, error: "Passwords can't have a line break" }, "root checks the password itself");
 
   const set = await call("PUT", { password: PASSWORD }, grant);
   assert.deepEqual([set.status, set.data.password], [200, { managed: true, name: "agentv", known: true }]);
@@ -164,5 +164,5 @@ test("with root's side down, Settings says so", async () => {
   const grant = ((await (await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "4826" }) })).json()) as { grant: string }).grant;
   await new Promise((done) => rootSide.close(done));
   const put = await call("PUT", { password: PASSWORD }, grant);
-  assert.deepEqual([put.status, put.data.error], [500, "the box can't set passwords: is agentv-password.socket on?"]);
+  assert.deepEqual([put.status, put.data.error], [500, "Couldn't set the password. Restart your TV and try again."]);
 });

@@ -50,17 +50,17 @@ export const run: Run = (command, args, input) =>
 // A share's address: smb:// or nfs://, a host and a path, and a user name at
 // most, never a password.
 export function shareProblem(uri: string): string | null {
-  if (/[\x00-\x1f\\]/.test(uri)) return "a share's address can't have that in it";
+  if (/[\x00-\x1f\\]/.test(uri)) return "A folder's address can't have that in it";
   let url: URL;
   try {
     url = new URL(uri);
   } catch {
-    return "a share's address looks like smb://nas/music or nfs://nas/export/music";
+    return "A folder's address looks like smb://nas/music";
   }
-  if (url.protocol !== "smb:" && url.protocol !== "nfs:") return "a share is smb:// or nfs://";
-  if (!url.hostname) return "a share's address names its server";
-  if (url.password) return "a share's address doesn't hold its password; it's asked for when it mounts";
-  if (url.pathname.replace(/\/+$/, "") === "") return "a share's address names the share, like smb://nas/music";
+  if (url.protocol !== "smb:" && url.protocol !== "nfs:") return "A folder's address starts with smb:// or nfs://";
+  if (!url.hostname) return "A folder's address looks like smb://nas/music";
+  if (url.password) return "Leave the password out of the address. You'll type it next.";
+  if (url.pathname.replace(/\/+$/, "") === "") return "A folder's address looks like smb://nas/music";
   return null;
 }
 
@@ -89,11 +89,13 @@ interface RootStatus {
   at?: string;
 }
 
+const NO_FOLDER = "Couldn't connect to that folder";
+
 // The words for what gio's mount said, or didn't.
 export function gioProblem(uri: string, message: string): string {
   const user = new URL(uri).username;
-  if (/not mounted|Command failed|^$/.test(message.trim()) && !user) return `${shareName(uri)} wants a user name and password. add it as smb://you@${shareName(uri)}`;
-  return message;
+  if (/not mounted|Command failed|^$/.test(message.trim()) && !user) return `${shareName(uri)} needs a user name and password. Add it as smb://you@${shareName(uri)}.`;
+  return NO_FOLDER;
 }
 
 export interface StorageOptions {
@@ -158,7 +160,7 @@ export class Storage {
       const now = (await this.rootStatus()).find((share) => share.uri === uri);
       if (op === "remove" ? !now : now && now.at !== before) return now ?? null;
     }
-    throw new Error("the box didn't answer about that share in time");
+    throw new Error(`${NO_FOLDER}. Try again.`);
   }
 
   private async saved(): Promise<Saved> {
@@ -184,7 +186,7 @@ export class Storage {
     const folders: Source[] = saved.folders.map((path) => ({
       id: `folder:${path}`,
       kind: "folder",
-      name: path.split("/").filter(Boolean).pop()?.toLowerCase() ?? path,
+      name: path.split("/").filter(Boolean).pop() ?? path,
       path,
       available: existsSync(path),
     }));
@@ -197,7 +199,7 @@ export class Storage {
         // from before it.
         const said = root.find((share) => share.uri === uri);
         const here = Boolean(said?.mounted && mounted.has(said.path));
-        const error = here ? undefined : (said?.error ?? (said ? undefined : "it needs its password again"));
+        const error = here ? undefined : (said?.error ?? (said ? undefined : `Type the password for ${shareName(uri)} again`));
         shares.push({ id: `share:${uri}`, kind: "share", name: shareName(uri), path: here ? said!.path : null, available: here, ...(error ? { error } : {}) });
         continue;
       }
@@ -240,11 +242,11 @@ export class Storage {
   // Mounts a USB drive through udisks2, where the person at the TV may.
   async mountUsb(device: string): Promise<string> {
     const drive = (await this.usb()).find((source) => source.id === `usb:${device}`);
-    if (!drive) throw new Error(`${device} isn't a USB drive here`);
+    if (!drive) throw new Error("Couldn't find that drive");
     if (drive.path) return drive.path;
     const said = await this.run("udisksctl", ["mount", "--no-user-interaction", "-b", device]);
     const match = / at (.+?)\.?\s*$/.exec(said.trim());
-    if (!match) throw new Error(`udisks didn't say where it mounted ${device}`);
+    if (!match) throw new Error("Couldn't open that drive");
     return match[1];
   }
 
@@ -267,13 +269,13 @@ export class Storage {
     if (why) throw new Error(why);
     if (rootShare(uri)) {
       const said = await this.ask("mount", uri);
-      if (!said?.mounted) throw new Error(said?.error ?? `${shareName(uri)} didn't mount`);
+      if (!said?.mounted) throw new Error(said?.error ?? NO_FOLDER);
       return said.path;
     }
     const already = await this.sharePath(uri);
     if (already) return already;
     const user = new URL(uri).username;
-    if (user && password === undefined) throw new Error(`${shareName(uri)} needs its password`);
+    if (user && password === undefined) throw new Error(`Type the password for ${shareName(uri)} again`);
     const args = user ? ["mount", uri] : ["mount", "--anonymous", uri];
     // gio asks for the domain and the password on stdin.
     try {
@@ -282,7 +284,7 @@ export class Storage {
       throw new Error(gioProblem(uri, (error as Error).message));
     }
     const path = await this.sharePath(uri);
-    if (!path) throw new Error(`${shareName(uri)} didn't mount`);
+    if (!path) throw new Error(NO_FOLDER);
     return path;
   }
 
@@ -293,10 +295,10 @@ export class Storage {
     if (why) throw new Error(why);
     let path: string;
     if (rootShare(uri)) {
-      if (!password) throw new Error("a share with a user name needs its password");
-      if (/[\r\n]/.test(password)) throw new Error("a password can't have a line break in it");
+      if (!password) throw new Error("Type the password for that folder");
+      if (/[\r\n]/.test(password)) throw new Error("Passwords can't have a line break");
       const said = await this.ask("add", uri, password);
-      if (!said?.mounted) throw new Error(said?.error ?? `${shareName(uri)} didn't mount`);
+      if (!said?.mounted) throw new Error(said?.error ?? NO_FOLDER);
       path = said.path;
     } else {
       path = await this.mountShare(uri, password);
@@ -309,7 +311,7 @@ export class Storage {
 
   async addFolder(path: string): Promise<Source> {
     const full = resolve(this.home, path);
-    if (!existsSync(full)) throw new Error(`there's no folder at ${full}`);
+    if (!existsSync(full)) throw new Error(`Couldn't find a folder at ${full}`);
     const saved = await this.saved();
     if (!saved.folders.includes(full)) saved.folders.push(full);
     await this.save(saved);

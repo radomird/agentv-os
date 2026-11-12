@@ -29,6 +29,9 @@ export interface UpdateState {
   // (an AgenTV version, or "packages" for the system's alone), and when it
   // was asked for.
   tonight: { version: string; at: string } | null;
+  // The night an update waited because a game was being played, until it
+  // installs: the next night it goes in whatever is open.
+  held: { at: string } | null;
 }
 
 const AT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
@@ -58,6 +61,7 @@ export class Updates {
     const toasted = (await json(join(this.state, "update-toast.json"))) as { version?: unknown } | null;
     const seen = (await json(join(this.state, "update-seen.json"))) as { kept?: unknown; wentBack?: unknown; later?: unknown } | null;
     const tonight = (await json(join(this.state, "update-tonight.json"))) as { version?: unknown; at?: unknown } | null;
+    const held = (await json(join(this.state, "update-held.json"))) as { at?: unknown } | null;
     return {
       status: await json(join(this.dir, "status.json")),
       progress: await json(join(this.dir, "progress.json")),
@@ -71,7 +75,18 @@ export class Updates {
         later: typeof seen?.later === "string" ? seen.later : null,
       },
       tonight: typeof tonight?.version === "string" && typeof tonight.at === "string" ? { version: tonight.version, at: tonight.at } : null,
+      held: typeof held?.at === "string" && AT.test(held.at) ? { at: held.at } : null,
     };
+  }
+
+  // The night's update waited for a game, or that's over. It's kept in a
+  // file, so the one night it may wait is still one after a restart.
+  async setHeld(on: boolean, at = new Date()): Promise<void> {
+    const file = join(this.state, "update-held.json");
+    if (!on) return rm(file, { force: true });
+    await mkdir(this.state, { recursive: true });
+    await writeFile(`${file}.next`, `${JSON.stringify({ at: at.toISOString().replace(/\.\d+Z$/, "Z") })}\n`);
+    await rename(`${file}.next`, file);
   }
 
   // Tonight, or not: { version } asks for it, { version: null } doesn't.

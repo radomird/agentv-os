@@ -100,10 +100,10 @@ test("S8.1 with no TMDB key yet, a streaming household's home has New this week 
     const tile = page.locator(newTile);
     await tile.waitFor();
     assert.ok(await tile.evaluate((el) => el.classList.contains("size-l")), "it's large, as on the canvas");
-    await page.waitForFunction((sel) => document.querySelector(sel)?.textContent?.includes("add a tmdb key in settings → new this week"), newTile);
+    await page.waitForFunction((sel) => document.querySelector(sel)?.textContent?.includes("Set up New this week in Settings"), newTile);
     await tile.click();
-    await page.waitForSelector('.menu [data-key="tmdb"].open');
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("no key yet"));
+    await page.waitForSelector('.settings-panel[data-page="tmdb"]');
+    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("It needs a TMDB key from your own account at themoviedb.org"));
   } finally {
     await page.close();
   }
@@ -118,15 +118,15 @@ test("S8.1 Settings → new this week takes the key from the phone's keyboard, t
     assert.equal(await page.getAttribute('[data-action="tmdb-key-field"]', "type"), "password", "the key isn't shown as it's typed");
     await page.fill('[data-action="tmdb-key-field"]', "eyJhbGciOiJIUzI1NiJ9.stand-in-token.signature");
     await page.click('[data-action="save"]');
-    await page.waitForSelector('.menu [data-key="tmdb"].open');
-    await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("netherlands"));
+    await page.waitForSelector('.settings-panel[data-page="tmdb"]');
+    await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="country"]')?.textContent === "Change locationNetherlands");
     const panel = (await page.textContent(".settings-panel")) ?? "";
-    assert.ok(panel.includes("kino: kino, kino kids"), panel);
-    assert.ok(panel.includes("lumen: lumen"), panel);
-    assert.ok(panel.includes("where to watch from justwatch"), panel);
+    // Each app is a row: its name, then what it's called on TMDB.
+    const rows = await page.locator('.settings-panel [data-row="service"]').evaluateAll((all) => all.map((row) => [...row.children].map((part) => part.textContent).join(": ")));
+    assert.ok(rows.includes("Kino: Kino, Kino Kids") && rows.includes("Lumen: Lumen") && rows.includes("Tube: Not on TMDB"), rows.join(" | "));
+    assert.equal(await page.locator(".settings-panel .panel-note").count(), 0, "and nothing is explained under them");
     assert.ok(!panel.includes("stand-in-token"), "the key never comes back");
-    // The region is the box's country (ADR-055), changed in Settings →
-    // country, which "another country" opens.
+    // The location is the TV's own (ADR-055), which "Change location" opens.
     await page.click('[data-action="country"]');
     await page.waitForSelector(".country-picker");
   } finally {
@@ -152,12 +152,12 @@ test("S8.1 with a key, New this week shows this week's posters, each with its ap
     }, newTile);
     const { entries, poster } = (await seen.jsonValue()) as { entries: string[][]; poster: { w: number; h: number; loaded: boolean } };
     assert.deepEqual(entries, [
-      ["night train", "kino"],
-      ["glass harbour", "lumen"],
-      ["small hours", "kino"],
-      ["paper kites", "lumen"],
+      ["Night Train", "Kino"],
+      ["Glass Harbour", "Lumen"],
+      ["Small Hours", "Kino"],
+      ["Paper Kites", "Lumen"],
     ]);
-    assert.equal(await page.textContent(`${newTile} .new-credit`), "from tmdb · where to watch from justwatch");
+    assert.equal(await page.textContent(`${newTile} .new-credit`), "From TMDB · where to watch from JustWatch");
     assert.ok(poster.loaded, "the poster loads through the daemon");
     assert.ok(Math.abs(poster.h / poster.w - 1.5) < 0.05, `posters are 2:3, ${JSON.stringify(poster)}`);
     await page.click(`${newTile} .entry >> nth=1`);
@@ -176,7 +176,7 @@ test("Settings → About has TMDB's logo, smaller than AgenTV's name, and its no
     await page.waitForSelector(".about-tmdb");
     const panel = (await page.textContent(".settings-panel")) ?? "";
     assert.ok(panel.includes("This product uses the TMDB API but is not endorsed or certified by TMDB."), panel);
-    assert.ok(panel.includes("where to watch is from justwatch"), panel);
+    assert.ok(panel.includes("Where to watch is from JustWatch, through TMDB."), panel);
     const logo = await page.$eval(".about-tmdb", (img) => (img as HTMLImageElement).getBoundingClientRect().height);
     const name = await page.$eval(".settings-panel .panel-big", (el) => el.getBoundingClientRect().height);
     assert.ok(logo > 0 && logo < name, `the logo (${logo}px) is less prominent than agentv's name (${name}px)`);

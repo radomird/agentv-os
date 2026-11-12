@@ -11,6 +11,7 @@
   "steps": [
     {
       "id": "design",
+      "label": "Designing",
       "does": "Work out the photo browser from the request and write it down in DESIGN.md: its screens (the sources, a source's folders, a grid of photos, one photo full screen, a slideshow if asked), how the arrows and ok move through them, what Back does on each (back up a screen, and leave from the first), what a gamepad adds, and how it looks at couch distance on a 1920 x 1080 TV. The photos come only from agentv.photos: sources(), list() a page at a time, and url() at the width shown. Keep it to one page.",
       "tools": ["read", "list", "write"],
       "writes": ["DESIGN.md"],
@@ -19,6 +20,7 @@
     },
     {
       "id": "build",
+      "label": "Making it",
       "does": "Write the photo browser, starting from the template in app/. Set tv.media to [\"photos\"] in app/manifest.json, and nothing else it doesn't need. Ask for photos at the width you show them (a grid's at 400 or so, full screen at 1920), a page at a time, and keep only what's on screen. Input comes from agentv.input.on, Back from agentv.onBack, Home's pause from agentv.onPause, and it calls agentv.ready() once something is drawn. Show a plain line when there are no sources or no photos. No inline scripts, eval or code from other sites. Run check until it passes.",
       "tools": ["read", "list", "write", "remove", "check"],
       "writes": ["app/**", "NOTES.md"],
@@ -28,6 +30,7 @@
     },
     {
       "id": "tests",
+      "label": "Testing",
       "does": "Write tests in tests/ for what was asked: that the arrows and ok go from the sources to a folder to a photo, that Back comes back up, and that a photo is shown at the size it's drawn. The test run gives the app a source with a few photos. Use the test API the tests reference describes, and run them with run_tests.",
       "tools": ["read", "list", "write", "run_tests"],
       "writes": ["tests/**"],
@@ -36,6 +39,7 @@
     },
     {
       "id": "try",
+      "label": "Trying it on a TV",
       "does": "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it asks for nothing from the internet.",
       "tools": ["read", "list", "write", "remove", "check", "try", "run_tests"],
       "writes": ["app/**", "tests/**", "NOTES.md"],

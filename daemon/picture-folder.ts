@@ -7,6 +7,7 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { NEEDS_PIN } from "./notices.ts";
 
 export const MOST = 60;
 const KINDS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -63,7 +64,7 @@ export class FolderPictures {
   // profile, past the PIN.
   async send(source: FolderSource, grant?: string): Promise<{ ok: boolean; count?: number; error?: string }> {
     const found = await findPictures(source.path);
-    if (!found.length) return { ok: false, error: `there are no pictures in ${source.name}` };
+    if (!found.length) return { ok: false, error: `No pictures in ${source.name}` };
     let sent = 0;
     for (const path of found) {
       const body = await readFile(path).catch(() => null);
@@ -74,9 +75,9 @@ export class FolderPictures {
         body: new Uint8Array(body),
         signal: AbortSignal.timeout(30_000),
       }).catch(() => null);
-      if (response?.status === 403) return { ok: false, error: "that needs the pin" };
+      if (response?.status === 403) return { ok: false, error: NEEDS_PIN };
       if (response?.ok) sent++;
     }
-    return sent ? { ok: true, count: sent } : { ok: false, error: `none of the pictures in ${source.name} can be shown` };
+    return sent ? { ok: true, count: sent } : { ok: false, error: `Couldn't show the pictures in ${source.name}` };
   }
 }
