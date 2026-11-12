@@ -53,7 +53,7 @@ export interface AskRoutes {
   log: (line: string) => void;
 }
 
-const CHILD = "ask a grown-up to make apps";
+const CHILD = "Ask a grown-up to make apps";
 
 // What the Ask box is waiting on, from the newest sentence.
 export async function askView(kit: Pick<AskRoutes, "said" | "find">): Promise<AskView | null> {
@@ -80,8 +80,6 @@ export async function askView(kit: Pick<AskRoutes, "said" | "find">): Promise<As
   };
 }
 
-const lower = (text: string) => text.toLowerCase();
-
 // True when the request was one of these, and has been answered.
 export async function askRoutes(kit: AskRoutes, request: IncomingMessage, response: ServerResponse, path: string): Promise<boolean> {
   const route = /^\/api(?:\/phone)?\/ask(?:\/(confirm|cancel))?$/.exec(path);
@@ -107,7 +105,7 @@ export async function askRoutes(kit: AskRoutes, request: IncomingMessage, respon
   const n = ((await kit.body(request)) as { n?: unknown } | undefined)?.n;
   const ask = await askView(kit);
   if (!ask || ask.n !== n) {
-    kit.json(response, 409, { ok: false, error: "that isn't waiting any more" });
+    kit.json(response, 409, { ok: false, error: "That isn't waiting any more" });
     return true;
   }
   const answer = (result: { error?: string }, done: string) => {
@@ -122,8 +120,8 @@ export async function askRoutes(kit: AskRoutes, request: IncomingMessage, respon
       return answer({}, "a change from the ask box was turned down"), true;
     }
     const made = await kit.change(ask.app, ask.what);
-    if (!made.build) return answer({ error: made.error ?? "your agent couldn't start on it" }, ""), true;
-    kit.settle(ask.n, { kind: "build", build: made.build.build, app: ask.app, what: ask.what, say: `building ${lower(ask.name)}` });
+    if (!made.build) return answer({ error: made.error ?? "Couldn't start on that" }, ""), true;
+    kit.settle(ask.n, { kind: "build", build: made.build.build, app: ask.app, what: ask.what, say: `Making ${ask.name}` });
     kit.json(response, 200, { ok: true, ask: await askView(kit) });
     kit.log(`a change to ${ask.app} from the ask box is building`);
     return true;
@@ -131,7 +129,7 @@ export async function askRoutes(kit: AskRoutes, request: IncomingMessage, respon
 
   // A make: the builder's own confirm, once the agent has read the ask.
   if (action === "confirm") {
-    if (ask.state !== "confirm") return answer({ error: ask.state === "running" || ask.state === "starting" ? "your agent is still reading it" : "it isn't waiting to be confirmed" }, ""), true;
+    if (ask.state !== "confirm") return answer({ error: ask.state === "running" || ask.state === "starting" ? "Still working it out" : "It isn't waiting to be confirmed" }, ""), true;
     const confirmed = await kit.confirm(ask.build);
     if (confirmed.error) return answer(confirmed, ""), true;
     kit.json(response, 200, { ok: true, ask: await askView(kit) });
@@ -140,6 +138,6 @@ export async function askRoutes(kit: AskRoutes, request: IncomingMessage, respon
   }
   const forgot = await kit.forget(ask.build);
   if (forgot.error) return answer(forgot, ""), true;
-  kit.settle(ask.n, { kind: "none", why: "not-built", say: "ok, not that one" });
+  kit.settle(ask.n, { kind: "none", why: "not-built", say: "OK, cancelled" });
   return answer({}, "a make from the ask box was turned down"), true;
 }

@@ -16,6 +16,7 @@ import type { Provider } from "../ai.ts";
 import { GROK_BUILT_INS, SIGN_IN_RAN_OUT as RAN_OUT_WORDS } from "../../builder/providers.ts";
 import type { Answer, Ask, Backend } from "../router.ts";
 import { ProviderError } from "./http.ts";
+import { NO_ANSWER, NOT_SIGNED_IN, SIGN_IN_RAN_OUT } from "./no-answer.ts";
 import { ROUTER_MODELS } from "./index.ts";
 
 // The plans whose CLI can route: the ones a box offers (daemon/ai.ts).
@@ -184,8 +185,7 @@ const said = (stderr: string) => {
 // A plan signs in the first time the builder runs (ADR-040), so a CLI that
 // says it isn't signed in yet means that. One whose sign-in ran out and
 // couldn't be refreshed was signed in, and needs signing in again.
-export const NOT_SIGNED_IN = "the plan isn't signed in yet: it signs in the first time your agent builds something";
-export const SIGN_IN_RAN_OUT = "the plan's sign-in ran out: it needs signing in again";
+export { NOT_SIGNED_IN, SIGN_IN_RAN_OUT };
 const signedOut = (text: string) => /\/login|not logged in|log ?in again|not signed in|unauthori[sz]ed/i.test(text);
 // The builder's own list of each CLI's words, so the two agree, and a
 // refresh that only failed this once isn't taken for a sign-in that ran out.
@@ -240,7 +240,7 @@ export const runCli: CliRunner = (run, timeoutMs) =>
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new ProviderError(`${run.command.split("/").pop()} didn't answer in time`));
+      reject(new ProviderError(NO_ANSWER.slow(), undefined, `${run.command.split("/").pop()} didn't answer in time`));
     }, timeoutMs);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
       if (stdout.length < 1024 * 1024) stdout += chunk;
@@ -250,7 +250,7 @@ export const runCli: CliRunner = (run, timeoutMs) =>
     });
     child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
-      reject(new ProviderError(error.code === "ENOENT" ? `${run.command.split("/").pop()} isn't on the box yet: it comes with your agent's first build` : error.message));
+      reject(new ProviderError(error.code === "ENOENT" ? `${run.command.split("/").pop()} isn't on the box yet: it comes with the first app that's made` : error.message));
     });
     child.on("close", (code) => {
       clearTimeout(timer);

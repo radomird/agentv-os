@@ -11,8 +11,8 @@
 // The builder's rules stay its own: adults only, the PIN for every
 // approval, and the plan's or the key's limits. A child's ask says to ask a
 // grown-up, and with no AI set up, the TV says where to set it up. With the
-// askbuilds switch off there's no ExecBuilds, and make and change get "i
-// didn't get that", as before the router knew them.
+// askbuilds switch off there's no ExecBuilds, and make and change get
+// "Didn't get that", as before the router knew them.
 
 import type { Route } from "../router.ts";
 import { DIDNT_GET, type ExecApp, type ExecContext, type Outcome } from "./index.ts";
@@ -29,12 +29,10 @@ export interface ExecBuilds {
   recipe: (app: string) => Promise<string | null>;
 }
 
-const lower = (text: string) => text.toLowerCase();
-
 async function refused(ctx: ExecContext, doing: "make" | "change"): Promise<Outcome | null> {
   const builds = ctx.builds;
   if (!builds) return { kind: "none", why: "unroutable", say: DIDNT_GET };
-  if (!builds.adult) return { kind: "none", why: "child", say: `ask a grown-up to ${doing} apps` };
+  if (!builds.adult) return { kind: "none", why: "child", say: `Ask a grown-up to ${doing} apps` };
   const why = await builds.ready();
   return why ? { kind: "none", why: "no-ai", say: why } : null;
 }
@@ -44,18 +42,18 @@ export async function make(route: Route, ctx: ExecContext): Promise<Outcome> {
   if (no) return no;
   const what = route.what!;
   const started = await ctx.builds!.make(what);
-  if (!started.build) return { kind: "none", why: "not-built", say: started.error ?? "your agent couldn't start on it" };
-  return { kind: "build", build: started.build, what, say: "your agent is reading what you asked" };
+  if (!started.build) return { kind: "none", why: "not-built", say: started.error ?? "Couldn't start on that" };
+  return { kind: "build", build: started.build, what, say: "On it…" };
 }
 
 // The app a change is for: the one they named, or with none named, the
 // only one the agent made. app is the one run() found by what they said.
 function changing(ctx: ExecContext, app: ExecApp | undefined): ExecApp | Outcome {
-  if (app) return app.made ? app : { kind: "none", why: "not-made", say: `your agent didn't make ${lower(app.name)}, so it can't change it` };
+  if (app) return app.made ? app : { kind: "none", why: "not-made", say: `${app.name} isn't one of your own apps` };
   const made = ctx.apps.filter((a) => a.made);
   if (made.length === 1) return made[0];
-  if (!made.length) return { kind: "none", why: "not-made", say: "your agent hasn't made any apps yet" };
-  return { kind: "none", why: "which", say: "which app? say its name too" };
+  if (!made.length) return { kind: "none", why: "not-made", say: "You haven't made any apps yet" };
+  return { kind: "none", why: "which", say: "Which app? Say its name." };
 }
 
 export async function change(route: Route, ctx: ExecContext, named: ExecApp | undefined): Promise<Outcome> {
@@ -64,5 +62,5 @@ export async function change(route: Route, ctx: ExecContext, named: ExecApp | un
   const app = changing(ctx, named);
   if ("kind" in app) return app;
   const what = route.what!;
-  return { kind: "change", app: app.id, name: app.name, what, recipe: await ctx.builds!.recipe(app.id), say: `change ${lower(app.name)}: ${lower(what)}?` };
+  return { kind: "change", app: app.id, name: app.name, what, recipe: await ctx.builds!.recipe(app.id), say: `Change ${app.name}: ${what}?` };
 }
