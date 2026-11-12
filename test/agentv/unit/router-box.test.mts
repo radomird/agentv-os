@@ -59,11 +59,11 @@ test("the daemon asks the back end setup chose, and says what's missing until it
   const why = async () => (await route("play frozen", [])).error;
   assert.equal(await why(), "set up your agent in settings → ai first");
   state = ai({ provider: "claude", path: "key" });
-  assert.equal(await why(), "an adult accepts claude's terms on a phone first");
+  assert.equal(await why(), "an adult accepts Claude's terms on a phone first");
   state = ai({ provider: "claude", path: "key", accepted });
-  assert.equal(await why(), "add claude's key in settings → ai first");
+  assert.equal(await why(), "add Claude's key in settings → ai first");
   key = { set: true, provider: "chatgpt" };
-  assert.equal(await why(), "add claude's key in settings → ai first", "a key for another provider isn't this one's");
+  assert.equal(await why(), "add Claude's key in settings → ai first", "a key for another provider isn't this one's");
   assert.deepEqual(heard, [], "nothing reached a router until then");
   key = { set: true, provider: "claude" };
   const viaKey = await route("play frozen", [{ id: "local.kino", name: "Kino", category: "streaming" }]);
@@ -76,7 +76,7 @@ test("the daemon asks the back end setup chose, and says what's missing until it
   key = { set: false, provider: null };
   assert.equal((await route("play frozen", [])).via, "cli", "a plan needs no key");
   state = ai({ provider: "muse", path: "plan", accepted: { ...accepted, provider: "muse", path: "plan" } });
-  assert.equal(await why(), "a muse code subscription can't take requests yet");
+  assert.equal(await why(), "A Muse Code subscription can't take requests yet");
 });
 
 test("a router that isn't running, or doesn't answer in time, is none, failed, with why", async () => {

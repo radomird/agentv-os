@@ -123,8 +123,8 @@ test("T7.2 each provider shows its own icon from its site, and one whose site ha
     assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "pick your ai.");
     assert.equal(await page.locator(".setup-line").textContent(), "it builds your apps and answers what you ask");
     assert.equal(await page.locator(".bar .bar-step").textContent(), "6 of 12 · ai");
-    assert.deepEqual(await page.locator(".ai-card .ai-name").allTextContents(), ["claude", "chatgpt", "gemini", "grok", "muse"]);
-    assert.deepEqual(await page.locator(".ai-card .ai-maker").allTextContents(), ["anthropic", "openai", "google", "xai", "meta"]);
+    assert.deepEqual(await page.locator(".ai-card .ai-name").allTextContents(), ["Claude", "ChatGPT", "Gemini", "Grok", "Muse"]);
+    assert.deepEqual(await page.locator(".ai-card .ai-maker").allTextContents(), ["Anthropic", "OpenAI", "Google", "xAI", "Meta"]);
     // The icons that came load; the ones that didn't are gone, names left.
     await page.waitForFunction(() => document.querySelectorAll(".ai-icon").length === 2 && [...document.querySelectorAll<HTMLImageElement>(".ai-icon")].every((img) => img.complete && img.naturalWidth > 0));
     assert.deepEqual(await page.locator(".ai-icon").evaluateAll((imgs) => imgs.map((img) => img.getAttribute("data-icon"))), ["claude", "gemini"]);
@@ -150,7 +150,7 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     await page.waitForSelector(".ai-cards");
     await page.keyboard.press("Enter");
     await page.waitForSelector(".ai-options");
-    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "sign in to claude.");
+    assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "sign in to Claude.");
     assert.deepEqual(await page.locator(".ai-options > .button").allTextContents(), ["↵ use my plan", "use a key from my phone", "later, in settings"]);
     assert.equal(await page.locator(".ai-paste.hidden").count(), 1, "no code to paste until the sign-in asks for one");
     assert.equal(await page.locator(".focused").textContent(), "↵ use my plan");
@@ -210,11 +210,11 @@ test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, s
     // pick, and the line says so without a "soon".
     const google = await ways("gemini");
     assert.deepEqual(google.buttons, ["use a key from my phone", "later, in settings"]);
-    assert.equal(google.line, "google keeps its plan to its own apps. a key works now");
+    assert.equal(google.line, "Google keeps its plan to its own apps. A key works now.");
     // Meta has been asked, so Muse's is coming soon.
     const muse = await ways("muse");
     assert.deepEqual(muse.buttons, ["use a key from my phone", "later, in settings"]);
-    assert.equal(muse.line, "a muse code subscription is coming soon. a key works now");
+    assert.equal(muse.line, "A Muse Code subscription is coming soon. a key works now");
   } finally {
     writeFileSync(channel, was);
     await page.close();

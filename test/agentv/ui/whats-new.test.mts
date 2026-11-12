@@ -100,7 +100,7 @@ test("S8.1 with no TMDB key yet, a streaming household's home has New this week 
     const tile = page.locator(newTile);
     await tile.waitFor();
     assert.ok(await tile.evaluate((el) => el.classList.contains("size-l")), "it's large, as on the canvas");
-    await page.waitForFunction((sel) => document.querySelector(sel)?.textContent?.includes("add a tmdb key in settings → new this week"), newTile);
+    await page.waitForFunction((sel) => document.querySelector(sel)?.textContent?.includes("Set up New this week in Settings"), newTile);
     await tile.click();
     await page.waitForSelector('.menu [data-key="tmdb"].open');
     await page.waitForFunction(() => document.querySelector(".settings-panel")?.textContent?.includes("no key yet"));
@@ -152,10 +152,10 @@ test("S8.1 with a key, New this week shows this week's posters, each with its ap
     }, newTile);
     const { entries, poster } = (await seen.jsonValue()) as { entries: string[][]; poster: { w: number; h: number; loaded: boolean } };
     assert.deepEqual(entries, [
-      ["night train", "kino"],
-      ["glass harbour", "lumen"],
-      ["small hours", "kino"],
-      ["paper kites", "lumen"],
+      ["Night Train", "Kino"],
+      ["Glass Harbour", "Lumen"],
+      ["Small Hours", "Kino"],
+      ["Paper Kites", "Lumen"],
     ]);
     assert.equal(await page.textContent(`${newTile} .new-credit`), "from tmdb · where to watch from justwatch");
     assert.ok(poster.loaded, "the poster loads through the daemon");
