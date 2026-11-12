@@ -379,7 +379,7 @@ join() {
   [[ -n $device ]] || device=$(wifi_device)
   # A TV with no Wi-Fi says so, and the ask has its answer.
   if [[ -z $device ]]; then
-    state_set '.radio = false | .joining = null | .error = "this tv has no wi-fi" | .why = "failed" | .answered = $asked'
+    state_set '.radio = false | .joining = null | .error = "This TV has no Wi-Fi" | .why = "failed" | .answered = $asked'
     echo "agentv-hotspot: NetworkManager has no Wi-Fi device, so there's nothing to join $ssid with" >&2
     return 1
   fi
@@ -549,7 +549,7 @@ join_stale() {
   reopens=$(state_get .joining_reopens)
   echo "agentv-hotspot: the join of $ssid never said how it went" >&2
   # The page that asked waits for its own answer.
-  state_set '.answered = (if (.joining_ask // "") == "" then .answered else .joining_ask end) | .joining = null | .joining_since = null | .joining_reopens = null | .joining_ask = null | .error = $error | .why = "failed"' --arg error "the tv couldn't join $ssid"
+  state_set '.answered = (if (.joining_ask // "") == "" then .answered else .joining_ask end) | .joining = null | .joining_since = null | .joining_reopens = null | .joining_ask = null | .error = $error | .why = "failed"' --arg error "Couldn't join $ssid"
   links
   if [[ $reopens == "true" ]] && (( ! ONLINE )); then
     systemctl start --no-block agentv-hotspot.service || true

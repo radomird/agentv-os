@@ -571,7 +571,7 @@ if grep -q "systemctl" "$FAKE/calls"; then fail "the watch leaves a join alone";
 # under way for the rest of the boot.
 set_state '.joining_since = (now | floor) - 600'
 tick
-jq -e '.joining == null and .why == "failed" and .error == "the tv couldn'"'"'t join home wi-fi"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+jq -e '.joining == null and .why == "failed" and .error == "Couldn'"'"'t join home wi-fi"' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
   fail "a join that's older than any join can be is over, and says it didn't work" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 opened || fail "and the hotspot it had closed opens again" "$(cat "$FAKE/calls")"
 echo '{"done": false}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
