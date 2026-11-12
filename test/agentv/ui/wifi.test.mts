@@ -192,9 +192,9 @@ async function pick(page: Page, selector: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
-// Terminal writes its words in lower case, and Glass and Cinema as they're
-// written. A network's name is the same in each.
-const words = (look: Look, sentence: string, ssid = "") => (look === "terminal" ? sentence.toLowerCase() : sentence).replace("%s", ssid);
+// The words as the page writes them, the same in every look: Terminal lowers
+// them in CSS, which textContent doesn't see. A network's name goes in as it is.
+const words = (_look: Look, sentence: string, ssid = "") => sentence.replace("%s", ssid);
 
 // What's on the page outside the screen.
 function offScreen(page: Page, selector: string): Promise<string[]> {

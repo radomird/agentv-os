@@ -153,7 +153,7 @@ test("S4.2 a profile is added on the TV: a typed name, then its role and colour 
   await send("PUT", "/api/pin", { pin: PIN });
   await page.locator('[data-action="save"]').click();
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for changing profiles\./);
+  assert.match(await page.locator("#pin").innerText(), /for changing profiles$/m);
   await type(page, PIN);
   await waitPad(page, false);
   await page.waitForFunction(() => /leo is here now/.test(document.body.textContent ?? ""));
@@ -176,12 +176,12 @@ test("S4.2 S4.5 on a child's profile: only children's apps, the apps children ca
   // Edit mode and Settings ask for the PIN.
   await page.keyboard.press("e");
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for editing home\./);
+  assert.match(await page.locator("#pin").innerText(), /for editing home$/m);
   await page.keyboard.press("Escape");
   await waitPad(page, false);
   await page.locator(".bar-link", { hasText: "settings" }).click();
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for settings\./);
+  assert.match(await page.locator("#pin").innerText(), /for settings$/m);
   await type(page, PIN);
   await waitPad(page, false);
   await page.waitForSelector(".page.settings");
@@ -260,7 +260,7 @@ test("ADR-034 an adult locks their profile on its page: a lock on its row, the P
   await page.waitForSelector('.page.profile [data-action="watch"]');
   await page.locator('[data-action="watch"]').click();
   await waitPad(page, true);
-  assert.match(await page.locator("#pin").innerText(), /for watching as ana\./);
+  assert.match(await page.locator("#pin").innerText(), /for watching as ana$/m);
   await type(page, PIN);
   await page.waitForFunction(() => /watching now/.test(document.querySelector(".page.profile")?.textContent ?? ""));
   assert.equal((await send("GET", "/api/viewer")).viewer.id, ana.id);
@@ -271,7 +271,7 @@ test("ADR-034 an adult locks their profile on its page: a lock on its row, the P
   started.on("pageerror", (error) => errors.push(error.message));
   await started.goto(`${url}/`);
   await waitPad(started, true);
-  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the adult pin[\s\S]*ana's profile asks for it to open\./);
+  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the adult pin[\s\S]*to open ana's profile$/m);
   await type(started, PIN);
   await waitPad(started, false);
   await started.close();

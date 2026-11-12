@@ -91,7 +91,7 @@ export class KitHost {
         this.post({ agentv: 1, id, ok: true, value: await this.backend.daemon(this.app, call, args) });
       }
     } catch (error) {
-      this.post({ agentv: 1, id, ok: false, error: (error as Error).message || "that didn't work" });
+      this.post({ agentv: 1, id, ok: false, error: (error as Error).message || "Something went wrong" });
     }
   }
 

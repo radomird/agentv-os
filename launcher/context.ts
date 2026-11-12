@@ -31,5 +31,5 @@ export function fieldKind(el: HTMLInputElement): string {
 // to say what it's typing in (ADR-065).
 export function fieldOf(el: HTMLInputElement): Field {
   const label = el.getAttribute("aria-label") || el.labels?.[0]?.textContent || el.placeholder || "";
-  return { kind: fieldKind(el), label: label.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 40) };
+  return { kind: fieldKind(el), label: label.replace(/\s+/g, " ").trim().slice(0, 40) };
 }

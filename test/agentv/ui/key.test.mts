@@ -229,7 +229,7 @@ test("S4.6 S4.5 with a PIN set, the key is past it", async () => {
   await page.locator('[data-action="key"]').fill(KEY);
   await page.locator('[data-action="save"]').click();
   await page.waitForFunction(() => document.getElementById("pin")?.classList.contains("on") === true);
-  assert.match(await page.locator("#pin").innerText(), /for the ai key\./);
+  assert.match(await page.locator("#pin").innerText(), /for the ai key$/m);
   for (const digit of "4826") await page.keyboard.press(digit);
   await page.waitForFunction(() => /the key for claude is kept/.test(document.body.textContent ?? ""));
   assert.equal(puts.length, 1);
