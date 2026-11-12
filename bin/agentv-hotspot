@@ -374,8 +374,14 @@ join() {
 
   device=$(state_get .device)
   [[ -n $device ]] || device=$(wifi_device)
+  # A TV with no Wi-Fi says so, and the ask has its answer.
+  if [[ -z $device ]]; then
+    state_set '.radio = false | .joining = null | .error = "this tv has no wi-fi" | .why = "failed" | .answered = $asked'
+    echo "agentv-hotspot: NetworkManager has no Wi-Fi device, so there's nothing to join $ssid with" >&2
+    return 1
+  fi
   was_on=$(state_get .on)
-  [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1)
+  [[ $was_on == "true" ]] || previous=$(nmcli -g GENERAL.CON-UUID device show "$device" 2>/dev/null | head -n 1 || true)
   JOIN_CLOSED_HOTSPOT=$was_on
   trap join_ended EXIT
   state_set '.joining = $ssid | .error = null | .why = null' --arg ssid "$ssid"

@@ -37,6 +37,8 @@ case "$*" in
   "-t -f TYPE,NAME connection show") printf '802-3-ethernet:Wired connection 1\n802-11-wireless:agentv-hotspot-this-tv-opens-itself\n%s\n' "${FAKE_KNOWN:-}" ;;
   "-t -f UUID,TYPE,NAME connection show") cat "$FAKE/profiles" 2>/dev/null ;;
   "-g 802-11-wireless.mode connection show uuid "*) if [[ $6 == "old-hotspot" ]]; then echo ap; else echo infrastructure; fi ;;
+  # With no device to show, the real one fails.
+  *"device show ") exit 10 ;;
   *"device connect wlan0") [[ -z ${FAKE_REJOINS:-} ]] || cp "$FAKE/links-back" "$FAKE/links" ;;
   *"device wifi list --rescan yes ifname wlan0")
     printf '%s\n' '82:WPA2:home wi-fi' '40:WPA2:home wi-fi' '61::cafe' '55:WPA3:new\:net' '30:WPA1 WPA2:neighbours' '90:WPA2:AgenTV-0000' '70:WPA2:' ;;
@@ -341,7 +343,11 @@ hotspot drop
 printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
 FAKE_NO_WIFI=1 hotspot drop || fail "a box with no Wi-Fi says so and doesn't fail" "$(cat "$SCRATCH/out")"
 [[ $(state .radio) == "false" ]] || fail "state.json says the box has no Wi-Fi" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
-pass "Settings' look lists the networks nearby and the one the TV is on, with the hotspot closed"
+printf '%s' '{"join":{"ssid":"cafe","password":"","hidden":false},"id":"bb22cc33dd44ee55"}' >"$AGENTV_HOTSPOT_DROP"
+if FAKE_NO_WIFI=1 hotspot drop; then fail "a box with no Wi-Fi joins nothing"; fi
+jq -e '.answered == "bb22cc33dd44ee55" and .joining == null and .why == "failed" and .radio == false' "$AGENTV_HOTSPOT_RUN/state.json" >/dev/null ||
+  fail "a join on a box with no Wi-Fi is answered, with a reason" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+pass "Settings' look lists the networks nearby and the one the TV is on, with the hotspot closed, and a TV with no Wi-Fi answers a join"
 
 # A join with the hotspot closed.
 printf '%s' '{"scan":true}' >"$AGENTV_HOTSPOT_DROP"
