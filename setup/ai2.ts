@@ -10,7 +10,7 @@
 // With the switch off, setup/ai.ts is the whole step. This one reuses its
 // terms, key and done screens.
 
-import { h } from "../launcher/dom.ts";
+import { asWritten, h } from "../launcher/dom.ts";
 import { again, done, key, terms } from "./ai.ts";
 import { setup, type AiInfo, type PlanSignIn, type Provider } from "./api.ts";
 import { heading } from "./frame.ts";
@@ -92,7 +92,10 @@ export function ways(ctx: Ctx, provider: Provider): View {
   let shown = "";
 
   const draw = () => {
-    line.textContent = said(offer, now);
+    // The code to enter keeps its capitals.
+    const code = now?.now?.state === "waiting" && offer.plan.offered && !now.signedIn ? now.now.code : undefined;
+    if (code) line.replaceChildren("scan to sign in, then enter ", asWritten(code));
+    else line.textContent = said(offer, now);
     const url = now?.now?.state === "waiting" ? now.now.url : undefined;
     qrBox.classList.toggle("hidden", !url);
     if (url && url !== shown) {

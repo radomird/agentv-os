@@ -9,7 +9,7 @@
 // CLI arrives in the background, through Omarchy's own wrapper.
 
 import { screen } from "../launcher/api.ts";
-import { h } from "../launcher/dom.ts";
+import { asWritten, h } from "../launcher/dom.ts";
 import { setup, type AiInfo, type Path, type Provider } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
@@ -151,7 +151,7 @@ export function terms(ctx: Ctx, ai: AiInfo): View {
   // paired already shows them by itself.
   void setup.pair().then((code) => {
     if (code?.url) qr.setAttribute("src", `/api/phones/qr?${code.code}`);
-    label.textContent = code ? `pair a phone · code ${code.code}` : "";
+    label.replaceChildren(...(code ? ["pair a phone · code ", asWritten(code.code)] : []));
   });
   let moved = false;
   return {

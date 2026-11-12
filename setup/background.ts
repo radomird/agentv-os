@@ -7,7 +7,7 @@
 // shows.
 
 import { daemon, screen, shownCurrent, shownPictures, type Art, type Backgrounds } from "../launcher/api.ts";
-import { h } from "../launcher/dom.ts";
+import { asWritten, h } from "../launcher/dom.ts";
 import { glyph, type Glyph } from "../launcher/glyphs.ts";
 import { discoverOn, foundList, NAS, shareList, shown, type ShareFound } from "../launcher/pages/network.ts";
 import { setup } from "./api.ts";
@@ -159,7 +159,7 @@ export function photos(ctx: Ctx): View {
   if (!paired) {
     void setup.pair().then((code) => {
       if (code?.url) qr.setAttribute("src", `/api/phones/qr?${code.code}`);
-      label.textContent = code ? `pair a phone · code ${code.code}` : "";
+      label.replaceChildren(...(code ? ["pair a phone · code ", asWritten(code.code)] : []));
     });
   }
   let moved = false;

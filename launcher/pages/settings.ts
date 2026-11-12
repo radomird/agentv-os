@@ -620,7 +620,8 @@ export function settings(ctx: Ctx, open?: string): View {
         // TMDB's terms: its logo, less prominent than AgenTV's, and its
         // notice; JustWatch's: credit for where to watch.
         h("img", { class: "about-tmdb", src: TMDB_LOGO, alt: "tmdb" }),
-        note(TMDB_NOTICE),
+        // TMDB's own notice, as they word it, in every look.
+        h("p", { class: "panel-note", "data-own-case": true }, TMDB_NOTICE),
         note("where to watch is from justwatch, through tmdb."),
       ],
     },
