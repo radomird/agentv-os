@@ -7,10 +7,10 @@
 // Back from a page goes to its section, with the focus on its row.
 //
 // A route names what the panel shows: "settings/tv" is a section,
-// "settings/updates" a page in one, and "settings/tv.restart" a section with
+// "settings/updates" a page in one, and "settings/power.restart" a page with
 // the focus on one of its rows, which is where Back lands from a screen a
 // row opened. The names sections had before D10 still open where they went
-// ("settings/power" is This TV, and OK then starts on Restart).
+// ("settings/power" is System's Power page).
 
 import { creditLine, daemon, screen, shownCurrent, type AudioState, type Backgrounds, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
 import { asWritten, h } from "../dom.ts";
@@ -60,7 +60,6 @@ interface Page {
 // Where the sections from before D10 went: the section, and the row OK
 // starts on.
 const MOVED: Record<string, [string, string]> = {
-  power: ["tv", "restart"],
   country: ["tv", "country"],
   apps: ["home", "apps"],
 };
@@ -474,7 +473,7 @@ export function settings(ctx: Ctx, open?: string): View {
   ];
 
   // The eight sections (D10). A child's profile has no AI and no Network,
-  // and This TV has no Restart or Shut down for it (ADR-033).
+  // and System has no Power for it (ADR-033).
   const sections: Section[] = [
     {
       // It keeps Look's key, so a page that opens settings/look lands here.
@@ -542,14 +541,15 @@ export function settings(ctx: Ctx, open?: string): View {
       : []),
     {
       key: "tv",
-      label: "This TV",
+      label: "System",
+      // One row each, and the ones with more to them open a page (ADR-095).
       rows: () => [
         // The TV's location (ADR-055): the time zone and new this week follow it.
         row("country", "Location", countryValue(), () => ctx.go("country")),
         row("updates", "Updates", updatesValue(ctx), () => openPage("updates")),
+        // Restart, Shut down and sleep (ADR-033) are an adult's.
+        adult ? row("power", "Power", "", () => openPage("power")) : null,
         h("button", { class: "button", "data-focus": true, "data-action": "desktop", onclick: () => openPage("desktop") }, "Omarchy's desktop"),
-        // Restart and Shut down (ADR-033) are an adult's.
-        ...(adult ? powerRows(ctx) : []),
         row("about", "About", `AgenTV ${version()}`, () => openPage("about")),
       ],
     },
@@ -563,6 +563,8 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "weather", in: "home", panel: weatherPanel },
     { key: "tmdb", in: "home", panel: () => newsPanel(ctx) },
     { key: "pin", in: "profiles", panel: pinPanel },
+    // System's Power: Restart, Shut down, the boot menu and sleep (ADR-095).
+    ...(adult ? [{ key: "power", in: "tv", panel: () => [h("div", { class: "panel-title" }, "Power"), ...powerRows(ctx)] }] : []),
     // Game controllers (ADR-084): the ones nearby, to pair.
     { key: "controllers", in: "phones", panel: () => controllersPanel(ctx) },
     { key: "wifi", in: "network", panel: () => networkPanel(ctx) },
@@ -782,8 +784,12 @@ export function settings(ctx: Ctx, open?: string): View {
       ctx.sounds.play("confirm");
       if (looks) looks = { ...looks, current: look.id };
     }
-    // Still on Settings, after the few seconds Omarchy takes.
-    if (menu.isConnected) ctx.render("settings/theme", `theme-${look.id}`);
+    // Still on the theme's page, or back on Appearance, after the few
+    // seconds Omarchy takes: it says the theme is on. Omarchy changing the
+    // theme draws Settings again while this waits, so it's the panel on the
+    // screen now that's drawn again, not this one, which is gone by then.
+    const now = document.querySelector<HTMLElement>(".settings-panel")?.dataset.page;
+    if (now === "theme" || now === "look") ctx.render(`settings/${now}`, ctx.focus.get()?.dataset.action ?? (now === "theme" ? `theme-${look.id}` : "theme"));
   };
   // The sizes this TV offers.
   follow(() => sizes(), loadSizes(), "look");

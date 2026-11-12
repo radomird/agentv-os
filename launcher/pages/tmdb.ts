@@ -3,7 +3,7 @@
 // TMDB's services each streaming app here is. The key is typed or pasted on
 // the TV with the phone's keyboard, handed to root and never shown again, as
 // the AI's is. The location is the TV's own, which setup confirmed and
-// Settings, This TV changes (ADR-055). What's new comes from TMDB, and where
+// Settings, System changes (ADR-055). What's new comes from TMDB, and where
 // a title is on from JustWatch, through TMDB, which Settings, About credits.
 
 import { daemon, type Country, type NewsState } from "../api.ts";
