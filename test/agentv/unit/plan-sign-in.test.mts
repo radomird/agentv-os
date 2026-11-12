@@ -449,6 +449,32 @@ test("ADR-040 root starts the sign-in in the builder's sandbox with a ticket of 
   assert.deepEqual(o.calls.at(-1), ["stop", "--no-block", "agentv-builder@*.service", "agentv-builder-sign-in@*.service"]);
 });
 
+test("root fetches the AI's CLI when the daemon asks and it's missing, without waiting for it, and leaves a build's answer alone", async () => {
+  const { o, h } = handOver();
+  mkdirSync(o.run, { recursive: true });
+  writeFileSync(join(o.run, "answer.json"), '{"action":"start","build":"b1","started":false}');
+  writeFileSync(join(o.drop, "fetch-cli.json"), JSON.stringify({ provider: "chatgpt" }));
+  assert.equal((await h.handle())!.started, true);
+  assert.deepEqual(o.calls, [["start", "--no-block", "agentv-builder-cli@codex.service"]]);
+  assert.ok(!existsSync(join(o.drop, "fetch-cli.json")), "taken");
+  assert.equal(readFileSync(join(o.run, "answer.json"), "utf8"), '{"action":"start","build":"b1","started":false}', "no answer of its own");
+  // Once it's there, asking again starts nothing.
+  writeFileSync(join(o.home, ".local/bin/codex"), "");
+  writeFileSync(join(o.drop, "fetch-cli.json"), JSON.stringify({ provider: "chatgpt" }));
+  assert.equal((await h.handle())!.started, true);
+  assert.equal(o.calls.length, 1);
+  writeFileSync(join(o.drop, "fetch-cli.json"), JSON.stringify({ provider: "../../etc" }));
+  assert.equal((await h.handle())!.started, false);
+  assert.equal(o.calls.length, 1);
+  // A build that's waiting goes first.
+  writeFileSync(join(o.drop, "fetch-cli.json"), JSON.stringify({ provider: "claude" }));
+  writeFileSync(join(o.drop, "stop.json"), "{}");
+  await h.handle();
+  assert.ok(existsSync(join(o.drop, "fetch-cli.json")));
+  await h.handle();
+  assert.deepEqual(o.calls.at(-1), ["start", "--no-block", "agentv-builder-cli@claude.service"]);
+});
+
 test("root won't start a sign-in for a plan with none, or while a build runs, or hand a code to nobody", async () => {
   const { o, h } = handOver();
   writeFileSync(join(o.drop, "sign-in.json"), JSON.stringify({ build: "b1", provider: "muse" }));

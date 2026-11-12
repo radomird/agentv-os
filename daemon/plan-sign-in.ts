@@ -7,11 +7,19 @@
 // Once it's signed in, the router's CLI reads the same sign-in.
 //
 // Skipped in setup, it waits in Settings → AI, and a first build still asks.
+//
+// The AI's CLI comes before any of that. Routing on a plan runs it from the
+// builder's home, and so does every build, by plan or key. So it's fetched
+// as soon as the AI is connected (a plan or a key, its terms accepted), once
+// a plan's sign-in is done, each time the daemon starts, and whenever an ask
+// finds it missing: the daemon leaves fetch-cli.json in the drop, and root
+// starts agentv-builder-cli@ for it if it isn't there
+// (builder/sandbox/hand-over.ts).
 
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Provider } from "./ai.ts";
+import { type AiState, OFFERS, type Provider } from "./ai.ts";
 import type { SignInView } from "./builds.ts";
 
 export interface PlanSignInOptions {
@@ -61,7 +69,7 @@ export class PlanSignIn {
     await rename(`${this.path}.next`, this.path);
   }
 
-  private async drop(name: "sign-in" | "sign-in-code", data: unknown): Promise<void> {
+  private async drop(name: "sign-in" | "sign-in-code" | "fetch-cli", data: unknown): Promise<void> {
     await mkdir(this.o.drop, { recursive: true });
     const path = join(this.o.drop, `${name}.json`);
     await writeFile(`${path}.next`, JSON.stringify(data));
@@ -72,6 +80,15 @@ export class PlanSignIn {
   async start(provider: Provider): Promise<void> {
     await this.keep({ provider, asked: new Date().toISOString() });
     await this.drop("sign-in", { build: null, provider });
+  }
+
+  // The AI's CLI, fetched now if it isn't there: for a plan on offer or a
+  // key, whose terms an adult accepted, since nothing of a provider's
+  // installs before that. True when root was asked.
+  async fetchCli(ai: Pick<AiState, "provider" | "path" | "accepted">): Promise<boolean> {
+    if (!ai.provider || !ai.path || !ai.accepted || (ai.path === "plan" && !OFFERS[ai.provider].plan.offered)) return false;
+    await this.drop("fetch-cli", { provider: ai.provider });
+    return true;
   }
 
   // The code the provider's page gave the person, for the CLI's prompt.
@@ -97,6 +114,9 @@ export class PlanSignIn {
     if (said && said.provider === kept.provider && typeof said.at === "string" && said.at > kept.asked && ["starting", "waiting", "done", "failed"].includes(said.state)) {
       if (said.state === "done") {
         await this.keep({ ...kept, signedIn: said.at });
+        // Signed in is connected: its CLI is there for the sign-in, and
+        // this makes sure it stays.
+        await this.drop("fetch-cli", { provider: kept.provider });
         return { provider: kept.provider, signedIn: true };
       }
       return {

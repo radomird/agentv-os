@@ -433,7 +433,7 @@ else console.log(JSON.stringify({ type: "result", subtype: "success", is_error: 
     const slow = await new Router(cliBackend("claude", { home, work: scratch, timeoutMs: 300 })).route("slow", APPS);
     assert.deepEqual([slow.none, slow.error], ["failed", "Your AI took too long"]);
     const missing = await new Router(cliBackend("grok", { home, work: scratch })).route("play frozen", APPS);
-    assert.deepEqual([missing.none, missing.error], ["failed", "grok isn't on the box yet: it comes with the first app that's made"]);
+    assert.deepEqual([missing.none, missing.error], ["failed", "Getting your AI ready. Try again in a minute."]);
   } finally {
     delete process.env.AGENTV_SECRET;
     delete process.env.ANTHROPIC_API_KEY;
