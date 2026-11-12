@@ -78,13 +78,13 @@ test("pairing: the TV shows a code, the phone types it, and the TV says the phon
   const hand = await phone(`/?code=${code}`);
   await hand.waitForSelector(".field.code");
   assert.deepEqual((await (await fetch(`${url}/api/phones`)).json()).phones, []);
-  assert.match(await hand.locator(".page").innerText(), /pair with the tv[\s\S]*settings → phones → pair a phone/);
+  assert.match(await hand.locator(".page").innerText(), /Pair with your TV\n+Type the code from your TV/);
   await hand.locator(".field.code").fill(code.toLowerCase());
   await hand.locator("button.primary").click();
   await hand.waitForSelector(".dpad");
   // The TV: a toast, and back to Settings → Phones with the phone listed.
-  await screen.waitForFunction(() => /android phone is paired/.test(document.body.textContent ?? ""));
-  await screen.waitForFunction(() => /android phone/.test(document.querySelector(".panel")?.textContent ?? ""));
+  await screen.waitForFunction(() => /Android phone is paired/.test(document.body.textContent ?? ""));
+  await screen.waitForFunction(() => /Android phone/.test(document.querySelector(".panel")?.textContent ?? ""));
   assert.match(await screen.locator('.menu-item[data-key="phones"]').innerText(), /phones\s+1/);
   await screen.close();
   await hand.close();

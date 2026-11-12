@@ -28,7 +28,7 @@ const SEALED = "application/agentv-sealed";
 // answer is the box's, so the phone keeps its key all the same: only a new
 // pairing that worked puts another in its place.
 export class Unpaired extends Error {}
-const UNPAIRED = "this phone isn't paired: pair it from the tv";
+const UNPAIRED = "This phone isn't paired. Pair it from your TV.";
 
 const KEPT = "agentv-phone-key";
 // What a phone paired before requests were signed still holds. Nothing takes
@@ -77,13 +77,13 @@ export async function pair(how: { secret: string } | { code: string }, name: str
   const mine = random(32);
   const mineOpen = x25519Public(mine);
   const { status, data } = await plain("/api/phone/pair", { key: encode(mineOpen), name, proof: encode(hmac(k, concat(utf8(INFO.pair), mineOpen))) });
-  if (status !== 200) throw new Error(typeof data.error === "string" ? data.error : "the tv didn't answer");
+  if (status !== 200) throw new Error(typeof data.error === "string" ? data.error : "Couldn't reach your TV");
   const theirs = typeof data.key === "string" ? decode(data.key) : null;
   const confirm = typeof data.confirm === "string" ? decode(data.confirm) : null;
-  if (!theirs || theirs.length !== 32 || !confirm || typeof data.id !== "string") throw new Error("the tv didn't answer");
+  if (!theirs || theirs.length !== 32 || !confirm || typeof data.id !== "string") throw new Error("Couldn't reach your TV");
   const key = hkdf(x25519(mine, theirs), k, concat(utf8(INFO.key), mineOpen, theirs), 32);
   // Only the box that saw the same secret comes to the same key.
-  if (!same(confirm, hmac(key, concat(utf8(INFO.pairBox), mineOpen, theirs)))) throw new Error("the tv didn't answer");
+  if (!same(confirm, hmac(key, concat(utf8(INFO.pairBox), mineOpen, theirs)))) throw new Error("Couldn't reach your TV");
   keep({ id: data.id, key: encode(key) });
 }
 
@@ -102,7 +102,7 @@ let live: Session | null = null;
 async function hello(): Promise<Session> {
   const mine = kept();
   const key = mine ? decode(mine.key) : null;
-  if (!mine || !key) throw new Unpaired("this phone isn't paired");
+  if (!mine || !key) throw new Unpaired("This phone isn't paired");
   const nonce = random(16);
   const { status, data } = await plain("/api/phone/hello", { id: mine.id, nonce: encode(nonce) });
   // Anyone on the network can write this answer, so its own words aren't
@@ -111,7 +111,7 @@ async function hello(): Promise<Session> {
   const boxNonce = typeof data.nonce === "string" ? decode(data.nonce) : null;
   const proof = typeof data.proof === "string" ? decode(data.proof) : null;
   // The proof says the answer is from the box that holds this phone's key.
-  if (status !== 200 || !boxNonce || !proof || typeof data.session !== "string" || !same(proof, hmac(key, concat(utf8(INFO.helloBox), nonce, boxNonce)))) throw new Error("the tv didn't answer");
+  if (status !== 200 || !boxNonce || !proof || typeof data.session !== "string" || !same(proof, hmac(key, concat(utf8(INFO.helloBox), nonce, boxNonce)))) throw new Error("Couldn't reach your TV");
   const keys = hkdf(key, concat(nonce, boxNonce), utf8(INFO.session), 96);
   return { id: data.session, sign: keys.subarray(0, 32), up: keys.subarray(32, 64), down: keys.subarray(64, 96), counter: 0 };
 }
@@ -183,7 +183,7 @@ export async function sign(method: string, address: string, body: { json: unknow
     answer(status, type, bytes, file = false) {
       if (type === SEALED) {
         const opened = bytes.length < 28 ? null : open(now.down, bytes.subarray(0, 12), bytes.subarray(12), utf8(`${method}\n${path}\n${counter}\n${status}`));
-        if (!opened) throw new Error("the tv didn't answer");
+        if (!opened) throw new Error("Couldn't reach your TV");
         try {
           return JSON.parse(text(opened));
         } catch {
@@ -213,7 +213,7 @@ export async function sign(method: string, address: string, body: { json: unknow
       // takes it: a sign-in page some network put in the box's place isn't
       // an answer with nothing in it.
       if (file && method === "GET" && status === 200 && !isJson(type)) return {};
-      throw new Error("the tv didn't answer");
+      throw new Error("Couldn't reach your TV");
     },
   };
 }
@@ -249,7 +249,7 @@ async function ask(method: string, path: string, body: { json: unknown } | { typ
     if (data === null) {
       // The session is cleared by now: the next sign says hello.
       if (attempt === 0) continue;
-      throw new Error("the tv didn't answer");
+      throw new Error("Couldn't reach your TV");
     }
     if (type === SEALED) bytes = new Uint8Array(0);
     return { status: response.status, ok: response.ok, type, bytes, data };

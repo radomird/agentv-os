@@ -371,11 +371,11 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
 
   // Updates: tonight on the phone, tonight and now on the TV.
   update(b);
-  await openOffer(b, hand, "update", /is ready/);
+  await openOffer(b, hand, "update", /Update ready/);
   await hand.waitForSelector('[data-action="tonight"]');
-  assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["install tonight", "install now"]);
+  assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["Install tonight", "Install now"]);
   await hand.locator('[data-action="tonight"]').tap();
-  await hand.waitForFunction(() => /it installs tonight, between 2 and 5/.test(document.body.textContent ?? ""));
+  await hand.waitForFunction(() => /It installs tonight between 2 and 5/.test(document.body.textContent ?? ""));
   assert.equal((await send(b, "GET", "/api/updates")).tonight?.version, "0.3.0-1");
   await say("install tonight on the phone");
   await hand.locator('[data-action="not-tonight"]').tap();
@@ -661,12 +661,12 @@ for (const screens of SCREENS) {
         // so the menu closes before Cancel can be tapped.
         await hand.locator(`[data-viewer="${ana}"]`).tap();
         await hand.waitForSelector(".pin-keys");
-        assert.match(await hand.locator('.overlay[aria-label="the adult pin"]').innerText(), /enter the adult pin\s+for watching as ana\./);
+        assert.match(await hand.locator('.overlay:not(#tv-pin)[aria-label="Adult PIN"]').innerText(), /Enter the adult PIN\n+For watching as ana\n/);
         await hand.locator('[data-action="close-sheet"]').tap({ position: { x: 8, y: 8 } });
         await hand.locator('.overlay [data-action="cancel"]').tap();
       } else {
         await hand.waitForSelector(`[data-viewer="${ana}"] svg.glyph-lock`);
-        assert.match(await hand.locator(".typing").innerText(), /or to a locked one, needs the adult pin/);
+        assert.match(await hand.locator(".typing").innerText(), /An adult's or a locked profile needs the PIN/);
         await hand.locator('[data-viewer="radomir"]').tap();
       }
       await remote(b, hand);
@@ -777,12 +777,12 @@ for (const screens of SCREENS) {
       // pad comes for tonight's install.
       update(b);
       const hand = await phone(b, (await send(b, "POST", "/api/pin/check", { pin: PIN })).grant);
-      await openOffer(b, hand, "update", /is ready/);
+      await openOffer(b, hand, "update", /Update ready/);
       await hand.waitForSelector('[data-action="tonight"]');
-      assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["install tonight", "install now with pin"]);
+      assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["Install tonight", "Install now"]);
       await hand.locator('[data-action="tonight"]').tap();
       await hand.waitForSelector(".pin-keys");
-      assert.match(await hand.locator('.overlay[aria-label="the adult pin"]').innerText(), /enter the adult pin\s+for installing tonight\./);
+      assert.match(await hand.locator('.overlay:not(#tv-pin)[aria-label="Adult PIN"]').innerText(), /Enter the adult PIN\n+For installing tonight\n/);
       await hand.locator('.overlay [data-action="cancel"]').tap();
       assert.equal((await send(b, "GET", "/api/updates")).tonight, null);
       await hand.close();
