@@ -131,15 +131,24 @@ export function signedInPage(pages: string[] | undefined, address: URL): boolean
 // names. Two things at the front are skipped, but only with a page after
 // them to name: a language, and index with or without a file ending, as in
 // /index.php/search. Alone, each is the start page: /en, /index.html. So
-// /index.php/account is "account". A lone /me, /my or /id isn't taken for a
-// language, since each is as likely the person's own page.
+// /index.php/account is "account".
+//
+// /me, /my and /id aren't taken for a language when no page follows them,
+// alone or with only index after, as in /me/index.html: each is as likely
+// the person's own page. They're also Montenegro's, Malaysia's and
+// Indonesia's, so a recipe for a service that starts at one of them lists
+// it in signedInPages. That allows /id and /id/index, and /id/account is
+// still "account". The order is fixed, a language and then index, so
+// /index.php/en/browse is refused.
 function named(pages: string[] | undefined, parts: string[]): boolean {
+  const bare = (part: string) => part.replace(/\.[a-z0-9]{1,5}$/, "");
   if (parts.length && LOCALE.test(parts[0])) {
-    if (parts.length === 1) return !OWN_PAGES.includes(parts[0]);
+    const alone = parts.length === 1 || (parts.length === 2 && bare(parts[1]) === "index");
+    if (alone && OWN_PAGES.includes(parts[0])) return (pages ?? []).includes(parts[0]);
+    if (parts.length === 1) return true;
     parts = parts.slice(1);
   }
   if (parts.length === 0) return true;
-  const bare = (part: string) => part.replace(/\.[a-z0-9]{1,5}$/, "");
   if (bare(parts[0]) === "index") {
     if (parts.length === 1) return true;
     parts = parts.slice(1);
