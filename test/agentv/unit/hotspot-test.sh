@@ -253,7 +253,7 @@ hotspot run >/dev/null || true
 jq '.error = "that password didn'"'"'t work for new:net"' "$AGENTV_HOTSPOT_RUN/state.json" >"$SCRATCH/state"
 mv "$SCRATCH/state" "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot status
-[[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $ssid, password $password. Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: that password didn't work for new:net." ]] ||
+[[ $(cat "$SCRATCH/out") == "The setup hotspot is on: $(state .ssid), password $(state .password). Phones that join get the setup page at http://10.42.0.1/."$'\n'"The last try said: that password didn't work for new:net." ]] ||
   fail "and while it's on, its name, password and the last try's reason" "$(cat "$SCRATCH/out")"
 pass "status says how it stands"
 
@@ -268,15 +268,32 @@ rm -f "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot run || fail "it opens" "$(cat "$SCRATCH/out")"
 [[ $(state .ssid) == "AgenTV-1a2b" && $(state .password) == "abcdefghjk" ]] || fail "with the name and password the USB stick handed over" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
 grep -q "ssid AgenTV-1a2b .*wifi-sec.psk abcdefghjk" "$FAKE/calls" || fail "as the access point's own" "$(grep "connection add" "$FAKE/calls")"
+hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) == "AgenTV-1a2b" ]] || fail "and while setup isn't done it's that network each time, as after a wrong password"
+cp "$AGENTV_HOTSPOT_RUN/state.json" "$SCRATCH/first-boot-state.json"
 printf '%s' '{"stop":true}' >"$AGENTV_HOTSPOT_DROP"
 hotspot drop || fail "setup ending closes it"
 [[ ! -e $AGENTV_HOTSPOT_HANDED ]] || fail "and the handed-over network goes with it"
 pass "a box set up from the phone opens the USB stick's network again at first boot, even online, until setup ends"
 
+# The same boot, with setup done: the TV loses its network and the watch
+# opens the hotspot. state.json is still there from the first hotspot, and
+# the name and password in it were the installer's.
+echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
+hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) =~ ^AgenTV-[0-9a-f]{4}$ && $(state .ssid) != "AgenTV-1a2b" && $(state .password) != "abcdefghjk" ]] ||
+  fail "in the boot setup ended in, a hotspot opened later doesn't have the installer's name and password" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+later=$(state .ssid)
+hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) == "$later" ]] || fail "and it keeps its own for the rest of the boot"
+# Setup ended some other way, and root was never told to close the hotspot.
+cp "$SCRATCH/first-boot-state.json" "$AGENTV_HOTSPOT_RUN/state.json"
+hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
+[[ $(state .ssid) != "AgenTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "nor when root never heard setup end" "$(cat "$AGENTV_HOTSPOT_RUN/state.json")"
+
 # Setup ended with the file still there, as on a TV set up before the file
 # went with setup: a hotspot opened later has a name and password of its
 # own, and the file goes then, or at the next start.
-echo '{"done": true}' >"$AGENTV_DAEMON_PRIVATE/setup.json"
 printf '%s\n' '{"ssid":"AgenTV-1a2b","password":"abcdefghjk"}' >"$AGENTV_HOTSPOT_HANDED"
 rm -f "$AGENTV_HOTSPOT_RUN/state.json"
 hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"

@@ -22,8 +22,9 @@
 # USB stick's first screen opened AgenTV-<4 characters> for the phone, and
 # hands its name and password over in /etc/agentv/hotspot.json. At first
 # boot this opens that same network, even on Ethernet, so the phone joins
-# it again by itself and carries on. The file goes once setup ends, and a
-# hotspot opened after that never has its name and password.
+# it again by itself and carries on. The file goes once setup ends, and so
+# do the name and password this boot's hotspot had from it, so a hotspot
+# opened after that never has them.
 #
 # After setup, Settings changes the Wi-Fi the same way, with the hotspot
 # closed: the daemon hands over a look at the networks nearby, or one to
@@ -211,7 +212,7 @@ firewall_close() {
 }
 
 run() {
-  local device ssid password networks
+  local device ssid password networks handed=false
 
   device=$(wifi_device)
   if [[ -z $device ]]; then
@@ -229,11 +230,17 @@ run() {
   # One name and password for the whole boot, so a phone that joined once
   # still knows it when the hotspot comes back after a wrong password. The
   # first time, the one the USB stick handed over, so the phone that set
-  # the box up from there is already on it.
+  # the box up from there is already on it. That one is for setup only: once
+  # setup is done it isn't used again, in the same boot either.
   ssid=$(state_get .ssid)
   password=$(state_get .password)
+  [[ $(state_get .handed) == "true" ]] && handed=true
+  if [[ $handed == "true" ]] && setup_done; then
+    ssid="" password="" handed=false
+  fi
   if [[ $ssid != AgenTV-* || -z $password ]]; then
     read -r ssid password <<<"$(handed)" || true
+    [[ $ssid == AgenTV-* && -n $password ]] && handed=true
   fi
   if [[ $ssid != AgenTV-* || -z $password ]]; then
     ssid="AgenTV-$(random 0123456789abcdef 4)"
@@ -252,8 +259,8 @@ run() {
     exit 1
   fi
   firewall_open "$device"
-  state_set '.on = true | .ssid = $ssid | .password = $password | .device = $device | .address = $address | .joining = null | .joined = null | .wifi = null' \
-    --arg ssid "$ssid" --arg password "$password" --arg device "$device" --arg address "$ADDRESS"
+  state_set '.on = true | .ssid = $ssid | .password = $password | .handed = $handed | .device = $device | .address = $address | .joining = null | .joined = null | .wifi = null' \
+    --arg ssid "$ssid" --arg password "$password" --argjson handed "$handed" --arg device "$device" --arg address "$ADDRESS"
   echo "agentv-hotspot: $ssid is on, with the setup page at http://$ADDRESS/"
 
   # Addresses for phones, and every name pointing at the box, which is how
@@ -436,6 +443,11 @@ drop() {
   if [[ $(jq -r '.stop // false' <<<"$request" 2>/dev/null) == "true" ]]; then
     rm -f "$HANDED"
     systemctl stop agentv-hotspot.service
+    # The installer's name and password go with setup. A hotspot opened
+    # later in this boot, as when the network is lost, gets its own.
+    if [[ -f $RUN/state.json ]]; then
+      state_set '.ssid = null | .password = null | .handed = null'
+    fi
     echo "agentv-hotspot: closed, as setup ended"
     return 0
   fi
