@@ -181,7 +181,7 @@ export class PageApps {
     }
     const found = await this.options.find(id);
     if (!found || found.manifest.tv.runtime !== "page") {
-      send(404, "text/plain; charset=utf-8", "there's no such app on this box\n");
+      send(404, "text/plain; charset=utf-8", "Couldn't find that app\n");
       return;
     }
     const home = `http://127.0.0.1:${port} http://localhost:${port}`;
@@ -234,7 +234,7 @@ export class PageApps {
   // null when it may, or why not.
   async allows(id: string, call: unknown): Promise<string | null> {
     const found = ID.test(id) ? await this.options.find(id) : null;
-    if (!found) return "there's no such app on this box";
+    if (!found) return "Couldn't find that app";
     return refusal(found.manifest, call, true);
   }
 
@@ -243,7 +243,7 @@ export class PageApps {
   async call(id: unknown, call: unknown, args: unknown[]): Promise<{ value?: unknown; error?: string }> {
     if (typeof id !== "string" || !ID.test(id)) return { error: "which app" };
     const found = await this.options.find(id);
-    if (!found) return { error: "there's no such app on this box" };
+    if (!found) return { error: "Couldn't find that app" };
     const why = refusal(found.manifest, call);
     if (why) return { error: why };
     switch (call as Call) {

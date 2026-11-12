@@ -65,6 +65,6 @@ export class TmdbKey {
       if (now.at !== before) return now.error ?? null;
     }
     rmSync(this.drop, { force: true });
-    return "the key couldn't be kept: agentv-key.path isn't running";
+    return "Couldn't save the key. Restart your TV and try again.";
   }
 }

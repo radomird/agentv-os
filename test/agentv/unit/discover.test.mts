@@ -274,14 +274,14 @@ test("a server picked in setup waits for its app to install, then fills in its a
     assert.equal(saved["agentv.immich"], undefined);
     // What isn't a pick is refused.
     installed.add("agentv.steam");
-    assert.deepEqual(await picks.pick("agentv.steam", "http://192.168.50.10:1"), { ok: false, status: 400, error: "that app doesn't ask for a server" });
+    assert.deepEqual(await picks.pick("agentv.steam", "http://192.168.50.10:1"), { ok: false, status: 400, error: "That app doesn't need a server" });
     for (const [app, url] of [["", "http://a"], ["Jellyfin!", "http://a"], ["agentv.jellyfin", "ftp://nas"], ["agentv.jellyfin", 5], ["agentv.jellyfin", `http://${"a".repeat(500)}`]]) {
       assert.equal((await picks.pick(app, url)).ok, false, JSON.stringify([app, url]));
     }
     // F2: a server is never this box itself.
     const mine = new ServerPicks({ state, home, log: () => {}, own: () => ["192.168.50.2"] });
     for (const url of ["http://127.0.0.1:3000", "http://localhost:3000", "http://[::ffff:7f00:1]:3000", "http://192.168.50.2:3001"]) {
-      assert.deepEqual(await mine.pick("agentv.jellyfin", url), { ok: false, status: 400, error: "the server's address, like http://192.168.1.20:8096" }, url);
+      assert.deepEqual(await mine.pick("agentv.jellyfin", url), { ok: false, status: 400, error: "Type an address like http://192.168.1.20:8096" }, url);
     }
     assert.equal((await mine.pick("agentv.jellyfin", "http://192.168.50.11:8096")).ok, true);
   } finally {
@@ -511,7 +511,7 @@ test("a NAS's shares: smbclient's list and its NFS exports, only for a machine t
   for (const host of ["192.168.1.1", "printer.local", "127.0.0.2"]) {
     const refused = await fetch(`${url}/api/discover/shares?host=${host}`);
     assert.equal(refused.status, 404);
-    assert.match((await refused.json()).error, /isn't a nas the tv found/);
+    assert.equal((await refused.json()).error, `Couldn't find ${host}`);
   }
   assert.deepEqual(smbAsked, []);
   assert.equal((await fetch(`${url}/api/discover/shares`)).status, 400);

@@ -91,17 +91,17 @@ export function ownHost(hostname: string, own: readonly string[]): boolean {
 // password in it, and somewhere other than this box, which has no page of
 // its own to share. Its site is what the notice says.
 export function cleanLink(value: unknown, own: readonly string[] = ownAddresses()): { url: string; site: string } | { error: string } {
-  if (typeof value !== "string" || !value.trim()) return { error: "a link to send" };
-  if (value.length > MAX_URL) return { error: `a link of up to ${MAX_URL} characters` };
+  if (typeof value !== "string" || !value.trim()) return { error: "Send a link" };
+  if (value.length > MAX_URL) return { error: `Links can be up to ${MAX_URL} characters` };
   let url: URL;
   try {
     url = new URL(value.trim());
   } catch {
-    return { error: "that isn't a link the tv can open" };
+    return { error: "Your TV can't open that link" };
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "a link to a web page, http or https" };
-  if (url.username || url.password) return { error: "a link without a name and password in it" };
-  if (ownHost(url.hostname, own)) return { error: "that isn't a link the tv can open" };
+  if (url.protocol !== "https:" && url.protocol !== "http:") return { error: "Your TV can't open that link" };
+  if (url.username || url.password) return { error: "Send a link without a name and password in it" };
+  if (ownHost(url.hostname, own)) return { error: "Your TV can't open that link" };
   return { url: url.href, site: url.hostname.replace(/^www\./, "") };
 }
 
@@ -187,9 +187,9 @@ export class Shared {
   }
 
   async addPhoto(body: Buffer, credit: unknown, who: { from: string; to: string }): Promise<{ share?: Share; error?: string }> {
-    if (body.length > MAX_BYTES) return { error: "that photo is too big: 15 mb at most" };
+    if (body.length > MAX_BYTES) return { error: "That photo is too big. 15 MB at most." };
     const type = imageType(body);
-    if (!type) return { error: "a photo the tv can show: jpeg, png or webp" };
+    if (!type) return { error: "Use a JPEG, PNG or WebP photo" };
     const share: Share = { ...this.fresh("photo", "a photo", who), credit: creditText(credit), type, size: body.length };
     await mkdir(this.dir, { recursive: true });
     const name = `${share.id}.${EXTENSIONS[type]}`;
@@ -210,7 +210,7 @@ export class Shared {
       transform(chunk: Buffer, _encoding, done) {
         size += chunk.length;
         if (head.length < 16) head = Buffer.concat([head, chunk.subarray(0, 16 - head.length)]);
-        if (size > most) done(new Error(`that video is too big: ${Math.round(most / 1024 ** 3)} gb at most`));
+        if (size > most) done(new Error(`That video is too big. ${Math.round(most / 1024 ** 3)} GB at most.`));
         else done(null, chunk);
       },
     });
@@ -218,12 +218,12 @@ export class Shared {
       await pipeline(body, count, createWriteStream(part));
     } catch (error) {
       await rm(part, { force: true });
-      return { error: (error as Error).message.includes("too big") ? (error as Error).message : "the video didn't all come: try again" };
+      return { error: (error as Error).message.includes("too big") ? (error as Error).message : "Couldn't get the whole video" };
     }
     const type = videoType(head);
     if (!type || size === 0) {
       await rm(part, { force: true });
-      return { error: "a video the tv plays: mp4 or webm" };
+      return { error: "Use an MP4 or WebM video" };
     }
     await rename(part, join(this.dir, `${share.id}.${EXTENSIONS[type]}`));
     return { share: await this.keep({ ...share, type, size }) };

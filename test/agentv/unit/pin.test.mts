@@ -66,8 +66,8 @@ test("S4.5 changing or taking off the PIN needs a grant, and a child's profile k
   let children = false;
   const { pin } = box(() => (children ? "Keep the PIN while there's a child's profile" : null));
   pin.set("4826", undefined);
-  assert.equal(pin.set("1111", undefined), "that needs the pin");
-  assert.equal(pin.remove("made-up"), "that needs the pin");
+  assert.equal(pin.set("1111", undefined), "That needs the PIN");
+  assert.equal(pin.remove("made-up"), "That needs the PIN");
   const grant = granted(pin.check("4826"));
   // Grants earned with the PIN before, the TV's and a phone's.
   const other = granted(pin.check("4826"));

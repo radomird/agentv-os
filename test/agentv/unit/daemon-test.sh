@@ -53,7 +53,7 @@ if (( status != 1 )) || [[ $out != *"AGENTV_PIN"* ]]; then fail "agentv setup re
 [[ $(curl -fsS "$url/health" | jq -r '.screen') == "home" ]] || fail "and setup stays done"
 status=0
 out=$(AGENTV_PORT=$port AGENTV_PIN=0000 "$ROOT/bin/agentv-setup-reset" 2>&1) || status=$?
-if (( status != 1 )) || [[ $out != *"didn't take the PIN"* ]]; then fail "a wrong PIN is refused" "$out"; fi
+if (( status != 1 )) || [[ $out != *"Wrong PIN"* ]]; then fail "a wrong PIN is refused" "$out"; fi
 out=$(AGENTV_PORT=$port AGENTV_PIN=4826 "$ROOT/bin/agentv-setup-reset") || fail "agentv setup reset works with the PIN" "$out"
 [[ $(curl -fsS "$url/health" | jq -r '.screen') == "welcome" ]] || fail "with the PIN, the TV is on the welcome page"
 pass "with an adult PIN set, agentv setup reset needs it"

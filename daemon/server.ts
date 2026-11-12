@@ -268,7 +268,7 @@ export function remoteView(tv: TvContext, signingIn: boolean): "trackpad" | "pin
 // Whether a key's refusal is the TV's own trouble saving it, and not the
 // key that was typed.
 function notSaved(why: string): boolean {
-  return /^(the key couldn't|couldn't save)/i.test(why);
+  return why.toLowerCase().startsWith("couldn't save the key");
 }
 
 function now(): string {
@@ -1916,7 +1916,7 @@ export class Daemon {
       this.log(`${viewer.name} pushes ${offer.id} to github.com/${repo.owner}/${repo.name} from ${phone.name}`);
       const said = await this.exportAsks.ask({ kind: "push", id: offer.id, name: offer.name, version: offer.version, repo, files }, 5 * 60_000);
       if (!said.ok) {
-        this.log(`${offer.id} wasn't pushed: ${said.error}`);
+        this.log(`${offer.id} wasn't pushed: ${[said.error, said.detail].filter(Boolean).join(": ")}`);
         this.json(response, 502, { ok: false, error: said.error });
         return;
       }
@@ -3701,7 +3701,7 @@ export class Daemon {
     if (method === "GET" && path === "/api/art/search") {
       const result = await this.art.search(url.searchParams.get("archive"), url.searchParams.get("q"));
       if (!result.items) {
-        this.json(response, result.error?.includes("didn't answer") ? 502 : 400, { ok: false, error: result.error });
+        this.json(response, result.error?.startsWith("Couldn't reach") ? 502 : 400, { ok: false, error: result.error });
         return;
       }
       this.json(response, 200, { ok: true, items: result.items });

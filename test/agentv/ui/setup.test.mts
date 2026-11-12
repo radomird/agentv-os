@@ -543,8 +543,8 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
   await phone.waitForSelector("#tv-ask");
-  assert.equal(await phone.locator("#tv-ask h1").innerText(), "claude terms");
-  assert.match(await phone.locator("#tv-ask").innerText(), /anthropic's commercial terms and usage policy/);
+  assert.equal(await phone.locator("#tv-ask h1").innerText(), "Claude terms");
+  assert.match(await phone.locator("#tv-ask").innerText(), /Anthropic's commercial terms and usage policy/);
   assert.deepEqual(await phone.locator("#tv-ask [data-terms]").evaluateAll((links) => links.map((a) => a.getAttribute("href"))), [
     "https://www.anthropic.com/legal/commercial-terms",
     "https://www.anthropic.com/legal/aup",
@@ -637,7 +637,7 @@ test("ADR-047 five providers fit the screen in two rows the arrows reach: Grok's
   await page.keyboard.press("Enter");
   await page.waitForSelector('[data-path="key"]');
   assert.match(await textOf(page, '[data-path="plan"]'), /a muse code subscription · coming soon/);
-  assert.equal(await textOf(page, '[data-note="plan"]'), "a meta managed account can only use a key.");
+  assert.equal(await textOf(page, '[data-note="plan"]'), "a meta managed account can only use a key");
   assert.match(await textOf(page, '[data-path="key"]'), /from your meta account/);
   await page.keyboard.press("Enter");
   await page.waitForSelector(".terms-list");
@@ -678,7 +678,7 @@ test("T17.1 Google's plan is key only, with the line that says why, and setting 
   await page.waitForSelector('[data-path="key"]');
   assert.match(await textOf(page, '[data-path="plan"]'), /google ai pro or ultra · key only/);
   assert.doesNotMatch(await textOf(page, '[data-path="plan"]'), /coming soon/);
-  assert.equal(await textOf(page, '[data-note="plan"]'), "google keeps its plan to its own apps. a key works now");
+  assert.equal(await textOf(page, '[data-note="plan"]'), "google keeps its plan to its own apps. a key works now.");
   assert.equal(await page.locator('[data-path="plan"][data-focus]').count(), 0, "it can't be picked");
   assert.equal(await page.locator(".provider.focused").getAttribute("data-path"), "key");
   await page.keyboard.press("Escape");
@@ -1114,7 +1114,7 @@ test("the background: art from a museum archive, searched through the daemon and
   await page.locator('[data-work="commons/37658477"]').click();
   await page.waitForFunction(() => document.querySelector(".setup-headline")?.getAttribute("aria-label") === "pick a background.");
   await page.waitForSelector('.back.picked[data-background="art"]');
-  assert.match(await textOf(page, ".setup-note"), /Sète Harbour Sunset 04 · Christian Ferrer, 2014 · cc by 4\.0 · wikimedia commons/);
+  assert.match(await textOf(page, ".setup-note"), /Sète Harbour Sunset 04 · Christian Ferrer, 2014 · CC BY 4\.0 · Wikimedia Commons/);
   const now = await (await fetch(`${url}/api/backgrounds`)).json();
   assert.equal(now.source, "art");
   assert.equal(now.items.find((item: { id: string }) => item.id === now.current).credit.from, "wikimedia commons");
@@ -1178,7 +1178,7 @@ test("the background: an immich album through its shared link, with no account o
     // Not a link to an album: it says so, and stays.
     await page.locator('[data-action="immich"]').fill(`${immich.url}/share/not-the-key`);
     await page.locator('[data-action="use-album"]').click();
-    await page.waitForFunction(() => /immich didn't take that link: invalid share key/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
+    await page.waitForFunction(() => /Immich couldn't open that link/.test(document.querySelector(".toast:last-child")?.textContent ?? ""));
 
     await page.locator('[data-action="immich"]').fill(immich.link);
     await page.locator('[data-action="use-album"]').click();

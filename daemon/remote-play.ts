@@ -10,6 +10,7 @@
 // key. "Something is playing" uses the same search (MEDIA_PLAYING), so the
 // phone switches to playback on a service's player too.
 
+import { NOT_READY } from "./notices.ts";
 import type { TextAnswer } from "./remote-text.ts";
 
 // Every audio and video element in a page, through open shadow roots and
@@ -51,7 +52,7 @@ export const MEDIA_TOGGLE = `(async () => {${MEDIA}
   const playing = all.filter((m) => !m.paused && !m.ended);
   if (playing.length > 0) {
     for (const m of playing) m.pause();
-    return playing.every((m) => m.paused) ? { ok: true, did: "paused" } : { ok: false, why: "the player didn't pause" };
+    return playing.every((m) => m.paused) ? { ok: true, did: "paused" } : { ok: false, why: "Couldn't pause" };
   }
   const area = (m) => {
     const box = m.getBoundingClientRect();
@@ -59,13 +60,13 @@ export const MEDIA_TOGGLE = `(async () => {${MEDIA}
   };
   const waiting = all.filter((m) => !m.ended).sort((a, b) => (b.currentTime > 0) - (a.currentTime > 0) || area(b) - area(a));
   const one = waiting[0];
-  if (!one) return { ok: false, why: "nothing is playing" };
+  if (!one) return { ok: false, why: "Nothing is playing" };
   try {
     await one.play();
   } catch {
-    return { ok: false, why: "the player wouldn't play" };
+    return { ok: false, why: "Couldn't play" };
   }
-  return one.paused ? { ok: false, why: "the player wouldn't play" } : { ok: true, did: "played" };
+  return one.paused ? { ok: false, why: "Couldn't play" } : { ok: true, did: "played" };
 })()`;
 
 // What's in front for play and pause, from the screen daemon. app calls the
@@ -85,7 +86,7 @@ export interface PhonePlaybackOptions {
   ms?: number;
 }
 
-const NOTHING: TextAnswer = { ok: false, why: "nothing is playing" };
+const NOTHING: TextAnswer = { ok: false, why: "Nothing is playing" };
 
 export class PhonePlayback {
   private o: PhonePlaybackOptions;
@@ -132,9 +133,9 @@ export class PhonePlayback {
     if (front.kind === "native") return this.key("next");
     if (front.kind === "home") {
       const now = await this.musicNow(front);
-      if (!now) return { ok: false, why: "nothing is playing" };
+      if (!now) return { ok: false, why: "Nothing is playing" };
       const done = (await this.within(front.music!({ op: "next" }))) as { ok?: boolean } | null;
-      return done?.ok ? { ok: true, by: "app" } : { ok: false, why: "music didn't go on" };
+      return done?.ok ? { ok: true, by: "app" } : { ok: false, why: "Couldn't play music" };
     }
     if (front.app) {
       const done = await this.within(
@@ -146,7 +147,7 @@ export class PhonePlayback {
       );
       if (done) return { ok: true, by: "app" };
     }
-    return { ok: false, why: "this app has no next" };
+    return { ok: false, why: "This app can't skip" };
   }
 
   // Home's own player, a shared video (ADR-050), then Music.
@@ -156,7 +157,7 @@ export class PhonePlayback {
     const now = await this.musicNow(front);
     if (now) {
       const done = (await this.within(front.music!({ op: "pause", on: now.playing }))) as { ok?: boolean } | null;
-      return done?.ok ? { ok: true, by: "app" } : { ok: false, why: "music didn't answer" };
+      return done?.ok ? { ok: true, by: "app" } : { ok: false, why: "Couldn't play music" };
     }
     if (state?.any) return this.page(front.evaluate);
     return NOTHING;
@@ -170,8 +171,8 @@ export class PhonePlayback {
 
   private async page(evaluate: (expression: string) => Promise<unknown>): Promise<TextAnswer> {
     const did = (await this.within(evaluate(MEDIA_TOGGLE))) as { ok?: boolean; why?: string } | null;
-    if (!did) return { ok: false, why: "the tv's page didn't answer" };
-    return did.ok ? { ok: true, by: "page" } : { ok: false, by: "page", why: typeof did.why === "string" ? did.why.slice(0, 120) : "the player didn't answer" };
+    if (!did) return { ok: false, why: NOT_READY };
+    return did.ok ? { ok: true, by: "page" } : { ok: false, by: "page", why: typeof did.why === "string" ? did.why.slice(0, 120) : "Something went wrong" };
   }
 
   private async key(name: string): Promise<TextAnswer> {
@@ -179,7 +180,7 @@ export class PhonePlayback {
       await this.o.keys({ key: name });
       return { ok: true, by: "key" };
     } catch {
-      return { ok: false, why: "the key didn't reach the tv" };
+      return { ok: false, why: "Couldn't reach your TV" };
     }
   }
 }

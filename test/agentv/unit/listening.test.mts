@@ -194,7 +194,7 @@ function stateFiles(dir: string): string[] {
 test("ADR-054 a box's words take setup done, like a sentence", async () => {
   const early = await phone("/api/phone/say/live", { open: true });
   assert.equal(early.status, 409);
-  assert.equal((await early.json()).error, "the tv takes requests once setup is done");
+  assert.equal((await early.json()).error, "Finish setup on your TV first");
   writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-11-01T18:00:00Z" }));
 });
 
@@ -283,7 +283,7 @@ test("ADR-054 a locked TV takes no words, as it takes no sentences, and locking 
   await until(() => heardOnTv().at(-1)?.state === "closed");
   const refused = await phone("/api/phone/say/live", { text: "play frozen" });
   assert.equal(refused.status, 409);
-  assert.equal((await refused.json()).error, "the tv is locked: unlock it first");
+  assert.equal((await refused.json()).error, "Your TV is locked. Unlock it first.");
   assert.equal(heardOnTv().at(-1)!.state, "closed");
   assert.equal((await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
   assert.equal((await phone("/api/phone/say/live", { open: true })).status, 200);

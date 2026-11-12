@@ -67,7 +67,7 @@ test("S5.3 a photo becomes the background at once, kept with its credit, and the
   const dir = join(scratch, "store");
   const store = new Backgrounds({ dir });
   assert.deepEqual(await store.read(), { source: "theme", current: null, items: [], theme: { name: null, current: null, items: [], ...NO_INTRO }, softwareVideo: false }, "a new box: the theme's own, none yet");
-  assert.match((await store.add(Buffer.from("not a picture"), { from: "iphone" })).error ?? "", /jpeg, png or webp/);
+  assert.match((await store.add(Buffer.from("not a picture"), { from: "iphone" })).error ?? "", /JPEG, PNG or WebP/);
   const first = await store.add(JPEG, { text: "photo by ana on unsplash", from: "radomir on iphone" });
   assert.equal(first.state?.source, "photos");
   assert.equal(first.state?.current, first.item?.id);
@@ -86,7 +86,7 @@ test("S5.3 a photo becomes the background at once, kept with its credit, and the
 
 test("the pixel field or the photos, and taking the last photo off goes back to the field", async () => {
   const store = new Backgrounds({ dir: join(scratch, "choose") });
-  assert.match((await store.choose("photos")).error ?? "", /send a photo from your phone first/);
+  assert.match((await store.choose("photos")).error ?? "", /Send a photo from your phone first/);
   assert.match((await store.choose("unsplash")).error ?? "", /a source/);
   const added = await store.add(WEBP, { from: "pixel" });
   assert.equal((await store.choose("field")).state?.source, "field");

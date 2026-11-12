@@ -94,7 +94,7 @@ test("ADR-043 a call needs what the manifest declared", async () => {
   assert.match((await pages.call("agentv.blocks", "photos.list", ["s"])).error ?? "", /isn't something the app kit does here/);
   assert.match((await pages.call("agentv.blocks", "eval", [])).error ?? "", /isn't something the app kit does here/);
   assert.match((await pages.call("agentv.sample", "storage.get", ["x"])).error ?? "", /isn't a page app/);
-  assert.match((await pages.call("agentv.nowhere", "viewer", [])).error ?? "", /no such app/);
+  assert.match((await pages.call("agentv.nowhere", "viewer", [])).error ?? "", /Couldn't find that app/);
   assert.match((await pages.call("../etc", "viewer", [])).error ?? "", /which app/);
   // The TV session asks the same for photos and music.
   assert.equal(await pages.allows("agentv.album", "photos.list"), null);

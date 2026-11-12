@@ -100,14 +100,14 @@ test("F10 a link to the box itself is refused, however its address is written, a
     "http://[FD00:0:0:0:0:0:0:20]:3000/",
     "http://[fe80::1c2d:3eff:fe4f:5a6b]/",
   ];
-  for (const link of refused) assert.deepEqual(cleanLink(link, own), { error: "that isn't a link the tv can open" }, link);
+  for (const link of refused) assert.deepEqual(cleanLink(link, own), { error: "Your TV can't open that link" }, link);
   // Other machines at home, and names that only look like the box's.
   for (const link of ["http://192.168.1.1/", "http://192.168.1.21:8096/web", "http://[fd00::21]/", "https://localhost.example.org/", "https://notlocalhost/", "http://128.0.0.1/"]) {
     assert.ok("url" in cleanLink(link, own), link);
   }
   // The store asks for the box's addresses each time, since they change.
   const store = new Shared({ dir: join(scratch, "own"), addresses: () => own });
-  assert.deepEqual(await store.addLink("http://192.168.1.20:3000/", who), { error: "that isn't a link the tv can open" });
+  assert.deepEqual(await store.addLink("http://192.168.1.20:3000/", who), { error: "Your TV can't open that link" });
   assert.ok((await store.addLink("http://192.168.1.21:3000/", who)).share);
   assert.deepEqual(await store.list().then((shares) => shares.map((share) => share.url)), ["http://192.168.1.21:3000/"]);
 });
@@ -120,7 +120,7 @@ test("a video comes to disk as it's sent, kept only once it's all here and plays
   assert.equal(kept.share?.title, "beach.mp4");
   assert.equal((await store.file(kept.share!.id))?.size, MP4.length);
   assert.match((await store.addVideo(Readable.from([MP4]), "big.mp4", who, 1000)).error!, /too big/);
-  assert.match((await store.addVideo(Readable.from([JPEG]), "photo.mp4", who)).error!, /mp4 or webm/);
+  assert.match((await store.addVideo(Readable.from([JPEG]), "photo.mp4", who)).error!, /^Use an MP4 or WebM video$/);
   // Nothing half-sent is left behind.
   assert.deepEqual(readdirSync(join(scratch, "store")).filter((name) => name.startsWith(".")), []);
   // Two at once are both kept.
@@ -198,7 +198,7 @@ test("S5.10 a child's profile takes shares only once an adult allowed it, and se
   assert.equal((await tv("POST", "/api/viewer", { id: mila.id })).status, 200);
   const refused = await share("link", { url: "https://example.org/cartoons" });
   assert.equal(refused.status, 403);
-  assert.equal(refused.data.error, "mila's profile doesn't take shares. an adult can allow it in settings → profiles");
+  assert.equal(refused.data.error, "mila's profile doesn't accept things from phones");
   assert.deepEqual((await tv("GET", "/api/shared")).data.shares, [], "a child doesn't see what was sent to an adult");
   // Allowing it is changing a profile, past the PIN.
   assert.equal((await tv("PUT", `/api/viewers/${mila.id}`, { shares: true })).status, 403);

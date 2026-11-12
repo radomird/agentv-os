@@ -151,7 +151,7 @@ test("albums on a share that's away stay, marked away, aren't read again, and ca
   const storage = { sources: async () => sources, paths: async () => [], mountShare: async () => { throw new Error("the NAS at nas didn't answer"); } } as unknown as Storage;
   const player = { play: async () => assert.fail("nothing away plays"), now: async () => null, close() {} } as unknown as MusicPlayer;
   const app = new MusicApp({ storage, library, player });
-  assert.deepEqual(await app.handle({ op: "play", q: "night shift" }), { ok: false, error: "Night Shift is on a share that isn't there right now" });
+  assert.deepEqual(await app.handle({ op: "play", q: "night shift" }), { ok: false, error: "Night Shift is on a folder that isn't connected" });
   app.stop();
 
   // Back: it can play, and what was read of it before still holds.
@@ -235,7 +235,7 @@ test("USB sticks come from lsblk and mount through udisks2; shares mount through
   );
   assert.equal(await storage.mountUsb("/dev/sda1"), "/run/media/radomir/STICK");
   assert.deepEqual(log.find((call) => call.command === "udisksctl")?.args, ["mount", "--no-user-interaction", "-b", "/dev/sda1"]);
-  await assert.rejects(storage.mountUsb("/dev/nvme0n1p2"), /isn't a USB drive/);
+  await assert.rejects(storage.mountUsb("/dev/nvme0n1p2"), /Couldn't find that drive/);
 
   // A share with no user mounts through gvfs, as a guest.
   const share = await storage.addShare("smb://nas/music");
@@ -257,8 +257,8 @@ test("a guest share gvfs can't mount says it wants a user name and password", as
       throw new Error("Command failed: gio mount --anonymous smb://nas/private");
     },
   });
-  await assert.rejects(storage.addShare("smb://nas/private"), /nas\/private wants a user name and password\. add it as smb:\/\/you@nas\/private/);
-  assert.equal(gioProblem("smb://nas/music", "gio: smb://nas/music: Connection refused"), "gio: smb://nas/music: Connection refused");
+  await assert.rejects(storage.addShare("smb://nas/private"), /nas\/private needs a user name and password\. Add it as smb:\/\/you@nas\/private\./);
+  assert.equal(gioProblem("smb://nas/music", "gio: smb://nas/music: Connection refused"), "Couldn't connect to that folder");
 });
 
 // agentv-share-store as root answers a request in the drop folder: it writes
@@ -311,7 +311,7 @@ test("ADR-038 an SMB share with a user name goes to root with its password, and 
   assert.equal(rootShare("smb://nas/music"), false);
   assert.equal(rootShare("nfs://nas/export/music"), false);
   try {
-    await assert.rejects(storage.addShare("smb://radomir@nas/music"), /needs its password/);
+    await assert.rejects(storage.addShare("smb://radomir@nas/music"), /Type the password for that folder/);
     await assert.rejects(storage.addShare("smb://radomir@nas/music", "two\nlines"), /line break/);
     const share = await storage.addShare("smb://radomir@nas/music", "hunter2");
     assert.equal(share.available, true);
@@ -332,8 +332,8 @@ test("ADR-038 an SMB share with a user name goes to root with its password, and 
     assert.deepEqual(root.seen.at(-1), { op: "mount", uri: "smb://radomir@nas/music", mode: 0o600 });
 
     // A password the NAS turns down: root's words, and it isn't saved.
-    nas = { mounted: false, error: "the NAS didn't take that user name and password" };
-    await assert.rejects(storage.addShare("smb://radomir@nas/films", "wrong"), /the NAS didn't take that user name and password/);
+    nas = { mounted: false, error: "Wrong user name or password" };
+    await assert.rejects(storage.addShare("smb://radomir@nas/films", "wrong"), /Wrong user name or password/);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "storage.json"), "utf8")).shares, ["smb://radomir@nas/music"]);
     mounted.clear();
     nas = { mounted: false, error: "the NAS at nas didn't answer" };
@@ -354,7 +354,7 @@ test("a share root has no word on yet needs its password again", async () => {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "storage.json"), JSON.stringify({ folders: [], shares: ["smb://radomir@nas/music"] }));
   const storage = new Storage({ config: join(dir, "storage.json"), status: join(dir, "nothing.json"), mounted: async () => new Set(), run: async () => JSON.stringify({ blockdevices: [] }) });
-  assert.deepEqual((await storage.sources()).map((s) => [s.available, s.error]), [[false, "it needs its password again"]]);
+  assert.deepEqual((await storage.sources()).map((s) => [s.available, s.error]), [[false, "Type the password for nas/music again"]]);
 });
 
 test("a share's address is smb:// or nfs://, names its share, and holds no password", () => {
@@ -362,7 +362,7 @@ test("a share's address is smb:// or nfs://, names its share, and holds no passw
   assert.equal(shareProblem("nfs://nas/export/music"), null);
   assert.match(shareProblem("smb://me:secret@nas/music") ?? "", /password/);
   assert.match(shareProblem("ftp://nas/music") ?? "", /smb:\/\/ or nfs:\/\//);
-  assert.match(shareProblem("smb://nas") ?? "", /names the share/);
+  assert.match(shareProblem("smb://nas") ?? "", /looks like smb:\/\/nas\/music/);
   assert.match(shareProblem("nas/music") ?? "", /looks like/);
   assert.match(shareProblem("smb://nas/music\nevil") ?? "", /can't have that/);
 });
@@ -486,7 +486,7 @@ test("S3.6 an album on a USB stick and one on a NAS share each play, and 'play <
   }
   // The albums played last, newest first, for Music's large tile.
   assert.deepEqual(((await app.handle({ op: "recent" })) as { albums: { title: string }[] }).albums.map((a) => a.title), ["Night Shift", "Test Tones"]);
-  assert.deepEqual(await app.handle({ op: "play", q: "nothing like it" }), { ok: false, error: "nothing in the library matches nothing like it" });
+  assert.deepEqual(await app.handle({ op: "play", q: "nothing like it" }), { ok: false, error: "Couldn't find nothing like it in your music" });
   app.stop();
 });
 

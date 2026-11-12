@@ -54,7 +54,7 @@ grep -q "agentv-tv.target" "$CALLS" || fail "the TV session's units still restar
 rm "$STATE/daemon-fails"
 touch "$STATE/daemon-down"
 ! run || fail "a daemon that doesn't answer after restarting is a failure"
-grep -q "didn't answer within 0 s" "$SCRATCH/out" || fail "it says the daemon didn't answer" "$(cat "$SCRATCH/out")"
+grep -q "didn't answer within 0 s" "$SCRATCH/out" || fail "it says Your TV isn't ready yet" "$(cat "$SCRATCH/out")"
 rm "$STATE/daemon-down"
 pass "a daemon that doesn't restart or answer says so, and the TV's units restart anyway"
 

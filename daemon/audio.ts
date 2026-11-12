@@ -190,7 +190,7 @@ export class Audio {
   async choose(name: string): Promise<object> {
     const sinks = await this.pulse.sinks();
     const sink = sinks.find((s) => s.name === name);
-    if (!sink) return { ok: false, error: "that output isn't there" };
+    if (!sink) return { ok: false, error: "Couldn't find that output" };
     this.save({ ...this.chosen(), output: name });
     this.log(`sound: ${sink.description} picked in settings`);
     await this.check();
@@ -202,7 +202,7 @@ export class Audio {
     if (!Number.isFinite(volume) || volume < 0 || volume > 1) return { ok: false, error: "a volume from 0 to 100%" };
     const current = await this.pulse.defaultSink();
     const sink = (await this.pulse.sinks()).find((s) => s.name === current);
-    if (!sink) return { ok: false, error: "there's no sound output to set" };
+    if (!sink) return { ok: false, error: "No sound output to change" };
     const rounded = Math.round(volume * 100) / 100;
     const chosen = this.chosen();
     this.save({ ...chosen, levels: { ...chosen.levels, [sink.name]: rounded } });

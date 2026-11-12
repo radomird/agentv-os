@@ -84,6 +84,7 @@ import { THEME_NAME } from "./themes.ts";
 import { tvOn, watchHotplug } from "./tv-power.ts";
 import { Inhibitor } from "./inhibit.ts";
 import { Sleep, logindSleep } from "./sleep.ts";
+import { NEEDS_PIN, NOT_READY } from "./notices.ts";
 
 export type Role = "home" | "web" | "steam" | "share";
 
@@ -1000,7 +1001,7 @@ export class Screen {
     const action = guarded[request?.cmd];
     if (action && !owner && !(await this.launcher.pinCheck(action, typeof request.grant === "string" ? request.grant : undefined))) {
       this.log(`refused ${action} from home: it needs the pin`);
-      return { ok: false, error: "that needs the pin", pin: true };
+      return { ok: false, error: NEEDS_PIN, pin: true };
     }
     switch (request?.cmd) {
       case "open-share":
@@ -1016,7 +1017,7 @@ export class Screen {
           return reply;
         }
         const target = await this.launcher.appTarget(id).catch(() => null);
-        if (!target) return { ok: false, error: "that app can't be opened yet" };
+        if (!target) return { ok: false, error: "Can't open that app yet" };
         if (target.runtime === "web") {
           const reply = await this.openWeb(target.url, id);
           // For a child, in the profile for children.
@@ -1027,7 +1028,7 @@ export class Screen {
         // A page app opens on home, in its frame (ADR-043).
         if (target.runtime === "page") return this.openPage(id);
         if (target.exec[0] === "steam") return this.openSteam(id);
-        return { ok: false, error: "that app can't be opened from the tv yet" };
+        return { ok: false, error: "Can't open that app yet" };
       }
       // Someone else is watching (S4.2): an open app takes the service's
       // profile for them (ADR-009).
@@ -1045,7 +1046,7 @@ export class Screen {
       // A page app's photos or music, read-only (ADR-043). The daemon says
       // whether its manifest allows each call.
       case "kit":
-        if (!this.pageMedia) return { ok: false, error: "photos and music aren't here" };
+        if (!this.pageMedia) return { ok: false, error: "Photos and music aren't available" };
         return this.pageMedia.handle(request.app, request.call, Array.isArray(request.args) ? request.args : []);
       // A folder, a USB drive or a share as the background (ADR-012).
       case "background-folder":
@@ -1059,11 +1060,11 @@ export class Screen {
         return this.wake("a key or the mouse on home");
       // Settings → Updates: Check now, and Install now (ADR-025).
       case "update-check":
-        return (await this.launcher.startUnit("agentv-update-check.service")) ? { ok: true } : { ok: false, error: "couldn't check for updates" };
+        return (await this.launcher.startUnit("agentv-update-check.service")) ? { ok: true } : { ok: false, error: "Couldn't check for updates" };
       case "update-install":
-        return (await this.launcher.startUnit("agentv-update-tv.service")) ? { ok: true } : { ok: false, error: "couldn't start the update" };
+        return (await this.launcher.startUnit("agentv-update-tv.service")) ? { ok: true } : { ok: false, error: "Couldn't start the update" };
       case "update-go-back":
-        return (await this.launcher.startUnit("agentv-go-back.service")) ? { ok: true } : { ok: false, error: "couldn't go back" };
+        return (await this.launcher.startUnit("agentv-go-back.service")) ? { ok: true } : { ok: false, error: "Couldn't go back" };
       case "desktop":
         this.launcher.desktop(typeof request.grant === "string" ? request.grant : undefined);
         return { ok: true };
@@ -1093,11 +1094,11 @@ export class Screen {
   async power(what: unknown): Promise<object> {
     if (!POWER.includes(what as Power)) return { ok: false, error: "power restart, shutdown or bootmenu" };
     const power = what as Power;
-    if (await this.launcher.updating()) return { ok: false, error: "not while an update runs" };
+    if (await this.launcher.updating()) return { ok: false, error: "Not during an update" };
     const said = { restart: "restarting the box", shutdown: "shutting the box down", bootmenu: "restarting the box to its boot menu" }[power];
     this.log(`${said} from settings → power`);
     if (await this.launcher.power(power)) return { ok: true };
-    return { ok: false, error: power === "shutdown" ? "the box couldn't shut down" : "the box couldn't restart" };
+    return { ok: false, error: power === "shutdown" ? "Couldn't shut down" : "Couldn't restart" };
   }
 
   // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
@@ -1109,7 +1110,7 @@ export class Screen {
 
   async installCli(): Promise<object> {
     const cli = await this.launcher.acceptedCli().catch(() => null);
-    if (!cli) return { ok: false, error: "the provider's terms aren't accepted yet" };
+    if (!cli) return { ok: false, error: "Accept your AI's terms first" };
     if (this.cliRun) return { ok: true, running: true };
     this.log(`fetching ${cli} on its first run, now its provider's terms are accepted`);
     await this.launcher.cliState({ state: "installing" }).catch(() => {});
@@ -1134,13 +1135,13 @@ export class Screen {
 
   async setTheme(theme: unknown): Promise<object> {
     if (typeof theme !== "string" || !THEME_NAME.test(theme)) return { ok: false, error: "an omarchy theme's name" };
-    if (this.themeRun) return { ok: false, error: `${this.themeRun.replace(/-/g, " ")} is still being set` };
+    if (this.themeRun) return { ok: false, error: "Still changing the theme", busy: true };
     this.themeRun = theme;
     this.log(`setting omarchy's theme to ${theme}`);
     try {
       const why = await this.launcher.setTheme(theme).catch((error: Error) => error.message);
       if (why) this.log(`the theme didn't change: ${why}`);
-      return why ? { ok: false, error: why } : { ok: true };
+      return why ? { ok: false, error: "Couldn't change the theme" } : { ok: true };
     } finally {
       this.themeRun = null;
     }
@@ -1155,7 +1156,7 @@ export class Screen {
     this.log(`showing the theme's background ${id}`);
     const why = await this.launcher.setBackground(id).catch((error: Error) => error.message);
     if (why) this.log(`the background didn't change: ${why}`);
-    return why ? { ok: false, error: why } : { ok: true };
+    return why ? { ok: false, error: "Couldn't change the background" } : { ok: true };
   }
 
   // Brings home to the front and asks for the PIN there, for an action such
@@ -1170,8 +1171,8 @@ export class Screen {
       error?: string;
     };
     if (!reply.ok) return reply;
-    if (reply.asked === false) return { ok: false, error: "the launcher isn't on the home screen" };
-    return reply.grant ? { ok: true, grant: reply.grant } : { ok: false, error: "the pin wasn't entered" };
+    if (reply.asked === false) return { ok: false, error: NOT_READY };
+    return reply.grant ? { ok: true, grant: reply.grant } : { ok: false, error: "The PIN wasn't entered" };
   }
 
   // Settings on the TV, at a section, as from home (agentv screen settings):
@@ -1199,7 +1200,7 @@ export class Screen {
     await this.home(from);
     const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
-    return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
+    return reply.went ? { ok: true } : { ok: false, error: NOT_READY };
   }
 
   // What a sentence said to the TV opens (daemon/say.ts): an app the way
@@ -1246,7 +1247,7 @@ export class Screen {
     await this.home("a page app");
     const reply = (await this.inHome(`(() => { const open = window.agentvPage; if (open) open(${JSON.stringify(id)}); return { went: !!open }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
-    return reply.went ? { ok: true } : { ok: false, error: "the launcher isn't on the home screen" };
+    return reply.went ? { ok: true } : { ok: false, error: NOT_READY };
   }
 
   // Home, from any input (ADR-031): the app in front pauses and goes out of
@@ -1551,7 +1552,7 @@ export class Screen {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
-    if (!/^https?:/.test(target.url)) return { ok: false, error: "only a web page opens on the tv" };
+    if (!/^https?:/.test(target.url)) return { ok: false, error: "Your TV can't open that link" };
     if (target.app) {
       // Open already: it goes to the link, and comes back where it was.
       const open = this.opens.find((o) => o.id === target.app && o.target && o.address && this.windows.has(o.address));
@@ -1850,16 +1851,16 @@ export class Screen {
   // on the phone or a keyboard goes to the page. It ends once the app says
   // it's signed in, on Home, or when the app closes.
   async startSignIn(id: string): Promise<object> {
-    if (!this.signIn) return { ok: false, error: "signing in isn't here" };
+    if (!this.signIn) return { ok: false, error: "Signing in isn't available" };
     const target = await this.launcher.appTarget(id).catch(() => null);
-    if (target?.runtime !== "web") return { ok: false, error: "only a web app signs in on the tv" };
+    if (target?.runtime !== "web") return { ok: false, error: "Can't sign in to that app here" };
     if (this.signingIn && this.signingIn.id !== id) await this.endSignIn("another sign-in");
     this.signingIn = { id, name: target.name ?? id };
     const opened = (await this.fromHome({ cmd: "open-app", app: id })) as { ok: boolean; error?: string };
     const entry = this.opens.find((o) => o.id === id);
     if (!opened.ok || !entry) {
       this.signingIn = null;
-      return opened.ok ? { ok: false, error: "that app didn't open" } : opened;
+      return opened.ok ? { ok: false, error: "Couldn't open that app" } : opened;
     }
     await this.launcher.signInBar(this.signingIn.name).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
     await this.launcher.signingIn(this.signingIn).catch(() => {});
@@ -1869,7 +1870,7 @@ export class Screen {
     const started = await this.signIn.start(id, this.pageOf(entry), (signedIn) => void this.signInDone(id, signedIn));
     if (!started) {
       await this.endSignIn("the app can't say whether it's signed in");
-      return { ok: false, error: "that app can't tell whether it's signed in" };
+      return { ok: false, error: "Can't tell if that app is signed in" };
     }
     this.log(`signing in to ${id}`);
     return { ok: true };
@@ -1878,10 +1879,10 @@ export class Screen {
   // "i'm signed in" on the bar: the app is asked now.
   async signedInNow(): Promise<object> {
     const signing = this.signingIn;
-    if (!signing || !this.signIn) return { ok: false, error: "nothing is signing in" };
+    if (!signing || !this.signIn) return { ok: false, error: "Nothing is signing in" };
     const said = await this.signIn.now(signing.id);
     if (said === true) return { ok: true, signedIn: true };
-    await this.toast(said === false ? `${signing.name.toLowerCase()} still says you're signed out` : `${signing.name.toLowerCase()} can't tell yet`);
+    await this.toast(said === false ? `Still signed out of ${signing.name}` : `${signing.name} can't tell yet`);
     return { ok: true, signedIn: false };
   }
 
@@ -1889,7 +1890,7 @@ export class Screen {
     if (this.signingIn?.id !== id) return;
     const name = this.signingIn.name;
     await this.endSignIn(signedIn ? "signed in" : "it gave up");
-    if (signedIn) await this.toast(`signed in to ${name.toLowerCase()}`);
+    if (signedIn) await this.toast(`Signed in to ${name}`);
     // Signed in now, it can list its service's profiles for an adult to
     // pick from, as setup will ask which one is for children.
     const entry = this.opens.find((o) => o.id === id);
@@ -1906,7 +1907,7 @@ export class Screen {
     entry.profile = said;
     if (said === "not selected") {
       const name = (await this.launcher.appTarget(entry.id).catch(() => null))?.name ?? entry.id;
-      await this.toast(`${name.toLowerCase()} couldn't open the profile for children`);
+      await this.toast(`Couldn't open the children's profile in ${name}`);
     }
   }
 
@@ -1933,7 +1934,7 @@ export class Screen {
   }
 
   private async soundRequest(request: Record<string, unknown>): Promise<object> {
-    if (!this.sound) return { ok: false, error: "sound isn't here" };
+    if (!this.sound) return { ok: false, error: "Sound isn't available" };
     try {
       return await this.sound.handle(request);
     } catch (error) {
@@ -1945,14 +1946,14 @@ export class Screen {
   // handed to the daemon. One at a time.
   private folderBusy = false;
   private async backgroundFolder(id: string, grant?: string): Promise<object> {
-    if (!this.music || !this.pictures) return { ok: false, error: "the tv's folders aren't here" };
-    if (this.folderBusy) return { ok: false, error: "the pictures are still being copied" };
+    if (!this.music || !this.pictures) return { ok: false, error: "Folders aren't available" };
+    if (this.folderBusy) return { ok: false, error: "Still copying the last pictures" };
     this.folderBusy = true;
     try {
       const reply = (await this.music.handle({ op: "sources" })) as { sources?: { id: string; name: string; path: string | null; available: boolean }[] };
       const source = reply.sources?.find((one) => one.id === id);
-      if (!source) return { ok: false, error: "that isn't one of the tv's folders" };
-      if (!source.available || !source.path) return { ok: false, error: `${source.name} isn't there right now` };
+      if (!source) return { ok: false, error: "Couldn't find that folder" };
+      if (!source.available || !source.path) return { ok: false, error: `${source.name} isn't connected right now` };
       const sent = await this.pictures.send({ name: source.name, path: source.path }, grant);
       this.log(`background: ${sent.ok ? `${sent.count} pictures from ${source.name}` : `none from ${source.name}, ${sent.error}`}`);
       return sent;
@@ -1964,7 +1965,7 @@ export class Screen {
   }
 
   private async musicRequest(request: Record<string, unknown>): Promise<object> {
-    if (!this.music) return { ok: false, error: "music isn't here" };
+    if (!this.music) return { ok: false, error: "Music isn't available" };
     try {
       return await this.music.handle(request);
     } catch (error) {
@@ -2074,7 +2075,7 @@ export class Screen {
       }
       const monitor = (await this.hypr.monitors()).find((m) => m.focused) ?? (await this.hypr.monitors())[0];
       if (!monitor) {
-        result = { ok: false, error: "no screen to show Steam on" };
+        result = { ok: false, error: "No screen to show Steam on" };
         return;
       }
       try {
@@ -2201,7 +2202,7 @@ export class Screen {
     return this.inHome(`new Promise((resolve) => {
       const launcher = window.agentvLauncher;
       const sounds = launcher?.sounds;
-      if (!sounds) return resolve({ ok: false, error: "the launcher isn't on the home screen" });
+      if (!sounds) return resolve({ ok: false, error: ${JSON.stringify(NOT_READY)} });
       launcher.go?.("settings");
       const keys = [];
       const on = () => keys.push(performance.now());
@@ -2227,7 +2228,7 @@ export class Screen {
 
   private async inHome(expression: string): Promise<object> {
     const cdp = this.apps.get("home")?.cdp;
-    if (!cdp) return { ok: false, error: "the home screen isn't running" };
+    if (!cdp) return { ok: false, error: NOT_READY };
     try {
       return { ok: true, ...(await cdp.evaluate(HOME_URL, expression)) };
     } catch (error) {
@@ -2281,7 +2282,7 @@ export class Screen {
       case "idle-after":
         return this.idleAfterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
       case "sleep-after":
-        if (!this.sleep) return { ok: false, error: "sleep isn't here" };
+        if (!this.sleep) return { ok: false, error: "Sleep isn't available" };
         return this.sleep.afterSeconds(Number.isFinite(request.seconds) && request.seconds > 0 ? Number(request.seconds) : null);
       case "ambient":
         return this.showAmbient();
@@ -2511,7 +2512,7 @@ export const launcher: Launcher = {
   async shareTarget(id) {
     const response = await fetch(`${HOME_URL}api/shared/${encodeURIComponent(id)}/target`, { signal: AbortSignal.timeout(5000) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || typeof data.url !== "string") throw new Error(data.error ?? "that share isn't here");
+    if (!response.ok || typeof data.url !== "string") throw new Error(data.error ?? "That's no longer on your TV");
     return { url: data.url, ...(typeof data.app === "string" ? { app: data.app } : {}) };
   },
 
@@ -3017,9 +3018,9 @@ export async function answerTheme(ask: ThemeAsk, screen: { setTheme(theme: unkno
   const took = takeTheme({ themes: o.themes ?? THEMES, id: ask.id, home, omarchy: o.omarchy ?? (process.env.OMARCHY_PATH || "/usr/share/omarchy") });
   if (!took.name) return { ok: false, error: took.error };
   for (let tries = 0; ; tries++) {
-    const set = (await screen.setTheme(took.name)) as { ok: boolean; error?: string };
+    const set = (await screen.setTheme(took.name)) as { ok: boolean; error?: string; busy?: boolean };
     if (set.ok) return { ok: true, name: took.name };
-    if (!/still being set/.test(set.error ?? "") || tries >= 30) return { ok: false, error: set.error ?? "omarchy didn't set it" };
+    if (!set.busy || tries >= 30) return { ok: false, error: set.error ?? "Couldn't change the theme" };
     await new Promise((done) => setTimeout(done, o.waitMs ?? 2000));
   }
 }

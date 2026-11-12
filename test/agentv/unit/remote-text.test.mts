@@ -32,7 +32,7 @@ test("T8.1 a native app takes plain ASCII only, and the phone hears what couldn'
   const sent: Record<string, unknown>[] = [];
   const native = new NativeTyping();
   const answer = await native.type("René 🎬", "0xa", async (request) => void sent.push(request));
-  assert.deepEqual(answer, { ok: false, by: "key", value: "Ren ", why: "this app takes plain letters, so é can't go" });
+  assert.deepEqual(answer, { ok: false, by: "key", value: "Ren ", why: "This app can't take é" });
   assert.deepEqual(sent, [{ text: "Ren " }]);
   native.reset();
   const none: Record<string, unknown>[] = [];
@@ -97,11 +97,11 @@ test("T8.1 the screen daemon types into the page in front, or as keys into a nat
 test("T8.1 a page that doesn't answer, or nothing to type in, says so", async () => {
   let front: TypingFront = { kind: "page", id: "x", overlay: true, evaluate: () => new Promise(() => {}) };
   const typing = new PhoneTyping({ front: () => front, keys: async () => {}, bar: async () => {}, ms: 50 });
-  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "the tv's page didn't answer" });
+  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "Your TV isn't ready yet" });
   front = null;
-  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "nothing on the tv takes typing now" });
-  front = { kind: "page", id: "x", overlay: true, evaluate: async () => ({ ok: false, by: "page", why: "the tv's field is full", kept: 3, extra: "no" }) };
-  assert.deepEqual(await typing.text("abcd", 4, null), { ok: false, by: "page", why: "the tv's field is full", kept: 3 });
+  assert.deepEqual(await typing.text("a", 1, null), { ok: false, why: "Nothing to type into right now" });
+  front = { kind: "page", id: "x", overlay: true, evaluate: async () => ({ ok: false, by: "page", why: "That field is full", kept: 3, extra: "no" }) };
+  assert.deepEqual(await typing.text("abcd", 4, null), { ok: false, by: "page", why: "That field is full", kept: 3 });
 });
 
 // The route on a server of its own, with a stand-in for the screen
@@ -262,7 +262,7 @@ test("T8.1 on Omarchy's desktop, with no screen daemon to type through Chromium,
   say({ ask: { n: 3, kind: "playback", action: "toggle" } });
   while (answers.length < 3) await sleep(10);
   assert.deepEqual(sent, [{ text: "h" }, { key: "enter" }, { key: "playpause" }]);
-  assert.deepEqual(JSON.parse(answers[0]), { ok: false, by: "key", value: "h", why: "this app takes plain letters, so é can't go" });
+  assert.deepEqual(JSON.parse(answers[0]), { ok: false, by: "key", value: "h", why: "This app can't take é" });
   input.stop();
   (stream as ServerResponse).destroy();
   server.close();
