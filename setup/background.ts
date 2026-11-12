@@ -68,6 +68,12 @@ export async function background(ctx: Ctx): Promise<View> {
     const photos = now.items.filter((item) => item.kind === "photo").length;
     const shown = shownPictures(now);
     const theme = now.theme?.name?.replace(/[-_]+/g, " ");
+    // A work's credit is its maker's name and its title, as they write them.
+    const credit = now.source === "art" ? shown.find((item) => item.id === now.current)?.credit.text : undefined;
+    if (credit) {
+      line.replaceChildren(asWritten(credit));
+      return;
+    }
     line.textContent =
       now.source === "theme"
         ? own
