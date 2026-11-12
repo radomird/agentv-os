@@ -87,7 +87,7 @@ async function forecast(ctx: AppContext, place: Place): Promise<{ body: unknown;
 // of the weather tiles reads the two letters as they are here
 // (daemon/weather-check.ts), so they stay small.
 function hilo(day: Day | undefined, units: Place["units"]): string {
-  return day ? `h ${degrees(day.high, units)} · l ${degrees(day.low, units)}` : "";
+  return day ? `H ${degrees(day.high, units)} · L ${degrees(day.low, units)}` : "";
 }
 
 // What each size shows: the weather now (small), today and tomorrow

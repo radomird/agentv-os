@@ -173,7 +173,7 @@ test("S3.8 S3.9 small shows now, medium today and tomorrow, large now and seven 
 
   const s = tileFor("s", place, current, week, false);
   assert.deepEqual(s.headline, { label: "amsterdam", icon: "wind", value: "12°", caption: "Windy" });
-  assert.deepEqual(s.entries, [{ caption: "h 13° · l 10°" }]);
+  assert.deepEqual(s.entries, [{ caption: "H 13° · L 10°" }]);
   assert.equal(s.refreshMins, 30);
 
   const m = tileFor("m", place, current, week, false);
@@ -181,8 +181,8 @@ test("S3.8 S3.9 small shows now, medium today and tomorrow, large now and seven 
   assert.deepEqual(
     m.entries?.map((entry) => [entry.label, entry.icon, entry.value, entry.caption]),
     [
-      ["Today", "wind", "12°", "Windy\nh 13° · l 10°"],
-      ["Tomorrow", "cloudy", "13°", "Cloudy\nh 13° · l 11°"],
+      ["Today", "wind", "12°", "Windy\nH 13° · L 10°"],
+      ["Tomorrow", "cloudy", "13°", "Cloudy\nH 13° · L 11°"],
     ],
   );
 
