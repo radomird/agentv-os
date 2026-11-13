@@ -46,7 +46,7 @@ export async function country(ctx: Ctx): Promise<View> {
     "div",
     { class: "setup-page" },
     h("div", { class: "setup-top" }, h("div", {}, ...top), ok),
-    h("div", { class: "setup-foot country-foot" }, h("span", { class: "setup-note" }, "It sets your clock and what's new"), other),
+    h("div", { class: "setup-foot country-foot" }, h("span", { class: "setup-note" }, "It sets your clock, the weather and New this week"), other),
   );
   return { el, first: ok };
 }

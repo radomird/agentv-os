@@ -184,7 +184,7 @@ test("continue opens from the ledger, and says when there's nothing to continue"
 
 test("what's new and new episodes, with no way to ask TMDB, say so plainly and do nothing (tmdb.test.mts has the rest)", async () => {
   const { ctx, calls } = context();
-  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "soon", say: "Can't show what's new yet" });
+  assert.deepEqual(await execute(routed({ ...NONE, intent: "whats_new" }), ctx), { kind: "none", why: "soon", say: "Can't show New this week yet" });
   assert.deepEqual(await execute(routed({ ...NONE, intent: "new_episode", query: "Severance" }), ctx), { kind: "none", why: "soon", say: "Can't check for new episodes yet" });
   assert.deepEqual(calls, []);
 });

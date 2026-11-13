@@ -157,7 +157,7 @@ test("ADR-055 Settings → country shows where the TV is and changes the same se
     await page.click('[data-action="country"]');
     await page.waitForSelector(".country-picker");
     assert.equal(await page.locator(".page .headline").textContent(), "Pick your location");
-    assert.equal(await page.locator(".page > .panel-note").textContent(), "It sets your clock and what's new");
+    assert.equal(await page.locator(".page > .panel-note").textContent(), "It sets your clock, the weather and New this week");
     await page.fill('[data-action="country-field"]', "port");
     await page.click('.country-list [data-code="PT"]');
     await page.locator(".toast.ok", { hasText: "Location set to Portugal" }).waitFor();

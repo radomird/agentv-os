@@ -46,7 +46,7 @@ export function countryPage(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile" }, ...heading("tv settings · location", "Pick your location"), picker.el, h("p", { class: "panel-note" }, "It sets your clock and what's new")),
+    h("div", { class: "page profile" }, ...heading("tv settings · location", "Pick your location"), picker.el, h("p", { class: "panel-note" }, "It sets your clock, the weather and New this week")),
     bar(ctx, "settings"),
   );
   return { el, first: picker.first, act: () => false };
