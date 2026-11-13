@@ -55,6 +55,6 @@ export async function pick(ctx: Ctx): Promise<View> {
   const state = known ?? (await load().catch(() => null));
   const picker = countryPicker(state?.countries ?? [], state?.code ?? null, (c) => void choose(ctx, c.code));
   const top = heading("tv location --pick", "Pick your location", ctx.reduced());
-  const el = h("div", { class: "setup-page" }, h("div", {}, ...top), picker.el, h("span", { class: "setup-note" }, "Type on your phone, or use the arrows"));
+  const el = h("div", { class: "setup-page" }, h("div", {}, ...top), picker.el);
   return { el, first: picker.first };
 }

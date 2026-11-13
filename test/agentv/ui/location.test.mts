@@ -151,7 +151,8 @@ test("T7.1 with no phone and a box in UTC, the step starts on a pick, and a phon
   try {
     await page.waitForSelector(".country-picker");
     assert.equal(await headline(page), "Pick your location");
-    assert.equal(await page.locator(".setup-line").textContent(), "Type on your phone, or use the arrows");
+    assert.equal(await page.locator(".setup-line").count(), 0);
+    assert.equal(await page.locator('[data-action="country-field"]').getAttribute("placeholder"), "Norway");
   } finally {
     await page.close();
   }
