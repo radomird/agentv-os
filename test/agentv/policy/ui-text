@@ -1,11 +1,13 @@
 # Files with words people read on the TV and the phone, which bin/agentv-check
 # holds to AgenTV's voice (ui-words). A folder ends in a slash. "only:" and a
 # perl pattern after a path checks only the lines that match it, for code
-# where most strings go to a log.
+# where most strings go to a log: there, a string a function returns or
+# throws is read, since it often ends on screen.
 launcher/
 setup/
 companion-web/
 apps/builtin/
 builder/recipes/
 builder/reasons.ts
-daemon/ only:\b(?:error|why|reason|toast|notice|say|said|line|message|text|caption|label|title)\b\s*[:=(]|new Error\(|\bfail\(
+daemon/ only:\b(?:error|why|reason|toast|notice|say|said|line|message|text|caption|label|title)\b\s*[:=(]|\bnew \w*Error\(|\bfail\(|\breturn\b[^;]*["'`]
+session/

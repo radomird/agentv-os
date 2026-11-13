@@ -20,6 +20,7 @@ daemon/phone-client.ts .
 # The AI's raw answer, kept for the log. What a person reads is
 # daemon/providers/no-answer.ts's line.
 daemon/providers/http.ts ^the provider
+daemon/providers/google.ts ^the provider
 daemon/router-serve.ts .
 # Between the screen daemon and the TV's daemon, and for the journal.
 daemon/screen.ts ^(restarting the box|shutting the box down|restarting the box to its boot menu|the daemon said)
@@ -30,3 +31,7 @@ daemon/tmdb-api.ts ^there's no tmdb key on the box$
 daemon/tmdb.ts ^there's no tmdb key on the box$
 # agentv selftest's report, read in a terminal.
 daemon/weather-check.ts .
+# Why the app network filter refused a connection, which only goes to the journal.
+daemon/net-filter.ts .
+# An HTTP header's name, sent to a server.
+daemon/ ^User-Agent$
