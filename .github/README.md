@@ -60,7 +60,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 - **Build your own.** Can't find an app? Ask for it: a puzzle game, a better weather page, a slideshow of your photos. Your TV makes it while you keep watching, then puts it on home.
 - **Keep changing it.** Anything you made has "Change it". Say what you'd like different.
 - **What you make is yours.** It stays on your TV unless you save a copy.
-- **Edit home from your phone.** Put the apps you use first.
+- **Edit home** on the TV, in any of the three looks, or from your phone. Put the apps you use first.
 
 | | | |
 | --- | --- | --- |
@@ -86,7 +86,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 - **Six streaming apps,** three now and three coming soon. You sign in from your phone, on the service's own page. [The list is in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
 - **Your own servers.** Jellyfin, Plex and Immich show up in a list, found on your network, with no address to type. So do shared folders on a network drive.
 - **Music** from your own files: on the box, a USB drive or a network folder.
-- **New this week** on the apps you have, and whether your show has a new episode yet. It needs a key from your own TMDB account.
+- **New this week** on the apps you have, and whether your show has a new episode yet. Pick a title and its app opens on that title's own page. It needs a key from your own TMDB account.
 - **Send to the TV** from your phone: a link, a photo or a video.
 
 ## Before you install
@@ -94,7 +94,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 A few things I'd want to know first:
 
 - **Streaming won't be 4K.** The TV's own screens are, on a 4K TV. But the streaming apps play in a browser on Linux, and the services hold that to somewhere between SD and 1080p, with no HDR. If an app only plays in SD, [its entry in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get) says so.
-- **Asking and making need an AI you already pay for.** Sign in with your Claude, ChatGPT or Grok plan during setup. Or add an API key: Claude, ChatGPT, Gemini, Grok and Muse all take one. Everything else works without an AI.
+- **Asking and making need an AI you already pay for.** Sign in with your Claude, ChatGPT or Grok plan during setup, or later in _Settings > AI_. Or add an API key: Claude, ChatGPT, Gemini, Grok and Muse all take one. It works for both as soon as it's connected. Everything else works without an AI.
 - **It has no voice of its own.** Answers show on the TV. If you add an API key for an AI that has a voice (ChatGPT, Gemini or Grok), it says them too.
 - **I've tested it on one box,** mine. It should run on other x86_64 PCs, and I'd love to hear how it goes on yours.
 - **Installing erases the disk you pick.**
@@ -108,7 +108,7 @@ You'll need:
 - your phone
 - a keyboard, just long enough to tell the box to start from the stick
 
-1. Download the ISO from the newest release on [agentv-iso's releases page](https://github.com/radomird/agentv-iso/releases). Its notes have the download link. The file is named after its version, like `agentv-1.0.0-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [agentv-iso's README](https://github.com/radomird/agentv-iso#getting-the-iso) has the four commands that check it.
+1. Download the ISO from the newest release on [agentv-iso's releases page](https://github.com/radomird/agentv-iso/releases). Until 1.0 is out, that's a release candidate. Its notes have the download link. The file is named after its version, like `agentv-1.0.0-rc2-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [agentv-iso's README](https://github.com/radomird/agentv-iso#getting-the-iso) has the four commands that check it.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux.
 3. Start the box from the stick. On my NUC that's F10 as it powers on. Omarchy needs Secure Boot off, so turn it off in your box's firmware first if it's on. [Omarchy's manual](../manual/02-getting-started.md) has more on that.
 4. The TV shows a code. Scan it with your phone, pick the disk and tap "Erase and install". No phone to hand? Pick the disk with the keyboard and press Enter.
@@ -120,6 +120,7 @@ Want every question Omarchy's own installer asks (your keyboard layout, disk enc
 After that:
 
 - **Updates** are in _Settings > System > Updates_. See what's new, install it now or let it install overnight. If an update goes wrong, you can go back to the version before.
+- **On a release candidate,** your TV gets early updates, each new build as it's made. To move it to the releases, run `agentv channel stable` and then `agentv update`.
 - **The Linux desktop** is Omarchy's, and it's still there. Super+Ctrl+Home takes you to it and back.
 - **Start setup again** with `agentv setup reset`. Your profiles, phones and PIN stay.
 
@@ -132,7 +133,7 @@ After that:
 
 | Box | Release | How it went |
 | --- | --- | --- |
-| Intel NUC8i5BEH, on a 4K TV | 1.0 | It's the box I build AgenTV on. Home is in 4K, and setup says "light games". |
+| Intel NUC8i5BEH, on a 4K TV | 1.0 release candidates | It's the box I build AgenTV on. Home is in 4K, and setup says "light games". |
 
 Tried it on another box? [Tell me how it went](https://github.com/radomird/agentv-os/issues/new?template=box-report.yml) and I'll add it here.
 
