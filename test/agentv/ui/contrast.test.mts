@@ -52,7 +52,7 @@ test("S5.8 home, Apps and Settings read clearly in every theme Omarchy ships, li
   const short: string[] = [];
   try {
     for (const theme of THEMES) {
-      await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+      assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
       for (const [where, go] of [
         ["home", async () => page.keyboard.press("Home")],
         ["apps", async () => page.locator('.bar-link:has-text("apps")').click()],

@@ -73,7 +73,7 @@ async function setLayout(tiles: Tile[]): Promise<void> {
 }
 
 const useLook = (look: string) => fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
-const useTheme = (theme: string) => fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+const useTheme = async (theme: string) => assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
 
 beforeEach(() => setLayout(START));
 

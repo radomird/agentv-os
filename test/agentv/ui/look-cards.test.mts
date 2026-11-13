@@ -55,7 +55,7 @@ async function put(path: string, body: unknown): Promise<void> {
 }
 
 async function useTheme(theme: string): Promise<void> {
-  await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+  assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
 }
 
 // A page at a viewport. The previews are blank: their frames are what's

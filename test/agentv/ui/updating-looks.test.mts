@@ -145,7 +145,7 @@ for (const look of LOOKS) {
     const problems: string[] = [];
     try {
       for (const theme of THEMES) {
-        await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+        assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
         for (const size of Object.keys(SIZES) as (keyof typeof SIZES)[]) {
           const page = await tv(size);
           const at = `${theme}, ${size}`;
