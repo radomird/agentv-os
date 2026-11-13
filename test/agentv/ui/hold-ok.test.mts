@@ -309,6 +309,18 @@ test("T16.1 holding OK on an app in Apps opens its details, and OK anywhere else
   await page.close();
 });
 
+test("T16.1 a TV page that has just loaded tells the phone its focus is on no tile, even when that's where a page starts", async () => {
+  // What a page before it left behind: a tile in focus, where a hold opens
+  // its details. Cinema's home starts on Play, which is a page's own start,
+  // so it changes nothing on the page itself.
+  await useLook("cinema");
+  (daemon as unknown as { tv: { details: boolean } }).tv.details = true;
+  const page = await tv();
+  await page.waitForSelector('#page [data-action="cinema-play"].focused');
+  await until(() => !(daemon as unknown as { tv: { details: boolean } }).tv.details);
+  await page.close();
+});
+
 test("T16.1 OK held on something that isn't a tile is one OK, however long the key repeats: Cinema's Play, a button, and a digit on the PIN pad", async () => {
   // Cinema's home starts on Play, not on a tile.
   await useLook("cinema");
