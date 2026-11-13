@@ -119,7 +119,7 @@ Want every question Omarchy's own installer asks (your keyboard layout, disk enc
 
 After that:
 
-- **Updates** are in _Settings > This TV > Updates_. See what's new, install it now or let it install overnight. If an update goes wrong, you can go back to the version before.
+- **Updates** are in _Settings > System > Updates_. See what's new, install it now or let it install overnight. If an update goes wrong, you can go back to the version before.
 - **The Linux desktop** is Omarchy's, and it's still there. Super+Ctrl+Home takes you to it and back.
 - **Start setup again** with `agentv setup reset`. Your profiles, phones and PIN stay.
 

@@ -80,7 +80,7 @@ async function until(check: () => Promise<boolean>, ms = 5000): Promise<void> {
   }
 }
 
-// Settings, This TV, then its Updates row, which opens the page.
+// Settings, System, then its Updates row, which opens the page.
 async function openUpdates(page: Page): Promise<void> {
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="tv"]').click();
@@ -381,7 +381,7 @@ test("S2.12 Tonight asks for tonight, home's bar says so, and Later takes it bac
   assert.match((await api(page, "/api/updates")).held.at, /^\d{4}-/);
   await held(false);
   await page.waitForFunction(() => !document.querySelector(".held-note"));
-  // Back from the page is This TV, on its row, and Back again is home.
+  // Back from the page is System, on its row, and Back again is home.
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.querySelector(".focused")?.getAttribute("data-action") === "updates");
   await page.keyboard.press("Escape");
