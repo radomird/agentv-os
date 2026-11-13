@@ -83,7 +83,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 ### Your shows, films, photos and music
 
-- **Six streaming apps,** there from setup. You sign in from your phone, on the service's own page. [The list is in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
+- **Six streaming apps,** three now and three coming soon. You sign in from your phone, on the service's own page. [The list is in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
 - **Your own servers.** Jellyfin, Plex and Immich show up in a list, found on your network, with no address to type. So do shared folders on a network drive.
 - **Music** from your own files: on the box, a USB drive or a network folder.
 - **New this week** on the apps you have, and whether your show has a new episode yet. It needs a key from your own TMDB account.
@@ -93,7 +93,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 A few things I'd want to know first:
 
-- **Streaming won't be 4K.** The TV's own screens are, on a 4K TV. But the streaming apps play in a browser on Linux, and the services hold that to somewhere between SD and 1080p, with no HDR. [The list in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get) has the details.
+- **Streaming won't be 4K.** The TV's own screens are, on a 4K TV. But the streaming apps play in a browser on Linux, and the services hold that to somewhere between SD and 1080p, with no HDR. If an app only plays in SD, [its entry in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get) says so.
 - **Asking and making need an AI you already pay for.** Sign in with your Claude, ChatGPT or Grok plan during setup. Or add an API key: Claude, ChatGPT, Gemini, Grok and Muse all take one. Everything else works without an AI.
 - **It has no voice of its own.** Answers show on the TV. If you add an API key for an AI that has a voice (ChatGPT, Gemini or Grok), it says them too.
 - **I've tested it on one box,** mine. It should run on other x86_64 PCs, and I'd love to hear how it goes on yours.
@@ -142,7 +142,7 @@ Tried it on another box? [Tell me how it went](https://github.com/radomird/agent
 
 **Do I need an AI subscription?** Only to ask for things and to make apps. The remote, your apps, profiles and everything else work without one.
 
-**Which streaming services does it have?** Six. The list, and what each app can do, is in [agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
+**Which streaming services does it have?** Six: three now, and three coming soon. The list, and what each app can do, is in [agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
 
 **Does it run on a Raspberry Pi?** No. It needs an x86_64 PC.
 
@@ -211,4 +211,4 @@ The films in the pictures are the Blender Foundation's open movies ([studio.blen
 
 ## Whose names these are
 
-Apple TV, Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [six streaming apps](https://github.com/radomird/agentv-apps#what-you-get). I only name them to say what AgenTV works with or is like. AgenTV isn't made or endorsed by any of them, and the code for the streaming apps is in `agentv-apps`, not in this repo.
+Apple TV, Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/agentv-apps#what-you-get). I only name them to say what AgenTV works with or is like. AgenTV isn't made or endorsed by any of them, and the code for the streaming apps is in `agentv-apps`, not in this repo.

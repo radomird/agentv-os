@@ -25,7 +25,7 @@ Fixes go into the next release and into edge. I don't patch older releases, so t
 
 ## What's in this repo
 
-This is AgenTV itself: the TV's home, TV setup, your phone as the remote, building your own apps, updates and the `agentv` command. The USB stick installer is in [agentv-iso](https://github.com/radomird/agentv-iso), the packages your box updates from are in [agentv-pkgs](https://github.com/radomird/agentv-pkgs), and the apps, six streaming apps among them, are in [agentv-apps](https://github.com/radomird/agentv-apps).
+This is AgenTV itself: the TV's home, TV setup, your phone as the remote, building your own apps, updates and the `agentv` command. The USB stick installer is in [agentv-iso](https://github.com/radomird/agentv-iso), the packages your box updates from are in [agentv-pkgs](https://github.com/radomird/agentv-pkgs), and the apps, streaming apps among them, are in [agentv-apps](https://github.com/radomird/agentv-apps).
 
 Not sure which repo a problem belongs to? Report it here. I'll move it.
 
