@@ -13,7 +13,7 @@
 // ("settings/power" is System's Power page).
 
 import { creditLine, daemon, screen, shownCurrent, type AudioState, type Backgrounds, type ThemePreview, type VoiceState, type WeatherPlace } from "../api.ts";
-import { asWritten, h } from "../dom.ts";
+import { asWritten, h, zoom } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import { lookId, looksList, sizeId } from "../looks/looks.ts";
 import { lookCards } from "../looks/preview.ts";
@@ -761,10 +761,13 @@ export function settings(ctx: Ctx, open?: string): View {
       // The room from the list's top to the panel's bottom, less what comes
       // after the list.
       const after = [...page.children].filter((el) => el !== wrap && el.getBoundingClientRect().top >= wrap.getBoundingClientRect().bottom - 1).reduce((sum, el) => sum + el.getBoundingClientRect().height + (parseFloat(getComputedStyle(page).rowGap) || 0), 0);
-      const room = box.bottom - inside - list.getBoundingClientRect().top - after;
+      // Rects come zoomed and styles don't (dom.ts), so the room is put back
+      // in the styles' pixels before it's counted in rows.
+      const room = (box.bottom - list.getBoundingClientRect().top - after) / zoom() - inside;
       const rows = Math.max(2, Math.floor((room + gap) / (row + gap)));
       const height = `${rows * row + (rows - 1) * gap}px`;
       if (Number.isFinite(rows) && list.style.maxHeight !== height) list.style.maxHeight = height;
+      list.dataset.fitted = String(rows);
       mark();
     };
     const sizes = new ResizeObserver(fit);

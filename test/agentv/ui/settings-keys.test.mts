@@ -41,8 +41,8 @@ after(async () => {
 const useLook = (look: string) => fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
 const useTheme = (theme: string) => fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
 
-async function tv(size: keyof typeof SIZES): Promise<Page> {
-  const width = SIZES[size];
+async function tv(size: keyof typeof SIZES, window = SIZES[size]): Promise<Page> {
+  const width = window;
   const page = await browser.newPage({ viewport: { width, height: Math.round((width * 9) / 16) } });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -136,28 +136,35 @@ for (const look of LOOKS) {
     const problems: string[] = [];
     for (const theme of THEMES) {
       await useTheme(theme);
-      for (const size of Object.keys(SIZES) as (keyof typeof SIZES)[]) {
-        const page = await tv(size);
+      // Each size in a window its own width, and more on screen in a 1080p
+      // window too, zoomed down to fit as a 1080p TV draws it.
+      for (const [size, window] of [...(Object.keys(SIZES) as (keyof typeof SIZES)[]).map((one) => [one, SIZES[one]] as const), ["more", 1920] as const]) {
+        const page = await tv(size, window);
         try {
           await go(page, "settings/theme");
           await page.waitForSelector('.settings-panel[data-page="theme"] .look-item');
+          // Once the list has been fitted to its page, which is on a frame
+          // after it's drawn: a busy machine can take longer than any wait.
+          await page.waitForSelector('.settings-panel[data-page="theme"] .look-list[data-fitted]');
           await page.waitForTimeout(400);
           const seen = await page.evaluate(() => {
             const list = document.querySelector<HTMLElement>(".look-list")!;
             const panel = document.querySelector<HTMLElement>(".settings-panel")!;
             const row = parseFloat(getComputedStyle(list).getPropertyValue("--look-row"));
             const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+            // Rects come zoomed, and the row's height doesn't.
+            const zoom = Number(document.documentElement.style.zoom) || 1;
             const box = list.getBoundingClientRect();
-            const shown = Math.round((box.height + gap) / (row + gap));
+            const shown = Math.round((box.height / zoom + gap) / (row + gap));
             const last = [...panel.children].at(-1)!.getBoundingClientRect().bottom;
-            const left = panel.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(panel).paddingBottom) || 0) - last;
+            const left = (panel.getBoundingClientRect().bottom - last) / zoom - (parseFloat(getComputedStyle(panel).paddingBottom) || 0);
             const cut = [...list.querySelectorAll(".look-item")].some((item) => {
               const r = item.getBoundingClientRect();
               return r.top < box.bottom - 1 && r.bottom > box.bottom + 1;
             });
             return { shown, left, row, gap, cut };
           });
-          const at = `${theme}, ${size}`;
+          const at = `${theme}, ${size}${window === SIZES[size] ? "" : ` in a ${window} px window`}`;
           if (seen.shown <= 2) problems.push(`${at}: the list shows ${seen.shown} rows`);
           if (seen.left >= seen.row + seen.gap) problems.push(`${at}: ${Math.round(seen.left)} px left under the page, room for another row`);
           if (seen.cut) problems.push(`${at}: a row is cut in half`);
