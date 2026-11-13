@@ -123,11 +123,16 @@ function replaceKeeping(el: HTMLElement, ...children: HTMLElement[]): void {
   el.replaceChildren(...children, ...kept);
 }
 
+// Whether a tile has anything to draw: a small one needs its headline.
+function drawable(size: Placed["size"], data: TileData | null): data is TileData {
+  return !!data && (!!data.headline || !!data.entries?.length) && (size !== "s" || !!data.headline);
+}
+
 // Draws what an app's tile() sent, in place of the logo and name. A tile
 // with nothing to show stays as it is, and so does a small one with no
 // headline.
 export function drawTile(el: HTMLElement, app: App, size: Placed["size"], data: TileData | null): void {
-  if (!data || (!data.headline && !data.entries?.length) || (size === "s" && !data.headline)) return;
+  if (!drawable(size, data)) return;
   const headline = data.headline;
   const label = headline?.label ?? app.sizes.find((choice) => choice.size === size)?.label ?? "";
   const icon = pixel(headline?.icon, ICON_PX.headline[size]);
@@ -246,27 +251,68 @@ async function drawMusic(el: HTMLElement, app: App, size: Placed["size"]): Promi
   );
 }
 
+// What each tile drew last, by app and size, for as long as the launcher
+// runs. Home builds its tiles again on every redraw (a word from the TV, an
+// app opening behind it, coming back to it), and each asks for its content
+// again. A tile seen before shows what it had until the new answer comes,
+// so a redraw never drops a tile back to its name for a moment.
+const lastDrawn = new Map<string, TileData>();
+// Whose tiles they are: another profile's are never shown.
+let lastViewer = "";
+
+// Drops what home kept for apps that aren't on the TV any more, or for
+// another profile.
+function keepOnly(ctx: Ctx): void {
+  if (ctx.state.viewer.id !== lastViewer) {
+    lastViewer = ctx.state.viewer.id;
+    lastDrawn.clear();
+  }
+  const ids = new Set(ctx.state.apps.map((app) => app.id));
+  for (const key of lastDrawn.keys()) {
+    if (!ids.has(key.slice(0, key.lastIndexOf(":")))) lastDrawn.delete(key);
+  }
+}
+
 // Fills a tile with what its app's tile() sent. A tile whose content isn't
 // there yet says it's loading and asks again (loading.ts), so Weather has
 // its forecast soon after a start without home being left and come back to.
 async function fill(el: HTMLElement, app: App, placed: Placed): Promise<void> {
-  const draw = async (data: TileData | null) => {
-    // A tile that says Sign in keeps saying so, with its logo.
-    if (app.signIn === "needed" && app.tier !== "built-in") return;
+  const key = `${app.id}:${placed.size}`;
+  // Clock and Music draw themselves, from their own clock and player.
+  const own = app.tier === "built-in" && (app.id === CLOCK || app.id === MUSIC);
+  // A tile that says Sign in keeps saying so, with its logo.
+  const signIn = app.signIn === "needed" && app.tier !== "built-in";
+  if (signIn) lastDrawn.delete(key);
+  // What the tile showed last time, at once, until the new answer comes.
+  const kept = own || signIn ? undefined : lastDrawn.get(key);
+  const plain = kept ? [...el.children] : [];
+  if (kept) drawTile(el, app, placed.size, kept);
+  const draw = async (data: TileData | null, waiting: boolean) => {
+    if (signIn) return;
     if (app.id === CLOCK && app.tier === "built-in") drawClock(el, app, placed.size, data?.headline?.label);
     else if (app.id === MUSIC && app.tier === "built-in") await drawMusic(el, app, placed.size);
-    else drawTile(el, app, placed.size, data);
+    else if (drawable(placed.size, data)) {
+      lastDrawn.set(key, data);
+      drawTile(el, app, placed.size, data);
+    } else if (kept && !waiting) {
+      // It has nothing to show now: its logo and name again.
+      lastDrawn.delete(key);
+      el.classList.remove("has-content", "new-tile");
+      delete (el as HTMLElement & { entryItems?: TileEntry[] }).entryItems;
+      replaceKeeping(el, ...(plain as HTMLElement[]));
+    }
   };
-  // Clock keeps its own time, so it's drawn at once and never waits.
+  // Clock keeps its own time, so it's drawn at once and never waits. A tile
+  // that already shows what it had says nothing about loading.
   const clockTile = app.id === CLOCK && app.tier === "built-in";
-  const loaded = preview() || clockTile ? () => {} : showLoading(el, `${app.id}:${placed.size}`);
+  const loaded = preview() || clockTile || kept ? () => {} : showLoading(el, key);
   const started = Date.now();
   const ask = async (): Promise<boolean> => {
     const answer = await daemon.tileAnswer(app.id, placed.size).catch(() => ({ tile: null, waiting: !clockTile }));
     if (!el.isConnected) return false;
     if (!answer.waiting) loaded();
     // What a waiting tile has to say for now shows once the mark has gone.
-    if (!answer.waiting || Date.now() - started >= SHOWN_MS) await draw(answer.tile);
+    if (!answer.waiting || Date.now() - started >= SHOWN_MS) await draw(answer.tile, answer.waiting);
     return answer.waiting;
   };
   if (await ask()) keepAsking(ask, () => el.isConnected);
@@ -387,6 +433,7 @@ export function tileFor(ctx: Ctx, placed: Placed, editing = false): HTMLElement 
 }
 
 export function home(ctx: Ctx): View {
+  keepOnly(ctx);
   const grid = h("div", { class: currentGrid() === GRID_MORE ? "grid grid-5x4" : "grid" });
   const byId = new Map(ctx.state.apps.map((app) => [app.id, app]));
   const ordered = [...ctx.state.layout].sort((a, b) => a.y - b.y || a.x - b.x);
