@@ -66,7 +66,7 @@ test("a layout is kept only when the grid can draw it", async () => {
   for (const [layout, why] of [
     [[{ id: "agentv.tube", x: 0, y: 0, size: "m" }], /can't be size m/],
     [[{ id: "agentv.sample", x: 3, y: 0, size: "l" }], /doesn't fit/],
-    [[{ id: "agentv.nothing", x: 0, y: 0, size: "s" }], /isn't an app on this box/],
+    [[{ id: "agentv.nothing", x: 0, y: 0, size: "s" }], /isn't an app on this TV/],
     [[{ id: "local.mytv", x: 0, y: 0, size: "s" }, { id: "agentv.tube", x: 0, y: 0, size: "s" }], /overlaps/],
   ] as const) {
     const { status, data } = await send("PUT", "/api/layout", { layout });

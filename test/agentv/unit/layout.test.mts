@@ -35,7 +35,7 @@ test("a layout the grid can draw passes, and one it can't says why", () => {
   assert.match(String(problem([{ id: "app.a", x: 0, y: 0, size: "l" }, { id: "app.b", x: 1, y: 1, size: "s" }], sizes)), /overlaps/);
   assert.match(String(problem([{ id: "app.a", x: 0, y: 0, size: "s" }, { id: "app.a", x: 1, y: 0, size: "s" }], sizes)), /twice/);
   assert.match(String(problem([{ id: "small.a", x: 0, y: 0, size: "m" }], sizes)), /can't be size m/);
-  assert.match(String(problem([{ id: "nowhere", x: 0, y: 0, size: "s" }], sizes)), /isn't an app on this box/);
+  assert.match(String(problem([{ id: "nowhere", x: 0, y: 0, size: "s" }], sizes)), /isn't an app on this TV/);
   assert.match(String(problem([{ id: "app.a", x: 0.5, y: 0, size: "s" }], sizes)), /doesn't fit/);
   assert.match(String(problem({}, sizes)), /list of tiles/);
 });

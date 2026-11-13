@@ -62,7 +62,7 @@ export function problem(layout: unknown, sizes: (id: string) => Size[] | undefin
     if (seen.has(tile.id)) return `${tile.id} is on the grid twice`;
     seen.add(tile.id);
     const allowed = sizes(tile.id);
-    if (!allowed) return `${tile.id} isn't an app on this box`;
+    if (!allowed) return `${tile.id} isn't an app on this TV`;
     if (!SIZES.includes(tile.size) || !allowed.includes(tile.size)) return `${tile.id} can't be size ${String(tile.size)}`;
     if (!inside(tile, grid)) return `${tile.id} doesn't fit on the grid there`;
     for (const other of (layout as Placed[]).slice(0, i)) {

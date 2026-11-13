@@ -441,7 +441,7 @@ test("playback.show is optional, and when an app has it, it's a function under p
   assert.equal(await h.call(viewer, "playback.show", { id: "tmdb:film:8", kind: "film", title: "Sintel", year: 1999 }), false);
   await fails(host(app(tileApp("return {};").replace("async readPlaybackState() { return null; } },", 'async readPlaybackState() { return null; }, show: "the film page" },'))).start(), "refused", /playback\.show isn't a function/);
   // An app that doesn't say it plays can't show a title's page either.
-  await fails(host(app(shows, (m) => (m.tv.capabilities = ["launch", "signIn", "search", "tile"]))).start(), "refused", /has playback\.show, but its manifest doesn't list playback/);
+  await fails(host(app(shows, (m) => (m.tv.capabilities = ["launch", "signIn", "search", "tile"]))).start(), "refused", /has playback\.show, but doesn't say it can playback/);
 });
 
 test("a module that doesn't load says so", async () => {
