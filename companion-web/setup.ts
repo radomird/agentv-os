@@ -188,7 +188,7 @@ async function start(): Promise<void> {
   } catch (error) {
     // What the TV said, when it said something more than the headline.
     const said = (error as Error).message === UNREACHED ? "" : (error as Error).message;
-    app.replaceChildren(h("div", { class: "page" }, prompt("tv wi-fi"), h("h1", {}, "Can't reach your TV"), said ? h("p", { class: "note bad" }, said) : null));
+    app.replaceChildren(h("div", { class: "page" }, prompt("tv wi-fi"), h("h1", {}, UNREACHED), said ? h("p", { class: "note bad" }, said) : null));
   }
 }
 

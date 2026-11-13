@@ -298,7 +298,7 @@ export function exportBanner(offer: Offer | null | undefined, failed: (error: un
 // The push, when the box is signed in to GitHub as the person.
 export function pushBanner(offer: Offer | null | undefined, open: () => void): HTMLElement | null {
   if (!offer?.github) return null;
-  return h("button", { type: "button", class: "banner", "data-action": "push-export", onclick: open }, glyph("lock", 18), h("span", {}, `Push ${offer.name} to GitHub`));
+  return h("button", { type: "button", class: "banner", "data-action": "push-export", onclick: open }, glyph("lock", 18), h("span", {}, `Save ${offer.name} to GitHub`));
 }
 
 // Where it goes, asked each time, and the PIN. The TV pushes it as the
@@ -306,16 +306,16 @@ export function pushBanner(offer: Offer | null | undefined, open: () => void): H
 export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: string } }, back: () => void, failed: (error: unknown) => void): HTMLElement[] {
   const name = offer.name;
   const field = h("input", { class: "field", type: "text", name: "repo", value: `${offer.github.login}/${offer.id.replace(/^local\./, "")}`, autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "Repo" }) as HTMLInputElement;
-  const label = h("span", {}, "Push");
+  const label = h("span", {}, "Save");
   const button = h("button", { class: "button primary", type: "submit", "data-action": "push" }, glyph("lock", 20), label) as HTMLButtonElement;
   const push = async (event: Event) => {
     event.preventDefault();
     const repo = field.value.trim();
     if (!repo) return toast("Type the repo first");
     button.disabled = true;
-    label.textContent = "Pushing…";
+    label.textContent = "Saving…";
     try {
-      const answered = await withPin(`pushing ${name}`, (grant) => api<{ url: string; pushed: boolean }>("POST", `/api/phone/apps/${offer.id}/push`, { repo }, grant));
+      const answered = await withPin(`saving ${name} to GitHub`, (grant) => api<{ url: string; pushed: boolean }>("POST", `/api/phone/apps/${offer.id}/push`, { repo }, grant));
       if (answered === null) return;
       toast(answered.pushed ? `${name} is on ${answered.url.replace(/^https:\/\//, "")}` : `${answered.url.replace(/^https:\/\//, "")} has this version already`, true);
       back();
@@ -323,13 +323,13 @@ export function pushPage(offer: Offer & { github: { via: "gh" | "ssh"; login: st
       failed(error);
     } finally {
       button.disabled = false;
-      label.textContent = "Push";
+      label.textContent = "Save";
     }
   };
   return [
     prompt(`git push ${offer.id}`),
-    h("h1", {}, `Push ${name} to GitHub`),
-    h("p", { class: "note" }, `Your TV pushes it as ${offer.github.login}, to a folder named ${offer.id}. Nothing else in the repo changes.`),
+    h("h1", {}, `Save ${name} to GitHub`),
+    h("p", { class: "note" }, `It's saved as ${offer.github.login}, in a folder named ${offer.id}. Nothing else in the repo changes.`),
     h("p", { class: "note" }, offer.github.via === "gh" ? "A new repo is made private" : "The repo has to be on GitHub already"),
     h("form", { class: "plan-paste", onsubmit: (event: Event) => void push(event) }, field, button),
     h("button", { class: "button", type: "button", "data-action": "not-now", onclick: back }, "Back"),

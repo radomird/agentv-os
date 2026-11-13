@@ -668,7 +668,7 @@ for (const screens of SCREENS) {
         await hand.locator('.overlay [data-action="cancel"]').tap();
       } else {
         await hand.waitForSelector(`[data-viewer="${ana}"] svg.glyph-lock`);
-        assert.match(await hand.locator(".typing").innerText(), /An adult's or a locked profile needs the PIN/);
+        assert.match(await hand.locator(".typing").innerText(), /Adult and locked profiles need the PIN/);
         await hand.locator('[data-viewer="radomir"]').tap();
       }
       await remote(b, hand);
