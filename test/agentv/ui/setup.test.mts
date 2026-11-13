@@ -609,7 +609,7 @@ test("S5.5 picking Claude shows Anthropic's terms for the way in picked, nothing
 
   // The CLI's first run, as the screen daemon tells it.
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
-  await page.waitForFunction(() => /claude is ready · 2\.1\.30/i.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /claude is ready$/i.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   await page.keyboard.press("Enter");
   await page.waitForSelector(".people");
   assert.match(await textOf(page, ".bar"), /claude is ready/, "the AI's state stays in the bar");
@@ -624,10 +624,10 @@ test("Q103 with Claude's plan, once its terms are accepted and the CLI is in, th
   await page.waitForSelector('[data-action="continue"]');
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Ready");
   const plan = page.locator('[data-plan="sign-in"]');
-  assert.match(await plan.innerText(), /^\[ \] claude pro or max · you sign in when you first build an app$/);
+  assert.match(await plan.innerText(), /^\[ \] claude pro or max · you sign in when you first make an app$/);
   assert.match((await plan.getAttribute("class")) ?? "", /mark-todo/);
   await post("/api/ai/cli", { state: "ready", version: "2.1.30 (Claude Code)" });
-  await page.waitForFunction(() => /\[x\] claude is ready · 2\.1\.30/i.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
+  await page.waitForFunction(() => /\[x\] claude is ready$/i.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 5000 });
   assert.doesNotMatch(await textOf(page, ".ready-list"), /signed in/);
   await page.close();
 });
@@ -967,7 +967,7 @@ test("apps: add your own asks what to add, keeps it for the TV's agent, and noth
   await page.keyboard.press("Enter");
   await page.waitForSelector(".wish-field");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Build your own");
-  assert.match(await textOf(page, ".setup-page"), /tv apps add[\s\S]*built after setup, for \$5 at most$/);
+  assert.match(await textOf(page, ".setup-page"), /tv apps add[\s\S]*made after setup, for \$5 at most$/);
   assert.doesNotMatch(await textOf(page, ".setup-page"), /type here|not this|esc/, "no line of instructions, and no back button");
   assert.equal(await page.locator(".wish-field").getAttribute("placeholder"), "A puzzle game", "an example of what to ask for is in the field");
   await page.keyboard.type("A radio app");

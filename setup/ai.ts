@@ -232,7 +232,7 @@ export function done(ctx: Ctx, ai: AiInfo): View {
   const drawCli = (now: AiInfo) => {
     const state = now.cli?.state ?? "installing";
     cli.className = `ready-row ${state === "ready" ? "mark-done" : state === "failed" ? "mark-bad" : "mark-now"}`;
-    cli.replaceChildren(h("span", {}, h("b", {}, state === "ready" ? "[x]" : state === "failed" ? "[!]" : "[>]"), ` ${cliLine(now)}${now.cli?.state === "ready" && now.cli.version ? ` · ${now.cli.version}` : ""}`));
+    cli.replaceChildren(h("span", {}, h("b", {}, state === "ready" ? "[x]" : state === "failed" ? "[!]" : "[>]"), ` ${cliLine(now)}`));
   };
   drawCli(ai);
   const accepted = ai.accepted!;
@@ -247,7 +247,7 @@ export function done(ctx: Ctx, ai: AiInfo): View {
       h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), ` Terms accepted · ${accepted.by.viewer} on ${accepted.by.phone}`)),
       ai.path === "key"
         ? h("span", { class: "ready-row mark-done" }, h("span", {}, h("b", {}, "[x]"), " Key saved"))
-        : h("span", { class: "ready-row mark-todo", "data-plan": "sign-in" }, h("span", {}, h("b", {}, "[ ]"), ` ${offer.plan.name} · you sign in when you first build an app`)),
+        : h("span", { class: "ready-row mark-todo", "data-plan": "sign-in" }, h("span", {}, h("b", {}, "[ ]"), ` ${offer.plan.name} · you sign in when you first make an app`)),
       cli,
     ),
   );

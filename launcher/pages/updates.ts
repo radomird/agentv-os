@@ -336,7 +336,7 @@ export function checkView(ctx: Ctx): View {
         "div",
         { class: "check-actions" },
         h("button", { class: "button primary", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go?.from.agentv)}`),
-        h("button", { class: "button", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, `Keep ${shown(after?.agentv)}`),
+        h("button", { class: "button", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, `Stay on ${shown(after?.agentv)}`),
       ),
     ),
     bar(ctx, "updates"),

@@ -67,7 +67,7 @@ function planName(plan: { provider: string; name?: string }): string {
 
 // A plan's line: its name, and when it's signed in.
 function planLine(plan: { provider: string; name?: string }): string {
-  return `${planName(plan)}. You sign in on your phone when you first build an app.`;
+  return `${planName(plan)}. You sign in on your phone when you first make an app.`;
 }
 
 // The "Your AI" row's page: what's in use, a plan or a key, and changing it.
