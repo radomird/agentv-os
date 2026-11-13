@@ -370,7 +370,7 @@ if [[ -f $POLICY_DIR/ui-text ]]; then
         # words anyone reads.
         $line =~ s/\b(?:class|id|for|key|action|kind|type)\s*[:=]\s*(?:"[^"]*"|`[^`]*`|\x27[^\x27]*\x27)//g;
         $line =~ s/"(?:data|aria-hidden)[\w-]*"\s*:\s*(?:"[^"]*"|`[^`]*`)//g;
-        $line =~ s{(?<=[(,=:\[|&!]\s|[(,=:\[|&!])/(?![/*\s])(?:[^/\\\n]|\\.)+/[dgimsuy]*}{ }g;
+        $line =~ s{(?:(?<=[(,=:\[|&!]\s)|(?<=[(,=:\[|&!]))/(?![/*\s])(?:[^/\\\n]|\\.)+/[dgimsuy]*}{ }g;
         my @text;
         if ($json) {
           push @text, $1 while $line =~ /"(?:name|description|label|title|line|note)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
