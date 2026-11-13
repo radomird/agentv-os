@@ -107,7 +107,7 @@ export function networkLine(list: TvList, failed: (error: unknown) => void): HTM
       const shares = answer.shares ?? [];
       draw(
         shares.map((share) => ({ key: share.uri, text: share.name })),
-        answer.login && !shares.length ? "Sign in to it on your TV" : shares.length ? "" : "No shared folders",
+        answer.login && !shares.length ? "Sign in to it on your TV" : shares.length ? "" : "No network folders",
       );
       return AGAIN_MS;
     }

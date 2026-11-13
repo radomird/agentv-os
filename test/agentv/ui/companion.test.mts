@@ -168,7 +168,7 @@ test("ADR-034 the phone shows a lock on a locked profile, and switching to it ta
   await hand.waitForSelector(".viewer");
   assert.equal(await hand.locator(`[data-viewer="${ana.id}"] svg.glyph-lock`).count(), 1);
   assert.equal(await hand.locator('[data-viewer="radomir"] svg.glyph-lock').count(), 0);
-  assert.match(await hand.locator(".typing").innerText(), /An adult's or a locked profile needs the PIN/);
+  assert.match(await hand.locator(".typing").innerText(), /Adult and locked profiles need the PIN/);
   await hand.locator(`[data-viewer="${ana.id}"]`).tap();
   await hand.waitForSelector(".overlay .pin-keys");
   assert.match(await hand.locator(".overlay").innerText(), /\nFor watching as ana\n/);

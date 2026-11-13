@@ -274,7 +274,7 @@ test("Enter on a tile asks the TV session to open its app, and Settings asks for
   const open = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.find((r) => r.cmd === "open-app"));
   assert.deepEqual({ cmd: open?.cmd, app: open?.app }, { cmd: "open-app", app: "agentv.tube" });
 
-  // Settings, This TV, Omarchy's desktop, which opens its page on Switch.
+  // Settings, System, Omarchy's desktop, which opens its page on Switch.
   await page.locator('.bar-link:has-text("settings")').click();
   await page.locator('.menu-item[data-key="tv"]').click();
   await page.locator('.panel [data-action="desktop"]').click();

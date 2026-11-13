@@ -34,7 +34,7 @@ export function listed(words: string[]): string {
 const spoken = (t: NewTitle) => (t.season ? `${t.title}, season ${t.season}` : t.title);
 
 export async function whatsNew(route: Route, ctx: ExecContext, app?: ExecApp): Promise<Outcome> {
-  if (!ctx.news) return { kind: "none", why: "soon", say: "Can't show what's new yet" };
+  if (!ctx.news) return { kind: "none", why: "soon", say: "Can't show New this week yet" };
   // Films and shows: TMDB knows nothing new about music or games.
   const kind = route.kind === "film" ? "film" : route.kind === "series" ? "series" : null;
   if (route.kind && route.kind !== "video" && !kind) return { kind: "none", why: "not-found", say: "New this week is films and shows only" };
@@ -42,7 +42,7 @@ export async function whatsNew(route: Route, ctx: ExecContext, app?: ExecApp): P
   if (!feed.ok) {
     if (feed.why === "no-key") return { kind: "none", why: "no-tmdb", say: NO_KEY };
     if (feed.why === "no-region") return { kind: "none", why: "no-tmdb", say: "Pick your location in Settings first" };
-    if (feed.why === "no-services") return { kind: "none", why: "not-found", say: `Can't see what's new on your apps in ${feed.region ?? "your location"}` };
+    if (feed.why === "no-services") return { kind: "none", why: "not-found", say: `Can't see New this week for your apps in ${feed.region ?? "your location"}` };
     return { kind: "none", why: "failed", say: "Couldn't check just now", ...(feed.error ? { detail: feed.error } : {}) };
   }
   const where = app ? app.name : "your apps";

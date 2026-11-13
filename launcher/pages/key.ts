@@ -67,7 +67,7 @@ function planName(plan: { provider: string; name?: string }): string {
 
 // A plan's line: its name, and when it's signed in.
 function planLine(plan: { provider: string; name?: string }): string {
-  return `${planName(plan)}. You sign in on your phone when you first build an app.`;
+  return `${planName(plan)}. You sign in on your phone when you first make an app.`;
 }
 
 // The "Your AI" row's page: what's in use, a plan or a key, and changing it.
@@ -99,7 +99,7 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
     return [
       h("div", { class: "panel-title" }, "Your AI"),
       h("div", { class: "panel-big" }, `${providerName(plan.provider)} plan`),
-      note(signIn.length ? "Sign in now so voice works" : planLine(plan)),
+      note(signIn.length ? "Sign in now to ask your TV things" : planLine(plan)),
       ...signIn,
       button("use-plan", "Change plan", () => ctx.go("plan")),
       button("add-key", "Use a key instead", () => ctx.go("key")),

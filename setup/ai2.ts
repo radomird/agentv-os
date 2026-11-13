@@ -76,7 +76,7 @@ function said(offer: AiInfo["offers"][Provider], now: PlanSignIn | null): string
   if (state === "waiting") return "Scan to sign in with your plan";
   if (state === "starting") return "Getting the sign-in ready…";
   if (state === "failed") return "Couldn't sign in. Try again.";
-  return "Sign in now and voice works today";
+  return "Sign in now to ask your TV things";
 }
 
 // The ways in for one provider: its plan, signed in right here, a key from

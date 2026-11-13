@@ -28,7 +28,7 @@ body:
     id: release
     attributes:
       label: AgenTV release
-      description: It's in _Settings > This TV > About_ on the TV. Or run `agentv version` on the box.
+      description: It's in _Settings > System > About_ on the TV. Or run `agentv version` on the box.
       placeholder: e.g. 1.0.0
     validations:
       required: true

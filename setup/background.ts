@@ -26,7 +26,7 @@ const CARDS: Card[] = [
   { id: "theme", name: "The theme's", note: "Default", icon: "grid" },
   { id: "field", name: "Pixel field", note: "In its colours" },
   { id: "photos", name: "Your photos", note: "Sent from your phone", icon: "photo" },
-  { id: "folder", name: "Shared folder", note: "A drive or Immich", icon: "grid" },
+  { id: "folder", name: "Network folder", note: "A drive or Immich", icon: "grid" },
   { id: "art", name: "Art", note: "Museum archives", icon: "spark" },
   { id: "made", name: "Made for you", note: "Coming soon", icon: "spark", soon: "Made-to-order backgrounds are coming soon" },
 ];

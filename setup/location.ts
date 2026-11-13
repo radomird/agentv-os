@@ -44,8 +44,10 @@ function info(ctx: Ctx): string {
 function page(ctx: Ctx, command: string, title: string, line: string, ...rest: HTMLElement[]): { el: HTMLElement; headline: HTMLElement; line: HTMLElement } {
   const [prompt, headline] = heading(command, title, ctx.reduced());
   if (title.length > 16) headline.classList.add("long");
+  // No line under the headline when there's nothing to say: the location
+  // picker's field carries its own example.
   const said = h("p", { class: "setup-line" }, line);
-  return { el: h("div", { class: "setup-page d3" }, prompt, headline, said, ...rest), headline, line: said };
+  return { el: h("div", { class: "setup-page d3" }, prompt, headline, ...(line ? [said] : []), ...rest), headline, line: said };
 }
 
 // A country confirmed or picked, or a zone chosen: on to the AI, or to the
@@ -105,7 +107,7 @@ export async function pickLocation(ctx: Ctx): Promise<View> {
   const state = known ?? (await load());
   const countries: Country[] = state?.countries ?? [];
   const picker = countryPicker(countries, state?.start?.code ?? null, (c) => void choose(ctx, c.code));
-  const drawn = page(ctx, "agentv location --pick", "Pick your location", "Type on your phone, or use the arrows", picker.el);
+  const drawn = page(ctx, "agentv location --pick", "Pick your location", "", picker.el);
   return { el: drawn.el, first: picker.first, info: info(ctx) };
 }
 

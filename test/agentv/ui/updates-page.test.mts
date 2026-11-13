@@ -99,7 +99,7 @@ for (const look of LOOKS) {
         const page = await tv(size);
         const at = `${theme}, ${size}`;
         try {
-          // OK on This TV's Updates row.
+          // OK on System's Updates row.
           await page.evaluate(() => (window as unknown as { agentvLauncher: { go(route: string): void } }).agentvLauncher.go("settings/tv.updates"));
           await page.waitForSelector('.focused[data-action="updates"]');
           await page.keyboard.press("Enter");
