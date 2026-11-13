@@ -99,7 +99,7 @@ export function aiPanel(ctx: Ctx): HTMLElement[] {
     return [
       h("div", { class: "panel-title" }, "Your AI"),
       h("div", { class: "panel-big" }, `${providerName(plan.provider)} plan`),
-      note(signIn.length ? "Sign in now so voice works" : planLine(plan)),
+      note(signIn.length ? "Sign in now to ask your TV things" : planLine(plan)),
       ...signIn,
       button("use-plan", "Change plan", () => ctx.go("plan")),
       button("add-key", "Use a key instead", () => ctx.go("key")),

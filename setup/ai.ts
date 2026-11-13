@@ -116,7 +116,7 @@ export function path(ctx: Ctx, provider: Provider): View {
     // One line: who can't use a plan, where that matters more than voice.
     offer.plan.note
       ? h("span", { class: "setup-note", "data-note": "plan" }, offer.plan.note)
-      : h("span", { class: "setup-note" }, "Voice works either way"),
+      : h("span", { class: "setup-note" }, "Either way, you can ask your TV things"),
   );
   return { el, first: offer.plan.offered ? (plan as HTMLElement) : keyCard, back: () => again(ctx) };
 }
