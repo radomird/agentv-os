@@ -202,3 +202,23 @@ test("ADR-045 a name that points at this box is refused, even on the list", asyn
     await strict.close();
   }
 });
+
+test("home's filter logs a host it refuses once an hour, not each time it's asked", async () => {
+  const lines: string[] = [];
+  let clock = 1_000_000;
+  const quiet = new NetFilter({ policy: () => false, resolve: async () => "127.0.0.1", forbid: () => false, log: (line) => lines.push(line), logEveryMs: 3600_000, now: () => clock });
+  const quietPort = await quiet.listen();
+  try {
+    for (let i = 0; i < 3; i++) assert.match((await tunnel("updates.example:443", quietPort)).status, / 403 /);
+    assert.equal((await plain(`http://updates.example:${sitePort}/time`, quietPort)).status, 403);
+    assert.match((await tunnel("sync.example:5228", quietPort)).status, / 403 /);
+    clock += 3599_000;
+    assert.match((await tunnel("updates.example:443", quietPort)).status, / 403 /);
+    assert.deepEqual(lines.map((line) => line.split(":")[0]), ["refused CONNECT updates.example", "refused CONNECT sync.example"]);
+    clock += 1000;
+    assert.match((await tunnel("updates.example:443", quietPort)).status, / 403 /, "still refused, and said again an hour on");
+    assert.equal(lines.length, 3, lines.join("\n"));
+  } finally {
+    await quiet.close();
+  }
+});

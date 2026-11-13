@@ -10,11 +10,16 @@ type Context = { pin: Pin; field: Field | null; screen: "home" | "menu" | "ambie
 
 const now: Context = { pin: null, field: null, screen: "home", details: false };
 let timer = 0;
+// A page that has just loaded tells the daemon at least once, even when
+// nothing changed from its own start: the daemon may still hold what a page
+// before it said, such as a hold that opens details.
+let told = false;
 
 export function tell(change: Partial<Context>): void {
   const before = JSON.stringify(now);
   Object.assign(now, change);
-  if (JSON.stringify(now) === before) return;
+  if (told && JSON.stringify(now) === before) return;
+  told = true;
   clearTimeout(timer);
   timer = window.setTimeout(() => {
     void fetch("/api/tv/context", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(now) }).catch(() => {});
