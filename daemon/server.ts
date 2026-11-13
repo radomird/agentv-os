@@ -520,6 +520,8 @@ export class Daemon {
           return false;
         },
         log: (line) => this.log(`home's proxy: ${line}`),
+        // Once an hour for each host: a Chromium asks again every few seconds.
+        logEveryMs: 3600_000,
       });
     }
     this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
