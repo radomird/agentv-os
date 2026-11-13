@@ -187,7 +187,10 @@ async function put(path: string, body: unknown): Promise<void> {
 async function dress(look: Look, theme: string, size: Size): Promise<void> {
   await put("/api/look", { look });
   await put("/api/display", { size });
-  await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+  // The daemon answers 400 for a theme it can't use, and the walk would then
+  // go over the last theme again: check it took.
+  const took = await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+  assert.equal(took.status, 200, `the theme ${theme}: ${(await took.text()).slice(0, 200)}`);
 }
 
 async function open(size: Size, ready: string): Promise<Page> {
@@ -316,7 +319,7 @@ function routes(profile: string): string[] {
   ];
 }
 
-const SETTINGS_PAGES = ["looks", "theme", "pictures", "weather", "tmdb", "pin", "controllers", "wifi", "your-ai", "usage", "updates", "desktop", "about"];
+const SETTINGS_PAGES = ["looks", "theme", "pictures", "weather", "tmdb", "pin", "power", "controllers", "wifi", "your-ai", "usage", "updates", "whats-new", "desktop", "about"];
 
 async function walk(look: Look, theme: string, size: Size, problems: string[]): Promise<void> {
   await dress(look, theme, size);
