@@ -301,6 +301,11 @@ test("T16.1 holding OK on an app in Apps opens its details, and OK anywhere else
   await page.waitForSelector(`#page [data-id="${APP}"][data-details]`);
   await page.keyboard.press("e");
   await page.waitForSelector(`#page [data-id="${APP}"]:not([data-details])`);
+  // The phone hears it too. The TV tells the daemon a moment after the
+  // focus moves, and a TV page that loads next only tells it what changed,
+  // so a page closed before then would leave the next test's phone thinking
+  // a hold opens details.
+  await until(() => !(daemon as unknown as { tv: { details: boolean } }).tv.details);
   await page.close();
 });
 
