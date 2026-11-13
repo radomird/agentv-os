@@ -22,7 +22,7 @@
 
 AgenTV turns a small PC into the box under your TV.
 
-**It's easy, like an Apple TV.** Your phone is the remote. Home has what you were watching. Everyone in the house gets a profile, children too.
+**It's as easy as the TV box you already have.** Your phone is the remote. Home has what you were watching. Everyone in the house gets a profile, children too.
 
 **It's yours to change.** Pick how home looks, how big things are, the colours and the background. And when an app is missing, you don't wait for someone to write it. You ask for it, and your TV makes it. That's the agentic part.
 
@@ -211,4 +211,4 @@ The films in the pictures are the Blender Foundation's open movies ([studio.blen
 
 ## Whose names these are
 
-Apple TV, Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/agentv-apps#what-you-get). I only name them to say what AgenTV works with or is like. AgenTV isn't made or endorsed by any of them, and the code for the streaming apps is in `agentv-apps`, not in this repo.
+Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/agentv-apps#what-you-get). I only name them to say what AgenTV works with. AgenTV isn't made or endorsed by any of them, and the code for the streaming apps is in `agentv-apps`, not in this repo.
