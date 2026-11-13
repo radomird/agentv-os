@@ -1001,7 +1001,7 @@ function shippedBackground(theme: string): string {
 test("S5.2 S5.7 the look: every Omarchy theme in its own colours, Tokyo Night first, OK sets one with Omarchy's command, and the whole TV follows", async () => {
   await toApps("streaming");
   await post("/api/setup/finish", { step: "apps" });
-  await fetch(`${url}/api/theme?name=tokyo-night`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  assert.equal((await fetch(`${url}/api/theme?name=tokyo-night`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") })).status, 200, "the theme tokyo-night took");
   const shipped = readdirSync(join(ROOT, "themes")).sort();
   const page = await tv();
   await page.waitForSelector(".looks .look");
@@ -1063,14 +1063,14 @@ test("S5.2 S5.7 the look: every Omarchy theme in its own colours, Tokyo Night fi
   await page.locator('[data-theme="gruvbox"]').click();
   await requested(page, "theme-set");
   assert.equal(await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.find((r) => r.cmd === "theme-set")?.theme), "gruvbox");
-  await fetch(`${url}/api/theme?name=gruvbox`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("gruvbox") });
+  assert.equal((await fetch(`${url}/api/theme?name=gruvbox`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("gruvbox") })).status, 200, "the theme gruvbox took");
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim() === "#282828", null, { timeout: 5000 });
   await page.waitForSelector('.look.picked[data-theme="gruvbox"]');
 
   await page.locator('[data-action="continue"]').click();
   await page.waitForSelector(".backs", { timeout: 10_000 });
   assert.equal((await (await fetch(`${url}/api/setup`)).json()).setup.step, "background");
-  await fetch(`${url}/api/theme?name=tokyo-night`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") });
+  assert.equal((await fetch(`${url}/api/theme?name=tokyo-night`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered("tokyo-night") })).status, 200, "the theme tokyo-night took");
   await page.close();
 });
 

@@ -94,7 +94,7 @@ for (const look of LOOKS) {
     await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
     const problems: string[] = [];
     for (const theme of THEMES) {
-      await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) });
+      assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
       for (const size of Object.keys(SIZES) as (keyof typeof SIZES)[]) {
         const page = await tv(size);
         const at = `${theme}, ${size}`;

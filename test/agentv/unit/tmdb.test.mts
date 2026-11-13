@@ -77,7 +77,7 @@ test("the router's service asks TMDB with the key, says when there's none, and l
     assert.equal(seen[0].url, "/3/search/tv?query=copper+hill");
     assert.equal(seen[0].headers.authorization, "Bearer eyJ.test-token.sig");
     assert.deepEqual(await ask("/tv/4242"), { ok: true, status: 200, data: { results: [{ id: 1, name: "Stand-in" }] } });
-    assert.deepEqual(await ask("/account/1"), { ok: false, error: "that isn't a path the box asks tmdb for" });
+    assert.deepEqual(await ask("/account/1"), { ok: false, error: "that isn't a path this TV asks TMDB for" });
     assert.equal(seen.length, 2, "a path that isn't one of TMDB's few doesn't reach it");
     key = "eyJ.wrong.sig";
     assert.deepEqual(await ask("/configuration"), { ok: false, status: 401, error: "tmdb didn't take the key" });
@@ -86,7 +86,7 @@ test("the router's service asks TMDB with the key, says when there's none, and l
     assert.deepEqual(lines.map((l) => l.replace(/in \d+ ms/, "in n ms")), [
       "tmdb /search/tv: 200 in n ms",
       "tmdb /tv/:id: 200 in n ms",
-      "tmdb (refused): that isn't a path the box asks tmdb for in n ms",
+      "tmdb (refused): that isn't a path this TV asks TMDB for in n ms",
       "tmdb /configuration: tmdb didn't take the key in n ms",
       "tmdb /configuration: there's no tmdb key on the box in n ms",
     ]);

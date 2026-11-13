@@ -35,9 +35,9 @@ export function tmdbPath(asked: unknown): { path: string; query: URLSearchParams
   } catch {
     return "which path";
   }
-  if (url.origin !== "http://tmdb.invalid" || url.hash || !PATHS.some((p) => p.test(url.pathname))) return "that isn't a path the box asks tmdb for";
+  if (url.origin !== "http://tmdb.invalid" || url.hash || !PATHS.some((p) => p.test(url.pathname))) return "that isn't a path this TV asks TMDB for";
   for (const [name, value] of url.searchParams) {
-    if (!PARAM.test(name) || name === "api_key" || !VALUE.test(value)) return "that isn't a query the box asks tmdb for";
+    if (!PARAM.test(name) || name === "api_key" || !VALUE.test(value)) return "that isn't a query this TV asks TMDB for";
   }
   return { path: url.pathname, query: url.searchParams };
 }

@@ -373,7 +373,7 @@ export class AppHost {
     if (optional.broken.length) return `${this.manifest.name}'s ${optional.broken[0]} isn't a function`;
     for (const path of optional.has) {
       const capability = CALLS[path]?.capability;
-      if (capability && !this.manifest.tv.capabilities.includes(capability)) return `${this.manifest.name} has ${path}, but its manifest doesn't list ${capability}`;
+      if (capability && !this.manifest.tv.capabilities.includes(capability)) return `${this.manifest.name} has ${path}, but doesn't say it can ${capability}`;
     }
     return null;
   }
