@@ -1082,7 +1082,7 @@ test("S5.3 the background: the pixel field by default, and a photo sent from the
   const page = await tv();
   await page.waitForSelector(".backs .back");
   assert.equal(await page.locator(".setup-headline").getAttribute("aria-label"), "Pick a background");
-  assert.deepEqual(await page.locator(".back .look-name").allInnerTexts(), ["the theme's", "pixel field", "your photos", "shared folder", "art", "made for you"]);
+  assert.deepEqual(await page.locator(".back .look-name").allInnerTexts(), ["the theme's", "pixel field", "your photos", "network folder", "art", "made for you"]);
   assert.equal(await page.locator(".back.picked").getAttribute("data-background"), "field");
   assert.match(await textOf(page, ".bar"), /6\/6 look/);
 
