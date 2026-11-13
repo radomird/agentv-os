@@ -22,7 +22,7 @@ type Back = "theme" | "photos" | "folder" | "made";
 
 const BACKS: { id: Back; name: string; icon: Glyph }[] = [
   { id: "photos", name: "Your photos", icon: "photo" },
-  { id: "folder", name: "A shared folder", icon: "grid" },
+  { id: "folder", name: "A network folder", icon: "grid" },
   { id: "made", name: "Made for you", icon: "spark" },
 ];
 

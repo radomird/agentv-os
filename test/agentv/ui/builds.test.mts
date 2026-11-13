@@ -629,13 +629,13 @@ test("ADR-045 with the box signed in to GitHub, the phone pushes a built app to 
 
     const hand = await phone();
     await hand.waitForSelector('[data-action="push-export"]', { timeout: 10_000 });
-    assert.match(await hand.locator('[data-action="push-export"]').innerText(), /^Push Blocks to GitHub$/);
+    assert.match(await hand.locator('[data-action="push-export"]').innerText(), /^Save Blocks to GitHub$/);
     await hand.locator('[data-action="push-export"]').tap();
     await hand.waitForSelector('input[name="repo"]');
     const shown = await hand.locator("body").innerText();
-    assert.match(shown, /Push Blocks to GitHub/);
-    assert.equal(await hand.locator('[data-action="push"]').innerText(), "Push");
-    assert.match(shown, new RegExp(`Your TV pushes it as person, to a folder named ${asked.id.replace(/\./g, "\\.")}\\.`));
+    assert.match(shown, /Save Blocks to GitHub/);
+    assert.equal(await hand.locator('[data-action="push"]').innerText(), "Save");
+    assert.match(shown, new RegExp(`It's saved as person, in a folder named ${asked.id.replace(/\./g, "\\.")}\\.`));
     assert.match(shown, /\nA new repo is made private\n/);
     assert.equal(await hand.locator('input[name="repo"]').inputValue(), `person/${asked.id.replace(/^local\./, "")}`);
     await hand.locator('input[name="repo"]').fill("my-blocks");

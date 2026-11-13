@@ -325,10 +325,10 @@ export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): 
     signedIn = withLogin ? password.value : undefined;
     password.value = "";
     const shares = answer.shares ?? [];
-    rows.replaceChildren(...shares.map((share) => row(null, share.name, "", share.kind === "nfs" ? "NFS" : "", { "data-share": share.uri }, () => options.pick(share, signedIn))));
+    rows.replaceChildren(...shares.map((share) => row(null, share.name, "", "", { "data-share": share.uri }, () => options.pick(share, signedIn))));
     if (answer.login && !withLogin) return signIn();
     shown(form, false);
-    line.replaceChildren(...(shares.length ? [] : ["No shared folders on ", asWritten(options.host)]));
+    line.replaceChildren(...(shares.length ? [] : ["No network folders on ", asWritten(options.host)]));
     const first = rows.firstElementChild as HTMLElement | null;
     if (first) options.focus.set(first, false);
   };

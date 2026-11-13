@@ -312,7 +312,7 @@ export function addYourOwn(ctx: Ctx, kind?: "theme"): View {
     h("div", { class: "wish-row" }, h("span", { class: "wish-caret" }, ">"), field),
     examples,
     h("div", { class: "wish-actions" }, go),
-    h("p", { class: "setup-note" }, theme ? "Made after setup: colours and a background or two" : "Built after setup, for $5 at most"),
+    h("p", { class: "setup-note" }, theme ? "Made after setup: colours and a background or two" : "Made after setup, for $5 at most"),
   );
   return { el, first: field };
 }

@@ -597,7 +597,7 @@ jobs:
           if ! gh release view tested -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create tested -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
               --title "Tested by the nightly run" \
-              --notes "tested.json lists every package version that passed AgenTV's nightly run. A box only takes an update that's on the list."
+              --notes "tested.json lists every package version that passed AgenTV's nightly run. Your box only takes an update that's on the list."
           fi
           gh release upload tested -R "$GITHUB_REPOSITORY" --clobber tested.json tested.json.sig
           jq '{date, agentv, omarchy, packages: (.packages | length)}' tested.json | tee -a "$GITHUB_STEP_SUMMARY"

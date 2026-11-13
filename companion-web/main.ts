@@ -537,7 +537,7 @@ function who(): HTMLElement {
       ),
     ),
     // With no PIN, a switch needs nothing, so nothing says it does (ADR-087).
-    state?.pin.set ? h("p", { class: "note" }, "An adult's or a locked profile needs the PIN") : null,
+    state?.pin.set ? h("p", { class: "note" }, "Adult and locked profiles need the PIN") : null,
   );
 }
 
@@ -553,7 +553,7 @@ function updatePage(update: Update): HTMLElement {
       failed(error);
     }
   };
-  const name = update.version === "packages" ? "Updates are ready" : `AgenTV ${shown(update.version)} is ready`;
+  const name = update.version === "packages" ? "Update ready" : `AgenTV ${shown(update.version)} is ready`;
   const parts: (HTMLElement | null)[] = [
     prompt("tv updates"),
     h("h1", {}, name),

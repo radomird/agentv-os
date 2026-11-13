@@ -35,7 +35,7 @@ export function countryPicker(all: Country[], current: string | null, pick: (cou
     "data-focus": true,
     "data-action": "country-field",
     type: "text",
-    placeholder: "Your location",
+    placeholder: "Norway",
     "aria-label": "Your location",
     autocomplete: "off",
     spellcheck: "false",

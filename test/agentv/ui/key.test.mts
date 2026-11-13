@@ -179,7 +179,7 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   await page.locator('.panel [data-action="use-plan"]').click();
   await page.waitForSelector('.page [data-action="provider"]');
   assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+claude$/);
-  assert.equal(await page.locator('[data-plan="about"]').innerText(), "claude pro or max. you sign in on your phone when you first build an app.");
+  assert.equal(await page.locator('[data-plan="about"]').innerText(), "claude pro or max. you sign in on your phone when you first make an app.");
   await page.locator('[data-action="save"]').click();
 
   // Claude's terms for a plan come first, accepted by an adult on a phone.
@@ -202,7 +202,7 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
   await page.waitForFunction(() => /Claude plan/.test(document.querySelector('.panel [data-action="your-ai"]')?.textContent ?? ""));
   await go(page, "settings/your-ai");
   await page.waitForSelector('.panel [data-action="use-plan"]');
-  assert.match(await page.locator(".panel").innerText(), /claude plan[\s\S]*(claude pro or max\. you sign in on your phone|sign in now so voice works)[\s\S]*change plan\s+use a key instead/);
+  assert.match(await page.locator(".panel").innerText(), /claude plan[\s\S]*(claude pro or max\. you sign in on your phone|sign in now to ask your tv things)[\s\S]*change plan\s+use a key instead/);
 
   // On stable, as this box is: ChatGPT's and Grok's plans, each with its
   // own terms. Google's and Muse's aren't in the list.
@@ -214,7 +214,7 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
     await page.waitForSelector('.page [data-action="provider"]');
     await page.keyboard.press("ArrowRight");
     assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+chatgpt$/);
-    assert.equal(await page.locator('[data-plan="about"]').innerText(), "chatgpt plus or pro. you sign in on your phone when you first build an app.");
+    assert.equal(await page.locator('[data-plan="about"]').innerText(), "chatgpt plus or pro. you sign in on your phone when you first make an app.");
     await page.keyboard.press("ArrowRight");
     assert.match(await page.locator('[data-action="provider"]').innerText(), /^plan\s+grok$/);
     // Grok's is the last: right goes round to Claude's, never to a plan
