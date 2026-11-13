@@ -94,3 +94,36 @@ test("a click on an entry opens it in the app, and choosing the tile opens the a
   assert.deepEqual([second.app, second.item], ["local.mytv", undefined]);
   await page.close();
 });
+
+// Home draws again whenever the TV says something changed, and every tile
+// asks for its content again. Until the answer comes, a tile keeps what it
+// showed, so a redraw never flickers back to the app's name. Here My TV's
+// answer is held back while a new row in the ledger draws home again.
+test("a redraw of home keeps each tile's content until its new answer comes", async () => {
+  const page = await tv();
+  let release = () => {};
+  const held = new Promise<void>((done) => (release = done));
+  let asked = 0;
+  await page.route("**/api/tile/local.mytv/m", async (route) => {
+    asked++;
+    await held;
+    await route.continue();
+  });
+  await page.$eval(tile, (el) => el.setAttribute("data-before", ""));
+  const ledger = await fetch(`${url}/api/ledger`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ app: "local.mytv", state: { title: "Cosmos Laundromat", position: 60, duration: 720, playing: false } }),
+  });
+  assert.equal(ledger.status, 200);
+  // A new tile, which has asked and is still waiting for its answer.
+  await page.waitForSelector(`${tile}:not([data-before])`);
+  while (asked === 0) await page.waitForTimeout(20);
+  await page.waitForTimeout(300);
+  assert.match(await page.locator(tile).innerText(), /^my tv\s+continue\s+Spring\s+Film · 3 min left\s+Sintel\s+S2 E4 · 6 min left$/);
+  assert.equal(await page.locator(`${tile} .loading-mark`).count(), 0, "a tile with content shows no loading mark");
+  // The answer comes, and the new row is in.
+  release();
+  await page.waitForFunction((selector) => /Cosmos Laundromat/.test(document.querySelector<HTMLElement>(selector)?.innerText ?? ""), tile);
+  await page.close();
+});
