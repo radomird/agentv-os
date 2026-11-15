@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  <sub>origaiTV used to be called AgenTV. Same project, new name.</sub>
+</p>
+
+<p align="center">
   <a href="#install-it">Install it</a> · <a href="#what-you-get">What you get</a> · <a href="#questions">Questions</a>
 </p>
 
@@ -206,7 +210,7 @@ This repo is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that 
 
 Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. origaiTV's additions are copyright Radomir Drndarski and use the same licence, with two exceptions. The [menu sounds](../launcher/sounds/LICENSE) and the [setup music](../setup/audio/LICENSE) are all rights reserved and ship only with origaiTV. The fonts keep their own [open licence](../launcher/fonts/OFL.txt). origaiTV isn't made or endorsed by the Omarchy project.
 
-The origaiTV wordmark is drawn in the letters of Omarchy's logo, as a thank-you, and its "a" is Omarchy's own.
+The origaiTV logo is drawn in pixels, the way Omarchy's is, as a thank-you.
 
 The films in the pictures are the Blender Foundation's open movies ([studio.blender.org](https://studio.blender.org), CC BY).
 
