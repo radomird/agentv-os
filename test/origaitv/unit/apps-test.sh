@@ -43,7 +43,7 @@ grep -q "symlinks aren't allowed in an app package: passwd" <<<"$out" ||
   fail "S2.2 origaitv app validate rejects a symlink" "$out"
 grep -q "the entry point tvApp has '..' in it: '../app.ts'" <<<"$out" ||
   fail "S2.2 origaitv app validate rejects an unsafe entry path" "$out"
-grep -q "the id 'origaitv.sample' uses origaitv.\*, which is only for origaiTV's own apps" <<<"$out" ||
+grep -q "the id 'origaitv.sample' uses origaitv.\*, which is only for OrigaiTV's own apps" <<<"$out" ||
   fail "S2.2 origaitv app validate rejects a third-party origaitv.* id" "$out"
 pass "S2.2 origaitv app validate rejects a symlink, an unsafe entry path and a third-party origaitv.* id"
 

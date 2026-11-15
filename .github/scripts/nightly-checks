@@ -19,7 +19,7 @@
 #
 # Usage: .github/scripts/nightly-checks <version> <origaitv-os> <origaitv-iso>
 #   version     the origaitv package on edge, like 0.2.0.r389.g0bab19ed7
-#   origaitv-os   and origaitv-iso: anything git clones, each with an agentv branch
+#   origaitv-os   and origaitv-iso: anything git clones, each with an origaitv branch
 #
 # Writes to $GITHUB_OUTPUT (or stdout): built (the origaitv-os commit the
 # package came from), checks (an origaitv-iso commit, or origaitv) and newer (the
@@ -42,10 +42,10 @@ say() {
 
 # Commits only: the history is all this reads.
 clone() {
-  git clone --quiet --bare --filter=tree:0 --single-branch --branch agentv "$1" "$2" 2>/dev/null
+  git clone --quiet --bare --filter=tree:0 --single-branch --branch origaitv "$1" "$2" 2>/dev/null
 }
 
-# The origaitv-os branch a first-parent commit on agentv merged, from GitHub's
+# The origaitv-os branch a first-parent commit on origaitv merged, from GitHub's
 # own subject for a pull request's merge.
 branch() {
   sed -nE 's/^Merge pull request #[0-9]+ from [^/]+\/(.+)$/\1/p' <<<"$1"
@@ -63,8 +63,8 @@ os=(git -C "$work/os")
 iso=(git -C "$work/iso")
 
 built=$("${os[@]}" rev-parse --verify --quiet "$short^{commit}" || true)
-if [[ -z $built ]] || ! "${os[@]}" merge-base --is-ancestor "$built" agentv; then
-  echo "nightly-checks: origaitv-os's agentv has no commit $short, which edge's package $version was built from" >&2
+if [[ -z $built ]] || ! "${os[@]}" merge-base --is-ancestor "$built" origaitv; then
+  echo "nightly-checks: origaitv-os's origaitv has no commit $short, which edge's package $version was built from" >&2
   exit 1
 fi
 say built "$built"
@@ -76,7 +76,7 @@ after="$work/after"
 while IFS=' ' read -r time subject; do
   name=$(branch "$subject")
   [[ -n $name ]] && printf '%s %s\n' "$name" "$time" >>"$after"
-done < <("${os[@]}" log --first-parent --format='%ct %s' "$built..agentv")
+done < <("${os[@]}" log --first-parent --format='%ct %s' "$built..origaitv")
 
 # When origaitv-os merged a branch after the package, or nothing.
 merged_at() {
@@ -95,10 +95,10 @@ while IFS=' ' read -r commit time subject; do
   (( time >= os_time - day )) || continue
   first=$commit
   newer="$name${newer:+ $newer}"
-done < <("${iso[@]}" log --first-parent --format='%H %ct %s' agentv)
+done < <("${iso[@]}" log --first-parent --format='%H %ct %s' origaitv)
 
 if [[ -z $first ]]; then
-  say checks agentv
+  say checks origaitv
 else
   say checks "$("${iso[@]}" rev-parse "$first^1")"
 fi

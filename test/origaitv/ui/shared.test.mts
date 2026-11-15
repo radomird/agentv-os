@@ -1,6 +1,6 @@
 // Shared to the TV on the TV itself (ADR-050, S5.10): the notice with Open
 // and Not now, over home and never over what's playing, a photo full screen
-// with its credit and "make it the background", a video in origaiTV's player,
+// with its credit and "make it the background", a video in OrigaiTV's player,
 // a link opened through the TV session, Apps → Shared, and a child's
 // profile that takes shares only once an adult allows it.
 
@@ -51,7 +51,7 @@ after(async () => {
 });
 
 const post = async (path: string, body?: unknown, grant?: string) =>
-  (await fetch(`${url}${path}`, { method: "POST", headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
+  (await fetch(`${url}${path}`, { method: "POST", headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
 
 // What a phone sends, as the companion's Share page does.
 async function share(kind: "link" | "photo" | "video", body: unknown, query = ""): Promise<{ status: number; data: any }> {
@@ -228,7 +228,7 @@ test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Share
   }
 });
 
-test("S5.10 a video never interrupts what's playing: it asks once nothing is, and Open plays it in origaiTV's player, where OK pauses it", async () => {
+test("S5.10 a video never interrupts what's playing: it asks once nothing is, and Open plays it in OrigaiTV's player, where OK pauses it", async () => {
   const page = await tv();
   try {
     await post("/api/tv/context", { front: "app", playing: true });
@@ -308,7 +308,7 @@ test("S5.10 a child's profile takes what phones share only once an adult allows 
     assert.equal(await page.locator('[data-action="shares"]').isVisible(), false);
   } finally {
     await page.close();
-    await fetch(`${url}/api/viewers/${mila.id}`, { method: "DELETE", headers: { "X-origaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant } });
+    await fetch(`${url}/api/viewers/${mila.id}`, { method: "DELETE", headers: { "X-OrigaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant } });
   }
 });
 
@@ -332,7 +332,7 @@ test("S5.10 a shared link opens in the app that declares its site, if who's watc
     const photo = await share("photo", JPEG);
     assert.equal((await fetch(`${url}/api/shared/${photo.data.share.id}/target`)).status, 400);
     await post("/api/viewer", { id: "radomir" }, (await post("/api/pin/check", { pin: PIN })).grant);
-    await fetch(`${url}/api/viewers/${noa.id}`, { method: "DELETE", headers: { "X-origaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant } });
+    await fetch(`${url}/api/viewers/${noa.id}`, { method: "DELETE", headers: { "X-OrigaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant } });
   } finally {
     await clear();
   }

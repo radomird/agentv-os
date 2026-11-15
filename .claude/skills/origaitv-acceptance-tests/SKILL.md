@@ -1,17 +1,17 @@
 ---
 name: origaitv-acceptance-tests
-description: Use when writing or running origaiTV tests, including the image test that installs the ISO in a VM in CI. Builds on Omarchy's acceptance-tests guide and maps tests to the plan's acceptance ids.
+description: Use when writing or running OrigaiTV tests, including the image test that installs the ISO in a VM in CI. Builds on Omarchy's acceptance-tests guide and maps tests to the plan's acceptance ids.
 paths:
   - "test/origaitv/**"
 ---
 
-# origaiTV tests
+# OrigaiTV tests
 
 Read Omarchy's `agents/skills/acceptance-tests.md` first. Omarchy's own suites (`test/all` and the graphical suite in `test/acceptance.d/`) stay untouched, and they must keep passing.
 
 ## Where ours live
 
-Everything origaiTV adds goes under `test/origaitv/`, one folder per ADR-019 layer:
+Everything OrigaiTV adds goes under `test/origaitv/`, one folder per ADR-019 layer:
 
 | Layer | Folder | Runs |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Everything origaiTV adds goes under `test/origaitv/`, one folder per ADR-019 lay
 
 ## The image test
 
-Omarchy's guide runs the image test in a VM through the sibling ISO repo. For origaiTV that sibling is `../origaitv-iso`, and the VM has to be x86_64 with KVM, which the Mac can't do. So the image test runs in GitHub Actions on `ubuntu-26.04`:
+Omarchy's guide runs the image test in a VM through the sibling ISO repo. For OrigaiTV that sibling is `../origaitv-iso`, and the VM has to be x86_64 with KVM, which the Mac can't do. So the image test runs in GitHub Actions on `ubuntu-26.04`:
 1. Build the ISO from `origaitv-os`.
 2. Run upstream's `test/integration <iso> boot`: an unattended install, then a boot of the installed system.
 3. Run ours from `test/origaitv/image/`: no boot password, first boot reaches the TV setup welcome screen (S0.1), then a scripted setup through the companion API to the home screen.

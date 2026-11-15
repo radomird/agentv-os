@@ -1,4 +1,4 @@
-// A web app made for a desktop, for origaiTV's tests of the phone's d-pad
+// A web app made for a desktop, for OrigaiTV's tests of the phone's d-pad
 // (ADR-008): it only opens its site. The site has no arrow keys of its own,
 // so its contract checks press the d-pad the way the TV's remote does.
 

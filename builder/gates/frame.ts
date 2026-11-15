@@ -1,10 +1,10 @@
-// origaiTV's test TV, in a page app's own frame (builder/gates/, ADR-043).
+// OrigaiTV's test TV, in a page app's own frame (builder/gates/, ADR-043).
 // Only the test TV in the builder's sandbox serves this, first in the app's
 // page, before the kit and the app; home never does. It keeps what the
-// tests and origaiTV's checks read: the listeners the app gave the kit, the
+// tests and OrigaiTV's checks read: the listeners the app gave the kit, the
 // frames it drew, what it asked the network for, what it threw, and its
 // memory. Each load runs the one test the host names, with the test API
-// builder/prompts/tests.md describes, or none, for origaiTV's own checks.
+// builder/prompts/tests.md describes, or none, for OrigaiTV's own checks.
 // Like the kit, it's a plain script with no imports, only types.
 
 interface Snapshot {

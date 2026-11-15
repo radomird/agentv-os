@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""origaiTV's virtual input device (ADR-008).
+"""OrigaiTV's virtual input device (ADR-008).
 
 The phone's d-pad and keyboard, and later the gamepad mapping, reach the TV
-through one virtual keyboard and pointer, "origaiTV remote", so they work in
+through one virtual keyboard and pointer, "OrigaiTV remote", so they work in
 every window: the home screen, a service's page, Steam. It's a uinput device
 made by the person logged in on the screen, which the udev rule in
 system/70-origaitv-uinput.rules allows, the way Steam's own rule does for Steam
@@ -65,7 +65,7 @@ UI_DEV_SETUP = 0x405C5503
 UI_DEV_CREATE = 0x5501
 UI_DEV_DESTROY = 0x5502
 
-NAME = b"origaiTV remote"
+NAME = b"OrigaiTV remote"
 
 # Typed text goes a character at a time, with a pause after each, so the
 # compositor reads the events as they come. The kernel keeps 128 events for

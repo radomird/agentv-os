@@ -124,7 +124,7 @@ async function route(options: { front?: "home" | "app"; field?: { kind: string }
       const ask = (event as { ask: any }).ask;
       asks.push(ask);
       const said = options.answer ? options.answer(ask) : { ok: true, by: "page" };
-      if (said) setTimeout(() => void fetch(`${base}/api/remote/answer/${ask.n}`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Screen": "1" }, body: JSON.stringify(said) }), 30);
+      if (said) setTimeout(() => void fetch(`${base}/api/remote/answer/${ask.n}`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Screen": "1" }, body: JSON.stringify(said) }), 30);
       return true;
     },
     tv: () => ({ field: options.field === undefined ? { kind: "search" } : options.field, front: options.front ?? "home" }),
@@ -192,7 +192,7 @@ test("T8.1 the route says when there's no TV session, refuses a bad change, and 
   assert.equal((await r.post("/api/phone/text", { value: "é".repeat(501) })).status, 400);
   assert.equal((await r.post("/api/remote/answer/1", { ok: true })).status, 403);
   assert.deepEqual(await r.post("/api/phone/text", { value: "a", caret: 1 }), { status: 200, body: { ok: false, why: "Your TV isn't ready yet" } });
-  assert.equal((await r.post("/api/remote/answer/99", { ok: true }, { "X-origaiTV-Screen": "1" })).status, 404);
+  assert.equal((await r.post("/api/remote/answer/99", { ok: true }, { "X-OrigaiTV-Screen": "1" })).status, 404);
   r.close();
 });
 

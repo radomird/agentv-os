@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds origaiTV's pixel logo files from one bitmap.
+"""Builds OrigaiTV's pixel logo files from one bitmap.
 
 The bitmap is Terminal's logo from branding/origaitv/: the folded play button
 and "origaitv" in pixels, with "tv" in the accent colour. Every file here is
@@ -142,7 +142,7 @@ def svg(px, colours, unit=15):
     paths = ''.join(f'<path fill="{fill}" d="{"".join(d)}"/>' for fill, d in parts.items())
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
-        f'role="img" aria-label="origaiTV">{paths}</svg>\n'
+        f'role="img" aria-label="OrigaiTV">{paths}</svg>\n'
     )
 
 
@@ -205,7 +205,7 @@ def launcher_logos(whole):
         'cinema': {'dark': drawn('cinema', 'dark'), 'light': drawn('cinema', 'light')},
     }
     lines = [
-        "// origaiTV's logo in each look, dark and light, on a clear background,",
+        "// OrigaiTV's logo in each look, dark and light, on a clear background,",
         '// for Settings, System, About. branding/build.py writes this file from',
         "// branding/origaitv/, so change those and run it again, not this.",
         '',

@@ -1,4 +1,4 @@
-// origaiTV's launcher, the home screen PWA (ADR-012, ADR-014, ADR-015): it draws
+// OrigaiTV's launcher, the home screen PWA (ADR-012, ADR-014, ADR-015): it draws
 // what the daemon keeps, in the Terminal look and the Omarchy theme's colours,
 // and takes the same actions from every input. Pages: home, apps, an app's
 // details and settings. Forward slides in, back slides out, and each plays
@@ -608,7 +608,7 @@ function checkAfterUpdate(): void {
   const went = ctx.updates.wentBack;
   if (went && ctx.updates.seen?.wentBack !== went.at && route === "home") {
     ctx.updates.seen = { kept: null, ...ctx.updates.seen, wentBack: went.at };
-    ctx.toast(`Back on origaiTV ${shown(went.to.origaitv)}. The update is still in Settings.`, "ok");
+    ctx.toast(`Back on OrigaiTV ${shown(went.to.origaitv)}. The update is still in Settings.`, "ok");
     void daemon.seen({ wentBack: went.at }).catch(() => {});
   }
 }
@@ -627,7 +627,7 @@ function toastRelease(): void {
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
   toastedHere = version;
   ctx.updates.toasted = version;
-  ctx.toast(`origaiTV ${version} is ready, in Settings`, "ok");
+  ctx.toast(`OrigaiTV ${version} is ready, in Settings`, "ok");
   void daemon.toasted(version).catch(() => {});
 }
 

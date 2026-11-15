@@ -56,7 +56,7 @@ fi
 # since lists newer than the system can break it.
 SYNC=${ORIGAITV_PACMAN_SYNC:-/var/lib/pacman/sync}
 for repo in $(pacman-conf --repo-list 2>/dev/null); do
-  [[ -f $SYNC/$repo.db ]] || fail "Update origaiTV in Settings first, then add the app again"
+  [[ -f $SYNC/$repo.db ]] || fail "Update OrigaiTV in Settings first, then add the app again"
 done
 
 # What Omarchy's own installer runs first, for the programs it has one for.

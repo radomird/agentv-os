@@ -5,7 +5,7 @@
 # origaitv-setup-apps.service is.
 
 [Unit]
-Description=origaiTV: the program %i opens
+Description=OrigaiTV: the program %i opens
 
 [Service]
 Type=oneshot

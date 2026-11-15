@@ -51,7 +51,7 @@ export interface HandOverOptions {
   builds: string; // /var/lib/origaitv/build
   apps: string; // /var/lib/origaitv/apps
   themes?: string; // /var/lib/origaitv/themes, beside the apps
-  recipes?: string; // origaiTV's own, whose rules a theme is checked by again
+  recipes?: string; // OrigaiTV's own, whose rules a theme is checked by again
   home: string; // the builder's home
   run: string; // /run/origaitv-build
   spend: string; // the relay's spend.json
@@ -81,7 +81,7 @@ export function checkRequest(data: unknown): { request?: BuildRequest; from?: st
   const sentence = clean(d.sentence, 500);
   if (!sentence) return { error: "a build says what was asked" };
   if (typeof d.phase !== "string" || !PHASES.includes(d.phase)) return { error: "understand, plan, build or stage-b" };
-  if (d.recipe !== null && !KINDS.includes(d.recipe as never)) return { error: "a recipe origaiTV has, or null for a plan" };
+  if (d.recipe !== null && !KINDS.includes(d.recipe as never)) return { error: "a recipe OrigaiTV has, or null for a plan" };
   if (!PROVIDERS.includes(d.provider as Provider)) return { error: "claude, chatgpt, gemini, grok or muse" };
   if (d.path !== "plan" && d.path !== "key") return { error: "a plan or a key" };
   if (d.provider === "gemini" && d.path === "plan") return { error: "google's plans aren't offered yet" };
@@ -336,7 +336,7 @@ export class HandOver {
   }
 
   // A theme the agent made (S6.4): a copy of its build, links left as links,
-  // checked again by origaiTV's own theme rules rather than the build's, then
+  // checked again by OrigaiTV's own theme rules rather than the build's, then
   // only what Omarchy shows put in place, for anyone to read.
   private async installTheme(theme: string, about: MadeTheme): Promise<void> {
     const recipe = loadRecipes(this.o.recipes ?? join(process.env.ORIGAITV_PATH ?? "/usr/share/origaitv", "builder", "recipes")).get("theme");

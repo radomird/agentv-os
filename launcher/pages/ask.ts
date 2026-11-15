@@ -210,7 +210,7 @@ export function changeWaiting(n: number, outcome: Extract<Outcome, { kind: "chan
   waiting = { n, app: outcome.app, name: outcome.name, what: outcome.what, recipe: outcome.recipe };
 }
 
-// The one line under a confirm (ADR-046): a kind of app origaiTV knows how to
+// The one line under a confirm (ADR-046): a kind of app OrigaiTV knows how to
 // make stays on this TV, and something new has steps for you to check first.
 export function confirmLine(recipe: string | null): string {
   return recipe ? "It stays on this TV" : "You'll check the steps first";

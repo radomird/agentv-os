@@ -1,4 +1,4 @@
-// Blocks: a falling-block game on origaiTV's app kit, for the page runtime's
+// Blocks: a falling-block game on OrigaiTV's app kit, for the page runtime's
 // tests. The remote, the phone or a gamepad move and turn the piece, ok
 // drops it, Back pauses, and Back again leaves. The best score is kept in
 // the app's own storage and shown on its tile.

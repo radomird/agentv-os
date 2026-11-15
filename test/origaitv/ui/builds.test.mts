@@ -35,7 +35,7 @@ const errors: string[] = [];
 async function send(method: string, path: string, body?: unknown, grant?: string, base = url) {
   const response = await fetch(`${base}${path}`, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return (await response.json()) as Record<string, any>;
@@ -472,7 +472,7 @@ test("S6.5 a build on a plan waits for its sign-in: the TV shows the CLI's link 
     assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
     const accepted = await phoneToken.fetch("/api/phone/terms", {
       method: "POST",
-      headers: { "X-origaiTV-Grant": (await phoneToken.json("POST", "/api/phone/pin", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      headers: { "X-OrigaiTV-Grant": (await phoneToken.json("POST", "/api/phone/pin", { pin: "2468" })).grant, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", path: "plan" }),
     });
     assert.equal(accepted.status, 200);
@@ -538,7 +538,7 @@ test("ADR-040 a plan whose sign-in ran out asks for it again on the TV and the p
     assert.equal((await send("POST", "/api/ai", { provider: "claude", path: "plan" }, grant)).ok, true);
     const accepted = await phoneToken.fetch("/api/phone/terms", {
       method: "POST",
-      headers: { "X-origaiTV-Grant": (await phoneToken.json("POST", "/api/phone/pin", { pin: "2468" })).grant, "Content-Type": "application/json" },
+      headers: { "X-OrigaiTV-Grant": (await phoneToken.json("POST", "/api/phone/pin", { pin: "2468" })).grant, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "claude", path: "plan" }),
     });
     assert.equal(accepted.status, 200);

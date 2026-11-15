@@ -10,7 +10,7 @@ set -euo pipefail
 port=${ORIGAITV_PORT:-3000}
 if ! curl -fsS --max-time 5 -o /dev/null -H 'Content-Type: application/json' \
   -d '{"done": true}' "http://127.0.0.1:$port/api/setup"; then
-  echo "origaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
+  echo "OrigaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
   exit 1
 fi
 echo "Setup is marked done, so the TV shows the home screen."

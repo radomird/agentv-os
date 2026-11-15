@@ -1,4 +1,4 @@
-// origaiTV's contract tests (ADR-019, layer 3; S3.1): any app, run in its own
+// OrigaiTV's contract tests (ADR-019, layer 3; S3.1): any app, run in its own
 // worker the way the TV runs it, against its fixtures, with no network and
 // no sign-in.
 //

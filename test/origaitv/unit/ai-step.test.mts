@@ -43,13 +43,13 @@ test("ADR-069 each provider's icon comes from its own site", () => {
 
 test("T7.2 a provider's icon is fetched from its site once and kept, and a site with none isn't asked again at once", async () => {
   const state = join(scratch, "icons");
-  const icons = new AiIcons({ state, userAgent: "origaiTV test", sites: { claude: `${at}/claude/`, chatgpt: `${at}/chatgpt/` } });
+  const icons = new AiIcons({ state, userAgent: "OrigaiTV test", sites: { claude: `${at}/claude/`, chatgpt: `${at}/chatgpt/` } });
   const claude = await icons.icon("claude");
   assert.equal(claude?.type, "image/png");
   assert.deepEqual(claude?.body, PNG);
   assert.deepEqual(readFileSync(join(state, "ai-icons", "claude")), PNG);
   const before = asked.length;
-  assert.deepEqual((await new AiIcons({ state, userAgent: "origaiTV test", sites: { claude: `${at}/claude/` } }).icon("claude"))?.body, PNG, "kept, even after a restart");
+  assert.deepEqual((await new AiIcons({ state, userAgent: "OrigaiTV test", sites: { claude: `${at}/claude/` } }).icon("claude"))?.body, PNG, "kept, even after a restart");
   assert.equal(asked.length, before, "the site isn't asked again");
 
   assert.equal(await icons.icon("chatgpt"), null, "no icon: the name alone");
@@ -57,7 +57,7 @@ test("T7.2 a provider's icon is fetched from its site once and kept, and a site 
   assert.equal(await icons.icon("chatgpt"), null);
   assert.equal(asked.length, missed, "a site with no icon is left alone for a while");
   // Two screens asking at once share one fetch.
-  const together = new AiIcons({ state: join(scratch, "together"), userAgent: "origaiTV test", sites: { claude: `${at}/claude/` } });
+  const together = new AiIcons({ state: join(scratch, "together"), userAgent: "OrigaiTV test", sites: { claude: `${at}/claude/` } });
   const first = asked.length;
   await Promise.all([together.icon("claude"), together.icon("claude")]);
   assert.equal(asked.slice(first).filter((u) => u === "/claude/").length, 1);

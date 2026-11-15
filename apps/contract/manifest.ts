@@ -46,8 +46,8 @@ export type SetupStep = { type: "field"; key: string; label: string } | { type: 
 export interface TvBlock {
   contract: number;
   category: Category;
-  // builtin: one of origaiTV's own apps in apps/builtin/, which come with
-  // origaiTV and which the launcher opens itself (ADR-015, ADR-017).
+  // builtin: one of OrigaiTV's own apps in apps/builtin/, which come with
+  // OrigaiTV and which the launcher opens itself (ADR-015, ADR-017).
   // page: an app that is its own page, which the box serves from an origin
   // of its own and shows in a sandboxed frame (contract 2, ADR-043).
   runtime: "web" | "native" | "builtin" | "page";
@@ -206,7 +206,7 @@ function checkId(id: string, author: unknown, tier: Tier, problem: (text: string
   } else if (tier === "local") {
     if (namespace !== "local") problem(`an app built on this box has an id that starts with local., not '${id}'`);
   } else if (namespace === "origaitv") {
-    problem(`the id '${id}' uses origaitv.*, which is only for origaiTV's own apps`);
+    problem(`the id '${id}' uses origaitv.*, which is only for OrigaiTV's own apps`);
   } else if (RESERVED.includes(namespace)) {
     problem(`the id '${id}' uses ${namespace}.*, which is reserved`);
   } else if (typeof author === "string" && NAMESPACE.test(author) && namespace !== author) {
@@ -320,9 +320,9 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
     }
     if (tv.homeUrl !== undefined) problem("a native app has no tv.homeUrl");
   } else if (tv.runtime === "builtin") {
-    // Only origaiTV's own apps come built in, and the installer never takes
+    // Only OrigaiTV's own apps come built in, and the installer never takes
     // one from the index (install.ts).
-    if (tier !== "official") problem("only origaiTV's own built-in apps have tv.runtime builtin");
+    if (tier !== "official") problem("only OrigaiTV's own built-in apps have tv.runtime builtin");
     if (tv.homeUrl !== undefined || tv.package !== undefined || tv.exec !== undefined) {
       problem("a built-in app has no tv.homeUrl, tv.package or tv.exec");
     }

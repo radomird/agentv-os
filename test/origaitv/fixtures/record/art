@@ -19,7 +19,7 @@ if [[ -z $contact && -n ${GITHUB_REPOSITORY:-} ]]; then
   contact="${GITHUB_SERVER_URL:-https://github.com}/$GITHUB_REPOSITORY"
 fi
 [[ -n $contact ]] || { echo "Set ORIGAITV_RECORD_CONTACT to a web address or email for the archives' User-Agent" >&2; exit 2; }
-agent="origaiTV-fixtures/1 (+$contact)"
+agent="OrigaiTV-fixtures/1 (+$contact)"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

@@ -7,7 +7,7 @@
 //        node cli.ts list
 //        node cli.ts remove <id>
 // ORIGAITV_STATE (/var/lib/origaitv) holds the apps; ORIGAITV_KEYRING overrides
-// origaiTV's key, and ORIGAITV_INDEX_URL the index from the package's settings.
+// OrigaiTV's key, and ORIGAITV_INDEX_URL the index from the package's settings.
 // ORIGAITV_BIN_DIR is where origaitv-pin-check is, and ORIGAITV_PIN_CHECK replaces
 // it for the tests.
 

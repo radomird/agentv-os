@@ -1,9 +1,9 @@
 ---
 name: origaitv-quality-gates
-description: Use before every origaiTV commit, before opening a pull request, and before saying a task is done. Runs the fast gate (ADR-019 layers 1 to 4), says when the slow image layer is needed, and how to mark an acceptance check as passed.
+description: Use before every OrigaiTV commit, before opening a pull request, and before saying a task is done. Runs the fast gate (ADR-019 layers 1 to 4), says when the slow image layer is needed, and how to mark an acceptance check as passed.
 ---
 
-# origaiTV quality gates
+# OrigaiTV quality gates
 
 The full rules are ADR-019 in `../agentic-tv-os/DECISION-RECORD.md` and the "Quality gates" section of `../agentic-tv-os/PHASE-1-PLAN.md`. This is the working version.
 
@@ -14,9 +14,9 @@ Main is always installable. Nothing merges while a required check is red, and no
 Run `bin/origaitv-check` (layer 1) and `test/origaitv/unit/run` (layer 2). In origaitv-os, `test/origaitv/omarchy-tests` covers item 2 below; it needs Linux and bash 5, so it runs in CI. The gate checks:
 
 1. **Omarchy's files are untouched** since the base in `.github/omarchy-base`: `git diff --diff-filter=MDR --name-only "$(cat .github/omarchy-base)"...HEAD` prints nothing.
-2. **Omarchy's own tests still pass.** `test/all` (its CLI and shell suites). origaiTV adds files only, so a failure here means something of ours leaked into Omarchy's world, for example a command `bin/omarchy` now picks up.
+2. **Omarchy's own tests still pass.** `test/all` (its CLI and shell suites). OrigaiTV adds files only, so a failure here means something of ours leaked into Omarchy's world, for example a command `bin/omarchy` now picks up.
 3. **No em dashes** in anything you added or changed: `git diff --cached | grep -n $'\u2014'` prints nothing. (The pattern is written as an escape so this file doesn't contain the character either.)
-4. **No secrets:** gitleaks, on the files and on every origaiTV commit since the base.
+4. **No secrets:** gitleaks, on the files and on every OrigaiTV commit since the base.
 5. **Shell style:** `shellcheck` on every shell file you added. Follow Omarchy's `AGENTS.md` style too: two spaces, `[[ ]]` and `(( ))`, `#!/bin/bash`.
 6. **No service automation here:** nothing that names selectors or automates a streaming service (Disney+, Netflix, Prime Video, HBO Max, YouTube, YouTube Kids, SkyShowtime or Spotify). Only `origaitv-apps` may, and only in the service's own app folder (ADR-066). `test/origaitv/policy/service-hosts` and `service-names` say how each is spotted.
 7. **Every manifest validates:** `origaitv app validate <dir>` once it exists.
@@ -26,7 +26,7 @@ Layers 2 to 4 (unit, contract, UI) join the gate as their code lands. They shoul
 ## Pull requests
 
 - Layers 1 to 4 must be green, and the target is under 10 minutes.
-- A pull request runs only the checks its files can affect. Lint, secrets and house rules always run. One that only changes `.claude/`, the README in `.github/` or the image and nightly workflows skips the unit, contract, screen and Omarchy tests. One that only touches origaiTV's own folders (`daemon/`, `launcher/`, `setup/`, `companion-web/`, `apps/`, `builder/`, `branding/`, `session/`, `test/origaitv/`, `.github/`) skips Omarchy's own tests, unless it adds or changes a `.service` or `.conf` file. A push to `origaitv` runs everything.
+- A pull request runs only the checks its files can affect. Lint, secrets and house rules always run. One that only changes `.claude/`, the README in `.github/` or the image and nightly workflows skips the unit, contract, screen and Omarchy tests. One that only touches OrigaiTV's own folders (`daemon/`, `launcher/`, `setup/`, `companion-web/`, `apps/`, `builder/`, `branding/`, `session/`, `test/origaitv/`, `.github/`) skips Omarchy's own tests, unless it adds or changes a `.service` or `.conf` file. A push to `origaitv` runs everything.
 ## The image layer, once per change
 
 Layer 5, the image test, builds the ISO, installs it in a VM and runs every image check. That takes about 50 minutes, so a pull request gets it once, when it's ready. It runs in GitHub Actions on `ubuntu-26.04` with KVM, because the Mac can't run the x86_64 ISO. See `origaitv-acceptance-tests`.

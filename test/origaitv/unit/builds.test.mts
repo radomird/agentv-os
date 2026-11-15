@@ -410,11 +410,11 @@ test("the TV asks the builder once the AI is ready, and the phone sees the app a
   const lan = `http://127.0.0.1:${daemon.lanPort}`;
   try {
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
-      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
     const token = await pairPhone(lan, code, "iphone");
     const phone = (method: string, path: string, body?: unknown, grant?: string) =>
-      token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
 
     assert.match((await (await send("POST", "/api/builds", { sentence: "a game like tetris" })).json()).error, /Set up AI in Settings first/, "nothing's built before the AI is picked and its terms accepted");
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);

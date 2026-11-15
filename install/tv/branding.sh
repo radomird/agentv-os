@@ -1,4 +1,4 @@
-# origaiTV's logo on the screensaver and About, through Omarchy's branding
+# OrigaiTV's logo on the screensaver and About, through Omarchy's branding
 # files, and on the boot splash and the login screen, through Omarchy's own
 # omarchy plymouth set (ADR-021). Omarchy's own commands, such as omarchy
 # branding screensaver reset, still bring its logo back.

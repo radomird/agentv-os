@@ -1,10 +1,10 @@
-# The box's own boot menu says origaiTV (ADR-027), the way the ISO's does: the
-# header says origaiTV in origaiTV's blue, and so does the entry, with its
+# The box's own boot menu says OrigaiTV (ADR-027), the way the ISO's does: the
+# header says OrigaiTV in OrigaiTV's blue, and so does the entry, with its
 # snapshots under it.
 #
 # It stays hidden at power on (ADR-060). Omarchy 4.5's Limine waits one
 # quiet second, with nothing on the screen, and a key in that second shows
-# the menu. origaiTV keeps Omarchy's timeout and writes none of its own, and
+# the menu. OrigaiTV keeps Omarchy's timeout and writes none of its own, and
 # Settings → Power can restart the box to the menu, which then waits.
 #
 # Not before now: omarchy-iso's installer checks for an "Omarchy" entry while
@@ -20,17 +20,17 @@
 # rebuilt, which first boot's branding does next.
 install -d -m 755 /etc/limine-entry-tool.d
 printf '%s\n' \
-  '# origaiTV names the boot menu entry (ADR-027); after omarchy-defaults.conf.' \
-  'TARGET_OS_NAME="origaiTV"' \
+  '# OrigaiTV names the boot menu entry (ADR-027); after omarchy-defaults.conf.' \
+  'TARGET_OS_NAME="OrigaiTV"' \
   '# The splash, never the boot log, with a serial console too (ADR-060).' \
   'KERNEL_CMDLINE[default]+=" plymouth.ignore-serial-consoles"' >/etc/limine-entry-tool.d/zz-origaitv.conf
 
 limine_conf=/boot/limine.conf
 if [[ -f $limine_conf ]]; then
   sed -i \
-    -e 's/^interface_branding: .*/interface_branding: origaiTV/' \
+    -e 's/^interface_branding: .*/interface_branding: OrigaiTV/' \
     -e 's/^interface_branding_color: .*/interface_branding_color: 7aa2f7/' \
-    -e 's|^/\(+\?\)Omarchy$|/\1origaiTV|' \
-    -e 's/^comment: Omarchy$/comment: origaiTV/' \
+    -e 's|^/\(+\?\)Omarchy$|/\1OrigaiTV|' \
+    -e 's/^comment: Omarchy$/comment: OrigaiTV/' \
     "$limine_conf"
 fi

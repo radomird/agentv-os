@@ -5,7 +5,7 @@
 # now.
 
 [Unit]
-Description=origaiTV provider key
+Description=OrigaiTV provider key
 
 [Service]
 Type=oneshot

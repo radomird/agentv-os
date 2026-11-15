@@ -2,7 +2,7 @@
 # ADR-040): the instance is the provider, like claude. The provider's own
 # CLI signs in as origaitv-builder, in the same sandbox as a build
 # (origaitv-builder@.service), and keeps what it gets in its own files in the
-# builder's home. origaiTV shows the link it prints and types the code the
+# builder's home. OrigaiTV shows the link it prints and types the code the
 # person pastes on the phone into its prompt (builder/sign-in.ts), and sees
 # nothing else. origaitv-build.service starts this once root has made its
 # folder and the filter's sign-in ticket.
@@ -13,7 +13,7 @@
 # RestrictSUIDSGID= as well.
 
 [Unit]
-Description=origaiTV builder's %i sign-in
+Description=OrigaiTV builder's %i sign-in
 BindsTo=origaitv-build-net.service
 After=origaitv-build-net.service
 RequiresMountsFor=/var/lib/origaitv/builder

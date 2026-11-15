@@ -11,7 +11,7 @@ import { ROOT } from "./box.mts";
 export const THEMES = readdirSync(join(ROOT, "themes")).sort();
 const TEMPLATE = readFileSync(join(ROOT, "config/omarchy/themed/launcher.css.tpl"), "utf8");
 
-// The TV's colours for a theme, as Omarchy renders origaiTV's template.
+// The TV's colours for a theme, as Omarchy renders OrigaiTV's template.
 export function rendered(theme: string): string {
   const out = execFileSync(join(ROOT, "bin/omarchy-theme-color"), ["--file", join(ROOT, "themes", theme, "colors.toml"), "--all"], {
     env: { ...process.env, OMARCHY_PATH: ROOT },

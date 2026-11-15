@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# origaiTV's layer 4 (ADR-019): the launcher in a real Chromium, headless, at
+# OrigaiTV's layer 4 (ADR-019): the launcher in a real Chromium, headless, at
 # 1920 × 1080, on the daemon itself with a few sample apps. It checks keyboard
 # reach, what tiles and app details say, edit mode, the motion and sound
 # rules, and the requests the launcher sends the TV session. Playwright comes at a pinned

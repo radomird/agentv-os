@@ -1,4 +1,4 @@
-// origaiTV's app kit, contract 2 (ADR-043). A page app is its own HTML, CSS
+// OrigaiTV's app kit, contract 2 (ADR-043). A page app is its own HTML, CSS
 // and JavaScript, shown full screen in a sandboxed frame on home. It reaches
 // the box only through this kit, which the box serves to every page app at
 // /_origaitv/kit.js and which sets window.origaitv. The kit talks to home with

@@ -9,7 +9,7 @@
 #   Environment=ORIGAITV_HOTSPOT_LOST_AFTER=10
 
 [Unit]
-Description=origaiTV hotspot for a TV that lost its network
+Description=OrigaiTV hotspot for a TV that lost its network
 Wants=NetworkManager.service
 After=NetworkManager.service origaitv-daemon.service
 

@@ -14,7 +14,7 @@ import { join } from "node:path";
 export interface UpdateState {
   status: unknown;
   progress: unknown;
-  // The origaiTV version whose toast home has shown already.
+  // The OrigaiTV version whose toast home has shown already.
   toasted: string | null;
   // The check after the last update, and the snapshot Go back returns to.
   after: unknown;
@@ -26,7 +26,7 @@ export interface UpdateState {
   // saying it's ready.
   seen: { kept: string | null; wentBack: string | null; later: string | null };
   // Install tonight, between 02:00 and 05:00 (ADR-025): what's to install
-  // (an origaiTV version, or "packages" for the system's alone), and when it
+  // (an OrigaiTV version, or "packages" for the system's alone), and when it
   // was asked for.
   tonight: { version: string; at: string } | null;
   // The night an update waited because a game was being played, until it

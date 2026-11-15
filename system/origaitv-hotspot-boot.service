@@ -3,7 +3,7 @@
 # waits for NetworkManager in the background, so the TV doesn't wait for it.
 
 [Unit]
-Description=origaiTV setup hotspot on first boot
+Description=OrigaiTV setup hotspot on first boot
 Wants=NetworkManager.service
 After=NetworkManager.service
 

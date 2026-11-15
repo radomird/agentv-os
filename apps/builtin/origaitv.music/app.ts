@@ -1,4 +1,4 @@
-// origaiTV's built-in Music app (ADR-017). Its library and its player live in
+// OrigaiTV's built-in Music app (ADR-017). Its library and its player live in
 // the TV session, as the person the box logs in, since they read files a
 // sandboxed app can't: daemon/music.ts and daemon/storage.ts. The launcher
 // opens its page and draws its tiles from there; this module is what the

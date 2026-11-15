@@ -89,7 +89,7 @@ pass "only an official native app names a package, by a package name, and a refu
 # A box that hasn't fetched its package lists yet says to update it first.
 rm "$ORIGAITV_PACMAN_SYNC/multilib.db"
 app origaitv.later official "$(native pacman later-game)"
-refused origaitv.later "Update origaiTV in Settings first, then add the app again"
+refused origaitv.later "Update OrigaiTV in Settings first, then add the app again"
 touch "$ORIGAITV_PACMAN_SYNC/multilib.db"
 pass "a box without its package lists says to update it, and fetches none on the side"
 

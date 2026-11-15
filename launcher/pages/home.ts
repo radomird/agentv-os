@@ -86,7 +86,7 @@ function entry(app: App, item: TileEntry, size: Placed["size"], at: number): HTM
   const progress = typeof item.progress === "number" ? Math.max(0, Math.min(1, item.progress)) : null;
   return h(
     "div",
-    // An app's own words keep their capitals in every look. origaiTV's own
+    // An app's own words keep their capitals in every look. OrigaiTV's own
     // apps are written like the rest of the TV, so Terminal lowers them.
     { class: `entry${icon ? " entry-icon" : ""}${item.item ? " entry-item" : ""}`, "data-entry": item.item ? at : undefined, "data-own-case": app.tier !== "built-in" },
     item.label ? h("span", { class: "entry-label" }, item.label) : null,
@@ -448,7 +448,7 @@ export function home(ctx: Ctx): View {
   // A new release says so in the bar (ADR-025, board 31), until Later, and
   // a build that's going or waiting says so after it.
   const next = release(ctx.updates);
-  const update = !next ? "" : tonight(ctx.updates) ? `origaiTV ${next} installs tonight` : later(ctx.updates) ? "" : `origaiTV ${next} is ready, in Settings`;
+  const update = !next ? "" : tonight(ctx.updates) ? `OrigaiTV ${next} installs tonight` : later(ctx.updates) ? "" : `OrigaiTV ${next} is ready, in Settings`;
   const notice = update || buildNotice();
   const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice, undefined, HOLD_HINT));
   return {

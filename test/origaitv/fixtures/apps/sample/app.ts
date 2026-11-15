@@ -1,4 +1,4 @@
-// A sample app for origaiTV's tests: a web app on a server the person names in
+// A sample app for OrigaiTV's tests: a web app on a server the person names in
 // setup. It answers from fixed data, so the tests need no server.
 
 import type { AppContext, Item, TileSize, Tile, TvApp } from "../../../../../apps/contract/contract.ts";

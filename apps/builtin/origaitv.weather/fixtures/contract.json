@@ -7,11 +7,11 @@
   "checks": [
     {
       "id": "S3.8",
-      "name": "small: the weather now, as MET's recorded symbol and wind say, asked for as origaiTV with the place rounded",
+      "name": "small: the weather now, as MET's recorded symbol and wind say, asked for as OrigaiTV with the place rounded",
       "call": "tile",
       "args": ["s"],
       "expect": { "headline": { "label": "amsterdam", "icon": "wind", "value": "12°", "caption": "Windy" } },
-      "asks": [{ "url": "\\?lat=52\\.37&lon=4\\.9$", "headers": { "user-agent": "^origaiTV-contract origaitv\\.weather/" } }]
+      "asks": [{ "url": "\\?lat=52\\.37&lon=4\\.9$", "headers": { "user-agent": "^OrigaiTV-contract origaitv\\.weather/" } }]
     },
     {
       "id": "S3.9",

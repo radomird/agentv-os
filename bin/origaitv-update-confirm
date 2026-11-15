@@ -3,10 +3,10 @@
 # origaitv:summary=Ask before an update, saying what changes and where to read about it
 # origaitv:hidden=true
 
-# origaiTV's own question before origaitv update (ADR-025, ADR-029), in place of
+# OrigaiTV's own question before origaitv update (ADR-025, ADR-029), in place of
 # Omarchy's, which points at Omarchy's release notes and a laptop's battery.
-# It says which origaiTV and Omarchy versions the update moves to, how many
-# other packages change, and where origaiTV's release notes are.
+# It says which OrigaiTV and Omarchy versions the update moves to, how many
+# other packages change, and where OrigaiTV's release notes are.
 #
 # Exits 0 to go ahead, 1 when the answer is no.
 
@@ -41,7 +41,7 @@ others=$(awk '$1 != "origaitv" && $1 != "omarchy" && NF { n++ } END { print n + 
 lines=(
   "Ready to update?"
   ""
-  "$(version_line origaitv origaiTV)"
+  "$(version_line origaitv OrigaiTV)"
   "$(version_line omarchy Omarchy)"
 )
 if (( status == 1 )); then

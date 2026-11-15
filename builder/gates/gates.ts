@@ -1,4 +1,4 @@
-// Gates 2 and 3 for a build (ADR-043), after its static checks: origaiTV's
+// Gates 2 and 3 for a build (ADR-043), after its static checks: OrigaiTV's
 // headless checks and the tests, the recipe's and the agent's, on the test
 // TV (testtv.ts). The runner calls them before an adult sees the app, and
 // the harness's try and run_tests tools call them while the agent works.
@@ -11,7 +11,7 @@ import { checkTheme, themeRules } from "../theme.ts";
 import { type TestFile, tryApp, type TryReport } from "./testtv.ts";
 
 export interface GateOptions {
-  root: string; // origaiTV's files
+  root: string; // OrigaiTV's files
   chromium?: string;
   proxy?: string;
 }

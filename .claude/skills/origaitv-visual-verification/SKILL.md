@@ -1,13 +1,13 @@
 ---
 name: origaitv-visual-verification
-description: Use before finishing any origaiTV change people can see or hear, in the TV launcher, the setup screens, the phone companion, motion or sounds. Builds on Omarchy's visual-verification guide and checks against the canvas and the look ADRs.
+description: Use before finishing any OrigaiTV change people can see or hear, in the TV launcher, the setup screens, the phone companion, motion or sounds. Builds on Omarchy's visual-verification guide and checks against the canvas and the look ADRs.
 paths:
   - "launcher/**"
   - "setup/**"
   - "companion-web/**"
 ---
 
-# origaiTV visual verification
+# OrigaiTV visual verification
 
 Read Omarchy's `agents/skills/visual-verification.md` first. Its rule holds: a visual change isn't done until you've looked at it running, and an artifact alone doesn't count. For anything on the Omarchy desktop, use its own screenshot and screen-recording commands.
 

@@ -6,7 +6,7 @@
 # agent's, so it has the network, but none of the box's keys or sign-ins.
 
 [Unit]
-Description=origaiTV builder's %i
+Description=OrigaiTV builder's %i
 After=network-online.target
 Wants=network-online.target
 

@@ -186,8 +186,8 @@ test("too big, or not a picture, is refused; a child's profile can't send one; t
   const grant = (await (await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
   const id = (await (await fetch(`${url}/api/backgrounds`)).json()).current;
   assert.equal((await fetch(`${url}/api/backgrounds/${id}`, { method: "DELETE" })).status, 403);
-  assert.equal((await fetch(`${url}/api/backgrounds/${id}`, { method: "DELETE", headers: { "X-origaiTV-Grant": grant } })).status, 200);
-  const child = (await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": grant }, body: JSON.stringify({ name: "mia", role: "child" }) })).json()).profile;
-  await fetch(`${url}/api/viewer`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": grant }, body: JSON.stringify({ id: child.id }) });
+  assert.equal((await fetch(`${url}/api/backgrounds/${id}`, { method: "DELETE", headers: { "X-OrigaiTV-Grant": grant } })).status, 200);
+  const child = (await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": grant }, body: JSON.stringify({ name: "mia", role: "child" }) })).json()).profile;
+  await fetch(`${url}/api/viewer`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": grant }, body: JSON.stringify({ id: child.id }) });
   assert.equal((await send(JPEG)).status, 403);
 });

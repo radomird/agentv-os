@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# origaitv:summary=origaiTV's command line
+# origaitv:summary=OrigaiTV's command line
 # origaitv:args=<command> [args...]
 # origaitv:examples=origaitv update | origaitv version
 # origaitv:hidden=true

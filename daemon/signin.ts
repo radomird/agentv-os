@@ -1,4 +1,4 @@
-// Signing in to an app's service on the TV (ADR-032, board 15). origaiTV
+// Signing in to an app's service on the TV (ADR-032, board 15). OrigaiTV
 // stores no passwords: the service's own page takes them, typed on the
 // phone or a keyboard, and keeps its own cookies in the services' profile.
 //

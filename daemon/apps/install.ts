@@ -61,12 +61,12 @@ async function writeInstalled(appsDir: string, record: Record<string, Installed>
 }
 
 // Checks the package in pkg as an app of tier: the contract's checks, and
-// not built in, since only origaiTV itself brings those. Returns its manifest.
+// not built in, since only OrigaiTV itself brings those. Returns its manifest.
 function check(pkg: string, id: string, tier: Tier, thisBox = false): Manifest {
   const { manifest, problems } = validatePackage(pkg, tier, { thisBox });
   if (!manifest) throw new IndexError(`${id} is broken:\n  ${problems.join("\n  ")}`);
   if (manifest.tv.runtime === "builtin") {
-    throw new IndexError(`${id} says it's built in, and built-in apps only come with origaiTV itself`);
+    throw new IndexError(`${id} says it's built in, and built-in apps only come with OrigaiTV itself`);
   }
   return manifest;
 }

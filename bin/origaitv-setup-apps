@@ -5,7 +5,7 @@
 # origaitv:requires-sudo=true
 
 # TV setup's apps (board 09), and the ones added from Apps after it
-# (ADR-042). The TV hands the official apps picked to origaiTV's daemon, which
+# (ADR-042). The TV hands the official apps picked to OrigaiTV's daemon, which
 # can't write the apps folder. It leaves their ids in its own private state,
 # and origaitv-setup-apps.path starts this as root to install each one with
 # `origaitv app install`, from the signed index, one after the other. A native

@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "origaitv",
   "license": "MIT",
-  "description": "A web app for origaiTV's tests that reads its page",
+  "description": "A web app for OrigaiTV's tests that reads its page",
   "kinds": ["tv-app"],
   "entryPoints": { "tvApp": "app.ts" },
   "tv": {

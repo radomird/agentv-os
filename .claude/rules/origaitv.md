@@ -1,16 +1,16 @@
-# origaiTV
+# OrigaiTV
 
-This repo is `origaitv-os`: origaiTV, a TV OS whose own agent builds the apps it's missing, built on top of Omarchy. It's a fork of `omacom/omarchy` that follows Omarchy's stable releases (ADR-026). The release it's on is in `.github/omarchy-base`. Omarchy's own `AGENTS.md` still applies to everything here: its style, its runtime environment rules and its privilege rules. This file adds what's different for origaiTV, and when the two disagree, this file wins.
+This repo is `origaitv-os`: OrigaiTV, a TV OS whose own agent builds the apps it's missing, built on top of Omarchy. It's a fork of `omacom/omarchy` that follows Omarchy's stable releases (ADR-026). The release it's on is in `.github/omarchy-base`. Omarchy's own `AGENTS.md` still applies to everything here: its style, its runtime environment rules and its privilege rules. This file adds what's different for OrigaiTV, and when the two disagree, this file wins.
 
 The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, then the ADRs in `DECISION-RECORD.md`, then `PHASE-1-PLAN.md`. The ADRs are decisions, so don't re-open one without asking Radomir.
 
 ## Never edit Omarchy's files
 
 - Only add files. Every file that exists at the base in `.github/omarchy-base` stays byte-for-byte as it is, so merging each new Omarchy release stays mechanical. The daily Omarchy sync does that merge and moves the base.
-- origaiTV's own code goes under `install/tv/`, `session/` (the TV session, ADR-031), `config/omarchy/`, `system/`, `daemon/`, `launcher/`, `setup/`, `companion-web/`, `builder/`, `apps/`, `branding/`, `test/origaitv/`, `.claude/` and `bin/origaitv*`.
+- OrigaiTV's own code goes under `install/tv/`, `session/` (the TV session, ADR-031), `config/omarchy/`, `system/`, `daemon/`, `launcher/`, `setup/`, `companion-web/`, `builder/`, `apps/`, `branding/`, `test/origaitv/`, `.claude/` and `bin/origaitv*`.
 - Check before every commit with `bin/origaitv-check`. Its first check is the same as `git diff --diff-filter=MDR --name-only "$(cat .github/omarchy-base)"...HEAD` printing nothing.
 - If you think an upstream file has to change, stop and ask. ADR-021 leaves one possible exception, `logo.txt`, and only if no overlay works.
-- Omarchy's commands all start with `omarchy-`. origaiTV's own commands start with `origaitv` instead (see the `origaitv-commands` skill), and they never add, rename or wrap an `omarchy-*` command.
+- Omarchy's commands all start with `omarchy-`. OrigaiTV's own commands start with `origaitv` instead (see the `origaitv-commands` skill), and they never add, rename or wrap an `omarchy-*` command.
 
 ## Public repo rules
 
@@ -23,7 +23,7 @@ The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, the
 - Write docs, UI text, commit messages and READMEs the way an indie dev talks about their own project: first to the person who'll use it, then to another dev. Straightforward, grounded and easy to read the first time. Short sentences, plain words before project words, what actually happens in order, "you" and "I", and no inside references (ADRs, grilling numbers, acceptance ids) in public text. Omarchy's README is the spirit to match, and origaitv-apps' README is the reference.
 - Say "will" for what isn't built yet, and mark planned features "coming soon" in READMEs.
 - No em dashes anywhere, ever. That includes code comments and commit messages.
-- Public lines say "Powered by Omarchy". Never call origaiTV Omarchy itself or suggest Basecamp endorses it.
+- Public lines say "Powered by Omarchy". Never call OrigaiTV Omarchy itself or suggest Basecamp endorses it.
 - The `origaitv-copy` skill has the details.
 
 ## Before you commit
@@ -34,9 +34,9 @@ The plan lives next door in `../agentic-tv-os`. Read its `HANDOFF.md` first, the
 
 ## Which guide to read
 
-Omarchy's task guides in `agents/skills/` still apply. The origaiTV skills build on them:
+Omarchy's task guides in `agents/skills/` still apply. The OrigaiTV skills build on them:
 
-| Work | Read first (Omarchy) | Then (origaiTV skill) |
+| Work | Read first (Omarchy) | Then (OrigaiTV skill) |
 | --- | --- | --- |
 | Install, first boot, system units | `agents/skills/install-scripts.md` | `origaitv-install-scripts` |
 | Commands in `bin/` | `agents/skills/command-metadata.md` | `origaitv-commands` |

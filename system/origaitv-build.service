@@ -6,7 +6,7 @@
 # builder made, and the same for a theme. origaitv-build.path starts it.
 
 [Unit]
-Description=origaiTV build start
+Description=OrigaiTV build start
 
 [Service]
 Type=oneshot

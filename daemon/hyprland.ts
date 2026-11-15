@@ -1,4 +1,4 @@
-// Hyprland's IPC, for origaiTV's screen daemon (ADR-031): hyprctl for requests
+// Hyprland's IPC, for OrigaiTV's screen daemon (ADR-031): hyprctl for requests
 // and Hyprland's event socket for what happens (https://wiki.hypr.land/ipc/).
 // The real one talks to the TV session's Hyprland; the unit tests hand the
 // screen daemon a fake with the same shape.

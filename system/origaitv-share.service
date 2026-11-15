@@ -5,7 +5,7 @@
 # wouldn't be seen by Music.
 
 [Unit]
-Description=origaiTV NAS shares
+Description=OrigaiTV NAS shares
 After=network-online.target
 
 [Service]

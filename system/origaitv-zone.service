@@ -2,7 +2,7 @@
 # timedatectl. origaitv-zone.path starts it when the daemon hands one over.
 
 [Unit]
-Description=origaiTV time zone
+Description=OrigaiTV time zone
 
 [Service]
 Type=oneshot

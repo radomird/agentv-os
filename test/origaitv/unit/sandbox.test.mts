@@ -284,7 +284,7 @@ test("a build reaches npm and OSV, its provider only on a plan, and the origins 
   assert.equal(p("api.met.no", 443, "http"), false, "plain http never");
 });
 
-test("what a build declared comes from its state, within origaiTV's own recipe for it", () => {
+test("what a build declared comes from its state, within OrigaiTV's own recipe for it", () => {
   const dir = join(scratch, "declared");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "state.json"), JSON.stringify({ origins: [{ origin: "https://api.met.no", why: "the forecast" }] }));

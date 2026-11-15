@@ -1,5 +1,5 @@
-// The box side of Settings → Power (ADR-033, S2.18): what origaiTV's polkit
-// rules allow, run in a stand-in for polkit, and that origaiTV's long-running
+// The box side of Settings → Power (ADR-033, S2.18): what OrigaiTV's polkit
+// rules allow, run in a stand-in for polkit, and that OrigaiTV's long-running
 // units stop within a few seconds, so none holds a restart or a power-off up.
 
 import assert from "node:assert/strict";
@@ -91,7 +91,7 @@ test("H1 only the owner's own account may start the three update units, and noth
   }
 });
 
-test("S2.18 origaiTV's long-running units stop within a few seconds", () => {
+test("S2.18 OrigaiTV's long-running units stop within a few seconds", () => {
   for (const unit of ["system/origaitv-daemon.service", "system/user/origaitv-screen.service", "system/user/origaitv-input.service", "system/user/origaitv-toast.service"]) {
     const found = /^TimeoutStopSec=(\d+)s$/m.exec(readFileSync(join(ROOT, unit), "utf8"));
     assert.ok(found && Number(found[1]) <= 5, `${unit} stops within 5 s`);
@@ -134,5 +134,5 @@ test("T13.2 the wake alarm wakes the box for the night's update window, and is n
 
 test("T13.2 installing apps holds the box awake", () => {
   const unit = readFileSync(join(ROOT, "system/origaitv-setup-apps.service"), "utf8");
-  assert.match(unit, /^ExecStart=\/usr\/bin\/systemd-inhibit --what=sleep --who=origaiTV "--why=installing apps" --mode=block \/usr\/bin\/origaitv-setup-apps$/m);
+  assert.match(unit, /^ExecStart=\/usr\/bin\/systemd-inhibit --what=sleep --who=OrigaiTV "--why=installing apps" --mode=block \/usr\/bin\/origaitv-setup-apps$/m);
 });

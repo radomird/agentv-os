@@ -97,7 +97,7 @@ for proto in udp tcp; do
   grep -qx "ufw --force delete allow 53317/$proto" "$CALLS" || fail "the rules go as Omarchy added them" "$(cat "$CALLS")"
 done
 grep -qx "allow 3001/tcp from 192.168.0.0/16" "$BOX/rules" || fail "the phone companion's rule stays" "$(cat "$BOX/rules")"
-pass "ADR-085 LocalSend's port 53317 is closed for both protocols, and origaiTV's own rules stay"
+pass "ADR-085 LocalSend's port 53317 is closed for both protocols, and OrigaiTV's own rules stay"
 
 # What it removes is what Omarchy adds. If Omarchy changes its rules, this
 # says so before a box keeps a port open.
@@ -133,8 +133,8 @@ pass "a box without ufw is fine"
 grep -qF "run_logged \"\$ORIGAITV_INSTALL/services.sh\"" "$ROOT/bin/origaitv-firstboot" || fail "first boot runs it"
 after=$(grep -n 'firewall.sh"' "$ROOT/bin/origaitv-firstboot" | cut -d: -f1)
 mine=$(grep -n 'services.sh"' "$ROOT/bin/origaitv-firstboot" | cut -d: -f1)
-(( mine > after )) || fail "after origaiTV's own firewall rules"
-pass "first boot runs it, after origaiTV's own firewall rules"
+(( mine > after )) || fail "after OrigaiTV's own firewall rules"
+pass "first boot runs it, after OrigaiTV's own firewall rules"
 
 # Boxes installed before: a migration runs the same leaf as root.
 migration=$(grep -l "install/tv/services.sh" "$ROOT"/migrations/origaitv/*.sh || true)

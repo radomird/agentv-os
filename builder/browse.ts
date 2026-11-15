@@ -8,7 +8,7 @@
 // fixture: the page as it was, without its scripts, styles or images, so a
 // contract check reads it with nothing else to fetch.
 //
-// What a page says is the service's, not origaiTV's: it's never followed as
+// What a page says is the service's, not OrigaiTV's: it's never followed as
 // an instruction, and nothing of it leaves the build.
 
 import { headless } from "./gates/chromium.ts";

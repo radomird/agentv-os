@@ -9,7 +9,7 @@
 # the right namespace, and code that Node runs as it is and that imports only
 # files from its own package (PHASE-1-PLAN.md, "App contract"). A package is
 # checked as a community app, whose id starts with its author, unless it's
-# one of origaiTV's own (--official) or built on this box (--local).
+# one of OrigaiTV's own (--official) or built on this box (--local).
 
 set -euo pipefail
 

@@ -184,7 +184,7 @@ async function send(base: string, method: string, path: string, options: { body?
     method,
     headers: {
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(options.grant ? { "X-origaiTV-Grant": options.grant } : {}),
+      ...(options.grant ? { "X-OrigaiTV-Grant": options.grant } : {}),
       ...(options.origin ? { Origin: options.origin } : {}),
     } as Record<string, string>,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -255,7 +255,7 @@ test("the home network gets only the phone companion: its page, its requests, an
   assert.match(page.text, /<link rel="manifest" href="\/companion-web\/manifest\.json">/);
   assert.match(page.text, /<link rel="apple-touch-icon" href="\/companion-web\/icon-180\.png">/);
   const manifest = (await send(phone, "GET", "/companion-web/manifest.json")).data;
-  assert.deepEqual([manifest.name, manifest.short_name, manifest.start_url], ["origaiTV", "origaiTV", "/"]);
+  assert.deepEqual([manifest.name, manifest.short_name, manifest.start_url], ["OrigaiTV", "OrigaiTV", "/"]);
   for (const icon of [...manifest.icons.map((one: { src: string }) => one.src), "/companion-web/icon-180.png"]) {
     const drawn = await fetch(`${phone}${icon}`);
     assert.deepEqual([drawn.status, drawn.headers.get("content-type")], [200, "image/png"], icon);
@@ -280,7 +280,7 @@ test("the phone's keys and text reach the screen daemon's stream, and what's typ
   assert.deepEqual((await send(phone, "POST", "/api/phone/remote", { token, body: { key: "down" } })).data, { ok: false, error: "Your TV isn't ready yet" });
   assert.equal((await send(tv, "GET", "/api/remote")).status, 403, "a page can't take the phone's keys");
   const controller = new AbortController();
-  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-origaiTV-Screen": "1" }, signal: controller.signal });
+  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-OrigaiTV-Screen": "1" }, signal: controller.signal });
   const got: string[] = [];
   void (async () => {
     for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
@@ -427,7 +427,7 @@ test("ADR-037 a change while the phone's state is read leaves it a count behind,
 
 test("ADR-037 the trackpad's moves, clicks and scrolls reach the stream, Omarchy's desktop's relay makes it the trackpad, and Settings opens on the TV for an adult", async () => {
   const controller = new AbortController();
-  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-origaiTV-Screen": "desktop" }, signal: controller.signal });
+  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-OrigaiTV-Screen": "desktop" }, signal: controller.signal });
   const got: string[] = [];
   void (async () => {
     for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
@@ -487,7 +487,7 @@ test("S4.7 S4.8 S4.9 the phone arranges home, hears about an update, and signs i
   assert.equal((await send(tv, "POST", "/api/sign-in-screen", { body: { app: "origaitv.tube", name: "Tube" } })).status, 200);
   assert.deepEqual((await send(phone, "GET", "/api/phone/state", { token })).data.signIn, { name: "Tube" });
   const controller = new AbortController();
-  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-origaiTV-Screen": "1" }, signal: controller.signal });
+  const stream = await fetch(`${tv}/api/remote`, { headers: { "X-OrigaiTV-Screen": "1" }, signal: controller.signal });
   const got: string[] = [];
   void (async () => {
     for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {

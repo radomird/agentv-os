@@ -26,7 +26,7 @@ const base = process.env.ORIGAITV_PHONE_URL ?? `http://127.0.0.1:${process.env.O
 // comes from the environment, never from the command line.
 async function newCode(): Promise<string> {
   const post = async (path: string, body: unknown, grant?: string) => {
-    const response = await fetch(`${local}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
+    const response = await fetch(`${local}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
     return { status: response.status, data: (await response.json().catch(() => ({}))) as { pin?: boolean; grant?: string; error?: string; pairing?: { code?: string } } };
   };
   let asked = await post("/api/phones/pair", {});

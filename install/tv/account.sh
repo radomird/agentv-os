@@ -10,7 +10,7 @@ no_password=${ORIGAITV_SSHD_NO_PASSWORD:-/etc/ssh/sshd_config.d/05-origaitv-no-p
 if [[ -f $marker ]] && [[ $(jq -r '.passwordKnown' "$marker" 2>/dev/null) == "false" ]]; then
   install -d -m 755 "$(dirname "$no_password")"
   cat >"$no_password" <<'CONF'
-# origaiTV: nobody knows this box's password until the phone sets one, so
+# OrigaiTV: nobody knows this box's password until the phone sets one, so
 # until then SSH takes keys only (install/tv/account.sh).
 PasswordAuthentication no
 KbdInteractiveAuthentication no

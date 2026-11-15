@@ -1,4 +1,4 @@
-// origaiTV's built-in New this week (stage 8, S8.1): home's top rail for
+// OrigaiTV's built-in New this week (stage 8, S8.1): home's top rail for
 // streaming, what came out this week on the household's services. The
 // daemon draws its tile itself, from TMDB through the router's service
 // (daemon/tmdb.ts), since the household's TMDB key is root's and no app's

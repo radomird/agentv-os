@@ -37,7 +37,7 @@ async function send(method: string, path: string, body?: unknown, options: { gra
     method,
     headers: {
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(options.grant ? { "X-origaiTV-Grant": options.grant } : {}),
+      ...(options.grant ? { "X-OrigaiTV-Grant": options.grant } : {}),
     } as Record<string, string>,
     body: body === undefined ? undefined : JSON.stringify(body),
   };

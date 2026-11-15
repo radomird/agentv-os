@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# origaiTV's layer 3 (ADR-019; S3.1): every app against its fixtures, in its
+# OrigaiTV's layer 3 (ADR-019; S3.1): every app against its fixtures, in its
 # own worker, with its page in a real Chromium, and no network. Playwright
 # comes at a pinned version into a folder of its own; the browser is the one
 # on the machine. Music reads its tags with ffprobe.

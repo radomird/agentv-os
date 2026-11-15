@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Type-checks origaiTV's TypeScript (ADR-019, layer 1): the daemon, the app
+# Type-checks OrigaiTV's TypeScript (ADR-019, layer 1): the daemon, the app
 # contract, the apps in the test fixtures, the tests and the launcher, with TypeScript,
 # Node's types and Playwright's (for the contract's Page) at pinned versions,
 # fetched into a folder of their own. The box itself never needs them: Node
@@ -33,4 +33,4 @@ for project in daemon launcher companion-web setup builder; do
   }' >"$tools/$project.json"
   "$tools/node_modules/.bin/tsc" -p "$tools/$project.json"
 done
-echo "ok - origaiTV's TypeScript type-checks ($TYPESCRIPT, $NODE_TYPES, $PLAYWRIGHT)"
+echo "ok - OrigaiTV's TypeScript type-checks ($TYPESCRIPT, $NODE_TYPES, $PLAYWRIGHT)"

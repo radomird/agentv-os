@@ -371,7 +371,7 @@ test("ADR-040 a sign-in that runs out halfway through a build asks for it again,
   assert.deepEqual([key.state, key.reason], ["failed", "packages: the agent stopped with an error"]);
 });
 
-test("ADR-040 a sign-in origaiTV ended isn't done because the CLI's status still says it's in", async () => {
+test("ADR-040 a sign-in OrigaiTV ended isn't done because the CLI's status still says it's in", async () => {
   // A plan whose sign-in ran out: its status says claude.ai all along, and
   // its login waits for a code that never comes.
   const h = home("claude", `#!/bin/bash

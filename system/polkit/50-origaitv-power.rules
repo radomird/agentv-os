@@ -1,4 +1,4 @@
-// origaiTV (ADR-033): Settings → Power restarts the box and shuts it down,
+// OrigaiTV (ADR-033): Settings → Power restarts the box and shuts it down,
 // through Omarchy's own commands. It also restarts it to the boot menu
 // (ADR-060), which logind asks the boot loader for, for the next boot only.
 // The TV's screen daemon runs them as the box's owner, from the TV session's

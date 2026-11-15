@@ -149,7 +149,7 @@ const readJson = <T>(path: string): T | null => {
 };
 
 // What the running build declared: the origins in its state, and whether its
-// recipe lets an app have any, from origaiTV's own recipes, not the build's.
+// recipe lets an app have any, from OrigaiTV's own recipes, not the build's.
 export function declaredBy(ticket: Ticket | null, recipesRoot: string): Declared {
   if (!ticket || ticket.recipe === null) return { origins: [], originsAllowed: false };
   if (!KINDS.includes(ticket.recipe as Kind)) return { origins: [], originsAllowed: false };

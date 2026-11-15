@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards daemon/input.py, origaiTV's virtual input device (ADR-008): what it
+# Guards daemon/input.py, OrigaiTV's virtual input device (ADR-008): what it
 # writes for a key, typed text, the pointer and a bad request. The uinput
 # device itself needs the box (an image check and origaitv selftest see it);
 # here the events go to a stand-in.
@@ -32,7 +32,7 @@ assert events() == [(1, 103, 1), (1, 103, 0)], "up"
 print("ok - a key is a press and a release")
 
 device.handle({"key": "back"})
-assert events() == [(1, 1, 1), (1, 1, 0)], "back is Esc, origaiTV's back key"
+assert events() == [(1, 1, 1), (1, 1, 0)], "back is Esc, OrigaiTV's back key"
 device.handle({"key": "home"})
 assert events() == [(1, 172, 1), (1, 172, 0)], "home is a remote's Home button"
 print("ok - back is Esc (ADR-008), and home is a remote's Home button")

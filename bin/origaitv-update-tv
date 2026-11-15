@@ -21,11 +21,11 @@
 # /etc/sudoers.d at all, and this runs the steps of Omarchy's update itself,
 # in Omarchy's order (bin/omarchy-update), each as who it belongs to:
 #
-# - Root's half as root: origaiTV's repository line, the tested check, free
+# - Root's half as root: OrigaiTV's repository line, the tested check, free
 #   space, the package cache, the snapshot, the keys, the packages, orphans
 #   and the boot files. Omarchy's own commands, from root-owned code, with a
 #   clean environment that has nothing of the owner's in it.
-# - Omarchy's and origaiTV's migrations as the owner, since they migrate the
+# - Omarchy's and OrigaiTV's migrations as the owner, since they migrate the
 #   owner's own config. They're root-owned code from the packages too, but
 #   they call sudo. So for the migrations alone, root lends them a sudo that
 #   only they and what they start can use (bin/origaitv-sudo-lend). It's gone
@@ -34,7 +34,7 @@
 #   Omarchy's service restarts, the owner's own post-update hooks and mise.
 #   No login shell, and none of the owner's profile.
 #
-# origaiTV's services restart in between, the daemon as root and the TV
+# OrigaiTV's services restart in between, the daemon as root and the TV
 # session's units as the owner (bin/origaitv-restart). AUR packages are left
 # for the desktop's terminal: yay won't run as root and needs sudo to
 # install, and a TV has none unless someone added them there.
@@ -55,7 +55,7 @@ SYSTEM_PATH=${ORIGAITV_UPDATE_PATH:-/usr/local/sbin:/usr/local/bin:/usr/bin}:$OM
 export PATH="$SYSTEM_PATH"
 unset BASH_ENV ENV
 
-# origaiTV's own settings from this script's environment go on to what it runs.
+# OrigaiTV's own settings from this script's environment go on to what it runs.
 # systemd starts it with none, so that's the tests' stand-in paths.
 passed=()
 while IFS= read -r name; do
@@ -199,13 +199,13 @@ needs_restart() {
 # A step that fails ends it, where it would end Omarchy's.
 update() {
   # Omarchy writes /etc/pacman.conf from its own template, which doesn't know
-  # about origaiTV's repository. Put it back first, or origaiTV never updates.
+  # about OrigaiTV's repository. Put it back first, or OrigaiTV never updates.
   as_root "$ORIGAITV_BIN_DIR/origaitv-pacman-conf" ${ORIGAITV_PACMAN_CONF:+--file "$ORIGAITV_PACMAN_CONF"} || return 1
 
-  # Only versions origaiTV's nightly run has passed, except on edge, as origaitv
+  # Only versions OrigaiTV's nightly run has passed, except on edge, as origaitv
   # update has it. Nothing has changed on the box before this says yes.
   if [[ $(as_root "$ORIGAITV_BIN_DIR/origaitv-channel") == "edge" ]]; then
-    echo "On edge: taking origaiTV's newest green build, without waiting for the nightly run."
+    echo "On edge: taking OrigaiTV's newest green build, without waiting for the nightly run."
   else
     as_root "$ORIGAITV_BIN_DIR/origaitv-tested" || return 1
   fi
@@ -219,8 +219,8 @@ update() {
   # Migrations call Omarchy's shell, so give them one running the new code.
   as_owner -- 'if omarchy-migrate --pending >/dev/null; then omarchy-restart-shell || true; fi'
 
-  # Omarchy's migrations, then origaiTV's, from /usr/bin and not through the
-  # owner's copy of the post-update hook. origaiTV's services restart further
+  # Omarchy's migrations, then OrigaiTV's, from /usr/bin and not through the
+  # owner's copy of the post-update hook. OrigaiTV's services restart further
   # down, so origaitv-migrate leaves that out here.
   with_lent_sudo ORIGAITV_RESTART=/usr/bin/true -- 'omarchy-migrate && "$1"' origaitv-update-tv "$ORIGAITV_BIN_DIR/origaitv-migrate" || return 1
 
@@ -235,11 +235,11 @@ update() {
   # the update goes on: the restart or the next boot does the same.
   as_owner -- 'omarchy-shell -q omarchy.system-update clear; omarchy-update-restart --services-only' || true
 
-  # origaiTV's own services on the version now installed, unless the box
+  # OrigaiTV's own services on the version now installed, unless the box
   # restarts anyway. A service that doesn't restart says so, and the check
   # after the update finds a daemon still on the old version.
   if needs_restart; then
-    echo "origaiTV's services start again with the box, which this update restarts"
+    echo "OrigaiTV's services start again with the box, which this update restarts"
   else
     as_root "$ORIGAITV_BIN_DIR/origaitv-restart" --system || true
     as_owner -- '"$1" --session' origaitv-update-tv "$ORIGAITV_BIN_DIR/origaitv-restart" || true
@@ -247,7 +247,7 @@ update() {
 
   # The owner's own post-update hooks and mise tools. These are the owner's
   # to write, so they run last, with the PATH a login gives them and nothing
-  # else. origaiTV's hook among them calls origaitv-migrate, which finds nothing
+  # else. OrigaiTV's hook among them calls origaitv-migrate, which finds nothing
   # left to run, and is told not to restart everything a second time.
   as_owner ORIGAITV_RESTART=/usr/bin/true \
     PATH="$home/.local/share/mise/command-wrappers/bin:$SYSTEM_PATH:$home/.local/share/mise/shims:$home/.local/bin" \

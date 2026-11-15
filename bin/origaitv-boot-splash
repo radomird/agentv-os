@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# origaitv:summary=Keep origaiTV's splash on the TV from the boot until home is drawn
+# origaitv:summary=Keep OrigaiTV's splash on the TV from the boot until home is drawn
 # origaitv:args=<quit|release|tv|done|desktop>
 # origaitv:hidden=true
 
-# Straight to the TV (ADR-060): origaiTV's splash stays from the boot loader
+# Straight to the TV (ADR-060): OrigaiTV's splash stays from the boot loader
 # until home or setup is drawn, with no console text, black screen or
 # Omarchy screen between them. Each part runs from where it happens:
 #
-#   quit     Plymouth's own quit at boot, as root, through origaiTV's drop-in
+#   quit     Plymouth's own quit at boot, as root, through OrigaiTV's drop-in
 #            for plymouth-quit.service. Plymouth lets go of the screen but
 #            keeps running, so its last frame stays up while the login
 #            manager starts the TV session, and the session's first frame

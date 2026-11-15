@@ -30,7 +30,7 @@ before(async () => {
   browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER });
   const controller = new AbortController();
   stopRemote = () => controller.abort();
-  const stream = await fetch(`${url}/api/remote`, { headers: { "X-origaiTV-Screen": "1" }, signal: controller.signal });
+  const stream = await fetch(`${url}/api/remote`, { headers: { "X-OrigaiTV-Screen": "1" }, signal: controller.signal });
   void (async () => {
     for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
       for (const match of new TextDecoder().decode(chunk).matchAll(/data: (.*)/g)) remote.push(match[1]);
@@ -240,7 +240,7 @@ test("an answer nobody sealed doesn't take the phone's key: after a made-up \"pa
 
 test("F6 with a PIN set, pair a phone and forget ask for it once, on the pad Settings has, and Back leaves things as they were", async () => {
   const send = async (method: string, path: string, body?: unknown, grant?: string) =>
-    (await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
+    (await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
   await send("PUT", "/api/pin", { pin: "4826" });
   const before = (await send("GET", "/api/phones")).pairing?.code ?? null;
   const screen = await tv();

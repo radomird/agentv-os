@@ -182,7 +182,7 @@ test("the key is the router's alone: only origaitv-router.service has it, and a 
   // does. Its other groups are the desktop password's way to root, and the
   // builder's, which reads the builds now that they aren't open to everyone.
   assert.deepEqual(settings(unit("origaitv-daemon.service"), "SupplementaryGroups"), ["origaitv-router origaitv-account origaitv-builder"]);
-  assert.match(readFileSync(join(ROOT, "system/sysusers/origaitv-router.conf"), "utf8"), /^u origaitv-router - "origaiTV router" - \/usr\/bin\/nologin$/m);
+  assert.match(readFileSync(join(ROOT, "system/sysusers/origaitv-router.conf"), "utf8"), /^u origaitv-router - "OrigaiTV router" - \/usr\/bin\/nologin$/m);
 });
 
 test("S7.4 the plan's CLI runs as the builder, in a sandbox like a build's: no network of its own, no keys, only the builder's home", () => {

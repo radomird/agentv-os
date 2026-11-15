@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# origaitv:summary=origaiTV's part of Omarchy's desktop: Back to TV, and no first-run notices
+# origaitv:summary=OrigaiTV's part of Omarchy's desktop: Back to TV, and no first-run notices
 # origaitv:args=[--install]
 # origaitv:hidden=true
 
@@ -28,7 +28,7 @@ LOADER="$TOGGLES/origaitv-back-to-tv.lua"
 install_loader() {
   mkdir -p "$TOGGLES"
   cat >"$LOADER" <<LUA
--- origaiTV: Super+Ctrl+Home goes back to the TV (ADR-031). Written by origaiTV;
+-- OrigaiTV: Super+Ctrl+Home goes back to the TV (ADR-031). Written by OrigaiTV;
 -- the key itself is in $ORIGAITV_PATH/session/desktop.lua.
 local path = "$ORIGAITV_PATH/session/desktop.lua"
 local file = io.open(path, "r")

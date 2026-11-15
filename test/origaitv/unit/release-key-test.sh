@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Guards who gets origaiTV's signing key in this repo's workflows (audit M3
+# Guards who gets OrigaiTV's signing key in this repo's workflows (audit M3
 # and L8): a pull request's, a sync's and a release candidate's image run
 # get no secrets at all and sign with a throwaway key, only the nightly run
-# asks for origaiTV's own, and not when it's started by hand with an origaitv-iso
+# asks for OrigaiTV's own, and not when it's started by hand with an origaitv-iso
 # ref of its own. Inside image.yml the key is read only where release-key
 # says so, only beside merged code, and never handed to a container.
 #
-# Merged code is agentv, or a whole commit agentv has. No tag is taken by
+# Merged code is origaitv, or a whole commit origaitv has. No tag is taken by
 # its name, a release's neither: a branch can have the same name and a
 # checkout takes the branch, and this repo carries Omarchy's own v1 to v4
 # tags too. The nightly run hands over the commit a release's tag is on
@@ -38,20 +38,20 @@ for name in check omarchy-sync omarchy-rc; do
   job=$(code "$(caller "$workflows/$name.yml")")
   [[ -n $job ]] || fail "M3 $name.yml calls image.yml"
   grep -q 'secrets' <<<"$job" && fail "M3 $name.yml hands image.yml no secrets" "$job"
-  grep -q 'release-key' <<<"$job" && fail "M3 $name.yml never asks for origaiTV's own key" "$job"
-  pass "M3 $name.yml hands image.yml no secrets, and never asks for origaiTV's own key"
-  # With no key of origaiTV's, the newer agentv a run updates to is signed
+  grep -q 'release-key' <<<"$job" && fail "M3 $name.yml never asks for OrigaiTV's own key" "$job"
+  pass "M3 $name.yml hands image.yml no secrets, and never asks for OrigaiTV's own key"
+  # With no key of OrigaiTV's, the newer origaitv a run updates to is signed
   # with the run's throwaway key. Only a box with the run's own packages
   # trusts that, so image.yml refuses a channel's packages here.
   if ! grep -q 'update-test: false' <<<"$job"; then
     grep -q '^ *packages: build$' <<<"$job" ||
-      fail "$name.yml checks an update with no key of origaiTV's, so it builds its own packages" "$job"
-    pass "$name.yml checks an update with no key of origaiTV's, so it builds its own packages"
+      fail "$name.yml checks an update with no key of OrigaiTV's, so it builds its own packages" "$job"
+    pass "$name.yml checks an update with no key of OrigaiTV's, so it builds its own packages"
   fi
 done
 
 job=$(code "$(caller "$workflows/nightly.yml")")
-grep -q 'release-key: ' <<<"$job" || fail "M3 the nightly run asks for origaiTV's own key" "$job"
+grep -q 'release-key: ' <<<"$job" || fail "M3 the nightly run asks for OrigaiTV's own key" "$job"
 # It passes the key by name and nothing else. The key is a secret of the
 # "release" environment alone, and GitHub hands a called workflow an
 # environment secret only when the caller passes it by name: not passed,
@@ -62,7 +62,7 @@ grep -q 'secrets: inherit' <<<"$job" && fail "M3 the nightly run never hands ove
 # shellcheck disable=SC2016 # the workflow's own expression, not the shell's
 grep -qx '      AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}' <<<"$job" ||
   fail "M3 the nightly run passes the signing key by name, which is how an environment's secret reaches a called workflow" "$job"
-pass "M3 only the nightly run asks for origaiTV's own key, and it passes that one secret by name and nothing else"
+pass "M3 only the nightly run asks for OrigaiTV's own key, and it passes that one secret by name and nothing else"
 
 # Started by hand, the nightly run can check with an origaitv-iso ref that
 # isn't merged (its checks input). Then it gets no key, so it has nothing to
@@ -86,17 +86,17 @@ pass "M3 no workflow hands every secret to another"
 body=$(code "$(cat "$image")")
 # Every read of the secret is behind release-key.
 reads=$(grep -n 'secrets\.AGENTV_SIGNING_KEY' <<<"$body" || true)
-[[ -n $reads ]] || fail "M3 image.yml still signs tested.json with origaiTV's key"
+[[ -n $reads ]] || fail "M3 image.yml still signs tested.json with OrigaiTV's key"
 ungated=$(grep -v "inputs.release-key && secrets.AGENTV_SIGNING_KEY || ''" <<<"$reads" || true)
-[[ -z $ungated ]] || fail "M3 image.yml reads origaiTV's key only when release-key is set" "$ungated"
-pass "M3 image.yml reads origaiTV's key only when release-key is set"
+[[ -z $ungated ]] || fail "M3 image.yml reads OrigaiTV's key only when release-key is set" "$ungated"
+pass "M3 image.yml reads OrigaiTV's key only when release-key is set"
 
 [[ $(grep -cF "environment: \${{ inputs.release-key && 'release' || '' }}" <<<"$body") == 2 ]] ||
   fail "M3 the two jobs that sign take the key from the release environment, and only with release-key"
 pass "M3 the two jobs that sign take the key from the release environment, and only with release-key"
 
 # The step that says which key a run gets, once for each job that signs.
-# With origaiTV's own, everything checked out beside it is merged: agentv, or
+# With OrigaiTV's own, everything checked out beside it is merged: origaitv, or
 # a release's tag. This runs the step's own script, which stops or goes on
 # before it would make a throwaway key.
 awk -v dir="$SCRATCH" '
@@ -108,9 +108,9 @@ awk -v dir="$SCRATCH" '
   /^      - / { script = 0 }
 ' "$image"
 [[ -s $SCRATCH/guard-2.sh && ! -e $SCRATCH/guard-3.sh ]] || fail "M3 each of the two jobs that sign says which key it gets"
-# GitHub's answer to whether a commit is on agentv's branch, for made-up
-# commits: one origaitv-iso's agentv has, one that's ahead of it on a branch,
-# and one origaitv-os's agentv has. It also knows where tags are, the way
+# GitHub's answer to whether a commit is on origaitv's branch, for made-up
+# commits: one origaitv-iso's origaitv has, one that's ahead of it on a branch,
+# and one origaitv-os's origaitv has. It also knows where tags are, the way
 # GitHub does, to show that nobody asks: a tag is never taken by its name.
 on=1111111111111111111111111111111111111111
 ahead=2222222222222222222222222222222222222222
@@ -120,22 +120,22 @@ cat >"$SCRATCH/bin/gh" <<GH
 #!/bin/bash
 echo "\$*" >>"$SCRATCH/gh.calls"
 case "\$*" in
-  "api repos/owner/origaitv-iso/compare/$on...agentv --jq .status") echo ahead ;;
-  "api repos/owner/origaitv-iso/compare/$ahead...agentv --jq .status") echo behind ;;
-  "api repos/owner/origaitv-os/compare/$os_on...agentv --jq .status") echo identical ;;
+  "api repos/owner/origaitv-iso/compare/$on...origaitv --jq .status") echo ahead ;;
+  "api repos/owner/origaitv-iso/compare/$ahead...origaitv --jq .status") echo behind ;;
+  "api repos/owner/origaitv-os/compare/$os_on...origaitv --jq .status") echo identical ;;
   "api repos/owner/origaitv-"*"/git/ref/tags/"*) echo "commit $on" ;;
-  "api repos/owner/origaitv-"*"/compare/"*"...agentv --jq .status") echo behind ;;
+  "api repos/owner/origaitv-"*"/compare/"*"...origaitv --jq .status") echo behind ;;
   *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 GH
 chmod +x "$SCRATCH/bin/gh"
 # guard <os ref> <iso ref> <update checks> [NAME=value...]: a nightly run on
-# agentv with the key, with those refs.
+# origaitv with the key, with those refs.
 guard() {
   local os=$1 iso=$2 update=$3
   shift 3
   : >"$SCRATCH/guard.out"
-  env RELEASE_KEY=true PACKAGES=stable PKGS_REF=main GITHUB_REF=refs/heads/agentv GITHUB_STEP_SUMMARY=/dev/null \
+  env RELEASE_KEY=true PACKAGES=stable PKGS_REF=main GITHUB_REF=refs/heads/origaitv GITHUB_STEP_SUMMARY=/dev/null \
     GITHUB_OUTPUT="$SCRATCH/guard.out" RUNNER_TEMP="$SCRATCH/none" OS_REF="$os" ISO_REF="$iso" UPDATE_CHECKS="$update" \
     OWNER=owner GH_TOKEN=token PATH="$SCRATCH/bin:$PATH" "$@" \
     bash -euo pipefail "$script" >"$SCRATCH/guard.log" 2>&1
@@ -144,10 +144,10 @@ guard() {
 # it belongs to: a release's, a candidate's, one of Omarchy's own, with
 # refs/tags/ in front or not. A branch can carry the same name.
 tag_names=(
-  "agentv v0.2.0 agentv" "agentv origaitv-v1.0.0 agentv" "agentv origaitv-v1.0.0-rc1 agentv"
-  "origaitv-v1.0.0 agentv ''" "v4.0.6 agentv ''" "v0.2.0 agentv ''" "agentv agentv v0.2.0"
-  "agentv refs/tags/origaitv-v1.0.0 agentv" "agentv refs/tags/v0.2.0 agentv" "refs/tags/v4.0.6 agentv ''"
-  "agentv refs/heads/agentv agentv" "agentv tags/origaitv-v1.0.0 agentv"
+  "origaitv v0.2.0 origaitv" "origaitv origaitv-v1.0.0 origaitv" "origaitv origaitv-v1.0.0-rc1 origaitv"
+  "origaitv-v1.0.0 origaitv ''" "v4.0.6 origaitv ''" "v0.2.0 origaitv ''" "origaitv origaitv v0.2.0"
+  "origaitv refs/tags/origaitv-v1.0.0 origaitv" "origaitv refs/tags/v0.2.0 origaitv" "refs/tags/v4.0.6 origaitv ''"
+  "origaitv refs/heads/origaitv origaitv" "origaitv tags/origaitv-v1.0.0 origaitv"
 )
 
 for n in 1 2; do
@@ -159,25 +159,25 @@ for n in 1 2; do
   done
   grep -q '^ *if: .*inputs\.release-key' <<<"$step" || fail "M3 a run with release-key never skips the step that checks it" "$step"
 
-  guard agentv agentv "" || fail "M3 the night's own refs get origaiTV's key" "$(cat "$SCRATCH/guard.log")"
-  guard agentv "$on" agentv || fail "M3 a commit origaitv-iso's agentv has, updated to agentv, gets origaiTV's key" "$(cat "$SCRATCH/guard.log")"
-  guard "$os_on" "$on" agentv || fail "M3 origaitv-os at a commit its agentv has gets origaiTV's key" "$(cat "$SCRATCH/guard.log")"
+  guard origaitv origaitv "" || fail "M3 the night's own refs get OrigaiTV's key" "$(cat "$SCRATCH/guard.log")"
+  guard origaitv "$on" origaitv || fail "M3 a commit origaitv-iso's origaitv has, updated to origaitv, gets OrigaiTV's key" "$(cat "$SCRATCH/guard.log")"
+  guard "$os_on" "$on" origaitv || fail "M3 origaitv-os at a commit its origaitv has gets OrigaiTV's key" "$(cat "$SCRATCH/guard.log")"
   : >"$SCRATCH/gh.calls"
-  for refs in "agentv fix/checks ''" "agentv $on fix/checks" "fix/os agentv ''" "agentv v0.2.0-rc1 ''" \
-    "agentv 0123456789abcdef0123456789abcdef01234567 ''" "agentv 'origaitv x' ''" \
-    "agentv $ahead agentv" "agentv agentv $ahead" "$on agentv ''" "agentv ${on:0:9} agentv" \
+  for refs in "origaitv fix/checks ''" "origaitv $on fix/checks" "fix/os origaitv ''" "origaitv v0.2.0-rc1 ''" \
+    "origaitv 0123456789abcdef0123456789abcdef01234567 ''" "origaitv 'origaitv x' ''" \
+    "origaitv $ahead origaitv" "origaitv origaitv $ahead" "$on origaitv ''" "origaitv ${on:0:9} origaitv" \
     "${tag_names[@]}"; do
     eval "set -- $refs"
-    guard "$@" && fail "M3 origaiTV's key is never beside an unmerged ref" "passed with origaitv-os $1, origaitv-iso $2, update checks ${3:-none}"
-    grep -q "origaiTV's own key signs only" "$SCRATCH/guard.log" ||
-      fail "M3 origaiTV's key is never beside an unmerged ref" "$(cat "$SCRATCH/guard.log")"
+    guard "$@" && fail "M3 OrigaiTV's key is never beside an unmerged ref" "passed with origaitv-os $1, origaitv-iso $2, update checks ${3:-none}"
+    grep -q "OrigaiTV's own key signs only" "$SCRATCH/guard.log" ||
+      fail "M3 OrigaiTV's key is never beside an unmerged ref" "$(cat "$SCRATCH/guard.log")"
   done
   grep -q '/git/' "$SCRATCH/gh.calls" && fail "nobody asks where a tag is: a tag's name is never taken" "$(grep '/git/' "$SCRATCH/gh.calls")"
-  guard agentv agentv "" PKGS_REF=fix/pkgs && fail "M3 origaiTV's key signs only with origaitv-pkgs' main"
-  guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "M3 origaiTV's key signs only on agentv"
-  guard agentv agentv "" PACKAGES=build && fail "M3 origaiTV's key never signs packages built in the run"
+  guard origaitv origaitv "" PKGS_REF=fix/pkgs && fail "M3 OrigaiTV's key signs only with origaitv-pkgs' main"
+  guard origaitv origaitv "" GITHUB_REF=refs/heads/fix && fail "M3 OrigaiTV's key signs only on origaitv"
+  guard origaitv origaitv "" PACKAGES=build && fail "M3 OrigaiTV's key never signs packages built in the run"
 done
-pass "M3 origaiTV's key is only ever beside agentv or a whole commit agentv has, in origaitv-os and origaitv-iso"
+pass "M3 OrigaiTV's key is only ever beside origaitv or a whole commit origaitv has, in origaitv-os and origaitv-iso"
 pass "no tag is taken by its name, a release's neither, nor one of Omarchy's: whoever wants a release's checks hands over its commit"
 
 # image.yml declares the key, so a caller can pass it, and never requires
@@ -296,16 +296,16 @@ finish_if=$(awk '$0 == "  finish:" { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/
   fail "the last job, which checks the ref out again, doesn't run when the refs were refused" "$finish_if"
 script=$SCRATCH/refs.sh
 awk '/^        run: \|$/ { on = 1; next } on { sub(/^          /, ""); print }' <<<"$refs" >"$script"
-guard agentv agentv "" || fail "the night's own refs pass the job that checks them" "$(cat "$SCRATCH/guard.log")"
-guard agentv "$on" agentv || fail "a commit agentv has passes the job that checks the refs" "$(cat "$SCRATCH/guard.log")"
-for refs_tried in "agentv fix/checks ''" "fix/os agentv ''" "agentv agentv $ahead" "agentv $ahead agentv" "${tag_names[@]}"; do
+guard origaitv origaitv "" || fail "the night's own refs pass the job that checks them" "$(cat "$SCRATCH/guard.log")"
+guard origaitv "$on" origaitv || fail "a commit origaitv has passes the job that checks the refs" "$(cat "$SCRATCH/guard.log")"
+for refs_tried in "origaitv fix/checks ''" "fix/os origaitv ''" "origaitv origaitv $ahead" "origaitv $ahead origaitv" "${tag_names[@]}"; do
   eval "set -- $refs_tried"
   guard "$@" && fail "an unmerged ref stops the run before a job that can hold the key starts" "passed with origaitv-os $1, origaitv-iso $2, update checks ${3:-none}"
 done
-guard agentv agentv "" PKGS_REF=fix/pkgs && fail "the job that checks the refs wants origaitv-pkgs' main"
-guard agentv agentv "" GITHUB_REF=refs/heads/fix && fail "the job that checks the refs wants the run on agentv"
+guard origaitv origaitv "" PKGS_REF=fix/pkgs && fail "the job that checks the refs wants origaitv-pkgs' main"
+guard origaitv origaitv "" GITHUB_REF=refs/heads/fix && fail "the job that checks the refs wants the run on origaitv"
 guard fix/os fix/checks "" RELEASE_KEY=false || fail "a run that doesn't ask for the key isn't held up" "$(cat "$SCRATCH/guard.log")"
-pass "a run that asks for origaiTV's key has its refs checked in a job with no environment and no checkout, before the jobs that can hold the key"
+pass "a run that asks for OrigaiTV's key has its refs checked in a job with no environment and no checkout, before the jobs that can hold the key"
 
 # The same job says, for every run, whether everything it checks out is
 # merged. Only then does a run leave its root image's slow part or its box
@@ -317,17 +317,17 @@ merged_is() {
   [[ $(cat "$SCRATCH/guard.out") == "merged=$want" ]] ||
     fail "the job that checks the refs says merged=$want for: $*" "$(cat "$SCRATCH/guard.out" "$SCRATCH/guard.log")"
 }
-merged_is true agentv agentv "" RELEASE_KEY=false
-merged_is true agentv "$on" agentv RELEASE_KEY=false PACKAGES=build
+merged_is true origaitv origaitv "" RELEASE_KEY=false
+merged_is true origaitv "$on" origaitv RELEASE_KEY=false PACKAGES=build
 merged_is true "$os_on" "$on" "" RELEASE_KEY=false
-merged_is false agentv refs/tags/origaitv-v1.0.0 agentv RELEASE_KEY=false
-merged_is false fix/os agentv "" RELEASE_KEY=false
-merged_is false agentv fix/checks "" RELEASE_KEY=false
-merged_is false agentv agentv "$ahead" RELEASE_KEY=false
-merged_is false agentv origaitv-v1.0.0 "" RELEASE_KEY=false
-merged_is false agentv agentv "" RELEASE_KEY=false PKGS_REF=fix/pkgs
-merged_is false agentv agentv "" RELEASE_KEY=false GITHUB_REF=refs/pull/7/merge
-guard agentv agentv "" && [[ $(cat "$SCRATCH/guard.out") == "merged=true" ]] || fail "a run with the key and merged refs is merged"
+merged_is false origaitv refs/tags/origaitv-v1.0.0 origaitv RELEASE_KEY=false
+merged_is false fix/os origaitv "" RELEASE_KEY=false
+merged_is false origaitv fix/checks "" RELEASE_KEY=false
+merged_is false origaitv origaitv "$ahead" RELEASE_KEY=false
+merged_is false origaitv origaitv-v1.0.0 "" RELEASE_KEY=false
+merged_is false origaitv origaitv "" RELEASE_KEY=false PKGS_REF=fix/pkgs
+merged_is false origaitv origaitv "" RELEASE_KEY=false GITHUB_REF=refs/pull/7/merge
+guard origaitv origaitv "" && [[ $(cat "$SCRATCH/guard.out") == "merged=true" ]] || fail "a run with the key and merged refs is merged"
 # shellcheck disable=SC2016 # the workflow's own expressions, not the shell's
 {
   grep -qx '      merged: ${{ steps.refs.outputs.merged }}' <<<"$refs" || fail "the job that checks the refs hands on whether they're merged"
@@ -354,9 +354,9 @@ root_saved() {
     bash -euo pipefail -c "$root_step") >"$SCRATCH/root.log" 2>&1 || fail "the step that says which root image it used runs" "$(cat "$SCRATCH/root.log")"
   grep -qx 'save=true' "$SCRATCH/root.out"
 }
-root_saved true refs/heads/agentv || fail "a run on agentv whose checkouts are all merged keeps its root image" "$(cat "$SCRATCH/root.out")"
-root_saved false refs/heads/agentv && fail "a run on agentv with an unmerged checkout keeps no root image for later runs" "$(cat "$SCRATCH/root.log")"
-root_saved "" refs/heads/agentv && fail "a run that wasn't told its refs are merged keeps no root image"
+root_saved true refs/heads/origaitv || fail "a run on origaitv whose checkouts are all merged keeps its root image" "$(cat "$SCRATCH/root.out")"
+root_saved false refs/heads/origaitv && fail "a run on origaitv with an unmerged checkout keeps no root image for later runs" "$(cat "$SCRATCH/root.log")"
+root_saved "" refs/heads/origaitv && fail "a run that wasn't told its refs are merged keeps no root image"
 root_saved true refs/heads/fix && fail "a run on another branch keeps no root image, as before"
 pass "only a run whose every checkout is merged leaves a root image or a box in the cache for later runs"
 

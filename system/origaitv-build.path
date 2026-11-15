@@ -2,7 +2,7 @@
 # in its private state, origaitv-build.service hands it over as root.
 
 [Unit]
-Description=origaiTV build hand-over
+Description=OrigaiTV build hand-over
 
 [Path]
 PathExistsGlob=/var/lib/origaitv/daemon/build-drop/*.json

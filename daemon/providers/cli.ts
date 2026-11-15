@@ -1,6 +1,6 @@
 // A plan's back end (ADR-022, ADR-023, ADR-053): the provider's own CLI,
 // unmodified, run once per sentence as the builder, which signed in to the
-// plan through the CLI's own login. origaiTV never sees the plan's tokens:
+// plan through the CLI's own login. OrigaiTV never sees the plan's tokens:
 // the CLI reads them from its own files in the builder's home.
 //
 // Each run is the router's brief and nothing else: no tools, no MCP

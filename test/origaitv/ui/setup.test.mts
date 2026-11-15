@@ -76,7 +76,7 @@ after(async () => {
 
 const drop = () => join(state, "hotspot-drop", "request.json");
 function hotspotIs(fields: Record<string, unknown>): void {
-  writeFileSync(join(hotspot, "state.json"), JSON.stringify({ on: false, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", ...fields }));
+  writeFileSync(join(hotspot, "state.json"), JSON.stringify({ on: false, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", ...fields }));
 }
 
 async function phone(): Promise<Page> {
@@ -239,7 +239,7 @@ test("stage 4 the welcome screen shows the hotspot's QR code, then the code that
     const qr = document.querySelector(".welcome-qr .qr") as HTMLImageElement;
     return /^\/api\/hotspot\/qr/.test(qr.getAttribute("src") ?? "") && qr.complete && qr.naturalWidth > 0;
   });
-  assert.equal(await textOf(page, ".qr-label"), "wi-fi origaiTV-3f9a · password k7m2xpqr4n");
+  assert.equal(await textOf(page, ".qr-label"), "wi-fi OrigaiTV-3f9a · password k7m2xpqr4n");
   assert.match(await textOf(page, ".bar"), /setup[\s\S]*1\/6 connect[\s\S]*wi-fi hotspot · phone waiting/);
 
   hotspotIs({ on: true, error: "that password didn't work for home wi-fi" });
@@ -372,10 +372,10 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   const install = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; grant?: string }[] }).screenRequests.find((r) => r.cmd === "update-install"));
   assert.equal(install?.grant, "", "a new box has no PIN to ask for");
   writeFileSync(join(updates, "progress.json"), JSON.stringify({ state: "running", step: "packages", percent: 62, detail: "3 of 5", at: now(), from: { origaitv: "0.2.1-1", omarchy: "4.0.6-1" }, to: { origaitv: "0.3.0-1" } }));
-  await page.waitForFunction(() => /\[>\] origaiTV 0\.2\.1 to 0\.3\.0/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 10_000 });
+  await page.waitForFunction(() => /\[>\] OrigaiTV 0\.2\.1 to 0\.3\.0/.test(document.querySelector(".ready-list")?.textContent ?? ""), null, { timeout: 10_000 });
   await page.waitForFunction(() => document.querySelector(".blocks")?.getAttribute("aria-label") === "62 percent", null, { timeout: 5000 });
 
-  // The install restarts origaiTV, and the page loads again from the new
+  // The install restarts OrigaiTV, and the page loads again from the new
   // release: it's still getting ready, and sees the update in.
   await page.reload();
   await page.waitForSelector(".ready-list");
@@ -389,7 +389,7 @@ test("S5.6 getting ready asks for the update check, installs the newer release w
   await page.close();
 });
 
-test("S5.6 getting ready that loads again with the update in already moves on by itself, as on the box after origaiTV restarts", async () => {
+test("S5.6 getting ready that loads again with the update in already moves on by itself, as on the box after OrigaiTV restarts", async () => {
   await fresh();
   await post("/api/setup/finish", { step: "welcome" });
   // The page before the restart saw the update in and said so, then went.
@@ -777,10 +777,10 @@ async function toPeople(): Promise<void> {
   await toAi();
   for (const viewer of (await (await fetch(`${url}/api/viewers`)).json()).viewers.slice(1)) {
     const grant = await pinGrant();
-    await fetch(`${url}/api/viewers/${viewer.id}`, { method: "DELETE", headers: grant ? { "X-origaiTV-Grant": grant } : {} });
+    await fetch(`${url}/api/viewers/${viewer.id}`, { method: "DELETE", headers: grant ? { "X-OrigaiTV-Grant": grant } : {} });
   }
   const grant = await pinGrant();
-  if (grant) await fetch(`${url}/api/pin`, { method: "DELETE", headers: { "X-origaiTV-Grant": grant } });
+  if (grant) await fetch(`${url}/api/pin`, { method: "DELETE", headers: { "X-OrigaiTV-Grant": grant } });
   await post("/api/setup/finish", { step: "ai" });
 }
 
@@ -952,7 +952,7 @@ test("apps: the goal's official apps come first, the ticked ones install past th
   assert.equal(existsSync(join(state, "..", "apps", "origaitv.steam")), false, "only the ticked one");
   await page.close();
   const grant = await pinGrant();
-  await fetch(`${url}/api/pin`, { method: "DELETE", headers: { "X-origaiTV-Grant": grant! } });
+  await fetch(`${url}/api/pin`, { method: "DELETE", headers: { "X-OrigaiTV-Grant": grant! } });
 });
 
 test("apps: add your own asks what to add, keeps it for the TV's agent, and nothing is ticked to install", async () => {
@@ -980,7 +980,7 @@ test("apps: add your own asks what to add, keeps it for the TV's agent, and noth
   await page.close();
 });
 
-// The TV's colours as Omarchy renders origaiTV's template for one of its
+// The TV's colours as Omarchy renders OrigaiTV's template for one of its
 // themes, as origaitv-theme-sync hands them over.
 function rendered(theme: string): string {
   const colors: Record<string, string> = {};

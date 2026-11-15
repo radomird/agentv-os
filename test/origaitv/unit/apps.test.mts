@@ -74,7 +74,7 @@ test("an entry point that isn't in the package is refused", () => {
 });
 
 test("S2.2 a third-party app can't take an origaitv.* id", () => {
-  refused(SAMPLE, /uses origaitv\.\*, which is only for origaiTV's own apps/, "community");
+  refused(SAMPLE, /uses origaitv\.\*, which is only for OrigaiTV's own apps/, "community");
   refused(SAMPLE, /starts with local\./, "local");
 });
 
@@ -256,7 +256,7 @@ test("F2 no app's origins are the box, whatever runs it and however the address 
 test("ADR-043 a page app's origins are on the network, never the box", () => {
   assert.deepEqual(problems(blocks((m) => (m.tv.origins = ["https://api.example.org", "http://nas.example.org:8080"]))), []);
   for (const origin of ["http://localhost:3000", "http://origaitv.blocks.app.localhost:3003", "http://127.0.0.1", "http://[::1]:3000", "http://0.0.0.0"]) {
-    refused(blocks((m) => (m.tv.origins = [origin])), /is this box, which a page app reaches only through origaiTV's app kit/);
+    refused(blocks((m) => (m.tv.origins = [origin])), /is this box, which a page app reaches only through OrigaiTV's app kit/);
   }
   for (const origin of ["{serverUrl}", "https://example.org/path", "file:///etc", "example.org"]) {
     refused(blocks((m) => (m.tv.origins = [origin])), /isn't an origin/);

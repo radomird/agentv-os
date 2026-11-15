@@ -58,7 +58,7 @@ async function box(options: Pick<BoxOptions, "features">) {
   const { daemon, url, state } = started;
   const lan = `http://127.0.0.1:${daemon.lanPort}`;
   const send = async (method: string, path: string, body?: unknown, grant?: string, base = url) =>
-    (await fetch(`${base}${path}`, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json() as Promise<Record<string, any>>;
+    (await fetch(`${base}${path}`, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json() as Promise<Record<string, any>>;
   // Claude with a key, its terms accepted on a paired phone, as a build needs.
   writeFileSync(join(state, "..", "key.json"), JSON.stringify({ set: true, provider: "claude", at: new Date().toISOString() }));
   await send("POST", "/api/ai", { provider: "claude", path: "key" });

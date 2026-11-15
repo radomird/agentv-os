@@ -1,10 +1,10 @@
-# The provider key, handed over by origaiTV's daemon (ADR-009, S4.6): when it
+# The provider key, handed over by OrigaiTV's daemon (ADR-009, S4.6): when it
 # leaves one in its private state, origaitv-key.service moves it into
 # /etc/origaitv/env as root. The TMDB key (stage 8) comes the same way, in a
 # drop of its own.
 
 [Unit]
-Description=origaiTV provider key hand-over
+Description=OrigaiTV provider key hand-over
 
 [Path]
 PathExists=/var/lib/origaitv/daemon/key-drop/key.json

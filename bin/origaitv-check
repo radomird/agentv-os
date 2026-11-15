@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# origaitv:summary=Run origaiTV's fast gate (ADR-019 layer 1) on this repo
+# origaitv:summary=Run OrigaiTV's fast gate (ADR-019 layer 1) on this repo
 # origaitv:args=[--ci] [--fetch-base]
 # origaitv:examples=origaitv check | origaitv check --ci --fetch-base
 # origaitv:hidden=true
@@ -15,9 +15,9 @@ usage() {
   cat <<USAGE
 Usage: origaitv-check [--ci] [--fetch-base]
 
-Checks that Omarchy's files are untouched, and that everything origaiTV added
+Checks that Omarchy's files are untouched, and that everything OrigaiTV added
 has no em dashes, no secrets, no service automation, no emoji in UI text,
-UI text in origaiTV's voice and clean shell. Exits non-zero if anything fails.
+UI text in OrigaiTV's voice and clean shell. Exits non-zero if anything fails.
 
   --ci          Treat a missing tool (shellcheck, gitleaks) as a failure
   --fetch-base  Fetch the base from upstream when this clone doesn't have it
@@ -79,12 +79,12 @@ policy_lines() {
 
 # --- The base: the upstream tag or commit this fork sits on -----------------
 
-# A repo of origaiTV's own, such as origaitv-pkgs, has no base: every file in it
-# is origaiTV's, and every commit.
+# A repo of OrigaiTV's own, such as origaitv-pkgs, has no base: every file in it
+# is OrigaiTV's, and every commit.
 if [[ ! -f .github/omarchy-base ]]; then
   base_commit=$(git hash-object -t tree /dev/null)
   log_range=HEAD
-  pass "not a fork, so every file is origaiTV's"
+  pass "not a fork, so every file is OrigaiTV's"
 else
   base=$(sed -n '1{s/[[:space:]]//g;p;}' .github/omarchy-base)
   upstream=$(sed -n '1{s/[[:space:]]//g;p;}' .github/omarchy-upstream)
@@ -103,7 +103,7 @@ else
   fi
   log_range="$base_commit..HEAD"
 
-  # The commits that are origaiTV's: not the base's, and not those of any base
+  # The commits that are OrigaiTV's: not the base's, and not those of any base
   # the fork sat on before. When Omarchy cuts a release beside the line the
   # fork was on, as it did 4.5 beside 4.0.x, the old line's own commits are
   # still in origaitv's history but not in the new base's.
@@ -141,7 +141,7 @@ else
   fi
 fi
 
-# --- What origaiTV added ------------------------------------------------------
+# --- What OrigaiTV added ------------------------------------------------------
 
 # -z, so git hands over every name exactly as it is. Without it, git quotes a
 # name with unusual characters, and that file would slip past every scan.
@@ -173,7 +173,7 @@ done <"$WORK/all-added"
 grep -v "^$POLICY_DIR/" "$WORK/ours" >"$WORK/scanned" || true
 
 added_count=$(grep -c . "$WORK/all-added" || true)
-pass "origaiTV added $added_count files"
+pass "OrigaiTV added $added_count files"
 
 # Prints file:line for every line of the listed files that matches the perl
 # pattern. The pattern sees decoded UTF-8 when the second argument is "utf8".
@@ -211,14 +211,14 @@ found=$(scan "$EM_DASH" bytes "$WORK/ours")
 # shellcheck disable=SC2086 # the range is a list of revisions
 git log --format='%h %s%n%b' $log_range | grep -F "$EM_DASH" >"$WORK/dash-commits" || true
 if [[ -n $found || -s $WORK/dash-commits ]]; then
-  fail "no em dashes in what origaiTV added" "$(printf '%s\n%s' "$found" "$(cat "$WORK/dash-commits")" | sed '/^$/d')"
+  fail "no em dashes in what OrigaiTV added" "$(printf '%s\n%s' "$found" "$(cat "$WORK/dash-commits")" | sed '/^$/d')"
 else
-  pass "no em dashes in what origaiTV added"
+  pass "no em dashes in what OrigaiTV added"
 fi
 
 # --- The old name stays out -------------------------------------------------
 
-# AgenTV is called origaiTV now. The old name is only where it has to be: the
+# AgenTV is called OrigaiTV now. The old name is only where it has to be: the
 # agentv branch, which the release environment and the rulesets are tied to,
 # the signing key's secret, and the line that says what the project used to
 # be called. old-name-allowed lists those, each a perl pattern for
@@ -254,7 +254,7 @@ fi
 
 # --- No service automation in a public repo ---------------------------------
 
-# The lists are refused in every file origaiTV added, with one exception. In
+# The lists are refused in every file OrigaiTV added, with one exception. In
 # origaitv-apps, each official streaming app has a folder of its own, and
 # service-folders says which. Inside its own folder an app may use the lines
 # under its service's "#@ <id>" heading in the lists, and nothing else. No
@@ -357,10 +357,10 @@ else
   pass "no emoji in UI text"
 fi
 
-# --- UI text in origaiTV's voice ---------------------------------------------
+# --- UI text in OrigaiTV's voice ---------------------------------------------
 
 # The words people read on the TV, the phone and the USB stick follow
-# origaiTV's voice (the origaitv-copy skill). The parts of it a machine can check
+# OrigaiTV's voice (the origaitv-copy skill). The parts of it a machine can check
 # are here: none of the words that name how the TV works, and no key in a
 # button's words. ui-text lists the files with words people read, ui-words
 # the words they never say, and ui-words-allowed the few places one is right.
@@ -438,9 +438,9 @@ if [[ -f $POLICY_DIR/ui-text ]]; then
     exit $failed;
   ' "$WORK/ui-text" "$WORK/ui-words" "$WORK/ui-allowed" <"$WORK/scanned" || echo "(the scan of UI text failed)")
   if [[ -n $found ]]; then
-    fail "UI text is in origaiTV's voice" "$found"
+    fail "UI text is in OrigaiTV's voice" "$found"
   else
-    pass "UI text is in origaiTV's voice"
+    pass "UI text is in OrigaiTV's voice"
   fi
 else
   pass "no UI text here, so nothing to check for its voice"
@@ -449,7 +449,7 @@ fi
 # --- App packages pass origaitv app validate ----------------------------------
 
 # Every app package in the repo, against the app contract (ADR-019). The
-# built-ins and the apps in the test fixtures are origaiTV's own, so they're
+# built-ins and the apps in the test fixtures are OrigaiTV's own, so they're
 # checked as official apps. A repo without the contract, such as origaitv-iso,
 # has none.
 if [[ -f apps/contract/validate.ts ]]; then
@@ -521,7 +521,7 @@ fi
 if ! have gitleaks; then
   skip "no secrets" gitleaks
 else
-  # The files as they are now, committed or not, then every origaiTV commit, so
+  # The files as they are now, committed or not, then every OrigaiTV commit, so
   # a secret that was added and later removed still counts.
   mkdir -p "$WORK/tree"
   while IFS= read -r file; do
@@ -531,7 +531,7 @@ else
 
   # A clone without file contents, as CI's checkout is, fetches each one
   # the first time it's read, so gitleaks would fetch them a commit at a
-  # time. Fetch every version the origaiTV commits changed in one go first.
+  # time. Fetch every version the OrigaiTV commits changed in one go first.
   if [[ $(git config --get remote.origin.promisor) == "true" ]]; then
     # shellcheck disable=SC2086 # the range is a list of revisions
     git log --no-merges --raw --no-abbrev --format= $log_range \

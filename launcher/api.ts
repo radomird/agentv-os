@@ -1,4 +1,4 @@
-// The launcher's two neighbours: origaiTV's daemon over HTTP on this box, and
+// The launcher's two neighbours: OrigaiTV's daemon over HTTP on this box, and
 // the screen daemon in the TV session, which put the launcher on screen and
 // answers it over the DevTools pipe it holds (window.origaitvScreen). Outside
 // the TV session, on a computer or in the tests, there's no screen daemon.
@@ -95,7 +95,7 @@ export interface UpdateStatus {
   origaitv: { installed: string | null; available: string | null };
   omarchy: { installed: string | null; available: string | null };
   packages: number;
-  // Off edge, the update waits until origaiTV's nightly run has passed it
+  // Off edge, the update waits until OrigaiTV's nightly run has passed it
   // (ADR-026), so there's nothing to install yet.
   waiting?: boolean;
   security: boolean;
@@ -256,7 +256,7 @@ export interface TileData {
 async function call<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json();
@@ -480,7 +480,7 @@ export const daemon = {
   key: () => call<KeyState>("GET", "/api/key"),
   // The key kept, or the terms it waits for.
   saveKey: async (provider: string, key: string, grant?: string): Promise<KeyState | { terms: KeyTerms }> => {
-    const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
+    const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
     const data = await response.json();
     if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
     if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't save the key");
@@ -491,7 +491,7 @@ export const daemon = {
   // The household's plan for builds, from Settings → AI (Q143), or the terms
   // it waits for.
   usePlan: async (provider: string, grant?: string): Promise<{ provider: string; path: "plan" } | { terms: KeyTerms }> => {
-    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
     const data = await response.json();
     if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
     if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't use your plan");
@@ -685,7 +685,7 @@ export const screen = {
   // Whether this box restarts to its boot menu: it does when the boot
   // loader takes the request, as on a UEFI box.
   bootMenu: async () => (await ask({ cmd: "boot-menu" })).can === true,
-  // origaiTV's sign-in screen for an app whose tile says Sign in (ADR-032).
+  // OrigaiTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // Someone else is watching: the apps open take the service's profile for
   // them (ADR-009).

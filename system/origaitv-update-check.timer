@@ -2,7 +2,7 @@
 # day (ADR-025).
 
 [Unit]
-Description=origaiTV update check, daily
+Description=OrigaiTV update check, daily
 
 [Timer]
 OnBootSec=5min

@@ -5,7 +5,7 @@
 // so a request to anywhere it didn't declare fails, and the daemon's own
 // pages and API answer only 127.0.0.1 and localhost by name, never this.
 //
-// The app reaches the box only through origaiTV's app kit (apps/contract/
+// The app reaches the box only through OrigaiTV's app kit (apps/contract/
 // kit.ts), served at /_origaitv/kit.js on its own origin. Home relays each of
 // the kit's calls, knowing which app asked by which frame it came from, and
 // the daemon checks each one against the manifest here: its storage, with

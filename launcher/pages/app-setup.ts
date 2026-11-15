@@ -111,7 +111,7 @@ export function appSetup(ctx: Ctx, id: string): View {
       ctx.toast(`${name} is set up`, "ok");
       return;
     }
-    // Its sign-in next: origaiTV's sign-in screen, over the service's own page.
+    // Its sign-in next: OrigaiTV's sign-in screen, over the service's own page.
     const reply = await screen.signIn(id);
     if (!reply.ok) ctx.toast(reply.error ?? `Couldn't sign in to ${name}`, "fail");
   };

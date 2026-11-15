@@ -17,7 +17,7 @@ set -uo pipefail
 conf="${XDG_CONFIG_HOME:-$HOME/.config}/wireplumber/wireplumber.conf.d/50-origaitv-volume.conf"
 mkdir -p "${conf%/*}"
 cat >"$conf" <<'CONF'
-# origaiTV (S2.19): outputs WirePlumber hasn't seen before start at full
+# OrigaiTV (S2.19): outputs WirePlumber hasn't seen before start at full
 # volume, and the TV's remote sets how loud they are. Written by
 # origaitv-audio-default; Settings → Sound keeps a lower level for an output.
 wireplumber.settings = {

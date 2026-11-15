@@ -1,4 +1,4 @@
-// origaiTV's app kit, in a page app's own frame (contract 2, ADR-043). The box
+// OrigaiTV's app kit, in a page app's own frame (contract 2, ADR-043). The box
 // serves this at /_origaitv/kit.js on the app's origin, with its types
 // stripped, and it sets window.origaitv as apps/contract/kit.ts describes.
 // Everything goes to home with postMessage, and home answers only the frame
@@ -17,7 +17,7 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
   const paused: (() => void)[] = [];
   const resumed: (() => void)[] = [];
   let back: (() => boolean | void) | null = null;
-  // origaiTV's test TV (builder/gates/) sees how many listeners the app has
+  // OrigaiTV's test TV (builder/gates/) sees how many listeners the app has
   // given the kit through this. On home nothing's there, so it does nothing.
   const watched = () => (window as { origaitvTestTv?: (listening: { input: number; back: boolean; pause: number }) => void }).origaitvTestTv?.({ input: inputs.length, back: back !== null, pause: paused.length });
 

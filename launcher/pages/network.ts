@@ -66,16 +66,16 @@ export function discoverOn(): Promise<boolean> {
   return featureOn("discover");
 }
 
-// origaiTV's own apps that ask for a server, and the kind each one uses.
+// OrigaiTV's own apps that ask for a server, and the kind each one uses.
 const OWN: Record<string, Kind[]> = { "origaitv.jellyfin": ["jellyfin"], "origaitv.plex": ["plex"], "origaitv.immich": ["immich"] };
 
-// The servers an app can use: its own kind for origaiTV's own apps, and any
+// The servers an app can use: its own kind for OrigaiTV's own apps, and any
 // media server for one your agent made.
 export function kindsFor(app: string): Kind[] {
   return OWN[app] ?? SERVERS;
 }
 
-// The kind of server one of origaiTV's own apps asks for, before it's
+// The kind of server one of OrigaiTV's own apps asks for, before it's
 // installed: setup's server page opens for these.
 export function serverKinds(app: string): Kind[] | null {
   return OWN[app] ?? null;

@@ -35,7 +35,7 @@ export interface ReachOptions {
 }
 
 // What only the loader says, never the app: who the request is from at the
-// connection's level, and anything in origaiTV's own name. The daemon reads
+// connection's level, and anything in OrigaiTV's own name. The daemon reads
 // x-origaitv-* as coming from the box's own screens.
 const NOT_THE_APPS = ["host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "expect", "content-length"];
 

@@ -1,5 +1,5 @@
 // A streaming service's stage B (ADR-011): the build sees the service's
-// signed-in pages only through origaiTV. The builder's way out takes an ask
+// signed-in pages only through OrigaiTV. The builder's way out takes an ask
 // only in stage B and only for the build's declared origins
 // (builder/sandbox/net.ts), the daemon checks it again against root's
 // ticket and queues it, and the screen daemon takes it and answers

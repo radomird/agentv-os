@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# origaitv:summary=Look for a new origaiTV, Omarchy and system packages, for Settings → Updates
+# origaitv:summary=Look for a new OrigaiTV, Omarchy and system packages, for Settings → Updates
 # origaitv:args=[--pending <checkupdates output>]
 # origaitv:hidden=true
 # origaitv:requires-sudo=true
 
 # Run once a day and a few minutes after boot by origaitv-update-check.timer,
 # and by Check now in Settings → Updates (ADR-025). It only looks: it reads
-# origaiTV's signed release.json and the package repositories, and writes what
+# OrigaiTV's signed release.json and the package repositories, and writes what
 # it found to /var/lib/origaitv/update/status.json for the home screen.
 # Nothing about the box is sent anywhere.
 
@@ -42,7 +42,7 @@ chmod 755 "$STATE"
 
 ok=true
 if [[ -z $pending ]]; then
-  # Omarchy's update can write pacman.conf without origaiTV's repository.
+  # Omarchy's update can write pacman.conf without OrigaiTV's repository.
   # ORIGAITV_PACMAN_CONF is for the tests.
   if (( EUID == 0 )); then
     "$ORIGAITV_BIN_DIR/origaitv-pacman-conf" ${ORIGAITV_PACMAN_CONF:+--file "$ORIGAITV_PACMAN_CONF"} >/dev/null 2>&1 || true
@@ -68,7 +68,7 @@ omarchy_now=$(installed omarchy)
 omarchy_next=$(available omarchy)
 others=$(awk '$1 != "origaitv" && $1 != "omarchy" && $3 == "->" { n++ } END { print n + 0 }' "$pending")
 
-# Off edge, an update goes ahead only once origaiTV's nightly run has passed
+# Off edge, an update goes ahead only once OrigaiTV's nightly run has passed
 # every version it would install (ADR-026). Until then it waits, and the TV
 # says so instead of offering Install now. edge takes every green build.
 waiting=false
@@ -77,7 +77,7 @@ if [[ $ok == "true" && $channel != "edge" ]] && grep -q -- "->" "$pending" &&
   waiting=true
 fi
 
-# origaiTV's What's new, from release.json, signed with origaiTV's key. Without a
+# OrigaiTV's What's new, from release.json, signed with OrigaiTV's key. Without a
 # good signature it doesn't count.
 release="{}"
 if curl -fsSL --retry 2 --max-time 20 -o "$work/release.json" "$ORIGAITV_REPO_URL/$channel/release.json" 2>/dev/null &&
@@ -145,4 +145,4 @@ if [[ $ok == "false" ]]; then
   echo "Couldn't check for updates. Nothing changed." >&2
   exit 1
 fi
-jq -r '"origaiTV \(.origaitv.installed // "?")\(if .origaitv.available then " → \(.origaitv.available)" else "" end), Omarchy \(.omarchy.installed // "?")\(if .omarchy.available then " → \(.omarchy.available)" else "" end), \(.packages) other packages\(if .waiting then ", waiting for the nightly run" else "" end)"' "$STATE/status.json"
+jq -r '"OrigaiTV \(.origaitv.installed // "?")\(if .origaitv.available then " → \(.origaitv.available)" else "" end), Omarchy \(.omarchy.installed // "?")\(if .omarchy.available then " → \(.omarchy.available)" else "" end), \(.packages) other packages\(if .waiting then ", waiting for the nightly run" else "" end)"' "$STATE/status.json"

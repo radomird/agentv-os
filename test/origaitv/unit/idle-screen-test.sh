@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Guards the one idle screen (T17.1): the terminal screensaver is gone from
-# origaiTV's files, and the migration makes a TV that had picked it forget the
+# OrigaiTV's files, and the migration makes a TV that had picked it forget the
 # pick and keep the rest of its settings.
 
 set -euo pipefail
@@ -9,7 +9,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
 [[ ! -e $ROOT/bin/origaitv-screensaver ]] || fail "bin/origaitv-screensaver is gone"
 found=$(grep -rln "origaitv-screensaver\|org\.origaitv\.screensaver\|screensaver-after" "$ROOT"/bin/origaitv* "$ROOT"/daemon "$ROOT"/launcher "$ROOT"/session "$ROOT"/system "$ROOT"/install/tv 2>/dev/null || true)
-[[ -z $found ]] || fail "nothing of origaiTV's starts or names the terminal screensaver" "$found"
+[[ -z $found ]] || fail "nothing of OrigaiTV's starts or names the terminal screensaver" "$found"
 pass "T17.1 the terminal screensaver is gone: no command, no window, nothing that starts one"
 
 migration=$(grep -l "The terminal screensaver is gone" "$ROOT"/migrations/origaitv/*.sh)

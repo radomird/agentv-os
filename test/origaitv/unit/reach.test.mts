@@ -137,7 +137,7 @@ test("a link-local address is someone else's only when the box doesn't have it",
 test("F2 an app's headers go along, but never the box's own or the connection's", async () => {
   const headers = appHeaders([
     ["Accept", "application/json"],
-    ["X-origaiTV-Screen", "1"],
+    ["X-OrigaiTV-Screen", "1"],
     ["x-origaitv-anything", "1"],
     ["Host", "127.0.0.1:3000"],
     ["Connection", "upgrade"],

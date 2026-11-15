@@ -4,7 +4,7 @@
 # origaitv:args=[readings]
 # origaitv:examples=origaitv box | origaitv box readings
 
-# Asks origaiTV's daemon what the box check found, which setup and Settings
+# Asks OrigaiTV's daemon what the box check found, which setup and Settings
 # show. `origaitv box readings` prints everything it read instead, with the
 # TV's serial numbers zeroed, so the readings can be shared or kept as a test
 # fixture.

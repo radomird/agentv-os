@@ -1,5 +1,5 @@
 // Settings → About → your setup (ADR-061): the same lines as setup's box
-// step, above origaiTV's version and credits. On a 4K TV, "Check 4K again" runs
+// step, above OrigaiTV's version and credits. On a 4K TV, "Check 4K again" runs
 // the 4K test in front of everything for five seconds, as after a new GPU.
 
 import { box, boxStyles, checkSmooth, drawsFourK } from "../box.ts";

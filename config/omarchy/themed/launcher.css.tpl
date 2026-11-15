@@ -1,5 +1,5 @@
-/* origaiTV's home screen colours, from the Omarchy theme (ADR-012). Omarchy
-   renders this into the current theme on every theme change, and origaiTV's
+/* OrigaiTV's home screen colours, from the Omarchy theme (ADR-012). Omarchy
+   renders this into the current theme on every theme change, and OrigaiTV's
    theme-set hook hands the result to the TV. */
 :root {
   --background: {{ background }};

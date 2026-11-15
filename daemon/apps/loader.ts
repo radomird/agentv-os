@@ -4,7 +4,7 @@
 // instead. The app is held to its manifest: a capability it declares has to
 // be in its module, and only the capabilities it declares can be called.
 // Its fetch reaches only its declared origins, with setup fields filled in,
-// and says it comes from origaiTV and which app it is, unless the app says
+// and says it comes from OrigaiTV and which app it is, unless the app says
 // otherwise: a service such as MET Norway asks every request to say who's
 // asking (ADR-015). A web app's page (the contract's AppPage) is relayed to a
 // PageBroker, the screen daemon's DevTools pipe on the box or a test's own
@@ -178,7 +178,7 @@ export interface AppHostOptions {
   manifest: Manifest;
   settings?: Record<string, string>;
   limits?: Partial<Record<string, number>>; // per-call time limits, for tests
-  userAgent?: string; // origaiTV's own, like "origaiTV/0.1.2 (+https://...)"
+  userAgent?: string; // OrigaiTV's own, like "OrigaiTV/0.1.2 (+https://...)"
   page?: PageBroker; // a web app's page, when it has one open
   // What answers the app's requests, once they're past the origin check:
   // the network, or the contract tests' fixtures (test/origaitv/contract).
@@ -218,7 +218,7 @@ export class AppHost {
     this.dir = resolve(options.dir);
     this.settings = { ...(options.settings ?? {}) };
     this.limits = options.limits ?? {};
-    this.userAgent = `${options.userAgent ?? "origaiTV"} ${options.manifest.id}/${options.manifest.version}`;
+    this.userAgent = `${options.userAgent ?? "OrigaiTV"} ${options.manifest.id}/${options.manifest.version}`;
     this.thisBox = options.harness?.thisBox === true;
     this.noSandbox = options.harness?.noSandbox === true;
     this.bwrap = options.bwrap ?? "bwrap";

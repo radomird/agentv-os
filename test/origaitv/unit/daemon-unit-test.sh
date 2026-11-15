@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards the sandbox of origaiTV's daemon (system/origaitv-daemon.service). It
+# Guards the sandbox of OrigaiTV's daemon (system/origaitv-daemon.service). It
 # faces the home network and runs apps' workers, so its unit keeps the
 # kernel's knobs away from it. And it keeps out the settings the daemon
 # can't live with: the box check reads the GPU through /dev/dri, an app's

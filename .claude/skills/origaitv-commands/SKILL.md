@@ -1,19 +1,19 @@
 ---
 name: origaitv-commands
-description: Use when adding or changing an origaiTV command in bin/ (the origaitv CLI and its origaitv-* helpers). Builds on Omarchy's command-metadata guide.
+description: Use when adding or changing an OrigaiTV command in bin/ (the origaitv CLI and its origaitv-* helpers). Builds on Omarchy's command-metadata guide.
 paths:
   - "bin/origaitv*"
 ---
 
-# origaiTV commands
+# OrigaiTV commands
 
-Read Omarchy's `agents/skills/command-metadata.md` and the style section of `AGENTS.md` first. origaiTV commands follow the same shape, so they feel like Omarchy's.
+Read Omarchy's `agents/skills/command-metadata.md` and the style section of `AGENTS.md` first. OrigaiTV commands follow the same shape, so they feel like Omarchy's.
 
 ## Naming
 
 - The router is `bin/origaitv`: `origaitv app validate`, `origaitv app install`, `origaitv app export`, `origaitv selftest` and so on.
 - Helpers are `bin/origaitv-<group>-<name>`, for example `bin/origaitv-app-validate`, and `bin/origaitv` routes `origaitv app validate` to it. That's the same pattern `bin/omarchy` uses for `omarchy-*`.
-- Never add, rename or wrap an `omarchy-*` command, and never add origaiTV entries to Omarchy's `GROUP_DESCRIPTIONS`. The `omarchy` CLI stays exactly as upstream ships it.
+- Never add, rename or wrap an `omarchy-*` command, and never add OrigaiTV entries to Omarchy's `GROUP_DESCRIPTIONS`. The `omarchy` CLI stays exactly as upstream ships it.
 
 ## Metadata
 
@@ -28,7 +28,7 @@ Read Omarchy's `agents/skills/command-metadata.md` and the style section of `AGE
 ```bash
 #!/bin/bash
 
-# origaitv:summary=Check an app package against the origaiTV app contract
+# origaitv:summary=Check an app package against the OrigaiTV app contract
 # origaitv:args=<package-dir>
 ```
 

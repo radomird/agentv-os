@@ -17,28 +17,28 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 # repo <dir>: a repository with one commit on origaitv.
 repo() {
-  git init -q -b agentv "$1"
+  git init -q -b origaitv "$1"
   (cd "$1" && echo base >base.txt && git add -A && GIT_COMMITTER_DATE="@1700000000 +0000" git commit -qm base)
 }
 
 # pr <dir> <number> <branch> <seconds after the base>: a one-commit branch
-# merged into agentv, the way GitHub merges a pull request.
+# merged into origaitv, the way GitHub merges a pull request.
 pr() {
   (
     cd "$1"
     export GIT_AUTHOR_DATE="@$((1700000000 + $4)) +0000" GIT_COMMITTER_DATE="@$((1700000000 + $4)) +0000"
-    git switch -q -c "$3" agentv
+    git switch -q -c "$3" origaitv
     echo "$3 $4" >"${3//\//-}.txt"
     git add -A && git commit -qm "Change on $3"
-    git switch -q agentv
+    git switch -q origaitv
     git merge -q --no-ff -m "Merge pull request #$2 from owner/$3" "$3"
     git branch -q -D "$3"
   )
 }
 
-# version <dir>: edge's package version for origaitv-os's agentv as it is now.
+# version <dir>: edge's package version for origaitv-os's origaitv as it is now.
 version() {
-  echo "0.2.0.r9.g$(git -C "$1" rev-parse --short=9 agentv)"
+  echo "0.2.0.r9.g$(git -C "$1" rev-parse --short=9 origaitv)"
 }
 
 # picked <key>: what the last run wrote for it.
@@ -64,11 +64,11 @@ pr "$iso" 1 fix/again 100
 pr "$iso" 2 northstar/guide 50000
 pr "$os" 2 northstar/guide 50003
 package=$(version "$os")
-built=$(git -C "$os" rev-parse agentv)
+built=$(git -C "$os" rev-parse origaitv)
 # A fix to origaitv-iso's own checks, then two changes the package doesn't
 # have: origaitv-iso merged the first a few seconds before origaitv-os did.
 pr "$iso" 3 fix/ocr 60000
-before=$(git -C "$iso" rev-parse agentv)
+before=$(git -C "$iso" rev-parse origaitv)
 pr "$iso" 4 northstar/wifi 70000
 pr "$os" 3 northstar/wifi 70004
 pr "$os" 4 northstar/hold 80000
@@ -83,12 +83,12 @@ run "$package" "$os" "$iso" || fail "nightly-checks picks the checks for edge's 
 [[ $(picked newer) == "northstar/wifi northstar/hold" ]] || fail "nightly-checks names the branches that came after the package" "$(cat "$SCRATCH/out")"
 pass "edge's package is checked with origaitv-iso from before the first branch that came after it, with its own fixes before that, and a branch name used again a month later doesn't count"
 
-run "$(version "$os")" "$os" "$iso" || fail "a package from origaitv-os's agentv gets origaitv-iso's agentv" "$(cat "$SCRATCH/err")"
-[[ $(picked checks) == "agentv" && -z $(picked newer) ]] || fail "a package from origaitv-os's agentv gets origaitv-iso's agentv" "$(cat "$SCRATCH/out")"
-pass "a package from origaitv-os's agentv gets origaitv-iso's agentv"
+run "$(version "$os")" "$os" "$iso" || fail "a package from origaitv-os's origaitv gets origaitv-iso's origaitv" "$(cat "$SCRATCH/err")"
+[[ $(picked checks) == "origaitv" && -z $(picked newer) ]] || fail "a package from origaitv-os's origaitv gets origaitv-iso's origaitv" "$(cat "$SCRATCH/out")"
+pass "a package from origaitv-os's origaitv gets origaitv-iso's origaitv"
 
 run 0.2.0 "$os" "$iso" && fail "a version that names no commit stops the run" "$(cat "$SCRATCH/out")"
 grep -q "doesn't name the origaitv-os commit" "$SCRATCH/err" || fail "a version that names no commit stops the run" "$(cat "$SCRATCH/err")"
-run 0.2.0.r9.g0123456789 "$os" "$iso" && fail "a commit origaitv-os's agentv doesn't have stops the run" "$(cat "$SCRATCH/out")"
-grep -q "has no commit 0123456789" "$SCRATCH/err" || fail "a commit origaitv-os's agentv doesn't have stops the run" "$(cat "$SCRATCH/err")"
-pass "a version that names no commit on origaitv-os's agentv stops the run"
+run 0.2.0.r9.g0123456789 "$os" "$iso" && fail "a commit origaitv-os's origaitv doesn't have stops the run" "$(cat "$SCRATCH/out")"
+grep -q "has no commit 0123456789" "$SCRATCH/err" || fail "a commit origaitv-os's origaitv doesn't have stops the run" "$(cat "$SCRATCH/err")"
+pass "a version that names no commit on origaitv-os's origaitv stops the run"

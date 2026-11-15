@@ -2,7 +2,7 @@
 
 # Runs Omarchy's own CLI and shell suites at the base tag and at HEAD, one
 # file at a time, and fails when a file that passes at the base fails here.
-# origaiTV only adds files, so a new failure means something of ours leaked into
+# OrigaiTV only adds files, so a new failure means something of ours leaked into
 # Omarchy's world, such as a command in bin/ that one of its scans picks up.
 # Comparing with the base keeps a test that needs a desktop (and so can't pass
 # in CI either way) from hiding the ones that can.
@@ -70,7 +70,7 @@ total=$(grep -c . "$WORK/head-results")
 base_failing=$(grep -c '^fail ' "$WORK/base-results" || true)
 
 # passes_on_retry <name>: a test that passes here on any of four more tries
-# is flaky, not broken by origaiTV.
+# is flaky, not broken by OrigaiTV.
 passes_on_retry() {
   local _
 

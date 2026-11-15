@@ -4,7 +4,7 @@
 # (system/polkit/50-origaitv-update.rules), never enabled.
 
 [Unit]
-Description=origaiTV going back to the version before the update
+Description=OrigaiTV going back to the version before the update
 
 [Service]
 Type=oneshot

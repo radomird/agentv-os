@@ -3,10 +3,10 @@
 # origaitv:summary=Start the TV session, or Omarchy's desktop once when the TV asked for it
 # origaitv:hidden=true
 
-# The login manager runs this for origaiTV's session entry
+# The login manager runs this for OrigaiTV's session entry
 # (/usr/share/wayland-sessions/origaitv.desktop), and logs straight back in
 # whenever it ends (Relogin, install/tv/autologin.sh). Usually it starts the
-# TV session (ADR-031): Hyprland with origaiTV's session/hypr.lua and nothing
+# TV session (ADR-031): Hyprland with OrigaiTV's session/hypr.lua and nothing
 # of Omarchy's desktop.
 #
 # When origaitv desktop has left a note for this boot, it starts Omarchy's own
@@ -72,7 +72,7 @@ tv() {
 
   log "starting the TV session"
   export ORIGAITV_SESSION=tv
-  export XDG_CURRENT_DESKTOP=origaiTV:Hyprland XDG_SESSION_DESKTOP=origaitv XDG_SESSION_TYPE=wayland
+  export XDG_CURRENT_DESKTOP=OrigaiTV:Hyprland XDG_SESSION_DESKTOP=origaitv XDG_SESSION_TYPE=wayland
   # Hyprland would start graphical-session.target, and Omarchy's desktop
   # services (its notices, its sleep lock and more) hang off that. The TV
   # session has origaitv-tv.target instead.

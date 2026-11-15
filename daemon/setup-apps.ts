@@ -1,6 +1,6 @@
-// Setup's apps (board 09): the official apps from origaiTV's signed index
+// Setup's apps (board 09): the official apps from OrigaiTV's signed index
 // (ADR-010, ADR-036), the ones for what the TV is for first, and the rest
-// under "more", beside the built-in apps that come with origaiTV. Apps → add
+// under "more", beside the built-in apps that come with OrigaiTV. Apps → add
 // an app hands over the same way, after setup (ADR-042). The daemon
 // can't write the apps folder, which is root's, so it leaves the ones picked
 // in its own private state, where origaitv-setup-apps.path starts
@@ -23,7 +23,7 @@ export const GOAL_APPS: Record<Goal, string[]> = {
   gaming: ["origaitv.steam"],
 };
 
-// The built-in apps setup shows, ticked, since they come with origaiTV.
+// The built-in apps setup shows, ticked, since they come with OrigaiTV.
 const SHOWN_BUILTINS = new Set(Object.values(GOAL_APPS).flat());
 
 // The streaming starter pack (ADR-066): every official app the index says is
@@ -235,7 +235,7 @@ export class SetupApps {
     // to do.
     if (error) return "Couldn't load the apps. Try again later.";
     const unknown = (ids as string[]).find((id) => !apps.some((app) => app.id === id));
-    if (unknown) return `${unknown} isn't one of origaiTV's official apps`;
+    if (unknown) return `${unknown} isn't one of OrigaiTV's official apps`;
     const wanted = [...new Set(ids as string[])];
     mkdirSync(dirname(this.drop), { recursive: true, mode: 0o700 });
     writeFileSync(`${this.drop}.next`, JSON.stringify({ apps: wanted }), { mode: 0o600 });

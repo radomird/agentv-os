@@ -8,7 +8,7 @@
       "expect": {
         "ok": true,
         "albums": [
-          { "title": "Test Tones", "artist": "origaiTV", "year": "2026", "cover": true, "tracks": { "$length": 3 } },
+          { "title": "Test Tones", "artist": "OrigaiTV", "year": "2026", "cover": true, "tracks": { "$length": 3 } },
           { "title": "Night Shift", "artist": "Pixel Band", "year": "2025", "cover": true, "tracks": { "$length": 3 } }
         ],
         "playlists": [{ "name": "evening", "tracks": { "$length": 2 } }]

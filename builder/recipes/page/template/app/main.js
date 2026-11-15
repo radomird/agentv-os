@@ -1,4 +1,4 @@
-// A page app on origaiTV: full screen in a frame on home, reaching the box
+// A page app on OrigaiTV: full screen in a frame on home, reaching the box
 // only through window.origaitv, the app kit. This starts it: a canvas drawn
 // every frame, the buttons as they're pressed and let go, Back, Home's
 // pause, and the app's own storage. Replace the drawing with the app.

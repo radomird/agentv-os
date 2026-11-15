@@ -53,7 +53,7 @@ export interface ThemesOptions {
   omarchy: string;
   // The person's home.
   home: string;
-  // origaiTV's daemon.
+  // OrigaiTV's daemon.
   daemon?: string;
   // Omarchy's colour resolver for one colors.toml, every key it resolves,
   // or null when it couldn't.

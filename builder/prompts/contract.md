@@ -3,7 +3,7 @@
 A streaming app is a TypeScript module the TV's daemon loads in a worker of its own, with one page of the service's site in the TV's browser, on the app's declared origins only. It exports a `TvApp`; `@contract/contract.ts` has every type.
 
 - `launch(ctx)` opens the service's home address in `ctx.page`.
-- `signIn.isSignedIn(ctx)` tells from the page whether it's signed in. False puts "Sign in" on the tile, and origaiTV's sign-in screen opens over the service's own page, where the household signs in with the phone's password manager. origaiTV never stores a password.
+- `signIn.isSignedIn(ctx)` tells from the page whether it's signed in. False puts "Sign in" on the tile, and OrigaiTV's sign-in screen opens over the service's own page, where the household signs in with the phone's password manager. OrigaiTV never stores a password.
 - `signIn.open(ctx)` brings the page to the service's sign-in form.
 - `search(ctx, query)` finds titles with the site's own search: `[{ id, kind, title, season, episode, poster }]`.
 - `playback.open(ctx, item)` starts an item and resolves once it plays. It may use the site's search, never its continue watching row.

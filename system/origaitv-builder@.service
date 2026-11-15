@@ -27,7 +27,7 @@
 # in that group (origaitv-daemon.service, sysusers/origaitv-builder.conf).
 
 [Unit]
-Description=origaiTV build %I
+Description=OrigaiTV build %I
 BindsTo=origaitv-build-net.service
 After=origaitv-build-net.service
 RequiresMountsFor=/var/lib/origaitv/build/%I /var/lib/origaitv/builder

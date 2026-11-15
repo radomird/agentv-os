@@ -1,4 +1,4 @@
-// Home's side of origaiTV's app kit (contract 2, ADR-043): it holds a page
+// Home's side of OrigaiTV's app kit (contract 2, ADR-043): it holds a page
 // app's frame, answers the kit's calls from that frame alone, and hands the
 // app its input, Back, and Home's pause. Which app asked is the frame's, not
 // anything in the message, so one app can't speak for another. The calls go

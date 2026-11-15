@@ -78,7 +78,7 @@ test("S3.8 the small weather tile draws MET's condition as its scene, with the t
   assert.equal(drawn.scene, "Windy");
   assert.equal(drawn.value, "12°");
   assert.equal(drawn.caption, "Windy");
-  // Terminal shows origaiTV's own tile in lower case, like the rest of the TV.
+  // Terminal shows OrigaiTV's own tile in lower case, like the rest of the TV.
   assert.match(await page.locator(tile).innerText(), /^weather\s+amsterdam\s+12°\s+windy\s+h -?\d+° · l -?\d+°$/);
   assert.match(drawn.foot ?? "", /^H -?\d+° · L -?\d+°$/);
   // Its colours are the theme's.

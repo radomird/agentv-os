@@ -173,8 +173,8 @@ export async function sign(method: string, address: string, body: { json: unknow
   const path = sent(address);
   const now = await current();
   const counter = ++now.counter;
-  const headers: Record<string, string> = { "X-origaiTV-Session": now.id, "X-origaiTV-Counter": String(counter) };
-  if (grant) headers["X-origaiTV-Grant"] = grant;
+  const headers: Record<string, string> = { "X-OrigaiTV-Session": now.id, "X-OrigaiTV-Counter": String(counter) };
+  if (grant) headers["X-OrigaiTV-Grant"] = grant;
   let sealed: Bytes | undefined;
   let digest: string;
   if (body && "json" in body) {
@@ -188,7 +188,7 @@ export async function sign(method: string, address: string, body: { json: unknow
   } else {
     digest = hex(sha256(new Uint8Array(0)));
   }
-  headers["X-origaiTV-Sig"] = encode(hmac(now.sign, utf8([method, path, counter, grant, digest].join("\n"))));
+  headers["X-OrigaiTV-Sig"] = encode(hmac(now.sign, utf8([method, path, counter, grant, digest].join("\n"))));
   return {
     headers,
     body: sealed,

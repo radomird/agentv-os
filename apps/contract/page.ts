@@ -54,7 +54,7 @@ export function pageOriginProblem(origin: string): string | null {
   if ((url.protocol !== "https:" && url.protocol !== "http:") || url.origin !== origin) {
     return `'${origin}' isn't an origin: a scheme and a host, like https://example.org`;
   }
-  if (boxHost(url.hostname)) return `'${origin}' is this box, which a page app reaches only through origaiTV's app kit`;
+  if (boxHost(url.hostname)) return `'${origin}' is this box, which a page app reaches only through OrigaiTV's app kit`;
   return null;
 }
 

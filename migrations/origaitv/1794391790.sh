@@ -1,6 +1,6 @@
 echo "Home's Chromium keeps no passwords: forget any it saved before its prompts went off"
 
-# Home's Chromium ran without origaiTV's settings until now, so it offered to
+# Home's Chromium ran without OrigaiTV's settings until now, so it offered to
 # save what was typed into a password field on home (a key, the Wi-Fi's
 # password) and may have kept it. The screen daemon turns the offer off at
 # each start of home from here on (origaitv-chromium-prefs); this throws away

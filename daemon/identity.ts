@@ -1,6 +1,6 @@
-// What origaiTV's requests say they are (ADR-015): origaiTV, its version and
+// What OrigaiTV's requests say they are (ADR-015): OrigaiTV, its version and
 // where to find it, from the package's settings, so no owner is written in
-// code. "origaiTV/0.1.2 (+https://github.com/<owner>/origaitv-os)". Each app's
+// code. "OrigaiTV/0.1.2 (+https://github.com/<owner>/origaitv-os)". Each app's
 // requests add the app's own id and version (apps/loader.ts).
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -10,10 +10,10 @@ export function userAgent(root = process.env.ORIGAITV_PATH ?? "/usr/share/origai
   const value = settings(root);
   const version = value("ORIGAITV_VERSION") ?? "dev";
   const home = homepage(value);
-  return home ? `origaiTV/${version} (+${home})` : `origaiTV/${version}`;
+  return home ? `OrigaiTV/${version} (+${home})` : `OrigaiTV/${version}`;
 }
 
-// Who origaiTV's own repos belong to on GitHub, from the same settings, or
+// Who OrigaiTV's own repos belong to on GitHub, from the same settings, or
 // null in a checkout. Export never pushes to them (ADR-045).
 export function origaitvOwner(root = process.env.ORIGAITV_PATH ?? "/usr/share/origaitv"): string | null {
   return /^https:\/\/github\.com\/([A-Za-z0-9-]+)\//.exec(homepage(settings(root)) ?? "")?.[1] ?? null;
@@ -25,7 +25,7 @@ function settings(root: string): (key: string) => string | undefined {
   try {
     text = readFileSync(join(root, "settings"), "utf8");
   } catch {
-    // A checkout has no settings: origaiTV, in development.
+    // A checkout has no settings: OrigaiTV, in development.
   }
   return (key) => text.split("\n").find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1).trim();
 }

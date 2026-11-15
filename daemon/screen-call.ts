@@ -1,4 +1,4 @@
-// Sends one request to origaiTV's screen daemon and prints its answer, for
+// Sends one request to OrigaiTV's screen daemon and prints its answer, for
 // bin/origaitv-screen. Exits 0 when the answer says ok, 1 when it doesn't, and
 // 2 when the daemon isn't there (no TV session).
 //

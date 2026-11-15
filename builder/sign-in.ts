@@ -1,7 +1,7 @@
 // A plan's sign-in (ADR-022, ADR-040), the first time the builder runs:
 // the provider's own CLI, unmodified, signs in as origaitv-builder in the
 // builder's sandbox, and keeps what it gets in its own files in the
-// builder's home. origaiTV runs the CLI's sign-in command in a terminal of its
+// builder's home. OrigaiTV runs the CLI's sign-in command in a terminal of its
 // own, shows the link it prints (as a QR code on the TV and a link on the
 // phone), and types into its prompt the code the person pastes on the
 // phone. It reads nothing else the CLI prints, and keeps none of it.
@@ -53,7 +53,7 @@ function cliFor(provider: Provider, home: string): string {
 }
 
 // Whether the plan's CLI says it's signed in: true or false, or null for a
-// plan origaiTV has no sign-in for yet.
+// plan OrigaiTV has no sign-in for yet.
 export function signedIn(provider: Provider, o: { home: string; proxy?: string }): Promise<boolean | null> {
   const spec = SIGN_IN[provider];
   if (!spec) return Promise.resolve(null);
@@ -162,7 +162,7 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
   o.stop?.removeEventListener("abort", stopped);
   rmSync(inputPath, { force: true });
 
-  // The CLI's own word on it, not what its sign-in printed, unless origaiTV
+  // The CLI's own word on it, not what its sign-in printed, unless OrigaiTV
   // ended it first: a plan whose sign-in ran out can still say it's in.
   const ok = !why && (await signedIn(provider, o));
   if (ok) {

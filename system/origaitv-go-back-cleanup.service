@@ -3,7 +3,7 @@
 # the one it put back. This deletes the old one.
 
 [Unit]
-Description=origaiTV cleanup after going back
+Description=OrigaiTV cleanup after going back
 ConditionPathExists=/var/lib/origaitv/update/cleanup-pending
 
 [Service]

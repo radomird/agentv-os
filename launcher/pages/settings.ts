@@ -334,7 +334,7 @@ export function settings(ctx: Ctx, open?: string): View {
       return;
     }
     const grant = ctx.held();
-    const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify({ look: id }) }).catch(() => null);
+    const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify({ look: id }) }).catch(() => null);
     if (!response?.ok) {
       ctx.sounds.play("failure");
       ctx.toast("Couldn't set that look", "fail");
@@ -472,11 +472,11 @@ export function settings(ctx: Ctx, open?: string): View {
     aboutBox(ctx),
     // The look's own logo, with the name and version under it in words.
     h("img", { class: "about-logo", src: logoFor(lookId(), lightBackground()), alt: "" }),
-    h("div", { class: "panel-big" }, `origaiTV ${ctx.state.version}`),
+    h("div", { class: "panel-big" }, `OrigaiTV ${ctx.state.version}`),
     note("The world's first open-source agentic TV OS. Powered by Omarchy."),
     note("Omarchy is made by David Heinemeier Hansson and its contributors, under the MIT licence."),
     note("Weather data from MET Norway, under CC BY 4.0."),
-    // TMDB's terms: its logo, less prominent than origaiTV's, and its
+    // TMDB's terms: its logo, less prominent than OrigaiTV's, and its
     // notice; JustWatch's: credit for where to watch.
     h("img", { class: "about-tmdb", src: TMDB_LOGO, alt: "TMDB" }),
     // TMDB's own notice, as they word it, in every look.
@@ -562,7 +562,7 @@ export function settings(ctx: Ctx, open?: string): View {
         // Restart, Shut down and sleep (ADR-033) are an adult's.
         adult ? row("power", "Power", "", () => openPage("power")) : null,
         h("button", { class: "button", "data-focus": true, "data-action": "desktop", onclick: () => openPage("desktop") }, "Omarchy's desktop"),
-        row("about", "About", `origaiTV ${version()}`, () => openPage("about")),
+        row("about", "About", `OrigaiTV ${version()}`, () => openPage("about")),
       ],
     },
   ];

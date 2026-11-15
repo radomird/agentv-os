@@ -3,7 +3,7 @@
 # Finds the Omarchy release candidate worth trying, for the release candidate
 # run (omarchy-rc.yml, ADR-085). Omarchy tags a candidate as v4.6.0-rc1,
 # weeks before the final v4.6.0, and its rc channel serves it. The daily
-# sync never counts one (omarchy-sync), so this is where origaiTV hears about
+# sync never counts one (omarchy-sync), so this is where OrigaiTV hears about
 # the next release early.
 #
 # There's something to try when the newest candidate is for a release newer
@@ -66,8 +66,8 @@ if grep -qxF -- "v$version" <<<"$tags"; then
   echo "Omarchy $version is out, so $tag has nothing left to say. The daily sync takes it from here."
 elif [[ $(printf '%s\n%s\n' "v$version" "$base" | sort -V | tail -n 1) == "$base" ]]; then
   output run false
-  echo "origaiTV is on Omarchy $base, and $tag is no newer. Nothing to try."
+  echo "OrigaiTV is on Omarchy $base, and $tag is no newer. Nothing to try."
 else
   output run true
-  echo "Omarchy $tag is ahead of origaiTV's base, $base, so a box tries the move to it."
+  echo "Omarchy $tag is ahead of OrigaiTV's base, $base, so a box tries the move to it."
 fi

@@ -25,7 +25,7 @@ awk '/^      run: \|$/ { on = 1; next } on && /^    - / { on = 0 } on { sub(/^  
 mkdir -p "$SCRATCH/bin"
 cat >"$SCRATCH/bin/gh" <<'GH'
 #!/bin/bash
-[[ $* == *"repos/owner/origaitv-iso/contents/test/origaitv/image/ci?ref=agentv"* && -n ${CI_TEXT+set} ]] || exit 1
+[[ $* == *"repos/owner/origaitv-iso/contents/test/origaitv/image/ci?ref=origaitv"* && -n ${CI_TEXT+set} ]] || exit 1
 printf '%s\n' "$CI_TEXT"
 GH
 cat >"$SCRATCH/bin/docker" <<'DOCKER'

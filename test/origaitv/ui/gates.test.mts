@@ -1,6 +1,6 @@
 // The test TV (builder/gates/, ADR-043): gates 2 and 3 in a real headless
 // Chromium, as the builder runs them before an adult sees a page app. The
-// Blocks game passes origaiTV's checks and the game recipe's tests; an app
+// Blocks game passes OrigaiTV's checks and the game recipe's tests; an app
 // that does everything wrong fails each check it should, and a test that
 // fails says why.
 
@@ -39,7 +39,7 @@ const recipeTests = (kind: string) => {
   return [{ name: `recipe/${kind}.test.js`, code: readFileSync(join(dir, `${kind}.test.js`), "utf8") }];
 };
 
-test("ADR-043 the Blocks game passes origaiTV's checks and the game recipe's tests, and the approval gets its screenshot", async () => {
+test("ADR-043 the Blocks game passes OrigaiTV's checks and the game recipe's tests, and the approval gets its screenshot", async () => {
   const dir = app("blocks", {});
   const shot = join(scratch, "blocks.png");
   const report = await tryApp({ app: dir, tests: recipeTests("game"), checks: true, root: ROOT, chromium, storage: join(scratch, "blocks-storage"), shot });

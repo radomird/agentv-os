@@ -7,7 +7,7 @@
 
 # Fetches the app's exact commit from the repo the signed index pins it to,
 # checks it against the app contract and puts it in /var/lib/origaitv/apps/.
-# The index counts only with a good signature from origaiTV's key (ADR-010).
+# The index counts only with a good signature from OrigaiTV's key (ADR-010).
 #
 # With --local, the app comes from a folder on this box instead, as one the
 # box's agent built (ADR-039): it's copied without its fixtures, checked as

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Shared helpers for origaiTV's unit tests (ADR-019, layer 2). Source it from a
+# Shared helpers for OrigaiTV's unit tests (ADR-019, layer 2). Source it from a
 # test; test/origaitv/unit/run runs every *-test.sh here. Runs on bash 3.2 too.
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
@@ -56,7 +56,7 @@ node_test() {
   grep -E '^ok ' "$SCRATCH/tap" | sed -E 's/^ok [0-9]+ - /ok - /'
 }
 
-# node_eval <code>: runs ES module code that may import origaiTV's TypeScript.
+# node_eval <code>: runs ES module code that may import OrigaiTV's TypeScript.
 node_eval() {
   local flags=()
   [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)

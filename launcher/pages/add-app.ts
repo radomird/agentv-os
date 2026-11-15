@@ -1,4 +1,4 @@
-// The app library, "Add an app" (ADR-042, D11): origaiTV's apps that aren't
+// The app library, "Add an app" (ADR-042, D11): OrigaiTV's apps that aren't
 // on the TV yet, each with its one line. Choosing one asks for the adult PIN,
 // when there is one, and it installs in the background, as setup's apps step
 // does, with the program a native app needs, such as Steam. Each tile says

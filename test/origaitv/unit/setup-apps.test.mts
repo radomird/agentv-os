@@ -62,7 +62,7 @@ after(async () => {
 });
 
 const post = (path: string, body: unknown, grant?: string) =>
-  fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
+  fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
 
 // Root's side, as origaitv-setup-apps does it: takes the drop away, then says
 // how each app goes.
@@ -96,7 +96,7 @@ test("each goal puts its own official apps first, the rest go under more, and th
   // An app on the box already says so.
   const here = await apps.list("streaming", [MUSIC, { id: "origaitv.jellyfin", name: "Jellyfin", tier: "official" }]);
   assert.equal(here.for[0].installed, true);
-  for (const ids of Object.values(GOAL_APPS)) for (const id of ids) assert.match(id, /^origaitv\./, "only origaiTV's own apps");
+  for (const ids of Object.values(GOAL_APPS)) for (const id of ids) assert.match(id, /^origaitv\./, "only OrigaiTV's own apps");
 });
 
 test("T9.2 the starter pack: with its switch on, every official app the index says is for streaming, Streaming's own, and the servers under more", async () => {
@@ -125,7 +125,7 @@ test("an index that can't be read says why, and is asked again a little later", 
     source: async () => "index",
     catalog: async () => {
       calls++;
-      throw new Error("the app index isn't signed by origaiTV's key, so nothing was installed");
+      throw new Error("the app index isn't signed by OrigaiTV's key, so nothing was installed");
     },
   });
   const list = await apps.list("streaming", [MUSIC]);
@@ -145,8 +145,8 @@ test("the apps picked go to root in a drop only it takes, and only official apps
   const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => INDEX, status: statusPath, waitMs: 1500, onChange: (now) => heard.push(now) });
   assert.match((await apps.install([])) ?? "", /a list of their ids/);
   assert.match((await apps.install(["../../etc"])) ?? "", /a list of their ids/);
-  assert.match((await apps.install(["someone.else"])) ?? "", /isn't one of origaiTV's official apps/);
-  assert.match((await apps.install(["origaitv.plex"])) ?? "", /isn't one of origaiTV's official apps/);
+  assert.match((await apps.install(["someone.else"])) ?? "", /isn't one of OrigaiTV's official apps/);
+  assert.match((await apps.install(["origaitv.plex"])) ?? "", /isn't one of OrigaiTV's official apps/);
 
   // Nothing takes it: it doesn't stay.
   assert.match((await apps.install(["origaitv.immich"])) ?? "", /^Couldn't install the apps\. Restart your TV and try again\.$/);

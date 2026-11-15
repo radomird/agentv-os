@@ -1,8 +1,8 @@
 name: Image
 
-# origaiTV's image layer (ADR-019, layer 5) for a commit of origaitv-os, with
+# OrigaiTV's image layer (ADR-019, layer 5) for a commit of origaitv-os, with
 # origaitv-iso's harness checked out beside it: build the ISO, install it in a
-# VM with KVM, boot it and run origaiTV's image checks.
+# VM with KVM, boot it and run OrigaiTV's image checks.
 #
 # The ISO carries either packages built and signed from the commit itself
 # (what a pull request needs) or the ones published on a channel (what the
@@ -20,7 +20,7 @@ name: Image
 # With keep-iso, an ISO that passed every check is kept as a workflow
 # artifact: that's how the nightly run makes the edge ISO. With keep-disk,
 # the box it installed is kept too, in the Actions cache, and a run with
-# from-disk starts from the newest one kept on agentv (or on its own branch):
+# from-disk starts from the newest one kept on origaitv (or on its own branch):
 # it puts this commit's packages on that box, the way an update does, instead
 # of building an ISO and installing it (Q100). With none to start from, it
 # builds and installs, as before. With own-repo, the packages it built are
@@ -48,12 +48,12 @@ name: Image
 # Which key signs the packages a run builds: a throwaway one made in the
 # run (origaitv-pkgs' bin/test-key), unless release-key is set. A pull
 # request, a branch or a sync builds code nobody has reviewed yet, so it
-# never gets origaiTV's own key. The run's origaitv-keyring trusts the
+# never gets OrigaiTV's own key. The run's origaitv-keyring trusts the
 # throwaway key too, so the run's box takes its packages, and nothing
 # signed with it leaves the run. Only the nightly run sets release-key: it
-# updates a box installed from a channel, which trusts origaiTV's key alone,
+# updates a box installed from a channel, which trusts OrigaiTV's key alone,
 # and it signs tested.json. Its jobs then read AGENTV_SIGNING_KEY through
-# the "release" environment, which only the agentv branch may use. The
+# the "release" environment, which only the origaitv branch may use. The
 # packages are built without any key (bin/build) and signed in a step of
 # their own (bin/sign).
 #
@@ -78,11 +78,11 @@ on:
       ref:
         description: "origaitv-os commit or branch to test"
         type: string
-        default: agentv
+        default: origaitv
       iso-ref:
         description: "origaitv-iso branch or tag with the image checks"
         type: string
-        default: agentv
+        default: origaitv
       pkgs-ref:
         description: "origaitv-pkgs branch with the PKGBUILDs"
         type: string
@@ -133,7 +133,7 @@ on:
         type: number
         default: 4
       release-key:
-        description: "Sign with origaiTV's own key, not a throwaway one. Only on agentv, and only with packages from a channel"
+        description: "Sign with OrigaiTV's own key, not a throwaway one. Only on origaitv, and only with packages from a channel"
         type: boolean
         default: false
   workflow_call:
@@ -143,7 +143,7 @@ on:
         required: true
       iso-ref:
         type: string
-        default: agentv
+        default: origaitv
       pkgs-ref:
         type: string
         default: main
@@ -189,7 +189,7 @@ on:
       release-key:
         type: boolean
         default: false
-    # origaiTV's key, which the nightly run passes by name. Its value only
+    # OrigaiTV's key, which the nightly run passes by name. Its value only
     # ever comes from the "release" environment, in the jobs that set it
     # (when release-key is on): GitHub hands a called workflow an
     # environment secret only when the caller passes it. Never required, so
@@ -206,7 +206,7 @@ permissions:
   actions: write
 
 jobs:
-  # A run that asks for origaiTV's own key is checked here first, in a job
+  # A run that asks for OrigaiTV's own key is checked here first, in a job
   # that names no environment and checks nothing out: the jobs below are in
   # the "release" environment when release-key is set, and one that's
   # refused shouldn't get as far as running a step there. Each of them
@@ -215,10 +215,10 @@ jobs:
   # It also says, for every run, whether what the run checks out is all
   # merged (its merged output). Only such a run leaves anything in the
   # cache for the runs after it: the root image's slow part and the night's
-  # box. A run on agentv started by hand with a branch typed in would
+  # box. A run on origaitv started by hand with a branch typed in would
   # otherwise hand its own build to every pull request, and to the night.
   refs:
-    name: "May this run have origaiTV's key?"
+    name: "May this run have OrigaiTV's key?"
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -237,32 +237,32 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # agentv, or a whole commit agentv already has. No tag is taken
+          # origaitv, or a whole commit origaitv already has. No tag is taken
           # by its name, a release's neither: a branch can be called the
           # same, and a checkout by name takes the branch. Whoever wants a
           # release's checks hands over the commit its tag is on, as the
           # nightly run does. Never a branch that isn't merged.
           merged() {
-            [[ $2 == "agentv" ]] && return 0
+            [[ $2 == "origaitv" ]] && return 0
             [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
-              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...origaitv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
           }
           all=true
-          if [[ $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-            ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-agentv}"; then
+          if [[ $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/origaitv" ]] ||
+            ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-origaitv}"; then
             all=false
           fi
           echo "merged=$all" >>"$GITHUB_OUTPUT"
           if [[ $RELEASE_KEY != "true" ]]; then
-            echo "This run doesn't ask for origaiTV's own key."
+            echo "This run doesn't ask for OrigaiTV's own key."
             [[ $all == "true" ]] || echo "Not everything it checks out is merged, so it leaves nothing in the cache for later runs."
             exit 0
           fi
           if [[ $PACKAGES == "build" || $all != "true" ]]; then
-            echo "::error::origaiTV's own key signs only on agentv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at agentv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
+            echo "::error::OrigaiTV's own key signs only on origaitv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at origaitv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
             exit 1
           fi
-          echo "This run may sign with origaiTV's own key: everything it checks out is merged."
+          echo "This run may sign with OrigaiTV's own key: everything it checks out is merged."
 
   image:
     name: "Build the ISO, install it, boot it, check it"
@@ -270,7 +270,7 @@ jobs:
     if: ${{ !(inputs.shards > 1 && !inputs.nightly && inputs.update-checks == '') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 240
-    # origaiTV's own key is the environment's. Every other run names none.
+    # OrigaiTV's own key is the environment's. Every other run names none.
     environment: ${{ inputs.release-key && 'release' || '' }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -340,7 +340,7 @@ jobs:
           echo "Free: $(avail) GB"
           (( $(avail) >= 40 )) || { echo "::error::only $(avail) GB free, the build and install test need about 40 GB"; exit 1; }
 
-      # origaiTV's own key signs only what a channel's box updates to, built
+      # OrigaiTV's own key signs only what a channel's box updates to, built
       # from origaitv-pkgs' main. Anything else gets a key made here, good for
       # a day, that only this run's box trusts.
       - name: The key this run's packages are signed with
@@ -353,8 +353,8 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # What may be checked out beside origaiTV's own key: agentv, or a
-          # whole commit agentv already has. The nightly run checks edge's
+          # What may be checked out beside OrigaiTV's own key: origaitv, or a
+          # whole commit origaitv already has. The nightly run checks edge's
           # package and the release with the origaitv-iso that goes with
           # each, and hands over the commit. No tag is taken by its name,
           # a release's neither: a branch can be called the same, and a
@@ -362,21 +362,21 @@ jobs:
           # own v1 to v4 tags, which aren't all on origaitv. Never a branch
           # that isn't merged.
           merged() {
-            [[ $2 == "agentv" ]] && return 0
+            [[ $2 == "origaitv" ]] && return 0
             [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
-              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...origaitv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
           }
           if [[ $RELEASE_KEY == "true" ]]; then
-            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-agentv}"; then
-              echo "::error::origaiTV's own key signs only on agentv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at agentv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
+            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/origaitv" ]] ||
+              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-origaitv}"; then
+              echo "::error::OrigaiTV's own key signs only on origaitv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at origaitv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
               exit 1
             fi
-            echo "This run signs what the box updates to with origaiTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "This run signs what the box updates to with OrigaiTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [[ $PACKAGES != "build" ]]; then
-            echo "::error::A box installed from the $PACKAGES channel trusts origaiTV's key alone, so it won't take an update signed with a throwaway key. Build the packages (packages: build), turn update-test off, or run it on agentv with release-key."
+            echo "::error::A box installed from the $PACKAGES channel trusts OrigaiTV's key alone, so it won't take an update signed with a throwaway key. Build the packages (packages: build), turn update-test off, or run it on origaitv with release-key."
             exit 1
           fi
           pkgs/bin/test-key "$RUNNER_TEMP/test-key"
@@ -391,7 +391,7 @@ jobs:
       # throwaway key gets an origaitv-keyring that trusts it too. The build's
       # container can read origaitv-pkgs and not change it, since bin/sign
       # runs from there afterwards.
-      - name: origaiTV's packages for the ISO
+      - name: OrigaiTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
         run: |
@@ -413,7 +413,7 @@ jobs:
           fi
 
       # Packages are only built here for a run with a throwaway key (the
-      # step above the build says so), so origaiTV's own key is never asked for.
+      # step above the build says so), so OrigaiTV's own key is never asked for.
       - name: Sign them with the run's throwaway key
         if: inputs.packages == 'build'
         env:
@@ -467,7 +467,7 @@ jobs:
           fi
 
       # The only step with a key in it, and all it runs is origaitv-pkgs'
-      # bin/sign, which fetches nothing. origaiTV's own key is here only when
+      # bin/sign, which fetches nothing. OrigaiTV's own key is here only when
       # release-key is set, from the "release" environment.
       - name: Sign the newer origaitv
         if: inputs.update-test
@@ -482,7 +482,7 @@ jobs:
           pkgs/bin/sign iso/test-runs/update-repo
 
       # The newest box kept in the cache. A pull request reads the ones runs
-      # on agentv kept, and a run on a branch its own too. The cache, unlike
+      # on origaitv kept, and a run on a branch its own too. The cache, unlike
       # an artifact, hands back a few GB in about a minute: an artifact took
       # 20 minutes for the box's 4.7 GB, which ate what starting from it saves.
       - name: The night's installed box
@@ -507,7 +507,7 @@ jobs:
           echo "found=true" >>"$GITHUB_OUTPUT"
           echo "This run starts from the box a night's run installed ($(cat iso/test-runs/installed-disk/iso-name), kept as $KEPT), with this commit's packages put on it." | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # Arch's container as origaitv-iso's agentv pins it, also for a leg that
+      # Arch's container as origaitv-iso's origaitv pins it, also for a leg that
       # checks with an origaitv-iso from before the pin, as a stable release's
       # does (.github/actions/arch-pin).
       - uses: ./os/.github/actions/arch-pin
@@ -575,7 +575,7 @@ jobs:
           AGENTV_SIGNING_KEY: ${{ inputs.release-key && secrets.AGENTV_SIGNING_KEY || '' }}
         run: |
           if [[ -z $AGENTV_SIGNING_KEY ]]; then
-            echo "::error::tested.json is signed with origaiTV's own key, and this run has none. Only the nightly run on agentv does (release-key)."
+            echo "::error::tested.json is signed with OrigaiTV's own key, and this run has none. Only the nightly run on origaitv does (release-key)."
             exit 1
           fi
           list=iso/test-runs/tested-packages.txt
@@ -597,7 +597,7 @@ jobs:
           if ! gh release view tested -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create tested -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
               --title "Tested by the nightly run" \
-              --notes "tested.json lists every package version that passed origaiTV's nightly run. Your box only takes an update that's on the list."
+              --notes "tested.json lists every package version that passed OrigaiTV's nightly run. Your box only takes an update that's on the list."
           fi
           gh release upload tested -R "$GITHUB_REPOSITORY" --clobber tested.json tested.json.sig
           jq '{date, origaitv, omarchy, packages: (.packages | length)}' tested.json | tee -a "$GITHUB_STEP_SUMMARY"
@@ -726,7 +726,7 @@ jobs:
     if: inputs.shards > 1 && !inputs.nightly && inputs.update-checks == ''
     runs-on: ubuntu-26.04
     timeout-minutes: 150
-    # origaiTV's own key is the environment's. Every other run names none.
+    # OrigaiTV's own key is the environment's. Every other run names none.
     environment: ${{ inputs.release-key && 'release' || '' }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -799,7 +799,7 @@ jobs:
           echo "Free: $(avail) GB"
           (( $(avail) >= 40 )) || { echo "::error::only $(avail) GB free, the build and install test need about 40 GB"; exit 1; }
 
-      # origaiTV's own key signs only what a channel's box updates to, built
+      # OrigaiTV's own key signs only what a channel's box updates to, built
       # from origaitv-pkgs' main. Anything else gets a key made here, good for
       # a day, that only this run's box trusts.
       - name: The key this run's packages are signed with
@@ -812,8 +812,8 @@ jobs:
           ISO_REF: ${{ inputs.iso-ref }}
           UPDATE_CHECKS: ${{ inputs.update-checks }}
         run: |
-          # What may be checked out beside origaiTV's own key: agentv, or a
-          # whole commit agentv already has. The nightly run checks edge's
+          # What may be checked out beside OrigaiTV's own key: origaitv, or a
+          # whole commit origaitv already has. The nightly run checks edge's
           # package and the release with the origaitv-iso that goes with
           # each, and hands over the commit. No tag is taken by its name,
           # a release's neither: a branch can be called the same, and a
@@ -821,21 +821,21 @@ jobs:
           # own v1 to v4 tags, which aren't all on origaitv. Never a branch
           # that isn't merged.
           merged() {
-            [[ $2 == "agentv" ]] && return 0
+            [[ $2 == "origaitv" ]] && return 0
             [[ $2 =~ ^[0-9a-f]{40}$ ]] &&
-              [[ $(gh api "repos/$OWNER/$1/compare/$2...agentv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
+              [[ $(gh api "repos/$OWNER/$1/compare/$2...origaitv" --jq .status 2>/dev/null) =~ ^(ahead|identical)$ ]]
           }
           if [[ $RELEASE_KEY == "true" ]]; then
-            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-agentv}"; then
-              echo "::error::origaiTV's own key signs only on agentv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at agentv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
+            if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/origaitv" ]] ||
+              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-origaitv}"; then
+              echo "::error::OrigaiTV's own key signs only on origaitv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at origaitv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
               exit 1
             fi
-            echo "This run signs what the box updates to with origaiTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "This run signs what the box updates to with OrigaiTV's own key." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [[ $PACKAGES != "build" ]]; then
-            echo "::error::A box installed from the $PACKAGES channel trusts origaiTV's key alone, so it won't take an update signed with a throwaway key. Build the packages (packages: build), turn update-test off, or run it on agentv with release-key."
+            echo "::error::A box installed from the $PACKAGES channel trusts OrigaiTV's key alone, so it won't take an update signed with a throwaway key. Build the packages (packages: build), turn update-test off, or run it on origaitv with release-key."
             exit 1
           fi
           pkgs/bin/test-key "$RUNNER_TEMP/test-key"
@@ -850,7 +850,7 @@ jobs:
       # throwaway key gets an origaitv-keyring that trusts it too. The build's
       # container can read origaitv-pkgs and not change it, since bin/sign
       # runs from there afterwards.
-      - name: origaiTV's packages for the ISO
+      - name: OrigaiTV's packages for the ISO
         env:
           PACKAGES: ${{ inputs.packages }}
         run: |
@@ -872,7 +872,7 @@ jobs:
           fi
 
       # Packages are only built here for a run with a throwaway key (the
-      # step above the build says so), so origaiTV's own key is never asked for.
+      # step above the build says so), so OrigaiTV's own key is never asked for.
       - name: Sign them with the run's throwaway key
         if: inputs.packages == 'build'
         env:
@@ -926,7 +926,7 @@ jobs:
           fi
 
       # The only step with a key in it, and all it runs is origaitv-pkgs'
-      # bin/sign, which fetches nothing. origaiTV's own key is here only when
+      # bin/sign, which fetches nothing. OrigaiTV's own key is here only when
       # release-key is set, from the "release" environment.
       - name: Sign the newer origaitv
         if: inputs.update-test
@@ -998,7 +998,7 @@ jobs:
 
       # The slow part of the root image, Omarchy's 900 or so packages
       # pacstrapped into btrfs, from an earlier build when nothing in it
-      # changed (origaitv-iso's bin/origaitv-iso-root-cache). Only runs on agentv
+      # changed (origaitv-iso's bin/origaitv-iso-root-cache). Only runs on origaitv
       # keep one, which in practice is the Nightly: those are the ones every
       # pull request can read, and the cache holds only 10 GB, so a pull
       # request's own copy for its reruns isn't worth what it pushes out. And
@@ -1015,7 +1015,7 @@ jobs:
           key: origaitv-root-image-none
           restore-keys: origaitv-root-image-
 
-      # Arch's container as origaitv-iso's agentv pins it, also for a leg that
+      # Arch's container as origaitv-iso's origaitv pins it, also for a leg that
       # checks with an origaitv-iso from before the pin, as a stable release's
       # does (.github/actions/arch-pin).
       - uses: ./os/.github/actions/arch-pin
@@ -1042,8 +1042,8 @@ jobs:
           echo "key=$key" >>"$GITHUB_OUTPUT"
           if [[ $how == "hit" ]]; then
             echo "The root image's Omarchy part came from an earlier build ($key)." | tee -a "$GITHUB_STEP_SUMMARY"
-          elif [[ -n $key && $GITHUB_REF != "refs/heads/agentv" ]]; then
-            echo "The root image's Omarchy part was built in this run ($key). Only runs on agentv keep it, so the next Nightly will." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [[ -n $key && $GITHUB_REF != "refs/heads/origaitv" ]]; then
+            echo "The root image's Omarchy part was built in this run ($key). Only runs on origaitv keep it, so the next Nightly will." | tee -a "$GITHUB_STEP_SUMMARY"
           elif [[ -n $key && $MERGED != "true" ]]; then
             echo "The root image's Omarchy part was built in this run ($key). Not everything this run checked out is merged, so it isn't kept for the runs after it." | tee -a "$GITHUB_STEP_SUMMARY"
           elif [[ -n $key ]]; then
@@ -1410,7 +1410,7 @@ jobs:
             echo "::error::This run's box and packages aren't there any more. A run keeps them for a day, and throws the box away once every check passed. Run the whole workflow again (Re-run all jobs), not only this part."
           fi
 
-      # Arch's container as origaitv-iso's agentv pins it, also for a leg that
+      # Arch's container as origaitv-iso's origaitv pins it, also for a leg that
       # checks with an origaitv-iso from before the pin, as a stable release's
       # does (.github/actions/arch-pin).
       - uses: ./os/.github/actions/arch-pin

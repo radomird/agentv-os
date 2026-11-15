@@ -5,11 +5,11 @@
 # for it, as it did when Omarchy's own update held the inhibitor.
 
 [Unit]
-Description=origaiTV update from the TV
+Description=OrigaiTV update from the TV
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle --who=origaiTV "--why=installing an update" --mode=block /usr/bin/origaitv-update-tv
+ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle --who=OrigaiTV "--why=installing an update" --mode=block /usr/bin/origaitv-update-tv
 TimeoutStartSec=2h

@@ -151,7 +151,7 @@ export async function answerSay(ask: SayAsk, deps: SayDeps): Promise<SayAnswer> 
 }
 
 // An installed app with search, or with playback for a title's own page,
-// from its package as origaiTV's daemon describes it.
+// from its package as OrigaiTV's daemon describes it.
 export function sayHosts(home: string, userAgent: string, log: (line: string) => void): SayDeps["host"] {
   return async (id, need = "search") => {
     const response = await fetch(`${home}api/apps/${encodeURIComponent(id)}/package`, { signal: AbortSignal.timeout(5000) }).catch(() => null);

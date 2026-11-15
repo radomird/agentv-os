@@ -45,8 +45,8 @@ state="$SCRATCH/home/.local/state/origaitv"
 # --- origaitv-session ---------------------------------------------------------
 
 run "$ROOT/bin/origaitv-session" 2>/dev/null || true
-grep -q "^start-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=origaiTV:Hyprland" "$calls" ||
-  fail "with no note it starts the TV session with origaiTV's Hyprland setup" "$(cat "$calls")"
+grep -q "^start-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=OrigaiTV:Hyprland" "$calls" ||
+  fail "with no note it starts the TV session with OrigaiTV's Hyprland setup" "$(cat "$calls")"
 grep -qx "systemctl --user stop origaitv-tv.target" "$calls" || fail "the TV session's units stop with it" "$(cat "$calls")"
 pass "S1.1 with no note, the log-in starts the TV session, without graphical-session.target"
 stopped=$(grep -n -m1 -x "systemctl --user stop bt-agent.service" "$calls" | cut -d: -f1 || true)
@@ -195,7 +195,7 @@ ORIGAITV_SDDM_CONF_DIR="$SCRATCH/sddm.conf.d" ORIGAITV_STATE="$SCRATCH/var" run 
 [[ ! -e $SCRATCH/sddm.conf.d/origaitv-autologin.conf ]] || fail "stage 0's autologin file is gone"
 # What SDDM ends up with: the last Session= in name order.
 session=$(for file in "$SCRATCH/sddm.conf.d"/*.conf; do cat "$file"; done | awk -F= '$1 == "Session" { value = $2 } END { print value }')
-[[ $session == "origaitv.desktop" ]] || fail "origaiTV's autologin comes after Omarchy's own, so it's the one SDDM uses" "$session"
+[[ $session == "origaitv.desktop" ]] || fail "OrigaiTV's autologin comes after Omarchy's own, so it's the one SDDM uses" "$session"
 [[ -d $SCRATCH/var/chromium-home && $(stat -c %a "$SCRATCH/var/chromium-home" 2>/dev/null || stat -f %Lp "$SCRATCH/var/chromium-home") == 700 ]] ||
   fail "the home screen's profile belongs to the owner alone"
 pass "S1.1 SDDM logs the owner in to the TV session, and the home screen gets its own profile"

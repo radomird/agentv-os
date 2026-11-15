@@ -1,7 +1,7 @@
--- origaiTV's TV session (ADR-031): Hyprland with origaiTV's setup and nothing of
+-- OrigaiTV's TV session (ADR-031): Hyprland with OrigaiTV's setup and nothing of
 -- Omarchy's desktop. No bar, notices, screensaver, idle lock or desktop
 -- keybindings. bin/origaitv-session starts Hyprland with this file, and
--- origaiTV's screen daemon (daemon/screen.ts) decides over Hyprland's IPC which
+-- OrigaiTV's screen daemon (daemon/screen.ts) decides over Hyprland's IPC which
 -- window is in front.
 --
 -- Every window opens out of sight, on a special workspace that's never shown,
@@ -78,7 +78,7 @@ end
 local keyboard = vconsole()
 
 -- The splash's background, for the TV session's first frame, while
--- origaiTV's splash is kept from the boot to home (ADR-060,
+-- OrigaiTV's splash is kept from the boot to home (ADR-060,
 -- bin/origaitv-boot-splash leaves the note). It's the colour Plymouth drew,
 -- from its theme's script, so the hand-over shows no other colour.
 local function splash_background()
@@ -139,11 +139,11 @@ hl.config({
     disable_scale_notification = true,
     disable_hyprland_guiutils_check = true,
     disable_watchdog_warning = true,
-    -- The TV session sets its own XDG_CURRENT_DESKTOP (origaiTV:Hyprland), and
+    -- The TV session sets its own XDG_CURRENT_DESKTOP (OrigaiTV:Hyprland), and
     -- Hyprland would say so in a notice over the TV.
     disable_xdg_env_checks = true,
     force_default_wallpaper = 0,
-    -- The splash's background while origaiTV's splash is kept from the boot
+    -- The splash's background while OrigaiTV's splash is kept from the boot
     -- (above), and Tokyo Night's otherwise, for the moment before the home
     -- screen draws.
     background_color = splash_background() or "rgb(1a1b26)",
@@ -202,7 +202,7 @@ for _, key in ipairs({ "Escape", "XF86Back" }) do
 end
 
 hl.on("hyprland.start", function()
-  -- origaiTV's splash first, before anything else starts, so it's up as soon
+  -- OrigaiTV's splash first, before anything else starts, so it's up as soon
   -- as it can be (ADR-060). It draws only when the boot kept the splash.
   -- Plymouth, which let go of the screen and kept its last frame up, quits
   -- once home has drawn (origaitv-boot-splash done): this session's first

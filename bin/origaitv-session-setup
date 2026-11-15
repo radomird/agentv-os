@@ -5,8 +5,8 @@
 # origaitv:hidden=true
 # origaitv:requires-sudo=true
 
-# The box logs in to origaiTV's TV session on its own (ADR-031): SDDM's
-# autologin goes to the owner with origaiTV's session entry, and logs straight
+# The box logs in to OrigaiTV's TV session on its own (ADR-031): SDDM's
+# autologin goes to the owner with OrigaiTV's session entry, and logs straight
 # back in whenever a session ends (Relogin). That's what makes every switch
 # between the TV and Omarchy's desktop a log-out and a log-in, and what
 # brings the TV back if its session ever stops. It also makes the home
@@ -29,7 +29,7 @@ fi
 
 # SDDM reads sddm.conf.d in name order, and the last file to set a key wins.
 # Omarchy's installer writes its own autologin.conf, to omarchy.desktop, for
-# the first boot and for good on an encrypted disk, so origaiTV's file is named
+# the first boot and for good on an encrypted disk, so OrigaiTV's file is named
 # to come after it. Stage 0's origaitv-autologin.conf came before it, and goes.
 install -d -m 755 "$SDDM_CONF_DIR"
 printf '[Autologin]\nUser=%s\nSession=origaitv.desktop\nRelogin=true\n' "$owner" >"$SDDM_CONF_DIR/zz-origaitv-autologin.conf"

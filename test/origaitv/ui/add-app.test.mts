@@ -1,5 +1,5 @@
 // The app library, "Add an app", in a real Chromium (ADR-019, layer 4;
-// ADR-042): an adult sees origaiTV's apps that aren't on the TV, each with its
+// ADR-042): an adult sees OrigaiTV's apps that aren't on the TV, each with its
 // one line, adds one past the PIN, and its tile follows the install until
 // the app is in. The library's last tile is "Can't find it? Build your own"
 // (D11). A child's profile doesn't see it. Root's side is the test box's

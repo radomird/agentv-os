@@ -1,4 +1,4 @@
-// Guards daemon/screen.ts, origaiTV's screen daemon (ADR-031), against a fake
+// Guards daemon/screen.ts, OrigaiTV's screen daemon (ADR-031), against a fake
 // Hyprland that moves, focuses and closes windows the way the real one does.
 // Run by screen-test.sh with Node's own test runner.
 
@@ -517,7 +517,7 @@ test("S1.1 home that comes up stays as it is", async () => {
   assert.ok(!lines.some((line) => /didn't come up/.test(line)), lines.join("\n"));
 });
 
-test("T2.1 origaiTV's splash goes once home's page is up and has drawn, and not before", async () => {
+test("T2.1 OrigaiTV's splash goes once home's page is up and has drawn, and not before", async () => {
   const { launcher } = await tv({ homeCheckMs: 500, homeUp: false });
   await sleep(150);
   assert.equal(launcher.splashes, 0, "the splash stays while home's page isn't up");
@@ -541,7 +541,7 @@ test("S1.1 home whose page doesn't come up starts again, so the TV isn't left bl
   assert.equal(screen.homeRestarts, 1);
 });
 
-test("ADR-031 Omarchy's shell started in the TV session, as Omarchy's update does, is stopped again, and origaiTV's own layers stay", async () => {
+test("ADR-031 Omarchy's shell started in the TV session, as Omarchy's update does, is stopped again, and OrigaiTV's own layers stay", async () => {
   const { hypr, launcher, screen, lines } = await tv();
   hypr.emit("openlayer", "omarchy-bar");
   await screen.idle();
@@ -549,7 +549,7 @@ test("ADR-031 Omarchy's shell started in the TV session, as Omarchy's update doe
   assert.ok(lines.includes("Omarchy's shell came up in the TV session; stopping it"));
   for (const own of ["origaitv-toast", "origaitv-corner", "origaitv-signin"]) hypr.emit("openlayer", own);
   await screen.idle();
-  assert.equal(launcher.shellStops, 1, "origaiTV's toasts, corner and sign-in stay");
+  assert.equal(launcher.shellStops, 1, "OrigaiTV's toasts, corner and sign-in stay");
   hypr.emit("openlayer", "omarchy-notifications");
   await screen.idle();
   assert.equal(launcher.shellStops, 2);
@@ -913,7 +913,7 @@ function fakeSignIn(answer: { now?: boolean | null; starts?: boolean } = {}) {
   return { signIn, calls };
 }
 
-test("ADR-032 a tile that says Sign in opens the app maximized over origaiTV's sign-in bar, until the app says it's signed in", async () => {
+test("ADR-032 a tile that says Sign in opens the app maximized over OrigaiTV's sign-in bar, until the app says it's signed in", async () => {
   const { signIn, calls } = fakeSignIn();
   const t = await tv({ signIn });
   t.launcher.targets.set("origaitv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });

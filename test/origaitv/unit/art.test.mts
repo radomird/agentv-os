@@ -88,8 +88,8 @@ test("The Met: its public-domain works, each looked up and credited, and one tha
   assert.equal(data.items[1].page, "https://www.metmuseum.org/art/collection/search/436021");
   // The page gets no address of the archive's to fetch itself.
   assert.ok(data.items.every((work: object) => !("thumb" in work) && !("image" in work)));
-  // origaiTV says who it is, as Wikimedia and the Art Institute ask.
-  assert.match(String(archives.seen.find((one) => one.url.startsWith("/met/"))?.headers["user-agent"]), /^origaiTV\//);
+  // OrigaiTV says who it is, as Wikimedia and the Art Institute ask.
+  assert.match(String(archives.seen.find((one) => one.url.startsWith("/met/"))?.headers["user-agent"]), /^OrigaiTV\//);
 });
 
 test("the Art Institute and Commons: their works, with the licence when one asks for a credit", async () => {
@@ -122,7 +122,7 @@ test("Commons: a file under a licence that doesn't let the TV show it, or that i
   // Commons' own hosts, as a box has them; only the search is asked.
   const archive = new ArtArchives({
     cache: join(scratch, "commons"),
-    userAgent: "origaiTV/test",
+    userAgent: "OrigaiTV/test",
     endpoints: { commons: "https://commons.example/w/api.php" },
     fetch: async () => new Response(JSON.stringify(recorded), { headers: { "Content-Type": "application/json" } }),
   });
@@ -157,7 +157,7 @@ test("a thumbnail comes through the daemon, once, and only for a work the archiv
 });
 
 test("pictures come only from the archives' own image hosts", async () => {
-  const strict = new ArtArchives({ cache: join(scratch, "strict"), userAgent: "origaiTV/test", endpoints: archives.options.endpoints });
+  const strict = new ArtArchives({ cache: join(scratch, "strict"), userAgent: "OrigaiTV/test", endpoints: archives.options.endpoints });
   // The test server's pictures aren't on images.metmuseum.org.
   assert.deepEqual(await strict.search("met", "sea"), { items: [] });
   assert.equal(await strict.thumb("met", "436021"), null);

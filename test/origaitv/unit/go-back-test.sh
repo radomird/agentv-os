@@ -52,7 +52,7 @@ check_after() {
 
 touch "$ORIGAITV_UPDATE_STATE/check-pending"
 check_after || fail "the check passes on a box that's fine" "$(cat "$SCRATCH/after.out")"
-[[ $(jq -c '[.ok, .origaitv, [.checks[].name]]' "$after") == '[true,"0.3.0-1",["origaiTV","Home","Web apps"]]' ]] ||
+[[ $(jq -c '[.ok, .origaitv, [.checks[].name]]' "$after") == '[true,"0.3.0-1",["OrigaiTV","Home","Web apps"]]' ]] ||
   fail "S2.14 the check looks at the daemon, the home screen and Chromium" "$(cat "$after")"
 [[ ! -f $ORIGAITV_UPDATE_STATE/check-pending ]] || fail "the check after a restart runs once"
 [[ $(stat -c %a "$after") == 644 ]] || fail "the home screen's daemon can read what the check found"
@@ -60,7 +60,7 @@ pass "S2.14 the check after an update looks at the daemon, the home screen and C
 
 FAKE_APPS='{"ok":true,"apps":[{"id":"origaitv.tube","name":"Tube","ok":true},{"id":"someone.jellyfin","name":"Jellyfin","ok":false,"error":"Jellyfin couldn'"'"'t load"}]}' \
   check_after && fail "the check fails when an app won't load"
-[[ $(jq -c '[.ok, [.checks[] | select(.ok | not) | .detail], [.checks[] | select(.ok) | .name]]' "$after") == '[false,["Jellyfin won'"'"'t open"],["origaiTV","Home","Web apps","Tube"]]' ]] ||
+[[ $(jq -c '[.ok, [.checks[] | select(.ok | not) | .detail], [.checks[] | select(.ok) | .name]]' "$after") == '[false,["Jellyfin won'"'"'t open"],["OrigaiTV","Home","Web apps","Tube"]]' ]] ||
   fail "S2.14 an app that won't load is named" "$(cat "$after")"
 pass "S2.14 every installed app is checked, and one that won't load is named"
 
@@ -77,14 +77,14 @@ FAKE_CHROMIUM=1 check_after && fail "the check fails when Chromium doesn't start
   fail "Chromium that doesn't start" "$(cat "$after")"
 pass "the check fails when Chromium doesn't start, or lost the Widevine it had"
 
-# The update restarts origaiTV's services, so the daemon runs the new version.
+# The update restarts OrigaiTV's services, so the daemon runs the new version.
 FAKE_RUNNING=0.2.1-1 ORIGAITV_AFTER_WAIT=0 check_after && fail "the check fails when the daemon still runs the old version"
-[[ $(jq -r '.checks[] | select(.name == "origaiTV") | .detail' "$after") == "origaiTV is still on the version from before" ]] ||
+[[ $(jq -r '.checks[] | select(.name == "OrigaiTV") | .detail' "$after") == "OrigaiTV is still on the version from before" ]] ||
   fail "a daemon still on the version from before the update" "$(cat "$after")"
 pass "the check fails when the daemon still runs the version from before the update"
 
 FAKE_DAEMON=down ORIGAITV_AFTER_WAIT=0 check_after && fail "the check fails when the daemon is down"
-[[ $(jq -c '[.checks[] | select(.ok | not) | .name]' "$after") == '["origaiTV","Home"]' ]] ||
+[[ $(jq -c '[.checks[] | select(.ok | not) | .name]' "$after") == '["OrigaiTV","Home"]' ]] ||
   fail "a daemon that doesn't answer, and so no home screen" "$(cat "$after")"
 pass "the check fails when the daemon doesn't answer"
 

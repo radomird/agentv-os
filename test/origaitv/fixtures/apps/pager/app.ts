@@ -1,4 +1,4 @@
-// A web app for origaiTV's tests that does its work in its page, the way a
+// A web app for OrigaiTV's tests that does its work in its page, the way a
 // streaming service's app does: whether it's signed in, from the site's own
 // cookie, and its sign-in form; playback read from the page's player and
 // title, a title opened with the site's own search, and an attempt to take

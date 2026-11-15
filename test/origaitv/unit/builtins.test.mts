@@ -1,5 +1,5 @@
-// origaiTV's built-in apps in the daemon (daemon/home.ts, daemon/place.ts):
-// Clock, Music, New this week and Weather come with origaiTV and say so in
+// OrigaiTV's built-in apps in the daemon (daemon/home.ts, daemon/place.ts):
+// Clock, Music, New this week and Weather come with OrigaiTV and say so in
 // their details; Clock and Weather are pinned to each viewer's home once,
 // New this week too, large, for a streaming household, take where the box
 // is from its time zone, and Settings → Weather can pick another city
@@ -75,7 +75,7 @@ async function post(path: string, body: unknown): Promise<{ status: number; data
   return { status: response.status, data: await response.json() };
 }
 
-test("Clock, Music, New this week and Weather come with origaiTV, first, and their details say they're built in", async () => {
+test("Clock, Music, New this week and Weather come with OrigaiTV, first, and their details say they're built in", async () => {
   const home = await get("/api/home");
   assert.deepEqual(home.apps.slice(0, 4).map((app: any) => app.id), ["origaitv.clock", "origaitv.music", "origaitv.new", "origaitv.weather"]);
   const [clock, music, news, weather] = home.apps;
@@ -177,7 +177,7 @@ test("S3.8 the weather tile shows the forecast for the time zone's city, asked f
   const { tile } = await get("/api/tile/origaitv.weather/s");
   assert.deepEqual(tile.headline, { label: "Amsterdam", icon: "wind", value: "12°", caption: "Windy" });
   assert.match(met.seen.at(-1)!.url, /\?lat=52\.37&lon=4\.9$/);
-  assert.match(String(met.seen.at(-1)!.headers["user-agent"]), /^origaiTV\/\S+ origaitv\.weather\/1\.0\.0$/);
+  assert.match(String(met.seen.at(-1)!.headers["user-agent"]), /^OrigaiTV\/\S+ origaitv\.weather\/1\.0\.0$/);
   const clock = await get("/api/tile/origaitv.clock/m");
   assert.equal(clock.tile.headline.label, "Amsterdam");
 });
