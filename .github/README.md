@@ -112,7 +112,7 @@ You'll need:
 - your phone
 - a keyboard, just long enough to tell the box to start from the stick
 
-1. Download the ISO from the newest release on [origaitv-iso's releases page](https://github.com/radomird/origaitv-iso/releases). Until 1.0 is out, that's a release candidate. Its notes have the download link. The file is named after its version, like `origaitv-1.0.0-rc2-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [origaitv-iso's README](https://github.com/radomird/origaitv-iso#getting-the-iso) has the four commands that check it.
+1. Download the ISO from the newest release on [origaitv-iso's releases page](https://github.com/radomird/origaitv-iso/releases). Until 1.0 is out, that's a release candidate. Its notes have the download link. The file is named after its version, like `origaitv-1.0.0-rc3-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [origaitv-iso's README](https://github.com/radomird/origaitv-iso#getting-the-iso) has the four commands that check it.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux.
 3. Start the box from the stick. On my NUC that's F10 as it powers on. Omarchy needs Secure Boot off, so turn it off in your box's firmware first if it's on. [Omarchy's manual](../manual/02-getting-started.md) has more on that.
 4. The TV shows a code. Scan it with your phone, pick the disk and tap "Erase and install". No phone to hand? Pick the disk with the keyboard and press Enter.
