@@ -30,7 +30,7 @@ import { whyOf, type Why } from "./reasons.ts";
 import { KINDS, loadRecipes, planRecipe, stepLabel, type Recipe, type Step } from "./recipe.ts";
 
 export interface RunOptions {
-  root?: string; // origaiTV's files: /usr/share/origaitv
+  root?: string; // OrigaiTV's files: /usr/share/origaitv
   home?: string; // the builder's home: /var/lib/origaitv/builder
   proxy?: string; // the sandbox's way out
   relay?: string; // the key relay
@@ -264,7 +264,7 @@ export class Runner {
       "No recipe fits it, so write a plan for an adult to approve before anything is built. It's always a page app (read @kit/kit.md for what one can do). Submit it with submit_plan:",
       "- name: what it's called on home;",
       "- says: one line on what it is;",
-      "- steps: up to 8, each an id and in plain words what it does (origaiTV adds its own tests and checks after them);",
+      "- steps: up to 8, each an id and in plain words what it does (OrigaiTV adds its own tests and checks after them);",
       "- permissions: the internet origins it reaches (none if it needs none), the box's photos or music it reads, whether it has a tile on home and sends notices;",
       "- packages: the npm packages it expects, with exact versions where you know them;",
       request.path === "key" ? "- cost: a rough low and high in dollars, for the whole build." : "",

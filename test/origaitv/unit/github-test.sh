@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Guards Export's push to a repo of the person's own (daemon/github.ts,
-# ADR-045): origaiTV's own repos refused, the person's sign-in found with gh
+# ADR-045): OrigaiTV's own repos refused, the person's sign-in found with gh
 # or an SSH key, the app pushed as their commit and never forced, and the
 # phone asking for it behind the PIN each time.
 

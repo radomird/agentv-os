@@ -1,6 +1,6 @@
 // A box for the launcher's checks and for working on it without a TV: the
-// daemon with origaiTV's files from this checkout and a few apps from each
-// kind of maker, made from the sample app. With builtins, origaiTV's own
+// daemon with OrigaiTV's files from this checkout and a few apps from each
+// kind of maker, made from the sample app. With builtins, OrigaiTV's own
 // Clock and Weather too, in a time zone of the test's choosing, with the
 // weather's forecast from a server the test runs.
 
@@ -132,7 +132,7 @@ export function bothWays(feature: Feature, title: string, check: (on: boolean, o
   }
 }
 
-// origaiTV's built-ins, with the weather pointed at the test's own server.
+// OrigaiTV's built-ins, with the weather pointed at the test's own server.
 function builtins(dir: string, forecast?: string): string {
   const target = join(dir, "builtin");
   cpSync(join(ROOT, "apps/builtin"), target, { recursive: true });

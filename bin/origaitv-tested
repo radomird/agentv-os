@@ -9,7 +9,7 @@
 # isn't waits for the next night, and so does the whole update, so a box
 # never ends up half on tested versions. Packages the nightly run never
 # installs, such as Steam, aren't held back. tested.json counts only with a
-# good signature from origaiTV's key, and without one nothing goes ahead.
+# good signature from OrigaiTV's key, and without one nothing goes ahead.
 #
 # Exits 0 when the update may go ahead, 1 when it waits.
 
@@ -56,7 +56,7 @@ if [[ -z $tested ]]; then
 fi
 
 # gpgv takes a signature only from a key in the keyring it's given, and that
-# keyring holds origaiTV's key alone.
+# keyring holds OrigaiTV's key alone.
 gpg --batch --quiet --dearmor <"$ORIGAITV_KEYRING" >"$work/origaitv.gpg" 2>/dev/null ||
   cp "$ORIGAITV_KEYRING" "$work/origaitv.gpg"
 if ! gpgv --quiet --keyring "$work/origaitv.gpg" "$tested.sig" "$tested" 2>/dev/null; then
@@ -109,9 +109,9 @@ held=$(jq -r --rawfile pending "$pending" '
 ' "$tested")
 
 if [[ -n $held ]]; then
-  echo "These versions haven't passed origaiTV's nightly run yet, so the update waits:"
+  echo "These versions haven't passed OrigaiTV's nightly run yet, so the update waits:"
   printf '  %s\n' "$held"
   exit 1
 fi
 
-echo "Every pending update has passed origaiTV's nightly run ($(jq -r '.date' "$tested"))."
+echo "Every pending update has passed OrigaiTV's nightly run ($(jq -r '.date' "$tested"))."

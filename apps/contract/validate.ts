@@ -2,7 +2,7 @@
 // (manifest.ts) and says what's wrong with each, in plain words.
 //
 // Usage: node validate.ts [--official | --local] <package-dir>...
-//   --official  the package is one of origaiTV's own apps (origaitv.*)
+//   --official  the package is one of OrigaiTV's own apps (origaitv.*)
 //   --local     the package was built on this box (local.*)
 // Without either, it's checked as a community app, whose id starts with its
 // author. Exits 0 when every package passes, 1 when one doesn't, 2 on bad

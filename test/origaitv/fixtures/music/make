@@ -21,7 +21,7 @@ tone() {
 ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=64x64:duration=1" -frames:v 1 "$DIR/Test Tones/cover.jpg"
 ffmpeg -loglevel error -y -f lavfi -i "mandelbrot=size=64x64" -frames:v 1 "$DIR/night.jpg"
 
-common=(-metadata album="Test Tones" -metadata artist="origaiTV" -metadata album_artist="origaiTV" -metadata date=2026)
+common=(-metadata album="Test Tones" -metadata artist="OrigaiTV" -metadata album_artist="OrigaiTV" -metadata date=2026)
 tone 440 "${common[@]}" -metadata title="A" -metadata track=1/3 -b:a 32k -id3v2_version 3 "$DIR/Test Tones/01 A.mp3"
 tone 330 "${common[@]}" -metadata title="E" -metadata track=2/3 "$DIR/Test Tones/02 E.flac"
 tone 262 "${common[@]}" -metadata title="C" -metadata track=3/3 -c:a libvorbis -q:a 0 "$DIR/Test Tones/03 C.ogg"
@@ -33,5 +33,5 @@ ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=247:duration=2:sample_rate
 tone 294 "${night[@]}" -metadata title="Dawn" -metadata track=3 "$DIR/Night Shift/03 Dawn.wav"
 rm "$DIR/night.jpg"
 
-printf '%s\n' "#EXTM3U" "#EXTINF:2,Pixel Band - Dusk" "Night Shift/01 Dusk.opus" "#EXTINF:2,origaiTV - A" "Test Tones/01 A.mp3" >"$DIR/evening.m3u"
+printf '%s\n' "#EXTM3U" "#EXTINF:2,Pixel Band - Dusk" "Night Shift/01 Dusk.opus" "#EXTINF:2,OrigaiTV - A" "Test Tones/01 A.mp3" >"$DIR/evening.m3u"
 du -sh "$DIR"

@@ -39,11 +39,11 @@ after(async () => {
 });
 
 const post = (path: string, body: unknown, grant?: string) =>
-  fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
+  fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) });
 const phone = (path: string, body?: unknown, grant?: string) =>
   token.fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 const phoneState = async () => (await phone("/api/phone/state")).json();
@@ -278,7 +278,7 @@ test("Q104 Settings → AI: a key for a provider whose terms nobody here accepte
   const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   await post("/api/setup", { done: true });
   const put = (provider: string, key: string) =>
-    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": onTv }, body: JSON.stringify({ provider, key }) });
+    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": onTv }, body: JSON.stringify({ provider, key }) });
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
 
   // Claude's terms for a key were accepted in setup: a new key just saves.
@@ -321,7 +321,7 @@ test("ADR-047 Q104 Grok and Muse in Settings → AI: each waits for its own term
   // The TV's own pages hold a grant of their own: a phone's is no use to them.
   const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   const put = (provider: string, key: string) =>
-    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": onTv }, body: JSON.stringify({ provider, key }) });
+    fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": onTv }, body: JSON.stringify({ provider, key }) });
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
   for (const [provider, key, first] of [
     ["grok", `xai-${"g".repeat(40)}`, "xai-enterprise-terms"],
@@ -349,7 +349,7 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
   // The TV's own pages hold a grant of their own: a phone's is no use to them.
   const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   const usePlan = (provider: string, withGrant = true) =>
-    fetch(`${url}/api/ai/plan`, { method: "PUT", headers: { "Content-Type": "application/json", ...(withGrant ? { "X-origaiTV-Grant": onTv } : {}) }, body: JSON.stringify({ provider }) });
+    fetch(`${url}/api/ai/plan`, { method: "PUT", headers: { "Content-Type": "application/json", ...(withGrant ? { "X-OrigaiTV-Grant": onTv } : {}) }, body: JSON.stringify({ provider }) });
   const using = async () => (await (await fetch(`${url}/api/key`)).json()).ai;
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
   try {
@@ -393,7 +393,7 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
 
     // A key kept from Settings → AI is what builds use after.
     await withRoot(async () => {
-      const put = await fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": onTv }, body: JSON.stringify({ provider: "claude", key: `sk-ant-${"q".repeat(40)}` }) });
+      const put = await fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": onTv }, body: JSON.stringify({ provider: "claude", key: `sk-ant-${"q".repeat(40)}` }) });
       assert.equal(put.status, 200);
       assert.deepEqual((await put.json()).ai, { provider: "claude", path: "key", accepted: true });
     });

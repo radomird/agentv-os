@@ -25,7 +25,7 @@ const wired = { eth0: [{ address: "192.168.1.20", netmask: "255.255.255.0", fami
 
 before(async () => {
   mkdirSync(join(root, "setup"), { recursive: true });
-  writeFileSync(join(root, "setup/index.html"), "<!doctype html><title>origaiTV setup</title>");
+  writeFileSync(join(root, "setup/index.html"), "<!doctype html><title>OrigaiTV setup</title>");
   writeFileSync(join(root, "settings"), "ORIGAITV_VERSION=0.2.1\nORIGAITV_CHANNEL=stable\n");
   daemon = new Daemon({
     root,
@@ -218,7 +218,7 @@ test("the keyboard's Wi-Fi at the welcome screen goes the captive page's way, an
   mkdirSync(run, { recursive: true });
   writeFileSync(join(run, "networks.json"), JSON.stringify([{ ssid: "home wi-fi", signal: 82, secure: true }]));
   assert.match((await (await post("/api/setup/wifi", { ssid: "home wi-fi", password: "correct horse" })).json()).error, /^The setup Wi-Fi isn't on$/);
-  writeFileSync(join(run, "state.json"), JSON.stringify({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n" }));
+  writeFileSync(join(run, "state.json"), JSON.stringify({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n" }));
   assert.deepEqual((await (await fetch(`${url}/api/setup/networks`)).json()).networks, [{ ssid: "home wi-fi", signal: 82, secure: true }]);
   assert.match((await (await post("/api/setup/wifi", { ssid: "home wi-fi", password: "" })).json()).error, /needs its password/);
   // Root has taken what the tests before asked of it. An ask waits for that.

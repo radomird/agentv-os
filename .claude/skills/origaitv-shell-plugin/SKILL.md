@@ -1,24 +1,24 @@
 ---
 name: origaitv-shell-plugin
-description: Use when building origaiTV's Omarchy shell plugin (the Back to TV bar widget and the TV-mode toggle, in the origaitv-plugin repo) or anything else that touches the Quickshell desktop. Builds on Omarchy's shell-dev guide.
+description: Use when building OrigaiTV's Omarchy shell plugin (the Back to TV bar widget and the TV-mode toggle, in the origaitv-plugin repo) or anything else that touches the Quickshell desktop. Builds on Omarchy's shell-dev guide.
 ---
 
-# origaiTV shell plugin
+# OrigaiTV shell plugin
 
-Read Omarchy's `agents/skills/shell-dev.md` and `docs/omarchy-shell.md` first. origaiTV doesn't change the shell: it adds one third-party plugin.
+Read Omarchy's `agents/skills/shell-dev.md` and `docs/omarchy-shell.md` first. OrigaiTV doesn't change the shell: it adds one third-party plugin.
 
-## What's different for origaiTV
+## What's different for OrigaiTV
 
-- **Never edit `shell/` in this repo.** It's Omarchy's. origaiTV's desktop pieces live in their own public repo, `origaitv-plugin`, installed with `omarchy plugin add <git-url>` and listed on plugins.omarchy.org (ADR-010).
+- **Never edit `shell/` in this repo.** It's Omarchy's. OrigaiTV's desktop pieces live in their own public repo, `origaitv-plugin`, installed with `omarchy plugin add <git-url>` and listed on plugins.omarchy.org (ADR-010).
 - **The plugin follows the third-party contract:**
   - `manifest.json` at the root, with `schemaVersion`, a namespaced `id` (`origaitv.*`), `name`, `version`, `kinds` and `entryPoints`;
   - installed at `~/.config/omarchy/plugins/<id>/`.
   - It has to pass `omarchy plugin validate` (S1.4).
 - **It gets the narrow facades** Omarchy gives third-party plugins, and nothing more. Never reach up the parent hierarchy for host objects, and never touch authentication services.
-- **What it does:** a "Back to TV" bar widget, and a TV-mode toggle that does the same. Both end Omarchy's session, and the login manager logs back in to origaiTV's TV session (ADR-031): they run `origaitv tv`. The TV session has no bar at all, so the plugin never hides anything. Until the plugin exists, Super+Ctrl+Home on the desktop runs `origaitv tv` (`session/desktop.lua`).
+- **What it does:** a "Back to TV" bar widget, and a TV-mode toggle that does the same. Both end Omarchy's session, and the login manager logs back in to OrigaiTV's TV session (ADR-031): they run `origaitv tv`. The TV session has no bar at all, so the plugin never hides anything. Until the plugin exists, Super+Ctrl+Home on the desktop runs `origaitv tv` (`session/desktop.lua`).
 - **Talk to the shell through `omarchy-shell`,** never with direct socket calls. Register the plugin's IPC target under its own name.
 - **Palette:** import `qs.Commons as Commons` and use `Commons.Color`, so the widget follows the Omarchy theme like the rest of the bar.
-- **Icons:** don't add glyphs to Omarchy's icon font (`default/fonts/omarchy/omarchy.ttf` is upstream). Ship the origaiTV mark inside the plugin. Draw it from `branding/build.py` in `origaitv-os`, so it matches the logo (ADR-021).
+- **Icons:** don't add glyphs to Omarchy's icon font (`default/fonts/omarchy/omarchy.ttf` is upstream). Ship the OrigaiTV mark inside the plugin. Draw it from `branding/build.py` in `origaitv-os`, so it matches the logo (ADR-021).
 
 ## Testing it
 

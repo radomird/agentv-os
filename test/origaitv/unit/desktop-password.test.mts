@@ -74,7 +74,7 @@ const keysOnly = () => writeFileSync(dropIn, "PasswordAuthentication no\nKbdInte
 async function call(method: string, body?: unknown, grant?: string): Promise<{ status: number; data: { ok?: boolean; error?: string; password?: { managed: boolean; name: string | null; known: boolean } } }> {
   const response = await fetch(`${url}/api/desktop/password`, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: response.status, data: await response.json() };

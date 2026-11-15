@@ -4,10 +4,10 @@
 # origaitv:hidden=true
 
 # A TV never asks for the account's password (ADR-009, ADR-029): its only
-# lock will be origaiTV's own optional PIN. Omarchy's shell locks the screen
+# lock will be OrigaiTV's own optional PIN. Omarchy's shell locks the screen
 # after five idle minutes and asks for the password, and Omarchy's menu
 # offers suspend, which locks before it sleeps. This turns the idle lock off
-# in the owner's ~/.config/omarchy/shell.json, where the screensaver (origaiTV's
+# in the owner's ~/.config/omarchy/shell.json, where the screensaver (OrigaiTV's
 # logo, after two and a half minutes) stays, and takes suspend out of the
 # menu with Omarchy's own suspend-off toggle. When the screen goes dark and
 # the TV sleeps is stage 2's TV-off policy.

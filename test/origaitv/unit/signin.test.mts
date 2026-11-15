@@ -190,19 +190,19 @@ before(async () => {
 
 after(() => server?.close());
 
-test("a site's icon: the best one its page names that's an image, else its favicon.ico, asked for as origaiTV", async () => {
-  const icon = await siteIcon(`${base}/`, { userAgent: "origaiTV/0.1 local.notes" });
+test("a site's icon: the best one its page names that's an image, else its favicon.ico, asked for as OrigaiTV", async () => {
+  const icon = await siteIcon(`${base}/`, { userAgent: "OrigaiTV/0.1 local.notes" });
   assert.deepEqual([icon?.type, icon?.body.equals(PNG)], ["image/png", true]);
-  assert.ok(served.includes("/missing.png origaiTV/0.1 local.notes"), "the best first, which isn't there");
-  assert.ok(served.includes("/notes.txt origaiTV/0.1 local.notes"), "then one that isn't an image");
-  const ico = await siteIcon(`${base}/plain/`, { userAgent: "origaiTV/0.1 local.notes" });
+  assert.ok(served.includes("/missing.png OrigaiTV/0.1 local.notes"), "the best first, which isn't there");
+  assert.ok(served.includes("/notes.txt OrigaiTV/0.1 local.notes"), "then one that isn't an image");
+  const ico = await siteIcon(`${base}/plain/`, { userAgent: "OrigaiTV/0.1 local.notes" });
   assert.equal(ico?.type, "image/x-icon");
-  assert.equal(await siteIcon("http://127.0.0.1:1/", { userAgent: "origaiTV" }), null);
+  assert.equal(await siteIcon("http://127.0.0.1:1/", { userAgent: "OrigaiTV" }), null);
 });
 
 test("a site's largest icon wins, even on a page bigger than the part that's read", async () => {
   for (const path of ["/sizes/", "/big/"]) {
-    const icon = await siteIcon(`${base}${path}`, { userAgent: "origaiTV/0.1 local.notes" });
+    const icon = await siteIcon(`${base}${path}`, { userAgent: "OrigaiTV/0.1 local.notes" });
     assert.ok(icon?.body.equals(sized(512)), `${path}: ${icon?.body.subarray(PNG.length).toString()}`);
   }
 });
@@ -226,7 +226,7 @@ test("a site's icon that didn't come says why in the log, and is asked for again
   ]);
   const lines: string[] = [];
   const changes: string[] = [];
-  const home = new Home({ appsDir: apps, state, userAgent: "origaiTV/0.1", harness: HARNESS, iconRetryMs: 300, log: (line) => lines.push(line), changed: (event) => changes.push(event) });
+  const home = new Home({ appsDir: apps, state, userAgent: "OrigaiTV/0.1", harness: HARNESS, iconRetryMs: 300, log: (line) => lines.push(line), changed: (event) => changes.push(event) });
   open = false;
   try {
     assert.equal((await home.apps()).find((app) => app.id === "local.region")?.icon, undefined);
@@ -324,7 +324,7 @@ test("an app with no icon of its own gets its site's, kept on the box", async ()
   assert.ok(Buffer.from(await icon.arrayBuffer()).equals(PNG));
   assert.match(icon.headers.get("content-security-policy") ?? "", /sandbox/);
   assert.equal(JSON.parse(readFileSync(join(state, "icons", "local.notes.json"), "utf8")).type, "image/png");
-  assert.ok(served.some((line) => line.startsWith("/web/ origaiTV")), "asked for as origaiTV");
+  assert.ok(served.some((line) => line.startsWith("/web/ OrigaiTV")), "asked for as OrigaiTV");
   // An app with an icon of its own keeps it.
   const sample = (await (await fetch(`${url}/api/home`)).json()).apps.find((app: { id: string }) => app.id === "origaitv.sample");
   assert.equal((await fetch(`${url}${sample.icon}`)).headers.get("content-type"), "image/svg+xml");

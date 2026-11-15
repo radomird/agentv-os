@@ -46,7 +46,7 @@ function withName(text: string, name: string): Node {
 async function call(method: string, path: string, body?: unknown, grant?: string): Promise<State> {
   const response = await fetch(path, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
     keepalive: true,
   });

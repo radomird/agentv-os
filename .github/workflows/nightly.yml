@@ -1,14 +1,14 @@
 name: Nightly
 
-# Every night, the current origaiTV release on Omarchy's stable channel as it
+# Every night, the current OrigaiTV release on Omarchy's stable channel as it
 # stands tonight goes through the whole image layer, including an update in
 # place (S0.5). When everything passes, the run signs tested.json with every
 # package and version on the box, and boxes take only those (ADR-026, S0.7).
-# Until origaiTV has a stable release, it tests edge. A failure opens an issue,
+# Until OrigaiTV has a stable release, it tests edge. A failure opens an issue,
 # and the next night that passes closes it.
 #
 # It's also where the edge ISO is made, the way omarchy-iso's own nightly
-# build makes Omarchy's: origaiTV's edge packages on Omarchy's stable channel,
+# build makes Omarchy's: OrigaiTV's edge packages on Omarchy's stable channel,
 # built from origaitv-iso's origaitv branch, kept as a workflow artifact when
 # every check passes. Once there's a stable release, edge gets a run of its
 # own beside it, and only the stable run signs tested.json.
@@ -51,7 +51,7 @@ name: Nightly
 # Started by hand, it can take another origaitv-iso ref for edge's checks
 # (checks), so a fix to the checks can be seen in a full night before it
 # merges. The release keeps its own. That ref isn't merged yet, so such a
-# run never gets origaiTV's own key: it signs no tested.json, checks no
+# run never gets OrigaiTV's own key: it signs no tested.json, checks no
 # update (a channel's box takes one signed with that key alone) and keeps no
 # ISO.
 
@@ -139,22 +139,22 @@ jobs:
               with="$(sed -n 's/^tag=//p' "$RUNNER_TEMP/release") (${checks:0:9})"
             elif (( found == 3 )); then
               why=$(sed 's/^release-checks: //' "$RUNNER_TEMP/release.err")
-              untagged="origaiTV $stable is the stable release, and $why. So tonight it was checked with origaitv-iso's origaitv branch, which has checks for work the release doesn't have. Tag origaitv-iso for the release, on the commit it was built from."
+              untagged="OrigaiTV $stable is the stable release, and $why. So tonight it was checked with origaitv-iso's origaitv branch, which has checks for work the release doesn't have. Tag origaitv-iso for the release, on the commit it was built from."
               echo "untagged=$untagged" >>"$GITHUB_OUTPUT"
               echo "::warning::$untagged"
             else
               cat "$RUNNER_TEMP/release.err" >&2
-              echo "::error::Couldn't find out which origaitv-iso origaiTV $stable was tagged with, so nothing is tested tonight."
+              echo "::error::Couldn't find out which origaitv-iso OrigaiTV $stable was tagged with, so nothing is tested tonight."
               exit 1
             fi
             update=""
             [[ $checks == "$next" ]] || update=$next
             runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 2},
               {packages: "edge", tested: false, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
-            echo "Testing origaiTV's stable release $stable with origaitv-iso $with, two VMs at a time with S1.3 on its own, and making the edge ISO with origaitv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
+            echo "Testing OrigaiTV's stable release $stable with origaitv-iso $with, two VMs at a time with S1.3 on its own, and making the edge ISO with origaitv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
           else
             runs=$(jq -cn --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "edge", tested: true, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
-            echo "Testing origaiTV's edge release (there's no stable one yet) with origaitv-iso $edge_checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+            echo "Testing OrigaiTV's edge release (there's no stable one yet) with origaitv-iso $edge_checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
           if [[ -n $CHECKS ]]; then
             echo "Started by hand with origaitv-iso $CHECKS, so this run has no signing key: it signs no tested.json, checks no update and keeps no ISO." >>"$GITHUB_STEP_SUMMARY"
@@ -184,7 +184,7 @@ jobs:
       # that ran an origaitv-iso ref someone typed in either.
       keep-disk: ${{ matrix.iso && inputs.checks == '' }}
       lanes: ${{ matrix.lanes }}
-      # The one caller that signs with origaiTV's own key: what a channel's
+      # The one caller that signs with OrigaiTV's own key: what a channel's
       # box updates to, and tested.json. Never beside an origaitv-iso ref
       # someone typed in.
       release-key: ${{ inputs.checks == '' }}

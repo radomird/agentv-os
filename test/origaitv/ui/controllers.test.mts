@@ -356,7 +356,7 @@ test("T16.1 with a PIN set the pad comes before pairing, and a child's profile s
   const checked = daemon.pin.check(PIN);
   assert.ok(checked.ok);
   const send = (method: string, path: string, body?: unknown, grant?: string) =>
-    fetch(`${url}${path}`, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    fetch(`${url}${path}`, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   const child = (await (await send("POST", "/api/viewers", { name: "mila", role: "child" }, checked.grant)).json()).profile;
   assert.equal((await send("POST", "/api/viewer", { id: child.id })).status, 200);
   await send("POST", "/api/controllers/look", { on: true });

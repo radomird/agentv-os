@@ -32,7 +32,7 @@ get() {
 }
 
 # The daemon, given time to come up after a restart, on the origaitv now
-# installed: the update restarts origaiTV's services (origaitv-restart), so this
+# installed: the update restarts OrigaiTV's services (origaitv-restart), so this
 # checks the new code.
 installed=$(pacman -Q origaitv 2>/dev/null | cut -d' ' -f2)
 started=$SECONDS
@@ -49,11 +49,11 @@ while true; do
   sleep 3
 done
 if [[ $daemon != "true" ]]; then
-  add origaiTV false "origaiTV didn't start"
+  add OrigaiTV false "OrigaiTV didn't start"
 elif [[ $running != "$installed" ]]; then
-  add origaiTV false "origaiTV is still on the version from before"
+  add OrigaiTV false "OrigaiTV is still on the version from before"
 else
-  add origaiTV true
+  add OrigaiTV true
 fi
 
 # The home screen: its page, and the state it draws.

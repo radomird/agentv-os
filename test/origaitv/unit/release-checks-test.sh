@@ -49,21 +49,21 @@ pass "a 0.x release is found by its v tag, and handed back as the commit it's on
 
 # From 1.0 on the tag says origaitv. One with a message of its own, as a
 # release's tag can be, is followed to its commit.
-tag -a -m "origaiTV 1.0.0" origaitv-v1.0.0 "$third"
+tag -a -m "OrigaiTV 1.0.0" origaitv-v1.0.0 "$third"
 run 1.0.0 "$iso"
 [[ $status == 0 && $(found) == "origaitv-v1.0.0 $third" ]] ||
   fail "1.0.0 is found by origaitv-v1.0.0" "status $status: $(found)"$'\n'"$(cat "$SCRATCH/log")"
 [[ $(git -C "$iso" rev-parse origaitv-v1.0.0) != "$third" ]] || fail "the stand-in's 1.0.0 tag has a message of its own"
 pass "1.0.0 is found by origaitv-v1.0.0, and a tag with a message of its own is followed to its commit"
 
-# A v tag for 1.0 or later is never origaiTV's: in origaitv-os those are
+# A v tag for 1.0 or later is never OrigaiTV's: in origaitv-os those are
 # Omarchy's, and the rule is the same in both repos.
 tag v1.1.0 "$second"
 run 1.1.0 "$iso"
-[[ $status == 3 ]] || fail "v1.1.0 isn't taken for origaiTV 1.1.0's tag" "status $status: $(found)"
+[[ $status == 3 ]] || fail "v1.1.0 isn't taken for OrigaiTV 1.1.0's tag" "status $status: $(found)"
 grep -q "origaitv-iso has no origaitv-v1.1.0 tag" "$SCRATCH/log" || fail "it says which tag it looked for" "$(cat "$SCRATCH/log")"
 [[ ! -s $SCRATCH/out ]] || fail "with no tag it hands nothing back" "$(cat "$SCRATCH/out")"
-pass "a v tag for 1.0 or later isn't origaiTV's, so 1.1.0 has no tag, and it says so with exit 3"
+pass "a v tag for 1.0 or later isn't OrigaiTV's, so 1.1.0 has no tag, and it says so with exit 3"
 
 # A candidate's tag isn't the release's.
 tag origaitv-v1.2.0-rc1 "$fourth"
@@ -164,7 +164,7 @@ pass "the nightly run checks a tagged release with the commit its tag is on, and
 
 which 1.1.0 || fail "the step runs for a release with no tag" "$(cat "$SCRATCH/which.log")"
 [[ $(leg checks) == "origaitv" && -z $(leg update) ]] || fail "a release with no tag is still checked, with tonight's checks" "$(cat "$SCRATCH/which.out")"
-grep -q '^untagged=origaiTV 1.1.0 is the stable release, and origaitv-iso has no origaitv-v1.1.0 tag' "$SCRATCH/which.out" ||
+grep -q '^untagged=OrigaiTV 1.1.0 is the stable release, and origaitv-iso has no origaitv-v1.1.0 tag' "$SCRATCH/which.out" ||
   fail "and the step says the release has no tag" "$(cat "$SCRATCH/which.out")"
 pass "a release with no tag in origaitv-iso is still checked, and the run is told to fail and why"
 

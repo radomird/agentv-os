@@ -2,7 +2,7 @@
 # the next boot when the box was off.
 
 [Unit]
-Description=origaiTV nightly package check
+Description=OrigaiTV nightly package check
 
 [Timer]
 OnCalendar=*-*-* 03:20

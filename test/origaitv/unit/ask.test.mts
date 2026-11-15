@@ -211,11 +211,11 @@ test("T11.2 through the daemon: with the switch on, a phone's make reaches the b
   const lan = `http://127.0.0.1:${daemon.lanPort}`;
   try {
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
-      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
     const token = await pairPhone(lan, code, "iphone");
     const phone = (method: string, path: string, body?: unknown, grant?: string) =>
-      token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      token.fetch(`${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     writeFileSync(join(base, "state", "setup.json"), JSON.stringify({ done: true, at: "2026-11-05T08:00:00Z" }));
     const say = async (sentence: string, route: Route) => ((next = route), (await (await phone("POST", "/api/phone/say", { sentence })).json()).said);
 

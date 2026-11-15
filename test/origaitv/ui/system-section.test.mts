@@ -124,7 +124,7 @@ for (const look of LOOKS) {
 }
 
 for (const look of LOOKS) {
-  test(`T18.1 ${look}: About shows the look's own origaiTV logo, the one for a dark background or a light one, above the name, and bigger than TMDB's`, async () => {
+  test(`T18.1 ${look}: About shows the look's own OrigaiTV logo, the one for a dark background or a light one, above the name, and bigger than TMDB's`, async () => {
     await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
     const problems: string[] = [];
     for (const theme of THEMES) {
@@ -151,9 +151,9 @@ for (const look of LOOKS) {
         const tone = theme === "catppuccin-latte" ? "light" : "dark";
         if (shown.src !== LOGOS[look][tone]) problems.push(`${theme}: About doesn't show ${look}'s ${tone} logo`);
         if (!shown.loaded) problems.push(`${theme}: the logo didn't load`);
-        if (!shown.name.startsWith("origaiTV ")) problems.push(`${theme}: the name under the logo is "${shown.name}"`);
+        if (!shown.name.startsWith("OrigaiTV ")) problems.push(`${theme}: the name under the logo is "${shown.name}"`);
         if (!shown.fits) problems.push(`${theme}: the logo doesn't fit the panel`);
-        if (!shown.bigger) problems.push(`${theme}: TMDB's logo isn't smaller than origaiTV's`);
+        if (!shown.bigger) problems.push(`${theme}: TMDB's logo isn't smaller than OrigaiTV's`);
       } finally {
         await page.close();
       }

@@ -1,4 +1,4 @@
-// origaiTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
+// OrigaiTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
 // pages and the state behind them on this box only (127.0.0.1:3000), the
 // phone companion on the home network (port 3001), where only a paired phone
 // gets past pairing, and the setup hotspot's captive page (port 3002), on
@@ -92,7 +92,7 @@ import { DisplayRoutes } from "./routes/display.ts";
 import { Inhibitor } from "./inhibit.ts";
 
 export interface DaemonOptions {
-  root: string; // origaiTV's files: /usr/share/origaitv, or a checkout
+  root: string; // OrigaiTV's files: /usr/share/origaitv, or a checkout
   // Keeps the box awake while a build runs (daemon/inhibit.ts, ADR-072).
   inhibitor?: (why: string) => { set(on: boolean): void };
   state: string; // the daemon's own state: /var/lib/origaitv/daemon
@@ -101,7 +101,7 @@ export interface DaemonOptions {
   // and nothing reads it from a file or the environment.
   harness?: { thisBox?: boolean; noSandbox?: boolean };
   updates?: string; // what the update check and an install write: /var/lib/origaitv/update
-  builtins?: string | null; // origaiTV's own apps: <root>/apps/builtin, or null for none
+  builtins?: string | null; // OrigaiTV's own apps: <root>/apps/builtin, or null for none
   ledger?: string; // the ledger's database: <state>/ledger.db
   port: number;
   host?: string;
@@ -389,7 +389,7 @@ export class Daemon {
   // The screen daemon, taking the phone's keys and text for the virtual
   // input device.
   private remotes = new Set<ServerResponse>();
-  // origaiTV's sign-in screen, while it's on the TV (ADR-032): the phone then
+  // OrigaiTV's sign-in screen, while it's on the TV (ADR-032): the phone then
   // offers fields its password manager fills.
   private signingIn: { app: string; name: string } | null = null;
   // What's on the TV for the phones (ADR-037), and a count that goes up with
@@ -558,7 +558,7 @@ export class Daemon {
       state: options.state,
       keySet: () => this.tmdbKey.status().set,
       region: () => this.region(),
-      // Every app on the box but origaiTV's own.
+      // Every app on the box but OrigaiTV's own.
       apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
       now: options.newsNow,
       log: this.log,
@@ -1701,7 +1701,7 @@ export class Daemon {
       return;
     }
 
-    // origaiTV's sign-in screen (ADR-032, S4.9): the name and the password the
+    // OrigaiTV's sign-in screen (ADR-032, S4.9): the name and the password the
     // phone's password manager filled, typed into the service's form on the
     // TV, with Tab between them and Enter after. Never logged.
     if (method === "POST" && path === "/api/phone/sign-in") {
@@ -1924,7 +1924,7 @@ export class Daemon {
 
     // The push to a repo of the person's own, asked here each time behind
     // the PIN, and done by the screen daemon as the person, with their own
-    // GitHub sign-in. origaiTV's own repos are refused (ADR-045).
+    // GitHub sign-in. OrigaiTV's own repos are refused (ADR-045).
     const pushing = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/push$/.exec(path);
     if (method === "POST" && pushing) {
       const viewer = await this.profiles.active();
@@ -2383,7 +2383,7 @@ export class Daemon {
         service: "origaitv",
         version: info.ORIGAITV_VERSION,
         channel: info.ORIGAITV_CHANNEL,
-        // What this process runs, which after an update and before origaiTV's
+        // What this process runs, which after an update and before OrigaiTV's
         // services restart is still the package from before (origaitv-restart).
         running: this.running,
         // The time zone the daemon's clock goes by, which follows the box's
@@ -2458,7 +2458,7 @@ export class Daemon {
       const hotspot = this.hotspot.status();
       this.json(response, 200, {
         ok: true,
-        // The origaiTV this box has now, which getting ready brings up to date,
+        // The OrigaiTV this box has now, which getting ready brings up to date,
         // and the package this daemon runs, with its release: an update
         // restarts it on the new one.
         version: (await this.settings()).ORIGAITV_VERSION,
@@ -2879,7 +2879,7 @@ export class Daemon {
       return;
     }
 
-    // The screen daemon, as origaiTV's sign-in screen comes and goes.
+    // The screen daemon, as OrigaiTV's sign-in screen comes and goes.
     if (method === "POST" && path === "/api/sign-in-screen") {
       const body = (await this.body(request)) as { app?: unknown; name?: unknown } | undefined;
       this.signingIn = typeof body?.app === "string" ? { app: body.app, name: typeof body.name === "string" ? body.name : body.app } : null;

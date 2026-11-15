@@ -114,7 +114,7 @@ async function ask(base: string, keys: Keys, a: Ask) {
   }
   const sig = b64u(mac(keys.sign, [method, address, a.counter, a.grant ?? "", digest].join("\n")));
   const grant = a.wire?.grant ?? a.grant;
-  Object.assign(headers, { "X-origaiTV-Session": a.wire?.session ?? keys.session, "X-origaiTV-Counter": String(a.wire?.counter ?? a.counter), "X-origaiTV-Sig": a.wire?.sig ?? sig }, grant ? { "X-origaiTV-Grant": grant } : {}, a.wire?.headers ?? {});
+  Object.assign(headers, { "X-OrigaiTV-Session": a.wire?.session ?? keys.session, "X-OrigaiTV-Counter": String(a.wire?.counter ?? a.counter), "X-OrigaiTV-Sig": a.wire?.sig ?? sig }, grant ? { "X-OrigaiTV-Grant": grant } : {}, a.wire?.headers ?? {});
   const sentBody = a.wire?.body ?? body;
   const response = await fetch(`${base}${a.wire?.address ?? address}`, { method: a.wire?.method ?? method, headers, body: sentBody === undefined ? undefined : new Uint8Array(sentBody) });
   const raw = Buffer.from(await response.arrayBuffer());
@@ -303,7 +303,7 @@ test("F1 an upload goes as it is with its length signed: another length, or no l
   // Sent in chunks, there's no length to check the signature against.
   const sig = b64u(mac(keys.sign, ["POST", "/echo", 4, "", "length:5"].join("\n")));
   const status = await new Promise<number>((resolve, reject) => {
-    const request = httpRequest(`${base}/echo`, { method: "POST", headers: { "Content-Type": "video/mp4", "Transfer-Encoding": "chunked", "X-origaiTV-Session": keys.session, "X-origaiTV-Counter": "4", "X-origaiTV-Sig": sig } }, (response) => {
+    const request = httpRequest(`${base}/echo`, { method: "POST", headers: { "Content-Type": "video/mp4", "Transfer-Encoding": "chunked", "X-OrigaiTV-Session": keys.session, "X-OrigaiTV-Counter": "4", "X-OrigaiTV-Sig": sig } }, (response) => {
       response.resume();
       resolve(response.statusCode ?? 0);
     });
@@ -422,7 +422,7 @@ test("F1 the daemon's own routes: the state comes sealed, the PIN goes sealed, a
   assert.ok(!right.sentBody!.includes("4826") && !right.raw.includes(right.data.grant), "neither the PIN nor its grant can be read on the way");
   // The grant is in the signature: it can't be put on another request.
   const onTv = (await local("POST", "/api/pin/check", { pin: "4826" })).grant;
-  const child = (await (await fetch(`${tv}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": onTv }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()) as Record<string, any>;
+  const child = (await (await fetch(`${tv}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": onTv }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()) as Record<string, any>;
   const to = (id: string, counter: number, how: Partial<Ask> = {}) => ask(lan, keys, { counter, method: "POST", address: "/api/phone/viewer", body: { id }, ...how });
   assert.equal((await to(child.profile.id, 4)).status, 200);
   const owner = (await ask(lan, keys, { counter: 5, address: "/api/phone/state" })).data.viewers.find((viewer: { role: string }) => viewer.role === "adult");
@@ -469,7 +469,7 @@ test("F1 what was recorded before the daemon restarted is worth nothing after: t
   // The phone's key is still good: it says hello and goes on, with nothing to see.
   const fresh = await handHello(lan, mine.id, mine.key);
   assert.equal((await ask(lan, fresh, { counter: 1, address: "/api/phone/state" })).status, 200);
-  const replayedAgain = await fetch(`${lan}/api/phone/remote`, { method: "POST", headers: { ...before.headers, "X-origaiTV-Session": fresh.session }, body: new Uint8Array(before.sentBody!) });
+  const replayedAgain = await fetch(`${lan}/api/phone/remote`, { method: "POST", headers: { ...before.headers, "X-OrigaiTV-Session": fresh.session }, body: new Uint8Array(before.sentBody!) });
   assert.equal(replayedAgain.status, 401, "nor under the new session's name");
 });
 
@@ -550,7 +550,7 @@ test("origaitv-phone-call pairs with a code, sends a request as that phone, and 
     rmSync(dirname(withPin.out), { recursive: true, force: true });
     // Starting setup again needs the PIN's grant, now that one is set.
     const { grant } = await local("POST", "/api/pin/check", { pin: "4826" });
-    const reset = await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": grant }, body: JSON.stringify({ done: false }) });
+    const reset = await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": grant }, body: JSON.stringify({ done: false }) });
     assert.equal(reset.status, 200);
     assert.equal((await run(file, "POST", "/api/phone/background", `@${picture}`)).code, 2);
   } finally {

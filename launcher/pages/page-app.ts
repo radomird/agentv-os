@@ -2,7 +2,7 @@
 // full screen in a sandboxed frame over home, served from an origin of its
 // own. The frame has scripts and nothing else: no storage of the browser's,
 // no forms, popups or leaving home, and the policy its files come with. It
-// reaches the box only through origaiTV's app kit (kit-host.ts).
+// reaches the box only through OrigaiTV's app kit (kit-host.ts).
 //
 // Home pauses it and keeps it open behind home, two at most, as it does a
 // web app (ADR-031). Back goes to the app first; one that doesn't keep it,

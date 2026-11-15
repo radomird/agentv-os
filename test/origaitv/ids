@@ -5,7 +5,7 @@
 S0.1  origaitv-iso a tagged release's ISO installs in CI and boots to the TV setup welcome screen
 S0.2  manual    the NUC boots from the ISO to the welcome screen, with no boot password (origaitv selftest S0.2)
 S0.3  manual    NetworkManager brings up the setup hotspot on the NUC's Wi-Fi (origaitv selftest S0.3)
-S0.4  origaitv-iso the origaiTV logo in the installer, boot splash and screensaver; no Omarchy file edited
+S0.4  origaitv-iso the OrigaiTV logo in the installer, boot splash and screensaver; no Omarchy file edited
 S0.5  nightly   origaitv update moves a box to a newer release in place, with a snapshot in the boot menu
 S0.6  sync      a new Omarchy stable tag gets a sync pull request that merges itself only when green
 S0.7  nightly   a box holds back a package version until the signed tested.json lists it
@@ -25,7 +25,7 @@ S2.6  check     the tiles it covers move to the next free cells, and a size with
 S2.7  check     no tile shows a tier, and every app's details say who made it
 S2.10 manual    the focus glide, hover lift and page transitions at 60 fps on the NUC; reduce motion fades (layer 4 checks the rules)
 S2.11 manual    each UI sound within a frame of its action; move at most every 60 ms; Settings → Sound silences them (layer 4 checks the rules)
-S2.12 check     Settings → Updates shows the installed and the new origaiTV and Omarchy with What's new, and Install now runs the update (the NUC does a real one)
+S2.12 check     Settings → Updates shows the installed and the new OrigaiTV and Omarchy with What's new, and Install now runs the update (the NUC does a real one)
 S2.13 check     a new release shows one toast on home, and the bar says so until it's installed (no profiles or children until stage 4)
 S2.14 image     when the check after an update finds something off, Go back returns the box to the version from before, with no reinstall
 S2.15 image     Home pauses the app in front and shows home, choosing it again plays it where it was, a third app closes the oldest, a game keeps running with Quit (the NUC times the 1 s)
@@ -51,7 +51,7 @@ S4.5  image     a PIN-guarded action is refused without the PIN (layers 2 and 4 
 S4.6  image     the user account can't read the stored key (layer 2 too; origaitv selftest S4.6 on the NUC)
 S4.7  check     a tile moved or resized in arrange home changes on the TV within 1 s (layer 4; the image layer moves one from a phone on the box's address)
 S4.8  check     the phone shows the same update notice as the TV, and Install tonight from the phone installs it overnight (layer 4)
-S4.9  manual    on an iPhone, the sign-in field offers AutoFill and signs in to a service on the TV; the web companion's fields do the same in a phone browser, with no password in origaiTV's logs (the image layer checks the web companion's fields and the logs)
+S4.9  manual    on an iPhone, the sign-in field offers AutoFill and signs in to a service on the TV; the web companion's fields do the same in a phone browser, with no password in OrigaiTV's logs (the image layer checks the web companion's fields and the logs)
 S4.10 check     when the TV asks for the PIN, a paired phone shows a pad within 1 s and the PIN typed there does what the TV asked; the remote follows the TV to the keyboard, playback and the d-pad, each press shows and clicks (and buzzes on Android), and quick taps never zoom (layers 2 and 4; real phones by hand)
 S5.1  manual    a household member doing it for the first time finishes setup in under 10 minutes of their own time, without help
 S5.2  image     changing the theme as Omarchy's desktop does reaches the TV within 2 s, timed on the box (layer 2 checks the hand-over comes before Omarchy's hooks)

@@ -50,7 +50,7 @@ async function pickServer(ctx: Ctx, app: string, url: string, called: string): P
     .guarded(`setting up ${name}`, async (grant) => {
       const response = await fetch("/api/discover/pick", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+        headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
         body: JSON.stringify({ app, url }),
       }).catch(() => null);
       const answer = (await response?.json().catch(() => null)) as Answer;

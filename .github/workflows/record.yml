@@ -1,6 +1,6 @@
 name: Record fixtures
 
-# Records the replies origaiTV's tests use as fixtures (ADR-019, layer 3), from
+# Records the replies OrigaiTV's tests use as fixtures (ADR-019, layer 3), from
 # the services themselves: MET Norway's forecasts for the weather app, the
 # museum archives for the art picker, and an Immich album's shared link for
 # the backgrounds. A push to record/met, record/art or record/immich-share

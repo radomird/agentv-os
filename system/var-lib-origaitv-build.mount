@@ -4,7 +4,7 @@
 # in a build gives no one more rights. origaitv-builder@ waits for it.
 
 [Unit]
-Description=origaiTV's builds, where set-user-ID bits and devices do nothing
+Description=OrigaiTV's builds, where set-user-ID bits and devices do nothing
 
 [Mount]
 What=/var/lib/origaitv/build

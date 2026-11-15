@@ -1,6 +1,6 @@
 // The provider CLIs, as the builder starts them for a step (builder/
 // providers.ts, ADR-011, ADR-045, ADR-047): each with no tools of its own,
-// only origaiTV's harness, no key on a key's path (the relay adds it), and a
+// only OrigaiTV's harness, no key on a key's path (the relay adds it), and a
 // stop at its turns. claude, codex and gemini, and grok and muse beside
 // them. The CLIs themselves run on the NUC; here it's what they're given.
 
@@ -13,7 +13,7 @@ const harness = { command: "/usr/bin/node", args: ["/usr/share/origaitv/builder/
 
 const step = (change: Partial<StepRun> = {}): StepRun => ({
   prompt: "The request: a game like tetris",
-  brief: "origaiTV's brief",
+  brief: "OrigaiTV's brief",
   harness,
   cwd: "/var/lib/origaitv/build/local.blocks/1.0.0/work",
   turns: 30,

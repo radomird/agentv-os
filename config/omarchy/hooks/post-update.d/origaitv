@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# origaiTV's migrations, run after Omarchy's own on every omarchy update
-# (ADR-025), and then origaiTV's own services restarted on the new version.
-# origaiTV's first boot puts this file in the owner's
+# OrigaiTV's migrations, run after Omarchy's own on every omarchy update
+# (ADR-025), and then OrigaiTV's own services restarted on the new version.
+# OrigaiTV's first boot puts this file in the owner's
 # ~/.config/omarchy/hooks/post-update.d/, and omarchy-hook runs it with bash.
 
 origaitv-migrate

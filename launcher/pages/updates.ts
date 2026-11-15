@@ -24,7 +24,7 @@ function releaseNumber(version: string | null | undefined): string | null {
   return /^\d+(\.\d+){1,2}$/.test(v) ? v : null;
 }
 
-// The new origaiTV release the check found, if any, once it can be installed.
+// The new OrigaiTV release the check found, if any, once it can be installed.
 export function release(updates: Updates): string | null {
   const next = updates.status?.origaitv.available;
   return next && !updates.status?.waiting ? shown(next) : null;
@@ -64,7 +64,7 @@ export function installing(updates: Updates): boolean {
   return progress.state === "running" || progress.state === "restarting" || progress.state === "going-back";
 }
 
-// Anything new: origaiTV, Omarchy or system packages.
+// Anything new: OrigaiTV, Omarchy or system packages.
 export function pending(status: UpdateStatus | null): boolean {
   return Boolean(status && (status.origaitv.available || status.omarchy.available || status.packages > 0));
 }
@@ -74,7 +74,7 @@ function ready(status: UpdateStatus | null): boolean {
   return pending(status) && !status?.waiting;
 }
 
-// What Tonight and Later name: the origaiTV release, or "packages" when only
+// What Tonight and Later name: the OrigaiTV release, or "packages" when only
 // Omarchy's or the system's are new.
 function what(status: UpdateStatus | null): string {
   return status?.origaitv.available ?? "packages";
@@ -244,7 +244,7 @@ export function notesPanel(ctx: Ctx): HTMLElement[] {
   const date = status?.notes.origaitv_date ? ` · ${new Date(status.notes.origaitv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` : "";
   const parts: (HTMLElement | null)[] = [
     h("div", { class: "panel-title" }, "What's new"),
-    next ? h("div", { class: "section" }, `origaiTV ${shown(next)}${date}`) : null,
+    next ? h("div", { class: "section" }, `OrigaiTV ${shown(next)}${date}`) : null,
     status?.notes.origaitv.length ? h("ul", { class: "notes" }, ...status.notes.origaitv.map((item) => h("li", {}, h("b", {}, "+ "), item))) : h("div", { class: "empty" }, "No notes for this one"),
     ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "settings/whats-new"), tonightNote(ctx)) : null,
   ];
@@ -289,7 +289,7 @@ export function whatsNew(ctx: Ctx): View {
       "div",
       { class: "page" },
       ...heading("tv updates whats-new", "What's new"),
-      status?.origaitv.available ? h("div", { class: "section" }, `origaiTV ${shown(status.origaitv.available)}${date}`) : null,
+      status?.origaitv.available ? h("div", { class: "section" }, `OrigaiTV ${shown(status.origaitv.available)}${date}`) : null,
       status?.origaitv.available ? (status.notes.origaitv.length ? lines(status.notes.origaitv) : h("div", { class: "empty" }, "No notes for this one")) : null,
       status?.omarchy.available ? h("div", { class: "section" }, `Omarchy ${shown(status.omarchy.available)}`) : null,
       status?.omarchy.available
@@ -364,7 +364,7 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
     ? failed
       ? "Couldn't go back"
       : releaseNumber(progress.to.origaitv)
-        ? `Going back to origaiTV ${releaseNumber(progress.to.origaitv)}`
+        ? `Going back to OrigaiTV ${releaseNumber(progress.to.origaitv)}`
         : "Going back"
     : failed
       ? progress.detail === "not tested yet"
@@ -373,8 +373,8 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
           ? "Couldn't update. Nothing changed."
           : "The update stopped"
       : releaseNumber(progress.to.origaitv || progress.from.origaitv)
-        ? `Updating to origaiTV ${releaseNumber(progress.to.origaitv || progress.from.origaitv)}`
-        : "Updating origaiTV";
+        ? `Updating to OrigaiTV ${releaseNumber(progress.to.origaitv || progress.from.origaitv)}`
+        : "Updating OrigaiTV";
   const fill = h("div", { class: "updating-fill" });
   fill.style.transform = `scaleX(${Math.max(0.02, Math.min(1, progress.percent / 100))})`;
   el.replaceChildren(

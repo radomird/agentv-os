@@ -9,7 +9,7 @@
 // overlays, and Steam's gamescope.
 //
 // Two halves:
-//   - Display, in origaiTV's daemon, keeps what was picked in display.json in
+//   - Display, in OrigaiTV's daemon, keeps what was picked in display.json in
 //     the daemon's state, with the TV the screen daemon last saw, and says
 //     what the TV should run at (GET and PUT /api/display, routes/display.ts).
 //   - DisplayWatch, in the screen daemon, which runs as the person in the TV

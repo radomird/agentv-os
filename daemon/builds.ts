@@ -369,7 +369,7 @@ export class Builds {
   // root put in the ticket from its own copy of the app. Never from the
   // build's folder: what a build wrote after approval doesn't count. That's
   // what stage B's look at the signed-in pages keeps to, with the pages
-  // origaiTV's own recipe names for it: where a title is found and played,
+  // OrigaiTV's own recipe names for it: where a title is found and played,
   // never an account or a payment page.
   stageB(): { id: string; version: string; origins: string[]; looksAt: (address: URL) => boolean } | null {
     let ticket: { id?: unknown; version?: unknown; phase?: unknown; origins?: unknown; recipe?: unknown } | null = null;

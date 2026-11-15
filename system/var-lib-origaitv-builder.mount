@@ -5,7 +5,7 @@
 # more rights. origaitv-builder@ waits for it.
 
 [Unit]
-Description=origaiTV builder's home, where set-user-ID bits and devices do nothing
+Description=OrigaiTV builder's home, where set-user-ID bits and devices do nothing
 
 [Mount]
 What=/var/lib/origaitv/builder

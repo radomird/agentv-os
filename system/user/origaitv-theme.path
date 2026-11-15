@@ -5,7 +5,7 @@
 # pick a look, and Omarchy's desktop.
 
 [Unit]
-Description=origaiTV: hand a new Omarchy theme's colours to the TV
+Description=OrigaiTV: hand a new Omarchy theme's colours to the TV
 
 [Path]
 PathChanged=%h/.local/state/omarchy/current/theme.name

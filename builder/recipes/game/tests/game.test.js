@@ -1,5 +1,5 @@
 // The game recipe's own tests, which every game built from it passes as
-// well as its own. They run in the game's frame with origaiTV's test API.
+// well as its own. They run in the game's frame with OrigaiTV's test API.
 
 test("the game listens to the buttons and to Back", async (t) => {
   await t.frames(10);

@@ -1,6 +1,6 @@
 # Hosts of the streaming services whose automation never goes into a public
 # repo (CLAUDE.md, ADR-017, ADR-066). bin/origaitv-check fails on any of these
-# in a file origaiTV adds. Perl regular expressions, matched without regard to
+# in a file OrigaiTV adds. Perl regular expressions, matched without regard to
 # case.
 #
 # "#@ <id>" starts a service's lines. In origaitv-apps only, the app in that

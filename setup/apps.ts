@@ -1,5 +1,5 @@
-// Apps (board 09): origaiTV's official apps for what the TV is for, then the
-// rest under "more", beside the built-in apps that come with origaiTV. OK ticks
+// Apps (board 09): OrigaiTV's official apps for what the TV is for, then the
+// rest under "more", beside the built-in apps that come with OrigaiTV. OK ticks
 // one; continue hands the ticked ones to the box to install in the
 // background, from the signed index, and setup carries on while they do. Each
 // app's own setup (a server address, a sign-in) comes from its tile on home.

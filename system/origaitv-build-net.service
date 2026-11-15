@@ -9,7 +9,7 @@
 # each build.
 
 [Unit]
-Description=origaiTV builder's way out
+Description=OrigaiTV builder's way out
 After=network.target
 
 [Service]

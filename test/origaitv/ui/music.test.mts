@@ -28,7 +28,7 @@ const COVER = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS
 const LIBRARY = {
   albums: [
     { id: "a1", title: "Night Shift", artist: "Pixel Band", year: "2025", cover: true, tracks: ["t1", "t2", "t3"] },
-    { id: "a2", title: "Test Tones", artist: "origaiTV", year: "2026", cover: false, tracks: ["t4", "t5", "t6"] },
+    { id: "a2", title: "Test Tones", artist: "OrigaiTV", year: "2026", cover: false, tracks: ["t4", "t5", "t6"] },
   ],
   playlists: [{ id: "p1", name: "evening", tracks: ["t1", "t4"] }],
   tracks: {
@@ -142,7 +142,7 @@ function requests(page: Page, op: string): Promise<Record<string, unknown>[]> {
 
 const tile = '.grid .tile[data-id="origaitv.music"]';
 
-test("Music comes with origaiTV and waits in apps; choosing it opens its page, not a window", async () => {
+test("Music comes with OrigaiTV and waits in apps; choosing it opens its page, not a window", async () => {
   const home = await (await fetch(`${url}/api/home`)).json();
   assert.ok(!home.layout.some((placed: { id: string }) => placed.id === "origaitv.music"));
   await setLayout("s");
@@ -194,7 +194,7 @@ test("S3.6 the page lists the albums with their covers and the playlists, and a 
   );
   assert.deepEqual(albums, [
     ["Night Shift", "Pixel Band", true],
-    ["Test Tones", "origaiTV", false],
+    ["Test Tones", "OrigaiTV", false],
   ]);
   // An album with no cover isn't asked for one.
   assert.deepEqual((await requests(page, "cover")).map((r) => r.key), ["a1"]);

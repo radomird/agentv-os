@@ -173,7 +173,7 @@ after(async () => {
 async function send(method: string, path: string, body?: unknown, grant?: string): Promise<{ status: number; data: Record<string, any> }> {
   const response = await fetch(`${url}${path}`, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: response.status, data: (await response.json()) as Record<string, any> };
@@ -375,7 +375,7 @@ async function walk(look: Look, theme: string, size: Size, problems: string[]): 
     // The offline card on home: the TV lost its network, and the hotspot
     // is open for a phone to pick another.
     online = false;
-    hotspotSays({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
+    hotspotSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
     try {
       await page.waitForSelector("#offline", { timeout: 10_000 });
       await settle(page);
@@ -407,7 +407,7 @@ for (const look of LOOKS) {
 test("T14.2 setup's steps, dark and light at standard and dark at larger and more on screen, in the new words", async (t) => {
   if (!NEVER.length) t.diagnostic(`${POLICY} isn't here, so the words aren't checked`);
   const problems: string[] = [];
-  hotspotSays({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", wifi: null });
+  hotspotSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", wifi: null });
   try {
     for (const [theme, size] of [[DARK, "standard"], [LIGHT, "standard"], [DARK, "larger"], [DARK, "more"]] as const) {
       await dress("terminal", theme, size);

@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# origaitv:summary=Update origaiTV, Omarchy and the system packages in place
+# origaitv:summary=Update OrigaiTV, Omarchy and the system packages in place
 # origaitv:args=[-y] [--untested]
 # origaitv:examples=origaitv update | origaitv update -y
 # origaitv:requires-sudo=true
 
-# origaiTV ships as its own package beside Omarchy's (ADR-025), so Omarchy's own
+# OrigaiTV ships as its own package beside Omarchy's (ADR-025), so Omarchy's own
 # update moves both: one snapshot, one pacman -Syu for Arch, Omarchy and
-# origaiTV, then Omarchy's migrations and its post-update hook, where origaiTV's
+# OrigaiTV, then Omarchy's migrations and its post-update hook, where OrigaiTV's
 # own migrations run (config/omarchy/hooks/post-update.d/origaitv).
 
 set -euo pipefail
@@ -26,20 +26,20 @@ for arg in "$@"; do
 done
 
 # Omarchy writes /etc/pacman.conf from its own template, which doesn't know
-# about origaiTV's repository. Put it back first, or origaiTV never updates.
+# about OrigaiTV's repository. Put it back first, or OrigaiTV never updates.
 sudo "$ORIGAITV_BIN_DIR/origaitv-pacman-conf"
 
-# Only versions origaiTV's nightly run has passed (ADR-026). That run tests the
+# Only versions OrigaiTV's nightly run has passed (ADR-026). That run tests the
 # release, so it holds back stable. edge takes every green build of origaitv-os
 # (ADR-025), newer than any night's, so it skips the check, and so does
 # --untested.
 if [[ $("$ORIGAITV_BIN_DIR/origaitv-channel") == "edge" ]]; then
-  echo "On edge: taking origaiTV's newest green build, without waiting for the nightly run."
+  echo "On edge: taking OrigaiTV's newest green build, without waiting for the nightly run."
 elif (( ! untested )); then
   "$ORIGAITV_BIN_DIR/origaitv-tested" || exit 1
 fi
 
-# origaiTV asks its own question, with origaiTV's versions and release notes
+# OrigaiTV asks its own question, with OrigaiTV's versions and release notes
 # (ADR-029), so Omarchy's update runs with -y and skips its own.
 if (( ! yes )); then
   "$ORIGAITV_BIN_DIR/origaitv-update-confirm" || exit 1

@@ -9,7 +9,7 @@ daemon/location.ts ^a country is two capital letters
 daemon/routes/setup.ts ^a country is two capital letters
 daemon/server.ts ^that isn't an app on this box$
 daemon/server.ts ^only an app that's gone from the box is forgotten$
-# Refusals for a caller that isn't one of origaiTV's own pages or processes.
+# Refusals for a caller that isn't one of OrigaiTV's own pages or processes.
 daemon/server.ts ^not from one of this box's own pages$
 daemon/server.ts ^only the screen daemon takes the phone's keys$
 daemon/routes/remote.ts ^only the screen daemon answers for the phone$

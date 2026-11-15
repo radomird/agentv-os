@@ -1,7 +1,7 @@
 // Every theme Omarchy ships stays legible on the TV (ADR-048, S5.8): home,
 // Apps and Settings, in each of them, light ones included. Each theme's
 // colours are resolved by Omarchy's own omarchy-theme-color and rendered
-// into origaiTV's template, as Omarchy does when it sets the theme. Then every
+// into OrigaiTV's template, as Omarchy does when it sets the theme. Then every
 // piece of text on each page is measured against what's behind it, opacity
 // included, with WCAG's bar: 4.5 : 1, or 3 : 1 for large text (24 px, or
 // 19 px bold).

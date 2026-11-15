@@ -41,7 +41,7 @@ case "$*" in
   *"device show ") exit 10 ;;
   *"device connect wlan0") [[ -z ${FAKE_REJOINS:-} ]] || cp "$FAKE/links-back" "$FAKE/links" ;;
   *"device wifi list --rescan yes ifname wlan0")
-    printf '%s\n' '82:WPA2:home wi-fi' '40:WPA2:home wi-fi' '61::cafe' '55:WPA3:new\:net' '30:WPA1 WPA2:neighbours' '90:WPA2:origaiTV-0000' '70:WPA2:' ;;
+    printf '%s\n' '82:WPA2:home wi-fi' '40:WPA2:home wi-fi' '61::cafe' '55:WPA3:new\:net' '30:WPA1 WPA2:neighbours' '90:WPA2:OrigaiTV-0000' '70:WPA2:' ;;
   *"connection up uuid "*)
     if [[ -n ${FAKE_UP_FAILS:-} ]]; then echo "$FAKE_UP_FAILS" >&2; exit 4; fi ;;
   "connection load "*) cp "$3" "$FAKE/loaded" ;;
@@ -115,7 +115,7 @@ jq -e '. == [
   fail "it lists what it saw before opening, strongest first, each name once and none of its own" "$(cat "$ORIGAITV_HOTSPOT_RUN/networks.json")"
 ssid=$(state .ssid)
 password=$(state .password)
-[[ $ssid =~ ^origaiTV-[0-9a-f]{4}$ && $password =~ ^[a-z2-9]{10}$ ]] || fail "it has a name and a password of its own" "$ssid $password"
+[[ $ssid =~ ^OrigaiTV-[0-9a-f]{4}$ && $password =~ ^[a-z2-9]{10}$ ]] || fail "it has a name and a password of its own" "$ssid $password"
 [[ $(state .on) == "true" && $(state .device) == "wlan0" && $(state .address) == "10.42.0.1" ]] || fail "state.json says it's on, where" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
 [[ $(stat -c %a "$ORIGAITV_HOTSPOT_RUN/state.json") == 644 ]] || fail "and the daemon can read it"
 add=$(grep "^nmcli connection add" "$FAKE/calls")
@@ -125,7 +125,7 @@ for word in "save no" "ifname wlan0" "con-name $own" "autoconnect no" "ssid $ssi
 done
 grep -qx "nmcli --wait 45 connection up $own" "$FAKE/calls" || fail "and comes up"
 (( ${#own} > 32 )) || fail "its connection has a name no network can have: a network's is 32 bytes at most" "$own"
-pass "it looks first, then opens origaiTV's own WPA2 network, kept in memory only, at 10.42.0.1"
+pass "it looks first, then opens OrigaiTV's own WPA2 network, kept in memory only, at 10.42.0.1"
 
 expected=$(printf '%s\n' \
   "filter -A INPUT -i wlan0 -p tcp --dport 3002 -m comment --comment origaitv-setup-hotspot -j ACCEPT" \
@@ -290,16 +290,16 @@ pass "status says how it stands"
 # A box a phone set up from the USB stick: the same network as there, even
 # on Ethernet, and the file goes when setup ends.
 mkdir -p "$(dirname "$ORIGAITV_HOTSPOT_HANDED")"
-printf '%s\n' '{"ssid":"origaiTV-1a2b","password":"abcdefghjk"}' >"$ORIGAITV_HOTSPOT_HANDED"
+printf '%s\n' '{"ssid":"OrigaiTV-1a2b","password":"abcdefghjk"}' >"$ORIGAITV_HOTSPOT_HANDED"
 : >"$FAKE/calls"
 FAKE_ONLINE=0 hotspot boot || fail "boot opens the handed-over network" "$(cat "$SCRATCH/out")"
 grep -qx "systemctl start --no-block origaitv-hotspot.service" "$FAKE/calls" || fail "even on a box that's online, where a phone is waiting on it" "$(cat "$FAKE/calls")"
 rm -f "$ORIGAITV_HOTSPOT_RUN/state.json"
 hotspot run || fail "it opens" "$(cat "$SCRATCH/out")"
-[[ $(state .ssid) == "origaiTV-1a2b" && $(state .password) == "abcdefghjk" ]] || fail "with the name and password the USB stick handed over" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
-grep -q "ssid origaiTV-1a2b .*wifi-sec.psk abcdefghjk" "$FAKE/calls" || fail "as the access point's own" "$(grep "connection add" "$FAKE/calls")"
+[[ $(state .ssid) == "OrigaiTV-1a2b" && $(state .password) == "abcdefghjk" ]] || fail "with the name and password the USB stick handed over" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
+grep -q "ssid OrigaiTV-1a2b .*wifi-sec.psk abcdefghjk" "$FAKE/calls" || fail "as the access point's own" "$(grep "connection add" "$FAKE/calls")"
 hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
-[[ $(state .ssid) == "origaiTV-1a2b" ]] || fail "and while setup isn't done it's that network each time, as after a wrong password"
+[[ $(state .ssid) == "OrigaiTV-1a2b" ]] || fail "and while setup isn't done it's that network each time, as after a wrong password"
 cp "$ORIGAITV_HOTSPOT_RUN/state.json" "$SCRATCH/first-boot-state.json"
 printf '%s' '{"stop":true}' >"$ORIGAITV_HOTSPOT_DROP"
 hotspot drop || fail "setup ending closes it"
@@ -311,7 +311,7 @@ pass "a box set up from the phone opens the USB stick's network again at first b
 # the name and password in it were the installer's.
 echo '{"done": true}' >"$ORIGAITV_DAEMON_PRIVATE/setup.json"
 hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
-[[ $(state .ssid) =~ ^origaiTV-[0-9a-f]{4}$ && $(state .ssid) != "origaiTV-1a2b" && $(state .password) != "abcdefghjk" ]] ||
+[[ $(state .ssid) =~ ^OrigaiTV-[0-9a-f]{4}$ && $(state .ssid) != "OrigaiTV-1a2b" && $(state .password) != "abcdefghjk" ]] ||
   fail "in the boot setup ended in, a hotspot opened later doesn't have the installer's name and password" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
 later=$(state .ssid)
 hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
@@ -319,17 +319,17 @@ hotspot run || fail "it opens again" "$(cat "$SCRATCH/out")"
 # Setup ended some other way, and root was never told to close the hotspot.
 cp "$SCRATCH/first-boot-state.json" "$ORIGAITV_HOTSPOT_RUN/state.json"
 hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
-[[ $(state .ssid) != "origaiTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "nor when root never heard setup end" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
+[[ $(state .ssid) != "OrigaiTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "nor when root never heard setup end" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
 
 # Setup ended with the file still there, as on a TV set up before the file
 # went with setup: a hotspot opened later has a name and password of its
 # own, and the file goes then, or at the next start.
-printf '%s\n' '{"ssid":"origaiTV-1a2b","password":"abcdefghjk"}' >"$ORIGAITV_HOTSPOT_HANDED"
+printf '%s\n' '{"ssid":"OrigaiTV-1a2b","password":"abcdefghjk"}' >"$ORIGAITV_HOTSPOT_HANDED"
 rm -f "$ORIGAITV_HOTSPOT_RUN/state.json"
 hotspot run || fail "a hotspot opens after setup" "$(cat "$SCRATCH/out")"
-[[ $(state .ssid) != "origaiTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "after setup, a hotspot never has the installer's name and password" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
+[[ $(state .ssid) != "OrigaiTV-1a2b" && $(state .password) != "abcdefghjk" ]] || fail "after setup, a hotspot never has the installer's name and password" "$(cat "$ORIGAITV_HOTSPOT_RUN/state.json")"
 [[ ! -e $ORIGAITV_HOTSPOT_HANDED ]] || fail "and the installer's file goes"
-printf '%s\n' '{"ssid":"origaiTV-1a2b","password":"abcdefghjk"}' >"$ORIGAITV_HOTSPOT_HANDED"
+printf '%s\n' '{"ssid":"OrigaiTV-1a2b","password":"abcdefghjk"}' >"$ORIGAITV_HOTSPOT_HANDED"
 hotspot boot || fail "boot does nothing once setup is done"
 [[ ! -e $ORIGAITV_HOTSPOT_HANDED ]] || fail "a start after setup takes the installer's file away too"
 echo '{"done": false}' >"$ORIGAITV_DAEMON_PRIVATE/setup.json"
@@ -339,11 +339,11 @@ printf '%s\n' '{"ssid":"not ours","password":"x"}' >"$ORIGAITV_HOTSPOT_HANDED"
 rm -f "$ORIGAITV_HOTSPOT_RUN/state.json"
 : >"$FAKE/calls"
 FAKE_ONLINE=0 hotspot boot >/dev/null
-if grep -q "systemctl start" "$FAKE/calls"; then fail "a handed-over file that isn't origaiTV's network changes nothing"; fi
+if grep -q "systemctl start" "$FAKE/calls"; then fail "a handed-over file that isn't OrigaiTV's network changes nothing"; fi
 hotspot run >/dev/null || true
 [[ $(state .ssid) != "not ours" ]] || fail "and isn't opened"
 rm -f "$ORIGAITV_HOTSPOT_HANDED"
-pass "a handed-over file that isn't origaiTV's own network is ignored"
+pass "a handed-over file that isn't OrigaiTV's own network is ignored"
 
 # Settings, after setup: a look at the networks nearby with the hotspot
 # closed, and which one the TV is on.

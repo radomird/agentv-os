@@ -354,7 +354,7 @@ test("T16.1 OK held on something that isn't a tile is one OK, however long the k
 
   // The PIN pad: one digit.
   const send = async (method: string, path: string, body?: unknown, grant?: string) =>
-    (await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
+    (await fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
   await send("PUT", "/api/pin", { pin: "4826" });
   try {
     await go(page, "settings/phones");

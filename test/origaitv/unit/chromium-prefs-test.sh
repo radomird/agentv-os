@@ -79,9 +79,9 @@ left=$(find "$home/Default" -type f -printf '%f\n' | sort | tr '\n' ' ')
 ORIGAITV_CHROMIUM_HOME_STATE="$SCRATCH/no-home-yet" bash "$forget" >/dev/null || fail "it runs on a box whose home has no profile yet"
 pass "what home's Chromium saved before its prompts went off is thrown away, once"
 
-# The desktop's Chromium keeps its prompts: nothing of origaiTV's sets a
+# The desktop's Chromium keeps its prompts: nothing of OrigaiTV's sets a
 # Chromium policy for the whole system.
 if grep -rln "/etc/chromium" "$ROOT"/bin/origaitv* "$ROOT"/install/tv "$ROOT"/system "$ROOT"/session "$ROOT"/migrations/origaitv "$ROOT"/daemon 2>/dev/null; then
-  fail "nothing of origaiTV's writes Chromium's system-wide policies"
+  fail "nothing of OrigaiTV's writes Chromium's system-wide policies"
 fi
 pass "the Chromium on Omarchy's desktop keeps its prompts"

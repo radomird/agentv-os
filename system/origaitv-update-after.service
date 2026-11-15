@@ -3,7 +3,7 @@
 # checks the box once it's up again. It doesn't hold up the TV coming back.
 
 [Unit]
-Description=origaiTV check after an update
+Description=OrigaiTV check after an update
 ConditionPathExists=/var/lib/origaitv/update/check-pending
 Wants=origaitv-daemon.service
 After=origaitv-daemon.service

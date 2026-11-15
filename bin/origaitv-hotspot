@@ -5,7 +5,7 @@
 # origaitv:requires-sudo=true
 
 # The setup hotspot (ADR-007, stage 4). On first boot with no network, the
-# box opens its own Wi-Fi network, origaiTV-<4 characters>, and the TV shows a
+# box opens its own Wi-Fi network, OrigaiTV-<4 characters>, and the TV shows a
 # QR code for it. A phone that joins gets an address from dnsmasq, whose name
 # server answers every name with the box, and the box sends port 80 to the
 # daemon's captive page on port 3002, so the phone opens the page on its own.
@@ -19,7 +19,7 @@
 #   origaitv hotspot status  how it stands
 #
 # A box installed from the phone carries on with the phone's network: the
-# USB stick's first screen opened origaiTV-<4 characters> for the phone, and
+# USB stick's first screen opened OrigaiTV-<4 characters> for the phone, and
 # hands its name and password over in /etc/origaitv/hotspot.json. At first
 # boot this opens that same network, even on Ethernet, so the phone joins
 # it again by itself and carries on. The file goes once setup ends, and so
@@ -32,7 +32,7 @@
 # on. And a TV that loses its network opens the hotspot again by itself
 # (watch, below), so a phone can reach it and pick another.
 #
-# The rest is for origaiTV's own units, as root: run (origaitv-hotspot.service),
+# The rest is for OrigaiTV's own units, as root: run (origaitv-hotspot.service),
 # down (after it stops), boot (origaitv-hotspot-boot.service), drop
 # (origaitv-hotspot-drop.service) and watch (origaitv-hotspot-watch.service).
 # The home Wi-Fi's password never goes on a command line or in a log:
@@ -135,7 +135,7 @@ handed() {
   fi
   ssid=$(jq -r '.ssid // empty' "$HANDED" 2>/dev/null || true)
   password=$(jq -r '.password // empty' "$HANDED" 2>/dev/null || true)
-  if [[ $ssid =~ ^origaiTV-[0-9a-f]{4}$ && $password =~ ^[a-z0-9]{8,63}$ ]]; then
+  if [[ $ssid =~ ^OrigaiTV-[0-9a-f]{4}$ && $password =~ ^[a-z0-9]{8,63}$ ]]; then
     printf '%s %s\n' "$ssid" "$password"
   fi
 }
@@ -151,7 +151,7 @@ scan() {
     split("\n")
     | map(capture("^(?<signal>[0-9]*):(?<security>[^:]*):(?<ssid>.+)$")?)
     | map(.ssid |= gsub("\\\\(?<c>.)"; .c))
-    | map(select(.ssid | startswith("origaiTV-") | not))
+    | map(select(.ssid | startswith("OrigaiTV-") | not))
     | map({
         ssid,
         signal: (.signal | tonumber? // 0),
@@ -219,7 +219,7 @@ firewall_close() {
   done
 }
 
-# Takes away the hotspot an origaiTV from before the name changed left open,
+# Takes away the hotspot an OrigaiTV from before the name changed left open,
 # as on a TV updated with its hotspot up. That one was an access point named
 # origaitv-setup. A home network of that name isn't one, and stays.
 forget_old() {
@@ -260,12 +260,12 @@ run() {
   if [[ $handed == "true" ]] && setup_done; then
     ssid="" password="" handed=false
   fi
-  if [[ $ssid != origaiTV-* || -z $password ]]; then
+  if [[ $ssid != OrigaiTV-* || -z $password ]]; then
     read -r ssid password <<<"$(handed)" || true
-    [[ $ssid == origaiTV-* && -n $password ]] && handed=true
+    [[ $ssid == OrigaiTV-* && -n $password ]] && handed=true
   fi
-  if [[ $ssid != origaiTV-* || -z $password ]]; then
-    ssid="origaiTV-$(random 0123456789abcdef 4)"
+  if [[ $ssid != OrigaiTV-* || -z $password ]]; then
+    ssid="OrigaiTV-$(random 0123456789abcdef 4)"
     password=$(random abcdefghjkmnpqrstuvwxyz23456789 10)
   fi
 
@@ -407,7 +407,7 @@ join() {
   chmod 600 "$file"
 
   if nmcli connection load "$file" >/dev/null 2>&1 && output=$(nmcli --wait 45 connection up uuid "$uuid" ifname "$device" 2>&1); then
-    # What origaiTV kept for this network before goes, such as its password
+    # What OrigaiTV kept for this network before goes, such as its password
     # from before the router got a new one.
     for old in "$CONNECTIONS"/origaitv-*.nmconnection; do
       [[ -f $old && $old != "$file" ]] || continue

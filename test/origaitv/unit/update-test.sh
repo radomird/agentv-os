@@ -56,17 +56,17 @@ pass "--untested skips tested.json"
 
 update edge -y || fail "edge goes ahead even when tested.json would hold it" "$(cat "$SCRATCH/out")"
 [[ $(cat "$calls") == $'pacman-conf\nomarchy-update -y' ]] || fail "edge skips tested.json" "$(cat "$calls")"
-grep -q "^On edge: taking origaiTV's newest green build" "$SCRATCH/out" || fail "edge says why it doesn't wait" "$(cat "$SCRATCH/out")"
+grep -q "^On edge: taking OrigaiTV's newest green build" "$SCRATCH/out" || fail "edge says why it doesn't wait" "$(cat "$SCRATCH/out")"
 pass "edge takes the newest green build without waiting for the nightly run"
 
 rm -f "$SCRATCH/hold"
 update "" || fail "an update without -y goes ahead once it's confirmed" "$(cat "$SCRATCH/out")"
 [[ $(cat "$calls") == $'pacman-conf\ntested\nconfirm\nomarchy-update -y' ]] ||
-  fail "without -y, origaiTV asks, then Omarchy's update runs without asking again" "$(cat "$calls")"
-pass "without -y, origaiTV's own question comes first, and Omarchy's update doesn't ask again"
+  fail "without -y, OrigaiTV asks, then Omarchy's update runs without asking again" "$(cat "$calls")"
+pass "without -y, OrigaiTV's own question comes first, and Omarchy's update doesn't ask again"
 
 touch "$SCRATCH/decline"
 ! update "" || fail "a no stops the update"
 ! grep -q omarchy-update "$calls" || fail "nothing is updated after a no"
 rm -f "$SCRATCH/decline"
-pass "a no to origaiTV's question updates nothing"
+pass "a no to OrigaiTV's question updates nothing"

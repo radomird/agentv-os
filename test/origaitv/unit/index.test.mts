@@ -3,7 +3,7 @@
 // its folder in a repo of several (ADR-036), and a tampered index is refused
 // (S2.1). An app built on this box installs from its folder, once an adult
 // says yes (ADR-039). The index here is signed by a throwaway key made for the
-// test, which stands in for origaiTV's own.
+// test, which stands in for OrigaiTV's own.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -51,7 +51,7 @@ let otherSigner = "";
 
 function commit(message: string): string {
   sh("git", ["add", "-A"], repo);
-  sh("git", ["-c", "user.name=origaiTV", "-c", "user.email=test@origaitv.invalid", "commit", "--quiet", "-m", message], repo);
+  sh("git", ["-c", "user.name=OrigaiTV", "-c", "user.email=test@origaitv.invalid", "commit", "--quiet", "-m", message], repo);
   return sh("git", ["rev-parse", "HEAD"], repo).trim();
 }
 
@@ -173,7 +173,7 @@ test("a commit the repo doesn't have isn't installed", async () => {
   await refused(installFromIndex("origaitv.sample", index([sample("0".repeat(40))]), apps(), keyring), /Couldn't download Sample/);
 });
 
-test("an app that says it's built in isn't installed from the index, since built-ins come only with origaiTV", async () => {
+test("an app that says it's built in isn't installed from the index, since built-ins come only with OrigaiTV", async () => {
   const path = join(repo, "manifest.json");
   const before = readFileSync(path, "utf8");
   const manifest = JSON.parse(before);
@@ -221,7 +221,7 @@ function severalRepo(): string {
   symlinkSync("sample", join(several, "apps", "linked"));
   sh("git", ["init", "--quiet"], several);
   sh("git", ["add", "-A"], several);
-  sh("git", ["-c", "user.name=origaiTV", "-c", "user.email=test@origaitv.invalid", "commit", "--quiet", "-m", "Apps"], several);
+  sh("git", ["-c", "user.name=OrigaiTV", "-c", "user.email=test@origaitv.invalid", "commit", "--quiet", "-m", "Apps"], several);
   severalCommit = sh("git", ["rev-parse", "HEAD"], several).trim();
   return severalCommit;
 }
@@ -250,7 +250,7 @@ test("ADR-036 a folder that's a link isn't followed", async () => {
 test("the index has to have the shape this box understands", () => {
   const entry = sample() as Record<string, unknown>;
   assert.throws(() => parseIndex("{"), /Couldn't read the app list/);
-  assert.throws(() => parseIndex(JSON.stringify({ schema: 2, apps: [] })), /Couldn't read the app list\. Update origaiTV and try again\./);
+  assert.throws(() => parseIndex(JSON.stringify({ schema: 2, apps: [] })), /Couldn't read the app list\. Update OrigaiTV and try again\./);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, commit: "main" }] })), /exact commit/);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, repo: "http://example.org/x" }] })), /https/);
   assert.throws(() => parseIndex(JSON.stringify({ schema: 1, apps: [{ ...entry, tier: "local" }] })), /no tier/);

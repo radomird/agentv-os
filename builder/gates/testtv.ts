@@ -1,8 +1,8 @@
-// origaiTV's test TV (ADR-043): gates 2 and 3 for a page app, before an
+// OrigaiTV's test TV (ADR-043): gates 2 and 3 for a page app, before an
 // adult sees it. It serves the app as the box does, from its own origin with
 // the policy its manifest allows and the kit, puts it in a frame on a page
 // like home with home's own kit host, and opens that in a headless Chromium
-// with no window, driven over its DevTools pipe. Then it runs origaiTV's own
+// with no window, driven over its DevTools pipe. Then it runs OrigaiTV's own
 // checks (builder/gates/host.ts) and the tests, the recipe's and the
 // agent's, each in the app afresh (builder/gates/frame.ts), and takes the
 // screenshot the approval shows.
@@ -30,8 +30,8 @@ export interface TestFile {
 export interface TryOptions {
   app: string; // the app's folder
   tests: TestFile[];
-  checks: boolean; // origaiTV's own checks
-  root: string; // origaiTV's files, for the kit and the kit host
+  checks: boolean; // OrigaiTV's own checks
+  root: string; // OrigaiTV's files, for the kit and the kit host
   chromium: string;
   proxy?: string; // the sandbox's filter
   storage: string; // a folder for the app's storage while it's tried
@@ -57,7 +57,7 @@ export interface TryReport {
 
 const HOST_PAGE = `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>origaiTV test TV</title>
+<head><meta charset="utf-8"><title>OrigaiTV test TV</title>
 <style>html, body { margin: 0; height: 100%; background: #000; overflow: hidden } iframe { border: 0; width: 100%; height: 100% }</style>
 </head>
 <body><iframe id="app" sandbox="allow-scripts" allow="autoplay"></iframe><script type="module" src="/builder/gates/host.ts"></script></body>

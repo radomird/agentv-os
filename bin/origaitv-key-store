@@ -5,7 +5,7 @@
 # origaitv:requires-sudo=true
 
 # The provider key (ADR-009, S4.6). Settings → AI, or the phone, hands the
-# key to origaiTV's daemon, which can't write /etc. It leaves it in its own
+# key to OrigaiTV's daemon, which can't write /etc. It leaves it in its own
 # private state, and origaitv-key.path starts this as root to move it into
 # /etc/origaitv/env (root's alone, 0600), where the router and the builder will
 # get it. The key is write-only: nothing shows it again, and nothing logs it.

@@ -724,7 +724,7 @@ test("S1.1 the screen daemon can tell home's page came up, on home and on setup'
     fetch(`${url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done }) });
   await setup(false);
   try {
-    await page.waitForFunction(() => document.title === "origaiTV setup" && document.readyState === "complete");
+    await page.waitForFunction(() => document.title === "OrigaiTV setup" && document.readyState === "complete");
     // The screen daemon asks over DevTools, which setup's content policy
     // doesn't stop; Playwright's string predicate would need eval.
     for (let i = 0; i < 50 && (await page.evaluate(HOME_UP)) !== true; i++) await page.waitForTimeout(100);

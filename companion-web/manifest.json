@@ -1,6 +1,6 @@
 {
-  "name": "origaiTV",
-  "short_name": "origaiTV",
+  "name": "OrigaiTV",
+  "short_name": "OrigaiTV",
   "description": "The remote for your TV",
   "start_url": "/",
   "scope": "/",

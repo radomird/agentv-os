@@ -1,4 +1,4 @@
-// origaiTV (ADR-060): once home has drawn, the TV session lets Plymouth quit,
+// OrigaiTV (ADR-060): once home has drawn, the TV session lets Plymouth quit,
 // by starting origaitv-boot-splash-release.service as the box's owner. It runs
 // from the screen daemon, a user unit that isn't part of a login session's
 // processes, so, as for the update units, the rule goes by the owner's own

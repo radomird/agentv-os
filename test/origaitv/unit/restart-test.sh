@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Guards origaitv-restart, which every update runs after origaiTV's migrations:
-# origaiTV's daemon, then the TV session's units under origaitv-tv.target, on the
+# Guards origaitv-restart, which every update runs after OrigaiTV's migrations:
+# OrigaiTV's daemon, then the TV session's units under origaitv-tv.target, on the
 # version now installed, unless the box restarts anyway for a new kernel or
 # because Omarchy's update says so. systemctl, sudo and the daemon are
 # stand-ins here; the image layer updates a box for real.
@@ -36,7 +36,7 @@ run() {
     "$BASH" "$cmd" >"$SCRATCH/out" 2>&1
 }
 
-run || fail "a box after an update restarts origaiTV's services" "$(cat "$SCRATCH/out")"
+run || fail "a box after an update restarts OrigaiTV's services" "$(cat "$SCRATCH/out")"
 [[ $(cat "$CALLS") == $'sudo systemctl restart origaitv-daemon.service\nsystemctl restart origaitv-daemon.service (XDG_RUNTIME_DIR=)\nsudo systemctl try-restart origaitv-hotspot-watch.service\nsystemctl try-restart origaitv-hotspot-watch.service (XDG_RUNTIME_DIR=)\nsystemctl --user restart origaitv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)' ]] ||
   fail "the daemon, the watch for a lost network if it's running, then the TV session's units, in the TV session's systemd" "$(cat "$CALLS")"
 pass "after an update, the daemon restarts, then the TV session's units, in the session's own systemd"
@@ -49,7 +49,7 @@ pass "on Omarchy's desktop, only the daemon restarts"
 
 touch "$STATE/daemon-fails"
 ! run || fail "a daemon that didn't restart is a failure"
-grep -q "origaiTV's daemon didn't restart" "$SCRATCH/out" || fail "it says the daemon didn't restart" "$(cat "$SCRATCH/out")"
+grep -q "OrigaiTV's daemon didn't restart" "$SCRATCH/out" || fail "it says the daemon didn't restart" "$(cat "$SCRATCH/out")"
 grep -q "origaitv-tv.target" "$CALLS" || fail "the TV session's units still restart" "$(cat "$CALLS")"
 rm "$STATE/daemon-fails"
 touch "$STATE/daemon-down"

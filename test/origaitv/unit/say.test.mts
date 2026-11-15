@@ -450,7 +450,7 @@ test("a child's profile routes only to children's apps", async () => {
   // A child's profile needs the adult PIN first.
   assert.equal((await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
   const grant = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
-  const made = await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": grant }, body: JSON.stringify({ name: "mila", role: "child" }) })).json();
+  const made = await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": grant }, body: JSON.stringify({ name: "mila", role: "child" }) })).json();
   const child = made.profile;
   assert.ok(child, JSON.stringify(made));
   await post("/api/viewer", { id: child.id });

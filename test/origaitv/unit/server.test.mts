@@ -1,4 +1,4 @@
-// origaiTV's daemon (daemon/server.ts): TV setup's page and /health as the
+// OrigaiTV's daemon (daemon/server.ts): TV setup's page and /health as the
 // stage 0 placeholder had them (S0.1, S1.3 and S1.6 read them), the home
 // screen once setup is done, the launcher's TypeScript as JavaScript, and
 // nothing for a request that isn't addressed to this box or comes from
@@ -25,7 +25,7 @@ let port = 0;
 const lines: string[] = [];
 
 before(async () => {
-  // origaiTV's files as the package lays them out, with a launcher.
+  // OrigaiTV's files as the package lays them out, with a launcher.
   mkdirSync(join(root, "branding"), { recursive: true });
   cpSync(join(ROOT, "setup"), join(root, "setup"), { recursive: true });
   cpSync(join(ROOT, "branding/logo.svg"), join(root, "branding/logo.svg"));
@@ -93,7 +93,7 @@ test("the origaitv package installed is read from pacman's own records, with its
 
 test("S0.1 setup's page is served, and each time it's drawn /health counts it", async () => {
   const page = await (await fetch(`${url}/`)).text();
-  assert.match(page, /<title>origaiTV setup<\/title>/);
+  assert.match(page, /<title>OrigaiTV setup<\/title>/);
   assert.match(page, /\/setup\/main\.ts/);
   assert.match(await (await fetch(`${url}/setup/main.ts`)).text(), /\/api\/welcome-shown/);
   assert.equal((await fetch(`${url}/logo.svg`)).headers.get("content-type"), "image/svg+xml");
@@ -123,7 +123,7 @@ test("once setup is done, the home screen takes the place of setup, and it can g
 
   assert.equal((await setup(false)).status, 200);
   assert.equal((await health()).screen, "welcome");
-  assert.match(await (await fetch(`${url}/`)).text(), /<title>origaiTV setup<\/title>/);
+  assert.match(await (await fetch(`${url}/`)).text(), /<title>OrigaiTV setup<\/title>/);
 });
 
 test("setup takes only a done of true or false, as JSON", async () => {

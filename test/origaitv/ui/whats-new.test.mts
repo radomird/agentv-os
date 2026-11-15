@@ -169,7 +169,7 @@ test("S8.1 with a key, New this week shows this week's posters, each with its ap
   }
 });
 
-test("Settings → About has TMDB's logo, smaller than origaiTV's name, and its notice, and JustWatch's credit", async () => {
+test("Settings → About has TMDB's logo, smaller than OrigaiTV's name, and its notice, and JustWatch's credit", async () => {
   const { page } = await tv();
   try {
     await go(page, "settings/about");

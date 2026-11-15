@@ -1,4 +1,4 @@
-// origaiTV's toasts in the TV session (ADR-031): drawn the standard Wayland
+// OrigaiTV's toasts in the TV session (ADR-031): drawn the standard Wayland
 // way, as a layer surface over the app in front, so a toast shows over a
 // playing film too. A toast never takes the keyboard or the mouse.
 //
@@ -18,7 +18,7 @@
 // is in front:
 //   qs ipc -n -p /usr/share/origaitv/session/toast call -- corner front true
 //
-// And origaiTV's sign-in screen (ADR-032, board 15): a bar along the bottom
+// And OrigaiTV's sign-in screen (ADR-032, board 15): a bar along the bottom
 // with the app's name, where to type, and "i'm signed in", under the
 // service's own sign-in page. It keeps the bottom of the screen for itself,
 // so the page, maximized above it, isn't covered, and it never takes the

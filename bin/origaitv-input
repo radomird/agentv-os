@@ -4,7 +4,7 @@
 # origaitv:args=key <name>... | hold <name> <seconds> | text <text> | move <dx> <dy> | click [button]
 # origaitv:examples=origaitv input key down enter | origaitv input hold back 1.2 | origaitv input text "hello" | origaitv input move -4000 -4000
 
-# Sends keys to origaiTV's virtual input device, "origaiTV remote"
+# Sends keys to OrigaiTV's virtual input device, "OrigaiTV remote"
 # (daemon/input.py, ADR-008), which the TV session runs. They reach whatever
 # is in front, the way the phone's d-pad and keyboard will. Keys: up, down,
 # left, right, enter, back (Esc), home, playpause, volumeup, volumedown,

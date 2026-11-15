@@ -1,4 +1,4 @@
-// origaiTV (ADR-025): the person at the TV can check for updates, install them
+// OrigaiTV (ADR-025): the person at the TV can check for updates, install them
 // and go back from one, from Settings → Updates, which starts these units.
 // The TV's screen daemon asks as the box's owner, from the TV session's own
 // systemd, which isn't part of a login session, so the rule can't ask for an

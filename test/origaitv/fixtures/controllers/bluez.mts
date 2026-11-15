@@ -2,7 +2,7 @@
 // busctl the way bluetoothd does on the system bus, in the JSON busctl
 // prints with --json=short, and keeps what's paired, trusted and connected.
 // It pairs anything it's asked to, a keyboard too, so a test that sees a
-// keyboard refused is seeing origaiTV's own rule and not this file's.
+// keyboard refused is seeing OrigaiTV's own rule and not this file's.
 
 import type { Looking, Ran, Run } from "../../../../daemon/controllers.ts";
 

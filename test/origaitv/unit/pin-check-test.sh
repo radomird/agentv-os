@@ -76,4 +76,4 @@ down=$(free_port)
 ORIGAITV_PORT=$down "$ROOT/bin/origaitv-pin-check" desktop 2>/dev/null </dev/null || fail "with the daemon down, Omarchy's desktop still goes ahead, to fix the box"
 if ORIGAITV_PORT=$down "$ROOT/bin/origaitv-pin-check" power 2>/dev/null </dev/null; then fail "but nothing else does"; fi
 if "$ROOT/bin/origaitv-pin-check" 'x; y' 2>/dev/null; then fail "an action is a name"; fi
-pass "with origaiTV's daemon down, only Omarchy's desktop goes ahead, so the box can be fixed"
+pass "with OrigaiTV's daemon down, only Omarchy's desktop goes ahead, so the box can be fixed"

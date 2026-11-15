@@ -1,4 +1,4 @@
-// origaiTV's app contract (PHASE-1-PLAN.md, "App contract"). Every web or
+// OrigaiTV's app contract (PHASE-1-PLAN.md, "App contract"). Every web or
 // native TV app is a TypeScript module that the daemon loads in a worker of
 // its own. Its default export is a TvApp. A web app gets one page in the
 // services' Chromium, limited to the origins its manifest declares; a native
@@ -73,7 +73,7 @@ export interface TvApp {
   launch(ctx: AppContext): Promise<void>;
 
   /**
-   * Stage A. False puts "Sign in" on the tile, and choosing it shows origaiTV's
+   * Stage A. False puts "Sign in" on the tile, and choosing it shows OrigaiTV's
    * sign-in screen over the service's own page (ADR-032). open() brings the
    * page to the service's sign-in form; without it, the page stays at homeUrl.
    */

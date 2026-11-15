@@ -235,7 +235,7 @@ test("the Updating screen covers the TV while an install runs, and home comes ba
   // An early update's package version means nothing to a person: the
   // headline leaves it off.
   write("progress.json", { ...progress("running", "packages", 40, "2 of 4"), to: { origaitv: "0.3.0.r12.g7b931248a-1" } });
-  await page.waitForFunction(() => document.querySelector("#updating")?.textContent?.includes("Updating origaiTV"));
+  await page.waitForFunction(() => document.querySelector("#updating")?.textContent?.includes("Updating OrigaiTV"));
   const early = await page.locator("#updating").innerText();
   assert.match(early, /^updating origaitv$/m);
   assert.doesNotMatch(early, /r12|7b931248a/);
@@ -339,7 +339,7 @@ test("S2.14 going back covers the TV until the restart, and home says so after",
   write("status.json", STATUS);
   write("went-back.json", { at: "2026-10-23T22:06:00Z", from: { origaitv: "0.3.0-1", omarchy: "4.0.6-1" }, to: { origaitv: "0.2.1-1" } });
   const back = await tv();
-  await back.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => t.textContent?.startsWith("Back on origaiTV 0.2.1")));
+  await back.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => t.textContent?.startsWith("Back on OrigaiTV 0.2.1")));
   await back.close();
   const later = await tv();
   await later.waitForTimeout(800);

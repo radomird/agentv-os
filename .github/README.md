@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="../branding/logo.svg">
-    <img alt="origaiTV" src="../branding/logo-light.svg" width="520">
+    <img alt="OrigaiTV" src="../branding/logo-light.svg" width="520">
   </picture>
 </p>
 
@@ -11,20 +11,16 @@
 </p>
 
 <p align="center">
-  <sub>origaiTV used to be called AgenTV. Same project, new name.</sub>
-</p>
-
-<p align="center">
   <a href="#install-it">Install it</a> · <a href="#what-you-get">What you get</a> · <a href="#questions">Questions</a>
 </p>
 
 <p align="center">
-  <img alt="origaiTV's home in the Glass look: your apps and a row of games over a big picture of the film you were watching" src="../branding/readme/home-glass.jpg">
+  <img alt="OrigaiTV's home in the Glass look: your apps and a row of games over a big picture of the film you were watching" src="../branding/readme/home-glass.jpg">
 </p>
 
 ---
 
-origaiTV turns a small PC into the box under your TV.
+OrigaiTV turns a small PC into the box under your TV.
 
 **It's as easy as the TV box you already have.** Your phone is the remote. Home has what you were watching. Everyone in the house gets a profile, children too.
 
@@ -32,7 +28,7 @@ origaiTV turns a small PC into the box under your TV.
 
 **It's good for games.** Steam runs full screen for the games you own. Or ask for a small game of your own, and it's on home when it's done.
 
-It works with any TV that has HDMI, because origaiTV runs on the box and not on the TV. A projector or an old monitor works too.
+It works with any TV that has HDMI, because OrigaiTV runs on the box and not on the TV. A projector or an old monitor works too.
 
 I built it because I wanted a TV I could just ask for things, and one I could change without waiting for anyone.
 
@@ -137,7 +133,7 @@ After that:
 
 | Box | Release | How it went |
 | --- | --- | --- |
-| Intel NUC8i5BEH, on a 4K TV | 1.0 release candidates | It's the box I build origaiTV on. Home is in 4K, and setup says "light games". |
+| Intel NUC8i5BEH, on a 4K TV | 1.0 release candidates | It's the box I build OrigaiTV on. Home is in 4K, and setup says "light games". |
 
 Tried it on another box? [Tell me how it went](https://github.com/radomird/origaitv-os/issues/new?template=box-report.yml) and I'll add it here.
 
@@ -153,7 +149,7 @@ Tried it on another box? [Tell me how it went](https://github.com/radomird/origa
 
 **Can I still use it as a computer?** Yes. Omarchy's whole desktop is there, behind your PIN if you set one.
 
-**How is it different from OmarchyTV?** [OmarchyTV](https://github.com/piermark/omarchytv) by Marco Porro is a home screen in Omarchy's style for the TV you already have, on Android TV, Google TV and LG webOS. origaiTV is a whole OS on a box of its own, so it doesn't depend on what your TV runs. They'd get along fine: OmarchyTV on the TV, origaiTV on one of its HDMI inputs.
+**How is it different from OmarchyTV?** [OmarchyTV](https://github.com/piermark/omarchytv) by Marco Porro is a home screen in Omarchy's style for the TV you already have, on Android TV, Google TV and LG webOS. OrigaiTV is a whole OS on a box of its own, so it doesn't depend on what your TV runs. They'd get along fine: OmarchyTV on the TV, OrigaiTV on one of its HDMI inputs.
 
 **Something's broken. Where do I say so?** [Open an issue](https://github.com/radomird/origaitv-os/issues/new/choose). For a security problem, please [tell me privately](https://github.com/radomird/origaitv-os/security/advisories/new) first.
 
@@ -162,9 +158,9 @@ Tried it on another box? [Tell me how it went](https://github.com/radomird/origa
 - **An iPhone app:** the remote, the keyboard and a microphone in one. Until then, every phone uses its browser.
 - **A place to share the apps you've made,** and to find other people's.
 
-## Support origaiTV
+## Support OrigaiTV
 
-origaiTV is free and open source. If it's useful to you and you'd like to help, you can [chip in through Stripe](https://buy.stripe.com/7sY4gzeMjdZs1oo7Wbgfu00) and pick the amount yourself. The checkout will say Indie AI Labs: that's where I build it.
+OrigaiTV is free and open source. If it's useful to you and you'd like to help, you can [chip in through Stripe](https://buy.stripe.com/7sY4gzeMjdZs1oo7Wbgfu00) and pick the amount yourself. The checkout will say Indie AI Labs: that's where I build it.
 
 A star helps too, and so does [telling me how it ran on your box](https://github.com/radomird/origaitv-os/issues/new?template=box-report.yml).
 
@@ -172,11 +168,11 @@ A star helps too, and so does [telling me how it ran on your box](https://github
 
 For the curious, and for anyone poking around the code.
 
-origaiTV is Omarchy with a TV session next to its desktop. Your box starts straight into the TV. A small server on the box runs home, the remote, profiles and your apps, and your phone talks to it over your own network.
+OrigaiTV is Omarchy with a TV session next to its desktop. Your box starts straight into the TV. A small server on the box runs home, the remote, profiles and your apps, and your phone talks to it over your own network.
 
 The part that makes apps is the AI you already use, working on your box through its own coding tool. It knows how to make a few kinds of app (a game, a page, a slideshow of your photos, a theme). Every app follows the same small set of rules, so they all work with the remote, with profiles and with Continue.
 
-Your box only installs packages signed with origaiTV's key. The apps that come with origaiTV install from a list signed with the same key. And before a release reaches you, it installs, boots and updates itself in a VM.
+Your box only installs packages signed with OrigaiTV's key. The apps that come with OrigaiTV install from a list signed with the same key. And before a release reaches you, it installs, boots and updates itself in a VM.
 
 Where things are:
 
@@ -204,16 +200,16 @@ The repos:
 
 ## Powered by Omarchy
 
-origaiTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4.5 and adds its own TV session next to Omarchy's desktop.
+OrigaiTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4.5 and adds its own TV session next to Omarchy's desktop.
 
-This repo is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that follows Omarchy's stable releases. I don't edit Omarchy's own files here, with one exception: the security policy and the issue forms are origaiTV's, so a report about origaiTV reaches me and not Omarchy. Everything origaiTV adds lives in the folders above. Omarchy's own README is still here, at [`../README.md`](../README.md).
+This repo is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that follows Omarchy's stable releases. I don't edit Omarchy's own files here, with one exception: the security policy and the issue forms are OrigaiTV's, so a report about OrigaiTV reaches me and not Omarchy. Everything OrigaiTV adds lives in the folders above. Omarchy's own README is still here, at [`../README.md`](../README.md).
 
-Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. origaiTV's additions are copyright Radomir Drndarski and use the same licence, with two exceptions. The [menu sounds](../launcher/sounds/LICENSE) and the [setup music](../setup/audio/LICENSE) are all rights reserved and ship only with origaiTV. The fonts keep their own [open licence](../launcher/fonts/OFL.txt). origaiTV isn't made or endorsed by the Omarchy project.
+Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. OrigaiTV's additions are copyright Radomir Drndarski and use the same licence, with two exceptions. The [menu sounds](../launcher/sounds/LICENSE) and the [setup music](../setup/audio/LICENSE) are all rights reserved and ship only with OrigaiTV. The fonts keep their own [open licence](../launcher/fonts/OFL.txt). OrigaiTV isn't made or endorsed by the Omarchy project.
 
-The origaiTV logo is drawn in pixels, the way Omarchy's is, as a thank-you.
+The OrigaiTV logo is drawn in pixels, the way Omarchy's is, as a thank-you.
 
 The films in the pictures are the Blender Foundation's open movies ([studio.blender.org](https://studio.blender.org), CC BY).
 
 ## Whose names these are
 
-Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/origaitv-apps#what-you-get). I only name them to say what origaiTV works with. origaiTV isn't made or endorsed by any of them, and the code for the streaming apps is in `origaitv-apps`, not in this repo.
+Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/origaitv-apps#what-you-get). I only name them to say what OrigaiTV works with. OrigaiTV isn't made or endorsed by any of them, and the code for the streaming apps is in `origaitv-apps`, not in this repo.

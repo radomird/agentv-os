@@ -3,7 +3,7 @@
 # Guards the signed app index and the installer (daemon/apps/) with Node's own
 # test runner, then origaitv app install, list and remove on the command line: a
 # sample app installs from a signed test index, and a tampered index is
-# refused (S2.1). A throwaway key made here stands in for origaiTV's.
+# refused (S2.1). A throwaway key made here stands in for OrigaiTV's.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -29,13 +29,13 @@ grep -E '^ok ' "$SCRATCH/tap" | sed -E 's/^ok [0-9]+ - /ok - /'
 # A throwaway key, a repo with the sample app, and an index that pins it.
 export GNUPGHOME="$SCRATCH/gnupg" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 mkdir -m 700 "$GNUPGHOME"
-gpg --batch --quiet --passphrase '' --quick-gen-key 'origaiTV test <test@origaitv.invalid>' ed25519 sign never 2>/dev/null
+gpg --batch --quiet --passphrase '' --quick-gen-key 'OrigaiTV test <test@origaitv.invalid>' ed25519 sign never 2>/dev/null
 gpg --batch --armor --export test@origaitv.invalid >"$SCRATCH/origaitv.asc"
 
 cp -R "$ROOT/test/origaitv/fixtures/apps/sample" "$SCRATCH/repo"
 git -C "$SCRATCH/repo" init --quiet
 git -C "$SCRATCH/repo" add -A
-git -C "$SCRATCH/repo" -c user.name=origaiTV -c user.email=test@origaitv.invalid commit --quiet -m "Sample 1.0.0"
+git -C "$SCRATCH/repo" -c user.name=OrigaiTV -c user.email=test@origaitv.invalid commit --quiet -m "Sample 1.0.0"
 commit=$(git -C "$SCRATCH/repo" rev-parse HEAD)
 
 mkdir "$SCRATCH/index"

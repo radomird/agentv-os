@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# origaitv:summary=Put origaiTV's package repository in /etc/pacman.conf
+# origaitv:summary=Put OrigaiTV's package repository in /etc/pacman.conf
 # origaitv:args=[--check] [--file <pacman.conf>]
 # origaitv:hidden=true
 # origaitv:requires-sudo=true
 
 # Omarchy owns /etc/pacman.conf and rewrites it whole, on install and on
-# omarchy refresh pacman. origaiTV keeps one section at its end, between two
+# omarchy refresh pacman. OrigaiTV keeps one section at its end, between two
 # marker lines, and this puts it back whenever it's missing or out of date.
 # The repository's address comes from the package's settings, written when
 # the package was built, so the GitHub owner isn't in this code.
@@ -69,7 +69,7 @@ section=$(printf '%s\n' \
   "Server = $server" \
   "$end")
 
-# The file without origaiTV's section, whatever state that section is in.
+# The file without OrigaiTV's section, whatever state that section is in.
 without_section() {
   awk -v begin="$begin" -v end="$end" '
     $0 == begin { skipping = 1; next }
@@ -96,13 +96,13 @@ drop_unsigned_list() {
   [[ -n $sync ]] || return 0
   if [[ -e $sync/origaitv.db && ! -s $sync/origaitv.db.sig ]]; then
     rm -f "$sync/origaitv.db" "$sync/origaitv.db.sig" "$sync/origaitv.files" || return 0
-    echo "origaiTV's package list had no signature, so it's gone until the next update fetches both"
+    echo "OrigaiTV's package list had no signature, so it's gone until the next update fetches both"
   fi
 }
 
 if [[ $current == "$section" ]]; then
   if (( check )); then
-    echo "origaiTV's repository is in $conf"
+    echo "OrigaiTV's repository is in $conf"
   else
     drop_unsigned_list
   fi
@@ -110,7 +110,7 @@ if [[ $current == "$section" ]]; then
 fi
 
 if (( check )); then
-  echo "origaiTV's repository is missing from $conf, or out of date" >&2
+  echo "OrigaiTV's repository is missing from $conf, or out of date" >&2
   exit 1
 fi
 
@@ -127,4 +127,4 @@ mv -f "$tmp" "$conf"
 trap - EXIT
 drop_unsigned_list
 
-echo "origaiTV's repository in $conf is now $server"
+echo "OrigaiTV's repository in $conf is now $server"

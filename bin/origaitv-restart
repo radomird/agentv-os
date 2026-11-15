@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# origaitv:summary=Restart origaiTV's own services on the version now installed
+# origaitv:summary=Restart OrigaiTV's own services on the version now installed
 # origaitv:args=[--system | --session]
 # origaitv:hidden=true
 
-# After every update, once origaiTV's migrations are done (origaitv-migrate runs
-# this from Omarchy's post-update hook): origaiTV's daemon, then the TV
+# After every update, once OrigaiTV's migrations are done (origaitv-migrate runs
+# this from Omarchy's post-update hook): OrigaiTV's daemon, then the TV
 # session's own units under origaitv-tv.target, the screen daemon, the virtual
 # input device and the overlay, and with the screen daemon the home screen
 # and the services' Chromium, whose sign-ins are on disk. The watch for a
@@ -36,11 +36,11 @@ DAEMON=${ORIGAITV_DAEMON_URL:-http://127.0.0.1:3000}
 WAIT=${ORIGAITV_RESTART_WAIT:-60}
 
 if [[ ! -d $MODULES/$(uname -r) || -f ${HOME:-/nonexistent}/.local/state/omarchy/reboot-required ]]; then
-  echo "origaiTV's services start again with the box, which this update restarts"
+  echo "OrigaiTV's services start again with the box, which this update restarts"
   exit 0
 fi
 
-echo "Restarting origaiTV's services on the version now installed"
+echo "Restarting OrigaiTV's services on the version now installed"
 status=0
 
 as_root=(sudo)
@@ -51,14 +51,14 @@ if [[ $part != "session" ]] && systemctl is-active --quiet origaitv-daemon.servi
     started=$SECONDS
     until curl -fsS --max-time 3 "$DAEMON/health" >/dev/null 2>&1; do
       if (( SECONDS - started >= WAIT )); then
-        echo "origaiTV's daemon didn't answer within $WAIT s of restarting" >&2
+        echo "OrigaiTV's daemon didn't answer within $WAIT s of restarting" >&2
         status=1
         break
       fi
       sleep 1
     done
   else
-    echo "origaiTV's daemon didn't restart" >&2
+    echo "OrigaiTV's daemon didn't restart" >&2
     status=1
   fi
 fi

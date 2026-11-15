@@ -27,7 +27,7 @@ if [[ $status == "403" ]]; then
   exit 1
 fi
 if [[ $status != "200" ]]; then
-  echo "origaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
+  echo "OrigaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
   exit 1
 fi
 echo "Setup starts again from the welcome page."

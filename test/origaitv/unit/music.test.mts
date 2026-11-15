@@ -42,11 +42,11 @@ test("tags come from the container, then the audio stream, where Ogg keeps them"
   const read = tagsOf({
     format: { duration: "2.5", tags: { TITLE: "C", Album: "Test Tones" } },
     streams: [
-      { codec_type: "audio", tags: { title: "ignored", ARTIST: "origaiTV" } },
+      { codec_type: "audio", tags: { title: "ignored", ARTIST: "OrigaiTV" } },
       { codec_type: "video", disposition: { attached_pic: 1 } },
     ],
   });
-  assert.deepEqual(read, { tags: { title: "C", album: "Test Tones", artist: "origaiTV" }, duration: 2.5, picture: true });
+  assert.deepEqual(read, { tags: { title: "C", album: "Test Tones", artist: "OrigaiTV" }, duration: 2.5, picture: true });
   assert.equal(words("Ñight  Shift!"), "night shift");
 });
 
@@ -58,7 +58,7 @@ test("the library reads every format, with tags, numbers, years and covers, and 
     albums.map((album) => [album.title, album.artist, album.year, album.cover !== null, album.tracks.map((id) => `${read.tracks[id].number} ${read.tracks[id].title}`)]),
     [
       ["Night Shift", "Pixel Band", "2025", true, ["1 Dusk", "2 Midnight", "3 Dawn"]],
-      ["Test Tones", "origaiTV", "2026", true, ["1 A", "2 E", "3 C"]],
+      ["Test Tones", "OrigaiTV", "2026", true, ["1 A", "2 E", "3 C"]],
     ],
   );
   assert.ok(Object.values(read.tracks).every((track) => track.duration > 1.9 && track.duration < 2.2));

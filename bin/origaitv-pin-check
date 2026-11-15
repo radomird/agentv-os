@@ -41,10 +41,10 @@ allowed() {
 # ahead without one. Nothing on the TV can stop the daemon.
 if ! status=$(curl -fsS --max-time 5 "$url/api/pin" 2>/dev/null); then
   if [[ $action == "desktop" ]]; then
-    echo "origaiTV's daemon isn't answering, so there's no PIN to check." >&2
+    echo "OrigaiTV's daemon isn't answering, so there's no PIN to check." >&2
     exit 0
   fi
-  echo "origaiTV's daemon isn't answering, so the PIN can't be checked." >&2
+  echo "OrigaiTV's daemon isn't answering, so the PIN can't be checked." >&2
   exit 1
 fi
 [[ $(jq -r '.set' <<<"$status") == "true" ]] || exit 0
@@ -59,7 +59,7 @@ if [[ -t 0 && -t 2 ]]; then
     echo >&2
     reply=$(jq -Rc '{pin: .}' <<<"$pin" | post /api/pin/check)
     [[ $(jq -r '.ok // false' <<<"$reply" 2>/dev/null) == "true" ]] && exit 0
-    error=$(jq -r '.error // "Wrong PIN"' <<<"$reply" 2>/dev/null || echo "origaiTV's daemon didn't answer")
+    error=$(jq -r '.error // "Wrong PIN"' <<<"$reply" 2>/dev/null || echo "OrigaiTV's daemon didn't answer")
     echo "${error^}" >&2
     [[ $(jq -r '.wait // 0' <<<"$reply" 2>/dev/null) == "0" ]] || exit 1
   done

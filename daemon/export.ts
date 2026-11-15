@@ -2,7 +2,7 @@
 // phone, the package as a .zip with its manifest and licence. The box's
 // copy is the installed one, so its fixtures, which can hold a service's
 // saved pages, never leave. An app that drives a service's own site (a web
-// app) is never exported, since origaiTV can't tell that the service permits
+// app) is never exported, since OrigaiTV can't tell that the service permits
 // it (ADR-010).
 
 import { lstatSync, readdirSync, readFileSync } from "node:fs";

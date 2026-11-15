@@ -1,8 +1,8 @@
 // Getting ready (board 35, ADR-025, S5.6): once the box is online it brings
 // itself up to date first, so every screen after this one comes from the
 // newest release. It asks the screen daemon for the update check, and when
-// there's a newer origaiTV or Omarchy, for the same install Settings → Updates
-// runs. The install restarts origaiTV, so this page loads again from the new
+// there's a newer OrigaiTV or Omarchy, for the same install Settings → Updates
+// runs. The install restarts OrigaiTV, so this page loads again from the new
 // release and carries on here; one that needs the box to restart comes back
 // here after it. A check or an install that doesn't work doesn't hold setup
 // up: it carries on with the version it has, and Settings → Updates has the
@@ -104,11 +104,11 @@ export function ready(ctx: Ctx, phase2 = false): View {
     if (!about.network.online || r.update === null || r.update === "checking") rows.push(row(">", "Checking for updates"));
     else if (r.update === "installing") {
       const now = fresh(progress?.at, r.asked) ? progress : null;
-      rows.push(now?.state === "restarting" ? row(">", `origaiTV ${to} · restarting`) : row(">", `origaiTV ${from} to ${to}`, blocks(now?.percent ?? 0)));
-    } else if (r.update === "done") rows.push(row("x", `origaiTV ${to}`));
-    else if (r.update === "none") rows.push(row("x", `origaiTV ${from} · up to date`));
-    else if (r.update === "failed") rows.push(row("!", `origaiTV ${from} · couldn't update`));
-    else rows.push(row("x", `origaiTV ${from} · update later in Settings`));
+      rows.push(now?.state === "restarting" ? row(">", `OrigaiTV ${to} · restarting`) : row(">", `OrigaiTV ${from} to ${to}`, blocks(now?.percent ?? 0)));
+    } else if (r.update === "done") rows.push(row("x", `OrigaiTV ${to}`));
+    else if (r.update === "none") rows.push(row("x", `OrigaiTV ${from} · up to date`));
+    else if (r.update === "failed") rows.push(row("!", `OrigaiTV ${from} · couldn't update`));
+    else rows.push(row("x", `OrigaiTV ${from} · update later in Settings`));
     list.replaceChildren(...rows);
 
     const finished = r.update !== null && !["checking", "installing"].includes(r.update);
@@ -142,10 +142,10 @@ export function ready(ctx: Ctx, phase2 = false): View {
     else if (r.update === "installing") {
       const now = fresh(progress?.at, r.asked) ? progress : null;
       percent = now?.percent ?? 0;
-      line.textContent = now?.state === "restarting" ? `origaiTV ${to} installed. Restarting…` : `Updating origaiTV ${from} to ${to}`;
+      line.textContent = now?.state === "restarting" ? `OrigaiTV ${to} installed. Restarting…` : `Updating OrigaiTV ${from} to ${to}`;
     } else {
       percent = 100;
-      line.textContent = r.update === "done" ? `origaiTV ${to} is ready` : r.update === "failed" ? "Couldn't update. Try later in Settings." : `origaiTV ${from} is up to date`;
+      line.textContent = r.update === "done" ? `OrigaiTV ${to} is ready` : r.update === "failed" ? "Couldn't update. Try later in Settings." : `OrigaiTV ${from} is up to date`;
     }
     list.replaceChildren(blocks(percent));
     if (!finished) ran = true;

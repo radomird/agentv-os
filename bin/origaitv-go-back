@@ -14,7 +14,7 @@
 # It works the way Omarchy's factory reset does: a writable copy of the
 # snapshot becomes the root (@), with the boot files rebuilt from inside it,
 # and the box restarts into it. /home isn't in the snapshot and stays as it
-# is. origaiTV's own state under /var/lib/origaitv goes back with the system, so
+# is. OrigaiTV's own state under /var/lib/origaitv goes back with the system, so
 # code and data match. The root it replaces is kept until the next boot,
 # when origaitv-go-back-cleanup.service deletes it (--cleanup).
 

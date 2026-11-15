@@ -40,7 +40,7 @@
 #   S2.16 Home and Back from the keyboard, a gamepad and the mouse: manual.
 #   S2.18 what Settings → Power stands on, without turning the box off:
 #         polkit lets the owner power off and restart with no password,
-#         origaiTV's units stop within 5 s, Omarchy's commands are there, and
+#         OrigaiTV's units stop within 5 s, Omarchy's commands are there, and
 #         Settings opens at Power. Turning it off and on again is manual.
 #   S2.19 the sound output playing, and its volume: 100%, or the level
 #         Settings → Sound chose for it. How loud the TV is stays manual.
@@ -51,7 +51,7 @@
 #   S3.2  an app opens a known episode through its playback.open, and its
 #         playback state, read from its page for the ledger, has the same
 #         title, season and episode, with a position that moves. --app names
-#         the app and --item the episode, as JSON: origaiTV names no service.
+#         the app and --item the episode, as JSON: OrigaiTV names no service.
 #   S3.4  with a child's profile watching, the app named with --app opens
 #         the service's profile an adult picked for children, as the screen
 #         daemon says. It reads neither the profile's name nor the page.
@@ -337,7 +337,7 @@ s03() {
 
   # WPA2 with a throwaway passphrase that's never shown. A fixed address,
   # because handing out addresses to phones comes with TV setup's own hotspot.
-  ssid="origaiTV-selftest-$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"
+  ssid="OrigaiTV-selftest-$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"
   psk=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')
   sudo nmcli connection delete "$hotspot" >/dev/null 2>&1 || true
   if ! sudo nmcli connection add type wifi ifname "$device" con-name "$hotspot" autoconnect no ssid "$ssid" \
@@ -488,7 +488,7 @@ s15() {
   took=$(wait_front web 15)
   if [[ -n $took ]]; then
     result pass S1.5 "a web app came in front in $(seconds "$took")"
-    screen toast "origaiTV selftest: this toast is over the app in front" >/dev/null
+    screen toast "OrigaiTV selftest: this toast is over the app in front" >/dev/null
     sleep 1
     if [[ -n $(front '.layers[] | select(. == "origaitv-toast")') ]]; then
       result pass S1.5 "a toast showed over the app in front"
@@ -833,7 +833,7 @@ s218() {
     (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("$unit ($value)")
   done
   if (( ${#slow[@]} == 0 )); then
-    result pass S2.18 "origaiTV's units stop within 5 s, so none holds up a restart or a shut down"
+    result pass S2.18 "OrigaiTV's units stop within 5 s, so none holds up a restart or a shut down"
   else
     result fail S2.18 "these may hold up a shut down for longer than 5 s: ${slow[*]}"
   fi
@@ -882,7 +882,7 @@ s45() {
 
   pin=$(curl -fsS --max-time 5 "$(home_url)api/pin" 2>/dev/null || true)
   if [[ -z $pin ]]; then
-    result fail S4.5 "origaiTV's daemon didn't answer"
+    result fail S4.5 "OrigaiTV's daemon didn't answer"
     return 0
   fi
   if [[ $(jq -r '.set' <<<"$pin") != "true" ]]; then
@@ -1013,7 +1013,7 @@ s75() {
   result manual S7.5 "on a paired phone, tap ask your tv and dictate play frozen: a bar along the bottom of the TV says listening, shows the words as they come, then thinking and what came of it. Do it over an app too. Closing the box, Back and 20 s with no words each take the bar away. Try an iPhone and an Android phone"
 }
 
-# ts_check <script> <id>: runs one of origaiTV's TypeScript checks, which
+# ts_check <script> <id>: runs one of OrigaiTV's TypeScript checks, which
 # print their own pass, fail and manual lines for the id.
 ts_check() {
   local flags=() line verdict what got=0
@@ -1409,7 +1409,7 @@ s82() {
   fi
 }
 
-echo "origaiTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
+echo "OrigaiTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
 "$ORIGAITV_BIN_DIR/origaitv-version" 2>/dev/null || true
 echo
 

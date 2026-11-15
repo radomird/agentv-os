@@ -108,7 +108,7 @@ export async function extraTools(dir: string, stepId: string): Promise<Extra> {
     run,
     proxy: PROXY,
   });
-  // The test TV, with the app as it is now: origaiTV's checks, or the tests.
+  // The test TV, with the app as it is now: OrigaiTV's checks, or the tests.
   const root = process.env.ORIGAITV_PATH ?? join(import.meta.dirname, "../..");
   const gate = { root, proxy: PROXY };
   return {

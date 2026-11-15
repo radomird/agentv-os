@@ -1,11 +1,11 @@
 ---
 name: origaitv-copy
-description: Use when writing or editing any origaiTV text people read or hear, such as UI strings on the TV, the phone or the USB stick, spoken answers, setup screens, READMEs, docs, repo descriptions or commit messages. Sets the two voices (what someone on the couch reads, and an indie dev talking about their project), the never-say list, the glossary, the capitals rule, the no-em-dash rule and origaiTV's naming.
+description: Use when writing or editing any OrigaiTV text people read or hear, such as UI strings on the TV, the phone or the USB stick, spoken answers, setup screens, READMEs, docs, repo descriptions or commit messages. Sets the two voices (what someone on the couch reads, and an indie dev talking about their project), the never-say list, the glossary, the capitals rule, the no-em-dash rule and OrigaiTV's naming.
 ---
 
-# origaiTV copy
+# OrigaiTV copy
 
-origaiTV has two voices, and which one you write in depends on who reads it.
+OrigaiTV has two voices, and which one you write in depends on who reads it.
 
 - **On the TV, the phone and the USB stick,** and in anything the TV says aloud, write for the person on the couch. Say what they get or do, not how the TV works.
 - **In READMEs, docs, commit messages and pull requests,** write like an indie dev talking about their own project: first to the person who'll use it, then to another dev. Omarchy's README is the spirit to match: plain, confident and personal, with a bit of fun.
@@ -22,7 +22,7 @@ Radomir's direction (2026-11-10): the words are user centric and down to earth. 
 2. **Two people in the room: you and your TV.** It's "your TV", "your phone", "your apps". Nobody else speaks: no "your agent", no "the builder", no "the box", no "the system". On screen the TV has no "I". Aloud it may say "I" ("I couldn't find that").
 3. **One headline, at most one line under it.** The headline is the thing to do or the question to answer: "Pick your apps", "Who's watching?". If the line needs a second sentence, cut the first one.
 4. **Buttons are a verb, one to three words.** "Add", "Install now", "Try again", "Not now". No key names or arrows in the words ("↵", "esc", "del", "→"). The look draws those if it wants them.
-5. **Sentence case, with real names.** origaiTV, Omarchy, Wi-Fi, PIN, TV, AI, 4K, TMDB, MET Norway, GitHub. No title case.
+5. **Sentence case, with real names.** OrigaiTV, Omarchy, Wi-Fi, PIN, TV, AI, 4K, TMDB, MET Norway, GitHub. No title case.
 6. **Full stops only between two sentences.** No full stop on a headline, a label, a button, a tile or a one-sentence notice. Three dots ("Installing…") only while something is happening right now.
 7. **One verb per job.** Make (an app, a game, a theme). Add (an app that exists). Remove (never "take off", "forget", "unpin" or "is gone"). Save (never "keep" or "is kept"). Change. Sign in. Send (from the phone to the TV). "Build your own" is the one label that starts making an app, and "make" is the verb everywhere after it.
 8. **An error says what didn't happen, then what to do, in one line.** "Couldn't open that folder. Check the password." Never the cause in system words, never a raw reason ("exit 1", "PUT /api/key failed"), never "that didn't work" on its own, never blame ("you typed").
@@ -47,7 +47,7 @@ These are Radomir's notes on the rules, and they win where the two differ.
 
 ### Never say
 
-To someone on the couch, origaiTV never says: agent, builder, a build, recipe, provider, daemon, box, session, edge, stable channel, nightly run, tier, contract, capability, adapter, index, router, relay, sandbox, safeguards, cap, origin, manifest, package, snapshot, migration, mount, share (for a network folder), source (for where music is), ambient, the system (in a sentence; Settings' section is called System), root, country, region.
+To someone on the couch, OrigaiTV never says: agent, builder, a build, recipe, provider, daemon, box, session, edge, stable channel, nightly run, tier, contract, capability, adapter, index, router, relay, sandbox, safeguards, cap, origin, manifest, package, snapshot, migration, mount, share (for a network folder), source (for where music is), ambient, the system (in a sentence; Settings' section is called System), root, country, region.
 
 What stays, because it's someone else's word or a name: "API key" and "plan" (the AI companies' own terms), their plan names and terms, "Powered by Omarchy", "Omarchy's desktop", the TMDB, JustWatch and MET Norway credits, trademark notices, and GitHub.
 
@@ -68,14 +68,14 @@ What stays, because it's someone else's word or a name: "API key" and "plan" (th
 | key, api key | API key the first time, then "key" |
 | the box, this box | your TV, this TV, or no noun at all ("Restart?") |
 | your box (setup's step, and its "box" row) | Your setup (the step), Computer (the row) |
-| the daemon, the TV session | origaiTV, or "your TV": "Your TV isn't ready yet" |
+| the daemon, the TV session | OrigaiTV, or "your TV": "Your TV isn't ready yet" |
 | the router, "the provider didn't answer" | "Can't answer right now" |
 | edge | Early updates |
 | the nightly run, tonight's tests | "still being tested", "tested before it reaches you" |
 | snapshot | backup |
 | migrations | Finishing up |
 | packages (an update's) | Installing, system updates |
-| tier: official, community, local | From origaiTV, From the community, Made on this TV |
+| tier: official, community, local | From OrigaiTV, From the community, Made on this TV |
 | the app contract's checks | "This app is broken, so it's hidden" |
 | can reach, reaches, origins | Connects to. "Nothing online" when it's none |
 | app index | the app list: "Couldn't load the apps" |
@@ -150,7 +150,7 @@ Write the way you'd explain it to a friend who codes, over coffee. A README may 
 - **Lead with what it is and why someone would care.** The first sentence of a README says what this is in plain words. Then how to use it. Details come last.
 - **One idea per sentence.** Keep sentences short. Split anything held together by semicolons, a run of "and", or a clause hanging off another clause.
 - **Plain words before project words.** Say "the list of apps" before "the index", "test data" before "fixtures", and "the rules every app follows" before "the app contract". If you need the project word, explain it once, the first time it comes up.
-- **Concrete, with someone doing it.** Say what actually happens, in order: "Your box downloads the list, checks it really came from origaiTV, then installs the app." Not "A box reads it and checks the signature against the key it already has."
+- **Concrete, with someone doing it.** Say what actually happens, in order: "Your box downloads the list, checks it really came from OrigaiTV, then installs the app." Not "A box reads it and checks the signature against the key it already has."
 - **"You" for the reader, "I" for the maker.** "Your box" and "your TV" rather than "a box".
 - **Headings people would look for,** such as "What you get", "How your box gets the apps" and "For developers", rather than bare labels like "Checks" or "Fixtures".
 - **No inside references in public text.** No ADR or grilling numbers, no acceptance ids like S3.1, no session or planning names. If someone needs the background, link to a doc.
@@ -183,9 +183,9 @@ The origaitv-apps README is the reference: it's written exactly this way.
 
 | Don't write | Write |
 | --- | --- |
-| origaiTV's official apps, one folder each, and the signed index a box installs them from. | The apps that come with origaiTV. If you run origaiTV, this is where the apps in _Apps_ on your TV come from. |
+| OrigaiTV's official apps, one folder each, and the signed index a box installs them from. | The apps that come with OrigaiTV. If you run OrigaiTV, this is where the apps in _Apps_ on your TV come from. |
 | How a box gets them | How your box gets the apps |
-| The index is published as the `index` release here. | Every time an app changes here, CI builds a fresh list of apps, signs it with origaiTV's key, and puts it in this repo's `index` release. |
+| The index is published as the `index` release here. | Every time an app changes here, CI builds a fresh list of apps, signs it with OrigaiTV's key, and puts it in this repo's `index` release. |
 | Steam has nothing to record, so its checks are the contract's own and that it does nothing more. | Steam doesn't talk to a server, so there's nothing to record for it. Its tests just make sure it follows the rules and doesn't try anything else. |
 | Each app's `fixtures/README.md` says what's in them. | Each app's `fixtures` folder has a short README about what's in it. |
 
@@ -208,7 +208,7 @@ The same voice, kept short. Write them dev to dev.
 
 - **No em dashes anywhere, ever,** and no en dashes used as dashes either. Use a comma, colon, period or parentheses. Search the text for the em dash character (U+2014) before you finish.
 - **Names:**
-  - the product is **origaiTV**;
+  - the product is **OrigaiTV**;
   - repos are `origaitv-*`;
   - the command is `origaitv`.
   - Never call it Omarchy, and never suggest Basecamp endorses it.

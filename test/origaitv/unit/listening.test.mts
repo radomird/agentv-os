@@ -293,7 +293,7 @@ test("ADR-054 a locked TV takes no words, as it takes no sentences, and locking 
 
 test("ADR-054 on a child's profile the bar is the same, and the sentence is routed for the child", async () => {
   const grant = (await (await fetch(`${url}/api/pin/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
-  const child = (await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": grant }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()).profile;
+  const child = (await (await fetch(`${url}/api/viewers`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": grant }, body: JSON.stringify({ name: "mila", role: "child" }) })).json()).profile;
   await fetch(`${url}/api/viewer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: child.id }) });
   await phone("/api/phone/say/live", { open: true });
   await phone("/api/phone/say/live", { text: "play frozen" });

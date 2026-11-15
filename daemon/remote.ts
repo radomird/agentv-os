@@ -100,7 +100,7 @@ export class RemoteInput {
     while (!this.stopped) {
       this.abort = new AbortController();
       try {
-        const response = await fetch(this.url, { headers: { "X-origaiTV-Screen": this.as }, signal: this.abort.signal });
+        const response = await fetch(this.url, { headers: { "X-OrigaiTV-Screen": this.as }, signal: this.abort.signal });
         if (!response.ok || !response.body) throw new Error(`the daemon answered ${response.status}`);
         let buffer = "";
         const decoder = new TextDecoder();
@@ -156,7 +156,7 @@ export class RemoteInput {
     try {
       await fetch(`${this.url}/answer/${Number(n)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-origaiTV-Screen": this.as },
+        headers: { "Content-Type": "application/json", "X-OrigaiTV-Screen": this.as },
         body: JSON.stringify(answer),
         signal: AbortSignal.timeout(5000),
       });

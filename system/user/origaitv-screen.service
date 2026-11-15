@@ -1,8 +1,8 @@
-# origaiTV's screen daemon (daemon/screen.ts): which window is in front of the
+# OrigaiTV's screen daemon (daemon/screen.ts): which window is in front of the
 # TV. It starts the home screen and the apps, so they stop with it.
 
 [Unit]
-Description=origaiTV screen daemon
+Description=OrigaiTV screen daemon
 PartOf=origaitv-tv.target
 # Keep trying for as long as the session runs: a TV with no screen daemon
 # would stay black.

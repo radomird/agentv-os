@@ -50,7 +50,7 @@ before
 look || fail "it runs with the base's own candidates" "$(cat "$SCRATCH/log")"
 [[ $(outcome run) == "false" && $(outcome tag) == "v1.0.0-rc2" ]] ||
   fail "a candidate no newer than the base isn't tried" "$(cat "$SCRATCH/out")"
-pass "a candidate for the release origaiTV is on isn't tried"
+pass "a candidate for the release OrigaiTV is on isn't tried"
 
 release v1.1.0-rc1
 release v1.1.0-rc2

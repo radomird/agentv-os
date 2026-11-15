@@ -1,6 +1,6 @@
-# origaiTV's app kit
+# OrigaiTV's app kit
 
-A page app is its own HTML, CSS and JavaScript. origaiTV serves it from an origin of its own and shows it full screen (1920 x 1080) in a sandboxed frame on the TV. It reaches the box only through `window.origaitv`, which `/_origaitv/kit.js` sets. Load that first:
+A page app is its own HTML, CSS and JavaScript. OrigaiTV serves it from an origin of its own and shows it full screen (1920 x 1080) in a sandboxed frame on the TV. It reaches the box only through `window.origaitv`, which `/_origaitv/kit.js` sets. Load that first:
 
 ```html
 <script src="/_origaitv/kit.js"></script>

@@ -95,7 +95,7 @@ test("each step has a label, the words the TV shows for it, and its id stays wha
   const game = recipes.get("game")!;
   const { label: _, ...bare } = game.steps[0];
   assert.match(recipeProblems({ ...game, steps: [bare, ...game.steps.slice(1)] }, game.dir).join("; "), /the step design has a label/);
-  // A plan's own steps have none, so the TV shows the id as words. origaiTV's
+  // A plan's own steps have none, so the TV shows the id as words. OrigaiTV's
   // two steps after them have theirs.
   const planned = planRecipe({ name: "x", says: "y", steps: [{ id: "draw-the-sky", does: "b" }], permissions: { origins: [], media: [], tile: false, notices: false }, packages: [] }, ROOT);
   assert.deepEqual(planned.steps.map(stepLabel), ["Draw the sky", "Testing", "Trying it on a TV"]);
@@ -346,8 +346,8 @@ test("S6.9 a request with no recipe gets a plan, and nothing is built before an 
   assert.deepEqual(planned.plan, plan);
   assert.ok(!existsSync(planning.work), "nothing is built while the plan waits");
 
-  // Approved, the plan is walked with origaiTV's steps after its own, and
-  // origaiTV's page app tools, never ones the plan names.
+  // Approved, the plan is walked with OrigaiTV's steps after its own, and
+  // OrigaiTV's page app tools, never ones the plan names.
   const approved = build({ recipe: null, plan, sentence: "show me tonight's sky" });
   const status = await run(approved, recording({ sky: { calls: [{ tool: "write", args: { path: "app/main.js", content: "origaitv.ready();\n" } }] }, tests: { calls: [{ tool: "write", args: { path: "tests/sky.test.js", content: "" } }] } }));
   assert.equal(status.state, "approve", status.reason);
@@ -374,7 +374,7 @@ test("an app the agent builds is always local.*", async () => {
 
 test("a plan's own checks, and where a step may write", () => {
   assert.deepEqual(planProblems({ name: "x", says: "y", steps: [{ id: "a", does: "b" }], permissions: { origins: [], media: [], tile: false, notices: false }, packages: [] }), []);
-  assert.match(planProblems({ name: "x", says: "y", steps: [{ id: "try", does: "b" }], permissions: { origins: [], media: [], tile: false, notices: false }, packages: [] }).join(), /tests and try are origaiTV's/);
+  assert.match(planProblems({ name: "x", says: "y", steps: [{ id: "try", does: "b" }], permissions: { origins: [], media: [], tile: false, notices: false }, packages: [] }).join(), /tests and try are OrigaiTV's/);
   assert.match(planProblems({ name: "x", says: "y", steps: [{ id: "a", does: "b" }], permissions: { origins: ["ftp://x"], media: ["files"], tile: false, notices: false }, packages: [{ name: "Bad Name" }] }).join(";"), /isn't an origin.*isn't photos or music.*each package/);
   const recipe = planRecipe({ name: "x", says: "y", steps: [{ id: "a", does: "b" }], permissions: { origins: ["https://api.example.org"], media: ["photos"], tile: false, notices: false }, packages: [] }, ROOT);
   assert.deepEqual(recipe.bounds, { origins: true, media: ["photos"], tile: false, notices: false });

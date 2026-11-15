@@ -2,7 +2,7 @@
 // claude as the reference, codex, gemini, grok and muse beside it, each the
 // provider's own unmodified CLI from the builder's own home. Each run has no
 // built-in tools at all, no shell, no web search and no files of its own:
-// only origaiTV's harness, started for this step, with this step's tools.
+// only OrigaiTV's harness, started for this step, with this step's tools.
 // Each goes out only through the sandbox's filter, and a key never reaches
 // it: the relay outside the sandbox adds it, and stops a build at its cap on
 // every CLI, with a budget flag of its own or not (ADR-045). With a plan,
@@ -16,7 +16,7 @@ import type { Provider } from "./build.ts";
 
 export interface StepRun {
   prompt: string;
-  brief: string; // origaiTV's brief, given as the system prompt's addition
+  brief: string; // OrigaiTV's brief, given as the system prompt's addition
   harness: { command: string; args: string[] }; // the harness for this step
   cwd: string; // the build's work folder
   turns: number;
@@ -92,9 +92,9 @@ function baseEnv(run: { home: string; proxy?: string }): Record<string, string> 
 // A plan's own sign-in through its CLI (ADR-022, ADR-040), in the builder's
 // sandbox, as origaitv-builder: the command that starts it, whether the
 // person pastes a code back into it from the provider's page, and how the
-// CLI says it's signed in. origaiTV shows the link the CLI prints and passes
+// CLI says it's signed in. OrigaiTV shows the link the CLI prints and passes
 // on what the person types, and never sees the plan's tokens, which the CLI
-// keeps in its own files. Only the plans origaiTV offers have one.
+// keeps in its own files. Only the plans OrigaiTV offers have one.
 // How the CLI says it's signed in: a status command and what it prints,
 // or, for a CLI with none, its own credentials file in the builder's home.
 export type SignIn = { login: string[]; pastes: boolean } & ({ status: string[]; signedIn: (out: string, code: number) => boolean } | { file: string });
@@ -205,8 +205,8 @@ export function command(provider: Provider, run: StepRun): Command {
       `mcp_servers.origaitv=${server}`,
     ];
     if (run.path === "key" && run.relay) {
-      // A provider of origaiTV's that sends no key: the relay adds it.
-      args.push("-c", 'model_provider="origaitv"', "-c", `model_providers.origaitv={name="origaiTV",base_url=${toml(`${run.relay}/v1`)},wire_api="responses"}`);
+      // A provider of OrigaiTV's that sends no key: the relay adds it.
+      args.push("-c", 'model_provider="origaitv"', "-c", `model_providers.origaitv={name="OrigaiTV",base_url=${toml(`${run.relay}/v1`)},wire_api="responses"}`);
     }
     args.push(`${run.brief}\n\n${run.prompt}`);
     return { command: cli, args, env: { ...env, CODEX_HOME: join(run.home, ".codex") } };
@@ -217,7 +217,7 @@ export function command(provider: Provider, run: StepRun): Command {
     // sign-in lives too, and nothing from Claude's or Cursor's.
     const grokHome = join(run.home, ".grok");
     const config = [
-      "# origaiTV's builder writes this for each step (builder/providers.ts).",
+      "# OrigaiTV's builder writes this for each step (builder/providers.ts).",
       "[features]",
       "telemetry = false",
       "write_file = false",
@@ -231,7 +231,7 @@ export function command(provider: Provider, run: StepRun): Command {
       `args = [${run.harness.args.map(toml).join(", ")}]`,
     ];
     if (run.path === "key" && run.relay) {
-      // A model of origaiTV's that names a key no one has, so grok sends none
+      // A model of OrigaiTV's that names a key no one has, so grok sends none
       // and the relay adds it.
       config.push("", "[model.origaitv]", `model = ${toml(GROK_MODEL)}`, `base_url = ${toml(`${run.relay}/v1`)}`, 'api_backend = "responses"', 'env_key = "ORIGAITV_NO_KEY"', "context_window = 500000");
       config.push("", "[models]", 'default = "origaitv"');
@@ -292,7 +292,7 @@ export function command(provider: Provider, run: StepRun): Command {
     // Muse Code: its shell, writes, web tools and observer agents off, no
     // project rules (the work folder isn't a trusted workspace), and the
     // harness its one MCP server. With its shell off, its own sandbox has
-    // nothing to hold; origaiTV's holds it either way.
+    // nothing to hold; OrigaiTV's holds it either way.
     const config = join(run.home, ".config");
     const settings = { schema_version: 1, mcpServers: { origaitv: { type: "stdio", command: run.harness.command, args: run.harness.args, required: true } } };
     Object.assign(env, {

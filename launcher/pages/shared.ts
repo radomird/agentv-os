@@ -2,7 +2,7 @@
 // phone sent. The TV asks first, with Open and Not now, over home only and
 // never over what's playing (main.ts). Open shows a photo full screen, with
 // its credit and "Use as background" (ADR-012), plays a video in
-// origaiTV's own player, and opens a link in the app that declares its site
+// OrigaiTV's own player, and opens a link in the app that declares its site
 // or in a browser page of its own, which the TV session does. Each one waits
 // in Apps, under "From your phones", until someone removes it.
 
@@ -138,7 +138,7 @@ function clock(seconds: number): string {
   return hours ? `${hours}:${rest}` : rest;
 }
 
-// A video in origaiTV's own player: OK pauses and plays, left and right go
+// A video in OrigaiTV's own player: OK pauses and plays, left and right go
 // back and on 10 s, and Back closes it.
 function videoView(ctx: Ctx, share: Share): View {
   const video = h("video", { class: "shared-video", src: `/api/shared/${share.id}/file`, autoplay: true, playsinline: true }) as HTMLVideoElement;

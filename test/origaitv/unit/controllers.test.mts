@@ -410,7 +410,7 @@ after(async () => {
 const send = async (method: string, path: string, body?: unknown, grant?: string) => {
   const response = await fetch(`${url}${path}`, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: response.status, data: (await response.json()) as Record<string, any> };

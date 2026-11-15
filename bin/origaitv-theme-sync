@@ -3,8 +3,8 @@
 # origaitv:summary=Hand the Omarchy theme's colours to the TV
 # origaitv:hidden=true
 
-# Omarchy renders origaiTV's launcher.css.tpl into the current theme on every
-# theme change. This sends the result to origaiTV's daemon, which keeps only
+# Omarchy renders OrigaiTV's launcher.css.tpl into the current theme on every
+# theme change. This sends the result to OrigaiTV's daemon, which keeps only
 # the colours (ADR-012), with the theme's name, so Look knows which theme it
 # is (ADR-048). It runs from Omarchy's theme-set hook and when the TV session
 # starts. A theme set before the template was there has no launcher.css yet,
@@ -37,6 +37,6 @@ fi
 # At the TV session's start the daemon may still be on its way up.
 if ! curl -fsS --max-time 5 --retry 3 --retry-connrefused --retry-delay 1 -o /dev/null -H 'Content-Type: text/css' --data-binary @"$css" \
   "http://127.0.0.1:${ORIGAITV_PORT:-3000}/api/theme${name:+?name=${name//+/%2B}}"; then
-  echo "origaiTV's daemon didn't take the theme's colours" >&2
+  echo "OrigaiTV's daemon didn't take the theme's colours" >&2
   exit 1
 fi

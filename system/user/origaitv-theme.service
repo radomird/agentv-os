@@ -2,7 +2,7 @@
 # theme changed on Omarchy's desktop is on the TV when it's back (ADR-012).
 
 [Unit]
-Description=origaiTV: the Omarchy theme's colours for the TV
+Description=OrigaiTV: the Omarchy theme's colours for the TV
 PartOf=origaitv-tv.target
 
 [Service]

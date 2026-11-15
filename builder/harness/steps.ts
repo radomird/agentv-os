@@ -1,4 +1,4 @@
-// origaiTV's own steps around a recipe's (ADR-046): what the request is, and
+// OrigaiTV's own steps around a recipe's (ADR-046): what the request is, and
 // with no recipe a plan for an adult. And a build's step by its id, whoever
 // asks: the harness, or the tools it gets from beyond it.
 

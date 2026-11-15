@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards origaiTV's daemon (daemon/server.ts) with Node's own test runner, then
+# Guards OrigaiTV's daemon (daemon/server.ts) with Node's own test runner, then
 # runs it the way its unit does and checks what the image checks and the
 # selftest read: the welcome page, /health, and origaitv setup skip and reset.
 
@@ -31,7 +31,7 @@ grep -q "origaitv daemon on http://127.0.0.1:$port/" "$SCRATCH/daemon.log" || fa
 pass "S0.1 the daemon runs as its unit runs it, and /health starts on the welcome screen"
 
 page=$(curl -fsS "$url/")
-[[ $page == *"<title>origaiTV setup</title>"* && $(curl -fsS "$url/setup/main.ts") == *"/api/welcome-shown"* ]] || fail "setup's page is served, and reports itself"
+[[ $page == *"<title>OrigaiTV setup</title>"* && $(curl -fsS "$url/setup/main.ts") == *"/api/welcome-shown"* ]] || fail "setup's page is served, and reports itself"
 curl -fsS -o /dev/null -X POST "$url/api/welcome-shown" || fail "the welcome page can say it's drawn"
 [[ $(curl -fsS "$url/health" | jq -r '.welcome_shown_count') == 1 ]] || fail "/health counts each time the welcome page is drawn"
 pass "the welcome page is served, and /health counts each time it's drawn"

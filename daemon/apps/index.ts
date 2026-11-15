@@ -1,8 +1,8 @@
-// origaiTV's signed app index (ADR-010): which apps exist, their tier, and the
+// OrigaiTV's signed app index (ADR-010): which apps exist, their tier, and the
 // exact commit of the public repo each one installs from, and the app's folder
 // in that repo when it shares one with others, as the official apps share
 // origaitv-apps (ADR-036). The index counts
-// only with a good signature from origaiTV's key, the same key the box already
+// only with a good signature from OrigaiTV's key, the same key the box already
 // holds for its packages and tested.json (origaitv-keyring), checked with gpgv
 // against a keyring that holds that key alone.
 
@@ -62,7 +62,7 @@ export async function verifySignature(file: string, sig: string, keyring = DEFAU
   const work = await mkdtemp(join(tmpdir(), "origaitv-index-"));
   try {
     await access(keyring).catch(() => {
-      console.error(`origaitv: origaiTV's key isn't at ${keyring}`);
+      console.error(`origaitv: OrigaiTV's key isn't at ${keyring}`);
       throw new IndexError("Couldn't verify the app list, so nothing was installed");
     });
     const binary = join(work, "keyring.gpg");
@@ -98,7 +98,7 @@ export function parseIndex(text: string): AppIndex {
   }
   const index = data as Partial<AppIndex>;
   if (typeof data !== "object" || data === null || index.schema !== 1 || !Array.isArray(index.apps)) {
-    throw new IndexError("Couldn't read the app list. Update origaiTV and try again.");
+    throw new IndexError("Couldn't read the app list. Update OrigaiTV and try again.");
   }
   const seen = new Set<string>();
   for (const entry of index.apps as Partial<IndexEntry>[]) {

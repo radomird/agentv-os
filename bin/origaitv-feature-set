@@ -24,7 +24,7 @@ answer=$(curl -sS --max-time 5 -w '\n%{http_code}' -X PUT -H 'Content-Type: appl
 code=${answer##*$'\n'}
 answer=${answer%$'\n'*}
 if (( status != 0 )) || [[ $code == 000 ]]; then
-  echo "origaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
+  echo "OrigaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
   exit 1
 fi
 if [[ $code != 200 ]]; then

@@ -2,7 +2,7 @@
 # provider's own CLI, once per sentence, with no tools, as origaitv-builder,
 # which signed in to the plan through the CLI's own login when the builder
 # first ran (ADR-040). The plan's tokens stay in the CLI's own files in the
-# builder's home, and origaiTV never reads them.
+# builder's home, and OrigaiTV never reads them.
 #
 # Like a build (origaitv-builder@.service), it has no network of its own:
 # its only way out is origaitv-router's cli-net.sock, which reaches the plans'
@@ -12,7 +12,7 @@
 # group only.
 
 [Unit]
-Description=origaiTV router on a plan
+Description=OrigaiTV router on a plan
 Wants=origaitv-router.service
 After=origaitv-router.service
 RequiresMountsFor=/var/lib/origaitv/builder

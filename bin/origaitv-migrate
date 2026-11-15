@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# origaitv:summary=Run pending origaiTV migrations
+# origaitv:summary=Run pending OrigaiTV migrations
 # origaitv:args=[--pending | --mark-all-done]
 # origaitv:hidden=true
 
-# origaiTV's own migrations, numbered and run the way omarchy-migrate runs
+# OrigaiTV's own migrations, numbered and run the way omarchy-migrate runs
 # Omarchy's: each <unix-time>.sh once per user, oldest first, with a marker
 # file once it has finished. Omarchy's post-update hook calls this after every
 # update (ADR-025), and an update from the TV runs it itself, right after
 # Omarchy's migrations (bin/origaitv-update-tv). A fresh install marks them all
 # as done, since it already is what they would migrate to.
 #
-# Then it restarts origaiTV's own services on the version just installed
+# Then it restarts OrigaiTV's own services on the version just installed
 # (origaitv-restart), so an update only restarts the box when it has to. It's
 # here rather than in the hook because the hook is a copy in the owner's
 # config, from first boot, while this comes with every update.
@@ -68,11 +68,11 @@ case "$mode" in
 esac
 
 if (( ${#pending[@]} == 0 )); then
-  echo "No origaiTV migrations to run"
+  echo "No OrigaiTV migrations to run"
 else
   mkdir -p "$STATE_DIR"
   for name in "${pending[@]}"; do
-    echo -e "\e[32m\nRunning origaiTV migration (${name%.sh})\e[0m"
+    echo -e "\e[32m\nRunning OrigaiTV migration (${name%.sh})\e[0m"
     # A failed migration stops here unmarked, so the next update runs it
     # again, and nothing restarts on code it hasn't migrated for.
     ORIGAITV_PATH="$ORIGAITV_PATH" bash -euo pipefail "$MIGRATIONS_DIR/$name"

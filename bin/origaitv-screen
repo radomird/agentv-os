@@ -4,7 +4,7 @@
 # origaitv:args=status | home | open <url> | open steam | app <id> [item] | sign-in <id> | signed-in | quit <app> | close <home|web|steam> | ambient | background <id> | tv <on|off> | update <check|install|go-back> | power <restart|shutdown|bootmenu> | pin <action> | settings [section] | apps [add] | audio [output <name>|volume <0-100>] | toast <text> | frames [seconds] | keys [seconds] | sounds [seconds]
 # origaitv:examples=origaitv screen status | origaitv screen open https://example.org | origaitv screen toast "Hello"
 
-# Talks to origaiTV's screen daemon (daemon/screen.ts), which decides what's in
+# Talks to OrigaiTV's screen daemon (daemon/screen.ts), which decides what's in
 # front of the TV in the TV session (ADR-031). Works over SSH too, as the
 # person logged in on the TV. Prints the daemon's answer as JSON, and exits 0
 # when it says ok, 1 when it doesn't, and 2 when the TV session isn't on.
@@ -23,7 +23,7 @@
 #                  "title":"...","season":1,"episode":2}, the app opens it
 #                  through its playback.open, as a tile's entry does
 #   sign-in <id>   an installed app's sign-in screen: its service's page,
-#                  with origaiTV's bar under it, until the app says it's
+#                  with OrigaiTV's bar under it, until the app says it's
 #                  signed in (ADR-032)
 #   signed-in      "i'm signed in" on that bar: the app is asked now
 #   quit <app>     close an app that's open, such as a game behind home

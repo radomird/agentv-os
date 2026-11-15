@@ -98,7 +98,7 @@ const HOP = ["connection", "keep-alive", "proxy-connection", "proxy-authorizatio
 const AUTH = ["authorization", "x-api-key", "x-goog-api-key", "openai-organization", "openai-project", "anthropic-admin-key"];
 
 // What's wrong with a request's tools: any the provider would run itself.
-// The agent's tools are origaiTV's harness, which the CLI calls; a provider's
+// The agent's tools are OrigaiTV's harness, which the CLI calls; a provider's
 // own web search or code runner would reach the internet round the filter.
 export function serverTools(wire: Wire, body: Record<string, unknown>): string | null {
   const tools = Array.isArray(body.tools) ? (body.tools as Record<string, unknown>[]) : [];

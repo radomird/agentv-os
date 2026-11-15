@@ -246,7 +246,7 @@ test("T17.1 on stable, the AI step offers a plan for Claude, ChatGPT and Grok, s
 
 // A request to the TV as the tests make it, and a grant for the tests' PIN.
 const send = async (method: string, path: string, body?: unknown, grant?: string) =>
-  fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
 const granted = async () => (await (await send("POST", "/api/pin/check", { pin: "2468" })).json()).grant as string;
 
 // An adult on a paired phone accepts the terms, on a TV with a PIN.
@@ -254,7 +254,7 @@ async function acceptPastPin(provider: string, way: string): Promise<void> {
   const code = (await (await send("POST", "/api/phones/pair", {}, await granted())).json()).pairing.code;
   const phone = await pairPhone(lan, code, "pixel");
   const onPhone = (await (await phone.fetch("/api/phone/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).json()).grant;
-  assert.equal((await phone.fetch("/api/phone/terms", { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Grant": onPhone }, body: JSON.stringify({ provider, path: way }) })).status, 200);
+  assert.equal((await phone.fetch("/api/phone/terms", { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": onPhone }, body: JSON.stringify({ provider, path: way }) })).status, 200);
 }
 
 // The TV ends every grant, as when it has been off for a while.

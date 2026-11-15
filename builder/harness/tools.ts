@@ -18,7 +18,7 @@ const WRITE_MAX = 2 * 1024 * 1024;
 const LIST_MAX = 500;
 const ORIGINS_MAX = 8;
 
-// What a step's reads name, and the files behind each: origaiTV's own, or
+// What a step's reads name, and the files behind each: OrigaiTV's own, or
 // the recipe's tests.
 export function references(root: string, recipe: Recipe, omarchy: string): Record<string, Record<string, string>> {
   const tests: Record<string, string> = { "tests.md": join(root, "builder/prompts/tests.md") };
@@ -32,7 +32,7 @@ export function references(root: string, recipe: Recipe, omarchy: string): Recor
   };
 }
 
-// Tools origaiTV has, beyond the ones here, given by whoever runs the harness:
+// Tools OrigaiTV has, beyond the ones here, given by whoever runs the harness:
 // the gates, npm and the browser come with them.
 export type Extra = Partial<Record<Tool, (args: Record<string, unknown>) => Promise<string>>>;
 
@@ -40,7 +40,7 @@ export interface ToolsOptions {
   build: Build;
   recipe: Recipe;
   step: Step;
-  root: string; // origaiTV's files: /usr/share/origaitv
+  root: string; // OrigaiTV's files: /usr/share/origaitv
   omarchy: string; // Omarchy's: /usr/share/omarchy
   extra?: Extra;
 }

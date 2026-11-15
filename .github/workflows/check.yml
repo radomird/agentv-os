@@ -1,9 +1,9 @@
 name: Check
 
-# origaiTV's fast gates (ADR-019, layers 1 and 2) on every pull request and every
+# OrigaiTV's fast gates (ADR-019, layers 1 and 2) on every pull request and every
 # push to origaitv: Omarchy's files unchanged since .github/omarchy-base, no em
 # dashes, no secrets, no service automation, no owner in code, shellcheck,
-# origaiTV's unit tests, and Omarchy's own tests no worse than at the base.
+# OrigaiTV's unit tests, and Omarchy's own tests no worse than at the base.
 # A pull request that changes how the box installs, boots, migrates or drives
 # the screen, or comes with a branch of origaitv-iso or origaitv-pkgs, also gets
 # the image layer (layer 5) once it's ready for review, and so does one with
@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 20
     steps:
       # Full history with every file, in one download. The secrets scan reads
-      # every origaiTV commit since the Omarchy base, and a blobless clone made
+      # every OrigaiTV commit since the Omarchy base, and a blobless clone made
       # it fetch each file on its own, which outgrew the time limit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -65,9 +65,9 @@ jobs:
 
   # What a pull request touches, so it only waits for the checks that cover
   # it. Lint, secrets and house rules always run. A pull request that only
-  # changes origaiTV's README, its agent rules (.claude/) or the image and
+  # changes OrigaiTV's README, its agent rules (.claude/) or the image and
   # nightly workflows skips the unit, contract and screen tests too. One that touches
-  # only origaiTV's own folders skips Omarchy's own tests, which read bin/,
+  # only OrigaiTV's own folders skips Omarchy's own tests, which read bin/,
   # install/, migrations/, default/, shell/, themes/ and every .service and
   # .conf file. A push to origaitv runs everything, so a skip that was wrong
   # shows up right after the merge. A skipped job counts as passed for the
@@ -116,7 +116,7 @@ jobs:
           if [[ $code == false ]]; then
             echo "Only docs, agent rules or the image workflows changed, so the unit, contract, screen and Omarchy tests don't run." >>"$GITHUB_STEP_SUMMARY"
           elif [[ $omarchy == false ]]; then
-            echo "Only origaiTV's own folders changed, so Omarchy's own tests don't run." >>"$GITHUB_STEP_SUMMARY"
+            echo "Only OrigaiTV's own folders changed, so Omarchy's own tests don't run." >>"$GITHUB_STEP_SUMMARY"
           fi
 
   unit:

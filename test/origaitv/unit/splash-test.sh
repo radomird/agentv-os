@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards bin/origaitv-splash: origaiTV's logo goes back over Omarchy's splash
+# Guards bin/origaitv-splash: OrigaiTV's logo goes back over Omarchy's splash
 # after a package replaced it, and the boot image is rebuilt, except inside
 # the installer's chroot, where the installer builds it (ADR-029).
 
@@ -37,12 +37,12 @@ splash() {
 }
 
 splash || fail "it runs" "$(cat "$SCRATCH/out")"
-cmp -s "$theme/logo.png" "$SCRATCH/origaitv/branding/plymouth-logo.png" || fail "origaiTV's logo is back"
+cmp -s "$theme/logo.png" "$SCRATCH/origaitv/branding/plymouth-logo.png" || fail "OrigaiTV's logo is back"
 [[ $(cat "$calls") == limine-mkinitcpio ]] || fail "the boot image is rebuilt"
-pass "after a package puts Omarchy's logo back, origaiTV's returns and the boot image is rebuilt"
+pass "after a package puts Omarchy's logo back, OrigaiTV's returns and the boot image is rebuilt"
 
 splash chroot || fail "it runs in the installer's chroot" "$(cat "$SCRATCH/out")"
-cmp -s "$theme/logo.png" "$SCRATCH/origaitv/branding/plymouth-logo.png" || fail "origaiTV's logo goes in during the install"
+cmp -s "$theme/logo.png" "$SCRATCH/origaitv/branding/plymouth-logo.png" || fail "OrigaiTV's logo goes in during the install"
 [[ ! -f $calls ]] || fail "the installer builds the boot image itself"
 pass "in the installer's chroot it only puts the logo in"
 
@@ -56,4 +56,4 @@ env PATH="$bin:$PATH" CALLS="$calls" CHROOT="$SCRATCH/chroot" \
   ORIGAITV_PATH="$SCRATCH/origaitv" ORIGAITV_SPLASH_THEME="$theme" "$BASH" "$ROOT/bin/origaitv-splash" >/dev/null 2>&1 ||
   fail "no theme yet is fine"
 [[ ! -e $theme ]] || fail "it makes no theme of its own"
-pass "with origaiTV's logo already there, or no theme yet, it does nothing"
+pass "with OrigaiTV's logo already there, or no theme yet, it does nothing"

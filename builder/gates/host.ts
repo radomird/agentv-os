@@ -1,6 +1,6 @@
-// origaiTV's test TV (builder/gates/, ADR-043): a page like home that holds
+// OrigaiTV's test TV (builder/gates/, ADR-043): a page like home that holds
 // one page app in its frame with home's own kit host, plays the remote, a
-// gamepad and Back to it, and runs the tests and origaiTV's checks. The
+// gamepad and Back to it, and runs the tests and OrigaiTV's checks. The
 // builder drives it over Chromium's DevTools pipe (builder/gates/testtv.ts),
 // and the kit's calls go to the test TV's server, which answers them as the
 // daemon does, from the app's manifest.
@@ -30,7 +30,7 @@ export interface Check {
   says: string;
 }
 
-// What origaiTV asks of every page app.
+// What OrigaiTV asks of every page app.
 export const FPS_MIN = 50;
 export const LONGEST_MS = 200;
 export const MEMORY_MB = 256;
@@ -196,7 +196,7 @@ const testTv = {
     return { ready: ok, ms: Math.round(performance.now() - started), names };
   },
 
-  // origaiTV's own checks, on the app start() opened.
+  // OrigaiTV's own checks, on the app start() opened.
   async checks(): Promise<Check[]> {
     const checks: Check[] = [];
     const add = (id: string, ok: boolean, says: string) => checks.push({ id, ok, says });

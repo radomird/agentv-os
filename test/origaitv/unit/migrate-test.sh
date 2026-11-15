@@ -3,7 +3,7 @@
 # Guards origaitv-migrate: pending migrations run once each, oldest first, a
 # failure stops there unmarked so the next update retries it, and a fresh
 # install can mark them all as done. Updates in place (S0.5) run it, and it
-# restarts origaiTV's services after them (origaitv-restart, a stand-in here).
+# restarts OrigaiTV's services after them (origaitv-restart, a stand-in here).
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -24,8 +24,8 @@ printf 'echo first >>"%s"\n' "$log" >"$ORIGAITV_PATH/migrations/900000000.sh"
 pass "--pending lists them oldest first"
 
 "$cmd" >/dev/null
-[[ $(cat "$log") == $'first\nsecond\nrestart' ]] || fail "they run oldest first, then origaiTV's services restart" "$(cat "$log")"
-pass "they run oldest first, then origaiTV's services restart"
+[[ $(cat "$log") == $'first\nsecond\nrestart' ]] || fail "they run oldest first, then OrigaiTV's services restart" "$(cat "$log")"
+pass "they run oldest first, then OrigaiTV's services restart"
 
 "$cmd" >/dev/null
 [[ $(cat "$log") == $'first\nsecond\nrestart\nrestart' ]] || fail "each runs once, and the services restart with none to run" "$(cat "$log")"
@@ -51,5 +51,5 @@ rm -rf "$ORIGAITV_MIGRATION_STATE"
 pass "--mark-all-done leaves nothing pending"
 
 rm -rf "$ORIGAITV_PATH/migrations"
-[[ $("$cmd") == "No origaiTV migrations to run" ]] || fail "no migrations folder is fine"
+[[ $("$cmd") == "No OrigaiTV migrations to run" ]] || fail "no migrations folder is fine"
 pass "no migrations folder is fine"

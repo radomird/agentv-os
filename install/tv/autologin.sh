@@ -1,4 +1,4 @@
-# Straight to the TV at power on (ADR-007), in origaiTV's own TV session
+# Straight to the TV at power on (ADR-007), in OrigaiTV's own TV session
 # (ADR-031), and straight back after every log-out. Omarchy's installer only
 # turns on autologin for an encrypted disk, where the disk password is the
 # lock; a TV box installs without encryption, and the PIN (ADR-009) locks the

@@ -157,7 +157,7 @@ async function joinAsked(ssid: string): Promise<unknown> {
 async function send(method: string, route: string, body?: unknown, grant?: string): Promise<{ status: number; data: any }> {
   const response = await fetch(`${url}${route}`, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: response.status, data: await response.json().catch(() => null) };
@@ -369,7 +369,7 @@ for (const look of LOOKS) {
     assert.equal(await page.locator("#offline").count(), 0, "nothing while the TV is online");
     // The network goes, and root's watch opens the hotspot.
     online = false;
-    rootSays({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
+    rootSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
     await page.waitForSelector("#offline", { timeout: 8000 });
     assert.equal(await text(page, "#offline .offline-title"), words(look, "Your TV is offline"));
     assert.equal(await text(page, "#offline .offline-line"), words(look, "Scan to pick your Wi-Fi"));
@@ -398,7 +398,7 @@ for (const look of LOOKS) {
     assert.equal(await text(page, '[data-line="online"]'), words(look, "Offline"));
     assert.equal(await page.locator('[data-action="look"]').count(), 0);
     // A pick from the phone that didn't work says so.
-    rootSays({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true, error: "that password didn't work for Home", why: "password" });
+    rootSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true, error: "that password didn't work for Home", why: "password" });
     await page.waitForFunction((want) => document.querySelector("#offline .offline-line")?.textContent === want, words(look, "Couldn't join. Scan to try again."), { timeout: 8000 });
     await page.keyboard.press("Escape");
     await page.waitForSelector("#offline", { state: "visible" });
@@ -468,7 +468,7 @@ test("T16.1 with a PIN set, changing the Wi-Fi asks for it first, and a child's 
 test("the hotspot's page after setup: the same page as setup's, with the adult PIN asked where one is set, and nothing about a new code", async () => {
   const captive = `http://127.0.0.1:${daemon.setupPort}`;
   online = false;
-  rootSays({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
+  rootSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
   const hand = async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
     page.on("pageerror", (error) => errors.push(error.message));

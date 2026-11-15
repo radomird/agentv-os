@@ -85,7 +85,7 @@ test("ADR-045 the TV offers an app, an adult's phone saves it, and a child's doe
   const lan = `http://127.0.0.1:${daemon.lanPort}`;
   try {
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
-      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
     const token = await pairPhone(lan, code, "iphone");
     const phone = (path: string) => token.fetch(`${path}`);

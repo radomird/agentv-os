@@ -38,7 +38,7 @@ ${e}[1;35m==> edge-switch-test.sh${e}[0m
 Timed out after 300s waiting for SSH
 ${e}[1;35m==> Stopping test VM${e}[0m
 
-1 origaiTV image check(s) failed:
+1 OrigaiTV image check(s) failed:
   edge-switch-test.sh
 ##[error]Process completed with exit code 1.
 LOG
@@ -64,13 +64,13 @@ ${e}[1;35m==> s3.8-weather-test.sh${e}[0m
 fail S3.9 the weather tiles don't match MET for oslo (59.92, 10.75): large: today shows partly-cloudy, MET says cloudy
 not ok - S3.9 origaitv selftest finds the medium and large tiles as MET's days
 
-2 origaiTV image check(s) failed:
+2 OrigaiTV image check(s) failed:
   s1.3-switch-test.sh
   s3.8-weather-test.sh
 ${e}[1;35m==> update-tv-test.sh${e}[0m
 ${e}[1;35m==> Stopping test VM${e}[0m
 
-1 origaiTV image check(s) failed:
+1 OrigaiTV image check(s) failed:
   update-tv-test.sh
 LOG
 out=$("$script" "$night")

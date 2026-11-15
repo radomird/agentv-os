@@ -41,7 +41,7 @@ before(async () => {
   browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER });
   const controller = new AbortController();
   stopRemote = () => controller.abort();
-  const stream = await fetch(`${url}/api/remote`, { headers: { "X-origaiTV-Screen": "1" }, signal: controller.signal });
+  const stream = await fetch(`${url}/api/remote`, { headers: { "X-OrigaiTV-Screen": "1" }, signal: controller.signal });
   void (async () => {
     for await (const chunk of stream.body as unknown as AsyncIterable<Uint8Array>) {
       for (const match of new TextDecoder().decode(chunk).matchAll(/data: (.*)/g)) remote.push(match[1]);
@@ -59,7 +59,7 @@ after(async () => {
 });
 
 const post = async (path: string, body?: unknown, grant?: string) =>
-  (await fetch(`${url}${path}`, { method: "POST", headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
+  (await fetch(`${url}${path}`, { method: "POST", headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json();
 
 async function tv(): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -158,7 +158,7 @@ test("ADR-034 the phone shows a lock on a locked profile, and switching to it ta
   const ana = (await (await fetch(`${url}/api/viewers`)).json()).viewers.find((v: { name: string }) => v.name === "ana");
   const locking = await fetch(`${url}/api/viewers/${ana.id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", "X-origaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant },
+    headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant },
     body: JSON.stringify({ locked: true }),
   });
   assert.equal(locking.status, 200);
@@ -177,7 +177,7 @@ test("ADR-034 the phone shows a lock on a locked profile, and switching to it ta
   await post("/api/viewer", { id: "radomir" });
   await fetch(`${url}/api/viewers/${ana.id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", "X-origaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant },
+    headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": (await post("/api/pin/check", { pin: PIN })).grant },
     body: JSON.stringify({ locked: false }),
   });
   await screen.close();
@@ -238,7 +238,7 @@ test("S4.8 the phone shows the update notice the TV does, and Install tonight fr
   assert.match(await hand.locator('[data-action="update"]').innerText(), /^Update ready$/);
   await hand.locator('[data-action="update"]').tap();
   await hand.waitForSelector('[data-action="tonight"]');
-  assert.match(await hand.locator(".page").innerText(), /origaiTV 0\.3\.0 is ready[\s\S]*Includes Omarchy 4\.5\.0[\s\S]*\+ tiles come in small, medium and large[\s\S]*Install tonight[\s\S]*Install now\n[\s\S]*Later/);
+  assert.match(await hand.locator(".page").innerText(), /OrigaiTV 0\.3\.0 is ready[\s\S]*Includes Omarchy 4\.5\.0[\s\S]*\+ tiles come in small, medium and large[\s\S]*Install tonight[\s\S]*Install now\n[\s\S]*Later/);
   await hand.locator('[data-action="tonight"]').tap();
   await hand.waitForSelector(".overlay .pin-keys");
   for (const digit of PIN) await hand.locator(`.overlay [data-pin="${digit}"]`).tap();
@@ -317,7 +317,7 @@ test("S4.10 when the TV asks for the PIN, the phone shows a pad within 1 s, and 
 test("S4.10 the remote follows the TV: the keyboard for a text field, playback while something plays, the d-pad again, and a switch by hand holds till the next change", async () => {
   const screen = await tv();
   const hand = await phone();
-  const context = (body: object) => fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Screen": "1" }, body: JSON.stringify(body) });
+  const context = (body: object) => fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Screen": "1" }, body: JSON.stringify(body) });
   // A text field with the focus on the TV: the keyboard.
   await go(screen, "profile/new");
   await screen.waitForSelector(".profile-name.focused");
@@ -342,7 +342,7 @@ test("S4.10 the remote follows the TV: the keyboard for a text field, playback w
 });
 
 // What the screen daemon says is in front, which the phone's remote follows.
-const front = (body: object) => fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json", "X-origaiTV-Screen": "1" }, body: JSON.stringify(body) });
+const front = (body: object) => fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json", "X-OrigaiTV-Screen": "1" }, body: JSON.stringify(body) });
 
 test("a phone paired by typing the TV's code follows the TV from then on, with no reload", async () => {
   const { code } = await pairCode();
@@ -401,7 +401,7 @@ test("a phone whose first ask after pairing gets no answer still follows the TV,
   // what's typed there stays while it waits.
   const mine = (await (await fetch(`${url}/api/phones`)).json()).phones as { id: string }[];
   const grant = (await post("/api/pin/check", { pin: PIN })).grant as string | undefined;
-  for (const one of mine) await fetch(`${url}/api/phones/${one.id}`, { method: "DELETE", headers: grant ? { "X-origaiTV-Grant": grant } : {} });
+  for (const one of mine) await fetch(`${url}/api/phones/${one.id}`, { method: "DELETE", headers: grant ? { "X-OrigaiTV-Grant": grant } : {} });
   await hand.reload();
   await hand.waitForSelector("input.code");
   await hand.locator("input.code").fill("AB");

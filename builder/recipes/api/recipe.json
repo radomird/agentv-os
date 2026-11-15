@@ -57,7 +57,7 @@
     {
       "id": "try",
       "label": "Trying it on a TV",
-      "does": "Run origaiTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only the origins it declared.",
+      "does": "Run OrigaiTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only the origins it declared.",
       "tools": ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
       "writes": ["app/**", "src/**", "tests/**", "NOTES.md"],
       "reads": ["kit", "tests"],

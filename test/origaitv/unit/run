@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Runs origaiTV's unit tests (ADR-019, layer 2), every file, even after one
+# Runs OrigaiTV's unit tests (ADR-019, layer 2), every file, even after one
 # fails, so one failure can't hide the rest.
 
 set -euo pipefail

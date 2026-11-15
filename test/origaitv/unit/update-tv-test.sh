@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Guards updates from the TV (ADR-025): origaitv-update-check, which writes what
-# it found for Settings → Updates (S2.12), from the repositories and origaiTV's
+# it found for Settings → Updates (S2.12), from the repositories and OrigaiTV's
 # signed release.json; and origaitv-update-tv, which runs the update's steps
 # itself with progress for the Updating screen, root's as root and the owner's
 # as the owner, never writes a sudo rule, lends sudo to the migrations alone,
@@ -12,9 +12,9 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
 
 export GNUPGHOME="$SCRATCH/gnupg"
 mkdir -m 700 "$GNUPGHOME"
-gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key "origaiTV test key" ed25519 sign never 2>/dev/null
+gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key "OrigaiTV test key" ed25519 sign never 2>/dev/null
 gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key "Someone else" ed25519 sign never 2>/dev/null
-gpg --batch --armor --export "origaiTV test key" >"$SCRATCH/origaitv.gpg"
+gpg --batch --armor --export "OrigaiTV test key" >"$SCRATCH/origaitv.gpg"
 export ORIGAITV_KEYRING="$SCRATCH/origaitv.gpg"
 
 sign() {
@@ -38,14 +38,14 @@ cat >"$repo/stable/release.json" <<'JSON'
  "notes": ["tiles come in small, medium and large", "weather shows heavy rain and wind", "plex is on the apps list",
            "setup moves along faster on ethernet", "music plays straight from your nas", "a sixth line nobody sees"]}
 JSON
-sign "$repo/stable/release.json" "origaiTV test key"
+sign "$repo/stable/release.json" "OrigaiTV test key"
 printf '{"body": "## Faster updates\\nSome text\\n## A new theme\\n- a line"}' >"$SCRATCH/omarchy/v4.5.0"
 
 # The nightly run's list: tested <origaitv version>.
 mkdir -p "$SCRATCH/tested"
 tested() {
   printf '{"schema": 1, "date": "2026-10-22T03:00:00Z", "packages": {"origaitv": "%s", "omarchy": "4.5.0-1"}}\n' "$1" >"$SCRATCH/tested/tested.json"
-  sign "$SCRATCH/tested/tested.json" "origaiTV test key"
+  sign "$SCRATCH/tested/tested.json" "OrigaiTV test key"
 }
 tested 0.3.0-1
 
@@ -69,13 +69,13 @@ printf '%s\n' "origaitv 0.2.1-1 -> 0.3.0-1" "omarchy 4.0.6-1 -> 4.5.0-1" "chromi
 out=$(check) || fail "the check runs" "$out"
 status="$ORIGAITV_UPDATE_STATE/status.json"
 [[ $(jq -c '[.origaitv.installed, .origaitv.available, .omarchy.installed, .omarchy.available, .packages]' "$status") == '["0.2.1-1","0.3.0-1","4.0.6-1","4.5.0-1",2]' ]] ||
-  fail "S2.12 the check finds origaiTV's and Omarchy's new versions and the other packages" "$(cat "$status")"
+  fail "S2.12 the check finds OrigaiTV's and Omarchy's new versions and the other packages" "$(cat "$status")"
 [[ $(jq -r '.notes.origaitv | length' "$status") == 5 && $(jq -r '.notes.origaitv[0]' "$status") == "tiles come in small, medium and large" ]] ||
   fail "S2.12 What's new is release.json's, five lines at most" "$(jq -c .notes "$status")"
 [[ $(jq -c '.notes.omarchy' "$status") == '["Faster updates","A new theme"]' ]] ||
   fail "S2.12 Omarchy's What's new is its release notes' headings" "$(jq -c .notes.omarchy "$status")"
 [[ $(stat -c %a "$status") == 644 ]] || fail "the home screen's daemon can read what the check found"
-pass "S2.12 the check finds the new versions, with origaiTV's and Omarchy's What's new"
+pass "S2.12 the check finds the new versions, with OrigaiTV's and Omarchy's What's new"
 
 # Off edge, an update the nightly run hasn't passed waits (ADR-026), and the
 # check says so, so the TV doesn't offer Install now for it.
@@ -97,8 +97,8 @@ pass "S2.12 an update the nightly run hasn't passed waits, except on edge, and t
 sign "$repo/stable/release.json" "Someone else"
 check >/dev/null || fail "the check runs with a bad release.json"
 [[ $(jq -c '.notes.origaitv' "$status") == "[]" && $(jq -r '.origaitv.available' "$status") == "0.3.0-1" ]] ||
-  fail "a release.json that isn't origaiTV's has no say" "$(cat "$status")"
-pass "a release.json that isn't signed by origaiTV's key has no say"
+  fail "a release.json that isn't OrigaiTV's has no say" "$(cat "$status")"
+pass "a release.json that isn't signed by OrigaiTV's key has no say"
 
 # Nothing new.
 : >"$SCRATCH/pending"
@@ -140,7 +140,7 @@ run_dir="$SCRATCH/run"
 calls="$SCRATCH/calls"
 mkdir -p "$sudoers" "$modules/$(uname -r)" "$SCRATCH/new-kernel" "$home/.config/omarchy/hooks/post-update.d" \
   "$home/.local/state/omarchy" "$runtime" "$run_dir" "$SCRATCH/env" "$SCRATCH/fail" "$SCRATCH/origaitv/migrations"
-gpg --batch --export "origaiTV test key" >"$SCRATCH/origaitv-binary.gpg"
+gpg --batch --export "OrigaiTV test key" >"$SCRATCH/origaitv-binary.gpg"
 export ORIGAITV_KEYRING="$SCRATCH/origaitv-binary.gpg"
 export ORIGAITV_SUDOERS_DIR="$sudoers" ORIGAITV_MODULES_DIR="$modules" ORIGAITV_OWNER=someone ORIGAITV_RUN_DIR="$run_dir"
 export ORIGAITV_OWNER_RUNTIME_DIR="$runtime" ORIGAITV_UPDATE_PATH="$SCRATCH/bin:$PATH" ORIGAITV_SUDO_REAL="$SCRATCH/real-sudo"
@@ -248,13 +248,13 @@ stub omarchy-update-restart
 stub omarchy-update-mise
 stub yay
 
-# One of origaiTV's own migrations, which asks sudo too.
+# One of OrigaiTV's own migrations, which asks sudo too.
 cat >"$SCRATCH/origaitv/migrations/1700000001.sh" <<SH
 echo "origaitv migration" >>"$calls"
 sudo true
 SH
 # The owner's own files: a profile and an rc file that must never run, and
-# two post-update hooks, their own and origaiTV's. Theirs tries for the lent
+# two post-update hooks, their own and OrigaiTV's. Theirs tries for the lent
 # sudo every way it could.
 for file in .bash_profile .bash_login .profile .bashrc; do
   echo "echo \$0 >>'$SCRATCH/profile-ran'" >"$home/$file"
@@ -300,7 +300,7 @@ progress="$ORIGAITV_UPDATE_STATE/progress.json"
 grep -q "^Running migration" "$ORIGAITV_UPDATE_STATE/update.log" || fail "the update's output is kept"
 [[ $(jq -c '[.snapshot, .from.origaitv, .widevine]' "$ORIGAITV_UPDATE_STATE/go-back.json") == '[3,"0.2.1-1",false]' ]] ||
   fail "S2.14 Go back returns to the first snapshot the update took" "$(cat "$ORIGAITV_UPDATE_STATE/go-back.json")"
-[[ $(jq -c '[.checks[0].name, .checks[0].ok]' "$ORIGAITV_UPDATE_STATE/after.json") == '["origaiTV",false]' ]] ||
+[[ $(jq -c '[.checks[0].name, .checks[0].ok]' "$ORIGAITV_UPDATE_STATE/after.json") == '["OrigaiTV",false]' ]] ||
   fail "S2.14 the check runs after the update" "$(cat "$ORIGAITV_UPDATE_STATE/after.json" 2>&1)"
 [[ $(jq -r '.origaitv.available' "$status") == "null" ]] || fail "the check runs again after" "$(cat "$status")"
 ! grep -q reboot "$calls" || fail "no restart without a new kernel" "$(cat "$calls")"
@@ -345,16 +345,16 @@ done
 grep "^PATH=" "$SCRATCH/env/hook" | grep -q ":$home/.local/share/mise/shims:$home/.local/bin$" || fail "the owner's hooks and mise get the PATH a login gives" "$(grep '^PATH=' "$SCRATCH/env/hook")"
 pass "H1 the owner's half runs as the owner with no login shell and none of the owner's profile"
 
-# The migrations, Omarchy's and origaiTV's, are lent a sudo that works as sudo.
+# The migrations, Omarchy's and OrigaiTV's, are lent a sudo that works as sudo.
 [[ $(cat "$SCRATCH/which-sudo") == "$run_dir"/origaitv-sudo.*/sudo && $(cat "$SCRATCH/sudo-dir-mode") == 755 ]] ||
   fail "the migrations find the lent sudo first, in a folder only root writes" "$(cat "$SCRATCH/which-sudo" "$SCRATCH/sudo-dir-mode")"
 [[ $(cat "$SCRATCH/sudo-out") == "through the lent sudo" && $(cat "$SCRATCH/sudo-err") == "to errors" && $(cat "$SCRATCH/sudo-status") == 3 ]] ||
   fail "the lent sudo passes input, output, errors and how it ended" "$(cat "$SCRATCH/sudo-out" "$SCRATCH/sudo-err" "$SCRATCH/sudo-status")"
 grep -qxF "real sudo sh -c cat; echo \"to errors\" >&2; exit 3 (in $home, HOME=/root, LEAKED=no)" "$calls" ||
   fail "root runs the real sudo, in the caller's folder, with its own environment" "$(grep '^real sudo' "$calls")"
-grep -qx "real sudo true (in .*, HOME=/root, LEAKED=no)" "$calls" || fail "origaiTV's own migrations are lent it too" "$(grep '^real sudo' "$calls")"
+grep -qx "real sudo true (in .*, HOME=/root, LEAKED=no)" "$calls" || fail "OrigaiTV's own migrations are lent it too" "$(grep '^real sudo' "$calls")"
 [[ $(cat "$SCRATCH/by-path") == "refused" ]] || fail "H1 the lent socket can't be opened by its path"
-[[ -f $SCRATCH/migrated-$updates/1700000001.sh ]] || fail "origaiTV's migration is marked done"
+[[ -f $SCRATCH/migrated-$updates/1700000001.sh ]] || fail "OrigaiTV's migration is marked done"
 pass "H1 the migrations alone are lent sudo, over a socket nothing else can open"
 
 # The owner's hooks run once it's gone, and get nothing.
@@ -366,14 +366,14 @@ tried=$(cat "$SCRATCH/hook-tried")
 [[ $(sed -n "/^the owner's hook$/,\$p" "$calls" | grep -c "^real sudo") == 0 ]] || fail "H1 nothing runs through sudo once the owner's hooks start" "$(cat "$calls")"
 pass "H1 the owner's own hooks run after the lent sudo is gone, and can't get it back"
 
-# origaiTV's hook among them calls origaitv-migrate again: nothing left to run,
-# and origaiTV's services restarted once, the daemon by root and the TV
+# OrigaiTV's hook among them calls origaitv-migrate again: nothing left to run,
+# and OrigaiTV's services restarted once, the daemon by root and the TV
 # session's units by the owner.
-[[ $(grep -c "^No origaiTV migrations to run$" "$ORIGAITV_UPDATE_STATE/update.log") == 1 && $(grep -c "^origaitv migration$" "$calls") == 1 ]] ||
+[[ $(grep -c "^No OrigaiTV migrations to run$" "$ORIGAITV_UPDATE_STATE/update.log") == 1 && $(grep -c "^origaitv migration$" "$calls") == 1 ]] ||
   fail "the hook's origaitv-migrate finds nothing left to run" "$(cat "$ORIGAITV_UPDATE_STATE/update.log")"
 [[ $(grep -c "^systemctl restart origaitv-daemon.service (as root)$" "$calls") == 1 && $(grep -c "^systemctl --user restart origaitv-tv.target (as someone)$" "$calls") == 1 ]] ||
-  fail "origaiTV's services restart once, the daemon as root and the TV's units as the owner" "$(grep '^systemctl' "$calls")"
-pass "origaiTV's services restart once, and the owner's copy of the hook has nothing left to do"
+  fail "OrigaiTV's services restart once, the daemon as root and the TV's units as the owner" "$(grep '^systemctl' "$calls")"
+pass "OrigaiTV's services restart once, and the owner's copy of the hook has nothing left to do"
 
 # Omarchy's update lock is held for all of it, by the owner's own account,
 # and let go after.
@@ -408,11 +408,11 @@ bash -c '
 pass "the Updating screen gets the step, the percent and which package of how many"
 
 # A new kernel, here a modules folder without the running one: the box
-# restarts, and says so first. origaiTV's services are left to that restart.
+# restarts, and says so first. OrigaiTV's services are left to that restart.
 rm -f "$ORIGAITV_UPDATE_STATE/after.json"
 ORIGAITV_MODULES_DIR="$SCRATCH/new-kernel" update || fail "an update with a new kernel goes through" "$(cat "$SCRATCH/out")"
 grep -q "^systemctl reboot" "$calls" || fail "a new kernel restarts the box" "$(cat "$calls")"
-! grep -q "^systemctl.* restart origaitv" "$calls" || fail "origaiTV's services are left to the restart" "$(cat "$calls")"
+! grep -q "^systemctl.* restart origaitv" "$calls" || fail "OrigaiTV's services are left to the restart" "$(cat "$calls")"
 [[ $(jq -r .state "$progress") == "restarting" ]] || fail "the TV says it's restarting" "$(cat "$progress")"
 [[ -f $ORIGAITV_UPDATE_STATE/check-pending && ! -f $ORIGAITV_UPDATE_STATE/after.json ]] ||
   fail "S2.14 the check waits for the box to be up again"
@@ -457,7 +457,7 @@ rm "$SCRATCH/fail/omarchy-migrate"
 pass "an update that fails after the packages went in says it stopped halfway"
 
 # The box stays awake for it, as it did under Omarchy's own update.
-grep -qx 'ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle --who=origaiTV "--why=installing an update" --mode=block /usr/bin/origaitv-update-tv' "$ROOT/system/origaitv-update-tv.service" ||
+grep -qx 'ExecStart=/usr/bin/systemd-inhibit --what=sleep:idle --who=OrigaiTV "--why=installing an update" --mode=block /usr/bin/origaitv-update-tv' "$ROOT/system/origaitv-update-tv.service" ||
   fail "the update's unit holds the box awake"
 pass "an update from the TV holds the box awake"
 

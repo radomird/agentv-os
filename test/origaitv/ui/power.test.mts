@@ -264,7 +264,7 @@ test("T13.2 Settings → Power has sleep beside the boot menu, off by default, a
   assert.deepEqual(errors, []);
 });
 
-test("About says what origaiTV is, as its public line does", async () => {
+test("About says what OrigaiTV is, as its public line does", async () => {
   const page = await tv();
   await go(page, "settings/about");
   await page.waitForSelector('.settings-panel[data-page="about"]');

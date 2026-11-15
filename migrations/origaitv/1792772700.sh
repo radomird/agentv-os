@@ -1,4 +1,4 @@
-# The TV runs in origaiTV's own session now, not inside Omarchy's desktop
+# The TV runs in OrigaiTV's own session now, not inside Omarchy's desktop
 # (ADR-031). Boxes installed before it move over at their next start: SDDM
 # logs in to the TV session and back in after every log-out, the home screen
 # gets a Chromium profile of its own, Omarchy's desktop gets Back to TV on

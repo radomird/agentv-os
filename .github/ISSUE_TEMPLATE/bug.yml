@@ -27,7 +27,7 @@ body:
   - type: input
     id: release
     attributes:
-      label: origaiTV release
+      label: OrigaiTV release
       description: It's in _Settings > System > About_ on the TV. Or run `origaitv version` on the box.
       placeholder: e.g. 1.0.0
     validations:

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards origaitv-pacman-conf: origaiTV's repository sits once at the end of
+# Guards origaitv-pacman-conf: OrigaiTV's repository sits once at the end of
 # pacman.conf, survives being run again, follows a channel change and leaves
 # Omarchy's own lines alone. Updates in place (S0.5) depend on it.
 
@@ -35,11 +35,11 @@ grep -qxF 'Server = https://example.invalid/origaitv-pkgs/releases/download/stab
   fail "the server is the stable channel's release" "$(cat "$conf")"
 pass "the repository is added, on the stable channel"
 
-# L4: the package list's signature isn't optional for origaiTV's repository,
+# L4: the package list's signature isn't optional for OrigaiTV's repository,
 # so an old list can't be handed over without one.
 [[ $(sed -n '/^\[origaitv\]$/,/^# END origaitv$/p' "$conf" | grep -c '^SigLevel = Required DatabaseRequired$') == 1 ]] ||
-  fail "L4 origaiTV's repository needs a signed package list" "$(cat "$conf")"
-pass "L4 origaiTV's repository needs a signed package list"
+  fail "L4 OrigaiTV's repository needs a signed package list" "$(cat "$conf")"
+pass "L4 OrigaiTV's repository needs a signed package list"
 
 [[ $(tail -n 1 "$conf") == "# END origaitv" ]] || fail "the section ends the file" "$(cat "$conf")"
 pass "the section ends the file"
@@ -110,7 +110,7 @@ ORIGAITV_PATH="$SCRATCH/stable" "$cmd" --check --file "$conf" >/dev/null
 [[ -e $ORIGAITV_PACMAN_SYNC/origaitv.db ]] || fail "--check leaves the lists alone"
 ORIGAITV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null
 [[ ! -e $ORIGAITV_PACMAN_SYNC/origaitv.db && ! -e $ORIGAITV_PACMAN_SYNC/origaitv.files && -e $ORIGAITV_PACMAN_SYNC/core.db ]] ||
-  fail "an unsigned list of origaiTV's goes, and only it" "$(ls "$ORIGAITV_PACMAN_SYNC")"
+  fail "an unsigned list of OrigaiTV's goes, and only it" "$(ls "$ORIGAITV_PACMAN_SYNC")"
 touch "$ORIGAITV_PACMAN_SYNC/origaitv.db"
 echo signature >"$ORIGAITV_PACMAN_SYNC/origaitv.db.sig"
 ORIGAITV_PATH="$SCRATCH/stable" "$cmd" --file "$conf" >/dev/null

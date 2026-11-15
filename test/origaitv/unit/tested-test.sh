@@ -15,10 +15,10 @@ export ORIGAITV_UPDATE_STATE="$SCRATCH/update" XDG_STATE_HOME="$SCRATCH/home-sta
 export GNUPGHOME="$SCRATCH/gnupg"
 mkdir -m 700 "$GNUPGHOME"
 
-# A throwaway key standing in for origaiTV's, and one standing in for anyone else's.
-gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key "origaiTV test key" ed25519 sign never 2>/dev/null
+# A throwaway key standing in for OrigaiTV's, and one standing in for anyone else's.
+gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key "OrigaiTV test key" ed25519 sign never 2>/dev/null
 gpg --batch --quiet --pinentry-mode loopback --passphrase '' --quick-gen-key "Someone else" ed25519 sign never 2>/dev/null
-gpg --batch --armor --export "origaiTV test key" >"$SCRATCH/origaitv.gpg"
+gpg --batch --armor --export "OrigaiTV test key" >"$SCRATCH/origaitv.gpg"
 export ORIGAITV_KEYRING="$SCRATCH/origaitv.gpg"
 
 sign() {
@@ -30,7 +30,7 @@ cat >"$SCRATCH/tested.json" <<'JSON'
 {"schema": 1, "date": "2026-10-22T03:00:00Z", "origaitv": "0.1.0", "omarchy": "4.0.6",
  "packages": {"omarchy": "4.0.7-1", "chromium": "142.0.1-1", "linux": "6.17.4.arch1-1"}}
 JSON
-sign "$SCRATCH/tested.json" "origaiTV test key"
+sign "$SCRATCH/tested.json" "OrigaiTV test key"
 
 printf '%s\n' "omarchy 4.0.6-1 -> 4.0.7-1" "chromium 141.0.9-1 -> 142.0.1-1" >"$SCRATCH/tested-only"
 "$cmd" --tested "$SCRATCH/tested.json" --pending "$SCRATCH/tested-only" >/dev/null ||
@@ -56,7 +56,7 @@ pass "nothing pending is fine"
 
 # Then the night passes with the new kernel.
 sed 's/6.17.4.arch1-1/6.17.5.arch1-1/' "$SCRATCH/tested.json" >"$SCRATCH/next.json"
-sign "$SCRATCH/next.json" "origaiTV test key"
+sign "$SCRATCH/next.json" "OrigaiTV test key"
 "$cmd" --tested "$SCRATCH/next.json" --pending "$SCRATCH/one-untested" >/dev/null ||
   fail "S0.7 the held version goes ahead once tested.json lists it"
 pass "S0.7 the held version goes ahead once tested.json lists it"
@@ -84,7 +84,7 @@ fresh() {
 }
 dated() {
   jq --arg date "$2" '.date = $date' "$SCRATCH/tested.json" >"$SCRATCH/$1.json"
-  sign "$SCRATCH/$1.json" "origaiTV test key"
+  sign "$SCRATCH/$1.json" "OrigaiTV test key"
 }
 dated monday 2026-11-02T03:00:00Z
 dated tuesday 2026-11-03T03:00:00Z
@@ -127,7 +127,7 @@ pass "L4 what either root's check or the owner's update saw counts"
 # what was seen doesn't lock the box out.
 fresh
 jq 'del(.date)' "$SCRATCH/tested.json" >"$SCRATCH/undated.json"
-sign "$SCRATCH/undated.json" "origaiTV test key"
+sign "$SCRATCH/undated.json" "OrigaiTV test key"
 "$cmd" --tested "$SCRATCH/undated.json" --pending "$SCRATCH/tested-only" >/dev/null 2>&1 &&
   fail "L4 a list with no date is refused"
 mkdir -p "$ORIGAITV_UPDATE_STATE"

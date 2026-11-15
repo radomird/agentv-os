@@ -1,4 +1,4 @@
-# origaiTV's hooks into Omarchy, in the owner's own config: its migrations after
+# OrigaiTV's hooks into Omarchy, in the owner's own config: its migrations after
 # every update, its repository line after omarchy refresh pacman, and the TV
 # at every login. A fresh install already is what the migrations migrate to,
 # so they're all marked done.

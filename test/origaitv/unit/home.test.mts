@@ -39,7 +39,7 @@ test("the home screen gets the apps, who made each, and where they are", async (
   const home = await get("/api/home");
   assert.equal(home.viewer.role, "adult");
   const byId = Object.fromEntries(home.apps.map((app: any) => [app.id, app]));
-  assert.equal(byId["origaitv.sample"].maker, "From origaiTV");
+  assert.equal(byId["origaitv.sample"].maker, "From OrigaiTV");
   assert.equal(byId["someone.radio"].maker, "From the community · someone");
   assert.equal(byId["local.mytv"].maker, "Made on this TV");
   assert.deepEqual(byId["local.mytv"].sizes.map((s: any) => `${s.size} ${s.label}`), ["s logo", "m continue"]);
@@ -312,7 +312,7 @@ test("an app's own setup, from its tile: its fields, then the sign-in, past the 
   const call = async (method: string, path: string, body?: unknown, grant?: string) => {
     const response = await fetch(`${box.url}${path}`, {
       method,
-      headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+      headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { status: response.status, data: await response.json() };

@@ -3,7 +3,7 @@
 # hotspot as setup ends (bin/origaitv-hotspot). origaitv-hotspot.path starts it.
 
 [Unit]
-Description=origaiTV setup hotspot: join the home Wi-Fi
+Description=OrigaiTV setup hotspot: join the home Wi-Fi
 After=NetworkManager.service
 # No start limit. A look on a TV with no Wi-Fi is over in a moment, and a
 # few in a row would hit systemd's limit, which fails origaitv-hotspot.path

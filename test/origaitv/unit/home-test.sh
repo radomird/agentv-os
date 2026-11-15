@@ -58,7 +58,7 @@ sync_theme >/dev/null 2>&1 || fail "origaitv-theme-sync hands the colours over w
 pass "origaitv-theme-sync hands over the theme's name with its colours"
 
 out=$(HOME="$SCRATCH/home" ORIGAITV_PATH="$ROOT" ORIGAITV_PORT=1 PATH="$ROOT/bin:$PATH" "$ROOT/bin/origaitv-theme-sync" 2>&1) && fail "origaitv-theme-sync says when the daemon isn't there"
-[[ $out == *"origaiTV's daemon didn't take the theme's colours" ]] || fail "origaitv-theme-sync says when the daemon isn't there" "$out"
+[[ $out == *"OrigaiTV's daemon didn't take the theme's colours" ]] || fail "origaitv-theme-sync says when the daemon isn't there" "$out"
 pass "origaitv-theme-sync says when the daemon isn't there"
 
 # --- The migration, for boxes installed before ------------------------------
@@ -69,7 +69,7 @@ chmod +x "$SCRATCH/fakebin/origaitv-theme-sync"
 migration=$(grep -l "launcher.css.tpl" "$ROOT"/migrations/origaitv/*.sh)
 HOME="$SCRATCH/old" ORIGAITV_PATH="$ROOT" PATH="$SCRATCH/fakebin:$PATH" bash "$migration"
 [[ $(readlink "$SCRATCH/old/.config/omarchy/themed/launcher.css.tpl") == "$ROOT/config/omarchy/themed/launcher.css.tpl" ]] ||
-  fail "the migration links origaiTV's template where Omarchy renders the theme"
+  fail "the migration links OrigaiTV's template where Omarchy renders the theme"
 cmp -s "$SCRATCH/old/.config/omarchy/hooks/theme-set.d/origaitv" "$ROOT/config/omarchy/hooks/theme-set.d/origaitv" ||
   fail "the migration adds the theme-set hook"
 [[ $(cat "$SCRATCH/calls") == "synced" ]] || fail "the migration hands over the theme the box has"

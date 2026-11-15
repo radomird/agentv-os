@@ -2,7 +2,7 @@
 # whole job, so this does nothing.
 
 [Unit]
-Description=origaiTV woke for the night's update
+Description=OrigaiTV woke for the night's update
 
 [Service]
 Type=oneshot

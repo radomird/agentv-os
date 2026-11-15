@@ -1,4 +1,4 @@
-/* origaiTV's motion (ADR-024). Only transform and opacity move, which keeps the
+/* OrigaiTV's motion (ADR-024). Only transform and opacity move, which keeps the
    NUC's integrated graphics at 60 fps. Every screen uses these tokens: fast
    for focus, hover and press, base for pages, toasts and tiles settling,
    slow for setup steps. Things arriving ease in with a quick start and a soft

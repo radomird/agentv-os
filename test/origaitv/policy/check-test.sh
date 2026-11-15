@@ -31,7 +31,7 @@ repo="$SANDBOX/fork"
 mkdir -p "$repo"
 cd "$repo"
 git init -q -b main
-git config user.name "origaiTV test"
+git config user.name "OrigaiTV test"
 git config user.email "test@example.invalid"
 git remote add origin "https://github.com/example-owner/origaitv-os.git"
 
@@ -45,7 +45,7 @@ git add -A
 git commit -q -m "Upstream release"
 git tag v1.0.0
 
-# origaiTV's additions.
+# OrigaiTV's additions.
 mkdir -p .github test/origaitv/policy
 cp "$ROOT/bin/origaitv-check" bin/
 # The lists, but not origaitv-apps' service-folders: the cases below write
@@ -55,11 +55,11 @@ cp "$ROOT"/test/origaitv/policy/service-hosts "$ROOT"/test/origaitv/policy/servi
   test/origaitv/policy/
 printf 'v1.0.0\n' >.github/omarchy-base
 printf 'example/upstream\n' >.github/omarchy-upstream
-printf 'origaiTV. Powered by Omarchy.\n' >.github/README.md
+printf 'OrigaiTV. Powered by Omarchy.\n' >.github/README.md
 printf '#!/bin/bash\n\necho "hello"\n' >bin/origaitv-hello
 chmod +x bin/origaitv-hello
 git add -A
-git commit -q -m "Add origaiTV"
+git commit -q -m "Add OrigaiTV"
 clean=$(git rev-parse HEAD)
 
 reset_fork() {
@@ -121,7 +121,7 @@ expect_fail "a file named after the old name fails" "the old name is only where 
 
 mkdir -p test/origaitv/policy
 printf '# Saying once what the project used to be called.\nused to be called AgenTV\n' >test/origaitv/policy/old-name-allowed
-printf 'origaiTV used to be called AgenTV.\n' >notes.md
+printf 'OrigaiTV used to be called AgenTV.\n' >notes.md
 output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) || true
 [[ $output == *"ok - the old name is only where it has to be"* && $output != *"not ok - the old name"* ]] ||
   fail "a line the allowed list names may say the old name" "$output"
@@ -231,15 +231,15 @@ voice_lists() {
 
 voice_lists
 printf 'line("Your agent is making it in the background");\n' >setup/make.ts
-expect_fail "a word the TV never says, in UI text, fails" "UI text is in origaiTV's voice"
+expect_fail "a word the TV never says, in UI text, fails" "UI text is in OrigaiTV's voice"
 
 voice_lists
 printf 'h("button", {}, "\xe2\x86\xb5 Join");\n' >setup/join.ts
-expect_fail "a key in a button's words fails" "UI text is in origaiTV's voice"
+expect_fail "a key in a button's words fails" "UI text is in OrigaiTV's voice"
 
 voice_lists
 printf 'line("Pick your country");\n' >setup/where.ts
-expect_fail "country, where people read location, fails" "UI text is in origaiTV's voice"
+expect_fail "country, where people read location, fails" "UI text is in OrigaiTV's voice"
 
 voice_lists
 printf '// Asks the agent, through the daemon.\nh("div", { class: "agent tile" }, "Build your own");\nconst match = /the box didn.t answer/;\n' >setup/make.ts
@@ -269,15 +269,15 @@ daemon_lists() {
 if grep -q '^daemon/ only:' "$ROOT/test/origaitv/policy/ui-text"; then
   daemon_lists
   printf 'export function why(): string {\n  return "The daemon stopped";\n}\n' >daemon/why.ts
-  expect_fail "a string the daemon returns, with a word the TV never says, fails" "UI text is in origaiTV's voice"
+  expect_fail "a string the daemon returns, with a word the TV never says, fails" "UI text is in OrigaiTV's voice"
 
   daemon_lists
   # shellcheck disable=SC2016 # the ${id} is TypeScript's, not this script's
   printf 'throw new AppError("refused", `${id} isn\x27t on this box`);\n' >daemon/why.ts
-  expect_fail "an error the daemon throws, starting with a value, fails" "UI text is in origaiTV's voice"
+  expect_fail "an error the daemon throws, starting with a value, fails" "UI text is in OrigaiTV's voice"
 fi
 
-printf 'Just origaiTV.\n' >.github/README.md
+printf 'Just OrigaiTV.\n' >.github/README.md
 expect_fail "a README without Powered by Omarchy fails" "Omarchy's attribution is present"
 
 if have shellcheck; then
@@ -331,9 +331,9 @@ expect_fail "a file name with a newline fails" "file names have no control chara
 # --- A base on a sibling line -----------------------------------------------
 
 # Upstream cuts 1.5.0 from before 1.0.0's last commit, beside it, and the fork
-# moves its base there as a merge with the tag's tree plus origaiTV's files. The
+# moves its base there as a merge with the tag's tree plus OrigaiTV's files. The
 # old line's own commits, em dash and all, are still in the fork's history,
-# but they're upstream's, not origaiTV's.
+# but they're upstream's, not OrigaiTV's.
 first=$(git rev-list --max-parents=0 HEAD)
 git switch -q --detach "$first"
 git commit -q --allow-empty -m "$(printf 'Upstream on the old line \xe2\x80\x94 not ours')"
@@ -348,29 +348,29 @@ git tag -f v1.0.0 "$old_line" >/dev/null
 git merge -q --no-edit -s ours -m "Merge Upstream 1.5.0, a sibling" v1.5.0
 printf 'v1.5.0\n' >.github/omarchy-base
 git commit -qam "Move the base to 1.5.0"
-output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) || fail "an earlier base's own commits aren't origaiTV's" "$output"
-pass "an earlier base's own commits aren't origaiTV's"
+output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) || fail "an earlier base's own commits aren't OrigaiTV's" "$output"
+pass "an earlier base's own commits aren't OrigaiTV's"
 
-git commit -q --allow-empty -m "$(printf 'origaiTV on 1.5 \xe2\x80\x94 ours')"
-output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) && fail "origaiTV's commits on the new base are still scanned" "$output"
-[[ $output == *"not ok - no em dashes"* ]] || fail "origaiTV's commits on the new base are still scanned" "$output"
-pass "origaiTV's commits on the new base are still scanned"
+git commit -q --allow-empty -m "$(printf 'OrigaiTV on 1.5 \xe2\x80\x94 ours')"
+output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) && fail "OrigaiTV's commits on the new base are still scanned" "$output"
+[[ $output == *"not ok - no em dashes"* ]] || fail "OrigaiTV's commits on the new base are still scanned" "$output"
+pass "OrigaiTV's commits on the new base are still scanned"
 
-# --- A repo of origaiTV's own has no Omarchy base ----------------------------
+# --- A repo of OrigaiTV's own has no Omarchy base ----------------------------
 
 own="$SANDBOX/own"
 mkdir -p "$own/bin" "$own/test/origaitv/policy"
 cd "$own"
 git init -q -b main
-git config user.name "origaiTV test"
+git config user.name "OrigaiTV test"
 git config user.email "test@example.invalid"
 git remote add origin "https://github.com/example-owner/origaitv-pkgs.git"
 cp "$repo/bin/origaitv-check" bin/
 cp "$repo"/test/origaitv/policy/* test/origaitv/policy/
 printf 'Permission is hereby granted, free of charge, to any person\n' >LICENSE
-printf 'origaiTV packages. Powered by Omarchy.\n' >README.md
+printf 'OrigaiTV packages. Powered by Omarchy.\n' >README.md
 git add -A
-git commit -q -m "Start origaiTV's own repo"
+git commit -q -m "Start OrigaiTV's own repo"
 
 output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) || fail "a repo with no Omarchy base passes" "$output"
 [[ $output == *"not a fork"* ]] || fail "a repo with no Omarchy base says so" "$output"

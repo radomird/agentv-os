@@ -1,10 +1,10 @@
-// origaiTV's built-in Weather app (ADR-015, ADR-016): MET Norway's forecast for
+// OrigaiTV's built-in Weather app (ADR-015, ADR-016): MET Norway's forecast for
 // the city of the box's time zone, as a tile in three sizes. It runs in a
 // worker of its own like any app, and reaches only api.met.no. The launcher
 // draws the scenes from its own pixel set; this only sends their names.
 //
 // MET's terms: every request says who's asking (the daemon gives each app's
-// requests origaiTV's User-Agent, with a web address), only the place's
+// requests OrigaiTV's User-Agent, with a web address), only the place's
 // rounded coordinates are sent, and a forecast isn't asked for again before
 // the time MET's reply says it expires. Offline, the tile shows the last
 // forecast, marked so.

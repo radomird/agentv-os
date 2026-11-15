@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards first boot's branding (install/tv/branding.sh, ADR-021): origaiTV's
+# Guards first boot's branding (install/tv/branding.sh, ADR-021): OrigaiTV's
 # logo for the screensaver and About, and the boot splash through Omarchy's
 # own omarchy plymouth set, which runs as the owner and asks sudo. No sudo
 # rule is written for it (H1): root lends that one call a sudo of its own.
@@ -63,7 +63,7 @@ brand() {
 
 brand || fail "first boot's branding runs" "$(cat "$SCRATCH/out" "$calls")"
 [[ $(cat "$home/.config/omarchy/branding/screensaver.txt" "$home/.config/omarchy/branding/about.txt") == $'ORIGAITV\nORIGAITV' ]] ||
-  fail "the screensaver and About get origaiTV's logo"
+  fail "the screensaver and About get OrigaiTV's logo"
 grep -q "^omarchy-plymouth-set #1a1b26 #c0caf5 $SCRATCH/origaitv/branding/plymouth-logo.png (HOME=$home, sudo is $SCRATCH/run/origaitv-sudo\..*/sudo, LEAKED=no)$" "$calls" ||
   fail "Omarchy's splash command runs as the owner, in Tokyo Night's colours, from a clean environment, with the lent sudo first" "$(cat "$calls")"
 grep -q "^runuser -u someone -- env -i .* omarchy-plymouth-set " "$calls" || fail "H1 it starts from a clean environment" "$(cat "$calls")"

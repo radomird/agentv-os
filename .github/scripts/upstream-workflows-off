@@ -2,7 +2,7 @@
 
 # Switches off the workflows that came with upstream's code, except the ones
 # .github/upstream-workflows-kept names: they publish to Omarchy's own places,
-# use runners origaiTV doesn't have, or need Omarchy's secrets. Through the API,
+# use runners OrigaiTV doesn't have, or need Omarchy's secrets. Through the API,
 # so no file of upstream's is edited. The same file lives in origaitv-os and
 # origaitv-iso; keep the two copies identical.
 #

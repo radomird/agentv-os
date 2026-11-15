@@ -2,7 +2,7 @@
 # One perl pattern a line, matched without case. What to say instead is in the
 # comment after it.
 \bagents?\b                                 # your TV, or no noun at all
-\bdaemon\b                                  # origaiTV, or your TV
+\bdaemon\b                                  # OrigaiTV, or your TV
 \brecipes?\b                                # a game, an app
 \bbuilder\b                                 # your TV
 \b(?:the|this|your|a|my|that) box(?:es)?\b  # your TV, this TV

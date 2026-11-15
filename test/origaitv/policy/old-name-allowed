@@ -1,8 +1,6 @@
 # Lines that may still say agentv or AgenTV (bin/origaitv-check): perl
-# patterns for "<file>:<line>". Everything else says origaiTV.
+# patterns for "<file>:<line>". Everything else says OrigaiTV.
 
 # The signing key's secret keeps its name.
 AGENTV_SIGNING_KEY
 
-# Saying once what the project used to be called.
-used to be called AgenTV

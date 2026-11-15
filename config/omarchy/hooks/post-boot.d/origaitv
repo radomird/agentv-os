@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# origaiTV's part of Omarchy's desktop, which is for maintenance now (ADR-031):
-# Back to TV on Super+Ctrl+Home, and no first-run notices. origaiTV's first
+# OrigaiTV's part of Omarchy's desktop, which is for maintenance now (ADR-031):
+# Back to TV on Super+Ctrl+Home, and no first-run notices. OrigaiTV's first
 # boot puts this file in the owner's ~/.config/omarchy/hooks/post-boot.d/,
 # and omarchy-hook runs it with bash a moment after the desktop comes up. The
 # TV itself runs in its own session, not here.

@@ -20,7 +20,7 @@ import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
 import { DATA_DIRS, packageIcon } from "./package-icon.ts";
 import { siteIcon } from "./site-icon.ts";
 
-// Where an app came from: the signed index, this box's agent, or origaiTV
+// Where an app came from: the signed index, this box's agent, or OrigaiTV
 // itself, for the built-ins in apps/builtin/ (ADR-015, ADR-017).
 export type AppTier = Tier | "built-in";
 
@@ -244,7 +244,7 @@ function pageReach(manifest: Manifest): string[] {
 
 function maker(tier: AppTier, manifest: Manifest): string {
   if (tier === "built-in") return "Built in";
-  if (tier === "official") return "From origaiTV";
+  if (tier === "official") return "From OrigaiTV";
   if (tier === "community") return `From the community · ${manifest.author}`;
   return "Made on this TV";
 }
@@ -252,7 +252,7 @@ function maker(tier: AppTier, manifest: Manifest): string {
 export interface HomeOptions {
   appsDir: string; // the box's apps: /var/lib/origaitv/apps
   state: string; // the daemon's own state
-  builtins?: string; // origaiTV's own apps: /usr/share/origaitv/apps/builtin
+  builtins?: string; // OrigaiTV's own apps: /usr/share/origaitv/apps/builtin
   userAgent?: string; // what every app's requests say they are
   // How long before a site's icon that didn't come is asked for again: 6 h.
   iconRetryMs?: number;
@@ -387,7 +387,7 @@ export class Home {
 
   // --- The apps ---------------------------------------------------------
 
-  // origaiTV's own apps, which come with the origaitv package: checked once,
+  // OrigaiTV's own apps, which come with the origaitv package: checked once,
   // since the package only changes with an update, which restarts the daemon.
   private builtin?: Promise<{ manifest: Manifest; tier: AppTier; dir: string; thisBox?: boolean }[]>;
 
@@ -425,7 +425,7 @@ export class Home {
       if (!manifest) {
         this.log(`${app.id} doesn't pass the app contract's checks any more, so it isn't shown`);
       } else if (manifest.tv.runtime === "builtin" || builtins.some((b) => b.manifest.id === manifest.id)) {
-        this.log(`${app.id} isn't shown: only origaiTV itself brings built-in apps`);
+        this.log(`${app.id} isn't shown: only OrigaiTV itself brings built-in apps`);
       } else {
         found.push({ manifest, tier: app.tier, dir, thisBox });
       }
@@ -634,7 +634,7 @@ export class Home {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     const allowed = found ? allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}, this.onBox(found)) : new Set<string>();
     const reasons: string[] = [];
-    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "origaiTV"} ${id}`, allowed: (url) => allowed.has(url.origin), reasons });
+    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "OrigaiTV"} ${id}`, allowed: (url) => allowed.has(url.origin), reasons });
     if (!icon) {
       this.log(`${id}: its site has no icon to show (${reasons.join("; ") || "no reason given"}), so its tile keeps its letters; it's asked for again in ${hours(this.iconRetryMs)}`);
       later();

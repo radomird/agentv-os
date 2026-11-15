@@ -210,7 +210,7 @@ test("Weather and Clock pass the contract's checks as built-ins, and nothing els
   manifest.id = "someone.weather";
   manifest.author = "someone";
   writeFileSync(join(copy, "manifest.json"), JSON.stringify(manifest));
-  assert.ok(validatePackage(copy, "community").problems.some((p) => /only origaiTV's own built-in apps/.test(p)));
+  assert.ok(validatePackage(copy, "community").problems.some((p) => /only OrigaiTV's own built-in apps/.test(p)));
 });
 
 // --- In its worker, against a stand-in for MET ------------------------------
@@ -270,7 +270,7 @@ async function weatherHost(): Promise<AppHost> {
   return new AppHost({
     dir,
     manifest,
-    userAgent: "origaiTV/0.2.0 (+https://example.invalid/origaitv-os)",
+    userAgent: "OrigaiTV/0.2.0 (+https://example.invalid/origaitv-os)",
     harness: HARNESS,
     settings: {
       place: "amsterdam",
@@ -283,7 +283,7 @@ async function weatherHost(): Promise<AppHost> {
   });
 }
 
-test("S3.8 in its worker, Weather asks MET as origaiTV, with the place rounded, and shows what MET says", async () => {
+test("S3.8 in its worker, Weather asks MET as OrigaiTV, with the place rounded, and shows what MET says", async () => {
   host = await weatherHost();
   const started = Date.now();
   const tile = await host.call<{ headline: { label: string; icon: string; value: string } }>(viewer, "tile", "s");
@@ -291,7 +291,7 @@ test("S3.8 in its worker, Weather asks MET as origaiTV, with the place rounded, 
   assert.deepEqual([tile.headline.label, tile.headline.icon, tile.headline.value], ["amsterdam", "wind", "12°"]);
   const first = seen.at(-1)!;
   assert.equal(first.url, "/weatherapi/locationforecast/2.0/compact?lat=52.37&lon=4.9");
-  assert.equal(first.headers["user-agent"], "origaiTV/0.2.0 (+https://example.invalid/origaitv-os) origaitv.weather/1.0.0");
+  assert.equal(first.headers["user-agent"], "OrigaiTV/0.2.0 (+https://example.invalid/origaitv-os) origaitv.weather/1.0.0");
 });
 
 test("Weather asks again only after the forecast expires, and says it already has it", async () => {

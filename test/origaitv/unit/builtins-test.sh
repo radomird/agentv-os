@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards origaiTV's built-in apps in the daemon (daemon/home.ts, place.ts):
+# Guards OrigaiTV's built-in apps in the daemon (daemon/home.ts, place.ts):
 # Clock and Weather on home and in their details, the place from the box's
 # time zone, Settings → Weather, and that no installed app passes for one.
 

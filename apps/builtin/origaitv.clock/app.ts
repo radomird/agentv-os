@@ -1,4 +1,4 @@
-// origaiTV's built-in Clock app (ADR-015, ADR-016): the time, and in its medium
+// OrigaiTV's built-in Clock app (ADR-015, ADR-016): the time, and in its medium
 // size the date and the city of the box's time zone. The launcher keeps the
 // time ticking on its own, since a tile refreshes at most every 5 minutes;
 // this only says what goes around it.

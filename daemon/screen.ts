@@ -1,4 +1,4 @@
-// origaiTV's screen daemon (ADR-031): it decides what's on the TV.
+// OrigaiTV's screen daemon (ADR-031): it decides what's on the TV.
 //
 // The TV session's Hyprland (session/hypr.lua) opens every window out of
 // sight, on a special workspace that's never shown. This daemon brings the
@@ -177,30 +177,30 @@ export interface Launcher {
   // Tells the overlay whether an app is in front, so the mouse's Home
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
-  // What opening an installed app means, from origaiTV's daemon, or null.
+  // What opening an installed app means, from OrigaiTV's daemon, or null.
   appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | { runtime: "page"; name?: string } | null>;
-  // origaiTV's sign-in bar in the overlay, under the service's page (board
+  // OrigaiTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
-  // Tells origaiTV's daemon the sign-in screen is up for an app, or gone, so
+  // Tells OrigaiTV's daemon the sign-in screen is up for an app, or gone, so
   // a paired phone offers its fields (S4.9).
   signingIn(app: { id: string; name: string } | null): Promise<void>;
   // Settings → Omarchy desktop: origaitv desktop, which ends this session,
   // with the grant the home screen got for the PIN.
   desktop(grant?: string): void;
-  // Starts one of origaiTV's update units (ADR-025), which polkit lets the
+  // Starts one of OrigaiTV's update units (ADR-025), which polkit lets the
   // person at the TV start: the check, or an install.
   startUnit(name: "origaitv-update-check.service" | "origaitv-update-tv.service" | "origaitv-go-back.service"): Promise<boolean>;
   // Whether an install, going back or the check after an update is running.
   updating(): Promise<boolean>;
   // Whether an adult action from the home screen may go ahead (ADR-009):
   // always with no PIN set, and with one, only with the grant the page got
-  // for it, as origaiTV's daemon says.
+  // for it, as OrigaiTV's daemon says.
   pinCheck(action: string, grant?: string): Promise<boolean>;
   // Locks the TV until the PIN is entered, once it has been off for a while.
   // True when the TV is locked now.
   lock(): Promise<boolean | void>;
-  // Ends origaiTV's splash, which covers the TV from the session's start
+  // Ends OrigaiTV's splash, which covers the TV from the session's start
   // until home has drawn, when the boot kept it (ADR-060).
   splashDone?(): void;
   // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
@@ -219,7 +219,7 @@ export interface Launcher {
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
-  // Tells origaiTV's daemon what's in front and whether something plays, for
+  // Tells OrigaiTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037), and the field with the focus in
   // the app in front, when there is one (ADR-065).
   tvContext(change: { front: "home" | "app"; playing: boolean; appField?: object }): Promise<void>;
@@ -227,15 +227,15 @@ export interface Launcher {
   // gone with null (ADR-065). Home draws its own.
   typingBar?(bar: Bar | null): Promise<void>;
   // Stops Omarchy's shell, its bar and everything else it draws, and
-  // nothing of origaiTV's: the shell from $OMARCHY_PATH/shell, by its config.
+  // nothing of OrigaiTV's: the shell from $OMARCHY_PATH/shell, by its config.
   stopOmarchyShell(): Promise<void>;
   // The agent CLI of the provider whose terms an adult accepted, from
-  // origaiTV's daemon, or null while none are (ADR-023).
+  // OrigaiTV's daemon, or null while none are (ADR-023).
   acceptedCli(): Promise<Cli | null>;
   // Runs that CLI once, through Omarchy's own wrapper, which fetches it on
   // its first run: the version it says, or why not.
   firstRun(cli: Cli): Promise<{ version?: string; error?: string }>;
-  // Tells origaiTV's daemon how the first run goes.
+  // Tells OrigaiTV's daemon how the first run goes.
   cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }): Promise<void>;
   // Sets an Omarchy theme with Omarchy's own omarchy-theme-set, as its
   // desktop does: null once it's set, or why not.
@@ -381,7 +381,7 @@ interface Options {
 }
 
 // Omarchy's shell draws every layer it has under an omarchy- name: its bar,
-// notifications, menus, OSD and the rest. origaiTV's own don't use it.
+// notifications, menus, OSD and the rest. OrigaiTV's own don't use it.
 export function isOmarchyShell(namespace: string): boolean {
   return namespace.startsWith("omarchy-");
 }
@@ -977,7 +977,7 @@ export class Screen {
     app.stop();
   }
 
-  // Home's page is up: once it has drawn a frame or two, under origaiTV's
+  // Home's page is up: once it has drawn a frame or two, under OrigaiTV's
   // splash when the boot kept it (ADR-060), the splash goes and home shows,
   // whole. A page that draws no frame lets it go after two seconds anyway.
   private async homeDrawn(app: App): Promise<void> {
@@ -1046,7 +1046,7 @@ export class Screen {
       // profile for them (ADR-009).
       case "viewer":
         return this.viewerChanged();
-      // A tile that says Sign in: origaiTV's sign-in screen (ADR-032).
+      // A tile that says Sign in: OrigaiTV's sign-in screen (ADR-032).
       case "sign-in":
         return this.startSignIn(String(request.app ?? ""));
       case "running":
@@ -1115,7 +1115,7 @@ export class Screen {
 
   // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
   // fetches Anthropic's, OpenAI's, Google's, xAI's or Meta's published
-  // binary on the first run (ADR-023, ADR-047). Only once origaiTV's daemon says an adult accepted that
+  // binary on the first run (ADR-023, ADR-047). Only once OrigaiTV's daemon says an adult accepted that
   // provider's terms, in the background, one run at a time, and the daemon
   // hears how it goes.
   private cliRun: Promise<void> | null = null;
@@ -1947,7 +1947,7 @@ export class Screen {
 
   // --- Signing in (ADR-032, board 15) ---------------------------------------
 
-  // The app opens as its tile would, with origaiTV's sign-in bar under its
+  // The app opens as its tile would, with OrigaiTV's sign-in bar under its
   // page, and the app brings its page to the service's sign-in form. Typing
   // on the phone or a keyboard goes to the page. It ends once the app says
   // it's signed in, on Home, or when the app closes.
@@ -2238,7 +2238,7 @@ export class Screen {
     const layers = await this.hypr.layers();
     return {
       ok: true,
-      // What this process runs, which after an update and before origaiTV's
+      // What this process runs, which after an update and before OrigaiTV's
       // services restart is still the package from before (origaitv-restart).
       running: this.runningPackage,
       front: front ? summary(front, clients) : null,
@@ -2578,7 +2578,7 @@ async function barLook(): Promise<string[]> {
 const LOGIND = ["org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager"];
 
 // Whether Settings → Power's sleep is on, and Settings → Updates' overnight
-// installs, as origaiTV's daemon has them. Off when it doesn't answer.
+// installs, as OrigaiTV's daemon has them. Off when it doesn't answer.
 async function sleepSettings(): Promise<{ sleep: boolean; overnight: boolean }> {
   const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
   const settings = (await response.json())?.settings;
@@ -2947,7 +2947,7 @@ export const launcher: Launcher = {
 
   // Each kill stops one instance and returns once it's gone, as Omarchy's
   // own restart does it; its launcher takes the clean exit as a deliberate
-  // stop and doesn't start it again. origaiTV's toasts are a Quickshell of
+  // stop and doesn't start it again. OrigaiTV's toasts are a Quickshell of
   // their own, from another config, so they stay.
   async stopOmarchyShell() {
     const shell = join(process.env.OMARCHY_PATH || "/usr/share/omarchy", "shell");
@@ -3004,7 +3004,7 @@ function serve(screen: Screen): void {
 }
 
 // The ledger's half on this side (S3.3): each installed app's worker, made
-// from its package as origaiTV's daemon describes it, reading its playback
+// from its package as OrigaiTV's daemon describes it, reading its playback
 // state, and the daemon keeping it.
 export function playbackWatch(home = HOME_URL, log: (line: string) => void = console.log): PlaybackWatch {
   const get = async (path: string) => {

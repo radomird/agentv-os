@@ -22,7 +22,7 @@ const SHIPPED = readdirSync(join(ROOT, "themes")).sort();
 const scratch = mkdtempSync(join(tmpdir(), "origaitv-themes-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-// The TV's colours as Omarchy renders origaiTV's template for a theme.
+// The TV's colours as Omarchy renders OrigaiTV's template for a theme.
 function rendered(theme: string): string {
   const { colors } = parseColors(readFileSync(join(ROOT, "themes", theme, "colors.toml"), "utf8"));
   return readFileSync(join(ROOT, "config/omarchy/themed/launcher.css.tpl"), "utf8").replace(/\{\{ *([a-z_]+) *\}\}/g, (_, key) => colors[key] ?? "#000000");

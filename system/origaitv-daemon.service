@@ -1,4 +1,4 @@
-# origaiTV's daemon (daemon/server.ts): the TV's pages and the state behind
+# OrigaiTV's daemon (daemon/server.ts): the TV's pages and the state behind
 # them on this box, the phone companion on the home network (port 3001) and
 # the setup hotspot's captive page (port 3002). Node runs its TypeScript as
 # it is. Its own state, such as whether setup is done, lives in
@@ -12,7 +12,7 @@
 # aren't for every user on the box.
 
 [Unit]
-Description=origaiTV daemon
+Description=OrigaiTV daemon
 After=network.target
 Wants=origaitv-router.service origaitv-router-cli.service
 

@@ -1,6 +1,6 @@
 // A tile that says Sign in, in a real Chromium (ADR-032, board 15): an app
 // whose service wants a sign-in keeps its logo and says so, choosing it asks
-// the screen daemon for origaiTV's sign-in screen instead of opening the app,
+// the screen daemon for OrigaiTV's sign-in screen instead of opening the app,
 // and once the app is signed in, the tile is its usual self again.
 
 import assert from "node:assert/strict";

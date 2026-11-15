@@ -114,7 +114,7 @@ run S0.2 S0.3 || fail "a healthy box passes" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.2 the root disk isn't encrypted" "$SCRATCH/out" || fail "it says the disk isn't encrypted" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.2 radomir logs in on their own (session 2 on seat0)" "$SCRATCH/out" || fail "it finds the autologin session" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.2 the TV setup welcome screen was shown" "$SCRATCH/out" || fail "it reads welcome_shown" "$(cat "$SCRATCH/out")"
-grep -q "^pass S0.3 NetworkManager brought up a WPA2 hotspot in AP mode (origaiTV-selftest-[0-9a-f]* on channel 6)" "$SCRATCH/out" ||
+grep -q "^pass S0.3 NetworkManager brought up a WPA2 hotspot in AP mode (OrigaiTV-selftest-[0-9a-f]* on channel 6)" "$SCRATCH/out" ||
   fail "it brings up the hotspot" "$(cat "$SCRATCH/out")"
 grep -q "^pass S0.3 Wi-Fi is back on Home" "$SCRATCH/out" || fail "it puts Wi-Fi back" "$(cat "$SCRATCH/out")"
 [[ $(tail -n 1 "$SCRATCH/out") == "S0.2 pass, S0.3 pass" ]] || fail "it ends with a line per id" "$(cat "$SCRATCH/out")"
@@ -224,7 +224,7 @@ case "$*" in
   "is-active --quiet origaitv-key.path") [[ ! -f $STATE/no-key-path ]] ;;
   *) exit 3 ;;
 esac'
-# polkit, with origaiTV's power rule there unless it isn't (S2.18).
+# polkit, with OrigaiTV's power rule there unless it isn't (S2.18).
 fake pkcheck '[[ ! -f $STATE/no-power-rule ]]'
 # Omarchy 4.5's restart and shut down; 4.0.x had a command for each.
 fake omarchy-system 'exit 0'
@@ -277,7 +277,7 @@ fake journalctl 'cat "$STATE/journal" 2>/dev/null || true'
 tv() {
   healthy
   # Omarchy's own autologin to its desktop, kept on an encrypted disk, comes
-  # before origaiTV's in name order.
+  # before OrigaiTV's in name order.
   printf '[Autologin]\nUser=radomir\nSession=omarchy.desktop\n' >"$SCRATCH/sddm.conf.d/autologin.conf"
   printf '[Autologin]\nUser=radomir\nSession=origaitv.desktop\nRelogin=true\n' >"$SCRATCH/sddm.conf.d/zz-origaitv-autologin.conf"
   sleep 300 &
@@ -296,7 +296,7 @@ tv() {
   rm -f "$state/input.log" "$state/music.log" "$state/music-playing" "$state/music-stuck" "$state/music-scan" "$state/music-progress" "$state/music-sources"
   # A Music library with an album on the box, one on a stick and one on a share.
   echo '{"ok": true, "albums": [
-    {"id": "f1", "title": "Test Tones", "artist": "origaiTV", "source": "folder:/home/radomir/Music"},
+    {"id": "f1", "title": "Test Tones", "artist": "OrigaiTV", "source": "folder:/home/radomir/Music"},
     {"id": "u1", "title": "Night Shift", "artist": "Pixel Band", "source": "usb:/dev/sdb1"},
     {"id": "s1", "title": "Harbour Lights", "artist": "The Quays", "source": "share:smb://nas/music"}], "playlists": []}' >"$state/music-library"
   echo '{"ok": true, "welcome_shown": true, "screen": "home"}' >"$state/health"
@@ -350,7 +350,7 @@ for line in \
   "manual S2.15 with an episode playing" \
   "manual S2.16 over a playing app" \
   "pass S2.18 polkit lets" \
-  "pass S2.18 origaiTV's units stop within 5 s, so none holds up a restart or a shut down" \
+  "pass S2.18 OrigaiTV's units stop within 5 s, so none holds up a restart or a shut down" \
   "pass S2.18 Omarchy's omarchy-system is there to restart and shut down" \
   "pass S2.18 Settings opened at Power on the TV" \
   "manual S2.18 on the TV, Power is in Settings now" \
@@ -402,7 +402,7 @@ pass "S2.19 says the output and its volume, and fails below the level it should 
 
 tv
 echo '{"credentials_enable_service": true}' >"$SCRATCH/var/chromium/Default/Preferences"
-# Home's Chromium started before it had any settings of origaiTV's.
+# Home's Chromium started before it had any settings of OrigaiTV's.
 rm "$SCRATCH/var/chromium-home/Default/Preferences"
 jq '.tv = "off"' "$state/screen.json" >"$state/screen.json.new" && mv "$state/screen.json.new" "$state/screen.json"
 echo '{"ok": true, "keys": []}' >"$state/keys.json"

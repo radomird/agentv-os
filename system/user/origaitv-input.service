@@ -1,8 +1,8 @@
-# origaiTV's virtual input device (daemon/input.py, ADR-008): the phone's
+# OrigaiTV's virtual input device (daemon/input.py, ADR-008): the phone's
 # d-pad and keyboard reach every window on the TV through it.
 
 [Unit]
-Description=origaiTV virtual input device
+Description=OrigaiTV virtual input device
 PartOf=origaitv-tv.target
 StartLimitIntervalSec=0
 

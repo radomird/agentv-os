@@ -24,7 +24,7 @@ turn_off() {
   done
 }
 
-# Docker: nothing of origaiTV's uses it, and the box's owner isn't in its
+# Docker: nothing of OrigaiTV's uses it, and the box's owner isn't in its
 # group. Its socket would start the daemon, as root, for whoever asks.
 # The socket goes first, so stopping the service can't start it again.
 # To bring it back: sudo systemctl enable --now docker.socket

@@ -1,4 +1,4 @@
-// origaiTV (ADR-072): with Settings → Power's sleep on, the TV's screen daemon
+// OrigaiTV (ADR-072): with Settings → Power's sleep on, the TV's screen daemon
 // suspends the box once the TV has been off for an hour, and first sets or
 // clears the wake alarm for the night's update window, origaitv-wake.timer.
 // It runs as the box's owner, from the TV session's own systemd, which isn't

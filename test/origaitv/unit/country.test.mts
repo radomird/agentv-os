@@ -92,7 +92,7 @@ test("ADR-055 the daemon's country is TMDB's region, and picking another is an a
   const daemon = new Daemon({ root: join(base, "root"), state: join(base, "state"), apps: join(base, "apps"), builtins: null, port: 0, log: () => {}, country: { zone: async () => zone, waitMs: 2000 } });
   const url = `http://127.0.0.1:${await daemon.listen()}`;
   const send = async (method: string, path: string, body?: unknown, grant?: string) => {
-    const response = await fetch(`${url}${path}`, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(`${url}${path}`, { method, headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, data: (await response.json()) as Record<string, unknown> };
   };
   const drop = join(base, "state", "zone-drop", "zone.json");

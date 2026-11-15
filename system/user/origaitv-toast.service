@@ -1,8 +1,8 @@
-# origaiTV's toasts over the app in front (session/toast/shell.qml), drawn by
+# OrigaiTV's toasts over the app in front (session/toast/shell.qml), drawn by
 # Quickshell, which comes with Omarchy.
 
 [Unit]
-Description=origaiTV toasts
+Description=OrigaiTV toasts
 PartOf=origaitv-tv.target
 StartLimitIntervalSec=0
 ConditionEnvironment=WAYLAND_DISPLAY

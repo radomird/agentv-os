@@ -1,5 +1,5 @@
 // Export's push to a repo of the person's own (daemon/github.ts, ADR-045):
-// origaiTV's own repos refused, the person's GitHub sign-in found with gh or
+// OrigaiTV's own repos refused, the person's GitHub sign-in found with gh or
 // an SSH key, the app pushed with real git to a bare repo standing in for
 // GitHub, as a commit of theirs in a folder of its own and never forced,
 // and the daemon's side: offered only when the box is signed in, asked on
@@ -73,7 +73,7 @@ function blocks(): PushAsk["files"] {
   ];
 }
 
-test("ADR-045 a push never goes to origaiTV's own repos, or one named like them", () => {
+test("ADR-045 a push never goes to OrigaiTV's own repos, or one named like them", () => {
   assert.deepEqual(parseRepo("blocks", "person"), { owner: "person", name: "blocks" });
   assert.deepEqual(parseRepo(" someone/blocks.git ", "person"), { owner: "someone", name: "blocks" });
   assert.deepEqual(parseRepo("https://github.com/someone/blocks", "person"), { owner: "someone", name: "blocks" });
@@ -81,10 +81,10 @@ test("ADR-045 a push never goes to origaiTV's own repos, or one named like them"
 
   assert.equal(repoRefusal({ owner: "person", name: "blocks" }, "origaitv-owner"), null);
   assert.equal(repoRefusal({ owner: "person", name: "origaitv-blocks" }, "origaitv-owner"), null, "a repo of theirs may start with origaitv");
-  assert.match(repoRefusal({ owner: "origaiTV-Owner", name: "origaitv-os" }, "origaitv-owner")!, /origaiTV's own repos/);
-  assert.match(repoRefusal({ owner: "origaitv-owner", name: "origaitv-anything" }, "origaitv-owner")!, /origaiTV's own repos/);
-  assert.match(repoRefusal({ owner: "person", name: "origaitv-apps" }, "origaitv-owner")!, /named like one of origaiTV's own/);
-  assert.match(repoRefusal({ owner: "person", name: "origaitv-adapters" }, null)!, /named like one of origaiTV's own/, "even in a checkout, with no owner known");
+  assert.match(repoRefusal({ owner: "OrigaiTV-Owner", name: "origaitv-os" }, "origaitv-owner")!, /OrigaiTV's own repos/);
+  assert.match(repoRefusal({ owner: "origaitv-owner", name: "origaitv-anything" }, "origaitv-owner")!, /OrigaiTV's own repos/);
+  assert.match(repoRefusal({ owner: "person", name: "origaitv-apps" }, "origaitv-owner")!, /named like one of OrigaiTV's own/);
+  assert.match(repoRefusal({ owner: "person", name: "origaitv-adapters" }, null)!, /named like one of OrigaiTV's own/, "even in a checkout, with no owner known");
 
   const settings = join(scratch, "settings-root");
   mkdirSync(settings);
@@ -130,7 +130,7 @@ test("ADR-045 the app is pushed as the person's commit, in a folder of its own, 
   git(["clone", "-q", `file://${bare}/person/blocks.git`, look]);
   assert.equal(readFileSync(join(look, "local.blocks", "LICENSE"), "utf8"), "MIT\n");
   assert.ok(existsSync(join(look, "local.blocks", "web", "index.html")));
-  assert.equal(git(["log", "-1", "--format=%an <%ae> %s"], look), "A Person <person@example.com> Blocks 1.0.0, made on my TV with origaiTV");
+  assert.equal(git(["log", "-1", "--format=%an <%ae> %s"], look), "A Person <person@example.com> Blocks 1.0.0, made on my TV with OrigaiTV");
   assert.equal(git(["rev-parse", "--abbrev-ref", "HEAD"], look), "main");
 
   // The same version again changes nothing, and pushes nothing.
@@ -216,11 +216,11 @@ test("ADR-045 the phone offers a push only when the box is signed in, asks for t
   screen.start();
   try {
     const send = (method: string, path: string, body?: unknown, grant?: string) =>
-      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      fetch(`${url}${path}`, { method, headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
     const token = await pairPhone(lan, code, "iphone");
     const phone = (path: string, body?: unknown, grant?: string) =>
-      token.fetch(`${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+      token.fetch(`${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
     const offered = async () => ((await (await phone("/api/phone/state")).json()) as { export: { github: unknown } | null }).export;
     const until = async (check: () => Promise<boolean>) => {
       for (let i = 0; i < 100 && !(await check()); i++) await new Promise((done) => setTimeout(done, 50));
@@ -244,8 +244,8 @@ test("ADR-045 the phone offers a push only when the box is signed in, asks for t
     assert.equal((await noPin.json()).pin, true);
 
     for (const [repo, error] of [
-      ["origaitv-owner/origaitv-apps", /origaiTV's own repos/],
-      ["person/origaitv-os", /named like one of origaiTV's own/],
+      ["origaitv-owner/origaitv-apps", /OrigaiTV's own repos/],
+      ["person/origaitv-os", /named like one of OrigaiTV's own/],
       ["a/b/c", /name, or owner\/name/],
     ] as const) {
       const refused = await phone("/api/phone/apps/local.blocks/push", { repo }, await pin());

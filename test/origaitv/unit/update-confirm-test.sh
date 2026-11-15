@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Guards bin/origaitv-update-confirm, origaiTV's own question before an update
-# (ADR-029): origaiTV's and Omarchy's versions, the other packages, edge, and
-# origaiTV's release notes, never Omarchy's.
+# Guards bin/origaitv-update-confirm, OrigaiTV's own question before an update
+# (ADR-029): OrigaiTV's and Omarchy's versions, the other packages, edge, and
+# OrigaiTV's release notes, never Omarchy's.
 
 # shellcheck disable=SC2016 # the fakes' bodies are run later, by the script under test
 set -euo pipefail
@@ -43,15 +43,15 @@ ask() {
 
 ask "" 0 "origaitv 0.1.1-1 -> 0.1.2-1" "omarchy 4.0.6-1 -> 4.0.7-1" "linux 7.2.8-9 -> 7.2.9-1" "mesa 1-1 -> 2-1" ||
   fail "a yes goes ahead" "$(cat "$SCRATCH/out")"
-grep -qx "• origaiTV 0.1.1-1 to 0.1.2-1" "$SCRATCH/out" || fail "it says where origaiTV goes" "$(cat "$SCRATCH/out")"
+grep -qx "• OrigaiTV 0.1.1-1 to 0.1.2-1" "$SCRATCH/out" || fail "it says where OrigaiTV goes" "$(cat "$SCRATCH/out")"
 grep -qx "• Omarchy 4.0.6-1 to 4.0.7-1" "$SCRATCH/out" || fail "it says where Omarchy goes" "$(cat "$SCRATCH/out")"
 grep -qx "• 2 other packages" "$SCRATCH/out" || fail "it counts the other packages" "$(cat "$SCRATCH/out")"
-grep -qx "What's new: https://example.invalid/origaitv-os/releases" "$SCRATCH/out" || fail "it points at origaiTV's release notes" "$(cat "$SCRATCH/out")"
+grep -qx "What's new: https://example.invalid/origaitv-os/releases" "$SCRATCH/out" || fail "it points at OrigaiTV's release notes" "$(cat "$SCRATCH/out")"
 ! grep -q "omacom\|battery" "$SCRATCH/out" || fail "nothing of Omarchy's question is left" "$(cat "$SCRATCH/out")"
-pass "it shows origaiTV's and Omarchy's next versions, the other packages and origaiTV's release notes"
+pass "it shows OrigaiTV's and Omarchy's next versions, the other packages and OrigaiTV's release notes"
 
 ask "" 2 || fail "nothing to update is still a question" "$(cat "$SCRATCH/out")"
-grep -qx "• origaiTV 0.1.1-1, already the newest" "$SCRATCH/out" || fail "it says origaiTV is the newest" "$(cat "$SCRATCH/out")"
+grep -qx "• OrigaiTV 0.1.1-1, already the newest" "$SCRATCH/out" || fail "it says OrigaiTV is the newest" "$(cat "$SCRATCH/out")"
 ! grep -q "other package" "$SCRATCH/out" || fail "no other packages, no line about them"
 pass "with nothing new, it says so"
 

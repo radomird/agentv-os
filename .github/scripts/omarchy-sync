@@ -8,19 +8,19 @@
 #               v4.5.0), since omarchy-iso has no tags (ADR-058). Without
 #               that branch there's nothing to merge yet, and it says so.
 #
-# It merges, never rebases, because origaitv is public, and origaiTV only adds
+# It merges, never rebases, because origaitv is public, and OrigaiTV only adds
 # files, so the merge can't conflict unless a file of upstream's was edited
-# or upstream added a file origaiTV has too.
+# or upstream added a file OrigaiTV has too.
 #
-# The few files of upstream's that origaiTV replaces with its own are listed in
+# The few files of upstream's that OrigaiTV replaces with its own are listed in
 # test/origaitv/policy/upstream-exceptions (the security policy and the issue
-# forms). Those stay origaiTV's through every sync, whatever upstream does to
+# forms). Those stay OrigaiTV's through every sync, whatever upstream does to
 # its own, and they don't count against a sync merging itself.
 #
 # Omarchy can cut a release as a sibling of the line the fork is on, as it
 # did 4.5 beside 4.0.x (ADR-058): the tag doesn't descend from the base, and
 # a merge would fight over every file both lines changed. Then the sync
-# builds the tag's own tree plus origaiTV's files instead, as a merge commit
+# builds the tag's own tree plus OrigaiTV's files instead, as a merge commit
 # with the tag as its second parent, so later tags on the new line merge as
 # usual. Files only the old line has go. That pull request never merges
 # itself.
@@ -133,7 +133,7 @@ else
   followed="$release_branch at $upstream_ref"
 fi
 
-# Upstream's files that origaiTV keeps its own version of, and has one of now.
+# Upstream's files that OrigaiTV keeps its own version of, and has one of now.
 kept=$(mktemp)
 if [[ -f test/origaitv/policy/upstream-exceptions ]]; then
   sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' test/origaitv/policy/upstream-exceptions |
@@ -146,7 +146,7 @@ sibling=false
 if git merge-base --is-ancestor "$base_commit" "$upstream_ref"; then
   merged=true
   git merge --quiet --no-ff --no-commit "$upstream_ref" >/dev/null 2>&1 || merged=false
-  # origaiTV's version of each, whether upstream's change conflicted, merged
+  # OrigaiTV's version of each, whether upstream's change conflicted, merged
   # into it line by line, or removed the file.
   while IFS= read -r file; do
     git checkout --quiet HEAD -- "$file"
@@ -155,8 +155,8 @@ if git merge-base --is-ancestor "$base_commit" "$upstream_ref"; then
     {
       echo "Merging Omarchy $tag conflicts in these files:"
       git status --porcelain | grep -E '^(AA|UU|DU|UD|AU|UA|DD) ' || true
-      echo "UU or DU means a file of upstream's was edited or removed here, which origaiTV never does."
-      echo "AA means upstream added a file origaiTV has too: move origaiTV's file to a name of its own."
+      echo "UU or DU means a file of upstream's was edited or removed here, which OrigaiTV never does."
+      echo "AA means upstream added a file OrigaiTV has too: move OrigaiTV's file to a name of its own."
     } >&2
     git merge --abort || true
     exit 3
@@ -169,7 +169,7 @@ if git merge-base --is-ancestor "$base_commit" "$upstream_ref"; then
   fi
   git commit --quiet --no-edit -m "Merge Omarchy $tag"
 else
-  # A sibling line: the tag's tree, plus every file origaiTV added since the
+  # A sibling line: the tag's tree, plus every file OrigaiTV added since the
   # base, in an index of its own so the working tree stays as it is.
   sibling=true
   ours=$(mktemp)
@@ -180,9 +180,9 @@ else
   done <"$ours"
   if [[ -n $both ]]; then
     {
-      echo "Omarchy $tag is a sibling of $base's line, and it has files origaiTV added too:"
+      echo "Omarchy $tag is a sibling of $base's line, and it has files OrigaiTV added too:"
       printf '%s' "$both"
-      echo "Move origaiTV's files to names of their own first."
+      echo "Move OrigaiTV's files to names of their own first."
     } >&2
     exit 3
   fi
@@ -191,7 +191,7 @@ else
   if [[ -s $ours ]]; then
     xargs -0 git ls-tree -z HEAD -- <"$ours" | GIT_INDEX_FILE=$index git update-index -z --index-info
   fi
-  # And origaiTV's version of the files it keeps its own of.
+  # And OrigaiTV's version of the files it keeps its own of.
   while IFS= read -r file; do
     git ls-tree -z HEAD -- "$file" | GIT_INDEX_FILE=$index git update-index -z --index-info
   done <"$kept"
@@ -202,7 +202,7 @@ else
   message="Merge Omarchy $tag, a sibling of $base's line
 
 Omarchy cut $tag beside $base's line rather than on top of it, so this
-is $tag's own tree plus origaiTV's files, with $tag as the second parent.
+is $tag's own tree plus OrigaiTV's files, with $tag as the second parent.
 The $dropped files only the old line has are gone."
   merge=$(git commit-tree "$tree" -p HEAD -p "$upstream_ref" -m "$message")
   git reset --quiet --hard "$merge"
@@ -238,7 +238,7 @@ if (( new_major > current_major )); then
   reason="Omarchy $tag is a new major version, so it waits for Radomir."
 elif [[ $sibling == true ]]; then
   automerge=false
-  reason="Omarchy $tag is a sibling of $current's line, so this is its tree plus origaiTV's files, and it waits for Radomir."
+  reason="Omarchy $tag is a sibling of $current's line, so this is its tree plus OrigaiTV's files, and it waits for Radomir."
 elif [[ -n $foreign ]]; then
   automerge=false
   reason="These files differ from upstream's $tag: ${foreign//$'\n'/ }"
@@ -249,7 +249,7 @@ Merges Omarchy $tag into \`$target\` and moves \`.github/omarchy-base\` (ADR-026
 
 - Upstream: \`$upstream\`, $followed
 - Was: $current
-- A sibling line, so the tag's tree plus origaiTV's files: $sibling
+- A sibling line, so the tag's tree plus OrigaiTV's files: $sibling
 - Merges itself when every gate is green: $automerge
 ${reason:+- Why not: $reason}
 ${new_workflows:+- New upstream workflows, switched off after the merge: $(echo "$new_workflows" | tr '\n' ' ')}

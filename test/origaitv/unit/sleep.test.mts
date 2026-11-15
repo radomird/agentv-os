@@ -293,14 +293,14 @@ test("T13.2 only logind's inhibitors that block sleep hold it off", () => {
       [
         ["sleep", "NetworkManager", "NetworkManager needs to turn off networks", "delay", 0, 812],
         ["sleep:idle", "omarchy-update", "Omarchy update in progress", "block", 1000, 4242],
-        ["shutdown", "origaiTV", "something", "block", 0, 1],
-        ["sleep", "origaiTV", "building an app", "block", 64000, 900],
+        ["shutdown", "OrigaiTV", "something", "block", 0, 1],
+        ["sleep", "OrigaiTV", "building an app", "block", 64000, 900],
       ],
     ],
   });
   assert.deepEqual(blocking(listed), [
     { who: "omarchy-update", why: "Omarchy update in progress" },
-    { who: "origaiTV", why: "building an app" },
+    { who: "OrigaiTV", why: "building an app" },
   ]);
   assert.deepEqual(blocking(JSON.stringify({ type: "a(ssssuu)", data: [[]] })), []);
   assert.equal(blocking("not json").length, 1, "an answer that doesn't read holds sleep off");
@@ -312,12 +312,12 @@ test("T13.2 a build or a download holds an inhibitor while it runs, and letting 
   const stand = join(scratch, "systemd-inhibit");
   writeFileSync(stand, `#!/bin/bash\necho "$*" >"${scratch}/asked"\nshift 3\nexec sleep 30\n`);
   chmodSync(stand, 0o755);
-  const awake = new Inhibitor("building an app", [stand, "--what=sleep", "--who=origaiTV", "--mode=block"]);
+  const awake = new Inhibitor("building an app", [stand, "--what=sleep", "--who=OrigaiTV", "--mode=block"]);
   awake.set(true);
   awake.set(true);
   assert.equal(awake.held, true);
   for (let i = 0; i < 50 && !existsSync(join(scratch, "asked")); i++) await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(readFileSync(join(scratch, "asked"), "utf8").trim(), "--what=sleep --who=origaiTV --mode=block --why=building an app sleep infinity");
+  assert.equal(readFileSync(join(scratch, "asked"), "utf8").trim(), "--what=sleep --who=OrigaiTV --mode=block --why=building an app sleep infinity");
   awake.set(false);
   assert.equal(awake.held, false);
   // With no systemd-inhibit at all, nothing breaks.

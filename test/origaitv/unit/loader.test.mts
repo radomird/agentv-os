@@ -258,7 +258,7 @@ test("F2 an app can't speak as one of the box's own screens", async () => {
   await new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve));
   try {
     const at = `http://127.0.0.1:${(echo.address() as { port: number }).port}`;
-    const dir = app(tileApp(`const r = await fetch(ctx.settings.serverUrl + "/", { headers: { "X-origaiTV-Screen": "1", "X-origaiTV-Grant": "abc", "X-Own": "kept" } }); return { headline: { label: await r.text() } };`));
+    const dir = app(tileApp(`const r = await fetch(ctx.settings.serverUrl + "/", { headers: { "X-OrigaiTV-Screen": "1", "X-OrigaiTV-Grant": "abc", "X-Own": "kept" } }); return { headline: { label: await r.text() } };`));
     const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
     const h = new AppHost({ dir, manifest, settings: { serverUrl: at }, harness });
     hosts.push(h);

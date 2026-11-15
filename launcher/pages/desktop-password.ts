@@ -30,7 +30,7 @@ async function call(method: string, body?: unknown, grant?: string): Promise<{ p
   const response = await fetch("/api/desktop/password", {
     method,
     cache: "no-store",
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));

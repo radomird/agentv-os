@@ -1,12 +1,12 @@
 name: Box report
-description: Tell me how origaiTV went on your box
+description: Tell me how OrigaiTV went on your box
 title: "Box report: "
 labels: [box-report]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for trying origaiTV on your own box. Good or bad, it helps. I'll add your box to the README's tested boxes.
+        Thanks for trying OrigaiTV on your own box. Good or bad, it helps. I'll add your box to the README's tested boxes.
 
   - type: input
     id: box
@@ -20,7 +20,7 @@ body:
   - type: input
     id: release
     attributes:
-      label: origaiTV release
+      label: OrigaiTV release
       description: The ISO you installed from, or the update you're on.
       placeholder: e.g. 1.0.0
     validations:

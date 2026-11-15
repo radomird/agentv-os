@@ -1,4 +1,4 @@
-# The setup hotspot (ADR-007, stage 4): origaiTV's own Wi-Fi network, with
+# The setup hotspot (ADR-007, stage 4): OrigaiTV's own Wi-Fi network, with
 # addresses and names from dnsmasq, for a phone to set up the TV through
 # (bin/origaitv-hotspot). origaitv-hotspot-boot.service starts it on first boot
 # when there's no network, and so does `origaitv hotspot start`. It closes
@@ -6,7 +6,7 @@
 # with it, however it stops.
 
 [Unit]
-Description=origaiTV setup hotspot
+Description=OrigaiTV setup hotspot
 Requires=NetworkManager.service
 After=NetworkManager.service origaitv-daemon.service
 

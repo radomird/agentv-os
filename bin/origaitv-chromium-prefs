@@ -6,7 +6,7 @@
 
 # On the TV, a Chromium shows none of its own prompts (ADR-032): no Save
 # password, no address or card autofill, no translate and no site
-# notifications. origaiTV stores no passwords; the phone's password manager
+# notifications. OrigaiTV stores no passwords; the phone's password manager
 # fills sign-ins. That goes for the services' Chromium, for home's, which
 # has password fields of its own (a key, the Wi-Fi's password), and for the
 # share browser. They're set in each profile, not as a system policy, so the

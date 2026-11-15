@@ -43,9 +43,9 @@ test("it reads what origaitv-hotspot says, and the networks the box saw, stronge
   rmSync(join(run, "state.json"), { force: true });
   assert.deepEqual(hotspot.status(), { on: false, ssid: null, password: null, joining: null, joined: null, error: null });
   assert.deepEqual(hotspot.networks(), []);
-  hotspotIs({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", device: "wlan0", error: "Wrong password for home wi-fi" });
+  hotspotIs({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", device: "wlan0", error: "Wrong password for home wi-fi" });
   writeFileSync(join(run, "networks.json"), JSON.stringify(NETWORKS));
-  assert.deepEqual(hotspot.status(), { on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", joining: null, joined: null, error: "Wrong password for home wi-fi" });
+  assert.deepEqual(hotspot.status(), { on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", joining: null, joined: null, error: "Wrong password for home wi-fi" });
   assert.deepEqual(
     hotspot.networks().map((n) => n.ssid),
     ["home wi-fi", "cafe", "neighbours"],
@@ -64,7 +64,7 @@ test("joining hands the network and its password to root in a drop only its owne
   const hotspot = new Hotspot({ state, run });
   hotspotIs({ on: false });
   assert.equal(hotspot.join("home wi-fi", "correct horse"), "The setup Wi-Fi isn't on");
-  hotspotIs({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n" });
+  hotspotIs({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n" });
   assert.equal(hotspot.join("", "correct horse"), "That isn't a Wi-Fi network's name");
   assert.equal(hotspot.join("home wi-fi", "short"), "Wi-Fi passwords have 8 to 63 characters");
   assert.equal(hotspot.join("home wi-fi", ""), "home wi-fi needs its password");
@@ -115,7 +115,7 @@ test("an ask made before root took the last one waits its turn, and neither is l
 });
 
 test("the QR code a phone's camera joins with, with its special characters escaped", () => {
-  assert.equal(wifiQr("origaiTV-3f9a", "k7m2xpqr4n"), "WIFI:T:WPA;S:origaiTV-3f9a;P:k7m2xpqr4n;;");
+  assert.equal(wifiQr("OrigaiTV-3f9a", "k7m2xpqr4n"), "WIFI:T:WPA;S:OrigaiTV-3f9a;P:k7m2xpqr4n;;");
   assert.equal(wifiQr('a;b,c:d"e\\f', "p;ss"), 'WIFI:T:WPA;S:a\\;b\\,c\\:d\\"e\\\\f;P:p\\;ss;;');
   assert.equal(wifiQr("open", null), "WIFI:T:nopass;S:open;;");
 });
@@ -182,7 +182,7 @@ function phone(path: string, host: string, method = "GET", body?: unknown, heade
 }
 
 test("a phone asking whether it's online, for any name, is sent to the captive page", async () => {
-  hotspotIs({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n" });
+  hotspotIs({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n" });
   for (const [host, path] of [
     ["captive.apple.com", "/hotspot-detect.html"],
     ["connectivitycheck.gstatic.com", "/generate_204"],
@@ -222,7 +222,7 @@ test("on its own address it serves the captive page and what it needs, and nothi
 test("it lists the networks, takes the one picked and hands it to root, never logging the password", async () => {
   const host = `127.0.0.1:${port}`;
   const listed = JSON.parse((await phone("/api/setup/networks", host)).body);
-  assert.equal(listed.hotspot, "origaiTV-3f9a");
+  assert.equal(listed.hotspot, "OrigaiTV-3f9a");
   assert.deepEqual(listed.networks.map((n: { ssid: string }) => n.ssid), ["home wi-fi", "cafe", "neighbours"]);
   assert.equal(listed.password, undefined, "the hotspot's password is the TV's to show");
 
@@ -245,10 +245,10 @@ test("it lists the networks, takes the one picked and hands it to root, never lo
 
   // The reason the try before didn't work is still there until root says
   // how this one went, and a page that names its ask can tell them apart.
-  hotspotIs({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", error: "Wrong password for home wi-fi", answered: "0000000000000000" });
+  hotspotIs({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", error: "Wrong password for home wi-fi", answered: "0000000000000000" });
   assert.deepEqual(JSON.parse((await phone("/api/setup/state", host)).body), { ok: true, on: true, joining: null, joined: null, error: "Wrong password for home wi-fi" });
   assert.equal(JSON.parse((await phone(`/api/setup/state?ask=${ask}`, host)).body).answered, false, "an error from before this ask isn't its answer");
-  hotspotIs({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", error: "Can't find home wi-fi from here", answered: ask });
+  hotspotIs({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", error: "Can't find home wi-fi from here", answered: ask });
   assert.equal(JSON.parse((await phone(`/api/setup/state?ask=${ask}`, host)).body).answered, true);
 });
 
@@ -264,13 +264,13 @@ test("it answers on the hotspot's address and nowhere else", async () => {
 });
 
 test("the TV gets the hotspot's name, password and QR code, and setup ending closes it", async () => {
-  hotspotIs({ on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n" });
+  hotspotIs({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n" });
   const status = await (await fetch(`${tv}/api/hotspot`)).json();
-  assert.deepEqual(status, { ok: true, on: true, ssid: "origaiTV-3f9a", password: "k7m2xpqr4n", joining: null, joined: null, error: null });
+  assert.deepEqual(status, { ok: true, on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", joining: null, joined: null, error: null });
   const qr = await fetch(`${tv}/api/hotspot/qr`);
   assert.equal(qr.status, 200);
   assert.match(await qr.text(), /<svg/);
-  assert.match(readFileSync(qrArgs, "utf8"), /WIFI:T:WPA;S:origaiTV-3f9a;P:k7m2xpqr4n;;/);
+  assert.match(readFileSync(qrArgs, "utf8"), /WIFI:T:WPA;S:OrigaiTV-3f9a;P:k7m2xpqr4n;;/);
 
   await fetch(`${tv}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done: true }) });
   assert.deepEqual(readDrop(), { stop: true });

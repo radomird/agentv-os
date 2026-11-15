@@ -40,7 +40,7 @@ async function box(waitMs = 5000) {
   const send = async (method: string, path: string, body?: unknown, grant?: string) => {
     const response = await fetch(`${url}${path}`, {
       method,
-      headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
+      headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();

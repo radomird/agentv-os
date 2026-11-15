@@ -98,7 +98,7 @@ export interface Ready {
   // doesn't count.
   asked: string | null;
   update: UpdateFirst | null;
-  // The origaiTV versions on either side of the update.
+  // The OrigaiTV versions on either side of the update.
   from: string | null;
   to: string | null;
 }

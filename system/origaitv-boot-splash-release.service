@@ -6,7 +6,7 @@
 # (50-origaitv-splash.rules).
 
 [Unit]
-Description=origaiTV: Plymouth hands the screen to the TV session
+Description=OrigaiTV: Plymouth hands the screen to the TV session
 
 [Service]
 Type=oneshot

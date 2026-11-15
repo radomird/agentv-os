@@ -9,7 +9,7 @@
 # out (origaitv-router-cli.service), its providers' own hosts on 443.
 
 [Unit]
-Description=origaiTV router
+Description=OrigaiTV router
 After=network.target
 
 [Service]

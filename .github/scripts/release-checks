@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Which origaitv-iso commit an origaiTV release was tagged with, so the nightly
+# Which origaitv-iso commit an OrigaiTV release was tagged with, so the nightly
 # run checks the release with the image checks it shipped with, and not
 # with tonight's, which can be for work the release doesn't have.
 #

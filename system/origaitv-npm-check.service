@@ -7,7 +7,7 @@
 # builds' lockfiles, nothing else.
 
 [Unit]
-Description=origaiTV nightly package check
+Description=OrigaiTV nightly package check
 After=network-online.target
 Wants=network-online.target
 

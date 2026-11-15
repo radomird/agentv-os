@@ -41,7 +41,7 @@ export async function pairPhone(lan: string, how: string | { code: string } | { 
 // it. Once setup is done and a PIN is set, a code takes the PIN.
 export async function pairFromTv(tv: string, lan: string, name = "a phone", pin?: string): Promise<TestPhone> {
   const post = async (path: string, body: unknown, grant?: string) =>
-    (await (await fetch(`${tv}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) })).json()) as { pairing?: { code: string }; grant?: string };
+    (await (await fetch(`${tv}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify(body) })).json()) as { pairing?: { code: string }; grant?: string };
   const grant = pin === undefined ? undefined : (await post("/api/pin/check", { pin })).grant;
   const code = (await post("/api/phones/pair", {}, grant)).pairing?.code;
   if (!code) throw new Error("the tv showed no pairing code: is a PIN set?");

@@ -3,7 +3,7 @@
 # Nothing waits for it.
 
 [Unit]
-Description=origaiTV NAS shares at boot
+Description=OrigaiTV NAS shares at boot
 Wants=network-online.target
 After=network-online.target
 

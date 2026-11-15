@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "origaitv",
   "license": "MIT",
-  "description": "A falling-block game, the page app in origaiTV's tests",
+  "description": "A falling-block game, the page app in OrigaiTV's tests",
   "kinds": ["tv-app"],
   "entryPoints": { "page": "index.html" },
   "tv": {

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Guards daemon/screen.ts, origaiTV's screen daemon (ADR-031), with Node's own
+# Guards daemon/screen.ts, OrigaiTV's screen daemon (ADR-031), with Node's own
 # test runner: what's in front, what stays out of sight, and the home screen
 # coming back after a crash (S1.1, S1.6). The box runs it on Arch's nodejs,
 # which runs TypeScript as it is; so does any Node from 22.18 on.

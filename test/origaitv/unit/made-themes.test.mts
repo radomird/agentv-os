@@ -1,6 +1,6 @@
 // A theme your agent made, from approval to the TV and the desktop (S6.4,
 // daemon/made-themes.ts): root puts it in the themes folder, checked again
-// by origaiTV's own rules, with only what Omarchy shows; the screen daemon,
+// by OrigaiTV's own rules, with only what Omarchy shows; the screen daemon,
 // as the person, hands it to Omarchy as theirs and sets it, never over
 // Omarchy's own or a theme of theirs; and the daemon asks for that once a
 // version, lists it in Look, and takes it away again when it's removed.
@@ -114,7 +114,7 @@ test("S6.4 the screen daemon hands a made theme to Omarchy as the person's and s
   assert.deepEqual(readdirSync(mine).sort(), [".origaitv-theme", "backgrounds", "colors.toml", "icons.theme", "preview.png"]);
   assert.equal(readFileSync(join(mine, "colors.toml"), "utf8"), readFileSync(join(FOREST, "colors.toml"), "utf8"));
 
-  // A newer version goes over origaiTV's own copy.
+  // A newer version goes over OrigaiTV's own copy.
   assert.equal(takeTheme({ themes, id: ID, home, omarchy }).name, "calm-forest");
 
   // Omarchy's own, and a theme of the person's, are left alone.
@@ -129,7 +129,7 @@ test("S6.4 the screen daemon hands a made theme to Omarchy as the person's and s
   const failing = { setTheme: async () => ({ ok: false, error: "the theme does not exist" }) };
   assert.deepEqual(await answerTheme({ kind: "take", id: ID }, failing, { home, omarchy, themes }), { ok: false, error: "the theme does not exist" });
 
-  // Taken away again, only origaiTV's own copy.
+  // Taken away again, only OrigaiTV's own copy.
   dropTheme({ id: "local.dusk", home });
   assert.ok(existsSync(join(home, ".config/omarchy/themes/dusk")));
   assert.deepEqual(await answerTheme({ kind: "drop", id: ID }, screen, { home, omarchy, themes }), { ok: true });

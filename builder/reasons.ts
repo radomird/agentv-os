@@ -30,7 +30,7 @@ export type Why =
   | "setup" // the AI's own tool couldn't be fetched
   | "start" // the builder's own parts didn't start
   | "install" // it passed, and couldn't be put on the TV
-  | "checks" // origaiTV's static checks, or what it connects to
+  | "checks" // OrigaiTV's static checks, or what it connects to
   | "tests"; // its tests, or the test TV
 
 // Each AI by its name, as a line says it.

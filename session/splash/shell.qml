@@ -1,8 +1,8 @@
-// origaiTV's splash in the TV session (ADR-060): the boot splash's logo on its
+// OrigaiTV's splash in the TV session (ADR-060): the boot splash's logo on its
 // background, drawn over everything from the moment the TV session starts
 // until the screen daemon says home's page has drawn under it. Plymouth left
 // the same picture on the screen as it quit, so the boot runs from the
-// firmware's logo to home with only origaiTV's splash between them.
+// firmware's logo to home with only OrigaiTV's splash between them.
 //
 // bin/origaitv-boot-splash tv starts it with the splash's background and logo
 // in ORIGAITV_SPLASH_BACKGROUND and ORIGAITV_SPLASH_LOGO, and
