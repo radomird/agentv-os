@@ -231,6 +231,8 @@ found=$(perl -e '
   my $failed = 0;
   while (my $file = <STDIN>) {
     chomp $file;
+    # This check names what it looks for.
+    next if $file eq "bin/origaitv-check";
     open(my $fh, "<:raw", $file) or do { warn "cannot read $file: $!\n"; $failed = 1; next };
     while (my $line = <$fh>) {
       next unless $line =~ /agentv/i;

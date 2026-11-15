@@ -113,6 +113,21 @@ git add notes.md
 git commit -q -m "$(printf 'Add notes \xe2\x80\x94 with a dash')"
 expect_fail "an em dash in a commit message fails" "no em dashes"
 
+printf 'Run agentv selftest on the box.\n' >notes.md
+expect_fail "the old name in a new file fails" "the old name is only where it has to be"
+
+printf 'x\n' >AgenTV-notes.md
+expect_fail "a file named after the old name fails" "the old name is only where it has to be"
+
+mkdir -p test/origaitv/policy
+printf '# Saying once what the project used to be called.\nused to be called AgenTV\n' >test/origaitv/policy/old-name-allowed
+printf 'origaiTV used to be called AgenTV.\n' >notes.md
+output=$(bin/origaitv-check ${ci_flag[@]+"${ci_flag[@]}"} 2>&1) || true
+[[ $output == *"ok - the old name is only where it has to be"* && $output != *"not ok - the old name"* ]] ||
+  fail "a line the allowed list names may say the old name" "$output"
+pass "a line the allowed list names may say the old name"
+reset_fork
+
 printf 'const home = "https://www.netflix.com/browse";\n' >app.ts
 expect_fail "a service host in code fails" "no service automation"
 

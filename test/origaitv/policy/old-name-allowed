@@ -15,6 +15,3 @@ AGENTV_SIGNING_KEY
 
 # Saying once what the project used to be called.
 used to be called AgenTV
-
-# This check, which names what it looks for.
-^bin/origaitv-check:
