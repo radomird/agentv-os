@@ -1,0 +1,49 @@
+# The router with the household's key (daemon/router-serve.ts, ADR-013,
+# ADR-023): one sentence from the daemon at a time, routed by the provider's
+# API with structured output. Only this service reads the key, as a
+# credential systemd hands it from /etc/origaitv/env, so the daemon never
+# holds it. origaitv-key.service restarts it after a key is kept.
+#
+# Its sockets are in /run/origaitv-router, for the origaitv-router group only:
+# router.sock for the daemon, and cli-net.sock, the plan's CLI's only way
+# out (origaitv-router-cli.service), its providers' own hosts on 443.
+
+[Unit]
+Description=origaiTV router
+After=network.target
+
+[Service]
+User=origaitv-router
+Group=origaitv-router
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/origaitv/daemon/router-serve.ts api
+Environment=ORIGAITV_PATH=/usr/share/origaitv
+LoadCredential=env:/etc/origaitv/env
+RuntimeDirectory=origaitv-router
+RuntimeDirectoryMode=0750
+Restart=on-failure
+TimeoutStopSec=5s
+UMask=0077
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=-/var/lib/origaitv/chromium -/var/lib/origaitv/builder -/var/lib/origaitv/daemon -/var/lib/private
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+# Netlink is how Node lists the box's own addresses, which the filter reads
+# before each connection so it never connects back to this box.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

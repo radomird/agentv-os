@@ -2,7 +2,7 @@
 // each check calls one capability of the app in its own worker, as the TV
 // runs it, with its page in a headless Chromium and every request answered
 // from the fixtures, at the app's real addresses. Layer 3's runner
-// (test/agentv/contract/runner.mts) runs them in CI with Playwright's
+// (test/origaitv/contract/runner.mts) runs them in CI with Playwright's
 // Chromium; on the box the builder's contract_tests runs them with the
 // browser that's there, over its DevTools pipe, with no network at all.
 
@@ -69,7 +69,7 @@ export async function checkApp(o: { dir: string; manifest: Manifest; contract: C
   const app = manifest.id;
   const results: Result[] = [];
   const page = contract.checks.some((check) => check.page || check.remote) ? await o.openPage() : undefined;
-  const host = new AppHost({ dir: o.dir, manifest, settings: contract.settings ?? {}, page: page?.broker, fetch: served.fetch, userAgent: "AgenTV-contract", harness: o.harness });
+  const host = new AppHost({ dir: o.dir, manifest, settings: contract.settings ?? {}, page: page?.broker, fetch: served.fetch, userAgent: "origaiTV-contract", harness: o.harness });
   try {
     await host.start();
     results.push({ app, id: "S3.1", name: "its module starts in a worker of its own", ok: true, why: [] });

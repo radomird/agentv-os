@@ -1,4 +1,4 @@
-// `agentv app install | list | remove`: the box's apps from the command line.
+// `origaitv app install | list | remove`: the box's apps from the command line.
 // The daemon uses the same installer for setup's app picker, and the builder
 // will use installLocal for the apps it builds (ADR-039).
 //
@@ -6,9 +6,9 @@
 //        node cli.ts install --local <folder> [--yes] [--stand-in]
 //        node cli.ts list
 //        node cli.ts remove <id>
-// AGENTV_STATE (/var/lib/agentv) holds the apps; AGENTV_KEYRING overrides
-// AgenTV's key, and AGENTV_INDEX_URL the index from the package's settings.
-// AGENTV_BIN_DIR is where agentv-pin-check is, and AGENTV_PIN_CHECK replaces
+// ORIGAITV_STATE (/var/lib/origaitv) holds the apps; ORIGAITV_KEYRING overrides
+// origaiTV's key, and ORIGAITV_INDEX_URL the index from the package's settings.
+// ORIGAITV_BIN_DIR is where origaitv-pin-check is, and ORIGAITV_PIN_CHECK replaces
 // it for the tests.
 
 import { spawnSync } from "node:child_process";
@@ -19,14 +19,14 @@ import type { Manifest } from "../../apps/contract/manifest.ts";
 import { IndexError } from "./index.ts";
 import { installFromIndex, installLocal, readInstalled, removeApp } from "./install.ts";
 
-const AGENTV_PATH = process.env.AGENTV_PATH ?? "/usr/share/agentv";
-const appsDir = join(process.env.AGENTV_STATE ?? "/var/lib/agentv", "apps");
-const pinCheck = process.env.AGENTV_PIN_CHECK ?? join(process.env.AGENTV_BIN_DIR ?? "/usr/bin", "agentv-pin-check");
-const USAGE = "Usage: agentv app install <app-id> [--index <folder-or-url>] | --local <folder> [--yes]";
+const ORIGAITV_PATH = process.env.ORIGAITV_PATH ?? "/usr/share/origaitv";
+const appsDir = join(process.env.ORIGAITV_STATE ?? "/var/lib/origaitv", "apps");
+const pinCheck = process.env.ORIGAITV_PIN_CHECK ?? join(process.env.ORIGAITV_BIN_DIR ?? "/usr/bin", "origaitv-pin-check");
+const USAGE = "Usage: origaitv app install <app-id> [--index <folder-or-url>] | --local <folder> [--yes]";
 
 // A KEY=value line from the package's settings file.
 async function setting(key: string): Promise<string | undefined> {
-  const text = await readFile(join(AGENTV_PATH, "settings"), "utf8").catch(() => "");
+  const text = await readFile(join(ORIGAITV_PATH, "settings"), "utf8").catch(() => "");
   return text.split("\n").find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1);
 }
 
@@ -45,7 +45,7 @@ function reach(manifest: Manifest): string {
 
 // The adult's yes for an app built on this box (ADR-011, ADR-039): what it
 // can reach, then a question when there's a terminal to ask in (--yes
-// answers it), then the adult PIN when one is set, which agentv-pin-check
+// answers it), then the adult PIN when one is set, which origaitv-pin-check
 // asks for here, takes from the grant the TV or the phone gave, or asks for
 // on the TV.
 function approver(from: string, yes: boolean): (manifest: Manifest) => Promise<boolean> {
@@ -59,7 +59,7 @@ function approver(from: string, yes: boolean): (manifest: Manifest) => Promise<b
       question.close();
       if (!/^y(es)?$/i.test(answer.trim())) return false;
     }
-    // With no terminal, agentv-pin-check asks on the TV of whoever ran sudo:
+    // With no terminal, origaitv-pin-check asks on the TV of whoever ran sudo:
     // root has no TV session of its own to ask in.
     const sudoer = /^\d+$/.test(process.env.SUDO_UID ?? "") && !process.env.XDG_RUNTIME_DIR;
     const env = sudoer ? { ...process.env, XDG_RUNTIME_DIR: `/run/user/${process.env.SUDO_UID}` } : process.env;
@@ -81,7 +81,7 @@ async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
   if (command === "install" && rest.includes("--local")) {
     const yes = rest.includes("--yes");
-    // For agentv selftest's stand-in player only, which it serves from this
+    // For origaitv selftest's stand-in player only, which it serves from this
     // box: no other app may name the box as an origin.
     const standIn = rest.includes("--stand-in");
     const others = rest.filter((arg) => arg !== "--yes" && arg !== "--stand-in");
@@ -101,9 +101,9 @@ async function main(args: string[]): Promise<number> {
       console.error(USAGE);
       return 2;
     }
-    const source = flag ?? process.env.AGENTV_INDEX_URL ?? (await setting("AGENTV_INDEX_URL"));
+    const source = flag ?? process.env.ORIGAITV_INDEX_URL ?? (await setting("ORIGAITV_INDEX_URL"));
     if (!source) throw new IndexError("Couldn't load the apps");
-    const app = await installFromIndex(id, source, appsDir, process.env.AGENTV_KEYRING);
+    const app = await installFromIndex(id, source, appsDir, process.env.ORIGAITV_KEYRING);
     console.log(`Installed ${app.name} ${app.version} (${app.id}).`);
     return 0;
   }
@@ -116,14 +116,14 @@ async function main(args: string[]): Promise<number> {
   }
   if (command === "remove") {
     if (rest.length !== 1) {
-      console.error("Usage: agentv app remove <app-id>");
+      console.error("Usage: origaitv app remove <app-id>");
       return 2;
     }
     await removeApp(rest[0], appsDir);
     console.log(`Removed ${rest[0]}.`);
     return 0;
   }
-  console.error("Usage: agentv app install <app-id> | install --local <folder> | list | remove <app-id>");
+  console.error("Usage: origaitv app install <app-id> | install --local <folder> | list | remove <app-id>");
   return 2;
 }
 

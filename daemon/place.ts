@@ -55,11 +55,11 @@ export function parseZoneTab(text: string): Map<string, City> {
   return cities;
 }
 
-// AGENTV_ZONE_TAB and AGENTV_LOCALTIME stand in for the system's, in tests.
+// ORIGAITV_ZONE_TAB and ORIGAITV_LOCALTIME stand in for the system's, in tests.
 const tabs = new Map<string, Promise<Map<string, City>>>();
 
 export function cities(): Promise<Map<string, City>> {
-  const path = process.env.AGENTV_ZONE_TAB ?? "/usr/share/zoneinfo/zone.tab";
+  const path = process.env.ORIGAITV_ZONE_TAB ?? "/usr/share/zoneinfo/zone.tab";
   if (!tabs.has(path)) tabs.set(path, readFile(path, "utf8").then(parseZoneTab, () => new Map()));
   return tabs.get(path)!;
 }
@@ -67,7 +67,7 @@ export function cities(): Promise<Map<string, City>> {
 // The box's time zone, from /etc/localtime, which Omarchy's installer links
 // to the zone it was given. UTC when there's none.
 export async function boxZone(): Promise<string> {
-  const target = await readlink(process.env.AGENTV_LOCALTIME ?? "/etc/localtime").catch(() => "");
+  const target = await readlink(process.env.ORIGAITV_LOCALTIME ?? "/etc/localtime").catch(() => "");
   const match = /zoneinfo\/(.+)$/.exec(target);
   return match ? match[1].replace(/^(posix|right)\//, "") : "UTC";
 }

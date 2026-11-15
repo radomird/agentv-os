@@ -111,7 +111,7 @@ function number(value: string | undefined): number {
   return Number.parseInt((value ?? "").split("/")[0], 10) || 0;
 }
 
-// How far a scan has got, for Music → sources and agentv music scan.
+// How far a scan has got, for Music → sources and origaitv music scan.
 export interface ScanProgress {
   scanning: boolean;
   source: string | null; // the one being read now, by name
@@ -153,7 +153,7 @@ export class MusicLibrary {
 
   constructor(options: MusicOptions = {}) {
     const state = process.env.XDG_STATE_HOME ?? join(homedir(), ".local/state");
-    this.dir = options.dir ?? join(state, "agentv/music");
+    this.dir = options.dir ?? join(state, "origaitv/music");
     this.run = options.run ?? runCommand;
   }
 
@@ -530,7 +530,7 @@ export class MusicPlayer {
 
   constructor(options: PlayerOptions = {}) {
     const runtime = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.()}`;
-    this.socket = options.socket ?? join(runtime, "agentv", "mpv.sock");
+    this.socket = options.socket ?? join(runtime, "origaitv", "mpv.sock");
     this.startMpv = options.start ?? startMpv;
     this.connect = options.connect ?? connectMpv;
   }
@@ -631,7 +631,7 @@ function startMpv(socket: string): { stop(): void } | null {
   // still plays to nothing at the right pace, rather than skipping every
   // track at once.
   const args = ["--no-video", "--idle=yes", "--force-window=no", "--audio-display=no", "--no-terminal", "--ao=pipewire,pulse,alsa,null"];
-  const child = spawn("mpv", [...args, `--input-ipc-server=${socket}`, "--title=agentv music"], {
+  const child = spawn("mpv", [...args, `--input-ipc-server=${socket}`, "--title=origaitv music"], {
     stdio: "ignore",
   });
   child.on("error", () => {});
@@ -640,7 +640,7 @@ function startMpv(socket: string): { stop(): void } | null {
 
 // --- The app, as the screen daemon runs it ------------------------------------
 
-export const MUSIC = "agentv.music";
+export const MUSIC = "origaitv.music";
 const LEDGER_MS = 10_000;
 
 export interface MusicAppOptions {
@@ -653,7 +653,7 @@ export interface MusicAppOptions {
   log?: (line: string) => void;
 }
 
-// What the launcher's Music page and agentv music ask for, one request at a
+// What the launcher's Music page and origaitv music ask for, one request at a
 // time: the library, a search, playing and pausing, and the sources.
 export class MusicApp {
   private storage: Storage;
@@ -810,7 +810,7 @@ export class MusicApp {
       }
       case "sources":
         return { ok: true, sources: await this.storage.sources(), progress: this.progress() };
-      // A scan runs in the background; Music → sources and agentv music
+      // A scan runs in the background; Music → sources and origaitv music
       // scan --wait follow it with progress. With wait, the answer waits for
       // it, which only the tests ask for.
       case "scan": {

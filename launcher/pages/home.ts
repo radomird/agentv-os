@@ -21,12 +21,12 @@ import { later, release, tonight } from "./updates.ts";
 import { currentGrid, lookId, preview } from "../looks/looks.ts";
 import { showcasePicture } from "../looks/showcase.ts";
 
-export const CLOCK = "agentv.clock";
-export const WEATHER = "agentv.weather";
-export const MUSIC = "agentv.music";
+export const CLOCK = "origaitv.clock";
+export const WEATHER = "origaitv.weather";
+export const MUSIC = "origaitv.music";
 // New this week, home's top rail for streaming (S8.1): TMDB's, drawn by the
 // daemon, with posters.
-export const NEW = "agentv.new";
+export const NEW = "origaitv.new";
 
 // How many entries each size fits, in order (ADR-016): small has room for
 // one line under its headline, medium for a few columns, large for a week.
@@ -86,7 +86,7 @@ function entry(app: App, item: TileEntry, size: Placed["size"], at: number): HTM
   const progress = typeof item.progress === "number" ? Math.max(0, Math.min(1, item.progress)) : null;
   return h(
     "div",
-    // An app's own words keep their capitals in every look. AgenTV's own
+    // An app's own words keep their capitals in every look. origaiTV's own
     // apps are written like the rest of the TV, so Terminal lowers them.
     { class: `entry${icon ? " entry-icon" : ""}${item.item ? " entry-item" : ""}`, "data-entry": item.item ? at : undefined, "data-own-case": app.tier !== "built-in" },
     item.label ? h("span", { class: "entry-label" }, item.label) : null,
@@ -448,7 +448,7 @@ export function home(ctx: Ctx): View {
   // A new release says so in the bar (ADR-025, board 31), until Later, and
   // a build that's going or waiting says so after it.
   const next = release(ctx.updates);
-  const update = !next ? "" : tonight(ctx.updates) ? `AgenTV ${next} installs tonight` : later(ctx.updates) ? "" : `AgenTV ${next} is ready, in Settings`;
+  const update = !next ? "" : tonight(ctx.updates) ? `origaiTV ${next} installs tonight` : later(ctx.updates) ? "" : `origaiTV ${next} is ready, in Settings`;
   const notice = update || buildNotice();
   const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice, undefined, HOLD_HINT));
   return {

@@ -1,10 +1,10 @@
-// AgenTV's toasts in the TV session (ADR-031): drawn the standard Wayland
+// origaiTV's toasts in the TV session (ADR-031): drawn the standard Wayland
 // way, as a layer surface over the app in front, so a toast shows over a
 // playing film too. A toast never takes the keyboard or the mouse.
 //
-// agentv-toast.service runs it with Quickshell, which comes with Omarchy.
+// origaitv-toast.service runs it with Quickshell, which comes with Omarchy.
 // The screen daemon shows one with:
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- toast show "<text>"
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- toast show "<text>"
 // The real toasts, with What's new and the update notice, come with the
 // home screen in stage 2.
 //
@@ -16,30 +16,30 @@
 // pointer pushed into the top left corner shows a Home button there, and a
 // click goes home, as the Home key does. The screen daemon says when an app
 // is in front:
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- corner front true
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- corner front true
 //
-// And AgenTV's sign-in screen (ADR-032, board 15): a bar along the bottom
+// And origaiTV's sign-in screen (ADR-032, board 15): a bar along the bottom
 // with the app's name, where to type, and "i'm signed in", under the
 // service's own sign-in page. It keeps the bottom of the screen for itself,
 // so the page, maximized above it, isn't covered, and it never takes the
 // keyboard, so typing goes to the page. The screen daemon shows and hides it:
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- signin show "Jellyfin"
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- signin hide
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- signin show "Jellyfin"
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- signin hide
 //
 // And the listening bar (ADR-054), along the bottom over the app in front,
 // while someone talks to the TV from their phone: listening, the words as
 // the phone's dictation fills them in, thinking, then what came of it. It
 // moves to say it's listening, calmly and with opacity only, and stands
 // still with reduce motion. It never takes the keyboard or the mouse.
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- listen show <state> <words> <background> <foreground> <accent> <still>
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- listen hide
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- listen show <state> <words> <background> <foreground> <accent> <still>
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- listen hide
 //
 // And the typing bar (ADR-065), low over the app in front, while someone
 // types on their phone: whose phone it is, and what's arriving, with a dot
 // for each character of a password. The daemon sends the dots, never the
 // password. It goes after a few seconds with no typing, and on Enter.
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- typing show <from> <text> <password> <background> <foreground> <accent>
-//   qs ipc -n -p /usr/share/agentv/session/toast call -- typing hide
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- typing show <from> <text> <password> <background> <foreground> <accent>
+//   qs ipc -n -p /usr/share/origaitv/session/toast call -- typing hide
 
 import QtQuick
 import Quickshell
@@ -79,7 +79,7 @@ ShellRoot {
     timeout: 30
     respectInhibitors: true
     onIsIdleChanged: {
-      report.command = ["agentv", "screen", "idle", isIdle ? "yes" : "no"]
+      report.command = ["origaitv", "screen", "idle", isIdle ? "yes" : "no"]
       report.running = true
     }
   }
@@ -186,13 +186,13 @@ ShellRoot {
 
   Process {
     id: signedIn
-    command: ["agentv", "screen", "signed-in"]
+    command: ["origaitv", "screen", "signed-in"]
   }
 
   // After the overlay starts again, what's in front now.
   Process {
     running: true
-    command: ["agentv", "screen", "status"]
+    command: ["origaitv", "screen", "status"]
     stdout: StdioCollector {
       id: frontNow
       waitForEnd: true
@@ -208,7 +208,7 @@ ShellRoot {
 
   Process {
     id: goHome
-    command: ["agentv", "screen", "home"]
+    command: ["origaitv", "screen", "home"]
   }
 
   // It goes away a moment after the pointer leaves it, or after a while
@@ -232,7 +232,7 @@ ShellRoot {
     implicitHeight: cornerButton.height
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "agentv-corner"
+    WlrLayershell.namespace: "origaitv-corner"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     // Until it opens, it takes the pointer only in the corner itself, so
@@ -297,7 +297,7 @@ ShellRoot {
     implicitHeight: label.implicitHeight + 40
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "agentv-toast"
+    WlrLayershell.namespace: "origaitv-toast"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {}
@@ -331,7 +331,7 @@ ShellRoot {
     implicitHeight: 220
     color: "#101014"
     exclusionMode: ExclusionMode.Auto
-    WlrLayershell.namespace: "agentv-signin"
+    WlrLayershell.namespace: "origaitv-signin"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
@@ -465,7 +465,7 @@ ShellRoot {
     implicitHeight: 112
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "agentv-listening"
+    WlrLayershell.namespace: "origaitv-listening"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {}
@@ -558,7 +558,7 @@ ShellRoot {
     implicitHeight: 76
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "agentv-typing"
+    WlrLayershell.namespace: "origaitv-typing"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {}

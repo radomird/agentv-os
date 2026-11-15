@@ -1,0 +1,20 @@
+# origaiTV's screen daemon (daemon/screen.ts): which window is in front of the
+# TV. It starts the home screen and the apps, so they stop with it.
+
+[Unit]
+Description=origaiTV screen daemon
+PartOf=origaitv-tv.target
+# Keep trying for as long as the session runs: a TV with no screen daemon
+# would stay black.
+StartLimitIntervalSec=0
+ConditionEnvironment=HYPRLAND_INSTANCE_SIGNATURE
+
+[Service]
+Environment=ORIGAITV_PATH=/usr/share/origaitv
+ExecStart=/usr/bin/node /usr/share/origaitv/daemon/screen.ts
+Restart=on-failure
+RestartSec=1
+KillMode=control-group
+# Stopped within a few seconds, so Restart and Shut down never wait on it
+# (ADR-033).
+TimeoutStopSec=5s

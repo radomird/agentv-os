@@ -1,13 +1,13 @@
-// AgenTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
+// origaiTV's daemon (PHASE-1-PLAN.md, "Repository layout"): it serves the TV's
 // pages and the state behind them on this box only (127.0.0.1:3000), the
 // phone companion on the home network (port 3001), where only a paired phone
 // gets past pairing, and the setup hotspot's captive page (port 3002), on
 // the hotspot's own address only (stage 4).
 //
 // - TV setup (setup/) until it's done, and the home screen (launcher/) after
-//   it. Setup keeps its step in setup.json (daemon/setup.ts), and `agentv
+//   it. Setup keeps its step in setup.json (daemon/setup.ts), and `origaitv
 //   setup skip` marks it done.
-// - /health, which CI's image checks and `agentv selftest` read. The page on
+// - /health, which CI's image checks and `origaitv selftest` read. The page on
 //   the TV tells the daemon each time it has been drawn, so /health can say the
 //   welcome screen is really on the TV (S0.1, S1.3, S1.6).
 // - The launcher's TypeScript, served as JavaScript with its types stripped,
@@ -26,7 +26,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { stripTypeScriptTypes } from "node:module";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { APPS_TILE, gridNamed, Home, type TileAnswer } from "./home.ts";
-import { agentvOwner, installedPackage, userAgent } from "./identity.ts";
+import { origaitvOwner, installedPackage, userAgent } from "./identity.ts";
 import { Ai, OFFERS, planRefused, PROVIDER_LIST, TERMS_READ, type Provider } from "./ai.ts";
 import { ARCHIVES, ArtArchives, type ArtOptions } from "./art.ts";
 import { MAX_VIDEO, Shared, type Share } from "./shared.ts";
@@ -92,25 +92,25 @@ import { DisplayRoutes } from "./routes/display.ts";
 import { Inhibitor } from "./inhibit.ts";
 
 export interface DaemonOptions {
-  root: string; // AgenTV's files: /usr/share/agentv, or a checkout
+  root: string; // origaiTV's files: /usr/share/origaitv, or a checkout
   // Keeps the box awake while a build runs (daemon/inhibit.ts, ADR-072).
   inhibitor?: (why: string) => { set(on: boolean): void };
-  state: string; // the daemon's own state: /var/lib/agentv/daemon
-  apps?: string; // the box's apps: /var/lib/agentv/apps
+  state: string; // the daemon's own state: /var/lib/origaitv/daemon
+  apps?: string; // the box's apps: /var/lib/origaitv/apps
   // Only for a test harness (daemon/apps/loader.ts): the box never sets it,
   // and nothing reads it from a file or the environment.
   harness?: { thisBox?: boolean; noSandbox?: boolean };
-  updates?: string; // what the update check and an install write: /var/lib/agentv/update
-  builtins?: string | null; // AgenTV's own apps: <root>/apps/builtin, or null for none
+  updates?: string; // what the update check and an install write: /var/lib/origaitv/update
+  builtins?: string | null; // origaiTV's own apps: <root>/apps/builtin, or null for none
   ledger?: string; // the ledger's database: <state>/ledger.db
   port: number;
   host?: string;
   log?: (line: string) => void;
-  // The agentv package this daemon runs: the one installed as it starts.
+  // The origaitv package this daemon runs: the one installed as it starts.
   running?: string;
   // This boot's id, which the PIN's lock goes by: the kernel's, by default.
   bootId?: () => string;
-  // Which provider has a key: /etc/agentv/key.json, which agentv-key-store
+  // Which provider has a key: /etc/origaitv/key.json, which origaitv-key-store
   // writes, and how long that may take.
   keyStatus?: string;
   // The first screen's account note, and root's side of the desktop
@@ -118,24 +118,24 @@ export interface DaemonOptions {
   accountMarker?: string;
   passwordSocket?: string;
   keyWaitMs?: number;
-  // The channel `agentv channel` sets: /etc/agentv/channel (ADR-053).
+  // The channel `origaitv channel` sets: /etc/origaitv/channel (ADR-053).
   channelFile?: string;
-  // Setup's apps: what agentv-setup-apps writes as it installs them
-  // (/run/agentv-setup-apps/state.json), how long it may take to start, and
+  // Setup's apps: what origaitv-setup-apps writes as it installs them
+  // (/run/origaitv-setup-apps/state.json), how long it may take to start, and
   // the official apps in the index, in place of the signed index itself.
   setupAppsStatus?: string;
   setupAppsWaitMs?: number;
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
-  // The themes your agent made, as root put them: /var/lib/agentv/themes.
+  // The themes your agent made, as root put them: /var/lib/origaitv/themes.
   themes?: string;
   // Where packages put their desktop entries and icons, for a native app's
   // icon: /usr/local/share, /usr/share and flatpak's.
   dataDirs?: string[];
-  // The backgrounds and their credits: /var/lib/agentv/backgrounds.
+  // The backgrounds and their credits: /var/lib/origaitv/backgrounds.
   backgrounds?: string;
-  // What phones shared to the TV (ADR-050): /var/lib/agentv/shared.
+  // What phones shared to the TV (ADR-050): /var/lib/origaitv/shared.
   shared?: string;
   // Tests point the museum archives at their own server.
   art?: Pick<ArtOptions, "endpoints" | "imageHosts" | "fetch">;
@@ -148,9 +148,9 @@ export interface DaemonOptions {
   interfaces?: () => ReturnType<typeof networkInterfaces>;
   // qrencode, which draws the QR code.
   qrencode?: string;
-  // The setup hotspot's captive page: its port, which agentv-hotspot sends
-  // the phone's port 80 to (3002 on the box), or none; what agentv-hotspot
-  // writes (/run/agentv-hotspot); and the box's address on the hotspot,
+  // The setup hotspot's captive page: its port, which origaitv-hotspot sends
+  // the phone's port 80 to (3002 on the box), or none; what origaitv-hotspot
+  // writes (/run/origaitv-hotspot); and the box's address on the hotspot,
   // which the page answers on and nowhere else.
   setupPort?: number;
   setupHost?: string;
@@ -163,10 +163,10 @@ export interface DaemonOptions {
   homeProxyPort?: number;
   // The builder (ADR-011): its builds, root's answers, the spend and the
   // nightly package check, where root and the builder write them.
-  builds?: string; // /var/lib/agentv/build
-  buildRun?: string; // /run/agentv-build
-  spend?: string; // /var/lib/agentv/spend/spend.json
-  npmWarnings?: string; // /var/lib/agentv/npm-check/warnings.json
+  builds?: string; // /var/lib/origaitv/build
+  buildRun?: string; // /run/origaitv-build
+  spend?: string; // /var/lib/origaitv/spend/spend.json
+  npmWarnings?: string; // /var/lib/origaitv/npm-check/warnings.json
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
@@ -174,7 +174,7 @@ export interface DaemonOptions {
   // test stands them in.
   aiSites?: Partial<typeof PROVIDER_SITES>;
   // TMDB, through the router's service, which holds the household's TMDB
-  // key, and /etc/agentv/tmdb.json, which says whether there's one (stage 8).
+  // key, and /etc/origaitv/tmdb.json, which says whether there's one (stage 8).
   tmdb?: TmdbGet;
   tmdbStatus?: string;
   // The clock what's new goes by, for tests that pin the day.
@@ -389,7 +389,7 @@ export class Daemon {
   // The screen daemon, taking the phone's keys and text for the virtual
   // input device.
   private remotes = new Set<ServerResponse>();
-  // AgenTV's sign-in screen, while it's on the TV (ADR-032): the phone then
+  // origaiTV's sign-in screen, while it's on the TV (ADR-032): the phone then
   // offers fields its password manager fills.
   private signingIn: { app: string; name: string } | null = null;
   // What's on the TV for the phones (ADR-037), and a count that goes up with
@@ -420,7 +420,7 @@ export class Daemon {
     this.running = options.running ?? installedPackage();
     this.log = options.log ?? ((line) => console.log(line));
     this.home = new Home({
-      appsDir: options.apps ?? "/var/lib/agentv/apps",
+      appsDir: options.apps ?? "/var/lib/origaitv/apps",
       state: options.state,
       ledger: () => this.ledger,
       builtins: options.builtins === null ? undefined : (options.builtins ?? join(options.root, "apps", "builtin")),
@@ -524,7 +524,7 @@ export class Daemon {
         logEveryMs: 3600_000,
       });
     }
-    this.updates = new Updates({ dir: options.updates ?? "/var/lib/agentv/update", state: options.state });
+    this.updates = new Updates({ dir: options.updates ?? "/var/lib/origaitv/update", state: options.state });
     this.profiles = new Profiles({ ledger: () => this.ledger, state: options.state, pinSet: () => this.pin.status().set });
     this.key = new ProviderKey({ state: options.state, status: options.keyStatus, waitMs: options.keyWaitMs });
     this.tmdbKey = new TmdbKey({ state: options.state, status: options.tmdbStatus, waitMs: options.keyWaitMs });
@@ -558,7 +558,7 @@ export class Daemon {
       state: options.state,
       keySet: () => this.tmdbKey.status().set,
       region: () => this.region(),
-      // Every app on the box but AgenTV's own.
+      // Every app on the box but origaiTV's own.
       apps: async () => (await this.home.manifests()).filter(({ tier }) => tier !== "built-in").map(({ manifest }) => ({ id: manifest.id, name: manifest.name, category: manifest.tv.category })),
       now: options.newsNow,
       log: this.log,
@@ -570,11 +570,11 @@ export class Daemon {
     this.setupState = new Setup({ path: join(options.state, "setup.json"), on: (feature) => this.features.on(feature) });
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
-    this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/agentv-build" });
+    this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/origaitv-build" });
     this.buildAwake = options.inhibitor?.("building an app") ?? { set: () => {} };
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
-    this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/agentv/backgrounds" });
-    this.shared = new Shared({ dir: options.shared ?? "/var/lib/agentv/shared" });
+    this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/origaitv/backgrounds" });
+    this.shared = new Shared({ dir: options.shared ?? "/var/lib/origaitv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });
     this.immich = new ImmichAlbum({ userAgent: userAgent(options.root) });
     this.discover = new Discover({ log: this.log, changed: (state) => this.toPages("discover", state), screen: () => this.phonesChanged(), picked: (key) => this.toPages("discover-pick", { key }), ...options.discover });
@@ -582,7 +582,7 @@ export class Daemon {
     this.setupApps = new SetupApps({
       state: options.state,
       status: options.setupAppsStatus,
-      source: async () => process.env.AGENTV_INDEX_URL || (await this.settings()).AGENTV_INDEX_URL || undefined,
+      source: async () => process.env.ORIGAITV_INDEX_URL || (await this.settings()).ORIGAITV_INDEX_URL || undefined,
       catalog: options.setupCatalog,
       waitMs: options.setupAppsWaitMs,
       // The setup screens hear each install move on, and home gets each
@@ -675,7 +675,7 @@ export class Daemon {
     return this.openLedger;
   }
 
-  // systemd gives the daemon 5 s to stop (agentv-daemon.service). Idle
+  // systemd gives the daemon 5 s to stop (origaitv-daemon.service). Idle
   // connections go at once; one still busy, such as a phone's or the screen
   // daemon's long wait, gets a second to finish, and is then cut.
   close(graceMs = 1000): Promise<void> {
@@ -704,7 +704,7 @@ export class Daemon {
   // --- State --------------------------------------------------------------
 
   private async settings(): Promise<Record<string, string>> {
-    const values: Record<string, string> = { AGENTV_VERSION: "dev", AGENTV_CHANNEL: "dev", AGENTV_INDEX_URL: "" };
+    const values: Record<string, string> = { ORIGAITV_VERSION: "dev", ORIGAITV_CHANNEL: "dev", ORIGAITV_INDEX_URL: "" };
     const text = await readFile(join(this.options.root, "settings"), "utf8").catch(() => "");
     for (const line of text.split("\n")) {
       const at = line.indexOf("=");
@@ -723,13 +723,13 @@ export class Daemon {
     return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
   }
 
-  // The channel this box updates from, as `agentv channel` says it: the one
-  // /etc/agentv/channel names, or else the one its package was built for.
+  // The channel this box updates from, as `origaitv channel` says it: the one
+  // /etc/origaitv/channel names, or else the one its package was built for.
   // A checkout's daemon, with neither, is on stable.
   private async channel(): Promise<string> {
-    const chosen = (await readFile(this.options.channelFile ?? "/etc/agentv/channel", "utf8").catch(() => "")).split("\n")[0].trim();
+    const chosen = (await readFile(this.options.channelFile ?? "/etc/origaitv/channel", "utf8").catch(() => "")).split("\n")[0].trim();
     if (chosen) return chosen;
-    const built = (await this.settings()).AGENTV_CHANNEL;
+    const built = (await this.settings()).ORIGAITV_CHANNEL;
     return built === "dev" ? "stable" : built || "stable";
   }
 
@@ -1309,22 +1309,22 @@ export class Daemon {
   private async phoneUpdate(): Promise<object | null> {
     const state = await this.updates.read();
     const status = state.status as {
-      agentv?: { installed?: string | null; available?: string | null };
+      origaitv?: { installed?: string | null; available?: string | null };
       omarchy?: { available?: string | null };
       packages?: number;
       waiting?: boolean;
-      notes?: { agentv?: string[] };
+      notes?: { origaitv?: string[] };
     } | null;
     const progress = state.progress as { state?: string; at?: string } | null;
     const installing = Boolean(progress && ["running", "restarting", "going-back"].includes(progress.state ?? "") && Date.now() - Date.parse(progress.at ?? "") < 15 * 60_000);
-    const ready = Boolean(status && (status.agentv?.available || status.omarchy?.available || (status.packages ?? 0) > 0) && !status.waiting);
+    const ready = Boolean(status && (status.origaitv?.available || status.omarchy?.available || (status.packages ?? 0) > 0) && !status.waiting);
     if (!ready && !installing) return null;
-    const version = status?.agentv?.available ?? "packages";
+    const version = status?.origaitv?.available ?? "packages";
     return {
       version,
-      installed: status?.agentv?.installed ?? null,
+      installed: status?.origaitv?.installed ?? null,
       omarchy: status?.omarchy?.available ?? null,
-      notes: status?.notes?.agentv ?? [],
+      notes: status?.notes?.origaitv ?? [],
       tonight: state.tonight?.version === version,
       later: state.seen?.later === version,
       installing,
@@ -1701,7 +1701,7 @@ export class Daemon {
       return;
     }
 
-    // AgenTV's sign-in screen (ADR-032, S4.9): the name and the password the
+    // origaiTV's sign-in screen (ADR-032, S4.9): the name and the password the
     // phone's password manager filled, typed into the service's form on the
     // TV, with Tab between them and Enter after. Never logged.
     if (method === "POST" && path === "/api/phone/sign-in") {
@@ -1924,7 +1924,7 @@ export class Daemon {
 
     // The push to a repo of the person's own, asked here each time behind
     // the PIN, and done by the screen daemon as the person, with their own
-    // GitHub sign-in. AgenTV's own repos are refused (ADR-045).
+    // GitHub sign-in. origaiTV's own repos are refused (ADR-045).
     const pushing = /^\/api\/phone\/apps\/(local\.[a-z0-9-]+)\/push$/.exec(path);
     if (method === "POST" && pushing) {
       const viewer = await this.profiles.active();
@@ -1950,7 +1950,7 @@ export class Daemon {
       }
       const body = (await this.body(request)) as { repo?: unknown } | undefined;
       const repo = parseRepo(body?.repo, offer.github.login);
-      const refused = "error" in repo ? repo.error : repoRefusal(repo, agentvOwner());
+      const refused = "error" in repo ? repo.error : repoRefusal(repo, origaitvOwner());
       if (refused || "error" in repo) {
         this.json(response, 400, { ok: false, error: refused });
         return;
@@ -2095,7 +2095,7 @@ export class Daemon {
 
   // The grant a page got for the PIN, sent with a guarded request.
   private grant(request: IncomingMessage): string | undefined {
-    const grant = request.headers["x-agentv-grant"];
+    const grant = request.headers["x-origaitv-grant"];
     return typeof grant === "string" ? grant : undefined;
   }
 
@@ -2380,11 +2380,11 @@ export class Daemon {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
       this.json(response, 200, {
         ok: true,
-        service: "agentv",
-        version: info.AGENTV_VERSION,
-        channel: info.AGENTV_CHANNEL,
-        // What this process runs, which after an update and before AgenTV's
-        // services restart is still the package from before (agentv-restart).
+        service: "origaitv",
+        version: info.ORIGAITV_VERSION,
+        channel: info.ORIGAITV_CHANNEL,
+        // What this process runs, which after an update and before origaiTV's
+        // services restart is still the package from before (origaitv-restart).
         running: this.running,
         // The time zone the daemon's clock goes by, which follows the box's
         // when the country moves it.
@@ -2414,7 +2414,7 @@ export class Daemon {
 
     if (method === "GET" && path === "/api/state") {
       const [info, setup] = await Promise.all([this.settings(), this.setup()]);
-      this.json(response, 200, { ok: true, version: info.AGENTV_VERSION, channel: info.AGENTV_CHANNEL, setup });
+      this.json(response, 200, { ok: true, version: info.ORIGAITV_VERSION, channel: info.ORIGAITV_CHANNEL, setup });
       return;
     }
 
@@ -2425,7 +2425,7 @@ export class Daemon {
         return;
       }
       const was = (await this.setup()).done;
-      // agentv setup reset sends the PIN with its ask. It allows this and
+      // origaitv setup reset sends the PIN with its ask. It allows this and
       // nothing more: no grant comes of it, a locked TV stays locked and the
       // pad's own wrong tries stand, as on the hotspot's page.
       const byPin = was && !body.done && body.pin !== undefined && this.pin.status().set ? this.pin.right(body.pin, "setup-reset") : null;
@@ -2458,10 +2458,10 @@ export class Daemon {
       const hotspot = this.hotspot.status();
       this.json(response, 200, {
         ok: true,
-        // The AgenTV this box has now, which getting ready brings up to date,
+        // The origaiTV this box has now, which getting ready brings up to date,
         // and the package this daemon runs, with its release: an update
         // restarts it on the new one.
-        version: (await this.settings()).AGENTV_VERSION,
+        version: (await this.settings()).ORIGAITV_VERSION,
         running: this.running,
         setup: await this.setup(),
         // The steps shown, in order, and what the status bar says for each.
@@ -2602,8 +2602,8 @@ export class Daemon {
       ]);
       this.json(response, 200, {
         ok: true,
-        version: info.AGENTV_VERSION,
-        channel: info.AGENTV_CHANNEL,
+        version: info.ORIGAITV_VERSION,
+        channel: info.ORIGAITV_CHANNEL,
         setup,
         viewer,
         viewers,
@@ -2704,7 +2704,7 @@ export class Daemon {
       return;
     }
 
-    // The check after an update (bin/agentv-update-after): does every
+    // The check after an update (bin/origaitv-update-after): does every
     // installed app still load?
     if (method === "GET" && path === "/api/apps/check") {
       this.json(response, 200, { ok: true, apps: await this.home.check() });
@@ -2770,7 +2770,7 @@ export class Daemon {
       return;
     }
 
-    // Whether a grant is good, for the screen daemon and agentv-pin-check.
+    // Whether a grant is good, for the screen daemon and origaitv-pin-check.
     if (method === "POST" && path === "/api/pin/allows") {
       const body = (await this.body(request)) as { grant?: unknown } | undefined;
       if (!this.pin.allows(body?.grant)) {
@@ -2879,7 +2879,7 @@ export class Daemon {
       return;
     }
 
-    // The screen daemon, as AgenTV's sign-in screen comes and goes.
+    // The screen daemon, as origaiTV's sign-in screen comes and goes.
     if (method === "POST" && path === "/api/sign-in-screen") {
       const body = (await this.body(request)) as { app?: unknown; name?: unknown } | undefined;
       this.signingIn = typeof body?.app === "string" ? { app: body.app, name: typeof body.name === "string" ? body.name : body.app } : null;
@@ -2907,13 +2907,13 @@ export class Daemon {
     // another site.
     if (await this.phoneRemote.local(method ?? "", path, request, response)) return;
     if (method === "GET" && path === "/api/remote") {
-      const who = request.headers["x-agentv-screen"];
+      const who = request.headers["x-origaitv-screen"];
       if (who !== "1" && who !== "desktop") {
         this.json(response, 403, { ok: false, error: "only the screen daemon takes the phone's keys" });
         return;
       }
       response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-      response.write(": agentv remote\n\n");
+      response.write(": origaitv remote\n\n");
       this.remotes.add(response);
       if (who === "desktop") {
         this.desktops.add(response);
@@ -3406,7 +3406,7 @@ export class Daemon {
       return;
     }
     // A sentence said to the TV (ADR-023), here from the box itself, such
-    // as agentv selftest; and the TV's own pick and Back.
+    // as origaitv selftest; and the TV's own pick and Back.
     if (method === "GET" && path === "/api/say") {
       this.json(response, 200, { ok: true, said: this.say.current });
       return;
@@ -3430,7 +3430,7 @@ export class Daemon {
       return;
     }
     // The router alone, with apps it's told of and nothing done, as the box
-    // routes: agentv selftest S7.4 runs the eval set through it.
+    // routes: origaitv selftest S7.4 runs the eval set through it.
     if (method === "POST" && path === "/api/router/route") {
       const body = (await this.body(request)) as { sentence?: unknown; apps?: unknown } | undefined;
       const apps = Array.isArray(body?.apps) ? (body.apps as RouterApp[]).slice(0, 100) : [];
@@ -3928,7 +3928,7 @@ export class Daemon {
         "Cache-Control": "no-store",
         Connection: "keep-alive",
       });
-      response.write(": agentv\n\n");
+      response.write(": origaitv\n\n");
       this.streams.add(response);
       // A comment now and then keeps the connection open through idle hours.
       const beat = setInterval(() => response.write(": beat\n\n"), 25_000);
@@ -3991,28 +3991,28 @@ function stopServer(server: Server, graceMs: number): Promise<void> {
 async function stopping(daemon: Daemon, signal: string): Promise<void> {
   const progress = (await daemon.updates.read().catch(() => null))?.progress as { state?: unknown } | null | undefined;
   const why = progress?.state === "running" ? ", while an update installs" : progress?.state === "restarting" ? ", as an update restarts the TV" : "";
-  console.log(`agentv daemon stopping on ${signal}${why}`);
+  console.log(`origaitv daemon stopping on ${signal}${why}`);
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const at = args.indexOf("--port");
-  const port = at >= 0 ? Number(args[at + 1]) : Number(process.env.AGENTV_PORT ?? 3000);
+  const port = at >= 0 ? Number(args[at + 1]) : Number(process.env.ORIGAITV_PORT ?? 3000);
   const daemon = new Daemon({
-    root: process.env.AGENTV_PATH ?? "/usr/share/agentv",
+    root: process.env.ORIGAITV_PATH ?? "/usr/share/origaitv",
     inhibitor: (why) => new Inhibitor(why),
-    state: process.env.AGENTV_DAEMON_STATE ?? "/var/lib/agentv/daemon",
-    apps: process.env.AGENTV_APPS ?? "/var/lib/agentv/apps",
-    updates: process.env.AGENTV_UPDATE_STATE ?? "/var/lib/agentv/update",
+    state: process.env.ORIGAITV_DAEMON_STATE ?? "/var/lib/origaitv/daemon",
+    apps: process.env.ORIGAITV_APPS ?? "/var/lib/origaitv/apps",
+    updates: process.env.ORIGAITV_UPDATE_STATE ?? "/var/lib/origaitv/update",
     port,
-    lanPort: process.env.AGENTV_LAN_PORT === "off" ? undefined : Number(process.env.AGENTV_LAN_PORT ?? 3001),
-    setupPort: process.env.AGENTV_SETUP_PORT === "off" ? undefined : Number(process.env.AGENTV_SETUP_PORT ?? 3002),
-    homeProxyPort: process.env.AGENTV_HOME_PROXY_PORT === "off" ? undefined : Number(process.env.AGENTV_HOME_PROXY_PORT ?? 3005),
+    lanPort: process.env.ORIGAITV_LAN_PORT === "off" ? undefined : Number(process.env.ORIGAITV_LAN_PORT ?? 3001),
+    setupPort: process.env.ORIGAITV_SETUP_PORT === "off" ? undefined : Number(process.env.ORIGAITV_SETUP_PORT ?? 3002),
+    homeProxyPort: process.env.ORIGAITV_HOME_PROXY_PORT === "off" ? undefined : Number(process.env.ORIGAITV_HOME_PROXY_PORT ?? 3005),
   });
   const listening = await daemon.listen();
   const phones = daemon.lanPort ? `, for phones on port ${daemon.lanPort}` : "";
   const captive = daemon.setupPort ? `, and for the setup hotspot on port ${daemon.setupPort}` : "";
-  console.log(`agentv daemon on http://127.0.0.1:${listening}/${phones}${captive}`);
+  console.log(`origaitv daemon on http://127.0.0.1:${listening}/${phones}${captive}`);
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => void stopping(daemon, signal).then(() => daemon.close().then(() => process.exit(0))));
   }

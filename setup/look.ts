@@ -27,7 +27,7 @@ export async function look(ctx: Ctx): Promise<View> {
   const pick = async (one: LookInfo) => {
     const put = await ctx
       .guarded("the look", async (grant) => {
-        const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ look: one.id }) }).catch(() => null);
+        const response = await fetch("/api/look", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify({ look: one.id }) }).catch(() => null);
         if (response?.status === 403 && ((await response.json().catch(() => null)) as { pin?: boolean } | null)?.pin) throw new Error(NEEDS_PIN);
         return Boolean(response?.ok);
       })

@@ -38,7 +38,7 @@
     {
       "id": "build",
       "label": "Making it",
-      "does": "Write the app, starting from the template in app/. Its manifest's tv.origins are the ones you declared, and nothing else. It asks the API no more often than its terms allow, keeps the last answer in agentv.storage for a quick start, shows a plain line when the API doesn't answer, and credits the source where its terms ask. Its tile shows the one thing worth a glance, with agentv.tile.set. Input from agentv.input.on, Back from agentv.onBack, and agentv.ready() once something is drawn. No inline scripts, eval or code from other sites. Run check until it passes.",
+      "does": "Write the app, starting from the template in app/. Its manifest's tv.origins are the ones you declared, and nothing else. It asks the API no more often than its terms allow, keeps the last answer in origaitv.storage for a quick start, shows a plain line when the API doesn't answer, and credits the source where its terms ask. Its tile shows the one thing worth a glance, with origaitv.tile.set. Input from origaitv.input.on, Back from origaitv.onBack, and origaitv.ready() once something is drawn. No inline scripts, eval or code from other sites. Run check until it passes.",
       "tools": ["read", "list", "write", "remove", "bundle", "check", "fetch_sample"],
       "writes": ["app/**", "src/**", "NOTES.md"],
       "reads": ["kit"],
@@ -57,7 +57,7 @@
     {
       "id": "try",
       "label": "Trying it on a TV",
-      "does": "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only the origins it declared.",
+      "does": "Run origaiTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only the origins it declared.",
       "tools": ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
       "writes": ["app/**", "src/**", "tests/**", "NOTES.md"],
       "reads": ["kit", "tests"],

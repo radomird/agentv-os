@@ -412,7 +412,7 @@ async function start(): Promise<void> {
   listenInput(act);
   listen(
     {
-      // Setup done, from the last step or agentv setup skip: home takes over.
+      // Setup done, from the last step or origaitv setup skip: home takes over.
       // Started again or moved on elsewhere: the step it's on now.
       setup: (data) => {
         const next = data as SetupInfo["setup"];
@@ -486,10 +486,10 @@ async function start(): Promise<void> {
   void sounds.load();
   // The screen daemon reads this to know the page came up, and /health says
   // the welcome screen is on the TV once it's drawn (S0.1).
-  const w = window as unknown as { agentvWelcome: boolean; agentvSetup: object };
-  w.agentvWelcome = true;
+  const w = window as unknown as { origaitvWelcome: boolean; origaitvSetup: object };
+  w.origaitvWelcome = true;
   // For the UI checks and the image layer: the step, and the sounds.
-  w.agentvSetup = { sounds, focus, music, route: () => route };
+  w.origaitvSetup = { sounds, focus, music, route: () => route };
   requestAnimationFrame(() => void fetch("/api/welcome-shown", { method: "POST" }).catch(() => {}));
 }
 

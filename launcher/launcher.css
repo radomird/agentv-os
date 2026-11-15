@@ -1,4 +1,4 @@
-/* AgenTV's home screen, in the Terminal look (ADR-014): JetBrains Mono, sharp
+/* origaiTV's home screen, in the Terminal look (ADR-014): JetBrains Mono, sharp
    blocks, headings written as shell prompts and a status bar along the bottom.
    Every colour comes from the active Omarchy theme: these are Tokyo Night's,
    and /api/theme.css puts the theme's own over them. Sizes are for a 1080p
@@ -596,7 +596,7 @@ button {
   color: var(--foreground);
 }
 
-/* TMDB's logo in Settings → About: smaller than AgenTV's own name above it,
+/* TMDB's logo in Settings → About: smaller than origaiTV's own name above it,
    as TMDB's terms ask. */
 .about-tmdb {
   display: block;
@@ -1665,7 +1665,7 @@ body.with-backdrop.on-home {
   margin: 0;
 }
 
-/* AgenTV's UI icons (glyphs.ts), beside the words they go with. */
+/* origaiTV's UI icons (glyphs.ts), beside the words they go with. */
 .glyph {
   flex: none;
 }

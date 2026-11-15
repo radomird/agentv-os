@@ -23,18 +23,18 @@ import { Readable } from "node:stream";
 
 // What each derived value is for, so no two uses share a key or a proof.
 export const INFO = {
-  pair: "agentv pair v1",
-  pairBox: "agentv pair box v1",
-  key: "agentv phone key v1",
-  helloBox: "agentv hello box v1",
-  session: "agentv session v1",
+  pair: "origaitv pair v1",
+  pairBox: "origaitv pair box v1",
+  key: "origaitv phone key v1",
+  helloBox: "origaitv hello box v1",
+  session: "origaitv session v1",
 };
 
-export const HEADERS = { session: "x-agentv-session", counter: "x-agentv-counter", sig: "x-agentv-sig", grant: "x-agentv-grant" };
+export const HEADERS = { session: "x-origaitv-session", counter: "x-origaitv-counter", sig: "x-origaitv-sig", grant: "x-origaitv-grant" };
 
 // A sealed JSON body, either way: a 12-byte nonce, the sealed text, and the
 // 16-byte tag.
-export const SEALED = "application/agentv-sealed";
+export const SEALED = "application/origaitv-sealed";
 
 const NONCE = 12;
 const TAG = 16;

@@ -119,7 +119,7 @@ export class PhoneRemote {
   async local(method: string, path: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     const answered = /^\/api\/remote\/answer\/(\d+)$/.exec(path);
     if (method !== "POST" || !answered) return false;
-    const who = request.headers["x-agentv-screen"];
+    const who = request.headers["x-origaitv-screen"];
     if (who !== "1" && who !== "desktop") {
       this.o.json(response, 403, { ok: false, error: "only the screen daemon answers for the phone" });
       return true;

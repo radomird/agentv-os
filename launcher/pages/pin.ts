@@ -17,7 +17,7 @@ export interface PadOptions {
   submit(pin: string): Promise<string | null>;
   // Whether Back cancels it. The lock screen can't be cancelled.
   cancel: boolean;
-  // Gives up after this long with no key, as when agentv-pin-check asks.
+  // Gives up after this long with no key, as when origaitv-pin-check asks.
   idleMs?: number;
   // How many digits are in, and what went wrong, as they change: for the
   // phone's remote, which shows the pad too (ADR-037).

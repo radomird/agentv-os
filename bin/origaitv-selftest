@@ -1,0 +1,1459 @@
+#!/bin/bash
+
+# origaitv:summary=Check this TV and say pass or fail for each part
+# origaitv:args=[S0.2|S0.3|S1.1|S1.2|S1.5|S1.6|S1.7|S2|S2.8|S2.9|S2.10|S2.11|S2.15|S2.16|S2.18|S2.19|S3|S3.2|S3.3|S3.4|S3.6|S3.8|S3.9|S3.10|S4|S4.5|S4.6|S7|S7.3|S7.4|S7.5|S8|S8.1|S8.2]... [--app <id>] [--item <json>] [--show <name>]
+# origaitv:examples=origaitv selftest | origaitv selftest S3 | origaitv selftest S2 | origaitv selftest S1.5 | origaitv selftest S0.2 S0.3 | origaitv selftest S7.4 | origaitv selftest S8.2 --show "<a show you watch>"
+# origaitv:requires-sudo=true
+
+# The acceptance checks CI can't see, run on the box itself (ADR-019, layer
+# 7). Every line starts with pass, fail or manual and the check's id, so the
+# whole output can be pasted back as it is. With no id it runs stages 1
+# and 2. Run them over SSH while the TV is on, as the person it logs in.
+#
+# Stage 1, the TV session (ADR-031):
+#
+#   S1.1  SDDM logs in to the TV session and back in after a log-out; the
+#         home screen is in front; nothing of Omarchy's desktop runs there.
+#   S1.2  the services' Chromium has its Widevine module. The 10 minutes of
+#         playback and the fan are for eyes and ears: manual lines say so.
+#   S1.5  how smoothly the home screen draws; an app in front and the home
+#         screen back; a toast over the app; Steam in its own gamescope.
+#         What only a person can judge is listed on manual lines.
+#   S1.6  a new window stays out of sight, and the home screen comes back in
+#         front after a crash. It closes the home screen on purpose for that.
+#   S1.7  the services' Chromium and home's have their own prompts off:
+#         saving passwords, address and card autofill, translate,
+#         notifications (ADR-032).
+#
+# Stage 2, the home screen (S2 runs them all). Each also says, on manual
+# lines, what to watch or listen for:
+#
+#   S2.8  the box reads the TV as on, and what it saw the last time the TV
+#         went off and came back.
+#   S2.9  a key reaches the home screen through the virtual input device.
+#   S2.10 how smoothly the home screen draws while the focus glides, a tile
+#         lifts under the mouse and a page slides in and out.
+#   S2.11 how soon after its key each UI sound starts, and a held arrow's
+#         moves never closer than 60 ms, in Settings' list.
+#   S2.15 how long Home takes to show the home screen, and choosing the app
+#         again to bring it back.
+#   S2.16 Home and Back from the keyboard, a gamepad and the mouse: manual.
+#   S2.18 what Settings → Power stands on, without turning the box off:
+#         polkit lets the owner power off and restart with no password,
+#         origaiTV's units stop within 5 s, Omarchy's commands are there, and
+#         Settings opens at Power. Turning it off and on again is manual.
+#   S2.19 the sound output playing, and its volume: 100%, or the level
+#         Settings → Sound chose for it. How loud the TV is stays manual.
+#
+# Stage 3, the reference apps (S3 runs them all; S3.2 and S3.4 when an app
+# is named):
+#
+#   S3.2  an app opens a known episode through its playback.open, and its
+#         playback state, read from its page for the ledger, has the same
+#         title, season and episode, with a position that moves. --app names
+#         the app and --item the episode, as JSON: origaiTV names no service.
+#   S3.4  with a child's profile watching, the app named with --app opens
+#         the service's profile an adult picked for children, as the screen
+#         daemon says. It reads neither the profile's name nor the page.
+#   S3.3  a ledger row within 10 s of an app opening: a stand-in player app,
+#         installed for the check with origaitv app install --local and
+#         removed after it, with its rows. It asks for the adult PIN, when
+#         one is set, as any app install does.
+#   S3.10 the same stand-in, which has playback and no tile(), shows a
+#         medium continue tile from its row.
+#   S3.6  Music reads its sources again, then "play <album>" finds an album
+#         on a USB drive and one on a NAS share, and each plays. They have
+#         to be there first: a stick plugged in, and the share added.
+#   S3.8  the small weather tile's scene against MET Norway's forecast for
+#         now, fetched live for the same place.
+#   S3.9  the medium and large weather tiles against MET's days.
+#
+# Stage 4, the box's side of the companions (S4 runs them all). Neither
+# changes the household's PIN or key:
+#
+#   S4.5  with an adult PIN set, the daemon refuses a guarded request that
+#         doesn't carry the PIN's grant. The PIN on the TV is manual.
+#   S4.6  with a key set in Settings → AI, it's root's alone in
+#         /etc/origaitv/env, and this account can't read it.
+#
+# Stage 7, the router (S7 runs all three), with the AI Settings → AI chose:
+#
+#   S7.3  a sentence that can't be routed comes back as "i didn't get that"
+#         on the TV and the phone, and nothing opens, and the TV says it
+#         aloud (stage 8). It asks the provider.
+#   S7.4  the router's 150 phrasings through this box's own router, one at a
+#         time: on a Claude plan with no key, 95% or better, make and change
+#         each at 95% too, with the time per sentence. It takes a few minutes and counts against the plan.
+#   S7.5  the listening bar (ADR-054), watched from the couch with a real
+#         phone's dictation: it says what to try.
+#
+# Stage 8, what's new and new episodes from TMDB (S8 runs both), with a TMDB
+# key kept in Settings → new this week:
+#
+#   S8.1  what's new for who's watching, asked of TMDB afresh: titles that
+#         appeared on the household's services in the last 7 days, in the
+#         region setup chose.
+#   S8.2  whether there's a new episode of a show, with --show, or the
+#         newest show in the ledger: yes or no, with the next air date, and
+#         TMDB's dates beside it to check by eye.
+#
+# Stage 0:
+#
+#   S0.2  the root disk isn't encrypted, so there's no password at boot; the
+#         owner logs in on their own; the TV setup welcome screen was shown.
+#   S0.3  the Wi-Fi device can be an access point, NetworkManager brings up a
+#         WPA2 hotspot on it in AP mode, and Wi-Fi goes back to how it was.
+#
+# The hotspot takes over Wi-Fi for up to a minute, so S0.3 runs on the box
+# itself or over Ethernet. Over SSH on that Wi-Fi it says so and doesn't run.
+#
+# Exits 0 when every check passed, 1 when one didn't.
+
+set -Eeuo pipefail
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ORIGAITV_HEALTH_URL=${ORIGAITV_HEALTH_URL:-http://127.0.0.1:3000/health}
+ORIGAITV_SDDM_CONF=${ORIGAITV_SDDM_CONF:-/etc/sddm.conf}
+ORIGAITV_STATE=${ORIGAITV_STATE:-/var/lib/origaitv}
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+
+usage() {
+  cat <<'USAGE'
+Usage: origaitv selftest [check…] [--app <id>] [--item <json>] [--show <name>]
+
+With no check it runs them all. S2, S3, S4, S7 and S8 run their whole group.
+  S0.2   the disk, the login and the welcome page
+  S0.3   the Wi-Fi that setup opens
+  S1.1   the TV starts on its own
+  S1.2   protected video
+  S1.5   how smoothly home draws
+  S1.6   a new window stays behind home
+  S1.7   no browser prompts
+  S2.8   whether the TV is on
+  S2.9   keys reach home
+  S2.10  motion on home
+  S2.11  menu sounds
+  S2.15  the Home key
+  S2.16  Home over an app
+  S2.18  restart and shut down
+  S2.19  the volume
+  S3.2   an app opens a title (--app, --item)
+  S3.3   where you got to in a title
+  S3.4   the children's profile in an app (--app)
+  S3.6   music from a drive and a network folder
+  S3.8   the small weather tile
+  S3.9   the larger weather tiles
+  S3.10  continue watching
+  S4.5   the adult PIN
+  S4.6   the API key
+  S7.3   asking the TV
+  S7.4   a Claude plan
+  S7.5   the listening bar
+  S8.1   New this week
+  S8.2   new episodes (--show)
+USAGE
+}
+
+STAGE2=(S2.8 S2.9 S2.10 S2.11 S2.15 S2.16 S2.18 S2.19)
+STAGE3=(S3.3 S3.6 S3.8 S3.9 S3.10)
+STAGE4=(S4.5 S4.6)
+STAGE7=(S7.3 S7.4 S7.5)
+STAGE8=(S8.1 S8.2)
+checks=()
+app_id=""
+app_item=""
+show=""
+while (( $# )); do
+  arg=$1
+  shift
+  case "$arg" in
+    --app) app_id=${1:-}; shift || true; [[ $app_id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || { usage >&2; exit 2; } ;;
+    --item) app_item=${1:-}; shift || true; jq -e 'type == "object" and (.title | type) == "string"' <<<"$app_item" >/dev/null 2>&1 || { usage >&2; exit 2; } ;;
+    [sS]3.2 | [sS]3.4) checks+=("S${arg:1}") ;;
+    [sS]0.2 | [sS]0.3 | [sS]1.1 | [sS]1.2 | [sS]1.5 | [sS]1.6 | [sS]1.7) checks+=("S${arg:1}") ;;
+    [sS]2.8 | [sS]2.9 | [sS]2.10 | [sS]2.11 | [sS]2.15 | [sS]2.16 | [sS]2.18 | [sS]2.19) checks+=("S${arg:1}") ;;
+    [sS]2) checks+=("${STAGE2[@]}") ;;
+    [sS]3.3 | [sS]3.6 | [sS]3.8 | [sS]3.9 | [sS]3.10) checks+=("S${arg:1}") ;;
+    [sS]3) checks+=("${STAGE3[@]}") ;;
+    [sS]4.5 | [sS]4.6) checks+=("S${arg:1}") ;;
+    [sS]4) checks+=("${STAGE4[@]}") ;;
+    [sS]7.3 | [sS]7.4 | [sS]7.5) checks+=("S${arg:1}") ;;
+    [sS]7) checks+=("${STAGE7[@]}") ;;
+    [sS]8.1 | [sS]8.2) checks+=("S${arg:1}") ;;
+    [sS]8) checks+=("${STAGE8[@]}") ;;
+    --show) show=${1:-}; shift || true; [[ -n $show && ${#show} -le 120 ]] || { usage >&2; exit 2; } ;;
+    -h | --help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+(( ${#checks[@]} )) || checks=(S1.1 S1.2 S1.5 S1.6 S1.7 "${STAGE2[@]}")
+# S3 runs S3.2 and S3.4 too when an app is named.
+if [[ -n $app_id && " ${checks[*]} " == *" S3.3 "* && " ${checks[*]} " != *" S3.2 "* ]]; then
+  checks=(S3.2 S3.4 "${checks[@]}")
+fi
+
+failed=" "
+current=""
+
+# Anything that stops the selftest halfway is a failure of the check it was
+# on, said on a line of its own, never a quiet end.
+trap 'printf "fail %s the selftest stopped at line %s; send this whole output\n" "${current:-?}" "$LINENO"' ERR
+
+# result <pass|fail|manual> <id> <what>
+result() {
+  printf '%s %s %s\n' "$1" "$2" "$3"
+  [[ $1 != "fail" || $failed == *" $2 "* ]] || failed+="$2 "
+}
+
+s02_disk() {
+  local source types
+
+  source=$(findmnt -no SOURCE -v / 2>/dev/null || true)
+  if [[ -z $source ]] || ! types=$(lsblk -nso TYPE "$source" 2>/dev/null); then
+    result fail S0.2 "couldn't tell which disk / is on"
+  elif grep -qx crypt <<<"${types// /}"; then
+    result fail S0.2 "the root disk is encrypted ($source), so it asks for a password at boot"
+  else
+    result pass S0.2 "the root disk isn't encrypted ($source), so there's no password at boot"
+  fi
+}
+
+s02_login() {
+  local user session
+
+  # SDDM reads sddm.conf.d in name order and sddm.conf last; the last User=
+  # in an [Autologin] section wins.
+  user=$(
+    for file in "$ORIGAITV_SDDM_CONF.d"/*.conf "$ORIGAITV_SDDM_CONF"; do
+      if [[ -f $file ]]; then cat -- "$file"; fi
+    done | awk -F= '/^\[/ { section = $0 } section == "[Autologin]" && $1 == "User" { user = $2 } END { print user }'
+  )
+  if [[ -z $user ]]; then
+    result fail S0.2 "nobody logs in on their own: SDDM has no autologin user"
+    return
+  fi
+
+  # Columns: SESSION UID USER SEAT, then more.
+  session=$(loginctl list-sessions --no-legend 2>/dev/null |
+    awk -v user="$user" '!found && $3 == user && $4 == "seat0" { print $1; found = 1 }' || true)
+  if [[ -n $session ]]; then
+    result pass S0.2 "$user logs in on their own (session $session on seat0)"
+  else
+    result fail S0.2 "SDDM logs $user in, but $user has no session on the screen right now"
+  fi
+}
+
+s02_welcome() {
+  local health
+
+  health=$(curl -fsS --max-time 5 "$ORIGAITV_HEALTH_URL" 2>/dev/null || true)
+  if [[ -z $health ]]; then
+    result fail S0.2 "the daemon doesn't answer at $ORIGAITV_HEALTH_URL"
+  elif [[ $(jq -r '.welcome_shown // false' <<<"$health" 2>/dev/null) == "true" ]]; then
+    result pass S0.2 "the TV setup welcome screen was shown ($(jq -r '.welcome_shown_at // "time unknown"' <<<"$health"))"
+  else
+    result fail S0.2 "the TV setup welcome screen hasn't been shown since the daemon started"
+  fi
+}
+
+# The awk calls here read to the end: one that stopped early would leave the
+# command before it writing into a closed pipe, and with pipefail that ends
+# the selftest.
+
+# The first Wi-Fi device NetworkManager knows, or nothing.
+wifi_device() {
+  nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '!found && $2 == "wifi" { print $1; found = 1 }'
+}
+
+# The interface modes the device's radio supports, one per line.
+ap_modes() {
+  iw phy "$1" info 2>/dev/null |
+    awk '/Supported interface modes:/ && !done { list = 1; next } list && /^[[:space:]]+\* / { print $2; next } list { list = 0; done = 1 }'
+}
+
+# Is this an SSH session that runs over the given device?
+ssh_over() {
+  local here
+
+  [[ -n ${SSH_CONNECTION:-} ]] || return 1
+  here=$(awk '{ print $3 }' <<<"$SSH_CONNECTION")
+  ip -o addr show dev "$1" 2>/dev/null | grep -qF " $here/"
+}
+
+hotspot=origaitv-selftest-hotspot
+radio_before=""
+uuid_before=""
+restored=0
+
+# The connection the device is on now, by UUID, or nothing.
+active_uuid() {
+  nmcli -g UUID,DEVICE connection show --active 2>/dev/null | awk -F: -v device="$1" '!found && $2 == device { print $1; found = 1 }'
+}
+
+# Wi-Fi as it was: no test hotspot, the radio as it was, and the connection
+# the device had before, if it had one. Also runs when the selftest is
+# stopped halfway.
+restore_wifi() {
+  (( restored )) && return 0
+  restored=1
+  sudo nmcli connection down "$hotspot" >/dev/null 2>&1 || true
+  sudo nmcli connection delete "$hotspot" >/dev/null 2>&1 || true
+  [[ $radio_before == "disabled" ]] && sudo nmcli radio wifi off
+  if [[ -n $uuid_before ]]; then
+    sudo nmcli --wait 45 connection up uuid "$uuid_before" >/dev/null 2>&1 || true
+  fi
+}
+
+s03() {
+  local device phy driver modes ssid psk state type channel uuid_after
+
+  device=$(wifi_device)
+  if [[ -z $device ]]; then
+    result fail S0.3 "NetworkManager has no Wi-Fi device"
+    return
+  fi
+  phy=$(cat "/sys/class/net/$device/phy80211/name" 2>/dev/null || true)
+  driver=$(basename "$(readlink -f "/sys/class/net/$device/device/driver" 2>/dev/null)" 2>/dev/null || true)
+  modes=$(ap_modes "$phy")
+  if grep -qx AP <<<"$modes"; then
+    result pass S0.3 "the Wi-Fi device can be an access point ($device${driver:+, $driver}${phy:+, $phy})"
+  else
+    result fail S0.3 "the Wi-Fi device can't be an access point ($device${driver:+, $driver}; modes: $(tr '\n' ' ' <<<"$modes"))"
+    return
+  fi
+
+  if ssh_over "$device"; then
+    result fail S0.3 "not run: this SSH session goes over $device, which the hotspot takes over for up to a minute. Run it on the box or over Ethernet."
+    return
+  fi
+
+  radio_before=$(nmcli radio wifi 2>/dev/null || true)
+  uuid_before=$(active_uuid "$device")
+  trap restore_wifi EXIT
+  trap 'restore_wifi; exit 130' HUP INT TERM
+
+  [[ $radio_before == "enabled" ]] || sudo nmcli radio wifi on
+
+  # WPA2 with a throwaway passphrase that's never shown. A fixed address,
+  # because handing out addresses to phones comes with TV setup's own hotspot.
+  ssid="origaiTV-selftest-$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')"
+  psk=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')
+  sudo nmcli connection delete "$hotspot" >/dev/null 2>&1 || true
+  if ! sudo nmcli connection add type wifi ifname "$device" con-name "$hotspot" autoconnect no ssid "$ssid" \
+    802-11-wireless.mode ap 802-11-wireless.band bg \
+    wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp \
+    wifi-sec.pmf disable wifi-sec.psk "$psk" \
+    ipv4.method manual ipv4.addresses 10.42.0.1/24 ipv6.method disabled >/dev/null 2>&1; then
+    result fail S0.3 "NetworkManager wouldn't take the hotspot's settings"
+    restore_wifi
+    return
+  fi
+
+  sudo nmcli --wait 45 connection up "$hotspot" >/dev/null 2>&1 || true
+  state=$(nmcli -g GENERAL.STATE connection show "$hotspot" 2>/dev/null || true)
+  type=$(iw dev "$device" info 2>/dev/null | awk '$1 == "type" { print $2 }')
+  channel=$(iw dev "$device" info 2>/dev/null | awk '$1 == "channel" { print $2 }')
+  if [[ $state == "activated" && $type == "AP" ]]; then
+    result pass S0.3 "NetworkManager brought up a WPA2 hotspot in AP mode ($ssid on channel ${channel:-unknown})"
+  else
+    result fail S0.3 "NetworkManager didn't bring up the hotspot (connection: ${state:-not active}, device mode: ${type:-unknown}); journalctl -u NetworkManager says why"
+  fi
+
+  restore_wifi
+  trap - EXIT HUP INT TERM
+
+  if nmcli -g NAME connection show 2>/dev/null | grep -qx "$hotspot"; then
+    result fail S0.3 "the test hotspot is still there; remove it with: sudo nmcli connection delete $hotspot"
+  elif [[ -n $uuid_before ]]; then
+    uuid_after=$(active_uuid "$device")
+    if [[ $uuid_after == "$uuid_before" ]]; then
+      result pass S0.3 "Wi-Fi is back on $(nmcli -g connection.id connection show uuid "$uuid_before" 2>/dev/null)"
+    else
+      result fail S0.3 "Wi-Fi didn't reconnect to $(nmcli -g connection.id connection show uuid "$uuid_before" 2>/dev/null) on its own; reconnect from the Wi-Fi menu"
+    fi
+  else
+    result pass S0.3 "Wi-Fi is back as it was (it wasn't connected before)"
+  fi
+}
+
+# --- Stage 1: the TV session ------------------------------------------------
+
+# The screen daemon's answer to a request, or nothing when the TV session
+# isn't on. The status says what's in front, every window and the overlays.
+screen() {
+  "${ORIGAITV_SCREEN:-$ORIGAITV_BIN_DIR/origaitv-screen}" "$@" 2>/dev/null || true
+}
+
+# The value of a jq filter on the screen daemon's status.
+front() {
+  jq -r "$1" <<<"$(screen status)" 2>/dev/null || true
+}
+
+# wait_front <role> <seconds>: waits until that role is in front, and prints
+# how long it took, in tenths of a second, or nothing.
+wait_front() {
+  local tenths=0
+  while (( tenths < $2 * 10 )); do
+    [[ $(front '.front.role // ""') == "$1" ]] && { echo "$tenths"; return 0; }
+    sleep 0.2
+    tenths=$(( tenths + 2 ))
+  done
+}
+
+seconds() {
+  printf '%d.%d s' "$(( $1 / 10 ))" "$(( $1 % 10 ))"
+}
+
+# The last value of a key in SDDM's [Autologin] section; files in sddm.conf.d
+# are read in name order, sddm.conf last.
+autologin() {
+  for file in "$ORIGAITV_SDDM_CONF.d"/*.conf "$ORIGAITV_SDDM_CONF"; do
+    if [[ -f $file ]]; then cat -- "$file"; fi
+  done | awk -F= -v key="$1" '/^\[/ { section = $0 } section == "[Autologin]" && $1 == key { value = $2 } END { print value }'
+}
+
+tv_on() {
+  local status
+
+  status=$(screen status)
+  if [[ -z $status ]]; then
+    result fail "$1" "the TV session isn't on here; go back to the TV (Super+Ctrl+Home on Omarchy's desktop) and run this over SSH"
+    return 1
+  fi
+}
+
+s11() {
+  local session relogin home omarchy
+
+  session=$(autologin Session)
+  relogin=$(autologin Relogin)
+  if [[ $session == "origaitv.desktop" && $relogin == "true" ]]; then
+    result pass S1.1 "SDDM logs $(autologin User) in to the TV session, and back in after every log-out"
+  else
+    result fail S1.1 "SDDM logs in to ${session:-no session} (Relogin=${relogin:-false}); origaitv update moves the box to the TV session"
+  fi
+
+  tv_on S1.1 || return 0
+  home=$(front 'select(.front.role == "home") | "\(.front.workspace) \(.front.fullscreen)"')
+  if [[ $home == "1 2" ]]; then
+    result pass S1.1 "the TV session is on, with the home screen in front, full screen"
+  else
+    result fail S1.1 "the TV session is on, but the home screen isn't in front ($(front '.front.role // "nothing"'))"
+  fi
+
+  omarchy=""
+  pgrep -u "$(id -u)" -f "$OMARCHY_PATH/shell" >/dev/null 2>&1 && omarchy+="Omarchy's shell (bar, notices, screensaver, idle lock), "
+  systemctl --user is-active --quiet graphical-session.target 2>/dev/null && omarchy+="graphical-session.target, "
+  [[ -n $(front '.layers[] | select(startswith("omarchy"))') ]] && omarchy+="an Omarchy overlay, "
+  if [[ -z $omarchy ]]; then
+    result pass S1.1 "nothing of Omarchy's desktop runs in the TV session: no bar, notices, screensaver or idle lock"
+  else
+    result fail S1.1 "Omarchy's desktop runs in the TV session: ${omarchy%, }"
+  fi
+}
+
+s12() {
+  local manifest version
+
+  manifest=$(find "$ORIGAITV_STATE/chromium/WidevineCdm" -name manifest.json 2>/dev/null | sort | tail -n 1 || true)
+  if [[ -n $manifest ]]; then
+    version=$(jq -r '.version // "unknown"' "$manifest" 2>/dev/null || echo unknown)
+    result pass S1.2 "the services' Chromium has its Widevine module ($version)"
+  else
+    result fail S1.2 "the services' Chromium has no Widevine module yet; open a page with origaitv screen open <address>, wait five minutes, and run this again"
+  fi
+  result manual S1.2 "sign in with origaitv screen open <the service's address>, then play something for 10 minutes at 720p: no stutter, and no fan from the couch"
+}
+
+s15() {
+  local frames fps slow refresh took back
+
+  tv_on S1.5 || return 0
+
+  frames=$(screen frames 5)
+  fps=$(jq -r '.fps // empty' <<<"$frames" 2>/dev/null || true)
+  slow=$(jq -r '.slow_frames // empty' <<<"$frames" 2>/dev/null || true)
+  refresh=$(front '.monitors[0].refresh_rate // 60 | floor')
+  if [[ -z $fps ]]; then
+    result fail S1.5 "couldn't measure the home screen's frames: $(jq -r '.error // "no answer"' <<<"$frames" 2>/dev/null)"
+  elif awk -v fps="$fps" -v refresh="$refresh" -v slow="$slow" 'BEGIN { exit !(fps >= refresh - 2 && slow == 0) }'; then
+    result pass S1.5 "the home screen draws at $fps fps on a $refresh Hz screen, with no frame over 25 ms"
+  else
+    result fail S1.5 "the home screen draws at $fps fps on a $refresh Hz screen, with $slow frames over 25 ms"
+  fi
+
+  # Any page will do for an app in front; the box's own logo is always there.
+  screen open "http://127.0.0.1:3000/logo.svg" >/dev/null
+  took=$(wait_front web 15)
+  if [[ -n $took ]]; then
+    result pass S1.5 "a web app came in front in $(seconds "$took")"
+    screen toast "origaiTV selftest: this toast is over the app in front" >/dev/null
+    sleep 1
+    if [[ -n $(front '.layers[] | select(. == "origaitv-toast")') ]]; then
+      result pass S1.5 "a toast showed over the app in front"
+    else
+      result fail S1.5 "the toast didn't show over the app in front"
+    fi
+    screen home >/dev/null
+    back=$(wait_front home 10)
+    if [[ -n $back ]]; then
+      result pass S1.5 "the home screen came back in front in $(seconds "$back")"
+    else
+      result fail S1.5 "the home screen didn't come back in front"
+    fi
+    screen close web >/dev/null
+  else
+    result fail S1.5 "a web app didn't come in front within 15 s"
+  fi
+
+  if ! omarchy-cmd-present steam; then
+    result fail S1.5 "Steam isn't installed; on Omarchy's desktop: Install > Gaming > Steam, then run origaitv selftest S1.5 again"
+  else
+    screen open steam >/dev/null
+    took=$(wait_front steam 90)
+    if [[ -n $took && $(front '.front.class') == "gamescope" ]]; then
+      result pass S1.5 "Steam came in front in its own gamescope in $(seconds "$took")"
+    else
+      result fail S1.5 "Steam didn't come in front in its gamescope within 90 s"
+    fi
+    screen home >/dev/null
+    screen close steam >/dev/null
+  fi
+
+  result manual S1.5 "watch: the home screen moves smoothly, an app and home again show nothing of the desktop or a browser, a toast shows over a playing film (origaitv screen toast hello), and Steam's games pace well in its gamescope. If Hyprland fails this, gamescope as the TV session's compositor is next (ADR-031)."
+}
+
+s16() {
+  local display stray pid where before took
+
+  tv_on S1.6 || return 0
+
+  # A window opened in the TV session by someone else: a terminal.
+  display=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^WAYLAND_DISPLAY=//p')
+  if [[ -z $display ]] || ! omarchy-cmd-present foot; then
+    result fail S1.6 "couldn't open a window in the TV session to try (no WAYLAND_DISPLAY or no foot)"
+  else
+    WAYLAND_DISPLAY=$display setsid foot --title "origaitv selftest" sleep 30 >/dev/null 2>&1 &
+    stray=$!
+    sleep 3
+    where=$(front '.windows[] | select(.title == "origaitv selftest") | .workspace')
+    if [[ $where == "special:origaitv-held" && $(front '.front.role') == "home" ]]; then
+      result pass S1.6 "a new window stayed out of sight, and the home screen stayed in front"
+    else
+      result fail S1.6 "a new window went to ${where:-nowhere}, with $(front '.front.role // "nothing"') in front"
+    fi
+    kill "$stray" 2>/dev/null || true
+  fi
+
+  # The home screen crashing.
+  pid=$(front '.apps[] | select(.role == "home") | .pid')
+  before=$(front '.home_restarts')
+  if [[ -z $pid ]]; then
+    result fail S1.6 "the screen daemon didn't start the home screen"
+    return 0
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  sleep 1
+  took=$(wait_front home 20)
+  if [[ -n $took && $(front '.home_restarts') -gt $before && $(front '.apps[] | select(.role == "home") | .pid') != "$pid" ]]; then
+    result pass S1.6 "the home screen came back in front $(seconds $(( took + 10 ))) after a crash"
+  else
+    result fail S1.6 "the home screen didn't come back in front within 20 s of a crash"
+  fi
+}
+
+# --- ADR-032: no browser prompts on the TV ---------------------------------
+
+s17() {
+  local prefs="$ORIGAITV_STATE/chromium/Default/Preferences"
+  local home="$ORIGAITV_STATE/chromium-home/Default/Preferences"
+  local off='.credentials_enable_service == false and .credentials_enable_autosignin == false and .autofill.profile_enabled == false and .autofill.credit_card_enabled == false and .translate.enabled == false and .profile.default_content_setting_values.notifications == 2'
+
+  if [[ ! -f $prefs ]]; then
+    result fail S1.7 "the services' Chromium has no profile yet; open a page with origaitv screen open <address> and run this again"
+  elif [[ $(jq -r "$off" "$prefs" 2>/dev/null) == "true" ]]; then
+    result pass S1.7 "the services' Chromium has saving passwords, address and card autofill, translate and site notifications off"
+  else
+    result fail S1.7 "the services' Chromium still has some of its own prompts on; origaitv update and a reboot turn them off"
+  fi
+  # Home has password fields too: a key, the Wi-Fi's password.
+  if [[ $(jq -r "$off" "$home" 2>/dev/null) == "true" ]]; then
+    result pass S1.7 "home's Chromium has them off too, so it never offers to save a key or a password typed on home"
+  else
+    result fail S1.7 "home's Chromium still has some of its own prompts on; origaitv update and a reboot turn them off"
+  fi
+  result manual S1.7 "sign in to a streaming service again, with a keyboard on the box: no Save password, Translate or notification bubble shows on the TV, and you stay signed in after a reboot"
+}
+
+# --- Stage 2: the home screen -----------------------------------------------
+
+input() {
+  "${ORIGAITV_INPUT:-$ORIGAITV_BIN_DIR/origaitv-input}" "$@" >/dev/null 2>&1 || true
+}
+
+# A number from a jq filter on a file, or nothing.
+value() {
+  jq -r "$1 // empty" "$2" 2>/dev/null || true
+}
+
+# ms_until <role> <seconds> <start>: waits until that role is in front, and
+# prints the milliseconds since start (date +%s%N), or nothing.
+ms_until() {
+  local deadline=$(( $3 + $2 * 1000000000 ))
+  while (( $(date +%s%N) < deadline )); do
+    if [[ $(front '.front.role // ""') == "$1" ]]; then
+      echo $(( ($(date +%s%N) - $3) / 1000000 ))
+      return 0
+    fi
+    sleep 0.05
+  done
+}
+
+# Stage 2 measures the home screen itself, so TV setup has to be done: until
+# then the welcome page is on the TV, with no tiles and no UI sounds.
+launcher_on() {
+  local health
+
+  health=$(curl -fsS --max-time 5 "$ORIGAITV_HEALTH_URL" 2>/dev/null || true)
+  if [[ $(jq -r '.screen // ""' <<<"$health" 2>/dev/null || true) != "home" ]]; then
+    result fail "$1" "the TV is still on its setup welcome page; finish TV setup, or run origaitv setup skip, then run this again"
+    return 1
+  fi
+}
+
+# The home screen in front, with nothing else open, for a measurement.
+home_alone() {
+  screen home >/dev/null
+  wait_front home 10 >/dev/null
+  sleep 1
+}
+
+s28() {
+  local connectors seen
+
+  tv_on S2.8 || return 0
+  connectors=$(for status in /sys/class/drm/card*-*/status; do
+    if [[ -f $status && $(<"$status") == "connected" ]]; then basename "$(dirname "$status")"; fi
+  done | sed 's/^card[0-9]*-//' | paste -sd, -)
+  if [[ $(front '.tv') == "on" ]]; then
+    result pass S2.8 "the box reads the TV as on${connectors:+, from $connectors}, and looks every 2 s"
+  else
+    result fail S2.8 "the box reads the TV as off while it's on${connectors:+ (connected: $connectors)}; origaitv screen status says so too"
+  fi
+  result manual S2.8 "play an episode, then turn the TV off with its own remote: it pauses within 5 s. Leave it off for 2 minutes and turn it on: home is on its ambient screen, and the episode's app has closed. Then run origaitv selftest S2.8 again: it lists what the box saw."
+  seen=$(journalctl --user -b --no-pager -o short-iso -u origaitv-screen 2>/dev/null |
+    grep -E "the TV went off|the TV came back on|the TV has been off|the ambient screen ends" | tail -n 6 || true)
+  while IFS= read -r line; do
+    if [[ -n $line ]]; then result manual S2.8 "seen at ${line%% *}: ${line#*]: }"; fi
+  done <<<"$seen"
+}
+
+s29() {
+  local out
+
+  tv_on S2.9 || return 0
+  home_alone
+  out=$(mktemp)
+  screen keys 3 >"$out" &
+  sleep 1
+  input key right
+  input key left
+  wait $! || true
+  if [[ $(value '[.keys[] | select(. == "ArrowRight" or . == "ArrowLeft")] | length' "$out") == "2" ]]; then
+    result pass S2.9 "a key on the virtual input device reaches the home screen"
+  else
+    result fail S2.9 "the home screen didn't get the keys sent ($(value '.keys | join(" ")' "$out"))"
+  fi
+  rm -f "$out"
+  result manual S2.9 "with the TV back on after S2.8, press a key: the launcher is back within 10 s"
+}
+
+s210() {
+  local out fps slow refresh
+
+  tv_on S2.10 || return 0
+  launcher_on S2.10 || return 0
+  home_alone
+  refresh=$(front '.monitors[0].refresh_rate // 60 | floor')
+  out=$(mktemp)
+  screen frames 8 >"$out" &
+  sleep 0.5
+  # The focus glides from tile to tile, then the mouse lifts tiles as it
+  # passes, then a page slides in and back out.
+  for key in right right down left left up; do
+    input key "$key"
+    sleep 0.4
+  done
+  input move -4000 -4000
+  input move 300 300
+  for _ in 1 2 3 4; do
+    input move 420 0
+    sleep 0.3
+  done
+  input key i
+  sleep 1.2
+  input key back
+  wait $! || true
+  fps=$(value '.fps' "$out")
+  slow=$(value '.slow_frames' "$out")
+  if [[ -z $fps ]]; then
+    result fail S2.10 "couldn't measure the home screen's frames: $(value '.error' "$out")"
+  elif awk -v fps="$fps" -v refresh="$refresh" -v slow="$slow" 'BEGIN { exit !(fps >= refresh - 2 && slow == 0) }'; then
+    result pass S2.10 "with the focus gliding, tiles lifting under the mouse and a page sliding in and out, the home screen drew at $fps fps on a $refresh Hz screen, with no frame over 25 ms"
+  else
+    result fail S2.10 "with the focus gliding, tiles lifting and a page sliding, the home screen drew at $fps fps on a $refresh Hz screen, with $slow frames over 25 ms (worst $(value '.worst_ms' "$out") ms)"
+  fi
+  rm -f "$out"
+  home_alone
+  result manual S2.10 "watch: the focus glides between tiles, a tile lifts under the mouse, and pages slide in and out, all smoothly. Settings → Look → reduce motion turns them into fades; turn it off again after."
+}
+
+s211() {
+  local out on worst closest
+
+  tv_on S2.11 || return 0
+  launcher_on S2.11 || return 0
+  home_alone
+  out=$(mktemp)
+  # The measurement starts in Settings, whose list always has somewhere for
+  # an arrow to go.
+  screen sounds 7 >"$out" &
+  sleep 1
+  for key in down up down up; do
+    input key "$key"
+    sleep 0.5
+  done
+  # A held arrow repeats faster than one move sound every 60 ms.
+  input hold down 1.5
+  input hold up 1.5
+  wait $! || true
+  on=$(value '.on' "$out")
+  worst=$(value '.worst_ms' "$out")
+  closest=$(value '.closest_moves_ms' "$out")
+  if [[ -n $(value '.error' "$out") || $on != "true" ]]; then
+    if [[ -n $(value '.error' "$out") ]]; then
+      result fail S2.11 "couldn't measure the UI sounds: $(value '.error' "$out")"
+    else
+      result fail S2.11 "Settings → Sound has the UI sounds off; turn them on and run this again"
+    fi
+    rm -f "$out"
+    return 0
+  fi
+  if [[ -z $worst ]]; then
+    result fail S2.11 "no UI sound played for the keys sent (audio: $(value '.audio' "$out"))"
+  elif awk -v worst="$worst" 'BEGIN { exit !(worst <= 16.7) }'; then
+    result pass S2.11 "each UI sound started within $worst ms of its key reaching the page, inside one frame; the audio output adds about $(value '.output_ms' "$out") ms"
+  else
+    result fail S2.11 "a UI sound started $worst ms after its key reached the page, more than a frame"
+  fi
+  if [[ -n $closest ]] && (( closest >= 59 )); then
+    result pass S2.11 "a held arrow played a move sound at most every 60 ms (the closest two: $closest ms)"
+  elif [[ -n $closest ]]; then
+    result fail S2.11 "two move sounds played $closest ms apart, closer than 60 ms"
+  else
+    result fail S2.11 "a held arrow played fewer than two move sounds"
+  fi
+  rm -f "$out"
+  home_alone
+  result manual S2.11 "listen: each of the seven sounds comes with its action, a held arrow ticks evenly, and Settings → Sound → ui sounds off silences them all; turn them on again after"
+}
+
+s215() {
+  local page="http://127.0.0.1:3000/logo.svg" start took
+
+  tv_on S2.15 || return 0
+  screen open "$page" >/dev/null
+  if [[ -z $(wait_front web 15) ]]; then
+    result fail S2.15 "a web app didn't come in front within 15 s"
+    return 0
+  fi
+  sleep 2
+  start=$(date +%s%N)
+  screen home >/dev/null
+  took=$(ms_until home 5 "$start")
+  if [[ -n $took ]] && (( took <= 1000 )); then
+    result pass S2.15 "Home put the home screen in front in $took ms"
+  else
+    result fail S2.15 "Home took ${took:-over 5000} ms to put the home screen in front"
+  fi
+  sleep 2
+  start=$(date +%s%N)
+  screen open "$page" >/dev/null
+  took=$(ms_until web 5 "$start")
+  if [[ -n $took ]] && (( took <= 1000 )); then
+    result pass S2.15 "choosing the app again brought the same window back in $took ms"
+  else
+    result fail S2.15 "choosing the app again took ${took:-over 5000} ms"
+  fi
+  screen home >/dev/null
+  wait_front home 10 >/dev/null
+  screen close web >/dev/null
+  result manual S2.15 "with an episode playing: Home pauses it and home shows within a second, and choosing it again plays it from the same second within a second"
+}
+
+s216() {
+  tv_on S2.16 || return 0
+  result manual S2.16 "over a playing app: the keyboard's Home key, a gamepad's guide button and the mouse pushed into the top left corner, then a click on Home there, each show the home screen. Back reaches the app, and holding Back for a second goes home. In a game, a press of the guide button stays the game's, and holding it for a second goes home."
+}
+
+# How long a unit may take to stop, in milliseconds, from systemctl show's
+# TimeoutStopUSec (5s, 1min 30s, 500ms or infinity).
+stop_ms() {
+  local value=$1 ms=0 part
+
+  [[ $value == "infinity" ]] && { echo 999999999; return; }
+  for part in $value; do
+    case $part in
+      *min) ms=$(( ms + ${part%min} * 60000 )) ;;
+      *ms) ms=$(( ms + ${part%ms} )) ;;
+      *s) ms=$(( ms + ${part%s} * 1000 )) ;;
+    esac
+  done
+  echo "$ms"
+}
+
+s218() {
+  local action denied=() unit value slow=() missing=() command user
+
+  tv_on S2.18 || return 0
+  user=$(id -un)
+  for action in power-off power-off-multiple-sessions reboot reboot-multiple-sessions; do
+    pkcheck --action-id "org.freedesktop.login1.$action" --process $$ >/dev/null 2>&1 || denied+=("$action")
+  done
+  if (( ${#denied[@]} == 0 )); then
+    result pass S2.18 "polkit lets $user power off and restart with no password, with other sessions open too"
+  else
+    result fail S2.18 "polkit asks $user for a password to ${denied[*]}: is 50-origaitv-power.rules in /usr/share/polkit-1/rules.d/, and is $user the account the TV logs in as?"
+  fi
+  value=$(systemctl show -p TimeoutStopUSec --value origaitv-daemon.service 2>/dev/null || true)
+  (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("origaitv-daemon.service ($value)")
+  for unit in origaitv-screen.service origaitv-input.service origaitv-toast.service; do
+    value=$(systemctl --user show -p TimeoutStopUSec --value "$unit" 2>/dev/null || true)
+    (( $(stop_ms "${value:-infinity}") <= 5000 )) || slow+=("$unit ($value)")
+  done
+  if (( ${#slow[@]} == 0 )); then
+    result pass S2.18 "origaiTV's units stop within 5 s, so none holds up a restart or a shut down"
+  else
+    result fail S2.18 "these may hold up a shut down for longer than 5 s: ${slow[*]}"
+  fi
+  # Omarchy 4.5's omarchy-system, or the two commands 4.0.x had, which a box
+  # keeps until its Omarchy channel serves 4.5 (daemon/screen.ts).
+  if omarchy-cmd-present omarchy-system; then
+    result pass S2.18 "Omarchy's omarchy-system is there to restart and shut down"
+  else
+    for command in omarchy-system-shutdown omarchy-system-reboot; do
+      omarchy-cmd-present "$command" || missing+=("$command")
+    done
+    if (( ${#missing[@]} == 0 )); then
+      result pass S2.18 "Omarchy's omarchy-system-shutdown and omarchy-system-reboot are there"
+    else
+      result fail S2.18 "Omarchy has neither omarchy-system nor ${missing[*]}"
+    fi
+  fi
+  if [[ $(screen settings power | jq -r '.ok' 2>/dev/null) == "true" ]]; then
+    result pass S2.18 "Settings opened at Power on the TV"
+  else
+    result fail S2.18 "Settings didn't open at Power on the TV"
+  fi
+  result manual S2.18 "on the TV, Power is in Settings now: Shut down asks first, then counts down from 10, and Cancel stops it. Choose it again and let it run: the box is off about 10 s after the countdown ends, and its power button turns it on again. Then Settings → Power → Restart: it's back on home in about a minute."
+}
+
+s219() {
+  local audio output volume expected
+
+  tv_on S2.19 || return 0
+  audio=$(screen audio)
+  output=$(jq -r '.output as $o | .outputs[]? | select(.name == $o) | .description' <<<"$audio" 2>/dev/null)
+  volume=$(jq -r '.volume // empty | . * 100 | round' <<<"$audio" 2>/dev/null)
+  expected=$(jq -r '.expected // empty | . * 100 | round' <<<"$audio" 2>/dev/null)
+  if [[ -z $output || -z $volume ]]; then
+    result fail S2.19 "there's no sound output playing: is the TV on, with its HDMI or DisplayPort audio?"
+  elif (( volume == expected )); then
+    result pass S2.19 "$output plays at $volume%$( (( expected < 100 )) && echo ", as chosen in Settings → Sound")"
+  else
+    result fail S2.19 "$output plays at $volume%, not the $expected% it should"
+  fi
+  result manual S2.19 "play something: it's as loud as the TV's remote says, with the TV well below its top. Settings → Sound → output volume changes the box's own level, and keeps it after a restart."
+}
+
+s45() {
+  local pin code
+
+  pin=$(curl -fsS --max-time 5 "$(home_url)api/pin" 2>/dev/null || true)
+  if [[ -z $pin ]]; then
+    result fail S4.5 "origaiTV's daemon didn't answer"
+    return 0
+  fi
+  if [[ $(jq -r '.set' <<<"$pin") != "true" ]]; then
+    result manual S4.5 "there's no adult PIN yet: set one in Settings → Adult PIN, then run origaitv selftest S4.5 again"
+    return 0
+  fi
+  # A version nothing installs, so a daemon that let it through still
+  # couldn't schedule anything.
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Content-Type: application/json'     -d '{"version":"selftest"}' "$(home_url)api/updates/tonight" 2>/dev/null || true)
+  if [[ $code == "403" ]]; then
+    result pass S4.5 "with the adult PIN set, installing tonight without it is refused"
+  else
+    result fail S4.5 "installing tonight without the PIN wasn't refused (HTTP ${code:-none})"
+  fi
+  result manual S4.5 "on the TV, Settings → Omarchy desktop asks for the PIN, and Esc leaves you on the TV. Lock your profile in Settings → Profiles and restart the box: it comes back locked until the PIN is typed. A profile that isn't locked opens without it."
+}
+
+s46() {
+  local env="${ORIGAITV_ETC:-/etc/origaitv}/env" key mode owner
+
+  key=$(curl -fsS --max-time 5 "$(home_url)api/key" 2>/dev/null || true)
+  if [[ $(jq -r '.set' <<<"$key" 2>/dev/null) != "true" ]]; then
+    result manual S4.6 "there's no key yet: add one in Settings → AI, then run origaitv selftest S4.6 again"
+    return 0
+  fi
+  if ! systemctl is-active --quiet origaitv-key.path; then
+    result fail S4.6 "origaitv-key.path isn't running, so a new key wouldn't be kept"
+  elif [[ ! -e $env ]]; then
+    result fail S4.6 "Settings says there's a key, but $env isn't there"
+  elif (( EUID != 0 )) && [[ -r $env ]]; then
+    result fail S4.6 "this account can read $env"
+  else
+    mode=$(stat -c %a "$env")
+    owner=$(stat -c %U "$env")
+    if [[ $mode == "600" && $owner == "root" ]]; then
+      result pass S4.6 "the $(jq -r '.provider' <<<"$key") key is root's alone ($env, $mode), and this account can't read it"
+    else
+      result fail S4.6 "$env is $owner's with mode $mode, not root's with 600"
+    fi
+  fi
+}
+
+# What Settings → AI chose, as the daemon says it.
+ai_now() {
+  curl -fsS --max-time 5 "$(home_url)api/ai" 2>/dev/null || true
+}
+
+# The TV's voice, as the daemon says it (stage 8).
+voice_now() {
+  curl -fsS --max-time 5 "$(home_url)api/voice" 2>/dev/null || echo '{}'
+}
+
+# Whether the TV said its answer aloud (stage 8, Q146), after the clip
+# numbered before.
+s73_spoken() {
+  local before=$1 voice started=$SECONDS
+  while true; do
+    voice=$(voice_now)
+    jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played != null' <<<"$voice" >/dev/null && break
+    jq -e '.spoken == false or .by == null' <<<"$voice" >/dev/null && break
+    (( SECONDS - started < 60 )) || break
+    sleep 1
+  done
+  if jq -e '.spoken == false' <<<"$voice" >/dev/null; then
+    result manual S7.3 "spoken answers are off in Settings → Sound: turn them on to hear i didn't get that"
+  elif jq -e '.by == null' <<<"$voice" >/dev/null; then
+    result pass S7.3 "the TV has no voice of its own and no key with one, so it showed its answer without saying it"
+  elif jq -e --argjson before "$before" '(.last.clip // 0) > $before and .last.played == true' <<<"$voice" >/dev/null; then
+    result pass S7.3 "the TV said it aloud, with $(jq -r 'if .by == "provider" then "\(.provider)'"'"'s own voice" else "its own voice" end' <<<"$voice")"
+  else
+    result fail S7.3 "the TV didn't say it aloud: $(jq -r '.last.error // "no clip played"' <<<"$voice")"
+  fi
+}
+
+s73() {
+  local said outcome before
+  before=$(voice_now | jq -r '.last.clip // 0')
+  said=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d '{"sentence": "the cat sat on the"}' "$(home_url)api/say" 2>/dev/null || true)
+  outcome=$(jq -c '.said.outcome // empty' <<<"$said" 2>/dev/null)
+  if [[ -z $outcome ]]; then
+    result fail S7.3 "the daemon didn't take the sentence: $(jq -r '.error // "no answer"' <<<"$said" 2>/dev/null)"
+  elif jq -e '.kind == "none" and (.why == "unroutable" or .why == "unreadable") and .say == "Didn'"'"'t get that"' <<<"$outcome" >/dev/null; then
+    result pass S7.3 "\"the cat sat on the\" came back as i didn't get that, and nothing opened"
+  elif jq -e '.why == "failed"' <<<"$outcome" >/dev/null; then
+    result fail S7.3 "your agent didn't answer: $(jq -r '.detail // .say' <<<"$outcome")"
+  else
+    result fail S7.3 "it wasn't i didn't get that: $(jq -r '.say' <<<"$outcome")"
+  fi
+  s73_spoken "$before"
+  result manual S7.3 "the TV showed i didn't get that, and a paired phone too, under ask your tv, and you heard it from the TV's speakers"
+}
+
+s74() {
+  local ai json flags=() routed percent median
+  ai=$(ai_now)
+  if [[ $(jq -r '.ai.provider // .provider // empty' <<<"$ai") != "claude" || $(jq -r '.ai.path // .path // empty' <<<"$ai") != "plan" ]]; then
+    result manual S7.4 "S7.4 is for a Claude plan: pick it in Settings → AI$(past_pin), then run origaitv selftest S7.4 again"
+    return 0
+  fi
+  json=$(mktemp)
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ORIGAITV_PATH/test/origaitv/evals/router/run.mts" --via box --daemon "$(home_url)" --json "$json" >"$json.out" 2>&1 || true
+  routed=$(jq -r '"\(.score.routed.right) of \(.score.routed.of)"' "$json" 2>/dev/null)
+  percent=$(jq -r '.score.routed.percent // 0' "$json" 2>/dev/null)
+  median=$(jq -r '.score.ms.median // 0' "$json" 2>/dev/null)
+  if [[ -z $routed || $routed == "null of null" ]]; then
+    result fail S7.4 "the phrase set didn't run: $(tail -n 3 "$json.out" | tr '\n' ' ')"
+  elif jq -e '.score.failed > 0' "$json" >/dev/null; then
+    result fail S7.4 "your agent didn't answer $(jq -r '.score.failed' "$json") of them: $(jq -r '[.results[] | select(.routed.none == "failed") | .routed.error][0]' "$json")"
+  elif [[ $(jq -r '.via' "$json") != "cli" ]]; then
+    result fail S7.4 "the box routed through its key, not the plan's CLI"
+  elif jq -e '.score.routed.percent >= 95 and .score.unroutable.percent >= 100 and ((.score.bySet.make.percent // 100) >= 95) and ((.score.bySet.change.percent // 100) >= 95)' "$json" >/dev/null; then
+    result pass S7.4 "$routed routed right ($percent%) through Claude Code on the plan, median $median ms a sentence, p90 $(jq -r '.score.ms.p90' "$json") ms"
+  else
+    result fail S7.4 "$routed routed right ($percent%), make $(jq -r '.score.bySet.make.percent // "-"' "$json")% and change $(jq -r '.score.bySet.change.percent // "-"' "$json")%, none for $(jq -r '"\(.score.unroutable.right) of \(.score.unroutable.of)"' "$json"), median $median ms; the misses are in $json.out"
+  fi
+  if (( median > 0 && median < 5000 )); then
+    result pass S7.4 "the time per sentence is under 5 s: median $median ms, longest $(jq -r '.score.ms.max' "$json") ms"
+  elif (( median > 0 )); then
+    result fail S7.4 "the time per sentence is over the 5 s target: median $median ms"
+  fi
+  result manual S7.4 "paste the table from $json.out into the log; it has each request's score and the misses"
+}
+
+# The bar is drawn from a real phone's dictation, so only someone at the
+# couch can see it right.
+s75() {
+  result manual S7.5 "on a paired phone, tap ask your tv and dictate play frozen: a bar along the bottom of the TV says listening, shows the words as they come, then thinking and what came of it. Do it over an app too. Closing the box, Back and 20 s with no words each take the bar away. Try an iPhone and an Android phone"
+}
+
+# ts_check <script> <id>: runs one of origaiTV's TypeScript checks, which
+# print their own pass, fail and manual lines for the id.
+ts_check() {
+  local flags=() line verdict what got=0
+
+  [[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+  while IFS= read -r line; do
+    verdict=${line%% *}
+    what=${line#* }
+    what=${what#* }
+    case $verdict in
+      pass | fail | manual) result "$verdict" "$2" "$what"; got=1 ;;
+    esac
+  done < <(node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ORIGAITV_PATH/$1" "$2" 2>&1 || true)
+  (( got )) || result fail "$2" "$1 said nothing"
+}
+
+# The daemon's own address, from the health check's.
+home_url() {
+  printf '%s/' "${ORIGAITV_HEALTH_URL%/health}"
+}
+
+# Whether the box has an adult PIN. A line that sends you to a guarded page
+# names the PIN only when there is one.
+pin_set() {
+  [[ $(curl -fsS --max-time 5 "$(home_url)api/pin" 2>/dev/null | jq -r '.set // false' 2>/dev/null) == "true" ]]
+}
+
+past_pin() {
+  if pin_set; then printf ', past the PIN'; fi
+}
+
+# Whether this run checks an id.
+wants() {
+  [[ " ${checks[*]} " == *" $1 "* ]]
+}
+
+# origaitv app install, list or remove.
+origaitv_app() {
+  "${ORIGAITV_APP:-$ORIGAITV_BIN_DIR/origaitv-app}-$1" "${@:2}"
+}
+
+# S3.3 and S3.10, with one stand-in player for both.
+ledger_ran=0
+s33() {
+  local id=local.selftest-player work port server rows tile started took="" wait=${ORIGAITV_LEDGER_WAIT_MS:-20000} first
+
+  (( ledger_ran )) && return 0
+  ledger_ran=1
+  first=S3.3
+  wants S3.3 || first=S3.10
+  tv_on "$first" || return 0
+  work=$(mktemp -d)
+  # A stand-in for a streaming service: a page whose player moves on each
+  # second, and an app that reads it from its page, as every web app does.
+  cat >"$work/index.html" <<'HTML'
+<!doctype html><meta charset="utf-8"><title>origaitv selftest · S1 E1</title>
+<div id="player" data-position="0" data-duration="600"></div>
+<script>let t = 0; setInterval(() => { document.getElementById("player").dataset.position = ++t; }, 1000);</script>
+HTML
+  port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+  (cd "$work" && exec python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1) &
+  server=$!
+  mkdir -p "$work/app"
+  jq -n --arg url "http://127.0.0.1:$port" '{
+    schemaVersion: 1, id: "local.selftest-player", name: "Selftest player", version: "1.0.0", author: "origaitv",
+    license: "MIT", description: "origaitv selftest'"'"'s stand-in for a streaming service", kinds: ["tv-app"],
+    entryPoints: {tvApp: "app.ts"},
+    tv: {contract: 1, category: "streaming", runtime: "web", homeUrl: ($url + "/"), origins: [$url],
+      capabilities: ["launch", "playback"], childSafe: true}
+  }' >"$work/app/manifest.json"
+  cat >"$work/app/app.ts" <<'APP'
+export default {
+  id: "local.selftest-player",
+  async launch() {},
+  playback: {
+    async open() {},
+    async readPlaybackState(ctx) {
+      return ctx.page.evaluate(() => {
+        const player = document.querySelector("#player");
+        const [, title, season, episode] = /^(.*) · S(\d+) E(\d+)$/.exec(document.title) ?? [];
+        return player ? { title, season: Number(season), episode: Number(episode), position: Number(player.dataset.position), duration: 600, playing: true } : null;
+      });
+    },
+  },
+};
+APP
+  # Installed the way an app built on this box is (ADR-039), so the PIN, when
+  # there is one, is asked for here in the terminal. It's served from this
+  # box, which no other app may reach, so the install says it's the stand-in.
+  if ! origaitv_app install --local "$work/app" --yes --stand-in >/dev/null; then
+    kill "$server" 2>/dev/null || true
+    rm -rf "$work"
+    wants S3.3 && result fail S3.3 "origaitv app install --local didn't install the stand-in player"
+    wants S3.10 && result fail S3.10 "origaitv app install --local didn't install the stand-in player"
+    return 0
+  fi
+
+  started=$(date +%s%N)
+  screen app "$id" >/dev/null
+  while (( ($(date +%s%N) - started) / 1000000 < wait )); do
+    rows=$(curl -fsS --max-time 3 "$(home_url)api/ledger?app=$id&limit=1" 2>/dev/null || true)
+    if [[ $(jq -r '.rows | length' <<<"$rows" 2>/dev/null) == 1 ]]; then
+      took=$(( ($(date +%s%N) - started) / 1000000 ))
+      break
+    fi
+    sleep 0.25
+  done
+  if ! wants S3.3; then
+    :
+  elif [[ -n $took ]] && (( took <= 10000 )); then
+    result pass S3.3 "a ledger row appeared $took ms after the app opened: $(jq -r '.rows[0] | "\(.viewer_id), \(.title) S\(.season) E\(.episode) at \(.position_s) s"' <<<"$rows")"
+  elif [[ -n $took ]]; then
+    result fail S3.3 "the ledger row took $took ms to appear, more than 10 s"
+  else
+    result fail S3.3 "no ledger row appeared within $(( wait / 1000 )).$(( wait % 1000 / 100 )) s of the app opening"
+  fi
+
+  # The stand-in has playback and no tile(): its medium tile is the
+  # continue tile, from that row (ADR-016).
+  if wants S3.10; then
+    tile=$(curl -fsS --max-time 5 "$(home_url)api/tile/$id/m" 2>/dev/null || true)
+    if [[ $(jq -r '.tile.headline.label // ""' <<<"$tile" 2>/dev/null) == "continue" && $(jq -r '.tile.entries[0].label // ""' <<<"$tile" 2>/dev/null) == "origaitv selftest" ]]; then
+      result pass S3.10 "the stand-in's medium tile continues from the ledger: $(jq -r '.tile.entries[0] | "\(.label), \(.caption)"' <<<"$tile")"
+    else
+      result fail S3.10 "the stand-in's medium tile isn't a continue tile from its row: $(jq -c '.tile' <<<"$tile" 2>/dev/null || echo "no answer")"
+    fi
+  fi
+
+  screen quit "$id" >/dev/null
+  origaitv_app remove "$id" >/dev/null || true
+  curl -fsS --max-time 3 -X DELETE "$(home_url)api/ledger?app=$id" >/dev/null 2>&1 || true
+  kill "$server" 2>/dev/null || true
+  rm -rf "$work"
+  if wants S3.3; then
+    result manual S3.3 "a second viewer's own row comes with profiles in stage 4 (layer 2 checks it now); until then, play something in an app on the TV and its row shows in curl -s $(home_url)api/ledger"
+  fi
+  if wants S3.10; then
+    result manual S3.10 "on the TV, an app with playback and no tile of its own, made medium in edit home, shows what you last watched in it, with how far in"
+  fi
+}
+
+# The newest ledger row of an app, as JSON, or nothing.
+newest_row() {
+  curl -fsS --max-time 3 "$(home_url)api/ledger?app=$1&limit=1" 2>/dev/null | jq -c '.rows[0] // empty' 2>/dev/null || true
+}
+
+# When a ledger row was last written, in seconds since 1970.
+row_time() {
+  jq -r '.updated_at | sub("\\.[0-9]+Z$"; "Z") | fromdate' <<<"$1" 2>/dev/null || echo 0
+}
+
+# Whether a row is the item's: the same title, any case, and the same season
+# and episode when the item has them.
+row_is_item() {
+  jq -e --argjson item "$app_item" '(.title | ascii_downcase) == ($item.title | ascii_downcase)
+    and (($item.season // null) == null or .season == $item.season)
+    and (($item.episode // null) == null or .episode == $item.episode)' <<<"$1" >/dev/null 2>&1
+}
+
+# What a row says, for a line.
+row_says() {
+  jq -r '"\(.title)\(if .season then " S\(.season)" else "" end)\(if .episode then " E\(.episode)" else "" end) at \(.position_s) s"' <<<"$1" 2>/dev/null || echo "nothing"
+}
+
+# S3.2: the app named opens the item named through its playback.open, and
+# the screen daemon reads its playback state for the ledger every 10 s.
+s32() {
+  local id=$app_id started row first="" second="" wait=${ORIGAITV_PLAYBACK_WAIT_S:-90} manifest
+
+  if [[ -z $id || -z $app_item ]]; then
+    result manual S3.2 "name the app and a known episode: origaitv selftest S3.2 --app <id> --item '{\"kind\":\"episode\",\"title\":\"<series>\",\"season\":1,\"episode\":2}'"
+    return 0
+  fi
+  tv_on S3.2 || return 0
+  manifest=$(curl -fsS --max-time 5 "$(home_url)api/apps/$id/package" 2>/dev/null | jq -r '.dir // empty' 2>/dev/null || true)
+  if [[ -z $manifest ]] || ! jq -e '.tv.capabilities | index("playback")' "$manifest/manifest.json" >/dev/null 2>&1; then
+    result fail S3.2 "$id isn't an app on this box with playback"
+    return 0
+  fi
+
+  screen quit "$id" >/dev/null
+  started=$(date +%s)
+  screen app "$id" "$app_item" >/dev/null
+  # Its first row for the item, written after it opened, then a later one.
+  while (( $(date +%s) - started < wait )); do
+    row=$(newest_row "$id")
+    if [[ -n $row ]] && (( $(row_time "$row") >= started )) && row_is_item "$row"; then
+      if [[ -z $first ]]; then
+        first=$row
+      elif (( $(row_time "$row") > $(row_time "$first") )); then
+        second=$row
+        break
+      fi
+    fi
+    sleep 1
+  done
+  screen home >/dev/null
+
+  if [[ -z $first ]]; then
+    row=$(newest_row "$id")
+    result fail S3.2 "$id didn't play $(jq -r .title <<<"$app_item") within $wait s of opening it; its newest row says $(row_says "$row")"
+  elif [[ -z $second ]]; then
+    result fail S3.2 "$id read $(row_says "$first") once, and no second time within $wait s"
+  elif jq -e --argjson first "$first" '.position_s > $first.position_s' <<<"$second" >/dev/null 2>&1; then
+    result pass S3.2 "$id opened it through its playback.open, and its playback state read $(row_says "$first"), then $(row_says "$second")"
+  else
+    result fail S3.2 "$id read $(row_says "$first"), then $(row_says "$second"): the position didn't move"
+  fi
+  result manual S3.2 "on the TV, it was that episode playing, and Home paused it"
+}
+
+# S3.4: with a child watching, the app named opens the service's profile an
+# adult picked for children (ADR-009), as the screen daemon says it did.
+s34() {
+  local id=$app_id role picked started profile="" wait=${ORIGAITV_PROFILE_WAIT_S:-60}
+
+  if [[ -z $id ]]; then
+    result manual S3.4 "name the app: origaitv selftest S3.4 --app <id>, with a child's profile watching"
+    return 0
+  fi
+  tv_on S3.4 || return 0
+  role=$(curl -fsS --max-time 5 "$(home_url)api/viewer" 2>/dev/null | jq -r '.viewer.role // empty' 2>/dev/null || true)
+  if [[ $role != "child" ]]; then
+    result manual S3.4 "switch to a child's profile on the TV or the phone, then run origaitv selftest S3.4 --app $id again$(pin_set && printf '. Switching back to an adult asks for the PIN')"
+    return 0
+  fi
+  picked=$(curl -fsS --max-time 5 "$(home_url)api/apps/$id/profiles" 2>/dev/null | jq -r '.forChildren != null' 2>/dev/null || true)
+  if [[ $picked != "true" ]]; then
+    result fail S3.4 "no profile is picked for children in $id: an adult picks it in the app's details, under profile for children"
+    return 0
+  fi
+
+  screen quit "$id" >/dev/null
+  screen app "$id" >/dev/null
+  started=$(date +%s)
+  while (( $(date +%s) - started < wait )); do
+    profile=$(front "[.open[]? | select(.id == \"$id\") | .profile][0] // \"\"")
+    [[ -n $profile && $profile != "pending" ]] && break
+    sleep 1
+  done
+  case $profile in
+    selected) result pass S3.4 "with a child watching, $id opened the profile picked for children" ;;
+    "") result fail S3.4 "$id didn't open for the child: is it ticked for children in its details?" ;;
+    pending) result fail S3.4 "$id was still opening the profile for children after $wait s" ;;
+    *) result fail S3.4 "with a child watching, $id said: $profile" ;;
+  esac
+  result manual S3.4 "on the TV, it's the service's profile for children; then switch back to an adult"
+}
+
+# The built-in Music app, in the TV session.
+music() {
+  "${ORIGAITV_MUSIC:-$ORIGAITV_BIN_DIR/origaitv-music}" "$@" 2>/dev/null || true
+}
+
+# What a reply from Music says went wrong, or that it said nothing.
+music_error() {
+  if [[ -z $1 ]]; then
+    echo "Music didn't answer"
+  else
+    jq -r '.error // "it gave no reason"' <<<"$1" 2>/dev/null || echo "Music's answer couldn't be read"
+  fi
+}
+
+# S3.6: "play <album>" finds an album on a USB drive and one on a NAS share,
+# and each plays. An album whose name is also elsewhere in the library can't
+# show that, so it takes one whose name is only on that drive or share.
+s36() {
+  local scan progress started error away library kind where album title id reply now first second wait=${ORIGAITV_MUSIC_WAIT_S:-3}
+  local ceiling=${ORIGAITV_MUSIC_SCAN_S:-3600} poll=${ORIGAITV_MUSIC_POLL_S:-5}
+
+  tv_on S3.6 || return 0
+  # Reading a big share takes a while, so the scan runs in the background,
+  # and this follows how far it's got, for up to an hour.
+  scan=$(music scan)
+  if [[ $(jq -r '.ok // false' <<<"$scan" 2>/dev/null) != true ]]; then
+    result fail S3.6 "Music couldn't start reading its sources: $(music_error "$scan")"
+    return 0
+  fi
+  started=$SECONDS
+  while :; do
+    progress=$(music progress)
+    [[ $(jq -r '.progress.scanning // false' <<<"$progress" 2>/dev/null) == true ]] || break
+    if (( SECONDS - started >= ceiling )); then
+      result fail S3.6 "Music was still reading its sources after $(( ceiling / 60 )) minutes, with $(jq -r '.progress | "\(.read) of \(.found) files read from \(.source // "them") and \(.albums) albums so far"' <<<"$progress"). Music → sources says how far it's got; run origaitv selftest S3.6 again once it's done"
+      return 0
+    fi
+    sleep "$poll"
+  done
+  if [[ $(jq -r '.ok // false' <<<"$progress" 2>/dev/null) != true ]]; then
+    result fail S3.6 "Music stopped answering while it read its sources: $(music_error "$progress")"
+    return 0
+  fi
+  error=$(jq -r '.progress.error // empty' <<<"$progress" 2>/dev/null || true)
+  if [[ -n $error ]]; then
+    result fail S3.6 "Music couldn't read its sources: $error"
+    return 0
+  fi
+  # A share that isn't there, and why, when root mounts it.
+  away=$(music sources | jq -r '[.sources[]? | select(.kind == "share" and .available != true) | "\(.name) is away: \(.error // "not there")"] | join("; ")' 2>/dev/null || true)
+  library=$(music library)
+  for kind in usb share; do
+    where=$([[ $kind == usb ]] && echo "a USB drive" || echo "a NAS share")
+    album=$(jq -c --arg kind "$kind" '
+      (.albums | map(.title | ascii_downcase)) as $names
+      | [.albums[] | select(.away != true) | select(.source | startswith($kind + ":"))
+         | select((.title | ascii_downcase) as $t | $names | map(select(. == $t)) | length == 1)]
+      | first // empty' <<<"$library" 2>/dev/null || true)
+    if [[ -z $album ]]; then
+      if [[ $kind == usb ]]; then
+        result fail S3.6 "there's no album on a USB drive whose name is only there; plug in a stick with an album on it and run origaitv selftest S3.6 again"
+      else
+        result fail S3.6 "there's no album on a NAS share whose name is only there${away:+ ($away)}; add a share with origaitv music add-share smb://<nas>/<share> (or Music → sources on the TV) and run origaitv selftest S3.6 again"
+      fi
+      continue
+    fi
+    title=$(jq -r .title <<<"$album")
+    id=$(jq -r .id <<<"$album")
+    reply=$(music play album "$title")
+    if [[ $(jq -r '.playing.key // ""' <<<"$reply" 2>/dev/null) != "$id" ]]; then
+      result fail S3.6 "play $title didn't find the album on $where: $(jq -r '.playing.title // .error // "no answer"' <<<"$reply" 2>/dev/null || echo "no answer")"
+      continue
+    fi
+    sleep 1
+    first=$(music now | jq -r '.now.position // -1' 2>/dev/null || echo -1)
+    sleep "$wait"
+    now=$(music now)
+    second=$(jq -r '.now.position // -1' <<<"$now" 2>/dev/null || echo -1)
+    if [[ $(jq -r '.now.playing // false' <<<"$now" 2>/dev/null) == true && $(jq -r '.now.albumId // ""' <<<"$now") == "$id" ]] &&
+      awk -v a="$first" -v b="$second" 'BEGIN { exit !(b > a) }'; then
+      result pass S3.6 "play $title found the album on $where ($(jq -r '.source | sub("^[a-z]+:"; "")' <<<"$album")), and it plays: $(jq -r '.now | "\(.title) at \(.position | floor) s"' <<<"$now")"
+    else
+      result fail S3.6 "$title from $where didn't play: $(jq -c '.now' <<<"$now" 2>/dev/null || echo "no answer")"
+    fi
+  done
+  music stop >/dev/null
+  result manual S3.6 "listen: each album comes out of the TV's speakers. Then on the TV, Music → type each album's name in the search: it's the first result, and choosing it plays it"
+}
+
+s38() {
+  ts_check daemon/weather-check.ts S3.8
+}
+
+s39() {
+  ts_check daemon/weather-check.ts S3.9
+}
+
+# Why what's new has nothing, as the TV says it.
+whats_new_why() {
+  case $1 in
+    no-key) echo "there's no TMDB key yet: add one in Settings → new this week$(past_pin)" ;;
+    no-region) echo "there's no region yet: pick one in Settings → new this week" ;;
+    no-services) echo "TMDB lists none of this box's streaming apps for its region: Settings → new this week shows what each app matched" ;;
+    *) echo "TMDB didn't answer: ${2:-no answer}" ;;
+  esac
+}
+
+s81() {
+  local feed region count
+  feed=$(curl -sS --max-time 120 "$(home_url)api/whats-new?fresh=1" 2>/dev/null | jq -c '.feed // empty' 2>/dev/null || true)
+  if [[ -z $feed ]]; then
+    result fail S8.1 "the daemon didn't answer"
+    return 0
+  fi
+  region=$(jq -r '.region // "?"' <<<"$feed")
+  if ! jq -e '.ok' <<<"$feed" >/dev/null; then
+    result fail S8.1 "$(whats_new_why "$(jq -r '.why // ""' <<<"$feed")" "$(jq -r '.error // ""' <<<"$feed")")"
+    return 0
+  fi
+  count=$(jq '.titles | length' <<<"$feed")
+  if (( count == 0 )); then
+    result fail S8.1 "nothing appeared on $(jq -r '[.services[].name] | join(", ")' <<<"$feed") in $region from $(jq -r '.from' <<<"$feed") to $(jq -r '.to' <<<"$feed"), as TMDB has it"
+    return 0
+  fi
+  result pass S8.1 "$count titles new on $(jq -r '[.services[] | select(.providers | length > 0) | .name] | join(", ")' <<<"$feed") in $region since $(jq -r '.from' <<<"$feed"), such as $(jq -r '[.titles[:3][] | "\(.title)\(if .season then " (season \(.season))" else "" end)"] | join(", ")' <<<"$feed")"
+  result manual S8.1 "one of those is something you know came out this week on one of your services. Home's New this week shows them with their posters (pin it from Apps if it isn't there), and choosing one plays it in its app. On the phone, ask your tv \"what's new\": the TV says the top three and offers them"
+}
+
+s82() {
+  local body answer
+  body=$(jq -cn --arg show "$show" 'if $show == "" then {} else {query: $show} end')
+  answer=$(curl -sS --max-time 60 -H 'Content-Type: application/json' -d "$body" "$(home_url)api/whats-new/episode" 2>/dev/null | jq -c '.answer // empty' 2>/dev/null || true)
+  if [[ -z $answer ]]; then
+    result fail S8.2 "the daemon didn't answer"
+  elif ! jq -e '.ok' <<<"$answer" >/dev/null; then
+    case $(jq -r '.why // ""' <<<"$answer") in
+      no-key | no-region) result fail S8.2 "$(whats_new_why "$(jq -r '.why' <<<"$answer")")" ;;
+      which) result manual S8.2 "there's no show in this profile's ledger yet: watch an episode of one from the TV, or run origaitv selftest S8.2 --show \"<its name>\"" ;;
+      *) result fail S8.2 "$(jq -r '.say' <<<"$answer")$(jq -r 'if .error then ": \(.error)" else "" end' <<<"$answer")" ;;
+    esac
+  else
+    result pass S8.2 "$(jq -r '.say' <<<"$answer")"
+    result manual S8.2 "TMDB has $(jq -r '.show' <<<"$answer")'s newest out as $(jq -r 'if .latest then "s\(.latest.season) e\(.latest.episode) on \(.latest.date)" else "none yet" end' <<<"$answer"), and the next as $(jq -r 'if .next then "s\(.next.season) e\(.next.episode) on \(.next.date)" elif .ended then "none: it has ended" else "not dated yet" end' <<<"$answer"). Check that against the show's own page, and that yes or no is right for what this profile has watched"
+  fi
+}
+
+echo "origaiTV selftest, $(date -u +%Y-%m-%dT%H:%MZ), $(uname -n)"
+"$ORIGAITV_BIN_DIR/origaitv-version" 2>/dev/null || true
+echo
+
+for id in "${checks[@]}"; do
+  current=$id
+  case $id in
+    S0.2) s02_disk; s02_login; s02_welcome ;;
+    S0.3) s03 ;;
+    S1.1) s11 ;;
+    S1.2) s12 ;;
+    S1.5) s15 ;;
+    S1.6) s16 ;;
+    S1.7) s17 ;;
+    S2.8) s28 ;;
+    S2.9) s29 ;;
+    S2.10) s210 ;;
+    S2.11) s211 ;;
+    S2.15) s215 ;;
+    S2.16) s216 ;;
+    S2.18) s218 ;;
+    S2.19) s219 ;;
+    S3.2) s32 ;;
+    S3.4) s34 ;;
+    S3.3 | S3.10) s33 ;;
+    S3.6) s36 ;;
+    S3.8) s38 ;;
+    S3.9) s39 ;;
+    S4.5) s45 ;;
+    S4.6) s46 ;;
+    S7.3) s73 ;;
+    S7.4) s74 ;;
+    S7.5) s75 ;;
+    S8.1) s81 ;;
+    S8.2) s82 ;;
+  esac
+done
+
+echo
+summary=""
+for id in "${checks[@]}"; do
+  if [[ $failed == *" $id "* ]]; then summary+="${summary:+, }$id fail"; else summary+="${summary:+, }$id pass"; fi
+done
+echo "$summary"
+
+# The exit status says whether everything passed; that's not a stop.
+trap - ERR
+[[ $failed == " " ]]

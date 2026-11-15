@@ -1,0 +1,101 @@
+#!/bin/bash
+
+# origaitv:summary=Check the box after an update, for the TV's Go back
+# origaitv:hidden=true
+# origaitv:requires-sudo=true
+
+# The check after an update from the TV (ADR-025, board 33): the daemon
+# answers on the version now installed, the home screen loads, the services'
+# Chromium runs and still has Widevine if it had it before, and every
+# installed app loads.
+# origaitv-update-tv runs it when an update is done, and
+# origaitv-update-after.service at the boot after an update that needed a
+# restart. What it found goes to /var/lib/origaitv/update/after.json. When
+# something's off, the TV says so and offers Go back (bin/origaitv-go-back).
+
+set -uo pipefail
+
+STATE=${ORIGAITV_UPDATE_STATE:-/var/lib/origaitv/update}
+DAEMON=${ORIGAITV_DAEMON_URL:-http://127.0.0.1:3000}
+CHROMIUM_STATE=${ORIGAITV_CHROMIUM_STATE:-/var/lib/origaitv/chromium}
+WAIT=${ORIGAITV_AFTER_WAIT:-120}
+
+checks="[]"
+
+# add <name> <true|false> [<what's wrong>]
+add() {
+  checks=$(jq -c --arg name "$1" --argjson ok "$2" --arg detail "${3:-}" '. + [{name: $name, ok: $ok, detail: $detail}]' <<<"$checks")
+}
+
+get() {
+  curl -fsS --max-time "${2:-10}" "$DAEMON$1" 2>/dev/null
+}
+
+# The daemon, given time to come up after a restart, on the origaitv now
+# installed: the update restarts origaiTV's services (origaitv-restart), so this
+# checks the new code.
+installed=$(pacman -Q origaitv 2>/dev/null | cut -d' ' -f2)
+started=$SECONDS
+daemon=false
+running=""
+while true; do
+  health=$(get /health 3)
+  if jq -e '.ok == true' >/dev/null 2>&1 <<<"$health"; then
+    daemon=true
+    running=$(jq -r '.running // ""' <<<"$health" 2>/dev/null)
+    [[ $running == "$installed" ]] && break
+  fi
+  (( SECONDS - started >= WAIT )) && break
+  sleep 3
+done
+if [[ $daemon != "true" ]]; then
+  add origaiTV false "origaiTV didn't start"
+elif [[ $running != "$installed" ]]; then
+  add origaiTV false "origaiTV is still on the version from before"
+else
+  add origaiTV true
+fi
+
+# The home screen: its page, and the state it draws.
+if [[ $daemon == "true" ]] && get /launcher/main.ts >/dev/null && get /api/home | jq -e '.ok == true' >/dev/null 2>&1; then
+  add Home true
+else
+  add Home false "Home doesn't load"
+fi
+
+# The services' Chromium, and its Widevine module when it had one before the
+# update. Chromium fetches it a few minutes after it's first online, so a box
+# that never had it hasn't lost it.
+had_widevine=$(jq -r '.widevine // false' "$STATE/go-back.json" 2>/dev/null || echo false)
+if ! chromium --version >/dev/null 2>&1; then
+  add "Web apps" false "Web apps don't start"
+elif [[ $had_widevine == "true" ]] && [[ -z $(find "$CHROMIUM_STATE/WidevineCdm" -name manifest.json 2>/dev/null) ]]; then
+  add "Web apps" false "Web apps can't play protected video"
+else
+  add "Web apps" true
+fi
+
+# Every installed app, as the daemon loads it.
+if [[ $daemon == "true" ]]; then
+  apps=$(get /api/apps/check 120 | jq -c '.apps // []' 2>/dev/null || echo '[]')
+  while IFS=$'\t' read -r name ok; do
+    [[ -n $name ]] || continue
+    if [[ $ok == "true" ]]; then
+      add "$name" true
+    else
+      add "$name" false "$name won't open"
+    fi
+  done < <(jq -r '.[] | [.name, (.ok | tostring)] | @tsv' <<<"$apps")
+fi
+
+mkdir -p "$STATE"
+jq -n --argjson checks "$checks" \
+  --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg origaitv "$(pacman -Q origaitv 2>/dev/null | cut -d' ' -f2)" \
+  '{at: $at, ok: all($checks[]; .ok), origaitv: $origaitv, checks: $checks}' >"$STATE/after.json.new"
+chmod 644 "$STATE/after.json.new"
+mv "$STATE/after.json.new" "$STATE/after.json"
+rm -f "$STATE/check-pending"
+
+jq -r '.checks[] | "\(if .ok then "ok" else "not ok" end) - \(.name)\(if .detail != "" then ": \(.detail)" else "" end)"' "$STATE/after.json"
+jq -e '.ok' "$STATE/after.json" >/dev/null

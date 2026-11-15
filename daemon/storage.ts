@@ -5,10 +5,10 @@
 // USB drive through udisks2 and a share through gvfs (Omarchy ships both).
 //
 // An SMB share with a user name is root's to mount (ADR-038). Its password
-// goes in a drop folder only root can read, where agentv-share.path starts
-// bin/agentv-share-store as root to keep it and mount the share read-only,
+// goes in a drop folder only root can read, where origaitv-share.path starts
+// bin/origaitv-share-store as root to keep it and mount the share read-only,
 // at boot too. The TV session never has the password again: it reads the
-// files from that mount, and what happened from /etc/agentv/shares.json.
+// files from that mount, and what happened from /etc/origaitv/shares.json.
 // NFS shares, and SMB shares with no user, mount through gvfs, as before.
 
 import { execFile } from "node:child_process";
@@ -80,7 +80,7 @@ export function rootShare(uri: string): boolean {
   }
 }
 
-// What agentv-share-store says of the shares it mounts.
+// What origaitv-share-store says of the shares it mounts.
 interface RootStatus {
   uri: string;
   path: string;
@@ -102,8 +102,8 @@ export interface StorageOptions {
   config?: string; // where the folders and shares are kept
   run?: Run;
   home?: string;
-  drop?: string; // where a share's password goes for root: /var/lib/agentv/share-drop
-  status?: string; // what root says: /etc/agentv/shares.json
+  drop?: string; // where a share's password goes for root: /var/lib/origaitv/share-drop
+  status?: string; // what root says: /etc/origaitv/shares.json
   mounted?: () => Promise<Set<string>>; // where something is mounted now
   waitMs?: number; // how long root may take
 }
@@ -127,10 +127,10 @@ export class Storage {
   constructor(options: StorageOptions = {}) {
     this.home = options.home ?? homedir();
     const state = process.env.XDG_STATE_HOME ?? join(this.home, ".local/state");
-    this.config = options.config ?? join(state, "agentv/storage.json");
+    this.config = options.config ?? join(state, "origaitv/storage.json");
     this.run = options.run ?? run;
-    this.drop = options.drop ?? "/var/lib/agentv/share-drop";
-    this.statusPath = options.status ?? "/etc/agentv/shares.json";
+    this.drop = options.drop ?? "/var/lib/origaitv/share-drop";
+    this.statusPath = options.status ?? "/etc/origaitv/shares.json";
     this.mounted = options.mounted ?? mountPoints;
     this.waitMs = options.waitMs ?? 45_000;
   }

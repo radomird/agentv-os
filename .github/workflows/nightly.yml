@@ -1,57 +1,57 @@
 name: Nightly
 
-# Every night, the current AgenTV release on Omarchy's stable channel as it
+# Every night, the current origaiTV release on Omarchy's stable channel as it
 # stands tonight goes through the whole image layer, including an update in
 # place (S0.5). When everything passes, the run signs tested.json with every
 # package and version on the box, and boxes take only those (ADR-026, S0.7).
-# Until AgenTV has a stable release, it tests edge. A failure opens an issue,
+# Until origaiTV has a stable release, it tests edge. A failure opens an issue,
 # and the next night that passes closes it.
 #
 # It's also where the edge ISO is made, the way omarchy-iso's own nightly
-# build makes Omarchy's: AgenTV's edge packages on Omarchy's stable channel,
-# built from agentv-iso's agentv branch, kept as a workflow artifact when
+# build makes Omarchy's: origaiTV's edge packages on Omarchy's stable channel,
+# built from origaitv-iso's agentv branch, kept as a workflow artifact when
 # every check passes. Once there's a stable release, edge gets a run of its
 # own beside it, and only the stable run signs tested.json.
 #
-# Each release is checked with agentv-iso as it was tagged with it, so the
+# Each release is checked with origaitv-iso as it was tagged with it, so the
 # stable run doesn't hold a release to checks written for later work, such
 # as a stage it doesn't have yet. Its update in place goes to tonight's
-# agentv, so that update is checked with agentv-iso's agentv branch, the
+# origaitv, so that update is checked with origaitv-iso's agentv branch, the
 # checks that go with what it updates to.
 #
-# The release's tag in agentv-iso is agentv-v1.0.0 from 1.0 on, and v0.2.0
+# The release's tag in origaitv-iso is origaitv-v1.0.0 from 1.0 on, and v0.2.0
 # for a 0.x release (.github/scripts/release-checks). The run is handed the
-# commit that tag is on, not its name. When agentv-iso has no tag for the
-# release, the release is still checked, with agentv-iso's agentv branch,
+# commit that tag is on, not its name. When origaitv-iso has no tag for the
+# release, the release is still checked, with origaitv-iso's agentv branch,
 # but the night fails and its issue says why: checked that way for long, a
 # release would be held to checks for work it doesn't have.
 #
-# Edge is checked the same way, with the agentv-iso that goes with its
-# package (.github/scripts/nightly-checks). agentv-pkgs' Build publishes
+# Edge is checked the same way, with the origaitv-iso that goes with its
+# package (.github/scripts/nightly-checks). origaitv-pkgs' Build publishes
 # edge on GitHub's schedule, which can run hours late, so on a busy day
-# agentv-os has merged more by night, and agentv-iso the checks that came
+# origaitv-os has merged more by night, and origaitv-iso the checks that came
 # with it, which fail on the older package. Then edge's ISO is built and
-# checked with agentv-iso as it was before those, and its update to
-# tonight's agentv with agentv-iso's agentv branch. When edge's package is
-# agentv-os's newest, that's agentv-iso's agentv branch for both.
+# checked with origaitv-iso as it was before those, and its update to
+# tonight's origaitv with origaitv-iso's agentv branch. When edge's package is
+# origaitv-os's newest, that's origaitv-iso's agentv branch for both.
 #
 # The release's checks run two VMs at a time, as edge's do. S1.3 times the
 # switch back to the TV against a 10 s bar, and beside another VM (from
 # 2026-10-27) that took 6 to 10 s instead of 3 to 5 s, so for a while the
-# release's run had one VM at a time. agentv-iso fixed that in its own
-# checks: with two VMs, its test/agentv/image/run holds S1.3 back and runs
+# release's run had one VM at a time. origaitv-iso fixed that in its own
+# checks: with two VMs, its test/origaitv/image/run holds S1.3 back and runs
 # it on its own, with every CPU, once the rest are done. Every release from
 # 0.2.0 on has that, so two VMs are safe for the release again.
 #
 # Edge's checks are shared out across four jobs, two VMs each, the way a
 # pull request's are (image.yml). The release's run signs tested.json and
-# checks its update with tonight's agentv-iso, so it stays in one job, and
-# so does edge's on a night its update is checked with tonight's agentv-iso.
+# checks its update with tonight's origaitv-iso, so it stays in one job, and
+# so does edge's on a night its update is checked with tonight's origaitv-iso.
 #
-# Started by hand, it can take another agentv-iso ref for edge's checks
+# Started by hand, it can take another origaitv-iso ref for edge's checks
 # (checks), so a fix to the checks can be seen in a full night before it
 # merges. The release keeps its own. That ref isn't merged yet, so such a
-# run never gets AgenTV's own key: it signs no tested.json, checks no
+# run never gets origaiTV's own key: it signs no tested.json, checks no
 # update (a channel's box takes one signed with that key alone) and keeps no
 # ISO.
 
@@ -61,7 +61,7 @@ on:
   workflow_dispatch:
     inputs:
       checks:
-        description: "agentv-iso ref for edge's checks, in a run that signs nothing, checks no update and keeps no ISO (empty: agentv)"
+        description: "origaitv-iso ref for edge's checks, in a run that signs nothing, checks no update and keeps no ISO (empty: agentv)"
         type: string
         default: ""
 
@@ -93,71 +93,71 @@ jobs:
       - id: which
         env:
           GH_TOKEN: ${{ github.token }}
-          PKGS: ${{ github.repository_owner }}/agentv-pkgs
+          PKGS: ${{ github.repository_owner }}/origaitv-pkgs
           CHECKS: ${{ inputs.checks }}
         run: |
-          next=${CHECKS:-agentv}
+          next=${CHECKS:-origaitv}
           newest() {
             gh release view "$1" -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null |
-              sed -nE 's/^agentv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1
+              sed -nE 's/^origaitv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1
           }
           stable=$(newest stable)
 
-          # Edge's package, and the agentv-iso that goes with it. A run
-          # started with its own agentv-iso ref checks with that.
+          # Edge's package, and the origaitv-iso that goes with it. A run
+          # started with its own origaitv-iso ref checks with that.
           edge=$(newest edge)
           edge_checks=$next
           edge_update=""
           if [[ -z $CHECKS ]]; then
-            repos=("https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-os.git" "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git")
+            repos=("https://github.com/$GITHUB_REPOSITORY_OWNER/origaitv-os.git" "https://github.com/$GITHUB_REPOSITORY_OWNER/origaitv-iso.git")
             if GITHUB_OUTPUT="$RUNNER_TEMP/edge" .github/scripts/nightly-checks "$edge" "${repos[@]}"; then
               built=$(sed -n 's/^built=//p' "$RUNNER_TEMP/edge")
               edge_checks=$(sed -n 's/^checks=//p' "$RUNNER_TEMP/edge")
               newer=$(sed -n 's/^newer=//p' "$RUNNER_TEMP/edge")
               if [[ $edge_checks == "agentv" ]]; then
-                echo "Edge's package is agentv $edge, from agentv-os ${built:0:9}, checked with agentv-iso agentv." >>"$GITHUB_STEP_SUMMARY"
+                echo "Edge's package is origaitv $edge, from origaitv-os ${built:0:9}, checked with origaitv-iso origaitv." >>"$GITHUB_STEP_SUMMARY"
               else
                 edge_update=agentv
-                echo "Edge's package is agentv $edge, from agentv-os ${built:0:9}. Since then agentv-os has merged $newer, with checks of their own, so edge is checked with agentv-iso ${edge_checks:0:9}, from before those, and its update to tonight's agentv with agentv-iso agentv." >>"$GITHUB_STEP_SUMMARY"
+                echo "Edge's package is origaitv $edge, from origaitv-os ${built:0:9}. Since then origaitv-os has merged $newer, with checks of their own, so edge is checked with origaitv-iso ${edge_checks:0:9}, from before those, and its update to tonight's origaitv with origaitv-iso origaitv." >>"$GITHUB_STEP_SUMMARY"
               fi
             else
-              echo "::warning::The agentv-iso that goes with edge's package $edge couldn't be found, so edge is checked with agentv-iso agentv, which can have checks the package doesn't."
+              echo "::warning::The origaitv-iso that goes with edge's package $edge couldn't be found, so edge is checked with origaitv-iso agentv, which can have checks the package doesn't."
             fi
           fi
 
           if [[ -n $stable ]]; then
-            # The agentv-iso the release was tagged with, as the commit its
+            # The origaitv-iso the release was tagged with, as the commit its
             # tag is on. With no tag for it, tonight's checks stand in, and
             # the night says so out loud (the untagged job below).
             checks=$next
             with=$next
             found=0
             GITHUB_OUTPUT="$RUNNER_TEMP/release" .github/scripts/release-checks "$stable" \
-              "https://github.com/$GITHUB_REPOSITORY_OWNER/agentv-iso.git" 2>"$RUNNER_TEMP/release.err" || found=$?
+              "https://github.com/$GITHUB_REPOSITORY_OWNER/origaitv-iso.git" 2>"$RUNNER_TEMP/release.err" || found=$?
             if (( found == 0 )); then
               checks=$(sed -n 's/^checks=//p' "$RUNNER_TEMP/release")
               with="$(sed -n 's/^tag=//p' "$RUNNER_TEMP/release") (${checks:0:9})"
             elif (( found == 3 )); then
               why=$(sed 's/^release-checks: //' "$RUNNER_TEMP/release.err")
-              untagged="AgenTV $stable is the stable release, and $why. So tonight it was checked with agentv-iso's agentv branch, which has checks for work the release doesn't have. Tag agentv-iso for the release, on the commit it was built from."
+              untagged="origaiTV $stable is the stable release, and $why. So tonight it was checked with origaitv-iso's agentv branch, which has checks for work the release doesn't have. Tag origaitv-iso for the release, on the commit it was built from."
               echo "untagged=$untagged" >>"$GITHUB_OUTPUT"
               echo "::warning::$untagged"
             else
               cat "$RUNNER_TEMP/release.err" >&2
-              echo "::error::Couldn't find out which agentv-iso AgenTV $stable was tagged with, so nothing is tested tonight."
+              echo "::error::Couldn't find out which origaitv-iso origaiTV $stable was tagged with, so nothing is tested tonight."
               exit 1
             fi
             update=""
             [[ $checks == "$next" ]] || update=$next
             runs=$(jq -cn --arg checks "$checks" --arg update "$update" --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "stable", tested: true, iso: false, checks: $checks, update: $update, lanes: 2},
               {packages: "edge", tested: false, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
-            echo "Testing AgenTV's stable release $stable with agentv-iso $with, two VMs at a time with S1.3 on its own, and making the edge ISO with agentv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
+            echo "Testing origaiTV's stable release $stable with origaitv-iso $with, two VMs at a time with S1.3 on its own, and making the edge ISO with origaitv-iso $edge_checks" >>"$GITHUB_STEP_SUMMARY"
           else
             runs=$(jq -cn --arg edge "$edge_checks" --arg edge_update "$edge_update" '[{packages: "edge", tested: true, iso: true, checks: $edge, update: $edge_update, lanes: 2}]')
-            echo "Testing AgenTV's edge release (there's no stable one yet) with agentv-iso $edge_checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
+            echo "Testing origaiTV's edge release (there's no stable one yet) with origaitv-iso $edge_checks, and making the edge ISO" >>"$GITHUB_STEP_SUMMARY"
           fi
           if [[ -n $CHECKS ]]; then
-            echo "Started by hand with agentv-iso $CHECKS, so this run has no signing key: it signs no tested.json, checks no update and keeps no ISO." >>"$GITHUB_STEP_SUMMARY"
+            echo "Started by hand with origaitv-iso $CHECKS, so this run has no signing key: it signs no tested.json, checks no update and keeps no ISO." >>"$GITHUB_STEP_SUMMARY"
           fi
           echo "runs=$runs" >>"$GITHUB_OUTPUT"
 
@@ -173,7 +173,7 @@ jobs:
       ref: agentv
       iso-ref: ${{ matrix.checks }}
       packages: ${{ matrix.packages }}
-      # A run started by hand with its own agentv-iso ref (checks) has no
+      # A run started by hand with its own origaitv-iso ref (checks) has no
       # key, so it has nothing to sign an update or tested.json with, and
       # its ISO isn't one to keep.
       update-test: ${{ inputs.checks == '' }}
@@ -181,11 +181,11 @@ jobs:
       nightly: ${{ matrix.tested && inputs.checks == '' }}
       keep-iso: ${{ matrix.iso && inputs.checks == '' }}
       # The night's box is what later runs start from, so it's never one
-      # that ran an agentv-iso ref someone typed in either.
+      # that ran an origaitv-iso ref someone typed in either.
       keep-disk: ${{ matrix.iso && inputs.checks == '' }}
       lanes: ${{ matrix.lanes }}
-      # The one caller that signs with AgenTV's own key: what a channel's
-      # box updates to, and tested.json. Never beside an agentv-iso ref
+      # The one caller that signs with origaiTV's own key: what a channel's
+      # box updates to, and tested.json. Never beside an origaitv-iso ref
       # someone typed in.
       release-key: ${{ inputs.checks == '' }}
     # The key is a secret of the "release" environment only, which only
@@ -198,7 +198,7 @@ jobs:
     secrets:
       AGENTV_SIGNING_KEY: ${{ secrets.AGENTV_SIGNING_KEY }}
 
-  # A release with no tag in agentv-iso was checked with tonight's checks.
+  # A release with no tag in origaitv-iso was checked with tonight's checks.
   # That's said by failing the night, so it's in the issue below and not
   # only in a summary nobody reads.
   untagged:

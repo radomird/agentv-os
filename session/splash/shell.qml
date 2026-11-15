@@ -1,13 +1,13 @@
-// AgenTV's splash in the TV session (ADR-060): the boot splash's logo on its
+// origaiTV's splash in the TV session (ADR-060): the boot splash's logo on its
 // background, drawn over everything from the moment the TV session starts
 // until the screen daemon says home's page has drawn under it. Plymouth left
 // the same picture on the screen as it quit, so the boot runs from the
-// firmware's logo to home with only AgenTV's splash between them.
+// firmware's logo to home with only origaiTV's splash between them.
 //
-// bin/agentv-boot-splash tv starts it with the splash's background and logo
-// in AGENTV_SPLASH_BACKGROUND and AGENTV_SPLASH_LOGO, and
-// bin/agentv-boot-splash done ends it:
-//   qs ipc -n -p /usr/share/agentv/session/splash call splash done
+// bin/origaitv-boot-splash tv starts it with the splash's background and logo
+// in ORIGAITV_SPLASH_BACKGROUND and ORIGAITV_SPLASH_LOGO, and
+// bin/origaitv-boot-splash done ends it:
+//   qs ipc -n -p /usr/share/origaitv/session/splash call splash done
 // It never takes the keyboard or the mouse, and ends by itself after 90 s,
 // so a home screen that never comes can't leave it up.
 
@@ -20,8 +20,8 @@ import Quickshell.Wayland
 ShellRoot {
   id: root
 
-  readonly property string background: Quickshell.env("AGENTV_SPLASH_BACKGROUND") || "#1a1b26"
-  readonly property string logo: Quickshell.env("AGENTV_SPLASH_LOGO") || "/usr/share/plymouth/themes/omarchy/logo.png"
+  readonly property string background: Quickshell.env("ORIGAITV_SPLASH_BACKGROUND") || "#1a1b26"
+  readonly property string logo: Quickshell.env("ORIGAITV_SPLASH_LOGO") || "/usr/share/plymouth/themes/omarchy/logo.png"
 
   PanelWindow {
     anchors {
@@ -32,7 +32,7 @@ ShellRoot {
     }
     color: root.background
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "agentv-splash"
+    WlrLayershell.namespace: "origaitv-splash"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     mask: Region {}

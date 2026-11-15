@@ -1,4 +1,4 @@
-// Installs apps into /var/lib/agentv/apps/<id>/ (ADR-010, PHASE-1-PLAN.md),
+// Installs apps into /var/lib/origaitv/apps/<id>/ (ADR-010, PHASE-1-PLAN.md),
 // from one of two places:
 // - The signed index, which pins each app to an exact commit of its public
 //   repo, and names its folder there when the repo holds more than one app
@@ -28,8 +28,8 @@ export interface Installed {
   commit?: string;
   path?: string;
   source?: string; // the folder a local app was installed from
-  // agentv selftest's stand-in for a streaming service, which it serves
-  // from this box (bin/agentv-selftest). Only the installer writes this,
+  // origaitv selftest's stand-in for a streaming service, which it serves
+  // from this box (bin/origaitv-selftest). Only the installer writes this,
   // when asked with --stand-in in a terminal: an app or its manifest can't.
   standIn?: boolean;
   installedAt: string;
@@ -61,12 +61,12 @@ async function writeInstalled(appsDir: string, record: Record<string, Installed>
 }
 
 // Checks the package in pkg as an app of tier: the contract's checks, and
-// not built in, since only AgenTV itself brings those. Returns its manifest.
+// not built in, since only origaiTV itself brings those. Returns its manifest.
 function check(pkg: string, id: string, tier: Tier, thisBox = false): Manifest {
   const { manifest, problems } = validatePackage(pkg, tier, { thisBox });
   if (!manifest) throw new IndexError(`${id} is broken:\n  ${problems.join("\n  ")}`);
   if (manifest.tv.runtime === "builtin") {
-    throw new IndexError(`${id} says it's built in, and built-in apps only come with AgenTV itself`);
+    throw new IndexError(`${id} says it's built in, and built-in apps only come with origaiTV itself`);
   }
   return manifest;
 }
@@ -94,7 +94,7 @@ async function putInPlace(pkg: string, staging: string, appsDir: string, record:
 // A refusal with one line for the person, which the TV shows, and the
 // detail on stderr for whoever reads the journal or ran the command.
 function cant(shown: string, detail: string): IndexError {
-  console.error(`agentv: ${detail}`);
+  console.error(`origaitv: ${detail}`);
   return new IndexError(shown);
 }
 

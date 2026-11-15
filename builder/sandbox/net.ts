@@ -1,4 +1,4 @@
-// The sandbox's way out (ADR-045): agentv-build-net.service, outside the
+// The sandbox's way out (ADR-045): origaitv-build-net.service, outside the
 // sandbox, on two socket files the builder's own network-less sandbox can
 // reach (builder/sandbox/start.ts forwards to them).
 //
@@ -149,7 +149,7 @@ const readJson = <T>(path: string): T | null => {
 };
 
 // What the running build declared: the origins in its state, and whether its
-// recipe lets an app have any, from AgenTV's own recipes, not the build's.
+// recipe lets an app have any, from origaiTV's own recipes, not the build's.
 export function declaredBy(ticket: Ticket | null, recipesRoot: string): Declared {
   if (!ticket || ticket.recipe === null) return { origins: [], originsAllowed: false };
   if (!KINDS.includes(ticket.recipe as Kind)) return { origins: [], originsAllowed: false };
@@ -164,11 +164,11 @@ export function declaredBy(ticket: Ticket | null, recipesRoot: string): Declared
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   process.removeAllListeners("warning");
-  const root = process.env.AGENTV_PATH ?? "/usr/share/agentv";
-  const run = process.env.RUNTIME_DIRECTORY ?? "/run/agentv-build-net";
-  const ticketPath = process.env.AGENTV_BUILD_TICKET ?? "/run/agentv-build/ticket.json";
+  const root = process.env.ORIGAITV_PATH ?? "/usr/share/origaitv";
+  const run = process.env.RUNTIME_DIRECTORY ?? "/run/origaitv-build-net";
+  const ticketPath = process.env.ORIGAITV_BUILD_TICKET ?? "/run/origaitv-build/ticket.json";
   // A plan's first sign-in will leave its own ticket here (ADR-040).
-  const signInPath = process.env.AGENTV_BUILD_SIGN_IN ?? "/run/agentv-build/sign-in.json";
+  const signInPath = process.env.ORIGAITV_BUILD_SIGN_IN ?? "/run/origaitv-build/sign-in.json";
   const keyPath = process.env.CREDENTIALS_DIRECTORY ? join(process.env.CREDENTIALS_DIRECTORY, "env") : null;
   const ticket = () => readJson<Ticket>(ticketPath);
   const log = (line: string) => console.log(line);
@@ -196,12 +196,12 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
         return null;
       }
     },
-    spendPath: process.env.AGENTV_SPEND ?? "/var/lib/agentv/spend/spend.json",
+    spendPath: process.env.ORIGAITV_SPEND ?? "/var/lib/origaitv/spend/spend.json",
     log,
   });
   // The daemon, on the box's own address, takes stage B's asks to the
   // screen daemon, which holds the signed-in browser.
-  const daemon = process.env.AGENTV_DAEMON ?? "http://127.0.0.1:3000";
+  const daemon = process.env.ORIGAITV_DAEMON ?? "http://127.0.0.1:3000";
   const page = pageServer({
     ticket,
     // Stage B's origins are root's ticket's: the list approved with the app.

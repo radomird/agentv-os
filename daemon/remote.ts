@@ -38,7 +38,7 @@ export interface RemoteOptions {
 }
 
 // One JSON line to input.py's socket, and its answer.
-export function sendInput(request: Record<string, unknown>, socket = join(process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.()}`, "agentv", "input.sock")): Promise<void> {
+export function sendInput(request: Record<string, unknown>, socket = join(process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.()}`, "origaitv", "input.sock")): Promise<void> {
   return new Promise((resolve, reject) => {
     const connection = createConnection(socket);
     let answer = "";
@@ -100,7 +100,7 @@ export class RemoteInput {
     while (!this.stopped) {
       this.abort = new AbortController();
       try {
-        const response = await fetch(this.url, { headers: { "X-AgenTV-Screen": this.as }, signal: this.abort.signal });
+        const response = await fetch(this.url, { headers: { "X-origaiTV-Screen": this.as }, signal: this.abort.signal });
         if (!response.ok || !response.body) throw new Error(`the daemon answered ${response.status}`);
         let buffer = "";
         const decoder = new TextDecoder();
@@ -156,7 +156,7 @@ export class RemoteInput {
     try {
       await fetch(`${this.url}/answer/${Number(n)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-AgenTV-Screen": this.as },
+        headers: { "Content-Type": "application/json", "X-origaiTV-Screen": this.as },
         body: JSON.stringify(answer),
         signal: AbortSignal.timeout(5000),
       });

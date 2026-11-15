@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# origaitv:summary=Hand the Omarchy theme's colours to the TV
+# origaitv:hidden=true
+
+# Omarchy renders origaiTV's launcher.css.tpl into the current theme on every
+# theme change. This sends the result to origaiTV's daemon, which keeps only
+# the colours (ADR-012), with the theme's name, so Look knows which theme it
+# is (ADR-048). It runs from Omarchy's theme-set hook and when the TV session
+# starts. A theme set before the template was there has no launcher.css yet,
+# so it's rendered here from the theme's colours.
+
+set -euo pipefail
+
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+# The TV session's units don't have Omarchy's commands on their PATH.
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+theme="$HOME/.local/state/omarchy/current/theme"
+css="$theme/launcher.css"
+# The name, as omarchy-theme-install allows it, with its + kept as a +.
+name=$(head -n 1 "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
+if ! (LC_ALL=C; [[ $name =~ ^[a-z0-9_][a-z0-9._+-]{0,63}$ ]]); then
+  name=""
+fi
+
+if [[ ! -f $css ]]; then
+  [[ -f $theme/colors.toml ]] || exit 0
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  # Each colour as a sed substitution; only plain names and colours get in.
+  "$OMARCHY_PATH/bin/omarchy-theme-color" --file "$theme/colors.toml" --all |
+    awk -F '\t' '$1 ~ /^[a-z_]+$/ && $2 ~ /^#[0-9a-fA-F]+$/ && length($2) <= 9 { printf "s/{{ *%s *}}/%s/g\n", $1, $2 }' >"$work/colors.sed"
+  sed -f "$work/colors.sed" "$ORIGAITV_PATH/config/omarchy/themed/launcher.css.tpl" >"$work/launcher.css"
+  css="$work/launcher.css"
+fi
+
+# At the TV session's start the daemon may still be on its way up.
+if ! curl -fsS --max-time 5 --retry 3 --retry-connrefused --retry-delay 1 -o /dev/null -H 'Content-Type: text/css' --data-binary @"$css" \
+  "http://127.0.0.1:${ORIGAITV_PORT:-3000}/api/theme${name:+?name=${name//+/%2B}}"; then
+  echo "origaiTV's daemon didn't take the theme's colours" >&2
+  exit 1
+fi

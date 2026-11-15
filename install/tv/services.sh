@@ -6,9 +6,9 @@
 # with it.
 #
 # Safe to run again, and on a box where one of them isn't installed.
-# AGENTV_SYSTEMCTL and AGENTV_UFW are for the tests.
-systemctl=${AGENTV_SYSTEMCTL:-systemctl}
-ufw=${AGENTV_UFW:-ufw}
+# ORIGAITV_SYSTEMCTL and ORIGAITV_UFW are for the tests.
+systemctl=${ORIGAITV_SYSTEMCTL:-systemctl}
+ufw=${ORIGAITV_UFW:-ufw}
 
 turn_off() {
   local unit
@@ -17,14 +17,14 @@ turn_off() {
     # A unit that isn't on the box has nothing to turn off.
     [[ -n $("$systemctl" list-unit-files --no-legend "$unit" 2>/dev/null) ]] || continue
     if "$systemctl" disable --now "$unit" >/dev/null 2>&1; then
-      echo "agentv: turned off $unit"
+      echo "origaitv: turned off $unit"
     else
-      echo "agentv: couldn't turn off $unit" >&2
+      echo "origaitv: couldn't turn off $unit" >&2
     fi
   done
 }
 
-# Docker: nothing of AgenTV's uses it, and the box's owner isn't in its
+# Docker: nothing of origaiTV's uses it, and the box's owner isn't in its
 # group. Its socket would start the daemon, as root, for whoever asks.
 # The socket goes first, so stopping the service can't start it again.
 # To bring it back: sudo systemctl enable --now docker.socket
@@ -44,7 +44,7 @@ turn_off cups-browsed.service cups.path cups.socket cups.service
 if command -v "$ufw" >/dev/null 2>&1; then
   for proto in udp tcp; do
     "$ufw" --force delete allow "53317/$proto" >/dev/null 2>&1 ||
-      echo "agentv: couldn't close LocalSend's port 53317/$proto" >&2
+      echo "origaitv: couldn't close LocalSend's port 53317/$proto" >&2
   done
-  echo "agentv: LocalSend's port 53317 is closed"
+  echo "origaitv: LocalSend's port 53317 is closed"
 fi

@@ -1,4 +1,4 @@
-// What the setup screens ask AgenTV's daemon (daemon/setup.ts): where setup
+// What the setup screens ask origaiTV's daemon (daemon/setup.ts): where setup
 // is, how the box is online, the setup hotspot and the phones, and each step
 // moving on.
 
@@ -157,7 +157,7 @@ export const NEEDS_PIN = "that needs the pin";
 async function call<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });

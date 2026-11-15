@@ -4,7 +4,7 @@
 // household's own photos, sent from a phone (Share → TV on the web
 // companion), works picked from museum archives (art.ts), and pictures from
 // a folder, a USB drive or a NAS share, which the TV session hands over
-// (picture-folder.ts), each kept in /var/lib/agentv/backgrounds.
+// (picture-folder.ts), each kept in /var/lib/origaitv/backgrounds.
 //
 // The theme's own are the default. The TV session hands over the ones the
 // theme Omarchy has now ships, and which of them Omarchy shows, whenever
@@ -93,7 +93,7 @@ export interface BackgroundState {
   items: ShownBackground[];
   theme: ThemePictures;
   // Videos play without hardware decoding too: only for the image checks,
-  // whose VM has none (/etc/agentv/video-in-software).
+  // whose VM has none (/etc/origaitv/video-in-software).
   softwareVideo: boolean;
 }
 
@@ -256,7 +256,7 @@ export class Backgrounds {
 
   constructor(options: { dir: string; softwareVideo?: string }) {
     this.dir = options.dir;
-    this.softwareVideo = options.softwareVideo ?? "/etc/agentv/video-in-software";
+    this.softwareVideo = options.softwareVideo ?? "/etc/origaitv/video-in-software";
   }
 
   private get themeDir(): string {

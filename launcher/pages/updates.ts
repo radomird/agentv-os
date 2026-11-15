@@ -2,8 +2,8 @@
 // System, and its page, What's new, the notice on home, the Updating screen, and Go back when the check
 // after an update finds something off. The daemon passes on what the daily
 // check found, how an install is going and what the check after it found;
-// installing runs as root in agentv-update-tv.service, and going back in
-// agentv-go-back.service, which the screen daemon starts.
+// installing runs as root in origaitv-update-tv.service, and going back in
+// origaitv-go-back.service, which the screen daemon starts.
 
 import { daemon, screen, type AfterCheck, type GoBack, type UpdateProgress, type Updates, type UpdateStatus } from "../api.ts";
 import { asWritten, h } from "../dom.ts";
@@ -24,17 +24,17 @@ function releaseNumber(version: string | null | undefined): string | null {
   return /^\d+(\.\d+){1,2}$/.test(v) ? v : null;
 }
 
-// The new AgenTV release the check found, if any, once it can be installed.
+// The new origaiTV release the check found, if any, once it can be installed.
 export function release(updates: Updates): string | null {
-  const next = updates.status?.agentv.available;
+  const next = updates.status?.origaitv.available;
   return next && !updates.status?.waiting ? shown(next) : null;
 }
 
-// Go back's snapshot, while it's for the agentv the box has now.
+// Go back's snapshot, while it's for the origaitv the box has now.
 export function goBack(updates: Updates): GoBack | null {
   const go = updates.goBack;
-  const now = updates.status?.agentv.installed;
-  return go && now && go.to.agentv === now ? go : null;
+  const now = updates.status?.origaitv.installed;
+  return go && now && go.to.origaitv === now ? go : null;
 }
 
 // The check after the last update found something off, there's a snapshot
@@ -42,7 +42,7 @@ export function goBack(updates: Updates): GoBack | null {
 export function off(updates: Updates): AfterCheck | null {
   const after = updates.after;
   if (!after || after.ok || updates.seen?.kept === after.at) return null;
-  return goBack(updates)?.to.agentv === after.agentv ? after : null;
+  return goBack(updates)?.to.origaitv === after.origaitv ? after : null;
 }
 
 async function goBackNow(ctx: Ctx): Promise<void> {
@@ -64,9 +64,9 @@ export function installing(updates: Updates): boolean {
   return progress.state === "running" || progress.state === "restarting" || progress.state === "going-back";
 }
 
-// Anything new: AgenTV, Omarchy or system packages.
+// Anything new: origaiTV, Omarchy or system packages.
 export function pending(status: UpdateStatus | null): boolean {
-  return Boolean(status && (status.agentv.available || status.omarchy.available || status.packages > 0));
+  return Boolean(status && (status.origaitv.available || status.omarchy.available || status.packages > 0));
 }
 
 // Anything new that can be installed now.
@@ -74,10 +74,10 @@ function ready(status: UpdateStatus | null): boolean {
   return pending(status) && !status?.waiting;
 }
 
-// What Tonight and Later name: the AgenTV release, or "packages" when only
+// What Tonight and Later name: the origaiTV release, or "packages" when only
 // Omarchy's or the system's are new.
 function what(status: UpdateStatus | null): string {
-  return status?.agentv.available ?? "packages";
+  return status?.origaitv.available ?? "packages";
 }
 
 // Tonight was chosen, here or on the phone (S4.8), and there's still
@@ -181,7 +181,7 @@ export function updatesValue(ctx: Ctx): string {
   if (!status) return "Not checked yet";
   if (!status.ok) return "Couldn't check";
   if (status.waiting && pending(status)) return "Still being tested";
-  if (status.agentv.available) return "New version";
+  if (status.origaitv.available) return "New version";
   return pending(status) ? "Ready" : "Up to date";
 }
 
@@ -221,15 +221,15 @@ export function updatesPanel(ctx: Ctx, open: (page: string) => void): HTMLElemen
   const value = updatesValue(ctx);
   const title = `Updates · ${value.charAt(0).toLowerCase()}${value.slice(1)}`;
   const go = goBack(ctx.updates);
-  const next = status.agentv.available;
+  const next = status.origaitv.available;
   const says = line(ctx, status);
   const parts: (HTMLElement | null)[] = [
     h("div", { class: `panel-title${status.security ? " security" : ""}` }, status.security ? `${title} · security` : title),
     checkNow(status.ok ? when(status.checked_at) : ""),
-    updateRow("version", "Version", shown(status.agentv.installed)),
+    updateRow("version", "Version", shown(status.origaitv.installed)),
     ready(status) ? updateRow("install", "Install now", next ? shown(next) : "", () => void install(ctx)) : next ? updateRow("new-version", "New version", shown(next)) : null,
-    next && status.notes.agentv.length ? updateRow("whats-new", "What's new", "", () => open("whats-new")) : null,
-    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go.from.agentv)}`) : null,
+    next && status.notes.origaitv.length ? updateRow("whats-new", "What's new", "", () => open("whats-new")) : null,
+    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go.from.origaitv)}`) : null,
     says ? h("div", { class: `panel-note${held(ctx) ? " held-note" : tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, says) : null,
     overnightRow,
   ];
@@ -240,12 +240,12 @@ export function updatesPanel(ctx: Ctx, open: (page: string) => void): HTMLElemen
 // Install now, Tonight and Later while it can be installed.
 export function notesPanel(ctx: Ctx): HTMLElement[] {
   const status = ctx.updates.status;
-  const next = status?.agentv.available;
-  const date = status?.notes.agentv_date ? ` · ${new Date(status.notes.agentv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` : "";
+  const next = status?.origaitv.available;
+  const date = status?.notes.origaitv_date ? ` · ${new Date(status.notes.origaitv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` : "";
   const parts: (HTMLElement | null)[] = [
     h("div", { class: "panel-title" }, "What's new"),
-    next ? h("div", { class: "section" }, `AgenTV ${shown(next)}${date}`) : null,
-    status?.notes.agentv.length ? h("ul", { class: "notes" }, ...status.notes.agentv.map((item) => h("li", {}, h("b", {}, "+ "), item))) : h("div", { class: "empty" }, "No notes for this one"),
+    next ? h("div", { class: "section" }, `origaiTV ${shown(next)}${date}`) : null,
+    status?.notes.origaitv.length ? h("ul", { class: "notes" }, ...status.notes.origaitv.map((item) => h("li", {}, h("b", {}, "+ "), item))) : h("div", { class: "empty" }, "No notes for this one"),
     ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "settings/whats-new"), tonightNote(ctx)) : null,
   ];
   return parts.filter((part): part is HTMLElement => part !== null);
@@ -278,8 +278,8 @@ async function check(ctx: Ctx): Promise<void> {
 // What's new (board 30).
 export function whatsNew(ctx: Ctx): View {
   const status = ctx.updates.status;
-  const date = status?.notes.agentv_date
-    ? ` · ${new Date(status.notes.agentv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`
+  const date = status?.notes.origaitv_date
+    ? ` · ${new Date(status.notes.origaitv_date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`
     : "";
   const lines = (items: string[]) => h("ul", { class: "notes" }, ...items.map((item) => h("li", {}, h("b", {}, "+ "), item)));
   const el = h(
@@ -289,8 +289,8 @@ export function whatsNew(ctx: Ctx): View {
       "div",
       { class: "page" },
       ...heading("tv updates whats-new", "What's new"),
-      status?.agentv.available ? h("div", { class: "section" }, `AgenTV ${shown(status.agentv.available)}${date}`) : null,
-      status?.agentv.available ? (status.notes.agentv.length ? lines(status.notes.agentv) : h("div", { class: "empty" }, "No notes for this one")) : null,
+      status?.origaitv.available ? h("div", { class: "section" }, `origaiTV ${shown(status.origaitv.available)}${date}`) : null,
+      status?.origaitv.available ? (status.notes.origaitv.length ? lines(status.notes.origaitv) : h("div", { class: "empty" }, "No notes for this one")) : null,
       status?.omarchy.available ? h("div", { class: "section" }, `Omarchy ${shown(status.omarchy.available)}`) : null,
       status?.omarchy.available
         ? status.notes.omarchy.length
@@ -324,7 +324,7 @@ export function checkView(ctx: Ctx): View {
       "div",
       { class: "page" },
       ...heading("tv updates check", "Something's off"),
-      h("div", { class: "panel-note check-summary" }, `The update finished, but ${wrong.join(" and ") || "something isn't right"}. Go back to ${shown(go?.from.agentv)}?`),
+      h("div", { class: "panel-note check-summary" }, `The update finished, but ${wrong.join(" and ") || "something isn't right"}. Go back to ${shown(go?.from.origaitv)}?`),
       h(
         "div",
         { class: "check-rows" },
@@ -335,8 +335,8 @@ export function checkView(ctx: Ctx): View {
       h(
         "div",
         { class: "check-actions" },
-        h("button", { class: "button primary", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go?.from.agentv)}`),
-        h("button", { class: "button", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, `Stay on ${shown(after?.agentv)}`),
+        h("button", { class: "button primary", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go?.from.origaitv)}`),
+        h("button", { class: "button", "data-focus": true, "data-action": "keep", onclick: () => void keep() }, `Stay on ${shown(after?.origaitv)}`),
       ),
     ),
     bar(ctx, "updates"),
@@ -345,7 +345,7 @@ export function checkView(ctx: Ctx): View {
 }
 
 const STEPS: { step: UpdateProgress["step"]; label: (p: UpdateProgress) => string }[] = [
-  { step: "snapshot", label: (p) => `Backup of ${shown(p.from.agentv)} saved` },
+  { step: "snapshot", label: (p) => `Backup of ${shown(p.from.origaitv)} saved` },
   { step: "packages", label: () => "Installing" },
   { step: "migrations", label: () => "Finishing up" },
   { step: "restart", label: () => "Restart and check" },
@@ -363,8 +363,8 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
   const title = back
     ? failed
       ? "Couldn't go back"
-      : releaseNumber(progress.to.agentv)
-        ? `Going back to AgenTV ${releaseNumber(progress.to.agentv)}`
+      : releaseNumber(progress.to.origaitv)
+        ? `Going back to origaiTV ${releaseNumber(progress.to.origaitv)}`
         : "Going back"
     : failed
       ? progress.detail === "not tested yet"
@@ -372,9 +372,9 @@ export function drawUpdating(el: HTMLElement, progress: UpdateProgress): void {
         : progress.detail === "nothing changed"
           ? "Couldn't update. Nothing changed."
           : "The update stopped"
-      : releaseNumber(progress.to.agentv || progress.from.agentv)
-        ? `Updating to AgenTV ${releaseNumber(progress.to.agentv || progress.from.agentv)}`
-        : "Updating AgenTV";
+      : releaseNumber(progress.to.origaitv || progress.from.origaitv)
+        ? `Updating to origaiTV ${releaseNumber(progress.to.origaitv || progress.from.origaitv)}`
+        : "Updating origaiTV";
   const fill = h("div", { class: "updating-fill" });
   fill.style.transform = `scaleX(${Math.max(0.02, Math.min(1, progress.percent / 100))})`;
   el.replaceChildren(

@@ -12,7 +12,7 @@
 //   which needs no key and no network. Claude and Muse have no speech API,
 //   and a plan has no key, so they hear the TV's own.
 //
-// The TV's own voice is whatever the agentv-voice package ships (ADR-087):
+// The TV's own voice is whatever the origaitv-voice package ships (ADR-087):
 // - a program named say in its folder, which takes the line on its standard
 //   input and writes a WAV file where its one argument says. The daemon
 //   knows nothing else about it, so another voice is the package's change
@@ -32,9 +32,9 @@ import { join } from "node:path";
 import type { AiState, Provider } from "./ai.ts";
 import { speaks } from "./providers/speech.ts";
 
-export const VOICE_DIR = "/usr/lib/agentv-voice";
+export const VOICE_DIR = "/usr/lib/origaitv-voice";
 export const PIPER_VOICE = "en_GB-cori-medium";
-const SPEAK_SOCKET = "/run/agentv-router/router.sock";
+const SPEAK_SOCKET = "/run/origaitv-router/router.sock";
 // How long the TV's own voice may take for a line.
 const OWN_MS = 20_000;
 
@@ -55,7 +55,7 @@ export interface VoiceState {
 }
 
 export interface VoiceOptions {
-  dir?: string; // the TV's own voice, from agentv-voice: /usr/lib/agentv-voice
+  dir?: string; // the TV's own voice, from origaitv-voice: /usr/lib/origaitv-voice
   ai: () => Promise<AiState>;
   key: () => { set: boolean; provider: string | null };
   spoken: () => Promise<boolean>;
@@ -100,7 +100,7 @@ function runVoice(command: string, args: (out: string) => string[], env: Record<
   let n = 0;
   return (text) =>
     new Promise((resolve) => {
-      const out = join(tmpdir(), `agentv-voice-${process.pid}-${++n}.wav`);
+      const out = join(tmpdir(), `origaitv-voice-${process.pid}-${++n}.wav`);
       const done = (said: Voiced) => {
         rmSync(out, { force: true });
         resolve(said);

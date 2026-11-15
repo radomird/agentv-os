@@ -1,0 +1,736 @@
+// The launcher in a real Chromium (ADR-019, layer 4), on the daemon with the
+// sample apps in box.mts: every tile within reach of the keyboard (S2.3),
+// tiles that show no tier and details that say who made each app (S2.7), the
+// motion rules (S2.10 checks the frames on the NUC), the sound rules (S2.11's
+// timing is the NUC's), and what the launcher asks the TV session for.
+
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { after, before, test } from "node:test";
+import type { Browser, Page } from "playwright-core";
+import type { Daemon } from "../../../daemon/server.ts";
+import { HOME_UP } from "../../../daemon/screen.ts";
+import { FIXTURES, PHASE_1, ROOT, rest, startBox } from "./box.mts";
+import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
+
+const require = createRequire(`${process.env.ORIGAITV_UI_MODULES}/`);
+const { chromium } = require("playwright-core") as typeof import("playwright-core");
+
+let browser: Browser;
+let daemon: Daemon;
+let url = "";
+
+before(async () => {
+  ({ daemon, url } = await startBox(0, undefined, { features: PHASE_1 }));
+  browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER, args: ["--autoplay-policy=no-user-gesture-required"] });
+});
+
+after(async () => {
+  await browser?.close();
+  await daemon?.close();
+});
+
+// A TV at 1080p, with the screen daemon's binding stood in for: each request
+// the launcher sends it lands in window.screenRequests.
+async function tv(options: { reducedMotion?: "reduce" | "no-preference"; at?: string } = {}): Promise<Page> {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, reducedMotion: options.reducedMotion ?? "no-preference" });
+  await page.addInitScript(() => {
+    const w = window as unknown as { screenRequests: unknown[]; origaitvScreen: (json: string) => void; origaitvScreenReply?: (id: number, reply: string) => void };
+    w.screenRequests = [];
+    w.origaitvScreen = (json: string) => {
+      const request = JSON.parse(json);
+      w.screenRequests.push(request);
+      setTimeout(() => w.origaitvScreenReply?.(request.id, JSON.stringify({ ok: true })), 0);
+    };
+  });
+  await page.goto(`${options.at ?? url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  await rest(page);
+  return page;
+}
+
+function focused(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector<HTMLElement>(".focused");
+    return el?.dataset.id ?? el?.dataset.key ?? el?.dataset.action ?? el?.textContent ?? "";
+  });
+}
+
+// The keyboard's map of the page: for each focusable element, where each
+// arrow goes from it.
+async function arrows(page: Page): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  const ids = await page.$$eval(".grid [data-focus], .bar [data-focus]", (els) => els.map((el, i) => (el as HTMLElement).dataset.id ?? `bar-${i}`));
+  for (const [i, id] of ids.entries()) {
+    const next: string[] = [];
+    for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+      await page.evaluate((index) => {
+        const els = document.querySelectorAll<HTMLElement>(".grid [data-focus], .bar [data-focus]");
+        (window as unknown as { origaitvLauncher: { focus: { set(el: HTMLElement, announce: boolean): void } } }).origaitvLauncher.focus.set(els[index], false);
+      }, i);
+      await page.keyboard.press(key);
+      next.push(await page.evaluate(() => {
+        const els = [...document.querySelectorAll<HTMLElement>(".grid [data-focus], .bar [data-focus]")];
+        const at = els.findIndex((el) => el.classList.contains("focused"));
+        return els[at]?.dataset.id ?? `bar-${at}`;
+      }));
+    }
+    map.set(id, next);
+  }
+  return map;
+}
+
+test("S2.3 every tile can be reached with the keyboard alone", async () => {
+  const page = await tv();
+  // A layout with every size in it.
+  await page.evaluate(async () => {
+    await fetch("/api/layout", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        layout: [
+          { id: "origaitv.sample", x: 0, y: 0, size: "l" },
+          { id: "origaitv.tube", x: 2, y: 0, size: "s" },
+          { id: "someone.radio", x: 3, y: 0, size: "s" },
+          { id: "local.mytv", x: 2, y: 1, size: "m" },
+          { id: "origaitv.games", x: 1, y: 2, size: "s" },
+          { id: "apps", x: 3, y: 2, size: "s" },
+        ],
+      }),
+    });
+  });
+  await page.reload();
+  await page.waitForSelector(".grid .tile.focused");
+  const start = await focused(page);
+  const map = await arrows(page);
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length) for (const next of map.get(queue.shift()!) ?? []) if (!seen.has(next)) (seen.add(next), queue.push(next));
+  const tiles = await page.$$eval(".grid .tile", (els) => els.map((el) => (el as HTMLElement).dataset.id));
+  for (const tile of tiles) assert.ok(seen.has(tile!), `${tile} can't be reached from ${start} with the arrows`);
+  assert.ok(tiles.length >= 6);
+  await page.close();
+});
+
+test("S2.7 no tile shows a tier, on home or in Apps", async () => {
+  const page = await tv();
+  const tiers = /official|community|built in|made by|made on this tv|from origaitv|your agent/i;
+  assert.doesNotMatch(await page.locator(".grid").innerText(), tiers);
+  await page.keyboard.press("ArrowDown");
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  await page.locator('.bar-link:has-text("apps")').click();
+  await page.waitForSelector(".row .tile");
+  for (const text of await page.locator(".row .tile").allInnerTexts()) assert.doesNotMatch(text, tiers);
+  await page.close();
+});
+
+test("S2.7 every app's details say who made it", async () => {
+  const page = await tv();
+  const makers: Record<string, RegExp> = {
+    official: /^from origaitv$/,
+    community: /^from the community · someone$/,
+    local: /^made on this tv$/,
+  };
+  for (const fixture of FIXTURES) {
+    await page.goto(`${url}/`);
+    await page.waitForSelector(".grid .tile.focused");
+    await rest(page);
+    await page.locator(`.grid [data-id="${fixture.id}"]`).hover();
+    await page.keyboard.press("i");
+    await page.waitForSelector(".details-head");
+    assert.match(await page.locator(".maker").innerText(), makers[fixture.tier], fixture.id);
+    assert.match(await page.locator(".owner").innerText(), /belong to their owner, who didn't make or endorse this app/);
+  }
+  await page.close();
+});
+
+test("motion only moves transform and opacity, everywhere (ADR-024)", async () => {
+  const page = await tv();
+  const check = () =>
+    page.evaluate(() => {
+      const bad: string[] = [];
+      for (const el of document.querySelectorAll("*")) {
+        for (const property of getComputedStyle(el).transitionProperty.split(",").map((p) => p.trim())) {
+          if (!["transform", "opacity", "none", "all"].includes(property) || property === "all") {
+            const duration = getComputedStyle(el).transitionDuration;
+            if (duration.split(",").some((d) => parseFloat(d) > 0)) bad.push(`${el.tagName}.${el.className}: ${property}`);
+          }
+        }
+      }
+      for (const sheet of document.styleSheets) {
+        for (const rule of sheet.cssRules) {
+          if (rule instanceof CSSKeyframesRule) {
+            for (const frame of rule.cssRules) {
+              const style = (frame as CSSKeyframeRule).style;
+              for (let i = 0; i < style.length; i++) if (!["transform", "opacity"].includes(style[i])) bad.push(`@keyframes ${rule.name}: ${style[i]}`);
+            }
+          }
+        }
+      }
+      return bad;
+    });
+  assert.deepEqual(await check(), []);
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.waitForSelector(".settings");
+  assert.deepEqual(await check(), []);
+  await page.locator('.bar-link:has-text("apps")').click();
+  await page.waitForSelector(".row");
+  assert.deepEqual(await check(), []);
+  await page.close();
+});
+
+test("motion: focus lifts and glides, and pages slide in (ADR-024)", async () => {
+  const page = await tv();
+  await page.waitForTimeout(250);
+  assert.match(await page.evaluate(() => getComputedStyle(document.querySelector(".tile.focused")!).transform), /matrix\(1\.03/);
+  assert.match(await page.evaluate(() => getComputedStyle(document.getElementById("ring")!).transitionDuration), /0\.12s/);
+  await page.keyboard.press("i");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".screen")!).animationName), "page-forward");
+  await page.close();
+});
+
+test("reduce motion turns movement into fades, from the system or Settings", async () => {
+  const page = await tv({ reducedMotion: "reduce" });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".tile.focused")!).transform), "none");
+  await page.keyboard.press("i");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".screen")!).animationName), "fade-in");
+  await page.close();
+
+  const set = await tv();
+  await set.evaluate(() => fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reduceMotion: true }) }));
+  await set.reload();
+  await set.waitForSelector(".grid .tile.focused");
+  assert.equal(await set.evaluate(() => getComputedStyle(document.querySelector(".tile.focused")!).transform), "none");
+  await set.evaluate(() => fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reduceMotion: false }) }));
+  await set.close();
+});
+
+test("S2.11 a held arrow plays at most one move sound every 60 ms, and Settings → Sound silences them", async () => {
+  const page = await tv();
+  const log = () => page.evaluate(() => (window as unknown as { origaitvLauncher: { sounds: { log: { sound: string; at: number }[] } } }).origaitvLauncher.sounds.log.slice());
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press("ArrowRight", { delay: 0 });
+    await page.keyboard.press("ArrowLeft", { delay: 0 });
+  }
+  const moves = (await log()).filter((entry) => entry.sound === "move");
+  assert.ok(moves.length >= 1);
+  for (let i = 1; i < moves.length; i++) assert.ok(moves[i].at - moves[i - 1].at >= 59, `two move sounds ${moves[i].at - moves[i - 1].at} ms apart`);
+
+  await page.keyboard.press("i");
+  await page.waitForTimeout(250);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(250);
+  const names = (await log()).map((entry) => entry.sound);
+  assert.ok(names.includes("forward") && names.includes("back"), names.join(" "));
+
+  await page.evaluate(() => fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sound: { on: false } }) }));
+  await page.reload();
+  await page.waitForSelector(".grid .tile.focused");
+  await page.waitForTimeout(150);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("i");
+  assert.deepEqual(await log(), []);
+  await page.evaluate(() => fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sound: { on: true } }) }));
+  await page.close();
+});
+
+test("S2.11 origaitv selftest's measurement opens Settings, where arrows down its list always move", async () => {
+  const page = await tv();
+  await page.evaluate(() => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go("settings"));
+  await page.waitForSelector(".menu-item.focused");
+  await page.waitForTimeout(400);
+  const from = await page.evaluate(() => performance.now());
+  for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown", { delay: 0 });
+  const moves = await page.evaluate(
+    (since) => (window as unknown as { origaitvLauncher: { sounds: { log: { sound: string; at: number }[] } } }).origaitvLauncher.sounds.log.filter((e) => e.sound === "move" && e.at >= since).map((e) => e.at),
+    from,
+  );
+  assert.ok(moves.length >= 1, "the list moved");
+  for (let i = 1; i < moves.length; i++) assert.ok(moves[i] - moves[i - 1] >= 59, `two move sounds ${moves[i] - moves[i - 1]} ms apart`);
+  assert.notEqual(await page.evaluate(() => document.querySelector(".menu-item.focused")?.getAttribute("data-key")), "look", "the focus went down the list");
+  await page.close();
+});
+
+test("the seven sounds are there, as Ogg Opus", async () => {
+  for (const sound of ["move", "select", "forward", "back", "confirm", "success", "failure"]) {
+    const response = await fetch(`${url}/launcher/sounds/${sound}.ogg`);
+    assert.equal(response.status, 200, sound);
+    assert.equal(response.headers.get("content-type"), "audio/ogg");
+    const body = new Uint8Array(await response.arrayBuffer());
+    assert.equal(String.fromCharCode(...body.slice(0, 4)), "OggS");
+    assert.ok(String.fromCharCode(...body.slice(28, 36)) === "OpusHead", `${sound} is Opus`);
+  }
+});
+
+test("Enter on a tile asks the TV session to open its app, and Settings asks for Omarchy's desktop", async () => {
+  const page = await tv();
+  await page.locator('.grid [data-id="origaitv.tube"]').hover();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "open-app"));
+  const open = await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.find((r) => r.cmd === "open-app"));
+  assert.deepEqual({ cmd: open?.cmd, app: open?.app }, { cmd: "open-app", app: "origaitv.tube" });
+
+  // Settings, System, Omarchy's desktop, which opens its page on Switch.
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.locator('.menu-item[data-key="tv"]').click();
+  await page.locator('.panel [data-action="desktop"]').click();
+  await page.waitForSelector('.settings-panel[data-page="desktop"]');
+  assert.equal(await page.locator(".focused").innerText(), "switch");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "desktop"));
+  await page.close();
+});
+
+test("details put an app on home and take it off", async () => {
+  const page = await tv();
+  await page.locator('.grid [data-id="origaitv.games"]').hover();
+  await page.keyboard.press("i");
+  await page.waitForSelector(".details-head");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await focused(page), "home");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-action="home"] .button-value')?.textContent === "[ ]");
+  const layout = await page.evaluate(async () => (await (await fetch("/api/home")).json()).layout.map((t: { id: string }) => t.id));
+  assert.ok(!layout.includes("origaitv.games"));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-action="home"] .button-value')?.textContent === "[x]");
+  await page.close();
+});
+
+test("S2.15 tiles show the apps open behind home, and q quits a game", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.addInitScript(() => {
+    const w = window as unknown as { screenRequests: any[]; origaitvScreen: (json: string) => void; origaitvScreenReply?: (id: number, reply: string) => void };
+    w.screenRequests = [];
+    w.origaitvScreen = (json: string) => {
+      const request = JSON.parse(json);
+      w.screenRequests.push(request);
+      const apps = [
+        { id: "origaitv.games", game: true, paused: false },
+        { id: "origaitv.tube", game: false, paused: true },
+      ];
+      setTimeout(() => w.origaitvScreenReply?.(request.id, JSON.stringify(request.cmd === "running" ? { ok: true, apps } : { ok: true })), 0);
+    };
+  });
+  await page.goto(`${url}/`);
+  await page.waitForSelector('.grid [data-id="origaitv.games"] .tile-state');
+  await rest(page);
+  // The tile names no key for it: Quit is in the app's details (ADR-084).
+  assert.equal(await page.locator('.grid [data-id="origaitv.games"] .tile-state').innerText(), "running");
+  assert.equal(await page.locator('.grid [data-id="origaitv.tube"] .tile-state').innerText(), "paused");
+  await page.locator('.grid [data-id="origaitv.games"]').hover();
+  await page.keyboard.press("q");
+  await page.waitForFunction(() => (window as unknown as { screenRequests: any[] }).screenRequests.some((r) => r.cmd === "quit" && r.app === "origaitv.games"));
+  // The screen daemon says it's gone.
+  await page.evaluate(() => (window as unknown as { origaitvRunning: (json: string) => void }).origaitvRunning("[]"));
+  await page.waitForFunction(() => !document.querySelector('.grid [data-id="origaitv.games"] .tile-state'));
+  assert.equal(await page.locator('.grid [data-id="origaitv.tube"] .tile-label').innerText(), "streaming");
+  // Home from the screen daemon, with the home screen already in front,
+  // goes back to the home page.
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.waitForSelector(".settings");
+  await page.evaluate(() => (window as unknown as { origaitvHome: () => void }).origaitvHome());
+  await page.waitForSelector(".grid:not(.editing)");
+  await page.close();
+});
+
+test("a 720p TV shows the same page, smaller, with the ring on the focused tile", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(400);
+  const rect = (selector: string) =>
+    page.evaluate((s) => {
+      const r = document.querySelector(s)!.getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom };
+    }, selector);
+  const tile = await rect(".tile.focused");
+  const ring = await rect("#ring");
+  // A small tile is 452 × 308 at 1080p, and two thirds of that here, lifted 3%.
+  assert.ok(Math.abs(tile.w - 452 * (2 / 3) * 1.03) < 3, `tile ${tile.w} wide`);
+  for (const key of ["x", "y", "w", "h"] as const) assert.ok(Math.abs(tile[key] - ring[key]) < 2, `ring ${key}: ${ring[key]} vs ${tile[key]}`);
+  assert.equal((await rect(".bar")).bottom, 720);
+  // All apps fits on one line, as at 1080p.
+  const name = await rect('.tile-apps .tile-name');
+  assert.ok(name.h < 60, `"all apps" is ${name.h} px tall`);
+  await page.close();
+});
+
+test("S2.17 the ambient screen covers the TV, and the first key only ends it", async () => {
+  const page = await tv();
+  await page.keyboard.press("ArrowRight");
+  const before = await focused(page);
+  await page.evaluate(() => (window as unknown as { origaitvAmbient: (on: boolean) => void }).origaitvAmbient(true));
+  await page.waitForSelector("#ambient.on .ambient-time");
+  assert.match(await page.locator(".ambient-time").innerText(), /^\d\d:\d\d$/);
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => !document.getElementById("ambient")?.classList.contains("on"));
+  assert.equal(await focused(page), before, "the key that ended it didn't move the focus");
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "wake"));
+  await page.close();
+});
+
+test("S2.17 the mouse move Chromium sends as home comes to the front doesn't end the ambient screen", async () => {
+  const page = await tv();
+  const ambientOn = () => page.evaluate(() => document.getElementById("ambient")!.classList.contains("on"));
+  const wakes = () => page.evaluate(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.filter((r) => r.cmd === "wake").length);
+  // The first move on the ambient screen only says where the mouse is.
+  await page.evaluate(() => (window as unknown as { origaitvAmbient: (on: boolean) => void }).origaitvAmbient(true));
+  await page.mouse.move(700, 400);
+  await page.waitForTimeout(300);
+  assert.equal(await ambientOn(), true, "the first move after it came up ended it");
+  // A real move ends it.
+  await page.mouse.move(760, 430);
+  await page.waitForFunction(() => !document.getElementById("ambient")?.classList.contains("on"));
+  assert.equal(await wakes(), 1);
+  // The next time, the mouse was left somewhere else: home coming to the
+  // front under it isn't a move either.
+  await page.evaluate(() => (window as unknown as { origaitvAmbient: (on: boolean) => void }).origaitvAmbient(true));
+  await page.mouse.move(200, 150);
+  await page.waitForTimeout(300);
+  assert.equal(await ambientOn(), true, "the move as home came back ended it");
+  assert.equal(await wakes(), 1);
+  await page.close();
+});
+
+test("ADR-015 a mouse left still doesn't take the focus as home loads again: home starts on its first tile, and a real move takes it", async () => {
+  // On the box, home's page loads at boot and again after an update, and
+  // Chromium tells it where the mouse rests, in the middle of the screen,
+  // over a tile, as if it had moved there.
+  const page = await tv();
+  const first = await focused(page);
+  const middle = async (id: string) => {
+    const b = (await page.locator(`.grid [data-id="${id}"]`).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const [under, next] = (await page.$$eval(".grid .tile", (els) => els.map((el) => (el as HTMLElement).dataset.id!))).filter((id) => id !== first);
+  const resting = await middle(under);
+  await page.reload();
+  await page.waitForSelector(".grid .tile.focused");
+  await page.mouse.move(resting.x, resting.y);
+  await page.waitForTimeout(200);
+  assert.equal(await focused(page), first);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("pointer-hidden")), true, "the pointer showed");
+  const to = await middle(next);
+  await page.mouse.move(to.x, to.y, { steps: 4 });
+  assert.equal(await focused(page), next);
+  await page.close();
+});
+
+test("S2.17 Settings → Look changes how long the ambient screen waits", async () => {
+  const page = await tv();
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.locator('.menu-item[data-key="look"]').click();
+  await page.locator('[data-action="idle"]').hover();
+  assert.equal(await page.locator('[data-action="idle"]').innerText(), "screen saver\nafter 10 min");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector('[data-action="idle"] .button-value')?.textContent === "After 15 min");
+  const minutes = await page.evaluate(async () => (await (await fetch("/api/home")).json()).settings.idleMinutes);
+  assert.equal(minutes, 15);
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForFunction(() => document.querySelector('[data-action="idle"] .button-value')?.textContent === "After 10 min");
+  await page.close();
+});
+
+test("S5.7 the arrows skip the themes Look's list has scrolled out of sight", async () => {
+  const page = await tv();
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="look"]').click();
+    await page.locator('.panel [data-action="theme"]').click();
+    await page.locator('[data-action="theme-own"]').hover();
+    // The list's hidden rows run on under the buttons below it. Scrolled, as
+    // by a mouse's wheel, so the first of them is just below the focus.
+    await page.evaluate(() => {
+      const list = document.querySelector<HTMLElement>(".look-list")!;
+      const own = document.querySelector('[data-action="theme-own"]')!.getBoundingClientRect();
+      const hidden = [...list.querySelectorAll(".look-item")].map((el) => el.getBoundingClientRect()).find((r) => r.top > own.bottom);
+      if (hidden) list.scrollTop += hidden.top - (own.bottom + 8);
+    });
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".look-item.focused").count(), 0, "it's the page's last row, and the focus doesn't go to a theme out of sight");
+    assert.equal(await page.locator('.settings-panel[data-page="theme"]').count(), 1, "nor across to the list of sections, which would put the page away");
+    // Back on "Make your own theme" with the mouse: off it first, since a
+    // hover where the mouse already is moves nothing.
+    await page.mouse.move(0, 0);
+    await page.locator('[data-action="theme-own"]').hover();
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "theme-own");
+    await page.keyboard.press("ArrowUp");
+    const sight = await page.evaluate(() => {
+      const at = document.querySelector(".look-item.focused")?.getBoundingClientRect();
+      const box = document.querySelector(".look-list")!.getBoundingClientRect();
+      return Boolean(at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1);
+    });
+    assert.ok(sight, "up from make your own went to a theme out of sight");
+  } finally {
+    await page.close();
+  }
+});
+
+test("Up from the bar goes back into the Settings page it left, and doesn't put the page away", async () => {
+  const page = await tv();
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="tv"]').click();
+    await page.locator('.panel [data-action="updates"]').click();
+    await page.waitForSelector('.settings-panel[data-page="updates"] [data-focus]');
+    // Down from the page's last row stays on it (ADR-094).
+    for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowDown");
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".settings-panel [data-focus]")].at(-1)?.classList.contains("focused")), true, "down stays on the page's last row");
+    // The bar, as a pointer or the arrows from the list reach it.
+    await page.locator(".bar-link").last().hover();
+    await page.waitForFunction(() => Boolean(document.querySelector(".bar .focused")));
+    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.locator('.settings-panel[data-page="updates"]').count(), 1, "the page is still open");
+    assert.equal(await page.evaluate(() => Boolean(document.querySelector(".settings-panel .focused"))), true, "and the focus is back in it");
+  } finally {
+    await page.close();
+  }
+});
+
+test("T17.1 Settings has no screensaver row: the ambient screen is the one idle screen, and only its wait is a setting", async () => {
+  const page = await tv();
+  try {
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.locator('.menu-item[data-key="look"]').click();
+    await page.waitForSelector('[data-action="idle"]');
+    assert.equal(await page.locator('[data-action="ambient-style"]').count(), 0);
+    assert.doesNotMatch(await page.locator(".settings-panel").innerText(), /terminal|screensaver/i);
+    assert.equal(await page.evaluate(async () => "ambient" in (await (await fetch("/api/home")).json()).settings), false);
+    // Look can be longer than the screen: its last setting keeps the focus
+    // in sight, above the status bar.
+    await page.locator('[data-action="idle"]').hover();
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "idle");
+    const sight = await page.evaluate(() => {
+      const at = document.querySelector('[data-action="idle"]')!.getBoundingClientRect();
+      const panel = document.querySelector(".settings-panel")!.getBoundingClientRect();
+      return { at: at.bottom, panel: panel.bottom };
+    });
+    assert.ok(sight.at <= sight.panel + 1, JSON.stringify(sight));
+  } finally {
+    await page.close();
+  }
+});
+
+test("S5.2 S5.7 Settings → Look offers every Omarchy theme, Tokyo Night first, each with its colours, and picking one sets it with Omarchy's own command", async () => {
+  const page = await tv();
+  await page.locator('.bar-link:has-text("settings")').click();
+  await page.locator('.menu-item[data-key="look"]').click();
+  // Appearance's Theme row says which one, and opens the list.
+  assert.match(await page.locator('.panel [data-action="theme"]').innerText(), /^theme\s+\S/);
+  await page.locator('.panel [data-action="theme"]').click();
+  await page.waitForSelector('[data-action="theme-gruvbox"]');
+  const names = await page.locator(".look-item-name").allInnerTexts();
+  const shipped = readdirSync(join(ROOT, "themes"));
+  assert.equal(names.length, shipped.length, "every one of Omarchy's themes");
+  assert.equal(names[0], "tokyo night");
+  assert.ok(names.includes("gruvbox") && names.includes("rose pine") && names.includes("white"));
+  // Each with its own background and accent beside its name.
+  assert.deepEqual(
+    await page.locator('[data-action="theme-tokyo-night"] .look-swatch span').evaluateAll((els) => els.slice(0, 2).map((el) => getComputedStyle(el).backgroundColor)),
+    ["rgb(26, 27, 38)", "rgb(122, 162, 247)"],
+  );
+  // The list scrolls with the focus: down from the first theme to the last
+  // keeps the focused one in sight.
+  await page.locator('[data-action="theme-tokyo-night"]').hover();
+  for (let i = 1; i < Math.ceil(shipped.length / 2); i++) await page.keyboard.press("ArrowDown");
+  const sight = await page.evaluate(() => {
+    const list = document.querySelector(".look-list")!;
+    const at = document.querySelector(".look-item.focused")?.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    return { scrolled: list.scrollTop, inSight: Boolean(at && at.top >= box.top - 1 && at.bottom <= box.bottom + 1) };
+  });
+  assert.ok(sight.scrolled > 0 && sight.inSight, JSON.stringify(sight));
+  // And last, a theme your agent makes from a few words (S6.4, ADR-048).
+  assert.equal(await page.locator('.panel [data-action^="theme-"]').last().innerText(), "make your own theme");
+  await page.locator('[data-action="theme-gruvbox"]').click();
+  await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; theme?: string }[] }).screenRequests.some((r) => r.cmd === "theme-set" && r.theme === "gruvbox"));
+  await page.close();
+});
+
+test("S5.7 Look drawn again while it waits for the list, as for a build's news, still shows a theme that came in meanwhile", async () => {
+  const page = await tv();
+  const go = (route: string) => page.evaluate((r) => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go(r), route);
+  const before = (await (await fetch(`${url}/api/themes`)).json()).themes;
+  const handed = (themes: unknown[]) => fetch(`${url}/api/themes`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ themes }) });
+  try {
+    await go("settings/theme");
+    await page.waitForSelector('[data-action="theme-gruvbox"]');
+    await go("home");
+    // A theme installed on the desktop, and the list slow to come.
+    const aurora = { id: "aurora", mode: "dark", installed: true, colors: { background: "#101418", dark_background: "#0a0d10", accent: "#7fd1b9", selection: "#28323c", foreground: "#d8e0e8", bright_foreground: "#ffffff" } };
+    await handed([...before, aurora]);
+    await page.route("**/api/themes", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.continue();
+    });
+    await go("settings/theme");
+    await page.waitForTimeout(100);
+    await go("home");
+    await go("settings/theme");
+    await page.waitForSelector('[data-action="theme-aurora"]', { timeout: 5000 });
+  } finally {
+    await page.unroute("**/api/themes");
+    await handed(before);
+    await page.close();
+  }
+});
+
+test("S5.8 home shows the theme's own background, as on Omarchy's desktop, credited to the theme, and follows the desktop to the next; Settings keeps the theme's colour", async () => {
+  // As the screen daemon hands them over: two of Tokyo Night's, the second
+  // the one Omarchy shows, whatever Omarchy ships them as (jpg and png in
+  // 4.0, webp in 4.5).
+  const dir = join(ROOT, "themes", "tokyo-night", "backgrounds");
+  const shipped = readdirSync(dir).filter((name) => /\.(jpe?g|png|webp)$/i.test(name)).sort();
+  const files = [shipped[0], shipped[1]].map((name) => {
+    const body = readFileSync(join(dir, name));
+    const type = name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type, body };
+  });
+  const offer = (current: string) =>
+    fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current, files: files.map(({ id, type }) => ({ id, type })) }) });
+  await offer(files[1].id);
+  for (const file of files) await fetch(`${url}/api/backgrounds/theme/${file.id}`, { method: "POST", body: new Uint8Array(file.body) });
+  const before = (await (await fetch(`${url}/api/backgrounds`)).json()).source;
+  await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "theme" }) });
+  const page = await tv();
+  try {
+    await page.waitForSelector(`#backdrop img[data-id="${files[1].id}"]`, { timeout: 5000 });
+    assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "block");
+    // The desktop moves on to the next: home follows.
+    await offer(files[0].id);
+    await page.waitForSelector(`#backdrop img[data-id="${files[0].id}"]`, { timeout: 5000 });
+    // The ambient screen goes through them, credited to the theme.
+    await page.evaluate(() => (window as unknown as { origaitvAmbient: (on: boolean) => void }).origaitvAmbient(true));
+    await page.waitForSelector("#ambient.on.photos .ambient-picture.on", { timeout: 5000 });
+    assert.equal(await page.locator(".ambient-credit").innerText(), "tokyo night");
+    await page.evaluate(() => (window as unknown as { origaitvAmbient: (on: boolean) => void }).origaitvAmbient(false));
+    // Settings, like every page but home, keeps the theme's own colour.
+    await page.locator('.bar-link:has-text("settings")').click();
+    await page.waitForSelector(".menu");
+    assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "none");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".grid .tile.focused");
+    assert.equal(await page.locator("#backdrop").evaluate((el) => getComputedStyle(el).display), "block", "and home has it again");
+  } finally {
+    await fetch(`${url}/api/backgrounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: before }) });
+    await page.close();
+  }
+});
+
+test("with the looks off, Settings → look takes the background from a phone's photo back to the theme's own", async () => {
+  // Two of Tokyo Night's, as the screen daemon hands them over, the first
+  // the one Omarchy shows.
+  const dir = join(ROOT, "themes", "tokyo-night", "backgrounds");
+  const picture = (name: string) => {
+    const body = readFileSync(join(dir, name));
+    const type = name.endsWith(".png") ? "image/png" : name.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    return { id: createHash("sha256").update(body).digest("hex").slice(0, 16), type, body };
+  };
+  const shipped = readdirSync(dir).filter((name) => /\.(jpe?g|png|webp)$/i.test(name)).sort();
+  const files = [picture(shipped[0]), picture(shipped[1])];
+  await fetch(`${url}/api/backgrounds/theme`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: "tokyo-night", current: files[0].id, files: files.map(({ id, type }) => ({ id, type })) }) });
+  for (const file of files) await fetch(`${url}/api/backgrounds/theme/${file.id}`, { method: "POST", body: new Uint8Array(file.body) });
+  const before = (await (await fetch(`${url}/api/backgrounds`)).json()).source;
+  // A photo from a paired phone is the background now.
+  const json = { "Content-Type": "application/json" };
+  const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST", headers: json, body: "{}" })).json()).pairing.code;
+  const token = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
+  const photo = picture(shipped[shipped.length - 1]);
+  const sent = await token.fetch(`/api/phone/background?credit=a%20photo`, { method: "POST", headers: { "Content-Type": photo.type }, body: new Uint8Array(photo.body) });
+  assert.equal(sent.status, 200);
+  assert.equal((await (await fetch(`${url}/api/backgrounds`)).json()).source, "photos");
+  const page = await tv();
+  try {
+    await page.evaluate(() => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go("settings/look"));
+    await page.waitForSelector('.panel [data-action="background"]');
+    assert.match(await page.locator('.panel [data-action="background"]').innerText(), /your photos/);
+    // OK on one of the theme's own pictures: Omarchy shows it, and the
+    // theme's own is the background again.
+    // The Picture row opens them, each on its own card.
+    const card = `.theme-picture[data-action="theme-picture-${files[0].id}"]`;
+    await page.locator('.panel [data-action="pictures"]').click();
+    await page.waitForSelector(card);
+    await page.locator(card).click();
+    await page.waitForFunction((id) => (window as unknown as { screenRequests: { cmd: string; background?: string }[] }).screenRequests.some((r) => r.cmd === "theme-bg-set" && r.background === id), files[0].id);
+    const started = Date.now();
+    while ((await (await fetch(`${url}/api/backgrounds`)).json()).source !== "theme") {
+      assert.ok(Date.now() - started < 5000, "the theme's own is the background again");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  } finally {
+    await fetch(`${url}/api/backgrounds`, { method: "POST", headers: json, body: JSON.stringify({ source: before }) });
+    await page.close();
+  }
+});
+
+test("an app's tile that says set up opens its setup: the server's address, typed, then its sign-in", async () => {
+  // A box of its own, since this one fills in Radio's server.
+  const box = await startBox(0, undefined, { features: PHASE_1 });
+  try {
+    const page = await tv({ at: box.url });
+    await page.locator('.tile[data-id="someone.radio"] .tile-state:has-text("set up")').waitFor();
+    await page.locator('.tile[data-id="someone.radio"]').click();
+    const field = page.locator('input[data-field="serverUrl"]');
+    await field.waitFor();
+    assert.equal(await page.locator(".page h1.headline").innerText(), "set up radio");
+    // The field has the focus, and a url keyboard on the phone.
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.dataset.field), "serverUrl");
+    assert.equal(await field.getAttribute("type"), "url");
+    assert.equal(await page.locator('[data-action="save"]').innerText(), "save and sign in");
+    // A wrong one says why, and stays.
+    await page.keyboard.type("ftp://media.example");
+    await page.keyboard.press("Enter");
+    await page.locator('.toast:has-text("Type an address like http://192.168.1.20:8096")').waitFor();
+    await field.fill("");
+    await field.focus();
+    await page.keyboard.type("192.168.1.20:8096");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window as unknown as { screenRequests: { cmd: string; app?: string }[] }).screenRequests.some((r) => r.cmd === "sign-in" && r.app === "someone.radio"));
+    await page.locator('.tile[data-id="someone.radio"]').waitFor();
+    await page.waitForFunction(() => !document.querySelector('.tile[data-id="someone.radio"] .tile-state'));
+    const saved = await (await fetch(`${box.url}/api/apps/someone.radio/setup`)).json();
+    assert.equal(saved.setup.fields[0].value, "http://192.168.1.20:8096");
+    await page.close();
+  } finally {
+    await box.daemon.close();
+  }
+});
+
+test("the launcher has no errors in its console", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  for (const key of ["ArrowRight", "ArrowDown", "i", "Escape", "ArrowDown", "ArrowDown", "Enter"]) await page.keyboard.press(key);
+  await page.waitForTimeout(300);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test("S1.1 the screen daemon can tell home's page came up, on home and on setup's page", async () => {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await page.goto(`${url}/`);
+  await page.waitForSelector(".grid .tile.focused");
+  assert.equal(await page.evaluate(HOME_UP), true, "home");
+  const setup = (done: boolean) =>
+    fetch(`${url}/api/setup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ done }) });
+  await setup(false);
+  try {
+    await page.waitForFunction(() => document.title === "origaiTV setup" && document.readyState === "complete");
+    // The screen daemon asks over DevTools, which setup's content policy
+    // doesn't stop; Playwright's string predicate would need eval.
+    for (let i = 0; i < 50 && (await page.evaluate(HOME_UP)) !== true; i++) await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(HOME_UP), true, "setup's page");
+  } finally {
+    await setup(true);
+    await page.close();
+  }
+});

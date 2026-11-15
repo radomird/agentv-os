@@ -1,0 +1,14 @@
+# Sets the time zone the box's country takes (bin/origaitv-zone-set), through
+# timedatectl. origaitv-zone.path starts it when the daemon hands one over.
+
+[Unit]
+Description=origaiTV time zone
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/origaitv-zone-set
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/origaitv/daemon/zone-drop
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

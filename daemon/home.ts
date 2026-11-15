@@ -20,7 +20,7 @@ import { boxZone, cities, cityOf, placeSettings, type City } from "./place.ts";
 import { DATA_DIRS, packageIcon } from "./package-icon.ts";
 import { siteIcon } from "./site-icon.ts";
 
-// Where an app came from: the signed index, this box's agent, or AgenTV
+// Where an app came from: the signed index, this box's agent, or origaiTV
 // itself, for the built-ins in apps/builtin/ (ADR-015, ADR-017).
 export type AppTier = Tier | "built-in";
 
@@ -119,11 +119,11 @@ export function asAddress(typed: string, own: Iterable<string> | null = ownAddre
 
 // Whose data a built-in app shows, as its terms ask.
 const CREDITS: Record<string, string> = {
-  "agentv.weather": "Weather data from MET Norway, under CC BY 4.0",
-  "agentv.new": "This product uses the TMDB API but is not endorsed or certified by TMDB. Where to watch is from JustWatch.",
+  "origaitv.weather": "Weather data from MET Norway, under CC BY 4.0",
+  "origaitv.new": "This product uses the TMDB API but is not endorsed or certified by TMDB. Where to watch is from JustWatch.",
 };
 
-const WEATHER = "agentv.weather";
+const WEATHER = "origaitv.weather";
 
 // A city's name as people write it, from its time zone: "Amsterdam", "Port
 // of Spain". The tiles and Settings show it, and Terminal lowers it there.
@@ -134,14 +134,14 @@ function cityWritten(zone: string): string {
 function written(city: City | null): City | null {
   return city ? { ...city, name: cityWritten(city.zone) } : null;
 }
-const CLOCK = "agentv.clock";
+const CLOCK = "origaitv.clock";
 // The built-ins on every home from the start (ADR-015). Music joins them
 // when it's the household's goal, which setup asks (ADR-017), and New this
 // week, large, when it's streaming (ADR-006, S8.1); otherwise they're in
 // Apps.
 const PINNED = [CLOCK, WEATHER];
-const MUSIC_APP = "agentv.music";
-export const NEW_APP = "agentv.new";
+const MUSIC_APP = "origaitv.music";
+export const NEW_APP = "origaitv.new";
 const GOAL_PINS: Record<string, string[]> = { music: [MUSIC_APP], streaming: [NEW_APP] };
 // The size a built-in is pinned at, when it isn't small: the largest that
 // fits, from this one down.
@@ -244,15 +244,15 @@ function pageReach(manifest: Manifest): string[] {
 
 function maker(tier: AppTier, manifest: Manifest): string {
   if (tier === "built-in") return "Built in";
-  if (tier === "official") return "From AgenTV";
+  if (tier === "official") return "From origaiTV";
   if (tier === "community") return `From the community · ${manifest.author}`;
   return "Made on this TV";
 }
 
 export interface HomeOptions {
-  appsDir: string; // the box's apps: /var/lib/agentv/apps
+  appsDir: string; // the box's apps: /var/lib/origaitv/apps
   state: string; // the daemon's own state
-  builtins?: string; // AgenTV's own apps: /usr/share/agentv/apps/builtin
+  builtins?: string; // origaiTV's own apps: /usr/share/origaitv/apps/builtin
   userAgent?: string; // what every app's requests say they are
   // How long before a site's icon that didn't come is asked for again: 6 h.
   iconRetryMs?: number;
@@ -310,7 +310,7 @@ export function continueTile(rows: WatchRow[]): unknown {
   if (rows.length === 0) return null;
   return {
     // The size's own name, as an app's manifest writes it ("m": "continue"),
-    // and as agentv selftest looks for it.
+    // and as origaitv selftest looks for it.
     headline: { label: "continue" },
     entries: rows.map((row) => ({
       label: row.title,
@@ -375,7 +375,7 @@ export class Home {
   // belongs to: the first ordinary user, as first boot finds them.
   async viewer(): Promise<Viewer & { name: string; avatar?: string }> {
     if (this.viewerOf) return this.viewerOf();
-    const passwd = await readFile(process.env.AGENTV_PASSWD ?? "/etc/passwd", "utf8").catch(() => "");
+    const passwd = await readFile(process.env.ORIGAITV_PASSWD ?? "/etc/passwd", "utf8").catch(() => "");
     for (const line of passwd.split("\n")) {
       const [name, , uid, , , , shell] = line.split(":");
       if (Number(uid) >= 1000 && Number(uid) < 60000 && !/nologin|false/.test(shell ?? "")) {
@@ -387,7 +387,7 @@ export class Home {
 
   // --- The apps ---------------------------------------------------------
 
-  // AgenTV's own apps, which come with the agentv package: checked once,
+  // origaiTV's own apps, which come with the origaitv package: checked once,
   // since the package only changes with an update, which restarts the daemon.
   private builtin?: Promise<{ manifest: Manifest; tier: AppTier; dir: string; thisBox?: boolean }[]>;
 
@@ -425,7 +425,7 @@ export class Home {
       if (!manifest) {
         this.log(`${app.id} doesn't pass the app contract's checks any more, so it isn't shown`);
       } else if (manifest.tv.runtime === "builtin" || builtins.some((b) => b.manifest.id === manifest.id)) {
-        this.log(`${app.id} isn't shown: only AgenTV itself brings built-in apps`);
+        this.log(`${app.id} isn't shown: only origaiTV itself brings built-in apps`);
       } else {
         found.push({ manifest, tier: app.tier, dir, thisBox });
       }
@@ -634,7 +634,7 @@ export class Home {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     const allowed = found ? allowedOrigins(found.manifest, (await this.appSettings())[id] ?? {}, this.onBox(found)) : new Set<string>();
     const reasons: string[] = [];
-    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "AgenTV"} ${id}`, allowed: (url) => allowed.has(url.origin), reasons });
+    const icon = await siteIcon(target.url, { userAgent: `${this.userAgent ?? "origaiTV"} ${id}`, allowed: (url) => allowed.has(url.origin), reasons });
     if (!icon) {
       this.log(`${id}: its site has no icon to show (${reasons.join("; ") || "no reason given"}), so its tile keeps its letters; it's asked for again in ${hours(this.iconRetryMs)}`);
       later();
@@ -982,7 +982,7 @@ export class Home {
   // The content of an app's tile at a size, from its tile(), at most every
   // refreshMins (ADR-016), and again at once when its settings change, such
   // as the weather's city or the box's time zone, or when asked for a fresh
-  // one, as agentv selftest does to compare a tile with where it comes from.
+  // one, as origaitv selftest does to compare a tile with where it comes from.
   // A tile that doesn't answer in time keeps its last content; with none
   // it's null, and the launcher draws it small.
   async tile(id: string, size: Size, viewer: Viewer, fresh = false): Promise<unknown> {
@@ -1096,7 +1096,7 @@ export class Home {
   private watchAgain?: NodeJS.Timeout;
 
   // Calls changed("apps") shortly after an app is installed or removed
-  // outside the daemon, as agentv app install and remove do as root
+  // outside the daemon, as origaitv app install and remove do as root
   // (ADR-039), so the launcher shows it at once. An app that changed starts
   // its worker again from its new package. On a box with no apps yet the
   // folder isn't there until the first install, so it looks for it every

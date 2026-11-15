@@ -1,6 +1,6 @@
-// AgenTV's app kit, in a page app's own frame (contract 2, ADR-043). The box
-// serves this at /_agentv/kit.js on the app's origin, with its types
-// stripped, and it sets window.agentv as apps/contract/kit.ts describes.
+// origaiTV's app kit, in a page app's own frame (contract 2, ADR-043). The box
+// serves this at /_origaitv/kit.js on the app's origin, with its types
+// stripped, and it sets window.origaitv as apps/contract/kit.ts describes.
 // Everything goes to home with postMessage, and home answers only the frame
 // it put there, for the app it put there; the daemon checks each call
 // against the app's manifest. This file has no imports, since it runs as a
@@ -17,9 +17,9 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
   const paused: (() => void)[] = [];
   const resumed: (() => void)[] = [];
   let back: (() => boolean | void) | null = null;
-  // AgenTV's test TV (builder/gates/) sees how many listeners the app has
+  // origaiTV's test TV (builder/gates/) sees how many listeners the app has
   // given the kit through this. On home nothing's there, so it does nothing.
-  const watched = () => (window as { agentvTestTv?: (listening: { input: number; back: boolean; pause: number }) => void }).agentvTestTv?.({ input: inputs.length, back: back !== null, pause: paused.length });
+  const watched = () => (window as { origaitvTestTv?: (listening: { input: number; back: boolean; pause: number }) => void }).origaitvTestTv?.({ input: inputs.length, back: back !== null, pause: paused.length });
 
   const send = (message: FromApp) => home.postMessage(message, "*");
 
@@ -27,7 +27,7 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
     return new Promise((resolve, reject) => {
       const id = ++next;
       waiting.set(id, { resolve, reject });
-      send({ agentv: 1, id, call: name, args });
+      send({ origaitv: 1, id, call: name, args });
     });
   }
 
@@ -42,7 +42,7 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
   window.addEventListener("message", (event) => {
     if (event.source !== home) return;
     const message = event.data as ToApp;
-    if (!message || message.agentv !== 1) return;
+    if (!message || message.origaitv !== 1) return;
     if ("id" in message) {
       const pending = waiting.get(message.id);
       if (!pending) return;
@@ -58,7 +58,7 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
       } catch (error) {
         console.error(error);
       }
-      send({ agentv: 1, back: message.back, kept });
+      send({ origaitv: 1, back: message.back, kept });
     } else if (message.event === "pause") {
       for (const listener of paused) run(listener);
     } else if (message.event === "resume") {
@@ -109,5 +109,5 @@ import type { Bytes, Call, FromApp, InputEvent, Kit, ToApp } from "../apps/contr
     tile: Object.freeze({ set: async (tile: Parameters<Kit["tile"]["set"]>[0]) => void (await call("tile.set", tile)) }),
     notify: async (text: string) => void (await call("notify", text)),
   });
-  Object.defineProperty(window, "agentv", { value: kit, writable: false, configurable: false });
+  Object.defineProperty(window, "origaitv", { value: kit, writable: false, configurable: false });
 })();

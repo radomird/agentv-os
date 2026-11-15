@@ -41,7 +41,7 @@ const child = spawn(harness.command, harness.args, { stdio: ["pipe", "pipe", "in
 const mcp = client(child.stdout, child.stdin, () => child.stdin.end());
 
 const listed = (await mcp.list()).map((tool) => tool.name);
-out({ type: "system", subtype: "init", tools: [...listed.map((name) => `mcp__agentv__${name}`), ...(recorded.offer ?? [])] });
+out({ type: "system", subtype: "init", tools: [...listed.map((name) => `mcp__origaitv__${name}`), ...(recorded.offer ?? [])] });
 // A CLI that offers tools of its own is stopped here, before it acts.
 if (recorded.offer?.length) await new Promise((resolve) => setTimeout(resolve, 5000));
 let turns = 0;
@@ -57,9 +57,9 @@ for (const call of recorded.calls ?? []) {
 }
 mcp.close();
 
-const budget = Number(process.env.AGENTV_STAND_IN_BUDGET);
+const budget = Number(process.env.ORIGAITV_STAND_IN_BUDGET);
 const spent = recorded.spent ?? 0;
-if (process.env.AGENTV_STAND_IN_BUDGET && Number.isFinite(budget) && spent > budget) {
+if (process.env.ORIGAITV_STAND_IN_BUDGET && Number.isFinite(budget) && spent > budget) {
   out({ type: "result", subtype: "error_max_budget_usd", is_error: true, total_cost_usd: budget, num_turns: turns });
 } else if (recorded.fail) {
   out({ type: "result", subtype: "error_during_execution", is_error: true, result: recorded.fail, total_cost_usd: spent, num_turns: turns });

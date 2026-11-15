@@ -45,7 +45,7 @@ export class Profiles {
   constructor(options: ProfilesOptions) {
     this.ledger = options.ledger;
     this.state = options.state;
-    this.passwd = options.passwd ?? process.env.AGENTV_PASSWD ?? "/etc/passwd";
+    this.passwd = options.passwd ?? process.env.ORIGAITV_PASSWD ?? "/etc/passwd";
     this.pinSet = options.pinSet ?? (() => true);
   }
 

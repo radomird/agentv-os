@@ -1,7 +1,7 @@
 // A plan's sign-in from setup's AI step (ADR-070), so voice works from the
 // first day: the same sign-in a first build runs (ADR-040), started without
 // a build. The daemon leaves sign-in.json in the builder's drop, and root's
-// hand-over starts the provider's own CLI as agentv-builder in its sandbox
+// hand-over starts the provider's own CLI as origaitv-builder in its sandbox
 // (builder/sign-in.ts). The TV shows the CLI's link as a QR code, and a code
 // the provider's page gives goes back through the drop, as for a build.
 // Once it's signed in, the router's CLI reads the same sign-in.
@@ -13,7 +13,7 @@
 // as soon as the AI is connected (a plan or a key, its terms accepted), once
 // a plan's sign-in is done, each time the daemon starts, and whenever an ask
 // finds it missing: the daemon leaves fetch-cli.json in the drop, and root
-// starts agentv-builder-cli@ for it if it isn't there
+// starts origaitv-builder-cli@ for it if it isn't there
 // (builder/sandbox/hand-over.ts).
 
 import { readFileSync } from "node:fs";
@@ -25,7 +25,7 @@ import type { SignInView } from "./builds.ts";
 export interface PlanSignInOptions {
   state: string; // the daemon's own: plan-sign-in.json
   drop: string; // where root takes asks from: <state>/build-drop
-  run: string; // /run/agentv-build: root's answer and the sign-in's status
+  run: string; // /run/origaitv-build: root's answer and the sign-in's status
 }
 
 // What setup knows of the plan's sign-in: which provider was asked for, and

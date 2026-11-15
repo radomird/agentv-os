@@ -19,8 +19,8 @@ What `t` has:
 - `t.storage()`: what the app keeps, as a plain object.
 - `t.tile()`: what it last set on its tile, or null.
 - `t.listening()`: `{ input, back, pause }`, how many listeners it has given the kit.
-- `t.ready()`: whether it called `agentv.ready()`.
-- `t.left()`: whether it has left (Back not kept, or `agentv.exit()`).
+- `t.ready()`: whether it called `origaitv.ready()`.
+- `t.left()`: whether it has left (Back not kept, or `origaitv.exit()`).
 - `t.calls(name, filter)`: how many times it made one of the kit's calls, like `"photos.image"`, with an optional filter on its arguments.
 - `t.requests()`: what it asked the network for, each `{ url, declared }`.
 - `t.errors()`: what it threw, as messages.

@@ -1,0 +1,14 @@
+# Runs origaitv-update-check.service a few minutes after boot and then once a
+# day (ADR-025).
+
+[Unit]
+Description=origaiTV update check, daily
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1d
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

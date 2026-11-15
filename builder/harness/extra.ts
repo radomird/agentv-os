@@ -101,15 +101,15 @@ export async function extraTools(dir: string, stepId: string): Promise<Extra> {
   const packages = new Packages({
     work: build.work,
     safeguards: request.safeguards,
-    home: process.env.HOME ?? "/var/lib/agentv/builder",
+    home: process.env.HOME ?? "/var/lib/origaitv/builder",
     packument: registryFor(PROXY),
     osvBatch: osv.batch,
     osvVuln: osv.vuln,
     run,
     proxy: PROXY,
   });
-  // The test TV, with the app as it is now: AgenTV's checks, or the tests.
-  const root = process.env.AGENTV_PATH ?? join(import.meta.dirname, "../..");
+  // The test TV, with the app as it is now: origaiTV's checks, or the tests.
+  const root = process.env.ORIGAITV_PATH ?? join(import.meta.dirname, "../..");
   const gate = { root, proxy: PROXY };
   return {
     npm_info: (args) => said(() => packages.info(args.name)),

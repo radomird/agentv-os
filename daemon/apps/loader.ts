@@ -4,7 +4,7 @@
 // instead. The app is held to its manifest: a capability it declares has to
 // be in its module, and only the capabilities it declares can be called.
 // Its fetch reaches only its declared origins, with setup fields filled in,
-// and says it comes from AgenTV and which app it is, unless the app says
+// and says it comes from origaiTV and which app it is, unless the app says
 // otherwise: a service such as MET Norway asks every request to say who's
 // asking (ADR-015). A web app's page (the contract's AppPage) is relayed to a
 // PageBroker, the screen daemon's DevTools pipe on the box or a test's own
@@ -130,7 +130,7 @@ export function timeZoneLink(): string | undefined {
 // libraries, Node itself, and the files given (the app's package, the
 // worker and its package.json), each where it is outside. No network of
 // any kind, so a request can only be asked of the loader. No /proc, no
-// home, nothing of /var/lib/agentv or /etc/agentv but the app's own
+// home, nothing of /var/lib/origaitv or /etc/origaitv but the app's own
 // package. It goes when the loader does.
 export function workerJail(o: { dir: string; node: string; read: string[]; system: SystemPath[]; localtime?: string }): string[] {
   const inside = (path: string, folder: string) => path === folder || path.startsWith(folder.endsWith(sep) ? folder : `${folder}${sep}`);
@@ -178,10 +178,10 @@ export interface AppHostOptions {
   manifest: Manifest;
   settings?: Record<string, string>;
   limits?: Partial<Record<string, number>>; // per-call time limits, for tests
-  userAgent?: string; // AgenTV's own, like "AgenTV/0.1.2 (+https://...)"
+  userAgent?: string; // origaiTV's own, like "origaiTV/0.1.2 (+https://...)"
   page?: PageBroker; // a web app's page, when it has one open
   // What answers the app's requests, once they're past the origin check:
-  // the network, or the contract tests' fixtures (test/agentv/contract).
+  // the network, or the contract tests' fixtures (test/origaitv/contract).
   fetch?: typeof fetch;
   log?: (line: string) => void;
   // Only for a test harness, which runs outside the box. Nothing in an
@@ -218,7 +218,7 @@ export class AppHost {
     this.dir = resolve(options.dir);
     this.settings = { ...(options.settings ?? {}) };
     this.limits = options.limits ?? {};
-    this.userAgent = `${options.userAgent ?? "AgenTV"} ${options.manifest.id}/${options.manifest.version}`;
+    this.userAgent = `${options.userAgent ?? "origaiTV"} ${options.manifest.id}/${options.manifest.version}`;
     this.thisBox = options.harness?.thisBox === true;
     this.noSandbox = options.harness?.noSandbox === true;
     this.bwrap = options.bwrap ?? "bwrap";

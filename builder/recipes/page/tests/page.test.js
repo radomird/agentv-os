@@ -3,8 +3,8 @@
 
 test("it listens to the buttons, and says when it's drawn", async (t) => {
   await t.frames(10);
-  t.ok(t.listening().input > 0, "it takes its buttons from agentv.input.on");
-  t.ok(t.ready(), "it calls agentv.ready()");
+  t.ok(t.listening().input > 0, "it takes its buttons from origaitv.input.on");
+  t.ok(t.ready(), "it calls origaitv.ready()");
 });
 
 test("nothing throws, and Back leaves within a few presses", async (t) => {

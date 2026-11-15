@@ -1,6 +1,6 @@
 // The feature switches, for the TV's pages (daemon/features.ts). A page asks
 // once, and the answer follows the event `features`, so a switch turned on
-// with `agentv feature on` shows without a reload. The page's <html> carries
+// with `origaitv feature on` shows without a reload. The page's <html> carries
 // the switches that are on in data-features too, for CSS:
 // [data-features~="looks"].
 

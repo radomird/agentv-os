@@ -170,7 +170,7 @@ body { background: ${c.background}; font: 600 26px monospace; color: ${c.foregro
 .tiles { position: absolute; left: 90px; right: 90px; bottom: 120px; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 28px; }
 .tile { height: 250px; background: ${c.lighter_background}; border: 3px solid ${c.selection}; border-radius: 6px; display: flex; align-items: flex-end; padding: 22px; box-sizing: border-box; }
 .tile.focused { border: 6px solid ${c.accent}; }
-</style></head><body>${background ? `<img class="background" src="${background}">` : ""}<div class="bar"><b>agentv</b><span>home</span><span>apps</span><span>settings</span></div>
+</style></head><body>${background ? `<img class="background" src="${background}">` : ""}<div class="bar"><b>origaitv</b><span>home</span><span>apps</span><span>settings</span></div>
 <div class="tiles">${tile("watch", true)}${tile("music", false)}${tile("photos", false)}${tile("apps", false)}</div></body></html>`;
 }
 

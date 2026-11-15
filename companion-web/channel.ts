@@ -16,13 +16,13 @@
 import { concat, decode, encode, hex, hkdf, hmac, open, random, same, seal, sha256, text, utf8, x25519, x25519Public, type Bytes } from "./seal.ts";
 
 const INFO = {
-  pair: "agentv pair v1",
-  pairBox: "agentv pair box v1",
-  key: "agentv phone key v1",
-  helloBox: "agentv hello box v1",
-  session: "agentv session v1",
+  pair: "origaitv pair v1",
+  pairBox: "origaitv pair box v1",
+  key: "origaitv phone key v1",
+  helloBox: "origaitv hello box v1",
+  session: "origaitv session v1",
 };
-const SEALED = "application/agentv-sealed";
+const SEALED = "application/origaitv-sealed";
 
 // The box said this phone isn't paired, or not any more. Nothing proves that
 // answer is the box's, so the phone keeps its key all the same: only a new
@@ -42,10 +42,10 @@ function pairFailed(said: unknown): string {
   return PAIR_FAILED.find(([known]) => known.includes(words))?.[1] ?? "Couldn't reach your TV";
 }
 
-const KEPT = "agentv-phone-key";
+const KEPT = "origaitv-phone-key";
 // What a phone paired before requests were signed still holds. Nothing takes
 // it any more.
-const OLD = "agentv-phone-token";
+const OLD = "origaitv-phone-token";
 
 interface Kept {
   id: string;
@@ -173,8 +173,8 @@ export async function sign(method: string, address: string, body: { json: unknow
   const path = sent(address);
   const now = await current();
   const counter = ++now.counter;
-  const headers: Record<string, string> = { "X-AgenTV-Session": now.id, "X-AgenTV-Counter": String(counter) };
-  if (grant) headers["X-AgenTV-Grant"] = grant;
+  const headers: Record<string, string> = { "X-origaiTV-Session": now.id, "X-origaiTV-Counter": String(counter) };
+  if (grant) headers["X-origaiTV-Grant"] = grant;
   let sealed: Bytes | undefined;
   let digest: string;
   if (body && "json" in body) {
@@ -188,7 +188,7 @@ export async function sign(method: string, address: string, body: { json: unknow
   } else {
     digest = hex(sha256(new Uint8Array(0)));
   }
-  headers["X-AgenTV-Sig"] = encode(hmac(now.sign, utf8([method, path, counter, grant, digest].join("\n"))));
+  headers["X-origaiTV-Sig"] = encode(hmac(now.sign, utf8([method, path, counter, grant, digest].join("\n"))));
   return {
     headers,
     body: sealed,

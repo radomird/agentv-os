@@ -30,7 +30,7 @@ export type Why =
   | "setup" // the AI's own tool couldn't be fetched
   | "start" // the builder's own parts didn't start
   | "install" // it passed, and couldn't be put on the TV
-  | "checks" // AgenTV's static checks, or what it connects to
+  | "checks" // origaiTV's static checks, or what it connects to
   | "tests"; // its tests, or the test TV
 
 // Each AI by its name, as a line says it.
@@ -58,14 +58,14 @@ const WORDS: [Why, RegExp][] = [
   ["sign-in", /sign-in didn't (take|start|finish)|couldn't (sign in|start the sign-in|finish the sign-in)|sign-in stopped|sign-in ran out|oauth (session|token)|log ?in (again|expired)/i],
   ["busy", /another build is (running|going)/i],
   ["setup", /couldn't fetch|isn't on the box yet/i],
-  ["start", /way out didn't start|builder didn't start|no agentv-builder user|build folders aren't root's|build's folder isn't a folder/i],
+  ["start", /way out didn't start|builder didn't start|no origaitv-builder user|build folders aren't root's|build's folder isn't a folder/i],
   ["install", /couldn't be installed|isn't approved and waiting|no such build to install/i],
   ["slow", /took longer than/i],
   ["tries", /ran out of (turns|steps)|error_max_turns/i],
   ["unclear", /didn't say what it understood/i],
   ["steps", /didn't submit a plan/i],
   ["checks", /the static checks found|the app's manifest (doesn't list|lists)|offered tools of its own/i],
-  ["tests", /tests? didn't pass|the test "|the test tv|agentv\.ready\(\)|registered no test/i],
+  ["tests", /tests? didn't pass|the test "|the test tv|origaitv\.ready\(\)|registered no test/i],
   ["key", /\b401\b|authentication_error|invalid (x-)?api[- ]key|incorrect api key|api key (is )?(not valid|invalid)|refused the key/i],
   ["credit", /credit balance|insufficient_quota|exceeded your current quota|out of credit/i],
 ];

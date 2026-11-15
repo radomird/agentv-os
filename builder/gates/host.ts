@@ -1,6 +1,6 @@
-// AgenTV's test TV (builder/gates/, ADR-043): a page like home that holds
+// origaiTV's test TV (builder/gates/, ADR-043): a page like home that holds
 // one page app in its frame with home's own kit host, plays the remote, a
-// gamepad and Back to it, and runs the tests and AgenTV's checks. The
+// gamepad and Back to it, and runs the tests and origaiTV's checks. The
 // builder drives it over Chromium's DevTools pipe (builder/gates/testtv.ts),
 // and the kit's calls go to the test TV's server, which answers them as the
 // daemon does, from the app's manifest.
@@ -30,7 +30,7 @@ export interface Check {
   says: string;
 }
 
-// What AgenTV asks of every page app.
+// What origaiTV asks of every page app.
 export const FPS_MIN = 50;
 export const LONGEST_MS = 200;
 export const MEMORY_MB = 256;
@@ -93,9 +93,9 @@ async function press(button: string, source = "remote", pad?: number): Promise<v
 
 // What the frame's runner asks for, and the answer it waits on.
 window.addEventListener("message", async (event) => {
-  if (event.source !== frame.contentWindow || !event.data || typeof event.data.agentvTest !== "number") return;
+  if (event.source !== frame.contentWindow || !event.data || typeof event.data.origaitvTest !== "number") return;
   const message = event.data;
-  const reply = (value: unknown) => frame.contentWindow?.postMessage({ agentvTest: message.agentvTest, value }, "*");
+  const reply = (value: unknown) => frame.contentWindow?.postMessage({ origaitvTest: message.origaitvTest, value }, "*");
   switch (message.op) {
     case "which":
       names = Array.isArray(message.names) ? message.names.map(String) : [];
@@ -160,13 +160,13 @@ function probe(since = 0): Promise<Probe> {
     const id = ++nextProbe;
     const timer = setTimeout(() => reject(new Error("the app's frame didn't answer")), 3000);
     const heard = (event: MessageEvent) => {
-      if (event.source !== frame.contentWindow || event.data?.agentvProbe !== id) return;
+      if (event.source !== frame.contentWindow || event.data?.origaitvProbe !== id) return;
       clearTimeout(timer);
       window.removeEventListener("message", heard);
       resolve(event.data.value);
     };
     window.addEventListener("message", heard);
-    frame.contentWindow?.postMessage({ agentvProbe: id, since }, "*");
+    frame.contentWindow?.postMessage({ origaitvProbe: id, since }, "*");
   });
 }
 
@@ -176,13 +176,13 @@ function webrtc(): Promise<{ made: boolean; ways: number }> {
     const id = ++nextProbe;
     const timer = setTimeout(() => reject(new Error("the app's frame didn't answer")), 5000);
     const heard = (event: MessageEvent) => {
-      if (event.source !== frame.contentWindow || event.data?.agentvWebrtc !== id) return;
+      if (event.source !== frame.contentWindow || event.data?.origaitvWebrtc !== id) return;
       clearTimeout(timer);
       window.removeEventListener("message", heard);
       resolve(event.data.value);
     };
     window.addEventListener("message", heard);
-    frame.contentWindow?.postMessage({ agentvWebrtc: id }, "*");
+    frame.contentWindow?.postMessage({ origaitvWebrtc: id }, "*");
   });
 }
 
@@ -196,16 +196,16 @@ const testTv = {
     return { ready: ok, ms: Math.round(performance.now() - started), names };
   },
 
-  // AgenTV's own checks, on the app start() opened.
+  // origaiTV's own checks, on the app start() opened.
   async checks(): Promise<Check[]> {
     const checks: Check[] = [];
     const add = (id: string, ok: boolean, says: string) => checks.push({ id, ok, says });
-    add("ready", ready, ready ? "it says it's drawn with agentv.ready()" : `it didn't call agentv.ready() within ${READY_MS / 1000} seconds`);
+    add("ready", ready, ready ? "it says it's drawn with origaitv.ready()" : `it didn't call origaitv.ready() within ${READY_MS / 1000} seconds`);
 
     for (const button of ["up", "down", "left", "right", "ok"]) await press(button, "remote");
     await pause(300);
     let seen = await probe();
-    add("remote", seen.listening.input > 0 && !left, seen.listening.input > 0 ? "it takes the remote's buttons from agentv.input.on" : "it doesn't listen to its buttons with agentv.input.on");
+    add("remote", seen.listening.input > 0 && !left, seen.listening.input > 0 ? "it takes the remote's buttons from origaitv.input.on" : "it doesn't listen to its buttons with origaitv.input.on");
     for (const button of ["ok", "x", "y", "lb", "rb", "start"]) await press(button, "gamepad", 0);
     await pause(300);
     add("gamepad", !left, left ? "a gamepad's buttons made it leave" : "it takes a gamepad's buttons and stays");

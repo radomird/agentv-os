@@ -1,6 +1,6 @@
 // The feature switches' routes (daemon/features.ts):
 // - GET /api/features: every switch and whether it's on, { "looks": false, ... };
-// - PUT /api/features with { "looks": true }: what `agentv feature on` and
+// - PUT /api/features with { "looks": true }: what `origaitv feature on` and
 //   `off` send, from the box itself. It answers with every switch again;
 // - GET /api/phone/features: the same list, for a paired phone.
 // A change goes out as the event `features`, with every switch.

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "origaitv.pager",
+  "name": "Pager",
+  "version": "1.0.0",
+  "author": "origaitv",
+  "license": "MIT",
+  "description": "A web app for origaiTV's tests that reads its page",
+  "kinds": ["tv-app"],
+  "entryPoints": { "tvApp": "app.ts" },
+  "tv": {
+    "contract": 1,
+    "category": "streaming",
+    "runtime": "web",
+    "homeUrl": "{serverUrl}/",
+    "capabilities": ["launch", "signIn", "search", "playback"],
+    "setup": [{ "type": "field", "key": "serverUrl", "label": "Server address" }, { "type": "signIn" }],
+    "origins": ["{serverUrl}"],
+    "childSafe": true
+  }
+}

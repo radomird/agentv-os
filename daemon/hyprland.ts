@@ -1,4 +1,4 @@
-// Hyprland's IPC, for AgenTV's screen daemon (ADR-031): hyprctl for requests
+// Hyprland's IPC, for origaiTV's screen daemon (ADR-031): hyprctl for requests
 // and Hyprland's event socket for what happens (https://wiki.hypr.land/ipc/).
 // The real one talks to the TV session's Hyprland; the unit tests hand the
 // screen daemon a fake with the same shape.
@@ -49,7 +49,7 @@ export interface Hyprland {
   // takes effect at once.
   eval(code: string): Promise<void>;
   // Calls handler with each event's name and data, such as
-  // "openwindow" and "0x1,special:agentv-held,foot,foot".
+  // "openwindow" and "0x1,special:origaitv-held,foot,foot".
   events(handler: (name: string, data: string) => void, closed: () => void): void;
 }
 

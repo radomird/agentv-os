@@ -5,7 +5,7 @@
 # person, and linked as ~/.local/bin/<cli>, where the builder runs it from.
 # Its first run is here too: grok unpacks its binary and muse's launcher
 # downloads its own, so a build doesn't wait on either.
-# agentv-builder-cli@.service runs this as agentv-builder.
+# origaitv-builder-cli@.service runs this as origaitv-builder.
 #
 # Usage: fetch-cli.sh <claude|codex|gemini|grok|muse>
 
@@ -13,7 +13,7 @@ set -euo pipefail
 
 # mise reads a config from the folder it's started in and the ones above
 # it. Started from /, it reads none from the builder's home but its own
-# global one, which a build can't write (agentv-builder@.service).
+# global one, which a build can't write (origaitv-builder@.service).
 cd /
 
 cli=${1:-}

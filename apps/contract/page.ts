@@ -4,7 +4,7 @@
 // and its details on the TV.
 //
 // The checks are the first of the builder's three gates, and the installer
-// and `agentv app validate` run them too, so a page app from a file gets
+// and `origaitv app validate` run them too, so a page app from a file gets
 // them as well. The policy is what holds at run time: these checks catch
 // what would only fail there, and say why.
 
@@ -54,7 +54,7 @@ export function pageOriginProblem(origin: string): string | null {
   if ((url.protocol !== "https:" && url.protocol !== "http:") || url.origin !== origin) {
     return `'${origin}' isn't an origin: a scheme and a host, like https://example.org`;
   }
-  if (boxHost(url.hostname)) return `'${origin}' is this box, which a page app reaches only through AgenTV's app kit`;
+  if (boxHost(url.hostname)) return `'${origin}' is this box, which a page app reaches only through origaiTV's app kit`;
   return null;
 }
 

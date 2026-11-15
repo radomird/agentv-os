@@ -2,7 +2,7 @@
 // and output (ADR-046). The builder names the build and the step when it
 // starts the provider's CLI, and the CLI starts this with them: the step's
 // tools are the recipe's, read from the build's own recipe.json, which the
-// agent has no tool to change. The understanding and the plan are AgenTV's
+// agent has no tool to change. The understanding and the plan are origaiTV's
 // own steps, defined here.
 //
 // Usage: node server.ts <build-dir> <step>
@@ -20,9 +20,9 @@ export async function harness(dir: string, stepId: string, extra?: Extra): Promi
   const build = new Build(dir);
   const step = findStep(build, stepId);
   if (!step) throw new Error(`there's no step ${stepId} in this build`);
-  const root = process.env.AGENTV_PATH ?? join(import.meta.dirname, "../..");
+  const root = process.env.ORIGAITV_PATH ?? join(import.meta.dirname, "../..");
   const omarchy = process.env.OMARCHY_PATH ?? "/usr/share/omarchy";
-  // Before a recipe is chosen, AgenTV's own steps stand alone, with a page
+  // Before a recipe is chosen, origaiTV's own steps stand alone, with a page
   // app's template folder for a recipe.
   const own: Recipe = {
     kind: "plan",
@@ -41,7 +41,7 @@ export async function harness(dir: string, stepId: string, extra?: Extra): Promi
   const tools = stepTools({ build, recipe, step, root, omarchy, extra });
   build.log({ step: step.id, harness: "started", tools: tools.map((tool) => tool.name) });
   await serve(tools, {
-    name: "agentv",
+    name: "origaitv",
     seen: (call) => {
       if (!call.ok) build.log({ step: step.id, tool: call.tool, refused: call.answer });
     },

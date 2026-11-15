@@ -24,7 +24,7 @@ export { UPSTREAM };
 export { ProviderError } from "./http.ts";
 
 // The model each provider routes with: its quickest, read on each provider's
-// models page on 2026-10-29. The eval set (test/agentv/evals/router) runs on
+// models page on 2026-10-29. The eval set (test/origaitv/evals/router) runs on
 // these, and any other can be named for it.
 export const ROUTER_MODELS: Record<Provider, string> = {
   claude: "claude-haiku-5-5",
@@ -34,7 +34,7 @@ export const ROUTER_MODELS: Record<Provider, string> = {
   muse: "muse-spark-1.3",
 };
 
-// The key's name in /etc/agentv/env, and in the evals' environment.
+// The key's name in /etc/origaitv/env, and in the evals' environment.
 export const KEY_VARS: Record<Provider, string> = { claude: "ANTHROPIC_API_KEY", chatgpt: "OPENAI_API_KEY", gemini: "GEMINI_API_KEY", grok: "XAI_API_KEY", muse: "META_API_KEY" };
 
 export interface ApiOptions {

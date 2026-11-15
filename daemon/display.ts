@@ -9,7 +9,7 @@
 // overlays, and Steam's gamescope.
 //
 // Two halves:
-//   - Display, in AgenTV's daemon, keeps what was picked in display.json in
+//   - Display, in origaiTV's daemon, keeps what was picked in display.json in
 //     the daemon's state, with the TV the screen daemon last saw, and says
 //     what the TV should run at (GET and PUT /api/display, routes/display.ts).
 //   - DisplayWatch, in the screen daemon, which runs as the person in the TV
@@ -352,7 +352,7 @@ export interface DisplayHyprland {
 // Where the screen daemon keeps the last mode and scale it applied, for
 // session/hypr.lua: "HDMI-A-1 3840x2160@60 2" on one line.
 export function displayFile(env: NodeJS.ProcessEnv, home: string): string {
-  return join(env.XDG_STATE_HOME || join(home, ".local", "state"), "agentv", "display");
+  return join(env.XDG_STATE_HOME || join(home, ".local", "state"), "origaitv", "display");
 }
 
 export interface DisplayWatchOptions {

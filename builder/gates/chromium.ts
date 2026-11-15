@@ -16,7 +16,7 @@ export interface Headless {
 }
 
 export function headless(chromium: string, o: { proxy?: string; url?: string; flags?: string[] } = {}): Headless {
-  const profile = mkdtempSync(join(tmpdir(), "agentv-chromium-"));
+  const profile = mkdtempSync(join(tmpdir(), "origaitv-chromium-"));
   const flags = [
     "--headless=new",
     "--remote-debugging-pipe",

@@ -7,7 +7,7 @@
 // - the machine's model, from the firmware's DMI table;
 // - the CPU and its threads, from /proc/cpuinfo, and the memory, from the
 //   memory blocks the kernel has online (or MemTotal);
-// - the free space where AgenTV keeps its things (/var/lib/agentv);
+// - the free space where origaiTV keeps its things (/var/lib/origaitv);
 // - each GPU, from sysfs's PCI devices, never lspci, which wakes a sleeping
 //   GPU. Its name comes from hwdata's pci.ids, the video it decodes in
 //   hardware from vainfo, and whether it's integrated or discrete, with
@@ -20,7 +20,7 @@
 //
 // The readers only gather text and bytes into Readings. Everything that
 // makes sense of them is a plain function on Readings, so the unit tests run
-// it on recorded readings: `agentv box readings` prints them on a real box.
+// it on recorded readings: `origaitv box readings` prints them on a real box.
 //
 // Whether the box keeps 4K smooth is measured, not guessed: the TV's own
 // Chromium draws a home-like scene at the TV's full resolution for five
@@ -544,7 +544,7 @@ export interface ReadOptions {
   root?: string; // "/", or a tree a test made
   exec?: Exec;
   interfaces?: () => ReturnType<typeof networkInterfaces>;
-  // The folder whose free space counts: where AgenTV keeps its things.
+  // The folder whose free space counts: where origaiTV keeps its things.
   disk?: string;
   widevine?: string | null;
   // A stand-in machine for the screen tests: recorded readings, read in
@@ -802,7 +802,7 @@ export class Box {
     return this.gpuCache;
   }
 
-  // Everything the box check reads, as `agentv box readings` prints it.
+  // Everything the box check reads, as `origaitv box readings` prints it.
   async readings(): Promise<Readings> {
     if (this.options.machine) return { ...structuredClone(this.options.machine), widevine: (await this.saved()).widevine };
     const root = this.root;
@@ -812,7 +812,7 @@ export class Box {
       this.fixed,
       this.gpuReadings(),
       readConnectors(root),
-      readStorage(this.options.disk ?? "/var/lib/agentv"),
+      readStorage(this.options.disk ?? "/var/lib/origaitv"),
       readNetwork(root, run, this.options.interfaces ?? networkInterfaces),
       list(join(root, "sys/class/bluetooth")).then((all) => all.filter((name) => /^hci\d+$/.test(name))),
       readGamepads(root),

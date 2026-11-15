@@ -1,10 +1,10 @@
-// AgenTV's test TV, in a page app's own frame (builder/gates/, ADR-043).
+// origaiTV's test TV, in a page app's own frame (builder/gates/, ADR-043).
 // Only the test TV in the builder's sandbox serves this, first in the app's
 // page, before the kit and the app; home never does. It keeps what the
-// tests and AgenTV's checks read: the listeners the app gave the kit, the
+// tests and origaiTV's checks read: the listeners the app gave the kit, the
 // frames it drew, what it asked the network for, what it threw, and its
 // memory. Each load runs the one test the host names, with the test API
-// builder/prompts/tests.md describes, or none, for AgenTV's own checks.
+// builder/prompts/tests.md describes, or none, for origaiTV's own checks.
 // Like the kit, it's a plain script with no imports, only types.
 
 interface Snapshot {
@@ -27,7 +27,7 @@ interface Test {
   // --- What the checks read ----------------------------------------------
 
   let listening = { input: 0, back: false, pause: 0 };
-  (window as { agentvTestTv?: unknown }).agentvTestTv = (now: typeof listening) => {
+  (window as { origaitvTestTv?: unknown }).origaitvTestTv = (now: typeof listening) => {
     listening = now;
   };
 
@@ -94,7 +94,7 @@ interface Test {
       peer.onicecandidate = (event) => {
         if (event.candidate) ways++;
       };
-      peer.createDataChannel("agentv");
+      peer.createDataChannel("origaitv");
       await peer.setLocalDescription(await peer.createOffer());
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, 2000);
@@ -120,25 +120,25 @@ interface Test {
     new Promise((resolve) => {
       const id = ++next;
       waiting.set(id, resolve);
-      host.postMessage({ agentvTest: id, op, ...extra }, "*");
+      host.postMessage({ origaitvTest: id, op, ...extra }, "*");
     });
 
   window.addEventListener("message", (event) => {
     if (event.source !== host || !event.data) return;
-    const message = event.data as { agentvTest?: number; value?: unknown; agentvProbe?: number; since?: number };
-    if (typeof message.agentvTest === "number") {
-      waiting.get(message.agentvTest)?.(message.value);
-      waiting.delete(message.agentvTest);
-    } else if (typeof (message as { agentvWebrtc?: number }).agentvWebrtc === "number") {
+    const message = event.data as { origaitvTest?: number; value?: unknown; origaitvProbe?: number; since?: number };
+    if (typeof message.origaitvTest === "number") {
+      waiting.get(message.origaitvTest)?.(message.value);
+      waiting.delete(message.origaitvTest);
+    } else if (typeof (message as { origaitvWebrtc?: number }).origaitvWebrtc === "number") {
       // The host's check that WebRTC gets nowhere from here.
-      void webrtc().then((value) => host.postMessage({ agentvWebrtc: (message as { agentvWebrtc?: number }).agentvWebrtc, value }, "*"));
-    } else if (typeof message.agentvProbe === "number") {
+      void webrtc().then((value) => host.postMessage({ origaitvWebrtc: (message as { origaitvWebrtc?: number }).origaitvWebrtc, value }, "*"));
+    } else if (typeof message.origaitvProbe === "number") {
       // The host's checks: what's been seen, and the frames since a moment.
       const since = typeof message.since === "number" ? message.since : 0;
       const memory = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0;
       host.postMessage(
         {
-          agentvProbe: message.agentvProbe,
+          origaitvProbe: message.origaitvProbe,
           value: {
             now: performance.now(),
             listening,
@@ -208,7 +208,7 @@ interface Test {
     } catch (error) {
       failed.push(`it threw: ${said(error)}`);
     }
-    host.postMessage({ agentvTest: 0, op: "result", index, name: test.name, ok: failed.length === 0, failed }, "*");
+    host.postMessage({ origaitvTest: 0, op: "result", index, name: test.name, ok: failed.length === 0, failed }, "*");
   }
 
   window.addEventListener("load", async () => {

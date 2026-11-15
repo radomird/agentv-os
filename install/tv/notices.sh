@@ -5,7 +5,7 @@
 # phone (ADR-022, ADR-023, ADR-029), so they're marked as already offered,
 # with the same markers Omarchy sets itself when it shows them. Omarchy 4.5
 # has no Voxtype invitation, so its marker does nothing there. The notices
-# with no marker are bin/agentv-quiet-first-run's.
+# with no marker are bin/origaitv-quiet-first-run's.
 for invitation in agent-setup-invitation voxtype-install-invitation fingerprint-setup-invitation; do
-  runuser -u "$AGENTV_OWNER" -- env HOME="$AGENTV_OWNER_HOME" omarchy-done ensure "$invitation" || true
+  runuser -u "$ORIGAITV_OWNER" -- env HOME="$ORIGAITV_OWNER_HOME" omarchy-done ensure "$invitation" || true
 done

@@ -1,4 +1,4 @@
-// AgenTV's UI icons (ADR-014): one colour each, in the theme's colours
+// origaiTV's UI icons (ADR-014): one colour each, in the theme's colours
 // through currentColor, drawn as pixel art on a 12 × 12 grid, like the
 // launcher's weather scenes (pixels.ts). The home screen and the phone
 // companion share them, so a button looks the same on both.

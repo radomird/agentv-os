@@ -1,0 +1,18 @@
+# Joins the home Wi-Fi the daemon was given, on the setup hotspot's page or
+# in Settings, looks at the networks nearby for Settings, or closes the
+# hotspot as setup ends (bin/origaitv-hotspot). origaitv-hotspot.path starts it.
+
+[Unit]
+Description=origaiTV setup hotspot: join the home Wi-Fi
+After=NetworkManager.service
+# No start limit. A look on a TV with no Wi-Fi is over in a moment, and a
+# few in a row would hit systemd's limit, which fails origaitv-hotspot.path
+# too: then nothing the daemon hands over is taken until a restart.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/origaitv-hotspot drop
+UMask=0077
+ProtectHome=yes
+PrivateTmp=yes

@@ -1,8 +1,8 @@
-// `agentv app validate`: checks app packages against the app contract
+// `origaitv app validate`: checks app packages against the app contract
 // (manifest.ts) and says what's wrong with each, in plain words.
 //
 // Usage: node validate.ts [--official | --local] <package-dir>...
-//   --official  the package is one of AgenTV's own apps (agentv.*)
+//   --official  the package is one of origaiTV's own apps (origaitv.*)
 //   --local     the package was built on this box (local.*)
 // Without either, it's checked as a community app, whose id starts with its
 // author. Exits 0 when every package passes, 1 when one doesn't, 2 on bad
@@ -21,15 +21,15 @@ for (const arg of args) {
   if (arg === "--official") tier = "official";
   else if (arg === "--local") tier = "local";
   else if (arg === "-h" || arg === "--help") {
-    console.log("Usage: agentv app validate [--official | --local] <package-dir>...");
+    console.log("Usage: origaitv app validate [--official | --local] <package-dir>...");
     process.exit(0);
   } else if (arg.startsWith("-")) {
-    console.error(`agentv app validate: unknown option ${arg}`);
+    console.error(`origaitv app validate: unknown option ${arg}`);
     process.exit(2);
   } else dirs.push(arg);
 }
 if (dirs.length === 0) {
-  console.error("Usage: agentv app validate [--official | --local] <package-dir>...");
+  console.error("Usage: origaitv app validate [--official | --local] <package-dir>...");
   process.exit(2);
 }
 

@@ -2,11 +2,11 @@
 // box opens its own Wi-Fi network, and a phone that joins it from the QR code
 // on the TV gets the captive page, where it picks the home Wi-Fi. Opening
 // the network, its addresses and its firewall holes is root's job
-// (bin/agentv-hotspot, run by agentv-hotspot.service): it says how things
-// stand in /run/agentv-hotspot, and this reads that. The daemon can't touch
+// (bin/origaitv-hotspot, run by origaitv-hotspot.service): it says how things
+// stand in /run/origaitv-hotspot, and this reads that. The daemon can't touch
 // NetworkManager, so the home Wi-Fi's name and password go the way the
 // provider key goes: a drop in its own private state, which
-// agentv-hotspot.path hands to root.
+// origaitv-hotspot.path hands to root.
 //
 // After setup, Settings changes the Wi-Fi through the same drop, with the
 // hotspot closed (daemon/network.ts): a look at the networks nearby, and a
@@ -52,7 +52,7 @@ export interface RadioState {
 
 export interface HotspotOptions {
   state: string; // the daemon's own state: the drop goes in <state>/hotspot-drop
-  run?: string; // what agentv-hotspot writes: /run/agentv-hotspot
+  run?: string; // what origaitv-hotspot writes: /run/origaitv-hotspot
 }
 
 const text = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
@@ -84,14 +84,14 @@ export class Hotspot {
   private stopping = "";
 
   constructor(options: HotspotOptions) {
-    this.run = options.run ?? "/run/agentv-hotspot";
+    this.run = options.run ?? "/run/origaitv-hotspot";
     this.dropDir = join(options.state, "hotspot-drop");
     this.usedFile = join(options.state, "hotspot-page");
   }
 
   // Notes that someone is using the hotspot's page, for root's watch: while
   // they are, it doesn't close the hotspot to look for the home Wi-Fi
-  // (bin/agentv-hotspot, page_in_use). The file's time is all it says.
+  // (bin/origaitv-hotspot, page_in_use). The file's time is all it says.
   used(now = Date.now()): void {
     if (now - this.usedAt < USED_EVERY_MS) return;
     this.usedAt = now;

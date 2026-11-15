@@ -1,0 +1,14 @@
+# After going back (ADR-025): bin/origaitv-go-back keeps the system it replaced
+# until the next boot, and leaves /var/lib/origaitv/update/cleanup-pending in
+# the one it put back. This deletes the old one.
+
+[Unit]
+Description=origaiTV cleanup after going back
+ConditionPathExists=/var/lib/origaitv/update/cleanup-pending
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/origaitv-go-back --cleanup
+
+[Install]
+WantedBy=multi-user.target

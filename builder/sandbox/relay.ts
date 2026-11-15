@@ -19,7 +19,7 @@ import { dirname } from "node:path";
 import type { Provider } from "../build.ts";
 import { cost, NO_USAGE, rateFor, type Usage } from "./prices.ts";
 
-// What root says the running build is (bin/agentv-build-start), in a file
+// What root says the running build is (bin/origaitv-build-start), in a file
 // only root can write.
 export interface Ticket {
   build: string;
@@ -83,7 +83,7 @@ const CALLS: Record<Provider, Call[]> = {
   muse: [RESPONSES, CHAT, MESSAGES, MODELS],
 };
 
-// The key's line in /etc/agentv/env (bin/agentv-key-store).
+// The key's line in /etc/origaitv/env (bin/origaitv-key-store).
 const KEY_VARS: Record<Provider, string> = { claude: "ANTHROPIC_API_KEY", chatgpt: "OPENAI_API_KEY", gemini: "GEMINI_API_KEY", grok: "XAI_API_KEY", muse: "META_API_KEY" };
 
 export function keyFrom(env: string, provider: Provider): string | null {
@@ -98,7 +98,7 @@ const HOP = ["connection", "keep-alive", "proxy-connection", "proxy-authorizatio
 const AUTH = ["authorization", "x-api-key", "x-goog-api-key", "openai-organization", "openai-project", "anthropic-admin-key"];
 
 // What's wrong with a request's tools: any the provider would run itself.
-// The agent's tools are AgenTV's harness, which the CLI calls; a provider's
+// The agent's tools are origaiTV's harness, which the CLI calls; a provider's
 // own web search or code runner would reach the internet round the filter.
 export function serverTools(wire: Wire, body: Record<string, unknown>): string | null {
   const tools = Array.isArray(body.tools) ? (body.tools as Record<string, unknown>[]) : [];

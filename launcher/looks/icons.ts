@@ -1,6 +1,6 @@
 // Glass's and Cinema's line icons (ADR-063): one stroke each, in
 // currentColor, so the theme colours them. Terminal keeps its pixel art
-// (glyphs.ts, pixels.ts). They're AgenTV's own shapes, on a 24 × 24 grid,
+// (glyphs.ts, pixels.ts). They're origaiTV's own shapes, on a 24 × 24 grid,
 // and none of them is Apple's or Google's.
 
 const NS = "http://www.w3.org/2000/svg";

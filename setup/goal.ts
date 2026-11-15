@@ -94,7 +94,7 @@ export async function goal2(ctx: Ctx): Promise<View> {
       h("span", { class: "goal-card-text" }, h("span", { class: "goal-card-name" }, card.name), h("span", { class: "goal-card-note" }, card.goal === "gaming" && gaming ? gaming : card.note)),
     ),
   );
-  const [prompt, headline] = heading("agentv goal", "What's it for, mostly?", ctx.reduced());
+  const [prompt, headline] = heading("origaitv goal", "What's it for, mostly?", ctx.reduced());
   const el = h(
     "div",
     { class: "setup-page d3" },

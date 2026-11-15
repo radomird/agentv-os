@@ -1,5 +1,5 @@
 // The setup hotspot's captive page (ADR-007, stage 4): a phone that joins
-// AgenTV's own Wi-Fi from the QR code on the TV opens it on its own. It lists
+// origaiTV's own Wi-Fi from the QR code on the TV opens it on its own. It lists
 // the networks the box could see, takes the home Wi-Fi's password and hands
 // both to the box, which joins that network and closes its own. The phone
 // loses this page then and goes back to the home Wi-Fi, where the TV shows a

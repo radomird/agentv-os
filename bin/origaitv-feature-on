@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# origaitv:summary=Turn a feature switch on (edge only)
+# origaitv:args=<name>
+# origaitv:examples=origaitv feature on looks
+
+# Shows something that's still switched off for everyone else. It works on
+# edge only, so run origaitv channel edge first. origaitv feature list has the
+# names.
+
+set -euo pipefail
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec "$ORIGAITV_BIN_DIR/origaitv-feature-set" "${1:-}" on "${@:2}"

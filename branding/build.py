@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the AgenTV logo files from one set of glyphs.
+"""Builds the origaiTV logo files from one set of glyphs.
 
 The letterforms follow Omarchy's logo.txt: three-cell stems, rounded corners,
 the notch where a crossbar meets a stem. The "a" is Omarchy's own. Each text
@@ -90,7 +90,7 @@ GLYPHS = {
     ],
 }
 
-WORD = 'agentv'
+WORD = 'origaitv'
 ACCENT_FROM = 4          # "tv" is drawn in the accent colour
 GAP = 2                  # blank columns between letters
 WIDTH = 81               # the installer dashboard takes its width from logo.txt
@@ -187,7 +187,7 @@ def svg(px, colours, unit=15):
     w, h = (x1 - x0) * unit, (y1 - y0) * unit
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" '
-        f'role="img" aria-label="AgenTV">'
+        f'role="img" aria-label="origaiTV">'
         f'<path fill="{colours["ink"]}" d="{"".join(parts["ink"])}"/>'
         f'<path fill="{colours["accent"]}" d="{"".join(parts["accent"])}"/></svg>\n'
     )

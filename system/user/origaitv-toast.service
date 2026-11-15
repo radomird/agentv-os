@@ -1,0 +1,16 @@
+# origaiTV's toasts over the app in front (session/toast/shell.qml), drawn by
+# Quickshell, which comes with Omarchy.
+
+[Unit]
+Description=origaiTV toasts
+PartOf=origaitv-tv.target
+StartLimitIntervalSec=0
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+ExecStart=/usr/bin/quickshell -p /usr/share/origaitv/session/toast
+Restart=on-failure
+RestartSec=2
+# Stopped within a few seconds, so Restart and Shut down never wait on it
+# (ADR-033).
+TimeoutStopSec=5s

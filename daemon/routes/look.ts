@@ -25,7 +25,7 @@ export interface Look {
 }
 
 export interface LookKit {
-  root: string; // AgenTV's files, where launcher/looks/ is
+  root: string; // origaiTV's files, where launcher/looks/ is
   state: string; // the daemon's state, where look.json is kept
   broadcast(event: string, data: unknown): void;
   // True when the active profile may change it, having answered otherwise.

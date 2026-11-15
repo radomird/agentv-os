@@ -1,0 +1,14 @@
+# The phone's trackpad and keys on Omarchy's desktop (daemon/desktop-remote.ts,
+# ADR-037). Omarchy's post-boot hook starts it with the virtual input device
+# (bin/origaitv-desktop-hook), and it stops with the desktop's session.
+
+[Unit]
+Description=origaiTV phone remote on Omarchy's desktop
+PartOf=graphical-session.target
+After=origaitv-input.service
+
+[Service]
+ExecStart=/usr/bin/node /usr/share/origaitv/daemon/desktop-remote.ts
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5s

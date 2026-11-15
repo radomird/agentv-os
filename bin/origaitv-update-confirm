@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# origaitv:summary=Ask before an update, saying what changes and where to read about it
+# origaitv:hidden=true
+
+# origaiTV's own question before origaitv update (ADR-025, ADR-029), in place of
+# Omarchy's, which points at Omarchy's release notes and a laptop's battery.
+# It says which origaiTV and Omarchy versions the update moves to, how many
+# other packages change, and where origaiTV's release notes are.
+#
+# Exits 0 to go ahead, 1 when the answer is no.
+
+set -euo pipefail
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+
+# shellcheck source=/dev/null
+source "$ORIGAITV_PATH/settings"
+
+# checkupdates exits 2 when there's nothing to update, 1 when it couldn't look.
+status=0
+pending=$(checkupdates 2>/dev/null) || status=$?
+if (( status != 0 && status != 2 )); then
+  pending=""
+fi
+
+# version_line <package> <name>: where the update takes it, or that it stays.
+version_line() {
+  local now next
+  now=$(pacman -Q "$1" 2>/dev/null | cut -d' ' -f2)
+  next=$(awk -v name="$1" '$1 == name { print $4 }' <<<"$pending")
+  if [[ -n $next ]]; then
+    echo "• $2 ${now:-not installed} to $next"
+  else
+    echo "• $2 ${now:-not installed}, already the newest"
+  fi
+}
+
+others=$(awk '$1 != "origaitv" && $1 != "omarchy" && NF { n++ } END { print n + 0 }' <<<"$pending")
+lines=(
+  "Ready to update?"
+  ""
+  "$(version_line origaitv origaiTV)"
+  "$(version_line omarchy Omarchy)"
+)
+if (( status == 1 )); then
+  lines+=("• Couldn't check for other updates; the update will")
+elif (( others > 0 )); then
+  lines+=("• $others other package$( (( others == 1 )) || echo s)")
+fi
+if [[ $("$ORIGAITV_BIN_DIR/origaitv-channel") == "edge" ]]; then
+  lines+=("• On edge: every green build, not only releases")
+fi
+lines+=(
+  "• A snapshot comes first, so you can go back from the boot menu"
+  "• Keep the TV plugged in, and let it finish once it starts"
+  ""
+  "What's new: ${ORIGAITV_TESTED_URL%/download/tested}"
+)
+
+gum style --border normal --padding "1 2" "${lines[@]}"
+echo
+
+if ! gum confirm "Update now?"; then
+  echo "Update cancelled"
+  exit 1
+fi

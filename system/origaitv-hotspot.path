@@ -1,0 +1,13 @@
+# The home Wi-Fi a phone picked on the setup hotspot's page, handed over by
+# origaiTV's daemon (stage 4): when it leaves one in its private state,
+# origaitv-hotspot-drop.service joins it as root.
+
+[Unit]
+Description=origaiTV setup hotspot hand-over
+
+[Path]
+PathExists=/var/lib/origaitv/daemon/hotspot-drop/request.json
+Unit=origaitv-hotspot-drop.service
+
+[Install]
+WantedBy=paths.target

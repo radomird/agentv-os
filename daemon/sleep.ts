@@ -10,7 +10,7 @@
 // list itself rather than leaving it to logind.
 //
 // With overnight updates on, it first sets a wake alarm for the update
-// window (agentv-wake.timer), so the night's update still installs, and the
+// window (origaitv-wake.timer), so the night's update still installs, and the
 // box sleeps again an hour later. The alarm is only for while the box
 // sleeps: once it's awake again, and when the screen daemon starts, the
 // alarm goes off, so turning sleep off never leaves one behind for another
@@ -233,7 +233,7 @@ export function blocking(json: string): { who: string; why: string }[] {
 
 // The box's own: logind over busctl, and the wake alarm's timer through
 // systemctl. polkit lets the box's owner suspend and start or stop the timer
-// from the TV session (system/polkit/50-agentv-sleep.rules), but never past
+// from the TV session (system/polkit/50-origaitv-sleep.rules), but never past
 // an inhibitor.
 export function logindSleep(settings: () => Promise<{ sleep: boolean; overnight: boolean }>): SleepPlatform {
   return {
@@ -244,7 +244,7 @@ export function logindSleep(settings: () => Promise<{ sleep: boolean; overnight:
       return blocking(answer.out);
     },
     async wakeAlarm(on) {
-      return (await run("systemctl", [on ? "start" : "stop", "agentv-wake.timer"])).ok;
+      return (await run("systemctl", [on ? "start" : "stop", "origaitv-wake.timer"])).ok;
     },
     async suspend() {
       return (await run("busctl", ["call", ...LOGIND, "Suspend", "b", "false"])).ok;

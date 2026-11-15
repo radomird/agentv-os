@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# origaitv:summary=List the feature switches and whether each is on
+
+# Something new lands switched off until its design is signed off. Edge
+# boxes can turn any switch on with origaitv feature on <name>.
+
+set -euo pipefail
+
+port=${ORIGAITV_PORT:-3000}
+if ! features=$(curl -fsS --max-time 5 "http://127.0.0.1:$port/api/features" 2>/dev/null); then
+  echo "origaiTV's daemon isn't answering. Try: sudo systemctl restart origaitv-daemon" >&2
+  exit 1
+fi
+while IFS=$'\t' read -r name state; do
+  printf '%-12s %s\n' "$name" "$state"
+done < <(jq -r 'to_entries[] | "\(.key)\t\(if .value then "on" else "off" end)"' <<<"$features")

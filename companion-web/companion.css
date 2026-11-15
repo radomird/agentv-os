@@ -1,4 +1,4 @@
-/* AgenTV's phone companion, in the Terminal look (ADR-014, boards 03, 07 and
+/* origaiTV's phone companion, in the Terminal look (ADR-014, boards 03, 07 and
    11): JetBrains Mono, sharp blocks and the Omarchy theme's colours, which
    /api/theme.css puts over these Tokyo Night ones. Sized for a phone, 390 px
    wide, with thumbs in mind. */
@@ -521,7 +521,7 @@ button.who {
   border-left-color: var(--green);
 }
 
-/* AgenTV's UI icons (launcher/glyphs.ts), beside the words they go with. */
+/* origaiTV's UI icons (launcher/glyphs.ts), beside the words they go with. */
 .glyph {
   flex: none;
 }

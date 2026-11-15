@@ -1,0 +1,13 @@
+# A NAS share with a password, handed over by Music in the TV session
+# (ADR-038): when it leaves a request in the drop folder, origaitv-share.service
+# keeps the password and mounts the share as root.
+
+[Unit]
+Description=origaiTV NAS share hand-over
+
+[Path]
+DirectoryNotEmpty=/var/lib/origaitv/share-drop
+Unit=origaitv-share.service
+
+[Install]
+WantedBy=paths.target

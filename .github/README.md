@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="../branding/logo.svg">
-    <img alt="AgenTV" src="../branding/logo-light.svg" width="520">
+    <img alt="origaiTV" src="../branding/logo-light.svg" width="520">
   </picture>
 </p>
 
@@ -15,12 +15,12 @@
 </p>
 
 <p align="center">
-  <img alt="AgenTV's home in the Glass look: your apps and a row of games over a big picture of the film you were watching" src="../branding/readme/home-glass.jpg">
+  <img alt="origaiTV's home in the Glass look: your apps and a row of games over a big picture of the film you were watching" src="../branding/readme/home-glass.jpg">
 </p>
 
 ---
 
-AgenTV turns a small PC into the box under your TV.
+origaiTV turns a small PC into the box under your TV.
 
 **It's as easy as the TV box you already have.** Your phone is the remote. Home has what you were watching. Everyone in the house gets a profile, children too.
 
@@ -28,7 +28,7 @@ AgenTV turns a small PC into the box under your TV.
 
 **It's good for games.** Steam runs full screen for the games you own. Or ask for a small game of your own, and it's on home when it's done.
 
-It works with any TV that has HDMI, because AgenTV runs on the box and not on the TV. A projector or an old monitor works too.
+It works with any TV that has HDMI, because origaiTV runs on the box and not on the TV. A projector or an old monitor works too.
 
 I built it because I wanted a TV I could just ask for things, and one I could change without waiting for anyone.
 
@@ -83,7 +83,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 ### Your shows, films, photos and music
 
-- **Six streaming apps,** three now and three coming soon. You sign in from your phone, on the service's own page. [The list is in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
+- **Six streaming apps,** three now and three coming soon. You sign in from your phone, on the service's own page. [The list is in origaitv-apps](https://github.com/radomird/origaitv-apps#what-you-get).
 - **Your own servers.** Jellyfin, Plex and Immich show up in a list, found on your network, with no address to type. So do shared folders on a network drive.
 - **Music** from your own files: on the box, a USB drive or a network folder.
 - **New this week** on the apps you have, and whether your show has a new episode yet. Pick a title and its app opens on that title's own page. It needs a key from your own TMDB account.
@@ -93,7 +93,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 A few things I'd want to know first:
 
-- **Streaming won't be 4K.** The TV's own screens are, on a 4K TV. But the streaming apps play in a browser on Linux, and the services hold that to somewhere between SD and 1080p, with no HDR. If an app only plays in SD, [its entry in agentv-apps](https://github.com/radomird/agentv-apps#what-you-get) says so.
+- **Streaming won't be 4K.** The TV's own screens are, on a 4K TV. But the streaming apps play in a browser on Linux, and the services hold that to somewhere between SD and 1080p, with no HDR. If an app only plays in SD, [its entry in origaitv-apps](https://github.com/radomird/origaitv-apps#what-you-get) says so.
 - **Asking and making need an AI you already pay for.** Sign in with your Claude, ChatGPT or Grok plan during setup, or later in _Settings > AI_. Or add an API key: Claude, ChatGPT, Gemini, Grok and Muse all take one. It works for both as soon as it's connected. Everything else works without an AI.
 - **It has no voice of its own.** Answers show on the TV. If you add an API key for an AI that has a voice (ChatGPT, Gemini or Grok), it says them too.
 - **I've tested it on one box,** mine. It should run on other x86_64 PCs, and I'd love to hear how it goes on yours.
@@ -108,7 +108,7 @@ You'll need:
 - your phone
 - a keyboard, just long enough to tell the box to start from the stick
 
-1. Download the ISO from the newest release on [agentv-iso's releases page](https://github.com/radomird/agentv-iso/releases). Until 1.0 is out, that's a release candidate. Its notes have the download link. The file is named after its version, like `agentv-1.0.0-rc2-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [agentv-iso's README](https://github.com/radomird/agentv-iso#getting-the-iso) has the four commands that check it.
+1. Download the ISO from the newest release on [origaitv-iso's releases page](https://github.com/radomird/origaitv-iso/releases). Until 1.0 is out, that's a release candidate. Its notes have the download link. The file is named after its version, like `origaitv-1.0.0-rc2-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [origaitv-iso's README](https://github.com/radomird/origaitv-iso#getting-the-iso) has the four commands that check it.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux.
 3. Start the box from the stick. On my NUC that's F10 as it powers on. Omarchy needs Secure Boot off, so turn it off in your box's firmware first if it's on. [Omarchy's manual](../manual/02-getting-started.md) has more on that.
 4. The TV shows a code. Scan it with your phone, pick the disk and tap "Erase and install". No phone to hand? Pick the disk with the keyboard and press Enter.
@@ -120,9 +120,9 @@ Want every question Omarchy's own installer asks (your keyboard layout, disk enc
 After that:
 
 - **Updates** are in _Settings > System > Updates_. See what's new, install it now or let it install overnight. If an update goes wrong, you can go back to the version before.
-- **On a release candidate,** your TV gets early updates, each new build as it's made. To move it to the releases, run `agentv channel stable` and then `agentv update`.
+- **On a release candidate,** your TV gets early updates, each new build as it's made. To move it to the releases, run `origaitv channel stable` and then `origaitv update`.
 - **The Linux desktop** is Omarchy's, and it's still there. Super+Ctrl+Home takes you to it and back.
-- **Start setup again** with `agentv setup reset`. Your profiles, phones and PIN stay.
+- **Start setup again** with `origaitv setup reset`. Your profiles, phones and PIN stay.
 
 <p align="center">
   <img alt="Setup's first screen on the TV: hi, and a code to scan with your phone" src="../branding/readme/setup-hi.png" width="49%">
@@ -133,9 +133,9 @@ After that:
 
 | Box | Release | How it went |
 | --- | --- | --- |
-| Intel NUC8i5BEH, on a 4K TV | 1.0 release candidates | It's the box I build AgenTV on. Home is in 4K, and setup says "light games". |
+| Intel NUC8i5BEH, on a 4K TV | 1.0 release candidates | It's the box I build origaiTV on. Home is in 4K, and setup says "light games". |
 
-Tried it on another box? [Tell me how it went](https://github.com/radomird/agentv-os/issues/new?template=box-report.yml) and I'll add it here.
+Tried it on another box? [Tell me how it went](https://github.com/radomird/origaitv-os/issues/new?template=box-report.yml) and I'll add it here.
 
 ## Questions
 
@@ -143,36 +143,36 @@ Tried it on another box? [Tell me how it went](https://github.com/radomird/agent
 
 **Do I need an AI subscription?** Only to ask for things and to make apps. The remote, your apps, profiles and everything else work without one.
 
-**Which streaming services does it have?** Six: three now, and three coming soon. The list, and what each app can do, is in [agentv-apps](https://github.com/radomird/agentv-apps#what-you-get).
+**Which streaming services does it have?** Six: three now, and three coming soon. The list, and what each app can do, is in [origaitv-apps](https://github.com/radomird/origaitv-apps#what-you-get).
 
 **Does it run on a Raspberry Pi?** No. It needs an x86_64 PC.
 
 **Can I still use it as a computer?** Yes. Omarchy's whole desktop is there, behind your PIN if you set one.
 
-**How is it different from OmarchyTV?** [OmarchyTV](https://github.com/piermark/omarchytv) by Marco Porro is a home screen in Omarchy's style for the TV you already have, on Android TV, Google TV and LG webOS. AgenTV is a whole OS on a box of its own, so it doesn't depend on what your TV runs. They'd get along fine: OmarchyTV on the TV, AgenTV on one of its HDMI inputs.
+**How is it different from OmarchyTV?** [OmarchyTV](https://github.com/piermark/omarchytv) by Marco Porro is a home screen in Omarchy's style for the TV you already have, on Android TV, Google TV and LG webOS. origaiTV is a whole OS on a box of its own, so it doesn't depend on what your TV runs. They'd get along fine: OmarchyTV on the TV, origaiTV on one of its HDMI inputs.
 
-**Something's broken. Where do I say so?** [Open an issue](https://github.com/radomird/agentv-os/issues/new/choose). For a security problem, please [tell me privately](https://github.com/radomird/agentv-os/security/advisories/new) first.
+**Something's broken. Where do I say so?** [Open an issue](https://github.com/radomird/origaitv-os/issues/new/choose). For a security problem, please [tell me privately](https://github.com/radomird/origaitv-os/security/advisories/new) first.
 
 ## Coming soon
 
 - **An iPhone app:** the remote, the keyboard and a microphone in one. Until then, every phone uses its browser.
 - **A place to share the apps you've made,** and to find other people's.
 
-## Support AgenTV
+## Support origaiTV
 
-AgenTV is free and open source. If it's useful to you and you'd like to help, you can [chip in through Stripe](https://buy.stripe.com/7sY4gzeMjdZs1oo7Wbgfu00) and pick the amount yourself. The checkout will say Indie AI Labs: that's where I build it.
+origaiTV is free and open source. If it's useful to you and you'd like to help, you can [chip in through Stripe](https://buy.stripe.com/7sY4gzeMjdZs1oo7Wbgfu00) and pick the amount yourself. The checkout will say Indie AI Labs: that's where I build it.
 
-A star helps too, and so does [telling me how it ran on your box](https://github.com/radomird/agentv-os/issues/new?template=box-report.yml).
+A star helps too, and so does [telling me how it ran on your box](https://github.com/radomird/origaitv-os/issues/new?template=box-report.yml).
 
 ## How it works
 
 For the curious, and for anyone poking around the code.
 
-AgenTV is Omarchy with a TV session next to its desktop. Your box starts straight into the TV. A small server on the box runs home, the remote, profiles and your apps, and your phone talks to it over your own network.
+origaiTV is Omarchy with a TV session next to its desktop. Your box starts straight into the TV. A small server on the box runs home, the remote, profiles and your apps, and your phone talks to it over your own network.
 
 The part that makes apps is the AI you already use, working on your box through its own coding tool. It knows how to make a few kinds of app (a game, a page, a slideshow of your photos, a theme). Every app follows the same small set of rules, so they all work with the remote, with profiles and with Continue.
 
-Your box only installs packages signed with AgenTV's key. The apps that come with AgenTV install from a list signed with the same key. And before a release reaches you, it installs, boots and updates itself in a VM.
+Your box only installs packages signed with origaiTV's key. The apps that come with origaiTV install from a list signed with the same key. And before a release reaches you, it installs, boots and updates itself in a VM.
 
 Where things are:
 
@@ -185,31 +185,31 @@ Where things are:
 | `companion-web/` | The phone remote |
 | `builder/` | What makes apps |
 | `apps/` | The rules every app follows, and the built-in apps |
-| `install/tv/`, `bin/agentv*` | The installer's TV part, and the `agentv` command |
+| `install/tv/`, `bin/origaitv*` | The installer's TV part, and the `origaitv` command |
 
-`bin/agentv-check` and `test/agentv/unit/run` are the quick checks.
+`bin/origaitv-check` and `test/origaitv/unit/run` are the quick checks.
 
 The repos:
 
 | Repo | What it is |
 | --- | --- |
-| `agentv-os` (this one) | The TV OS itself |
-| [`agentv-iso`](https://github.com/radomird/agentv-iso) | The USB installer |
-| [`agentv-apps`](https://github.com/radomird/agentv-apps) | The apps that come with it |
-| [`agentv-pkgs`](https://github.com/radomird/agentv-pkgs) | The packages your box updates from |
+| `origaitv-os` (this one) | The TV OS itself |
+| [`origaitv-iso`](https://github.com/radomird/origaitv-iso) | The USB installer |
+| [`origaitv-apps`](https://github.com/radomird/origaitv-apps) | The apps that come with it |
+| [`origaitv-pkgs`](https://github.com/radomird/origaitv-pkgs) | The packages your box updates from |
 
 ## Powered by Omarchy
 
-AgenTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4.5 and adds its own TV session next to Omarchy's desktop.
+origaiTV is an Omarchy variant. It installs [Omarchy](https://omarchy.org) 4.5 and adds its own TV session next to Omarchy's desktop.
 
-This repo is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that follows Omarchy's stable releases. I don't edit Omarchy's own files here, with one exception: the security policy and the issue forms are AgenTV's, so a report about AgenTV reaches me and not Omarchy. Everything AgenTV adds lives in the folders above. Omarchy's own README is still here, at [`../README.md`](../README.md).
+This repo is a fork of [omacom/omarchy](https://github.com/omacom/omarchy) that follows Omarchy's stable releases. I don't edit Omarchy's own files here, with one exception: the security policy and the issue forms are origaiTV's, so a report about origaiTV reaches me and not Omarchy. Everything origaiTV adds lives in the folders above. Omarchy's own README is still here, at [`../README.md`](../README.md).
 
-Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. AgenTV's additions are copyright Radomir Drndarski and use the same licence, with two exceptions. The [menu sounds](../launcher/sounds/LICENSE) and the [setup music](../setup/audio/LICENSE) are all rights reserved and ship only with AgenTV. The fonts keep their own [open licence](../launcher/fonts/OFL.txt). AgenTV isn't made or endorsed by the Omarchy project.
+Omarchy is made by David Heinemeier Hansson and its contributors. It's MIT-licensed, and its [licence](../LICENSE) stays as it is. origaiTV's additions are copyright Radomir Drndarski and use the same licence, with two exceptions. The [menu sounds](../launcher/sounds/LICENSE) and the [setup music](../setup/audio/LICENSE) are all rights reserved and ship only with origaiTV. The fonts keep their own [open licence](../launcher/fonts/OFL.txt). origaiTV isn't made or endorsed by the Omarchy project.
 
-The AgenTV wordmark is drawn in the letters of Omarchy's logo, as a thank-you, and its "a" is Omarchy's own.
+The origaiTV wordmark is drawn in the letters of Omarchy's logo, as a thank-you, and its "a" is Omarchy's own.
 
 The films in the pictures are the Blender Foundation's open movies ([studio.blender.org](https://studio.blender.org), CC BY).
 
 ## Whose names these are
 
-Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/agentv-apps#what-you-get). I only name them to say what AgenTV works with. AgenTV isn't made or endorsed by any of them, and the code for the streaming apps is in `agentv-apps`, not in this repo.
+Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/origaitv-apps#what-you-get). I only name them to say what origaiTV works with. origaiTV isn't made or endorsed by any of them, and the code for the streaming apps is in `origaitv-apps`, not in this repo.

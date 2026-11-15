@@ -1,0 +1,21 @@
+# Moves the provider key, or the TMDB key, the daemon was given into
+# /etc/origaitv/env, root's alone (bin/origaitv-key-store). origaitv-key.path
+# starts it. systemd makes /etc/origaitv if it isn't there yet, and lets only
+# this write there. Then the router starts again, with the keys as they are
+# now.
+
+[Unit]
+Description=origaiTV provider key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/origaitv-key-store
+ExecStartPost=-/usr/bin/systemctl try-restart origaitv-router.service
+UMask=0077
+ConfigurationDirectory=origaitv
+ConfigurationDirectoryMode=0755
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/origaitv/daemon
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

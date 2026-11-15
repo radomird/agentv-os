@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# origaitv:summary=Show what this box is: the TV, the GPU, the space and the network
+# origaitv:args=[readings]
+# origaitv:examples=origaitv box | origaitv box readings
+
+# Asks origaiTV's daemon what the box check found, which setup and Settings
+# show. `origaitv box readings` prints everything it read instead, with the
+# TV's serial numbers zeroed, so the readings can be shared or kept as a test
+# fixture.
+
+set -euo pipefail
+
+DAEMON=${ORIGAITV_DAEMON_URL:-http://127.0.0.1:3000}
+
+case "${1:-}" in
+  "") path=/api/box ;;
+  readings) path=/api/box/readings ;;
+  *)
+    echo "Usage: origaitv box [readings]" >&2
+    exit 1
+    ;;
+esac
+
+if ! answer=$(curl -fsS --max-time 30 "$DAEMON$path"); then
+  echo "origaitv box: the daemon didn't answer; is origaitv-daemon running?" >&2
+  exit 1
+fi
+jq . <<<"$answer"

@@ -4,8 +4,8 @@
 // shows.
 //
 // The daemon can't touch NetworkManager. Looking and joining are root's
-// (bin/agentv-hotspot), asked through the same drop setup's hotspot uses,
-// and what root found is in /run/agentv-hotspot. A password goes into that
+// (bin/origaitv-hotspot), asked through the same drop setup's hotspot uses,
+// and what root found is in /run/origaitv-hotspot. A password goes into that
 // drop, which only the daemon and root can read, and nowhere else: not a
 // log, not an answer, not an event.
 
@@ -44,7 +44,7 @@ export interface ListedNetwork extends Found {
 
 export interface NetworkOptions {
   hotspot: Hotspot;
-  run?: string; // what agentv-hotspot writes: /run/agentv-hotspot
+  run?: string; // what origaitv-hotspot writes: /run/origaitv-hotspot
   interfaces?: () => ReturnType<typeof networkInterfaces>;
   // The TV's pages hear when something changed.
   changed?: (state: NetworkState) => void;
@@ -66,7 +66,7 @@ export class TvNetwork {
     this.options = options;
     this.hotspot = options.hotspot;
     this.now = options.now ?? Date.now;
-    this.file = join(options.run ?? "/run/agentv-hotspot", "state.json");
+    this.file = join(options.run ?? "/run/origaitv-hotspot", "state.json");
     // Root's news, as it's written. The file is in /run, where it comes and
     // goes, so it's looked at, not watched for events.
     if (options.changed) watchFile(this.file, { interval: 1000, persistent: false }, () => this.tell());

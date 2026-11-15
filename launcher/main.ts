@@ -1,4 +1,4 @@
-// AgenTV's launcher, the home screen PWA (ADR-012, ADR-014, ADR-015): it draws
+// origaiTV's launcher, the home screen PWA (ADR-012, ADR-014, ADR-015): it draws
 // what the daemon keeps, in the Terminal look and the Omarchy theme's colours,
 // and takes the same actions from every input. Pages: home, apps, an app's
 // details and settings. Forward slides in, back slides out, and each plays
@@ -334,7 +334,7 @@ function checkPin(hold: boolean, got?: (grant: string) => void): (pin: string) =
 }
 
 // The launcher's own adult actions share a grant through a visit to
-// Settings. agentv-pin-check's ask (one) gets a grant for its action alone,
+// Settings. origaitv-pin-check's ask (one) gets a grant for its action alone,
 // and always asks.
 async function grantFor(what: string, options: { idleMs?: number; one?: boolean } = {}): Promise<string | null> {
   if (!ctx.state.pin?.set) return "";
@@ -374,7 +374,7 @@ function setLock(locked: boolean): void {
   }
 }
 
-// What agentv-pin-check asks on the TV, by action.
+// What origaitv-pin-check asks on the TV, by action.
 const ACTIONS: Record<string, string> = {
   desktop: "Omarchy's desktop",
   power: "restarting or shutting down",
@@ -608,7 +608,7 @@ function checkAfterUpdate(): void {
   const went = ctx.updates.wentBack;
   if (went && ctx.updates.seen?.wentBack !== went.at && route === "home") {
     ctx.updates.seen = { kept: null, ...ctx.updates.seen, wentBack: went.at };
-    ctx.toast(`Back on AgenTV ${shown(went.to.agentv)}. The update is still in Settings.`, "ok");
+    ctx.toast(`Back on origaiTV ${shown(went.to.origaitv)}. The update is still in Settings.`, "ok");
     void daemon.seen({ wentBack: went.at }).catch(() => {});
   }
 }
@@ -627,7 +627,7 @@ function toastRelease(): void {
   if (history[history.length - 1] !== "home" || ctx.state.viewer.role !== "adult") return;
   toastedHere = version;
   ctx.updates.toasted = version;
-  ctx.toast(`AgenTV ${version} is ready, in Settings`, "ok");
+  ctx.toast(`origaiTV ${version} is ready, in Settings`, "ok");
   void daemon.toasted(version).catch(() => {});
 }
 
@@ -987,26 +987,26 @@ async function start(): Promise<void> {
   // The screen daemon calls these: Home when the home screen is already in
   // front, and the apps open behind it whenever that changes.
   const w = window as unknown as {
-    agentvHome: () => void;
-    agentvRunning: (json: string) => void;
-    agentvAmbient: (on: boolean) => void;
-    agentvFront: (app: boolean) => void;
-    agentvTv: (state: "on" | "off") => void;
-    agentvPage: (id: string) => void;
-    agentvGame: () => string | null;
-    agentvPagesClose: () => string[];
-    agentvLauncher: object;
+    origaitvHome: () => void;
+    origaitvRunning: (json: string) => void;
+    origaitvAmbient: (on: boolean) => void;
+    origaitvFront: (app: boolean) => void;
+    origaitvTv: (state: "on" | "off") => void;
+    origaitvPage: (id: string) => void;
+    origaitvGame: () => string | null;
+    origaitvPagesClose: () => string[];
+    origaitvLauncher: object;
   };
-  w.agentvHome = () => act("home");
-  w.agentvAmbient = (on) => setAmbient(on);
+  w.origaitvHome = () => act("home");
+  w.origaitvAmbient = (on) => setAmbient(on);
   // An app came in front of home, or home is in front again.
   // Settings, controllers reads the mark: it stops looking under an app.
-  w.agentvFront = (app) => {
+  w.origaitvFront = (app) => {
     document.documentElement.toggleAttribute("data-behind-app", app);
     backdrop.setFront(!app);
   };
   // The TV went off or came on again (ADR-072).
-  w.agentvTv = (state) => {
+  w.origaitvTv = (state) => {
     tvOn = state !== "off";
     setWatching(!ambient && tvOn);
     backdrop.setTv(tvOn);
@@ -1014,26 +1014,26 @@ async function start(): Promise<void> {
   // A page app opened from elsewhere, such as Apps or the phone, through
   // the screen daemon, which put home in front first. One installed a moment
   // ago may not be in home's list yet, so home reads it again first.
-  w.agentvPage = (id) => {
+  w.origaitvPage = (id) => {
     if (ctx.state.apps.some((app) => app.id === id)) openPage(ctx, id);
     else void refresh().then(() => openPage(ctx, id));
   };
   // The game made on this TV that's in front, if one is: the TV going off
   // leaves it there (ADR-084).
-  w.agentvGame = () => gameInFront(ctx);
+  w.origaitvGame = () => gameInFront(ctx);
   // The TV has been off for a while: the apps that are pages on home close
   // too, all but a game.
-  w.agentvPagesClose = () => closePagesButGames(ctx);
-  w.agentvRunning = (json) => setRunning(JSON.parse(json));
+  w.origaitvPagesClose = () => closePagesButGames(ctx);
+  w.origaitvRunning = (json) => setRunning(JSON.parse(json));
   void screen.running().then(setRunning);
-  // For the UI checks and agentv selftest: the sounds that played, the
+  // For the UI checks and origaitv selftest: the sounds that played, the
   // focus, and a page to go to.
-  w.agentvLauncher = {
+  w.origaitvLauncher = {
     sounds,
     focus,
     backdrop,
     go: (route: string) => ctx.go(route),
-    // agentv-pin-check, when there's no terminal to type the PIN in, as for
+    // origaitv-pin-check, when there's no terminal to type the PIN in, as for
     // Super+Ctrl+Home: the pad, which gives up after 2 minutes with no key.
     askPin: async (action: string) => ({ grant: await grantFor(ACTIONS[action] ?? action, { idleMs: 120_000, one: true }) }),
   };

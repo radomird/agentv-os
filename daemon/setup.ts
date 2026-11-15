@@ -2,7 +2,7 @@
 // which step the TV is on and what the household chose, kept in setup.json
 // in the daemon's own state, so setup picks up at the same step after a
 // restart, an update or a reboot (ADR-025, S5.6). The TV's setup page moves
-// it on, a step at a time; `agentv setup skip` marks it done, and `agentv
+// it on, a step at a time; `origaitv setup skip` marks it done, and `origaitv
 // setup reset` starts it again from the welcome screen.
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -98,7 +98,7 @@ export interface Ready {
   // doesn't count.
   asked: string | null;
   update: UpdateFirst | null;
-  // The AgenTV versions on either side of the update.
+  // The origaiTV versions on either side of the update.
   from: string | null;
   to: string | null;
 }
@@ -248,7 +248,7 @@ export class Setup {
     return state;
   }
 
-  // Done, as at the end of setup or with agentv setup skip, or not done,
+  // Done, as at the end of setup or with origaitv setup skip, or not done,
   // which starts it again from the welcome screen.
   async mark(done: boolean): Promise<SetupState> {
     if (!done) return this.save(fresh());

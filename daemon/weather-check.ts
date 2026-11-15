@@ -1,7 +1,7 @@
-// The weather tile against MET Norway, live, for `agentv selftest S3.8` and
+// The weather tile against MET Norway, live, for `origaitv selftest S3.8` and
 // `S3.9` on the box: the tiles the daemon has for each size, next to what
 // MET's forecast says now for the same place, read with the weather app's
-// own code (apps/builtin/agentv.weather/met.ts). Prints lines that start
+// own code (apps/builtin/origaitv.weather/met.ts). Prints lines that start
 // with pass, fail or manual and the check's id.
 //
 // The tiles are drawn again for the check, but the weather app draws them
@@ -20,18 +20,18 @@
 // the day, so a degree either way still matches.
 //
 // Usage: node weather-check.ts S3.8|S3.9
-// AGENTV_HOME_URL is the daemon (http://127.0.0.1:3000/), AGENTV_MET_URL
-// stands in for MET's address in tests, and AGENTV_MET_AGAIN_MS and
-// AGENTV_MET_FOR_MS for how often and how long the check asks again.
+// ORIGAITV_HOME_URL is the daemon (http://127.0.0.1:3000/), ORIGAITV_MET_URL
+// stands in for MET's address in tests, and ORIGAITV_MET_AGAIN_MS and
+// ORIGAITV_MET_FOR_MS for how often and how long the check asks again.
 
-import { days, degrees, label, now, steps, type Day, type Step } from "../apps/builtin/agentv.weather/met.ts";
+import { days, degrees, label, now, steps, type Day, type Step } from "../apps/builtin/origaitv.weather/met.ts";
 import { userAgent } from "./identity.ts";
 
-const HOME = process.env.AGENTV_HOME_URL ?? "http://127.0.0.1:3000/";
-const MET = process.env.AGENTV_MET_URL ?? "https://api.met.no/weatherapi/locationforecast/2.0/compact";
-const ROOT = process.env.AGENTV_PATH ?? "/usr/share/agentv";
-const AGAIN_MS = Number(process.env.AGENTV_MET_AGAIN_MS ?? 15_000);
-const FOR_MS = Number(process.env.AGENTV_MET_FOR_MS ?? 120_000);
+const HOME = process.env.ORIGAITV_HOME_URL ?? "http://127.0.0.1:3000/";
+const MET = process.env.ORIGAITV_MET_URL ?? "https://api.met.no/weatherapi/locationforecast/2.0/compact";
+const ROOT = process.env.ORIGAITV_PATH ?? "/usr/share/origaitv";
+const AGAIN_MS = Number(process.env.ORIGAITV_MET_AGAIN_MS ?? 15_000);
+const FOR_MS = Number(process.env.ORIGAITV_MET_FOR_MS ?? 120_000);
 
 interface Entry {
   label?: string;
@@ -61,7 +61,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function tile(size: string): Promise<TileData | null> {
-  return (await json<{ tile: TileData | null }>(new URL(`api/tile/agentv.weather/${size}?fresh=1`, HOME).href)).tile;
+  return (await json<{ tile: TileData | null }>(new URL(`api/tile/origaitv.weather/${size}?fresh=1`, HOME).href)).tile;
 }
 
 function near(shown: string | undefined, expected: string): boolean {
@@ -109,7 +109,7 @@ async function main(id: string): Promise<void> {
   const where = `${place.name} (${place.lat}, ${place.lon})`;
   const ask = async (): Promise<Forecast> => {
     const body = await json<{ properties?: { meta?: { updated_at?: string } } }>(`${MET}?lat=${place.lat}&lon=${place.lon}`, {
-      headers: { "User-Agent": `${userAgent(ROOT)} agentv-selftest` },
+      headers: { "User-Agent": `${userAgent(ROOT)} origaitv-selftest` },
     });
     return { steps: steps(body), updated: body?.properties?.meta?.updated_at };
   };

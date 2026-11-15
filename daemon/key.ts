@@ -1,15 +1,15 @@
 // The provider key (ADR-009, ADR-022, ADR-047, S4.6): an API key for Claude,
 // ChatGPT, Gemini, Grok or Muse, given on the TV or the phone. The daemon
 // can't write /etc, and shouldn't hold the key, so it leaves it in its own
-// private state, where agentv-key.path starts bin/agentv-key-store as root
-// to move it into /etc/agentv/env. It waits for that, and the key never comes back out: the
-// TV only hears which provider has one, from /etc/agentv/key.json.
+// private state, where origaitv-key.path starts bin/origaitv-key-store as root
+// to move it into /etc/origaitv/env. It waits for that, and the key never comes back out: the
+// TV only hears which provider has one, from /etc/origaitv/key.json.
 
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { OFFERS, PROVIDER_LIST } from "./ai.ts";
 
-// What agentv-key-store takes as a key, so the env file reads it as one.
+// What origaitv-key-store takes as a key, so the env file reads it as one.
 const KEY = /^[A-Za-z0-9_.:-]{20,300}$/;
 
 export interface KeyStatus {
@@ -21,7 +21,7 @@ export interface KeyStatus {
 
 export interface KeyOptions {
   state: string; // the daemon's own state: the drop goes in <state>/key-drop
-  status?: string; // /etc/agentv/key.json
+  status?: string; // /etc/origaitv/key.json
   waitMs?: number; // how long the move as root may take
 }
 
@@ -32,7 +32,7 @@ export class ProviderKey {
 
   constructor(options: KeyOptions) {
     this.drop = join(options.state, "key-drop", "key.json");
-    this.statusPath = options.status ?? "/etc/agentv/key.json";
+    this.statusPath = options.status ?? "/etc/origaitv/key.json";
     this.waitMs = options.waitMs ?? 10_000;
   }
 

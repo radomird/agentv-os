@@ -1,6 +1,6 @@
 // TMDB's API with the household's key (stage 8, S8.1, S8.2), on the router's
-// side (daemon/router-serve.ts). The key is TMDB_API_KEY in /etc/agentv/env,
-// which only agentv-router.service reads, so the daemon asks it over
+// side (daemon/router-serve.ts). The key is TMDB_API_KEY in /etc/origaitv/env,
+// which only origaitv-router.service reads, so the daemon asks it over
 // router.sock and never holds the key, as with the provider's.
 //
 // The daemon asks for a path, and only a few read-only paths go through:

@@ -67,7 +67,7 @@ export const ROUTE_SCHEMA = {
 
 // The brief, the same for every sentence and every box, so a provider can
 // cache it. What changes, the box's apps and the sentence, comes after it.
-export const BRIEF = `You are the router of AgenTV, a TV box. Someone said one sentence to the TV, typed by their phone's dictation. Turn it into one of six requests with its slots, or into none. You only read the sentence and answer with JSON. You never act, never chat and never explain.
+export const BRIEF = `You are the router of origaiTV, a TV box. Someone said one sentence to the TV, typed by their phone's dictation. Turn it into one of six requests with its slots, or into none. You only read the sentence and answer with JSON. You never act, never chat and never explain.
 
 The six requests:
 - continue: carry on with something they were watching or listening to, from where they got to. "continue my show", "carry on where I left off", "resume Severance", "keep watching", "next episode please". query is the title when they name one, else null.

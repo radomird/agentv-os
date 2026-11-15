@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# origaitv:summary=origaiTV's command line
+# origaitv:args=<command> [args...]
+# origaitv:examples=origaitv update | origaitv version
+# origaitv:hidden=true
+
+# Routes `origaitv <group> <name> [args]` to bin/origaitv-<group>-<name>, the way
+# bin/omarchy routes to omarchy-*. The longest matching command wins.
+
+set -euo pipefail
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+# metadata <file> <key>: a "# origaitv:<key>=" line from the first 80 lines.
+metadata() {
+  sed -n "1,80s/^# origaitv:$2=//p" "$1" | head -n 1
+}
+
+usage() {
+  local file name
+
+  echo "Usage: origaitv <command> [args]"
+  echo
+  echo "Commands:"
+  for file in "$ORIGAITV_BIN_DIR"/origaitv-*; do
+    [[ -f $file && -x $file ]] || continue
+    [[ $(metadata "$file" hidden) == "true" ]] && continue
+    name=${file##*/origaitv-}
+    printf '  %-20s %s\n' "${name//-/ }" "$(metadata "$file" summary)"
+  done
+}
+
+if (( $# == 0 )); then
+  usage
+  exit 0
+fi
+
+case "$1" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+words=("$@")
+for (( n = $#; n >= 1; n-- )); do
+  candidate="origaitv"
+  for (( i = 0; i < n; i++ )); do
+    # Command words are plain names, so nothing can climb out of bin/.
+    [[ ${words[i]} =~ ^[a-z0-9]+$ ]] || continue 2
+    candidate+="-${words[i]}"
+  done
+  if [[ -f $ORIGAITV_BIN_DIR/$candidate && -x $ORIGAITV_BIN_DIR/$candidate ]]; then
+    exec "$ORIGAITV_BIN_DIR/$candidate" "${words[@]:n}"
+  fi
+done
+
+echo "origaitv: no such command: $*" >&2
+echo >&2
+usage >&2
+exit 1

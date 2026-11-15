@@ -50,13 +50,13 @@
 export const SPATIAL_NAVIGATION = "--enable-spatial-navigation";
 
 // The isolated world REMOTE_PAGE runs in.
-export const REMOTE_WORLD = "agentv-remote";
+export const REMOTE_WORLD = "origaitv-remote";
 
 // The function each frame calls in that world as its focus moves.
-export const FOCUS_BINDING = "agentvFocus";
+export const FOCUS_BINDING = "origaitvFocus";
 
 // What the screen daemon runs in that world when Back was a tap.
-export const BACK_TAP = "window.__agentvBackTap?.() ?? null";
+export const BACK_TAP = "window.__origaitvBackTap?.() ?? null";
 
 // The ring's width and the gap it leaves around what has focus, in pixels.
 const RING = 4;
@@ -82,8 +82,8 @@ const TAP_LATE_MS = 1500;
 export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
   const back = o.back ?? true;
   return `(() => {
-  if (!window.__agentvFocus) {
-    window.__agentvFocus = true;
+  if (!window.__origaitvFocus) {
+    window.__origaitvFocus = true;
     // Focus moving inside one shadow root never reaches the window, so each
     // root the focus has gone into gets the same ear.
     const roots = new WeakSet();
@@ -100,8 +100,8 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     addEventListener("focusin", nudge, true);
     addEventListener("focusout", nudge, true);
   }
-  if (window.top !== window || window.__agentvRemote) return;
-  window.__agentvRemote = true;
+  if (window.top !== window || window.__origaitvRemote) return;
+  window.__origaitvRemote = true;
   const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
   let shown = false;
   let ring = null;
@@ -114,7 +114,7 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     return el;
   };
   const make = () => {
-    ring = document.createElement("agentv-focus");
+    ring = document.createElement("origaitv-focus");
     ring.style.cssText = "all: initial; position: fixed; z-index: 2147483647; pointer-events: none; box-sizing: border-box; display: none; border: ${RING}px solid #fff; border-radius: 8px; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7), inset 0 0 0 2px rgba(0, 0, 0, 0.7);";
   };
   const draw = () => {
@@ -321,7 +321,7 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
   let held = null;
   if (${back}) {
     // The screen daemon's word that Back was a tap (BACK_TAP).
-    window.__agentvBackTap = () => {
+    window.__origaitvBackTap = () => {
       const now = performance.now();
       if (backDown) {
         backDown.tap = true;
