@@ -216,6 +216,40 @@ else
   pass "no em dashes in what origaiTV added"
 fi
 
+# --- The old name stays out -------------------------------------------------
+
+# AgenTV is called origaiTV now. The old name is only where it has to be: the
+# agentv branch, which the release environment and the rulesets are tied to,
+# the signing key's secret, and the line that says what the project used to
+# be called. old-name-allowed lists those, each a perl pattern for
+# "<file>:<line>" that may say it. A file or folder isn't named after it at all.
+policy_lines old-name-allowed >"$WORK/old-allowed"
+# shellcheck disable=SC2016 # the single quotes hold perl, not shell
+found=$(perl -e '
+  open(my $al, "<", shift) or die "cannot read the allowed list: $!\n";
+  my @allowed = map { chomp; qr/$_/ } grep { /\S/ } <$al>;
+  my $failed = 0;
+  while (my $file = <STDIN>) {
+    chomp $file;
+    open(my $fh, "<:raw", $file) or do { warn "cannot read $file: $!\n"; $failed = 1; next };
+    while (my $line = <$fh>) {
+      next unless $line =~ /agentv/i;
+      chomp $line;
+      my $at = "$file:$line";
+      next if grep { $at =~ $_ } @allowed;
+      print "$file:$.: $line\n";
+    }
+    close $fh;
+  }
+  exit $failed;
+' "$WORK/old-allowed" <"$WORK/scanned" || echo "(the scan for the old name failed)")
+named=$(grep -i agentv "$WORK/all-added" || true)
+if [[ -n $found || -n $named ]]; then
+  fail "the old name is only where it has to be" "$(printf '%s\n%s' "$named" "$found" | sed '/^$/d' | cut -c1-200)"
+else
+  pass "the old name is only where it has to be"
+fi
+
 # --- No service automation in a public repo ---------------------------------
 
 # The lists are refused in every file origaiTV added, with one exception. In
