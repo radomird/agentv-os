@@ -392,7 +392,7 @@ test("S7.1 a phone's 'play frozen' hears the apps who's watching can open, and b
   routes = { "play frozen": play("Frozen") };
   const said = await (await phone("/api/phone/say", { sentence: "play frozen" })).json();
   assert.equal(said.ok, true);
-  assert.deepEqual(heard.map((app) => app.id).sort(), ["origaitv.music", "local.kino"], "the router hears of the apps that play things, not Clock or Weather");
+  assert.deepEqual(heard.map((app) => app.id).sort(), ["local.kino", "origaitv.music"], "the router hears of the apps that play things, not Clock or Weather");
   assert.equal(said.said.from, "iphone");
   assert.equal(said.said.outcome.kind, "choose", JSON.stringify(said));
   assert.deepEqual(said.said.outcome.candidates.map((c: { name: string; item: Item }) => [c.name, c.item.kind]), [["Kino", "film"], ["Music", "album"]]);

@@ -76,7 +76,7 @@ after="$work/after"
 while IFS=' ' read -r time subject; do
   name=$(branch "$subject")
   [[ -n $name ]] && printf '%s %s\n' "$name" "$time" >>"$after"
-done < <("${os[@]}" log --first-parent --format='%ct %s' "$built..origaitv")
+done < <("${os[@]}" log --first-parent --format='%ct %s' "$built..agentv")
 
 # When origaitv-os merged a branch after the package, or nothing.
 merged_at() {

@@ -96,7 +96,7 @@ jobs:
           PKGS: ${{ github.repository_owner }}/origaitv-pkgs
           CHECKS: ${{ inputs.checks }}
         run: |
-          next=${CHECKS:-origaitv}
+          next=${CHECKS:-agentv}
           newest() {
             gh release view "$1" -R "$PKGS" --json assets --jq '.assets[].name' 2>/dev/null |
               sed -nE 's/^origaitv-([0-9][^-]*)-[0-9]+-any\.pkg\.tar\.zst$/\1/p' | sort -V | tail -n 1

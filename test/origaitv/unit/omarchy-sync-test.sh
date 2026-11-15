@@ -71,7 +71,7 @@ pass "S0.6 the newest stable tag is picked, never a release candidate"
   [[ $(cat .github/omarchy-base) == "v1.0.1" ]] || fail "it moves the base"
   git merge-base --is-ancestor v1.0.1 HEAD || fail "it merges the tag"
   [[ -f ours.txt ]] || fail "origaiTV's files stay"
-  (( $(git rev-list --count --merges origin/origaitv..HEAD) == 1 )) || fail "it merges, never rebases"
+  (( $(git rev-list --count --merges origin/agentv..HEAD) == 1 )) || fail "it merges, never rebases"
   [[ -z $(git config --local user.name || true) ]] || fail "a dry run leaves the repo's git identity alone"
   [[ $(git log -1 --format=%cn) == "github-actions[bot]" ]] || fail "the sync commits as the bot"
 )

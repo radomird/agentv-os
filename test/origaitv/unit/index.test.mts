@@ -128,7 +128,7 @@ test("S2.1 a sample app installs from a signed test index", async () => {
   assert.ok(!existsSync(join(dir, "origaitv.sample", "fixtures")), "its fixtures stay out, since they're for its tests");
   const record = await readInstalled(dir);
   assert.equal(record["origaitv.sample"].commit, first);
-  assert.deepEqual(inside(dir).sort(), ["origaitv.sample", "installed.json"]);
+  assert.deepEqual(inside(dir).sort(), ["installed.json", "origaitv.sample"]);
 });
 
 test("S2.1 a tampered index is refused, and nothing is installed", async () => {
@@ -196,7 +196,7 @@ test("installing a newer version replaces the old one", async () => {
   const manifest = JSON.parse(readFileSync(join(dir, "origaitv.sample", "manifest.json"), "utf8"));
   assert.equal(manifest.version, "1.0.1");
   assert.equal((await readInstalled(dir))["origaitv.sample"].commit, second);
-  assert.deepEqual(inside(dir).sort(), ["origaitv.sample", "installed.json"]);
+  assert.deepEqual(inside(dir).sort(), ["installed.json", "origaitv.sample"]);
 });
 
 test("an app can be removed", async () => {
@@ -385,7 +385,7 @@ test("ADR-039 a local app sits beside the index's apps without touching them", a
   await installFromIndex("origaitv.sample", index([sample()]), dir, keyring);
   await installLocal(built(), dir, yes);
   const record = await readInstalled(dir);
-  assert.deepEqual(Object.keys(record).sort(), ["origaitv.sample", "local.sample"]);
+  assert.deepEqual(Object.keys(record).sort(), ["local.sample", "origaitv.sample"]);
   assert.equal(record["origaitv.sample"].tier, "official");
   assert.equal(record["local.sample"].tier, "local");
 });

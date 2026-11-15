@@ -249,7 +249,7 @@ jobs:
           }
           all=true
           if [[ $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-            ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-origaitv}"; then
+            ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-agentv}"; then
             all=false
           fi
           echo "merged=$all" >>"$GITHUB_OUTPUT"
@@ -368,7 +368,7 @@ jobs:
           }
           if [[ $RELEASE_KEY == "true" ]]; then
             if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-origaitv}"; then
+              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-agentv}"; then
               echo "::error::origaiTV's own key signs only on agentv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at agentv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
               exit 1
             fi
@@ -827,7 +827,7 @@ jobs:
           }
           if [[ $RELEASE_KEY == "true" ]]; then
             if [[ $PACKAGES == "build" || $PKGS_REF != "main" || $GITHUB_REF != "refs/heads/agentv" ]] ||
-              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-origaitv}"; then
+              ! merged origaitv-os "$OS_REF" || ! merged origaitv-iso "$ISO_REF" || ! merged origaitv-iso "${UPDATE_CHECKS:-agentv}"; then
               echo "::error::origaiTV's own key signs only on agentv, with packages from a channel, origaitv-pkgs' main, and origaitv-os and origaitv-iso at agentv or a whole commit origaitv has. A tag isn't taken by its name: give the commit it's on. This run gets a throwaway key when release-key is off."
               exit 1
             fi

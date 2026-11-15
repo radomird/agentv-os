@@ -120,11 +120,11 @@ cat >"$SCRATCH/bin/gh" <<GH
 #!/bin/bash
 echo "\$*" >>"$SCRATCH/gh.calls"
 case "\$*" in
-  "api repos/owner/origaitv-iso/compare/$on...origaitv --jq .status") echo ahead ;;
-  "api repos/owner/origaitv-iso/compare/$ahead...origaitv --jq .status") echo behind ;;
-  "api repos/owner/origaitv-os/compare/$os_on...origaitv --jq .status") echo identical ;;
+  "api repos/owner/origaitv-iso/compare/$on...agentv --jq .status") echo ahead ;;
+  "api repos/owner/origaitv-iso/compare/$ahead...agentv --jq .status") echo behind ;;
+  "api repos/owner/origaitv-os/compare/$os_on...agentv --jq .status") echo identical ;;
   "api repos/owner/origaitv-"*"/git/ref/tags/"*) echo "commit $on" ;;
-  "api repos/owner/origaitv-"*"/compare/"*"...origaitv --jq .status") echo behind ;;
+  "api repos/owner/origaitv-"*"/compare/"*"...agentv --jq .status") echo behind ;;
   *) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 GH

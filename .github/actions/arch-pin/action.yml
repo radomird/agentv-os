@@ -15,7 +15,10 @@ runs:
     - name: Arch's container, as origaitv-iso's agentv pins it
       shell: bash
       run: |
-        ci=$(gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/origaitv-iso/contents/test/origaitv/image/ci?ref=agentv") ||
+        # Until origaitv-iso's rename is on agentv, the file is still under
+        # the old name there.
+        ci=$(gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/origaitv-iso/contents/test/origaitv/image/ci?ref=agentv" ||
+          gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/origaitv-iso/contents/test/agentv/image/ci?ref=agentv") ||
           { echo "::error::Couldn't read origaitv-iso's test/origaitv/image/ci at agentv, to see which Arch container it pins"; exit 1; }
         pin=$(sed -nE 's/^ARCH_PIN=([^[:space:]]*).*/\1/p' <<<"$ci" | head -n 1)
         if [[ -z $pin ]]; then
