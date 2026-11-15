@@ -85,6 +85,23 @@ function cell(x: number, y: number): { x: number; y: number } {
   return { x: 32 + x * (w + 16) + w / 2, y: 32 + y * (h + 16) + h / 2 };
 }
 
+// Where a tile is in the saved layout once it's there: a drop is saved
+// with a request of its own, which a busy machine can take a while over.
+async function placedAt(id: string, want: string): Promise<string | undefined> {
+  let now = (await layout())[id];
+  for (let waited = 0; now !== want && waited < 5_000; waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    now = (await layout())[id];
+  }
+  return now;
+}
+
+// Once nothing on the page is still moving, as a dropped tile slides into
+// its cell.
+async function still(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running"), undefined, { timeout: 5_000 });
+}
+
 async function played(page: Page): Promise<string[]> {
   return page.evaluate(() =>
     (window as unknown as { origaitvLauncher: { sounds: { log: { sound: string }[] } } }).origaitvLauncher.sounds.log.map((entry) => entry.sound),
@@ -101,9 +118,9 @@ test("S2.4 a tile dragged with the mouse lands where it was dropped", async () =
   await page.mouse.move(to.x, to.y, { steps: 12 });
   assert.equal(await page.locator(".drop.on").innerText(), "moved here");
   await page.mouse.up();
-  await page.waitForTimeout(300);
-  assert.equal((await layout())["origaitv.games"], "s@3,2");
+  assert.equal(await placedAt("origaitv.games", "s@3,2"), "s@3,2");
   // It's on the screen where it was dropped, too.
+  await still(page);
   const landed = await tile(page, "origaitv.games").boundingBox();
   assert.ok(landed && Math.abs(landed.x + landed.width / 2 - to.x) < 4 && Math.abs(landed.y + landed.height / 2 - to.y) < 4);
   // Dropped on another tile, the two swap.
@@ -114,9 +131,8 @@ test("S2.4 a tile dragged with the mouse lands where it was dropped", async () =
   const sample = cell(0, 0);
   await page.mouse.move(sample.x, sample.y, { steps: 12 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  assert.equal(await placedAt("someone.radio", "s@0,0"), "s@0,0");
   const after = await layout();
-  assert.equal(after["someone.radio"], "s@0,0");
   assert.equal(after["origaitv.sample"], "s@2,0");
   await page.close();
 });
@@ -134,8 +150,8 @@ test("S2.4 on a 720p TV, a dragged tile lands in the cell it was dropped on too"
   const to = cell(2, 2);
   await page.mouse.move((to.x * 2) / 3, (to.y * 2) / 3, { steps: 12 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
-  assert.equal((await layout())["origaitv.games"], "s@2,2");
+  assert.equal(await placedAt("origaitv.games", "s@2,2"), "s@2,2");
+  await still(page);
   const landed = await tile(page, "origaitv.games").boundingBox();
   assert.ok(landed && Math.abs(landed.x + landed.width / 2 - (to.x * 2) / 3) < 4 && Math.abs(landed.y + landed.height / 2 - (to.y * 2) / 3) < 4);
   await page.close();

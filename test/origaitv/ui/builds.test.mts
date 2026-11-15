@@ -157,6 +157,42 @@ test("a build shows its steps on its page, its tile in Apps and on home, and hom
   await page.close();
 });
 
+// Word of a build's next step can come while the launcher is still asking
+// about the one before. The older answer can land last, and home mustn't go
+// back to it: nothing else would put it right until the build moved again.
+test("home keeps a build's newest step when an older answer about the builds lands after a newer one", async () => {
+  const listed = (await send("GET", "/api/builds")).builds[0];
+  const steps = (running: number) => ({ phase: "build", state: "running", step: "packages", steps: STEPS(running), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
+  status(listed.id, listed.build, steps(1));
+  const page = await tv();
+  try {
+    await page.waitForFunction(() => /1 of 4 steps/.test(document.querySelector<HTMLElement>(".grid .build-tile")?.innerText ?? ""));
+    // What the builds were a step ago, which the next ask is answered with,
+    // but only once a newer ask has been answered.
+    const before = await (await fetch(`${url}/api/builds`)).text();
+    let held = 0;
+    let release = () => {};
+    const late = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/api/builds", async (route) => {
+      if (held++) return route.continue();
+      await late;
+      await route.fulfill({ status: 200, contentType: "application/json", body: before });
+    });
+    status(listed.id, listed.build, steps(2));
+    for (let waited = 0; !held && waited < 10_000; waited += 100) await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.ok(held, "home asked about the builds");
+    status(listed.id, listed.build, steps(3));
+    await page.waitForFunction(() => /3 of 4 steps/.test(document.querySelector<HTMLElement>(".grid .build-tile")?.innerText ?? ""), undefined, { timeout: 10_000 });
+    // The older answer lands now.
+    release();
+    await page.waitForTimeout(800);
+    assert.match(await page.locator(".grid .build-tile").innerText(), /3 of 4 steps/);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.close();
+  }
+});
+
 test("a build that failed says why, and is tried again or put away", async () => {
   const listed = (await send("GET", "/api/builds")).builds[0];
   status(listed.id, listed.build, { phase: "build", state: "failed", reason: "its tests didn't pass", steps: STEPS(3).map((s) => (s.state === "running" ? { ...s, state: "failed" } : s)), understood: { name: "Blocks", recipe: "game", says: "A falling-block puzzle" } });
