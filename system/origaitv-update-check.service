@@ -1,0 +1,12 @@
+# Looks for a new origaiTV, Omarchy and system packages for Settings → Updates
+# (ADR-025): bin/origaitv-update-check. Its timer runs it once a day and a few
+# minutes after boot, and Check now on the TV starts it too. It only looks.
+
+[Unit]
+Description=origaiTV update check
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/origaitv-update-check

@@ -19,8 +19,8 @@ import { NEEDS_PIN } from "./api.ts";
 import { heading } from "./frame.ts";
 import type { Ctx, View } from "./main.ts";
 
-const MUSIC = "agentv.music";
-const NAMES: Record<string, string> = { "agentv.jellyfin": "Jellyfin", "agentv.plex": "Plex", "agentv.immich": "Immich", [MUSIC]: "Music" };
+const MUSIC = "origaitv.music";
+const NAMES: Record<string, string> = { "origaitv.jellyfin": "Jellyfin", "origaitv.plex": "Plex", "origaitv.immich": "Immich", [MUSIC]: "Music" };
 
 // The apps still to go, the one on screen first.
 let queue: string[] = [];
@@ -50,7 +50,7 @@ async function pickServer(ctx: Ctx, app: string, url: string, called: string): P
     .guarded(`setting up ${name}`, async (grant) => {
       const response = await fetch("/api/discover/pick", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+        headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
         body: JSON.stringify({ app, url }),
       }).catch(() => null);
       const answer = (await response?.json().catch(() => null)) as Answer;
@@ -125,7 +125,7 @@ function appPage(ctx: Ctx, app: string): View {
   const el = h(
     "div",
     { class: "setup-page" },
-    h("div", {}, ...heading(`agentv app setup ${name.toLowerCase()}`, `Pick your ${name}`, ctx.reduced())),
+    h("div", {}, ...heading(`origaitv app setup ${name.toLowerCase()}`, `Pick your ${name}`, ctx.reduced())),
     h("div", { class: "found" }, h("span", { class: "field-label" }, "Found on your network"), list.el, typed, form, later),
   );
   return { el, first: typed };
@@ -178,7 +178,7 @@ function musicPage(ctx: Ctx): View {
     });
     const list = foundList({ kinds: NAS, machines: true, focus: ctx.focus, typed, pick: (one) => folders(one.host) });
     el.replaceChildren(
-      h("div", {}, ...heading("agentv music sources", "Pick your drive", ctx.reduced())),
+      h("div", {}, ...heading("origaitv music sources", "Pick your drive", ctx.reduced())),
       h("div", { class: "found" }, h("span", { class: "field-label" }, "Found on your network"), list.el, typed, form, later),
     );
     return typed;
@@ -189,7 +189,7 @@ function musicPage(ctx: Ctx): View {
     nasHost = host;
     const list: ReturnType<typeof shareList> = shareList({ host, focus: ctx.focus, pick: (share: ShareFound, password?: string) => void add(share.uri, share.name, password, list) });
     el.replaceChildren(
-      h("div", {}, ...heading(`agentv music sources ${host}`, host, ctx.reduced())),
+      h("div", {}, ...heading(`origaitv music sources ${host}`, host, ctx.reduced())),
       h("div", { class: "found" }, h("span", { class: "field-label" }, "Pick the folder with your music"), list.el),
     );
     ctx.sounds.play("forward");

@@ -9,7 +9,7 @@ test("it reaches the API it declared, and nothing else", async (t) => {
 
 test("it shows something on its tile", async (t) => {
   await t.wait(3000);
-  t.ok(t.tile() !== null, "it sets its tile with agentv.tile.set");
+  t.ok(t.tile() !== null, "it sets its tile with origaitv.tile.set");
 });
 
 test("Back leaves within a few presses", async (t) => {

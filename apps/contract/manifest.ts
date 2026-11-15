@@ -1,5 +1,5 @@
 // The manifest every app package carries (ADR-010, ADR-016), and the checks
-// that `agentv app validate`, the installer and the builder run on a package
+// that `origaitv app validate`, the installer and the builder run on a package
 // before anything in it loads. They follow `omarchy plugin validate`:
 // schemaVersion 1, the required fields, safe relative entry points that
 // exist, no symlinks and no reserved id. Then the tv block's own rules, and a
@@ -46,8 +46,8 @@ export type SetupStep = { type: "field"; key: string; label: string } | { type: 
 export interface TvBlock {
   contract: number;
   category: Category;
-  // builtin: one of AgenTV's own apps in apps/builtin/, which come with
-  // AgenTV and which the launcher opens itself (ADR-015, ADR-017).
+  // builtin: one of origaiTV's own apps in apps/builtin/, which come with
+  // origaiTV and which the launcher opens itself (ADR-015, ADR-017).
   // page: an app that is its own page, which the box serves from an origin
   // of its own and shows in a sandboxed frame (contract 2, ADR-043).
   runtime: "web" | "native" | "builtin" | "page";
@@ -83,7 +83,7 @@ export interface Result {
   problems: string[];
 }
 
-const RESERVED = ["agentv", "local", "omarchy"];
+const RESERVED = ["origaitv", "local", "omarchy"];
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
 const NAMESPACE = /^[a-z0-9][a-z0-9-]*$/;
 const VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
@@ -197,16 +197,16 @@ function checkCode(root: string, files: Set<string>, rel: string, problem: (text
 
 function checkId(id: string, author: unknown, tier: Tier, problem: (text: string) => void): void {
   if (!ID.test(id)) {
-    problem(`the id '${id}' isn't valid: lowercase words joined by dots, like agentv.jellyfin`);
+    problem(`the id '${id}' isn't valid: lowercase words joined by dots, like origaitv.jellyfin`);
     return;
   }
   const namespace = id.split(".")[0];
   if (tier === "official") {
-    if (namespace !== "agentv") problem(`an official app's id starts with agentv., not '${id}'`);
+    if (namespace !== "origaitv") problem(`an official app's id starts with origaitv., not '${id}'`);
   } else if (tier === "local") {
     if (namespace !== "local") problem(`an app built on this box has an id that starts with local., not '${id}'`);
-  } else if (namespace === "agentv") {
-    problem(`the id '${id}' uses agentv.*, which is only for AgenTV's own apps`);
+  } else if (namespace === "origaitv") {
+    problem(`the id '${id}' uses origaitv.*, which is only for origaiTV's own apps`);
   } else if (RESERVED.includes(namespace)) {
     problem(`the id '${id}' uses ${namespace}.*, which is reserved`);
   } else if (typeof author === "string" && NAMESPACE.test(author) && namespace !== author) {
@@ -320,9 +320,9 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
     }
     if (tv.homeUrl !== undefined) problem("a native app has no tv.homeUrl");
   } else if (tv.runtime === "builtin") {
-    // Only AgenTV's own apps come built in, and the installer never takes
+    // Only origaiTV's own apps come built in, and the installer never takes
     // one from the index (install.ts).
-    if (tier !== "official") problem("only AgenTV's own built-in apps have tv.runtime builtin");
+    if (tier !== "official") problem("only origaiTV's own built-in apps have tv.runtime builtin");
     if (tv.homeUrl !== undefined || tv.package !== undefined || tv.exec !== undefined) {
       problem("a built-in app has no tv.homeUrl, tv.package or tv.exec");
     }

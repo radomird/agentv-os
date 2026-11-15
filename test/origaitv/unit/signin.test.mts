@@ -1,0 +1,331 @@
+// Signing in on the TV (ADR-032, board 15) and logos on every tile: the
+// screen daemon's sign-in watch (daemon/signin.ts) asking an app whether
+// it's signed in, the daemon keeping what it said for the app's tile, and a
+// site's own icon fetched on the box for an app with none (daemon/site-icon.ts).
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import { join } from "node:path";
+import { after, before, test } from "node:test";
+import type { AppHost, PageBroker, Viewer } from "../../../daemon/apps/loader.ts";
+import type { Daemon } from "../../../daemon/server.ts";
+import { SignInWatch, type SignInDeps } from "../../../daemon/signin.ts";
+import { iconLinks, siteIcon } from "../../../daemon/site-icon.ts";
+import { Home } from "../../../daemon/home.ts";
+import { FIXTURES, makeBox, startBox } from "../ui/box.mts";
+import { HARNESS } from "../harness.mts";
+
+const viewer: Viewer = { id: "radomir", role: "adult" };
+const page = { url: async () => "https://tube.example/", call: async () => null } as PageBroker;
+
+// A stand-in for an app's worker: answers isSignedIn from signedIn(), and
+// signIn.open from open().
+function fakeHost(app: { signedIn: () => boolean | Error; open?: () => void | Error }) {
+  const calls: string[] = [];
+  let stopped = 0;
+  const host = {
+    setPage() {},
+    async call(_viewer: Viewer, path: string) {
+      calls.push(path);
+      const answer = path === "signIn.open" ? (app.open ? app.open() : new Error("the app has no signIn.open")) : app.signedIn();
+      if (answer instanceof Error) throw answer;
+      return answer;
+    },
+    stop() {
+      stopped++;
+    },
+  } as unknown as AppHost;
+  return { host, calls, stopped: () => stopped };
+}
+
+function watch(host: AppHost | null, extra: Partial<SignInDeps> = {}) {
+  const reports: [string, boolean][] = [];
+  const deps: SignInDeps = {
+    host: async () => host,
+    viewer: async () => viewer,
+    report: async (app, signedIn) => void reports.push([app, signedIn]),
+    every: 20,
+    retry: 10,
+    settle: 0,
+    pageWithin: 200,
+    ...extra,
+  };
+  return { watch: new SignInWatch(deps), reports };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("as an app opens, it's asked once whether it's signed in, while its page comes up, and its tile is told", async () => {
+  let ready = false;
+  const app = fakeHost({ signedIn: () => (ready ? false : new Error("the page isn't there yet")) });
+  const { watch: w, reports } = watch(app.host);
+  setTimeout(() => (ready = true), 30);
+  assert.equal(await w.check("origaitv.tube", page), false);
+  assert.deepEqual(reports, [["origaitv.tube", false]]);
+  assert.equal(app.stopped(), 1, "its worker goes after");
+  // An app with no signIn says nothing.
+  assert.equal(await watch(null).watch.check("origaitv.tube", page), null);
+});
+
+test("the sign-in screen has the app show its form, then asks every 2 s until it's signed in, and says so once", async () => {
+  let signedIn = false;
+  let tries = 0;
+  const app = fakeHost({ signedIn: () => signedIn, open: () => (++tries < 3 ? new Error("the page isn't there yet") : undefined) });
+  const { watch: w, reports } = watch(app.host);
+  const done: boolean[] = [];
+  assert.equal(await w.start("origaitv.tube", page, (ok) => done.push(ok)), true);
+  await sleep(120);
+  assert.equal(tries, 3, "signIn.open is tried until the page is up");
+  assert.ok(app.calls.filter((c) => c === "signIn.isSignedIn").length >= 2);
+  assert.deepEqual(reports, [], "not signed in yet isn't news while the screen is up");
+  assert.deepEqual(w.signingIn(), ["origaitv.tube"]);
+  signedIn = true;
+  await sleep(60);
+  assert.deepEqual(done, [true]);
+  assert.deepEqual(reports, [["origaitv.tube", true]]);
+  assert.deepEqual(w.signingIn(), []);
+  assert.equal(app.stopped(), 1);
+});
+
+test("an app without signIn.open stays where it opened; i'm signed in asks now; Home stops it; and it gives up in the end", async () => {
+  let signedIn = false;
+  const app = fakeHost({ signedIn: () => signedIn });
+  const { watch: w } = watch(app.host, { every: 1000 });
+  const done: boolean[] = [];
+  await w.start("origaitv.tube", page, (ok) => done.push(ok));
+  assert.equal(await w.now("origaitv.tube"), false);
+  signedIn = true;
+  assert.equal(await w.now("origaitv.tube"), true);
+  assert.deepEqual(done, [true]);
+  assert.ok(!app.calls.includes("signIn.open") || app.calls.indexOf("signIn.open") === 0);
+  assert.equal(await w.now("origaitv.tube"), null, "nothing is signing in now");
+
+  const stopped = fakeHost({ signedIn: () => false });
+  const second = watch(stopped.host);
+  const ended: boolean[] = [];
+  await second.watch.start("origaitv.tube", page, (ok) => ended.push(ok));
+  second.watch.stop("origaitv.tube");
+  await sleep(60);
+  assert.deepEqual(ended, [], "Home isn't a sign-in, and isn't a giving up either");
+  assert.equal(stopped.stopped(), 1);
+
+  const slow = watch(fakeHost({ signedIn: () => false }).host, { within: 50 });
+  const gave: boolean[] = [];
+  await slow.watch.start("origaitv.tube", page, (ok) => gave.push(ok));
+  await sleep(150);
+  assert.deepEqual(gave, [false]);
+});
+
+// --- Site icons -----------------------------------------------------------------
+
+test("a page's icons, best first: the largest, with an apple-touch-icon that says no size as 180 px", () => {
+  const html = `<html><head>
+    <link rel="icon" href="/favicon-16.png" sizes="16x16">
+    <link rel="stylesheet" href="/site.css">
+    <link href="https://cdn.example/icon-192.png" rel="icon" sizes="192x192" type="image/png">
+    <link rel='apple-touch-icon' href='touch.png'>
+    <link rel="mask-icon" href="/mask.svg">
+    <link rel="icon" href="javascript:alert(1)">
+  </head></html>`;
+  assert.deepEqual(iconLinks(html, "https://tube.example/watch/"), [
+    "https://cdn.example/icon-192.png",
+    "https://tube.example/watch/touch.png",
+    "https://tube.example/favicon-16.png",
+  ]);
+  // A tie goes to the apple-touch-icon, made for a home screen.
+  assert.deepEqual(iconLinks('<link rel="icon" href="/a.png" sizes="180x180"><link rel="apple-touch-icon" href="/b.png">', "https://tube.example/"), ["https://tube.example/b.png", "https://tube.example/a.png"]);
+});
+
+let server: Server;
+let base = "";
+const served: string[] = [];
+const PNG = Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000", "hex");
+// A stand-in site whose page is refused until open is true, as a TV in
+// another region might be, and one that names icons of several sizes.
+let open = false;
+const sized = (size: number) => Buffer.concat([PNG, Buffer.from(`${size}`)]);
+
+before(async () => {
+  server = createServer((request, response) => {
+    served.push(`${request.url} ${request.headers["user-agent"]}`);
+    if (request.url === "/" || request.url === "/web/") {
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      response.end('<link rel="apple-touch-icon" href="/missing.png"><link rel="icon" href="/notes.txt" sizes="128x128"><link rel="icon" href="/logo.png" sizes="64x64">');
+    } else if (request.url === "/logo.png") {
+      response.writeHead(200, { "Content-Type": "image/png" });
+      response.end(PNG);
+    } else if (request.url === "/notes.txt") {
+      response.writeHead(200, { "Content-Type": "text/plain" });
+      response.end("not an image");
+    } else if (request.url === "/plain/") {
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<p>no icons named</p>");
+    } else if (request.url === "/region/") {
+      response.writeHead(open ? 200 : 403, { "Content-Type": "text/html" });
+      response.end(open ? '<link rel="apple-touch-icon" href="/logo.png">' : "not here");
+    } else if (request.url === "/sizes/" || request.url === "/big/") {
+      // The big page's icons are at the top, with 3 MB after them.
+      const head = '<link rel="icon" href="/32.png" sizes="32x32"><link rel="apple-touch-icon" href="/180.png"><link rel="icon" href="/512.png" sizes="512x512">';
+      const body = Buffer.from(request.url === "/big/" ? head + " ".repeat(3 * 1024 * 1024) : head);
+      response.writeHead(200, { "Content-Type": "text/html", "Content-Length": body.length });
+      response.end(body);
+    } else if (/^\/(32|180|512)\.png$/.test(request.url ?? "")) {
+      response.writeHead(200, { "Content-Type": "image/png" });
+      response.end(sized(Number(request.url!.slice(1, -4))));
+    } else if (request.url === "/favicon.ico" && !open && /local\.region$/.test(request.headers["user-agent"] ?? "")) {
+      response.writeHead(403);
+      response.end();
+    } else if (request.url === "/favicon.ico") {
+      response.writeHead(200, { "Content-Type": "application/octet-stream" });
+      response.end(Buffer.from([0, 0, 1, 0]));
+    } else {
+      response.writeHead(404);
+      response.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+});
+
+after(() => server?.close());
+
+test("a site's icon: the best one its page names that's an image, else its favicon.ico, asked for as origaiTV", async () => {
+  const icon = await siteIcon(`${base}/`, { userAgent: "origaiTV/0.1 local.notes" });
+  assert.deepEqual([icon?.type, icon?.body.equals(PNG)], ["image/png", true]);
+  assert.ok(served.includes("/missing.png origaiTV/0.1 local.notes"), "the best first, which isn't there");
+  assert.ok(served.includes("/notes.txt origaiTV/0.1 local.notes"), "then one that isn't an image");
+  const ico = await siteIcon(`${base}/plain/`, { userAgent: "origaiTV/0.1 local.notes" });
+  assert.equal(ico?.type, "image/x-icon");
+  assert.equal(await siteIcon("http://127.0.0.1:1/", { userAgent: "origaiTV" }), null);
+});
+
+test("a site's largest icon wins, even on a page bigger than the part that's read", async () => {
+  for (const path of ["/sizes/", "/big/"]) {
+    const icon = await siteIcon(`${base}${path}`, { userAgent: "origaiTV/0.1 local.notes" });
+    assert.ok(icon?.body.equals(sized(512)), `${path}: ${icon?.body.subarray(PNG.length).toString()}`);
+  }
+});
+
+test("a site's icon that didn't come says why in the log, and is asked for again later", async () => {
+  const { apps, state } = makeBox([
+    {
+      id: "local.region",
+      name: "Region",
+      tier: "local",
+      category: "streaming",
+      edit: (m) => {
+        m.tv.homeUrl = `${base}/region/`;
+        m.tv.origins = [base];
+        m.tv.capabilities = ["launch"];
+        delete m.tv.setup;
+        delete m.tv.icon;
+        delete m.tv.tiles;
+      },
+    },
+  ]);
+  const lines: string[] = [];
+  const changes: string[] = [];
+  const home = new Home({ appsDir: apps, state, userAgent: "origaiTV/0.1", harness: HARNESS, iconRetryMs: 300, log: (line) => lines.push(line), changed: (event) => changes.push(event) });
+  open = false;
+  try {
+    assert.equal((await home.apps()).find((app) => app.id === "local.region")?.icon, undefined);
+    for (let i = 0; i < 50 && !lines.some((line) => line.startsWith("local.region:")); i++) await sleep(20);
+    const said = lines.find((line) => line.startsWith("local.region:")) ?? `nothing logged: ${lines.join("\n")}`;
+    assert.ok(said.includes(`${base}/region/ answered 403`), said);
+    assert.ok(said.includes(`${base}/favicon.ico answered 403`), said);
+    // The site lets the TV in now, and the icon comes without home asking.
+    open = true;
+    for (let i = 0; i < 100 && !changes.includes("apps"); i++) await sleep(20);
+    assert.ok(changes.includes("apps"), lines.join("\n"));
+    assert.equal((await home.apps()).find((app) => app.id === "local.region")?.icon, "/api/apps/local.region/icon");
+  } finally {
+    home.stop();
+  }
+});
+
+// --- The daemon -------------------------------------------------------------------
+
+let daemon: Daemon;
+let url = "";
+let state = "";
+const events: string[] = [];
+const listening = new AbortController();
+
+after(async () => {
+  listening.abort();
+  await daemon?.close();
+});
+
+test("the daemon keeps what each app said, a tile says Sign in until its app is signed in, and home is told", async () => {
+  ({ daemon, url, state } = await startBox(0, [
+    ...FIXTURES,
+    // A web app with a sign-in step that hasn't been asked yet, and no icon
+    // of its own: its site's comes.
+    {
+      id: "local.notes",
+      name: "Notes",
+      tier: "local",
+      category: "streaming",
+      edit: (m) => {
+        m.tv.homeUrl = `${base}/web/`;
+        m.tv.origins = [base];
+        m.tv.setup = [{ type: "signIn" }];
+        m.tv.capabilities = ["launch", "signIn"];
+        delete m.tv.icon;
+        delete m.tv.tiles;
+      },
+    },
+  ]));
+  void fetch(`${url}/api/events`, { signal: listening.signal })
+    .then(async (response) => {
+      const reader = response.body!.getReader();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        for (const match of new TextDecoder().decode(value).matchAll(/^event: (\w+)$/gm)) events.push(match[1]);
+      }
+    })
+    .catch(() => {});
+  await sleep(50);
+  const get = async (path: string) => (await fetch(`${url}${path}`)).json();
+  const post = (id: string, body: unknown) => fetch(`${url}/api/apps/${id}/signed-in`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const signIns = async () => Object.fromEntries((await get("/api/home")).apps.map((app: { id: string; signIn?: string }) => [app.id, app.signIn ?? "-"]));
+
+  assert.deepEqual(await signIns(), { "origaitv.sample": "-", "origaitv.tube": "-", "someone.radio": "-", "local.mytv": "-", "origaitv.games": "-", "local.notes": "needed" });
+  const before = events.filter((event) => event === "apps").length;
+  assert.equal((await post("local.notes", { signedIn: true })).status, 200);
+  assert.equal((await signIns())["local.notes"], "-");
+  assert.equal((await post("origaitv.sample", { signedIn: false })).status, 200);
+  assert.equal((await signIns())["origaitv.sample"], "needed", "signed out since");
+  assert.equal(JSON.parse(readFileSync(join(state, "signins.json"), "utf8"))["origaitv.sample"].signedIn, false);
+  await sleep(50);
+  assert.ok(events.filter((event) => event === "apps").length >= before + 2, "home hears of each change");
+  // Saying the same again changes nothing.
+  assert.equal((await post("origaitv.sample", { signedIn: false })).status, 200);
+  // Only an app here with signIn, and only true or false.
+  assert.equal((await post("origaitv.tube", { signedIn: true })).status, 404);
+  assert.equal((await post("origaitv.nothing", { signedIn: true })).status, 404);
+  assert.equal((await post("local.notes", { signedIn: "yes" })).status, 400);
+  // The screen daemon gets the name for the sign-in bar with the address.
+  assert.deepEqual(await get("/api/apps/local.notes/launch"), { ok: true, runtime: "web", url: `${base}/web/`, name: "Notes" });
+});
+
+test("an app with no icon of its own gets its site's, kept on the box", async () => {
+  const notes = async () => (await (await fetch(`${url}/api/home`)).json()).apps.find((app: { id: string }) => app.id === "local.notes");
+  let found = await notes();
+  for (let i = 0; i < 50 && !found.icon; i++) {
+    await sleep(100);
+    found = await notes();
+  }
+  assert.equal(found.icon, "/api/apps/local.notes/icon");
+  const icon = await fetch(`${url}${found.icon}`);
+  assert.equal(icon.headers.get("content-type"), "image/png");
+  assert.ok(Buffer.from(await icon.arrayBuffer()).equals(PNG));
+  assert.match(icon.headers.get("content-security-policy") ?? "", /sandbox/);
+  assert.equal(JSON.parse(readFileSync(join(state, "icons", "local.notes.json"), "utf8")).type, "image/png");
+  assert.ok(served.some((line) => line.startsWith("/web/ origaiTV")), "asked for as origaiTV");
+  // An app with an icon of its own keeps it.
+  const sample = (await (await fetch(`${url}/api/home`)).json()).apps.find((app: { id: string }) => app.id === "origaitv.sample");
+  assert.equal((await fetch(`${url}${sample.icon}`)).headers.get("content-type"), "image/svg+xml");
+});

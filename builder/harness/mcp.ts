@@ -121,7 +121,7 @@ export function client(input: NodeJS.ReadableStream, output: NodeJS.WritableStre
       waiting.set(id, (message) => (message.error ? reject(new Error(message.error.message)) : resolve(message.result)));
       output.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
-  const ready = request("initialize", { protocolVersion: VERSIONS[0], capabilities: {}, clientInfo: { name: "agentv-stand-in", version: "1" } }).then(() =>
+  const ready = request("initialize", { protocolVersion: VERSIONS[0], capabilities: {}, clientInfo: { name: "origaitv-stand-in", version: "1" } }).then(() =>
     output.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`),
   );
   return {

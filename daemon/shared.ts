@@ -1,5 +1,5 @@
 // Shared to the TV (ADR-050, S5.10): a link, a photo or a video a paired
-// phone sent, each kept in /var/lib/agentv/shared with who sent it, until
+// phone sent, each kept in /var/lib/origaitv/shared with who sent it, until
 // someone removes it from Apps → Shared. The TV asks first, with Open and
 // Not now, and only once nothing's playing: the daemon keeps which ones it
 // hasn't had an answer for.

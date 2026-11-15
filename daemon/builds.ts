@@ -96,10 +96,10 @@ export interface Warning {
 export interface BuildsOptions {
   state: string; // the daemon's own: builds.json and the settings
   drop: string; // where root takes asks from: <state>/build-drop
-  builds?: string; // /var/lib/agentv/build
-  run?: string; // /run/agentv-build: root's answer
-  spend?: string; // /var/lib/agentv/spend/spend.json
-  warnings?: string; // /var/lib/agentv/npm-check/warnings.json
+  builds?: string; // /var/lib/origaitv/build
+  run?: string; // /run/origaitv-build: root's answer
+  spend?: string; // /var/lib/origaitv/spend/spend.json
+  warnings?: string; // /var/lib/origaitv/npm-check/warnings.json
   recipes?: string; // builder/recipes
   now?: () => Date;
 }
@@ -153,10 +153,10 @@ export class Builds {
     this.o = {
       state: options.state,
       drop: options.drop,
-      builds: options.builds ?? "/var/lib/agentv/build",
-      run: options.run ?? "/run/agentv-build",
-      spend: options.spend ?? "/var/lib/agentv/spend/spend.json",
-      warnings: options.warnings ?? "/var/lib/agentv/npm-check/warnings.json",
+      builds: options.builds ?? "/var/lib/origaitv/build",
+      run: options.run ?? "/run/origaitv-build",
+      spend: options.spend ?? "/var/lib/origaitv/spend/spend.json",
+      warnings: options.warnings ?? "/var/lib/origaitv/npm-check/warnings.json",
       recipes: options.recipes ?? fileURLToPath(new URL("../builder/recipes/", import.meta.url)),
       now: options.now ?? (() => new Date()),
     };
@@ -369,7 +369,7 @@ export class Builds {
   // root put in the ticket from its own copy of the app. Never from the
   // build's folder: what a build wrote after approval doesn't count. That's
   // what stage B's look at the signed-in pages keeps to, with the pages
-  // AgenTV's own recipe names for it: where a title is found and played,
+  // origaiTV's own recipe names for it: where a title is found and played,
   // never an account or a payment page.
   stageB(): { id: string; version: string; origins: string[]; looksAt: (address: URL) => boolean } | null {
     let ticket: { id?: unknown; version?: unknown; phase?: unknown; origins?: unknown; recipe?: unknown } | null = null;

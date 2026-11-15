@@ -8,8 +8,8 @@
 // - The box's time zone, when another country is picked: the installer's
 //   zone stays when it's in that country, and otherwise the zone most of
 //   the country's people live in (MAIN, Q167), or the first the tz
-//   database lists for it. Root sets it (bin/agentv-zone-set, through
-//   agentv-zone.path), and Clock, Weather and the TV's own clock follow.
+//   database lists for it. Root sets it (bin/origaitv-zone-set, through
+//   origaitv-zone.path), and Clock, Weather and the TV's own clock follow.
 //
 // The countries are the tz database's own, from iso3166.tab and zone.tab,
 // so nothing here reaches the network.
@@ -73,12 +73,12 @@ export function parseIso3166(text: string): Map<string, string> {
   return names;
 }
 
-// AGENTV_ISO3166_TAB stands in for the system's, in tests.
+// ORIGAITV_ISO3166_TAB stands in for the system's, in tests.
 let names: Promise<Map<string, string>> | null = null;
 let namesPath = "";
 
 function countryNames(): Promise<Map<string, string>> {
-  const path = process.env.AGENTV_ISO3166_TAB ?? "/usr/share/zoneinfo/iso3166.tab";
+  const path = process.env.ORIGAITV_ISO3166_TAB ?? "/usr/share/zoneinfo/iso3166.tab";
   if (!names || namesPath !== path) {
     namesPath = path;
     names = readFile(path, "utf8").then(parseIso3166, () => new Map());

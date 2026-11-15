@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Guards origaitv-restart, which every update runs after origaiTV's migrations:
+# origaiTV's daemon, then the TV session's units under origaitv-tv.target, on the
+# version now installed, unless the box restarts anyway for a new kernel or
+# because Omarchy's update says so. systemctl, sudo and the daemon are
+# stand-ins here; the image layer updates a box for real.
+
+# shellcheck disable=SC2016 # the fakes' bodies are run later, by the script under test
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
+
+cmd="$ROOT/bin/origaitv-restart"
+fakes="$SCRATCH/bin"
+export CALLS="$SCRATCH/calls" STATE="$SCRATCH/state"
+mkdir -p "$fakes" "$STATE" "$SCRATCH/modules/6.17.1-arch1-1" "$SCRATCH/home/.local/state/omarchy"
+
+fake() {
+  printf '#!/bin/bash\n%s\n' "$2" >"$fakes/$1"
+  chmod +x "$fakes/$1"
+}
+fake uname 'echo 6.17.1-arch1-1'
+fake sudo 'echo "sudo $*" >>"$CALLS"; [[ ! -f $STATE/daemon-fails ]] || exit 1; "$@"'
+fake systemctl '
+case "$*" in
+  "is-active --quiet origaitv-daemon.service") [[ ! -f $STATE/no-daemon ]] ;;
+  "--user is-active --quiet origaitv-tv.target") [[ ! -f $STATE/no-tv ]] ;;
+  *) echo "systemctl $* (XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-})" >>"$CALLS" ;;
+esac'
+fake curl '[[ ! -f $STATE/daemon-down ]]'
+fake id 'echo 1000'
+
+run() {
+  : >"$CALLS"
+  env -u XDG_RUNTIME_DIR PATH="$fakes:$PATH" HOME="$SCRATCH/home" ORIGAITV_MODULES_DIR="$SCRATCH/modules" ORIGAITV_RESTART_WAIT=0 \
+    "$BASH" "$cmd" >"$SCRATCH/out" 2>&1
+}
+
+run || fail "a box after an update restarts origaiTV's services" "$(cat "$SCRATCH/out")"
+[[ $(cat "$CALLS") == $'sudo systemctl restart origaitv-daemon.service\nsystemctl restart origaitv-daemon.service (XDG_RUNTIME_DIR=)\nsudo systemctl try-restart origaitv-hotspot-watch.service\nsystemctl try-restart origaitv-hotspot-watch.service (XDG_RUNTIME_DIR=)\nsystemctl --user restart origaitv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)' ]] ||
+  fail "the daemon, the watch for a lost network if it's running, then the TV session's units, in the TV session's systemd" "$(cat "$CALLS")"
+pass "after an update, the daemon restarts, then the TV session's units, in the session's own systemd"
+
+touch "$STATE/no-tv"
+run || fail "with the TV session off, only the daemon" "$(cat "$SCRATCH/out")"
+! grep -q "origaitv-tv.target" "$CALLS" || fail "nothing of a TV session that isn't on" "$(cat "$CALLS")"
+rm "$STATE/no-tv"
+pass "on Omarchy's desktop, only the daemon restarts"
+
+touch "$STATE/daemon-fails"
+! run || fail "a daemon that didn't restart is a failure"
+grep -q "origaiTV's daemon didn't restart" "$SCRATCH/out" || fail "it says the daemon didn't restart" "$(cat "$SCRATCH/out")"
+grep -q "origaitv-tv.target" "$CALLS" || fail "the TV session's units still restart" "$(cat "$CALLS")"
+rm "$STATE/daemon-fails"
+touch "$STATE/daemon-down"
+! run || fail "a daemon that doesn't answer after restarting is a failure"
+grep -q "didn't answer within 0 s" "$SCRATCH/out" || fail "it says the daemon didn't answer" "$(cat "$SCRATCH/out")"
+rm "$STATE/daemon-down"
+pass "a daemon that doesn't restart or answer says so, and the TV's units restart anyway"
+
+# A new kernel, or Omarchy's flag: the box restarts, so nothing does now.
+rm -rf "$SCRATCH/modules/6.17.1-arch1-1"
+run || fail "a new kernel isn't a failure" "$(cat "$SCRATCH/out")"
+[[ ! -s $CALLS ]] || fail "nothing restarts before a new kernel's restart" "$(cat "$CALLS")"
+grep -q "start again with the box" "$SCRATCH/out" || fail "it says the box restarts" "$(cat "$SCRATCH/out")"
+mkdir -p "$SCRATCH/modules/6.17.1-arch1-1"
+touch "$SCRATCH/home/.local/state/omarchy/reboot-required"
+run || fail "Omarchy's flag isn't a failure" "$(cat "$SCRATCH/out")"
+[[ ! -s $CALLS ]] || fail "nothing restarts when Omarchy's update wants the box restarted" "$(cat "$CALLS")"
+pass "with a new kernel, or when Omarchy's update says the box needs restarting, it leaves it to that"
+
+# An update from the TV has no sudo to give the owner, so it runs the two
+# halves apart: the daemon as root, with no sudo, and the TV session's units
+# as the owner (H1).
+rm "$SCRATCH/home/.local/state/omarchy/reboot-required"
+fake id '[[ $1 == "-u" ]] && echo "${FAKE_UID:-1000}"'
+half() {
+  : >"$CALLS"
+  env -u XDG_RUNTIME_DIR PATH="$fakes:$PATH" HOME="$SCRATCH/home" ORIGAITV_MODULES_DIR="$SCRATCH/modules" ORIGAITV_RESTART_WAIT=0 \
+    "$BASH" "$cmd" "$@" >"$SCRATCH/out" 2>&1
+}
+FAKE_UID=0 half --system || fail "root restarts the daemon alone" "$(cat "$SCRATCH/out")"
+[[ $(cat "$CALLS") == $'systemctl restart origaitv-daemon.service (XDG_RUNTIME_DIR=)\nsystemctl try-restart origaitv-hotspot-watch.service (XDG_RUNTIME_DIR=)' ]] || fail "H1 as root, the daemon and the watch restart without sudo, and nothing of the session's" "$(cat "$CALLS")"
+half --session || fail "the owner restarts the TV session's units alone" "$(cat "$SCRATCH/out")"
+[[ $(cat "$CALLS") == "systemctl --user restart origaitv-tv.target (XDG_RUNTIME_DIR=/run/user/1000)" ]] || fail "H1 as the owner, only the TV session's units restart, without sudo" "$(cat "$CALLS")"
+! half --everything || fail "an option it doesn't know is refused"
+pass "H1 the two halves restart apart: the daemon as root without sudo, the TV session's units as the owner"

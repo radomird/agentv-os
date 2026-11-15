@@ -2,19 +2,19 @@
 // services, so the daemon never holds the household's key and the plan's
 // CLI never reaches more than its provider.
 //
-// - api (agentv-router.service, as agentv-router): the provider's API with
+// - api (origaitv-router.service, as origaitv-router): the provider's API with
 //   the key, which only this service reads, as a credential systemd hands
-//   it from /etc/agentv/env. It answers on /run/agentv-router/router.sock.
+//   it from /etc/origaitv/env. It answers on /run/origaitv-router/router.sock.
 //   It's also the plan's CLI's way out, on cli-net.sock: the plans'
 //   providers' own hosts, on 443, and nothing else.
-// - cli (agentv-router-cli.service, as agentv-builder): a plan's CLI once
+// - cli (origaitv-router-cli.service, as origaitv-builder): a plan's CLI once
 //   per sentence, signed in through its own login as the builder (ADR-022,
 //   ADR-040). It has no network of its own, only cli-net.sock, and answers
-//   on /run/agentv-router-cli/route.sock.
+//   on /run/origaitv-router-cli/route.sock.
 //
 // Each takes one sentence a request, POST /route with the provider, the
 // sentence and the apps who's watching can open, and answers with the
-// route. The daemon's group, agentv-router, is the only one that reaches
+// route. The daemon's group, origaitv-router, is the only one that reaches
 // them. Neither logs what was said.
 //
 // The api service also holds the household's TMDB key, TMDB_API_KEY in the
@@ -179,11 +179,11 @@ export function cliNet(log?: (line: string) => void): NetFilter {
   return new NetFilter({ policy: cliPolicy(), log });
 }
 
-// The agentv-router group's id, which the sockets are given.
+// The origaitv-router group's id, which the sockets are given.
 function routerGroup(): number | null {
   for (const line of readFileSync("/etc/group", "utf8").split("\n")) {
     const [name, , gid] = line.split(":");
-    if (name === "agentv-router") return Number(gid);
+    if (name === "origaitv-router") return Number(gid);
   }
   return null;
 }
@@ -205,29 +205,29 @@ async function main(): Promise<void> {
   const mode = process.argv[2];
   const log = (line: string) => console.log(line);
   if (mode === "api") {
-    const run = process.env.RUNTIME_DIRECTORY ?? "/run/agentv-router";
+    const run = process.env.RUNTIME_DIRECTORY ?? "/run/origaitv-router";
     const credentials = process.env.CREDENTIALS_DIRECTORY;
     // The key, from the credential systemd handed this service as it
-    // started. agentv-key.service restarts it after a key is kept or taken
-    // off, so it always has the one in /etc/agentv/env.
+    // started. origaitv-key.service restarts it after a key is kept or taken
+    // off, so it always has the one in /etc/origaitv/env.
     const key = (provider: Provider) => (credentials ? keyFrom(readFileSync(join(credentials, "env"), "utf8"), provider) : null);
     const tmdbKey = () => (credentials ? tmdbKeyFrom(readFileSync(join(credentials, "env"), "utf8")) : null);
     const server = routeServer({
       log,
       // A stand-in for TMDB, for the image checks, which only a drop-in of
       // root's can set, as for the provider's API.
-      tmdb: (path) => askTmdb(tmdbKey(), path, process.env.AGENTV_TMDB_UPSTREAM ? { base: process.env.AGENTV_TMDB_UPSTREAM } : {}),
+      tmdb: (path) => askTmdb(tmdbKey(), path, process.env.ORIGAITV_TMDB_UPSTREAM ? { base: process.env.ORIGAITV_TMDB_UPSTREAM } : {}),
       // A stand-in for the providers' voices, for the image checks, the same way.
       speak: async (provider, words) => {
         const found = key(provider);
         if (!found) return { ok: false, error: "there's no key for this provider on the box" };
-        return speak(provider, found, words, process.env.AGENTV_SPEECH_UPSTREAM ? { base: process.env.AGENTV_SPEECH_UPSTREAM } : {});
+        return speak(provider, found, words, process.env.ORIGAITV_SPEECH_UPSTREAM ? { base: process.env.ORIGAITV_SPEECH_UPSTREAM } : {});
       },
       route: async ({ provider, sentence, apps }) => {
         const found = key(provider);
         // A stand-in for the provider's API, for the image checks, which
         // only a drop-in of root's can set.
-        const base = process.env.AGENTV_ROUTER_UPSTREAM || undefined;
+        const base = process.env.ORIGAITV_ROUTER_UPSTREAM || undefined;
         const backend = apiBackend(provider, { key: found ?? "", ...(base ? { base } : {}) });
         if (!found) {
           return { sentence, route: { ...NONE }, none: "failed", error: "there's no key for this provider on the box", provider, via: "api", model: backend.model, ms: 0 };
@@ -237,11 +237,11 @@ async function main(): Promise<void> {
     });
     await listen(server, join(run, "router.sock"));
     await listen(cliNet(log), join(run, "cli-net.sock"));
-    log(`agentv router: the provider's API with the household's key, on ${run}`);
+    log(`origaitv router: the provider's API with the household's key, on ${run}`);
   } else if (mode === "cli") {
-    const run = process.env.RUNTIME_DIRECTORY ?? "/run/agentv-router-cli";
-    const home = process.env.HOME ?? "/var/lib/agentv/builder";
-    const net = process.env.AGENTV_ROUTER_NET ?? "/run/agentv-router/cli-net.sock";
+    const run = process.env.RUNTIME_DIRECTORY ?? "/run/origaitv-router-cli";
+    const home = process.env.HOME ?? "/var/lib/origaitv/builder";
+    const net = process.env.ORIGAITV_ROUTER_NET ?? "/run/origaitv-router/cli-net.sock";
     await forward(PROXY_PORT, net);
     const proxy = `http://127.0.0.1:${PROXY_PORT}`;
     const server = routeServer({
@@ -254,7 +254,7 @@ async function main(): Promise<void> {
       },
     });
     await listen(server, join(run, "route.sock"));
-    log(`agentv router: a plan's CLI from ${home}, on ${run}`);
+    log(`origaitv router: a plan's CLI from ${home}, on ${run}`);
   } else {
     console.error("Usage: node router-serve.ts api|cli");
     process.exit(2);

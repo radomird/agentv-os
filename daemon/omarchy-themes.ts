@@ -53,7 +53,7 @@ export interface ThemesOptions {
   omarchy: string;
   // The person's home.
   home: string;
-  // AgenTV's daemon.
+  // origaiTV's daemon.
   daemon?: string;
   // Omarchy's colour resolver for one colors.toml, every key it resolves,
   // or null when it couldn't.
@@ -298,7 +298,7 @@ export class OmarchyThemes {
   private async sessionIntro(): Promise<void> {
     const session = this.options.session === undefined ? (process.env.HYPRLAND_INSTANCE_SIGNATURE ?? null) : this.options.session;
     if (!session) return;
-    const marker = join(this.options.home, ".local", "state", "agentv", "background-intro.session");
+    const marker = join(this.options.home, ".local", "state", "origaitv", "background-intro.session");
     if ((await readFile(marker, "utf8").catch(() => "")).trim() === session) return;
     await mkdir(dirname(marker), { recursive: true }).catch(() => {});
     await writeFile(marker, `${session}\n`).catch(() => {});

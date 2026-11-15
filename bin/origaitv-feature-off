@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# origaitv:summary=Turn a feature switch off
+# origaitv:args=<name>
+# origaitv:examples=origaitv feature off looks
+
+# Puts back what the box showed before the switch went on. origaitv feature
+# list has the names.
+
+set -euo pipefail
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec "$ORIGAITV_BIN_DIR/origaitv-feature-set" "${1:-}" off "${@:2}"

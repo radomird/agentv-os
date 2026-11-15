@@ -1,10 +1,10 @@
 // What the TV knows about updates (ADR-025): what the daily check found
-// (bin/agentv-update-check), how an install from the TV is going
-// (bin/agentv-update-tv), what the check after it found
-// (bin/agentv-update-after), what Go back returns to (bin/agentv-go-back),
+// (bin/origaitv-update-check), how an install from the TV is going
+// (bin/origaitv-update-tv), what the check after it found
+// (bin/origaitv-update-after), what Go back returns to (bin/origaitv-go-back),
 // which release's toast home has shown, and an install asked for tonight,
 // from the TV or the phone. The scripts run as root and
-// write /var/lib/agentv/update/; the daemon only reads it, and keeps what the
+// write /var/lib/origaitv/update/; the daemon only reads it, and keeps what the
 // TV has dealt with in its own state.
 
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -14,7 +14,7 @@ import { join } from "node:path";
 export interface UpdateState {
   status: unknown;
   progress: unknown;
-  // The AgenTV version whose toast home has shown already.
+  // The origaiTV version whose toast home has shown already.
   toasted: string | null;
   // The check after the last update, and the snapshot Go back returns to.
   after: unknown;
@@ -26,7 +26,7 @@ export interface UpdateState {
   // saying it's ready.
   seen: { kept: string | null; wentBack: string | null; later: string | null };
   // Install tonight, between 02:00 and 05:00 (ADR-025): what's to install
-  // (an AgenTV version, or "packages" for the system's alone), and when it
+  // (an origaiTV version, or "packages" for the system's alone), and when it
   // was asked for.
   tonight: { version: string; at: string } | null;
   // The night an update waited because a game was being played, until it

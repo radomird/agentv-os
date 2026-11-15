@@ -1,11 +1,11 @@
-// Setup's apps (board 09): the official apps from AgenTV's signed index
+// Setup's apps (board 09): the official apps from origaiTV's signed index
 // (ADR-010, ADR-036), the ones for what the TV is for first, and the rest
-// under "more", beside the built-in apps that come with AgenTV. Apps → add
+// under "more", beside the built-in apps that come with origaiTV. Apps → add
 // an app hands over the same way, after setup (ADR-042). The daemon
 // can't write the apps folder, which is root's, so it leaves the ones picked
-// in its own private state, where agentv-setup-apps.path starts
-// bin/agentv-setup-apps as root to install each with `agentv app install`,
-// in the background. /run/agentv-setup-apps/state.json says how each went.
+// in its own private state, where origaitv-setup-apps.path starts
+// bin/origaitv-setup-apps as root to install each with `origaitv app install`,
+// in the background. /run/origaitv-setup-apps/state.json says how each went.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,13 +17,13 @@ import type { Goal } from "./setup.ts";
 // With the starter switch off, Streaming has the servers you run yourself,
 // and the household's TV builds a streaming service ("+ add your own").
 export const GOAL_APPS: Record<Goal, string[]> = {
-  streaming: ["agentv.jellyfin", "agentv.plex"],
-  music: ["agentv.music"],
-  media: ["agentv.jellyfin", "agentv.plex", "agentv.immich"],
-  gaming: ["agentv.steam"],
+  streaming: ["origaitv.jellyfin", "origaitv.plex"],
+  music: ["origaitv.music"],
+  media: ["origaitv.jellyfin", "origaitv.plex", "origaitv.immich"],
+  gaming: ["origaitv.steam"],
 };
 
-// The built-in apps setup shows, ticked, since they come with AgenTV.
+// The built-in apps setup shows, ticked, since they come with origaiTV.
 const SHOWN_BUILTINS = new Set(Object.values(GOAL_APPS).flat());
 
 // The streaming starter pack (ADR-066): every official app the index says is
@@ -78,8 +78,8 @@ interface Status {
 
 export interface SetupAppsOptions {
   state: string; // the daemon's own state: the drop goes in <state>/apps-drop
-  status?: string; // /run/agentv-setup-apps/state.json
-  // Where the index is (AGENTV_INDEX_URL), and the official apps in it.
+  status?: string; // /run/origaitv-setup-apps/state.json
+  // Where the index is (ORIGAITV_INDEX_URL), and the official apps in it.
   source: () => Promise<string | undefined>;
   catalog?: (source: string) => Promise<IndexEntry[]>;
   waitMs?: number; // how long root may take to pick the drop up
@@ -87,7 +87,7 @@ export interface SetupAppsOptions {
 }
 
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
-// Longer than agentv-setup-apps.service may run.
+// Longer than origaitv-setup-apps.service may run.
 const STALE_MS = 2 * 3600_000;
 const STATES: InstallState[] = ["queued", "installing", "installed", "failed"];
 
@@ -110,9 +110,9 @@ export class SetupApps {
 
   constructor(options: SetupAppsOptions) {
     this.drop = join(options.state, "apps-drop", "install.json");
-    this.statusPath = options.status ?? "/run/agentv-setup-apps/state.json";
+    this.statusPath = options.status ?? "/run/origaitv-setup-apps/state.json";
     this.source = options.source;
-    this.catalog = options.catalog ?? (async (source) => (await loadIndex(source, process.env.AGENTV_KEYRING)).apps);
+    this.catalog = options.catalog ?? (async (source) => (await loadIndex(source, process.env.ORIGAITV_KEYRING)).apps);
     this.given = Boolean(options.catalog);
     this.waitMs = options.waitMs ?? 10_000;
     this.onChange = options.onChange;
@@ -235,7 +235,7 @@ export class SetupApps {
     // to do.
     if (error) return "Couldn't load the apps. Try again later.";
     const unknown = (ids as string[]).find((id) => !apps.some((app) => app.id === id));
-    if (unknown) return `${unknown} isn't one of AgenTV's official apps`;
+    if (unknown) return `${unknown} isn't one of origaiTV's official apps`;
     const wanted = [...new Set(ids as string[])];
     mkdirSync(dirname(this.drop), { recursive: true, mode: 0o700 });
     writeFileSync(`${this.drop}.next`, JSON.stringify({ apps: wanted }), { mode: 0o600 });

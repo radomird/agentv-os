@@ -81,7 +81,7 @@ export async function location(ctx: Ctx): Promise<View> {
   let start = state.start;
   const yes = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void choose(ctx, start.code) }, "Yes");
   const other = h("button", { class: "button", "data-focus": true, "data-action": "country-other", onclick: () => ctx.open("country/pick") }, "Another location");
-  const drawn = page(ctx, "agentv location", `${place(start)}?`, line(start), h("div", { class: "setup-actions" }, yes, other));
+  const drawn = page(ctx, "origaitv location", `${place(start)}?`, line(start), h("div", { class: "setup-actions" }, yes, other));
   return {
     el: drawn.el,
     first: yes,
@@ -107,7 +107,7 @@ export async function pickLocation(ctx: Ctx): Promise<View> {
   const state = known ?? (await load());
   const countries: Country[] = state?.countries ?? [];
   const picker = countryPicker(countries, state?.start?.code ?? null, (c) => void choose(ctx, c.code));
-  const drawn = page(ctx, "agentv location --pick", "Pick your location", "", picker.el);
+  const drawn = page(ctx, "origaitv location --pick", "Pick your location", "", picker.el);
   return { el: drawn.el, first: picker.first, info: info(ctx) };
 }
 
@@ -126,6 +126,6 @@ export function zoneQuestion(ctx: Ctx): View {
       h("span", { class: "zone-where" }, `${city(zone.zone)} · ${time(zone.zone)}`),
     ),
   );
-  const drawn = page(ctx, "agentv location --zone", "Which time zone?", `${place(question)} has ${question.zones.length}`, h("div", { class: "zones" }, ...cards));
+  const drawn = page(ctx, "origaitv location --zone", "Which time zone?", `${place(question)} has ${question.zones.length}`, h("div", { class: "zones" }, ...cards));
   return { el: drawn.el, first: cards[0], info: info(ctx) };
 }

@@ -42,7 +42,7 @@ export async function yourBox(ctx: Ctx): Promise<View> {
     "OK",
   );
   const model = report?.model;
-  const [prompt, headline] = heading("agentv box", "Here's your setup", ctx.reduced());
+  const [prompt, headline] = heading("origaitv box", "Here's your setup", ctx.reduced());
   const el = h(
     "div",
     { class: "setup-page d3 box-step" },

@@ -1,15 +1,15 @@
 // The game recipe's own tests, which every game built from it passes as
-// well as its own. They run in the game's frame with AgenTV's test API.
+// well as its own. They run in the game's frame with origaiTV's test API.
 
 test("the game listens to the buttons and to Back", async (t) => {
   await t.frames(10);
   const listening = t.listening();
-  t.ok(listening.input > 0, "it takes its buttons from agentv.input.on");
+  t.ok(listening.input > 0, "it takes its buttons from origaitv.input.on");
   t.ok(listening.back, "it has its own Back, to pause in play");
 });
 
 test("the game said its first frame is drawn", async (t) => {
-  t.ok(t.ready(), "it calls agentv.ready()");
+  t.ok(t.ready(), "it calls origaitv.ready()");
 });
 
 test("a few presses of each button don't stop it", async (t) => {

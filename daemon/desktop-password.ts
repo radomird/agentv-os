@@ -1,11 +1,11 @@
 // The password of Omarchy's desktop account, set from Settings → Omarchy
 // desktop and typed on the phone. A box set up from the USB stick's first
 // screen has an account with a random password nobody knows, and a note
-// saying so (/var/lib/agentv/account.json). Until a password is set there,
+// saying so (/var/lib/origaitv/account.json). Until a password is set there,
 // SSH takes keys only, and the desktop can't run anything that asks for it.
 //
 // The daemon checks the password, then hands it to root on
-// agentv-password.socket, which starts bin/agentv-password-set with the
+// origaitv-password.socket, which starts bin/origaitv-password-set with the
 // connection as its stdin. It never goes in a file or a log here.
 
 import { readFile } from "node:fs/promises";
@@ -44,8 +44,8 @@ export class DesktopPassword {
   private waitMs: number;
 
   constructor(options: DesktopPasswordOptions = {}) {
-    this.marker = options.marker ?? "/var/lib/agentv/account.json";
-    this.socket = options.socket ?? "/run/agentv-password.sock";
+    this.marker = options.marker ?? "/var/lib/origaitv/account.json";
+    this.socket = options.socket ?? "/run/origaitv-password.sock";
     this.waitMs = options.waitMs ?? 20_000;
   }
 

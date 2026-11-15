@@ -1,0 +1,9 @@
+# What origaitv-wake.timer runs once it has woken the box. Waking it is the
+# whole job, so this does nothing.
+
+[Unit]
+Description=origaiTV woke for the night's update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/true

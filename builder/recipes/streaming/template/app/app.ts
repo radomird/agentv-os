@@ -1,4 +1,4 @@
-// A streaming service's app, built on this box by its agent from AgenTV's
+// A streaming service's app, built on this box by its agent from origaiTV's
 // streaming recipe (ADR-011, ADR-046). What the service's pages look like
 // lives here and nowhere else, and it stays on this box. The daemon loads it
 // in a worker of its own, with one page in the TV's browser, on its declared

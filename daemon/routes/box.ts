@@ -1,7 +1,7 @@
 // The box check's routes (ADR-061):
 // - GET /api/box: what the box is, and the verdicts, in the shape
 //   PHASE-2-PLAN.md's "Shared interfaces" sets;
-// - GET /api/box/readings: everything it read, as `agentv box readings`
+// - GET /api/box/readings: everything it read, as `origaitv box readings`
 //   prints it, with the TV's serial numbers zeroed;
 // - GET and POST /api/box/smooth: whether the 4K test should run, and its
 //   result from the TV's page;

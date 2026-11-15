@@ -1,13 +1,13 @@
 // A plan's sign-in (ADR-022, ADR-040), the first time the builder runs:
-// the provider's own CLI, unmodified, signs in as agentv-builder in the
+// the provider's own CLI, unmodified, signs in as origaitv-builder in the
 // builder's sandbox, and keeps what it gets in its own files in the
-// builder's home. AgenTV runs the CLI's sign-in command in a terminal of its
+// builder's home. origaiTV runs the CLI's sign-in command in a terminal of its
 // own, shows the link it prints (as a QR code on the TV and a link on the
 // phone), and types into its prompt the code the person pastes on the
 // phone. It reads nothing else the CLI prints, and keeps none of it.
 //
-// agentv-builder-sign-in@.service runs this as agentv-builder. It writes how
-// the sign-in stands to status.json in its folder (/run/agentv-build/sign-in),
+// origaitv-builder-sign-in@.service runs this as origaitv-builder. It writes how
+// the sign-in stands to status.json in its folder (/run/origaitv-build/sign-in),
 // which root's hand-over made for it, and reads the code from input there,
 // which root writes from what the daemon handed over.
 //
@@ -53,7 +53,7 @@ function cliFor(provider: Provider, home: string): string {
 }
 
 // Whether the plan's CLI says it's signed in: true or false, or null for a
-// plan AgenTV has no sign-in for yet.
+// plan origaiTV has no sign-in for yet.
 export function signedIn(provider: Provider, o: { home: string; proxy?: string }): Promise<boolean | null> {
   const spec = SIGN_IN[provider];
   if (!spec) return Promise.resolve(null);
@@ -100,7 +100,7 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
   // The CLI in a terminal of its own, as it expects: script gives it one,
   // wide enough that its link stays on one line, and its keys come from
   // this pipe. script runs that in the shell SHELL names, or else in the
-  // account's own, and agentv-builder's is nologin; the CLI itself gets the
+  // account's own, and origaitv-builder's is nologin; the CLI itself gets the
   // same environment as in a build.
   const quoted = [cli, ...spec.login].map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
   const child = spawn("script", ["-qfec", `unset SHELL; stty cols 500 rows 40; exec ${quoted}`, "/dev/null"], {
@@ -162,7 +162,7 @@ export async function signIn(provider: Provider, o: SignInOptions): Promise<Sign
   o.stop?.removeEventListener("abort", stopped);
   rmSync(inputPath, { force: true });
 
-  // The CLI's own word on it, not what its sign-in printed, unless AgenTV
+  // The CLI's own word on it, not what its sign-in printed, unless origaiTV
   // ended it first: a plan whose sign-in ran out can still say it's in.
   const ok = !why && (await signedIn(provider, o));
   if (ok) {
@@ -181,14 +181,14 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     console.error("Usage: node sign-in.ts <claude|chatgpt|gemini|grok|muse>");
     process.exit(2);
   }
-  const net = process.env.AGENTV_BUILD_NET ?? "/run/agentv-build-net";
+  const net = process.env.ORIGAITV_BUILD_NET ?? "/run/origaitv-build-net";
   const server = await forward(PROXY_PORT, join(net, "proxy.sock"));
   // A stop from the TV says so, rather than leaving the link up.
   const stop = new AbortController();
   process.once("SIGTERM", () => stop.abort());
   const done = await signIn(provider, {
-    home: process.env.HOME ?? "/var/lib/agentv/builder",
-    folder: process.env.AGENTV_SIGN_IN ?? "/run/agentv-build/sign-in",
+    home: process.env.HOME ?? "/var/lib/origaitv/builder",
+    folder: process.env.ORIGAITV_SIGN_IN ?? "/run/origaitv-build/sign-in",
     proxy: `http://127.0.0.1:${PROXY_PORT}`,
     stop: stop.signal,
   });

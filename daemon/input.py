@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""AgenTV's virtual input device (ADR-008).
+"""origaiTV's virtual input device (ADR-008).
 
 The phone's d-pad and keyboard, and later the gamepad mapping, reach the TV
-through one virtual keyboard and pointer, "AgenTV remote", so they work in
+through one virtual keyboard and pointer, "origaiTV remote", so they work in
 every window: the home screen, a service's page, Steam. It's a uinput device
 made by the person logged in on the screen, which the udev rule in
-system/70-agentv-uinput.rules allows, the way Steam's own rule does for Steam
+system/70-origaitv-uinput.rules allows, the way Steam's own rule does for Steam
 Input. Nobody else on the box can use it.
 
   input.py serve              make the device and take requests on
-                              $XDG_RUNTIME_DIR/agentv/input.sock
+                              $XDG_RUNTIME_DIR/origaitv/input.sock
   input.py key <name>...      press and release keys: up, down, left, right,
                               enter, back, home, playpause, a, 1, ...
   input.py hold <name> <s>    press a key, hold it for s seconds, release it
@@ -65,7 +65,7 @@ UI_DEV_SETUP = 0x405C5503
 UI_DEV_CREATE = 0x5501
 UI_DEV_DESTROY = 0x5502
 
-NAME = b"AgenTV remote"
+NAME = b"origaiTV remote"
 
 # Typed text goes a character at a time, with a pause after each, so the
 # compositor reads the events as they come. The kernel keeps 128 events for
@@ -222,7 +222,7 @@ def create():
 
 def socket_path(name="input.sock"):
     runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    return os.path.join(runtime, "agentv", name)
+    return os.path.join(runtime, "origaitv", name)
 
 
 def gamepads(root="/"):
@@ -333,7 +333,7 @@ def keep_watching(watch, stop, pause=1.0, log=print):
         try:
             watch()
         except Exception as error:  # pylint: disable=broad-except
-            log(f"agentv input: the guide button's watcher stopped ({error!r}); starting it again", flush=True)
+            log(f"origaitv input: the guide button's watcher stopped ({error!r}); starting it again", flush=True)
             stop.wait(pause)
 
 
@@ -349,7 +349,7 @@ def screen_home(source="guide"):
         client.sendall(json.dumps({"cmd": "home", "from": source}, separators=(",", ":")).encode() + b"\n")
         client.recv(4096)
     except OSError as error:
-        print(f"agentv input: Home didn't reach the screen daemon: {error}", flush=True)
+        print(f"origaitv input: Home didn't reach the screen daemon: {error}", flush=True)
     finally:
         client.close()
 
@@ -374,7 +374,7 @@ def serve():
     server.bind(path)
     os.chmod(path, 0o600)
     server.listen(8)
-    print(f"agentv input: {NAME.decode()} is ready on {path}", flush=True)
+    print(f"origaitv input: {NAME.decode()} is ready on {path}", flush=True)
     stop = threading.Event()
     watch = lambda: watch_guide(gamepads, screen_home, stop, on_hold=lambda: screen_home("guide-hold"))
     threading.Thread(target=keep_watching, args=(watch, stop), daemon=True).start()
@@ -394,14 +394,14 @@ def send(request):
     try:
         client.connect(socket_path())
     except OSError:
-        print("agentv input: the virtual input device isn't running (no TV session)", file=sys.stderr)
+        print("origaitv input: the virtual input device isn't running (no TV session)", file=sys.stderr)
         return 2
     with client, client.makefile("rwb") as stream:
         stream.write(json.dumps(request).encode() + b"\n")
         stream.flush()
         answer = stream.readline().decode().strip()
     if answer != "ok":
-        print(f"agentv input: {answer}", file=sys.stderr)
+        print(f"origaitv input: {answer}", file=sys.stderr)
         return 1
     return 0
 

@@ -1,7 +1,7 @@
-// AgenTV's app kit, contract 2 (ADR-043). A page app is its own HTML, CSS
+// origaiTV's app kit, contract 2 (ADR-043). A page app is its own HTML, CSS
 // and JavaScript, shown full screen in a sandboxed frame on home. It reaches
 // the box only through this kit, which the box serves to every page app at
-// /_agentv/kit.js and which sets window.agentv. The kit talks to home with
+// /_origaitv/kit.js and which sets window.origaitv. The kit talks to home with
 // postMessage, and the daemon checks every call against the app's manifest:
 // a call the manifest doesn't declare fails, whatever the page asks.
 //
@@ -18,7 +18,7 @@
 import type { Tile } from "./contract.ts";
 
 // Where the box serves the kit to every page app, on the app's own origin.
-export const KIT_PATH = "/_agentv/kit.js";
+export const KIT_PATH = "/_origaitv/kit.js";
 
 // What a page app may keep, all of it together, in bytes of JSON.
 export const STORAGE_QUOTA = 5 * 1024 * 1024;
@@ -84,7 +84,7 @@ export interface Album {
   tracks: Track[];
 }
 
-// window.agentv, as the kit gives it to a page app.
+// window.origaitv, as the kit gives it to a page app.
 export interface Kit {
   /** Say the first frame is drawn. Home shows the app from then on. */
   ready(): void;
@@ -141,7 +141,7 @@ export interface Kit {
 }
 
 // --- How the kit talks to home ------------------------------------------
-// Each message carries agentv: 1. The frame sends calls; home answers each
+// Each message carries origaitv: 1. The frame sends calls; home answers each
 // one by its id, and sends events.
 
 export type Call =
@@ -173,16 +173,16 @@ export const NEEDS: Partial<Record<Call, { media?: "photos" | "music"; capabilit
 };
 
 export type FromApp =
-  | { agentv: 1; id: number; call: Call; args: unknown[] }
-  | { agentv: 1; back: number; kept: boolean };
+  | { origaitv: 1; id: number; call: Call; args: unknown[] }
+  | { origaitv: 1; back: number; kept: boolean };
 
 export type ToApp =
-  | { agentv: 1; id: number; ok: true; value?: unknown }
-  | { agentv: 1; id: number; ok: false; error: string }
-  | { agentv: 1; event: "input"; input: InputEvent }
-  | { agentv: 1; event: "back"; back: number }
-  | { agentv: 1; event: "pause" }
-  | { agentv: 1; event: "resume" };
+  | { origaitv: 1; id: number; ok: true; value?: unknown }
+  | { origaitv: 1; id: number; ok: false; error: string }
+  | { origaitv: 1; event: "input"; input: InputEvent }
+  | { origaitv: 1; event: "back"; back: number }
+  | { origaitv: 1; event: "pause" }
+  | { origaitv: 1; event: "resume" };
 
 // photos.image and music.track answer with the file itself, which the kit
 // turns into a blob: address.

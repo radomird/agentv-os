@@ -71,7 +71,7 @@ export class FolderPictures {
       if (!body) continue;
       const response = await fetch(`${this.home}api/backgrounds/folder?from=${encodeURIComponent(source.name)}${sent === 0 ? "&first=1" : ""}`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+        headers: { "Content-Type": "application/octet-stream", ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
         body: new Uint8Array(body),
         signal: AbortSignal.timeout(30_000),
       }).catch(() => null);

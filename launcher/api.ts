@@ -1,6 +1,6 @@
-// The launcher's two neighbours: AgenTV's daemon over HTTP on this box, and
+// The launcher's two neighbours: origaiTV's daemon over HTTP on this box, and
 // the screen daemon in the TV session, which put the launcher on screen and
-// answers it over the DevTools pipe it holds (window.agentvScreen). Outside
+// answers it over the DevTools pipe it holds (window.origaitvScreen). Outside
 // the TV session, on a computer or in the tests, there's no screen daemon.
 
 import type { Placed, Size } from "./layout.ts";
@@ -87,23 +87,23 @@ export interface HomeState {
   pin: { set: boolean; locked: boolean };
 }
 
-// What the daily update check found (bin/agentv-update-check, ADR-025).
+// What the daily update check found (bin/origaitv-update-check, ADR-025).
 export interface UpdateStatus {
   checked_at: string;
   ok: boolean;
   channel: string;
-  agentv: { installed: string | null; available: string | null };
+  origaitv: { installed: string | null; available: string | null };
   omarchy: { installed: string | null; available: string | null };
   packages: number;
-  // Off edge, the update waits until AgenTV's nightly run has passed it
+  // Off edge, the update waits until origaiTV's nightly run has passed it
   // (ADR-026), so there's nothing to install yet.
   waiting?: boolean;
   security: boolean;
-  notes: { agentv: string[]; agentv_date: string | null; omarchy: string[] };
+  notes: { origaitv: string[]; origaitv_date: string | null; omarchy: string[] };
 }
 
-// How an install from the TV is going (bin/agentv-update-tv), or going back
-// from one (bin/agentv-go-back).
+// How an install from the TV is going (bin/origaitv-update-tv), or going back
+// from one (bin/origaitv-go-back).
 export interface UpdateProgress {
   state: "running" | "restarting" | "done" | "failed" | "going-back";
   what?: "go-back";
@@ -111,15 +111,15 @@ export interface UpdateProgress {
   percent: number;
   detail: string;
   at: string;
-  from: { agentv: string; omarchy: string };
-  to: { agentv: string };
+  from: { origaitv: string; omarchy: string };
+  to: { origaitv: string };
 }
 
-// The check after an update (bin/agentv-update-after).
+// The check after an update (bin/origaitv-update-after).
 export interface AfterCheck {
   at: string;
   ok: boolean;
-  agentv: string;
+  origaitv: string;
   checks: { name: string; ok: boolean; detail: string }[];
 }
 
@@ -127,8 +127,8 @@ export interface AfterCheck {
 export interface GoBack {
   snapshot: number;
   at: string;
-  from: { agentv: string; omarchy: string };
-  to: { agentv: string; omarchy: string };
+  from: { origaitv: string; omarchy: string };
+  to: { origaitv: string; omarchy: string };
 }
 
 export interface Updates {
@@ -137,7 +137,7 @@ export interface Updates {
   toasted: string | null;
   after?: AfterCheck | null;
   goBack?: GoBack | null;
-  wentBack?: { at: string; from: { agentv: string }; to: { agentv: string } } | null;
+  wentBack?: { at: string; from: { origaitv: string }; to: { origaitv: string } } | null;
   seen?: { kept: string | null; wentBack: string | null; later?: string | null };
   // Tonight was chosen, for this release ("packages" when it's only those).
   tonight?: { version: string; at: string } | null;
@@ -256,7 +256,7 @@ export interface TileData {
 async function call<T>(method: string, path: string, body?: unknown, grant?: string): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+    headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json();
@@ -480,7 +480,7 @@ export const daemon = {
   key: () => call<KeyState>("GET", "/api/key"),
   // The key kept, or the terms it waits for.
   saveKey: async (provider: string, key: string, grant?: string): Promise<KeyState | { terms: KeyTerms }> => {
-    const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
+    const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
     const data = await response.json();
     if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
     if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't save the key");
@@ -491,7 +491,7 @@ export const daemon = {
   // The household's plan for builds, from Settings → AI (Q143), or the terms
   // it waits for.
   usePlan: async (provider: string, grant?: string): Promise<{ provider: string; path: "plan" } | { terms: KeyTerms }> => {
-    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
+    const response = await fetch("/api/ai/plan", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider }) });
     const data = await response.json();
     if (response.status === 409 && data.terms) return { terms: data.terms as KeyTerms };
     if (!response.ok || data.ok === false) throw new Error(data.error ?? "Couldn't use your plan");
@@ -605,8 +605,8 @@ export function listen(handlers: Record<string, (data: unknown) => void>, opened
 
 type Binding = (request: string) => void;
 interface ScreenWindow {
-  agentvScreen?: Binding;
-  agentvScreenReply?: (id: number, reply: string) => void;
+  origaitvScreen?: Binding;
+  origaitvScreenReply?: (id: number, reply: string) => void;
 }
 
 export interface Running {
@@ -625,7 +625,7 @@ interface Reply {
 
 const waiting = new Map<number, (reply: Reply) => void>();
 let next = 0;
-(window as ScreenWindow).agentvScreenReply = (id, reply) => {
+(window as ScreenWindow).origaitvScreenReply = (id, reply) => {
   waiting.get(id)?.(JSON.parse(reply));
   waiting.delete(id);
 };
@@ -635,7 +635,7 @@ let next = 0;
 export const ONLY_ON_TV = "That works on the TV";
 
 function ask(request: Record<string, unknown>, ms = 30_000): Promise<Reply> {
-  const binding = (window as ScreenWindow).agentvScreen;
+  const binding = (window as ScreenWindow).origaitvScreen;
   if (!binding) return Promise.resolve({ ok: false, error: ONLY_ON_TV });
   const id = ++next;
   return new Promise((resolve) => {
@@ -685,7 +685,7 @@ export const screen = {
   // Whether this box restarts to its boot menu: it does when the boot
   // loader takes the request, as on a UEFI box.
   bootMenu: async () => (await ask({ cmd: "boot-menu" })).can === true,
-  // AgenTV's sign-in screen for an app whose tile says Sign in (ADR-032).
+  // origaiTV's sign-in screen for an app whose tile says Sign in (ADR-032).
   signIn: (app: string) => ask({ cmd: "sign-in", app }),
   // Someone else is watching: the apps open take the service's profile for
   // them (ADR-009).

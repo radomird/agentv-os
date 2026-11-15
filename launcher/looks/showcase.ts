@@ -10,7 +10,7 @@ import type { TileData } from "../api.ts";
 import type { Size } from "../layout.ts";
 
 // The built-in whose tile the stand-ins fill.
-export const SHOWCASE_APP = "agentv.new";
+export const SHOWCASE_APP = "origaitv.new";
 
 const FILMS: [title: string, year: number, file: string][] = [
   ["Cosmos Laundromat", 2015, "cosmos-laundromat"],

@@ -14,7 +14,7 @@ export interface Section {
 // (ADR-068), and an adult's "make an app" with it off. Settings says when
 // an update is ready.
 export function sections(ctx: Ctx): Section[] {
-  const update = ctx.updates.status?.agentv.available && !ctx.updates.status.waiting;
+  const update = ctx.updates.status?.origaitv.available && !ctx.updates.status.waiting;
   const all: Section[] = [
     { key: "home", label: "Home", open: () => ctx.top("home") },
     { key: "apps", label: "Apps", open: () => ctx.top("apps") },

@@ -24,7 +24,7 @@ interface Pairing {
 
 // Pairing and removing are an adult's: with a PIN set, they send its grant.
 async function call<T>(method: string, path: string, grant?: string): Promise<T> {
-  const response = await fetch(path, { method, headers: grant ? { "X-AgenTV-Grant": grant } : {} });
+  const response = await fetch(path, { method, headers: grant ? { "X-origaiTV-Grant": grant } : {} });
   const data = await response.json();
   if (!response.ok || data.ok === false) throw new Error(data.error ?? "Something went wrong");
   return data as T;

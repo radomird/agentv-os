@@ -57,7 +57,7 @@ export async function fetchVia(proxy: string, url: string, options: FetchOptions
     raw.destroy();
   };
   return new Promise<Answer>((done, fail) => {
-    const headers: Record<string, string> = { accept: "application/json", "user-agent": "agentv-builder" };
+    const headers: Record<string, string> = { accept: "application/json", "user-agent": "origaitv-builder" };
     if (options.body !== undefined) headers["content-type"] = "application/json";
     const req = httpsRequest(
       { host: target.hostname, port, path: `${target.pathname}${target.search}`, method: options.method ?? "GET", headers, createConnection: () => secure },

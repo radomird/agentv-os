@@ -20,14 +20,14 @@ export const PAUSE = `(() => {
   walk(document);
   const paused = found.filter((el) => !el.paused && !el.ended);
   for (const el of paused) el.pause();
-  window.__agentvPaused = paused;
+  window.__origaitvPaused = paused;
   return paused.length;
 })()`;
 
 // How many it played again.
 export const RESUME = `(async () => {
-  const paused = window.__agentvPaused ?? [];
-  window.__agentvPaused = [];
+  const paused = window.__origaitvPaused ?? [];
+  window.__origaitvPaused = [];
   let played = 0;
   for (const el of paused) {
     if (!el.isConnected) continue;

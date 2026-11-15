@@ -1,0 +1,473 @@
+// The new phone remote (ADR-065, design page D4, track 8's T8.3) in a real
+// Chromium at 375 × 812, on the daemon itself, with the screen daemon's end
+// of the phone's stream stood in for by its own code (daemon/remote.ts):
+// one remote screen with nothing labelled "home" twice, the keyboard by
+// itself for a service page's field, typing that goes to the TV as it's
+// typed with no redraw under it, the first load following the TV, the
+// surface's swipes, tap and hold, a held Back, play and pause that say
+// why when they can't, and the menu. With its switch off, the phone keeps
+// the remote it had.
+
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, test } from "node:test";
+import type { Browser, Page } from "playwright-core";
+import { RemoteInput } from "../../../daemon/remote.ts";
+import type { Daemon } from "../../../daemon/server.ts";
+import { startBox } from "./box.mts";
+
+const require = createRequire(`${process.env.ORIGAITV_UI_MODULES}/`);
+const { chromium } = require("playwright-core") as typeof import("playwright-core");
+
+const PHONE = { width: 375, height: 812 };
+const dir = mkdtempSync(join(tmpdir(), "origaitv-remote2-ui-"));
+let browser: Browser;
+const errors: string[] = [];
+
+interface Box {
+  daemon: Daemon;
+  url: string;
+  phoneUrl: string;
+  // What reached the screen daemon's end: keys, commands, and the asks.
+  keys: Record<string, unknown>[];
+  commands: string[];
+  typed: string[];
+  actions: string[];
+  playback: { ok: boolean; why?: string; by?: string };
+  input: RemoteInput;
+}
+const boxes: Box[] = [];
+
+// A box with the new remote's switch on or off, and the screen daemon's end
+// of the phone's stream.
+async function box(remote2: boolean): Promise<Box> {
+  const { daemon, url } = await startBox(0, undefined, { features: { remote2 } });
+  const made: Box = { daemon, url, phoneUrl: `http://127.0.0.1:${daemon.lanPort}`, keys: [], commands: [], typed: [], actions: [], playback: { ok: true, by: "page" }, input: null as unknown as RemoteInput };
+  made.input = new RemoteInput({
+    url: `${url}/api/remote`,
+    send: async (request) => void made.keys.push(request),
+    command: async (cmd) => void made.commands.push(cmd),
+    ask: async (ask) => {
+      if (ask.kind === "text") {
+        made.typed.push(ask.value);
+        return { ok: true, by: "page" };
+      }
+      if (ask.kind === "done") {
+        made.keys.push({ key: "enter" });
+        return { ok: true, by: "page" };
+      }
+      made.actions.push(ask.action);
+      return made.playback;
+    },
+    log: () => {},
+  });
+  made.input.start();
+  boxes.push(made);
+  return made;
+}
+
+before(async () => {
+  const passwd = join(dir, "passwd");
+  writeFileSync(passwd, "radomir:x:1000:1000::/home/radomir:/bin/bash\n");
+  process.env.ORIGAITV_PASSWD = passwd;
+  browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER });
+});
+
+after(async () => {
+  for (const b of boxes) {
+    b.input.stop();
+    await b.daemon.close();
+  }
+  await browser?.close();
+  delete process.env.ORIGAITV_PASSWD;
+  rmSync(dir, { recursive: true, force: true });
+  assert.deepEqual(errors, []);
+});
+
+async function until(check: () => Promise<boolean> | boolean, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > end) throw new Error("it didn't happen in time");
+    await new Promise((done) => setTimeout(done, 20));
+  }
+}
+
+const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+const context = (b: Box, body: object) => fetch(`${b.url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+// A paired phone, through the QR code's address.
+async function phone(b: Box, ready = ".r2"): Promise<Page> {
+  await fetch(`${b.url}/api/phones/pair`, { method: "POST" });
+  const page = await browser.newPage({ viewport: PHONE, hasTouch: true });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`${b.phoneUrl}/#pair=${b.daemon.phones.secret()}`);
+  await page.waitForSelector(ready);
+  return page;
+}
+
+for (const on of [false, true]) {
+  test(`T8.3 the phone's remote with remote2 ${on ? "on: one remote screen" : "off: the remote it had, tabs and all"}`, async () => {
+    const b = await box(on);
+    const hand = await phone(b, on ? ".r2" : ".dpad");
+    assert.equal(await hand.locator(".tabs").count(), on ? 0 : 1);
+    assert.equal(await hand.locator(".r2").count(), on ? 1 : 0);
+    await hand.close();
+  });
+}
+
+test("T8.3 at 375 × 812 the remote is one screen: the surface, Back, Home and play in one row, Ask under them, and nothing labelled home twice", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  for (const selector of [".r2-top", ".r2-surface", '[data-key="back"]', '[data-key="home"]', '[data-action="playpause"]', ".r2-ask", ".r2-notice"]) {
+    const found = await hand.locator(selector).boundingBox();
+    assert.ok(found && found.y >= 0 && found.y + found.height <= PHONE.height, `${selector} is on the screen`);
+  }
+  const row = await Promise.all(['[data-key="back"]', '[data-key="home"]', '[data-action="playpause"]'].map((s) => hand.locator(s).boundingBox()));
+  assert.ok(row.every((r) => r && Math.abs(r.y - row[0]!.y) < 1), "back, home and play sit in one row");
+  assert.equal(await hand.evaluate(() => document.scrollingElement!.scrollHeight <= innerHeight), true, "nothing scrolls");
+  // Nothing on the screen or in the menu is called home but Home itself.
+  await hand.locator('[data-action="menu"]').tap();
+  await hand.waitForSelector("#r2-sheet .r2-row");
+  const homes = await hand.evaluate(() =>
+    [...document.querySelectorAll("button")].filter((el) => {
+      const name = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().toLowerCase();
+      return name === "home";
+    }).length,
+  );
+  assert.equal(homes, 1);
+  assert.deepEqual(await hand.locator("#r2-sheet .r2-row span:not([class])").allTextContents(), ["Edit home", "Send to TV", "Apps", "Settings", "Click and buzz"]);
+  await hand.close();
+});
+
+test("T8.3 the keyboard comes up by itself for a service page's field, and each change goes to the TV as it's typed, with nothing redrawn under it", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  await context(b, { front: "app", playing: false, appField: { kind: "search", label: "search", value: "", app: "origaitv.tube" } });
+  await hand.waitForSelector("#tv-text", { timeout: 1500 });
+  assert.equal(await hand.locator(".r2-where").textContent(), "Tube · search");
+  assert.equal(await hand.locator(".r2-headline").textContent(), "search");
+  assert.equal(await hand.locator("#tv-text").getAttribute("inputmode"), "search");
+  assert.equal(await hand.evaluate(() => document.activeElement?.id), "tv-text", "the field has the focus, so the phone's keyboard opens");
+  // The field is the same one all through, even as the TV changes under it.
+  await hand.evaluate(() => ((document.getElementById("tv-text") as HTMLInputElement & { mark?: boolean }).mark = true));
+  await hand.locator("#tv-text").pressSequentially("sintél", { delay: 40 });
+  await context(b, { front: "app", playing: true, appField: { kind: "search", label: "search", value: "sintél", app: "origaitv.tube" } });
+  await hand.locator("#tv-text").pressSequentially(" ж", { delay: 40 });
+  await until(() => b.typed.at(-1) === "sintél ж");
+  assert.ok(b.typed.length >= 4, `each change went: ${b.typed.length}`);
+  assert.equal(await hand.evaluate(() => (document.getElementById("tv-text") as HTMLInputElement & { mark?: boolean }).mark), true, "nothing redrew the field");
+  // Enter is the keyboard's own key, and goes to the TV's field.
+  await hand.locator("#tv-text").press("Enter");
+  await until(() => JSON.stringify(b.keys.at(-1)) === JSON.stringify({ key: "enter" }));
+  // The field goes on the TV: the remote again.
+  await context(b, { front: "app", playing: false });
+  await hand.waitForSelector(".r2-surface", { timeout: 1500 });
+  await hand.close();
+});
+
+test("T8.3 a password's field is the phone's password field, for its password manager, and done puts the keyboard away", async () => {
+  const b = await box(true);
+  await context(b, { front: "app", playing: false, appField: { kind: "password", label: "password", app: "origaitv.tube" } });
+  // The first load follows the TV: the keyboard, not the surface.
+  const hand = await phone(b, "#tv-text");
+  assert.equal(await hand.locator("#tv-text").getAttribute("type"), "password");
+  assert.equal(await hand.locator("#tv-text").getAttribute("autocomplete"), "current-password");
+  assert.equal(await hand.locator(".r2-where").textContent(), "Tube · sign in");
+  assert.equal(await hand.locator(".r2-note").textContent(), "Your password manager can fill it");
+  await hand.locator('[data-action="keyboard-done"]').tap();
+  await hand.waitForSelector(".r2-surface");
+  await hand.close();
+});
+
+test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens details on an app's tile and gives the pointer everywhere else, which moves and clicks", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
+  const label = () => hand.locator(".r2-surface").getAttribute("aria-label");
+  const area = (await hand.locator(".r2-surface").boundingBox())!;
+  const cx = area.x + area.width / 2;
+  const cy = area.y + area.height / 2;
+  const from = b.keys.length;
+  await hand.mouse.move(cx, cy);
+  await hand.mouse.down();
+  await hand.mouse.move(cx + 60, cy, { steps: 6 });
+  await hand.mouse.up();
+  await hand.mouse.move(cx, cy);
+  await hand.mouse.down();
+  await hand.mouse.move(cx, cy + 100, { steps: 8 });
+  await hand.mouse.up();
+  await hand.mouse.click(cx, cy);
+  await until(() => b.keys.length >= from + 4);
+  assert.deepEqual(b.keys.slice(from), [{ key: "right" }, { key: "down" }, { key: "down" }, { key: "enter" }]);
+  // A hold with an app's tile focused on home: the key that opens its
+  // details, sent while the finger is still down, and no pointer and no tap
+  // as it lifts. The hint says so.
+  const held = async () => {
+    const at = b.keys.length;
+    await hand.mouse.move(cx, cy);
+    await hand.mouse.down();
+    await wait(800);
+    const down = b.keys.slice(at);
+    await hand.mouse.up();
+    await wait(300);
+    return { down, all: b.keys.slice(at), pointer: await hand.locator(".r2-pointer").count() };
+  };
+  await context(b, { front: "home", screen: "home", details: true });
+  await until(async () => (await hint()) === "Hold for details");
+  assert.equal(await label(), "Swipe to move, tap for OK, hold for details");
+  assert.deepEqual(await held(), { down: [{ key: "i" }], all: [{ key: "i" }], pointer: 0 });
+  await context(b, { screen: "menu" });
+  await wait(150);
+  assert.equal(await hint(), "Hold for details");
+  assert.deepEqual(await held(), { down: [{ key: "i" }], all: [{ key: "i" }], pointer: 0 }, "a tile in Apps has details too");
+  // Two fingers aren't a hold, and the first one's timer goes with it: a
+  // swipe that follows sends its step and nothing held.
+  {
+    const cdp = await hand.context().newCDPSession(hand);
+    const at = b.keys.length;
+    const one = { x: Math.round(cx), y: Math.round(cy), id: 1 };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [one] });
+    await wait(100);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [one, { x: one.x + 30, y: one.y, id: 2 }] });
+    await wait(100);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...one, x: one.x + 60 }, { x: one.x + 30, y: one.y, id: 2 }] });
+    await wait(700);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await wait(200);
+    assert.deepEqual(b.keys.slice(at), [{ key: "right" }], "no held key lands mid-swipe");
+    await cdp.detach();
+  }
+  // Home's other screens, where the focus is on no tile: Settings on a row,
+  // a details page, an app made on the TV. The hint says the pointer, and a
+  // hold gives it and sends the TV nothing.
+  await context(b, { screen: "menu", details: false });
+  await until(async () => (await hint()) === "Hold for the pointer");
+  {
+    const at = b.keys.length;
+    await hand.mouse.move(cx, cy);
+    await hand.mouse.down();
+    await hand.waitForSelector(".r2-pointer", { timeout: 1500 });
+    await hand.mouse.up();
+    await wait(200);
+    assert.deepEqual(b.keys.slice(at), [], "a still finger is not a press");
+    await hand.locator('[data-action="pointer-done"]').click();
+    await hand.waitForSelector('.r2-surface[data-action="surface"]');
+  }
+  // A hold with an app in front: the pointer, as it was, and nothing sent.
+  await context(b, { front: "app", screen: "home", playing: false });
+  await until(async () => (await hint()) === "Hold for the pointer");
+  assert.equal(await label(), "Swipe to move, tap for OK, hold for the pointer");
+  const sent = b.keys.length;
+  await hand.mouse.move(cx, cy);
+  await hand.mouse.down();
+  await hand.waitForSelector(".r2-pointer", { timeout: 1500 });
+  await hand.mouse.up();
+  assert.equal(b.keys.length, sent, "the TV gets no held OK over an app");
+  const pad = (await hand.locator(".r2-pointer").boundingBox())!;
+  await hand.mouse.move(pad.x + 100, pad.y + 200);
+  await hand.mouse.down();
+  await hand.mouse.move(pad.x + 140, pad.y + 220, { steps: 4 });
+  await hand.mouse.up();
+  await until(() => b.keys.some((k) => Array.isArray(k.move)));
+  await hand.mouse.click(pad.x + 100, pad.y + 200);
+  await until(() => b.keys.some((k) => k.click === "left"));
+  await hand.locator('[data-action="pointer-done"]').click();
+  await hand.waitForSelector('.r2-surface[data-action="surface"]');
+  // The d-pad switch puts buttons on it instead, and remembers.
+  await hand.locator('[data-action="dpad"]').click();
+  await hand.locator('.r2-dpad [data-key="up"]').click();
+  await until(() => JSON.stringify(b.keys.at(-1)) === JSON.stringify({ key: "up" }));
+  await hand.reload();
+  await hand.waitForSelector(".r2-dpad");
+  await hand.close();
+});
+
+test("T8.3 a tap on Back goes back, and held, the phone sends the hold that goes home", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  const back = (await hand.locator('[data-key="back"]').boundingBox())!;
+  const from = b.keys.length;
+  await hand.mouse.click(back.x + back.width / 2, back.y + back.height / 2);
+  await hand.mouse.move(back.x + back.width / 2, back.y + back.height / 2);
+  await hand.mouse.down();
+  await until(() => b.keys.length >= from + 2, 2000);
+  await hand.mouse.up();
+  assert.deepEqual(b.keys.slice(from), [{ key: "back" }, { hold: "back", ms: 1100 }]);
+  await hand.close();
+});
+
+// A finger on the d-pad's OK, and off it again: real touches.
+async function fingers(hand: Page): Promise<{ down(count?: number): Promise<void>; up(): Promise<void> }> {
+  const box = (await hand.locator('.r2 [data-key="enter"]').boundingBox())!;
+  const point = (dx: number) => ({ x: Math.round(box.x + box.width / 2 + dx), y: Math.round(box.y + box.height / 2), id: dx });
+  const cdp = await hand.context().newCDPSession(hand);
+  return {
+    down: async (count = 1) => void (await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point(0), point(20)].slice(0, count) })),
+    up: async () => void (await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] })),
+  };
+}
+
+test("the d-pad's OK asks for details only on an app's tile: anywhere else a long press is one OK as the finger lifts, and its fill is the button's size", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  await hand.locator('[data-action="dpad"]').click();
+  await hand.waitForSelector('.r2-dpad [data-key="enter"]');
+  const ok = await fingers(hand);
+  const long = async () => {
+    const from = b.keys.length;
+    await ok.down();
+    await wait(800);
+    const while_ = b.keys.slice(from);
+    const filling = await hand.locator(".r2-ok.holding").count();
+    await ok.up();
+    await wait(300);
+    return { down: while_, all: b.keys.slice(from), filling };
+  };
+  // A tile focused on home: details, as the finger is still down, and the
+  // button shows it's being held.
+  await context(b, { front: "home", screen: "home", details: true });
+  await wait(150);
+  assert.deepEqual(await long(), { down: [{ key: "i" }], all: [{ key: "i" }], filling: 1 });
+  await context(b, { screen: "menu" });
+  assert.deepEqual((await long()).all, [{ key: "i" }], "a tile in Apps has details too");
+  // The fill is the button's, not the whole pad's.
+  const sizes = await hand.evaluate(() => {
+    const button = document.querySelector(".r2-ok")!;
+    const fill = getComputedStyle(button, "::before");
+    return { button: [button.clientWidth, button.clientHeight], fill: [parseFloat(fill.width), parseFloat(fill.height)], clipped: getComputedStyle(button).overflow };
+  });
+  assert.deepEqual(sizes.fill, sizes.button);
+  assert.equal(sizes.clipped, "hidden");
+  // A finger that slides off OK takes the press back: nothing as it lifts
+  // out there, and no hold either.
+  {
+    const box = (await hand.locator(".r2-ok").boundingBox())!;
+    const on = { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2), id: 1 };
+    const out = { ...on, y: Math.round(box.y + box.height + 60) };
+    const cdp = await hand.context().newCDPSession(hand);
+    for (const ms of [100, 900]) {
+      const from = b.keys.length;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [on] });
+      await wait(100);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [out] });
+      await wait(ms);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await wait(200);
+      assert.deepEqual(b.keys.slice(from), [], `slid off and lifted after ${ms} ms`);
+    }
+    await cdp.detach();
+  }
+  // Anything else in front: nothing while the finger is down, and one OK
+  // as it lifts.
+  const others: [string, object, object][] = [
+    ["an app", { front: "app", playing: false }, { front: "home" }],
+    ["the screen saver", { screen: "ambient" }, { screen: "home" }],
+    ["Settings", { screen: "menu", details: false }, { screen: "home", details: true }],
+  ];
+  for (const [what, there, gone] of others) {
+    await context(b, there);
+    await wait(150);
+    assert.deepEqual(await long(), { down: [], all: [{ key: "enter" }], filling: 0 }, `with ${what} in front`);
+    await context(b, gone);
+    await wait(150);
+  }
+  assert.deepEqual((await long()).all, [{ key: "i" }], "and back on a tile, details again");
+  await hand.close();
+});
+
+test("the d-pad's OK counts one press: a redraw under a quick tap still sends the tap and no hold after it, and a second finger adds nothing", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  await hand.locator('[data-action="dpad"]').click();
+  await hand.waitForSelector('.r2-dpad [data-key="enter"]');
+  const ok = await fingers(hand);
+  // Something starts playing while the finger is down, so the remote
+  // draws itself again with what's playing, and the button is a new one.
+  await fetch(`${b.url}/api/ledger`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: "local.mytv", state: { title: "Sintel", position: 480, duration: 888, playing: true } }) });
+  let from = b.keys.length;
+  await hand.evaluate(() => document.querySelector('.r2 [data-key="enter"]')!.setAttribute("data-first", ""));
+  await ok.down();
+  await context(b, { playing: true });
+  await hand.waitForSelector(".r2-card");
+  assert.equal(await hand.locator("[data-first]").count(), 0, "the button was drawn again");
+  await ok.up();
+  await wait(900);
+  assert.deepEqual(b.keys.slice(from), [{ key: "enter" }]);
+
+  // Two fingers on OK, held on a tile: one ask for details.
+  await context(b, { front: "home", screen: "home", details: true, playing: false });
+  await wait(150);
+  from = b.keys.length;
+  const two = await fingers(hand);
+  await two.down(1);
+  await wait(100);
+  await two.down(2);
+  await wait(1000);
+  await two.up();
+  await wait(300);
+  assert.deepEqual(b.keys.slice(from), [{ key: "i" }]);
+  await hand.close();
+});
+
+test("T8.3 play asks the box, and the notice line says why when nothing plays; what's playing shows with next", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  b.playback = { ok: false, why: "nothing is playing" };
+  await hand.locator('[data-action="playpause"]').tap();
+  await until(async () => (await hand.locator(".r2-notice-text").textContent()) === "nothing is playing");
+  // Playing: the button says pause, and the card says what, with next.
+  b.playback = { ok: true, by: "page" };
+  await fetch(`${b.url}/api/ledger`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: "local.mytv", state: { title: "Sintel", position: 480, duration: 888, playing: true } }) });
+  await context(b, { front: "app", playing: true });
+  await until(async () => (await hand.locator('[data-action="playpause"]').getAttribute("data-state")) === "pause");
+  await hand.waitForSelector(".r2-card");
+  assert.deepEqual(await hand.locator(".r2-card-text > *").allTextContents(), ["Sintel", "My TV · 7 min left"]);
+  await hand.locator('[data-action="next"]').tap();
+  await until(() => b.actions.at(-1) === "next");
+  assert.deepEqual(b.actions, ["toggle", "next"]);
+  await hand.close();
+});
+
+test("T8.3 the menu: who's watching, Apps on the TV, and Settings brings home in front first", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  await hand.locator('[data-action="who"]').tap();
+  await hand.waitForSelector("#r2-sheet .r2-viewer.on");
+  await hand.locator('#r2-sheet [data-action="apps"]').tap();
+  await until(() => b.commands.includes("apps"));
+  await hand.waitForSelector("#r2-sheet", { state: "detached" });
+  await hand.locator('[data-action="menu"]').tap();
+  await hand.locator('#r2-sheet [data-action="settings"]').tap();
+  await until(() => b.commands.includes("settings"));
+  // Edit home is its own page, with a way back.
+  await hand.locator('[data-action="menu"]').tap();
+  await hand.locator('#r2-sheet [data-action="edit-home"]').tap();
+  await hand.waitForSelector(".mini-grid");
+  await hand.locator('[data-action="to-remote"]').tap();
+  await hand.waitForSelector(".r2-surface");
+  await hand.close();
+});
+
+test("T8.3 the remote follows the TV's look: Glass and Cinema with the looks on, Terminal with them off", async () => {
+  const b = await box(true);
+  const state = join(String((b.daemon as unknown as { options: { state: string } }).options.state));
+  const hand = await phone(b);
+  const look = () => hand.evaluate(() => document.body.dataset.look);
+  assert.equal(await look(), "terminal", "with the looks off, the phone is Terminal");
+  writeFileSync(join(state, "features.json"), JSON.stringify({ remote2: true, looks: true }));
+  for (const [id, font] of [["glass", "Manrope"], ["cinema", "Instrument Sans"]] as const) {
+    await fetch(`${b.url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look: id }) });
+    await context(b, { screen: "home" });
+    await until(async () => (await look()) === id, 5000);
+    assert.match(await hand.evaluate(() => getComputedStyle(document.querySelector(".r2")!).fontFamily), new RegExp(font));
+    assert.notEqual(await hand.evaluate(() => getComputedStyle(document.querySelector(".r2-surface")!).borderRadius), "0px", "its surface is rounded");
+  }
+  // The looks' fonts come from the box over the phone's port.
+  assert.equal((await fetch(`${b.phoneUrl}/launcher/fonts/manrope-latin-wght-normal.woff2`)).status, 200);
+  assert.notEqual((await fetch(`${b.phoneUrl}/launcher/looks/looks.ts`)).status, 200, "and nothing else of the launcher's");
+  await hand.close();
+});

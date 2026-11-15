@@ -1,7 +1,7 @@
 // The phone's side of daemon/phone-channel.ts, with Node's own crypto: it
 // pairs, says hello, signs each request and seals what it sends. The page on
 // a real phone does the same in companion-web/channel.ts. This one is for
-// the box's own checks (bin/agentv-phone-call) and for the tests.
+// the box's own checks (bin/origaitv-phone-call) and for the tests.
 
 import { randomBytes } from "node:crypto";
 import { answerExtra, b64u, HEADERS, hmac, INFO, open, phoneKey, requestExtra, seal, SEALED, same, sessionKeys, sha256hex, signed, unb64u, x25519Pair, x25519Shared, type SessionKeys } from "./phone-channel.ts";

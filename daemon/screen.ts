@@ -1,4 +1,4 @@
-// AgenTV's screen daemon (ADR-031): it decides what's on the TV.
+// origaiTV's screen daemon (ADR-031): it decides what's on the TV.
 //
 // The TV session's Hyprland (session/hypr.lua) opens every window out of
 // sight, on a special workspace that's never shown. This daemon brings the
@@ -11,9 +11,9 @@
 // in front.
 //
 // It also starts the home screen, the session's main app, in a Chromium of
-// its own (/var/lib/agentv/chromium-home, ADR-030's kiosk app window), and
+// its own (/var/lib/origaitv/chromium-home, ADR-030's kiosk app window), and
 // starts it again when it stops. Web apps open in the services' Chromium
-// (/var/lib/agentv/chromium, with Widevine and the sign-ins), and Steam in a
+// (/var/lib/origaitv/chromium, with Widevine and the sign-ins), and Steam in a
 // gamescope of its own.
 //
 // Home pauses the app in front and shows the home screen; choosing the app
@@ -35,9 +35,9 @@
 // installs between 02:00 and 05:00 once nothing has played for 30 minutes
 // (ADR-025).
 //
-// Run by agentv-screen.service in the TV session. Other commands talk to it
-// over $XDG_RUNTIME_DIR/agentv/screen.sock, one JSON request and one JSON
-// answer per connection (daemon/screen-call.ts, agentv screen).
+// Run by origaitv-screen.service in the TV session. Other commands talk to it
+// over $XDG_RUNTIME_DIR/origaitv/screen.sock, one JSON request and one JSON
+// answer per connection (daemon/screen-call.ts, origaitv screen).
 
 import { execFile, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -89,26 +89,26 @@ import { NEEDS_PIN, NOT_READY } from "./notices.ts";
 export type Role = "home" | "web" | "steam" | "share";
 
 export const TV_WORKSPACE = "1";
-export const HELD_WORKSPACE = "special:agentv-held";
+export const HELD_WORKSPACE = "special:origaitv-held";
 export const HOME_URL = "http://127.0.0.1:3000/";
 
 // True once home's page has loaded and its own script has run: the
 // launcher's start, or the welcome page's.
-export const HOME_UP = `document.readyState === "complete" && ("agentvLauncher" in window || "agentvWelcome" in window)`;
+export const HOME_UP = `document.readyState === "complete" && ("origaitvLauncher" in window || "origaitvWelcome" in window)`;
 // Resolves once the page has drawn two frames.
 export const TWO_FRAMES = "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))";
-export const HOME_PROFILE = "/var/lib/agentv/chromium-home";
+export const HOME_PROFILE = "/var/lib/origaitv/chromium-home";
 // What Settings → Power does: restart, shut down, or restart to the boot
 // menu, which then waits for a choice (ADR-060).
 export type Power = "restart" | "shutdown" | "bootmenu";
 const POWER: Power[] = ["restart", "shutdown", "bootmenu"];
 // The daemon's filter for home's Chromium (daemon/net-filter.ts).
 export const HOME_PROXY = "http://127.0.0.1:3005";
-export const SERVICES_PROFILE = "/var/lib/agentv/chromium";
+export const SERVICES_PROFILE = "/var/lib/origaitv/chromium";
 // The share browser's own profile (ADR-050): a link a phone shared opens
 // there when no app declares its site, so it never sees the apps' sign-ins.
 // It's the person's, like Music's state.
-export const SHARE_PROFILE = join(homedir(), ".local", "state", "agentv", "chromium-share");
+export const SHARE_PROFILE = join(homedir(), ".local", "state", "origaitv", "chromium-share");
 // Apps kept open behind home, besides a game (ADR-031).
 export const KEEP_OPEN = 2;
 // How each provider's agent CLI says its version, which its first run asks
@@ -177,30 +177,30 @@ export interface Launcher {
   // Tells the overlay whether an app is in front, so the mouse's Home
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
-  // What opening an installed app means, from AgenTV's daemon, or null.
+  // What opening an installed app means, from origaiTV's daemon, or null.
   appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | { runtime: "page"; name?: string } | null>;
-  // AgenTV's sign-in bar in the overlay, under the service's page (board
+  // origaiTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
-  // Tells AgenTV's daemon the sign-in screen is up for an app, or gone, so
+  // Tells origaiTV's daemon the sign-in screen is up for an app, or gone, so
   // a paired phone offers its fields (S4.9).
   signingIn(app: { id: string; name: string } | null): Promise<void>;
-  // Settings → Omarchy desktop: agentv desktop, which ends this session,
+  // Settings → Omarchy desktop: origaitv desktop, which ends this session,
   // with the grant the home screen got for the PIN.
   desktop(grant?: string): void;
-  // Starts one of AgenTV's update units (ADR-025), which polkit lets the
+  // Starts one of origaiTV's update units (ADR-025), which polkit lets the
   // person at the TV start: the check, or an install.
-  startUnit(name: "agentv-update-check.service" | "agentv-update-tv.service" | "agentv-go-back.service"): Promise<boolean>;
+  startUnit(name: "origaitv-update-check.service" | "origaitv-update-tv.service" | "origaitv-go-back.service"): Promise<boolean>;
   // Whether an install, going back or the check after an update is running.
   updating(): Promise<boolean>;
   // Whether an adult action from the home screen may go ahead (ADR-009):
   // always with no PIN set, and with one, only with the grant the page got
-  // for it, as AgenTV's daemon says.
+  // for it, as origaiTV's daemon says.
   pinCheck(action: string, grant?: string): Promise<boolean>;
   // Locks the TV until the PIN is entered, once it has been off for a while.
   // True when the TV is locked now.
   lock(): Promise<boolean | void>;
-  // Ends AgenTV's splash, which covers the TV from the session's start
+  // Ends origaiTV's splash, which covers the TV from the session's start
   // until home has drawn, when the boot kept it (ADR-060).
   splashDone?(): void;
   // Settings → Power (ADR-033): Omarchy's own restart or shut down, which
@@ -219,7 +219,7 @@ export interface Launcher {
   // How long the TV waits before its ambient screen, from Settings, or null
   // while setup is on the screen, which has no ambient screen.
   idleMinutes(): Promise<number | null>;
-  // Tells AgenTV's daemon what's in front and whether something plays, for
+  // Tells origaiTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037), and the field with the focus in
   // the app in front, when there is one (ADR-065).
   tvContext(change: { front: "home" | "app"; playing: boolean; appField?: object }): Promise<void>;
@@ -227,15 +227,15 @@ export interface Launcher {
   // gone with null (ADR-065). Home draws its own.
   typingBar?(bar: Bar | null): Promise<void>;
   // Stops Omarchy's shell, its bar and everything else it draws, and
-  // nothing of AgenTV's: the shell from $OMARCHY_PATH/shell, by its config.
+  // nothing of origaiTV's: the shell from $OMARCHY_PATH/shell, by its config.
   stopOmarchyShell(): Promise<void>;
   // The agent CLI of the provider whose terms an adult accepted, from
-  // AgenTV's daemon, or null while none are (ADR-023).
+  // origaiTV's daemon, or null while none are (ADR-023).
   acceptedCli(): Promise<Cli | null>;
   // Runs that CLI once, through Omarchy's own wrapper, which fetches it on
   // its first run: the version it says, or why not.
   firstRun(cli: Cli): Promise<{ version?: string; error?: string }>;
-  // Tells AgenTV's daemon how the first run goes.
+  // Tells origaiTV's daemon how the first run goes.
   cliState(change: { state: "installing" | "ready" | "failed"; version?: string; error?: string }): Promise<void>;
   // Sets an Omarchy theme with Omarchy's own omarchy-theme-set, as its
   // desktop does: null once it's set, or why not.
@@ -273,7 +273,7 @@ interface Open {
   // Its service's profile for who's watching, once it's settled as the app
   // opened; an item to play waits for it (service-profiles.ts).
   ready?: Promise<unknown>;
-  // What that did, for agentv screen status: undefined while it's going.
+  // What that did, for origaitv screen status: undefined while it's going.
   profile?: ProfileOutcome;
 }
 
@@ -375,13 +375,13 @@ interface Options {
   // How often it looks at what's in front and what plays, for the phone's
   // remote (ADR-037).
   contextMs?: number;
-  // The agentv package this screen daemon runs: the one installed as it
+  // The origaitv package this screen daemon runs: the one installed as it
   // starts.
   running?: string;
 }
 
 // Omarchy's shell draws every layer it has under an omarchy- name: its bar,
-// notifications, menus, OSD and the rest. AgenTV's own don't use it.
+// notifications, menus, OSD and the rest. origaiTV's own don't use it.
 export function isOmarchyShell(namespace: string): boolean {
   return namespace.startsWith("omarchy-");
 }
@@ -877,7 +877,7 @@ export class Screen {
     this.stack.push(address);
     void this.corner(this.windows.get(address)?.role !== "home");
     // Home's moving background pauses under an app (ADR-064).
-    void this.inHome(`window.agentvFront?.(${this.windows.get(address)?.role !== "home"})`);
+    void this.inHome(`window.origaitvFront?.(${this.windows.get(address)?.role !== "home"})`);
   }
 
   // The mouse's Home in the overlay, on while an app is in front. Said once
@@ -977,7 +977,7 @@ export class Screen {
     app.stop();
   }
 
-  // Home's page is up: once it has drawn a frame or two, under AgenTV's
+  // Home's page is up: once it has drawn a frame or two, under origaiTV's
   // splash when the boot kept it (ADR-060), the splash goes and home shows,
   // whole. A page that draws no frame lets it go after two seconds anyway.
   private async homeDrawn(app: App): Promise<void> {
@@ -988,13 +988,13 @@ export class Screen {
     this.launcher.splashDone?.();
   }
 
-  // Gives the home screen window.agentvScreen, over its DevTools pipe, once
+  // Gives the home screen window.origaitvScreen, over its DevTools pipe, once
   // its page is there (launcher/api.ts).
   private async bridge(app: App): Promise<void> {
     if (!app.cdp) return;
     for (let tries = 0; tries < 60 && this.apps.get("home") === app; tries++) {
       try {
-        await app.cdp.bind(HOME_URL, "agentvScreen", (request) => this.fromHome(request));
+        await app.cdp.bind(HOME_URL, "origaitvScreen", (request) => this.fromHome(request));
         return;
       } catch {
         await sleep(500);
@@ -1006,7 +1006,7 @@ export class Screen {
   // What the home screen asks for: an app in front, the apps open, quitting
   // one, or Omarchy's desktop. The adult actions need the grant the page got
   // for the PIN, once there is one (ADR-009, S4.5). The owner's own commands
-  // over the socket (agentv screen) don't: the PIN locks the TV, and a shell
+  // over the socket (origaitv screen) don't: the PIN locks the TV, and a shell
   // on the box can do anything anyway.
   async fromHome(request: any, owner = false): Promise<object> {
     const guarded: Record<string, string> = { "update-install": "update", "update-go-back": "go-back", desktop: "desktop", power: "power" };
@@ -1046,7 +1046,7 @@ export class Screen {
       // profile for them (ADR-009).
       case "viewer":
         return this.viewerChanged();
-      // A tile that says Sign in: AgenTV's sign-in screen (ADR-032).
+      // A tile that says Sign in: origaiTV's sign-in screen (ADR-032).
       case "sign-in":
         return this.startSignIn(String(request.app ?? ""));
       case "running":
@@ -1072,11 +1072,11 @@ export class Screen {
         return this.wake("a key or the mouse on home");
       // Settings → Updates: Check now, and Install now (ADR-025).
       case "update-check":
-        return (await this.launcher.startUnit("agentv-update-check.service")) ? { ok: true } : { ok: false, error: "Couldn't check for updates" };
+        return (await this.launcher.startUnit("origaitv-update-check.service")) ? { ok: true } : { ok: false, error: "Couldn't check for updates" };
       case "update-install":
-        return (await this.launcher.startUnit("agentv-update-tv.service")) ? { ok: true } : { ok: false, error: "Couldn't start the update" };
+        return (await this.launcher.startUnit("origaitv-update-tv.service")) ? { ok: true } : { ok: false, error: "Couldn't start the update" };
       case "update-go-back":
-        return (await this.launcher.startUnit("agentv-go-back.service")) ? { ok: true } : { ok: false, error: "Couldn't go back" };
+        return (await this.launcher.startUnit("origaitv-go-back.service")) ? { ok: true } : { ok: false, error: "Couldn't go back" };
       case "desktop":
         this.launcher.desktop(typeof request.grant === "string" ? request.grant : undefined);
         return { ok: true };
@@ -1115,7 +1115,7 @@ export class Screen {
 
   // The provider's agent CLI arrives the way Omarchy brings it: its wrapper
   // fetches Anthropic's, OpenAI's, Google's, xAI's or Meta's published
-  // binary on the first run (ADR-023, ADR-047). Only once AgenTV's daemon says an adult accepted that
+  // binary on the first run (ADR-023, ADR-047). Only once origaiTV's daemon says an adult accepted that
   // provider's terms, in the background, one run at a time, and the daemon
   // hears how it goes.
   private cliRun: Promise<void> | null = null;
@@ -1175,8 +1175,8 @@ export class Screen {
   // as Omarchy's desktop. The grant comes back when it's entered.
   async askPin(action: string): Promise<object> {
     if (!/^[a-z-]{1,20}$/.test(action)) return { ok: false, error: "the pin for which action" };
-    await this.home("agentv screen pin");
-    const reply = (await this.inHome(`window.agentvLauncher?.askPin?.(${JSON.stringify(action)}) ?? { asked: false }`)) as {
+    await this.home("origaitv screen pin");
+    const reply = (await this.inHome(`window.origaitvLauncher?.askPin?.(${JSON.stringify(action)}) ?? { asked: false }`)) as {
       ok: boolean;
       grant?: string | null;
       asked?: boolean;
@@ -1187,11 +1187,11 @@ export class Screen {
     return reply.grant ? { ok: true, grant: reply.grant } : { ok: false, error: "The PIN wasn't entered" };
   }
 
-  // Settings on the TV, at a section, as from home (agentv screen settings):
+  // Settings on the TV, at a section, as from home (origaitv screen settings):
   // the image checks drive Settings → Power with keys from there.
   async settings(section: string): Promise<object> {
     if (!/^[a-z-]*$/.test(section)) return { ok: false, error: "which section of settings" };
-    return this.goHome(section ? `settings/${section}` : "settings", "agentv screen settings");
+    return this.goHome(section ? `settings/${section}` : "settings", "origaitv screen settings");
   }
 
   // Apps or Settings from the phone's menu: home comes in front of an app
@@ -1200,17 +1200,17 @@ export class Screen {
     return this.goHome(route, "the phone");
   }
 
-  // Apps on the TV, or its add an app (agentv screen apps [add]), as from
+  // Apps on the TV, or its add an app (origaitv screen apps [add]), as from
   // home: the image checks add an app with keys from there (ADR-042).
   async appsPage(page: string): Promise<object> {
     if (page !== "" && page !== "add") return { ok: false, error: "apps, or apps add" };
-    return this.goHome(page === "add" ? "add-app" : "apps", "agentv screen apps");
+    return this.goHome(page === "add" ? "add-app" : "apps", "origaitv screen apps");
   }
 
   // A page of the launcher's, as from home.
   private async goHome(route: string, from: string): Promise<object> {
     await this.home(from);
-    const reply = (await this.inHome(`(() => { const go = window.agentvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    const reply = (await this.inHome(`(() => { const go = window.origaitvLauncher?.go; if (go) go(${JSON.stringify(route)}); return { went: !!go }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
     return reply.went ? { ok: true } : { ok: false, error: NOT_READY };
   }
@@ -1283,7 +1283,7 @@ export class Screen {
   // A page app (ADR-043): home in front, then its frame there.
   async openPage(id: string): Promise<object> {
     await this.home("a page app");
-    const reply = (await this.inHome(`(() => { const open = window.agentvPage; if (open) open(${JSON.stringify(id)}); return { went: !!open }; })()`)) as { ok: boolean; went?: boolean; error?: string };
+    const reply = (await this.inHome(`(() => { const open = window.origaitvPage; if (open) open(${JSON.stringify(id)}); return { went: !!open }; })()`)) as { ok: boolean; went?: boolean; error?: string };
     if (!reply.ok) return reply;
     return reply.went ? { ok: true } : { ok: false, error: NOT_READY };
   }
@@ -1312,7 +1312,7 @@ export class Screen {
       const home = this.homeWindow();
       if (home && front?.address === home.address) {
         await this.homeOnTv(home);
-        await this.inHome("window.agentvHome?.()");
+        await this.inHome("window.origaitvHome?.()");
       } else if (home) {
         await this.toFront(home.address);
       } else {
@@ -1456,7 +1456,7 @@ export class Screen {
   // Tells the home screen which apps are open, for their tiles.
   private running(): void {
     const apps = JSON.stringify(JSON.stringify(this.runningApps()));
-    void this.inHome(`window.agentvRunning?.(${apps})`);
+    void this.inHome(`window.origaitvRunning?.(${apps})`);
   }
 
   // --- The ambient screen and TV off (ADR-031) ------------------------------
@@ -1533,7 +1533,7 @@ export class Screen {
       this.nightChecked = night;
       this.nightCheckAt = this.now();
       this.log("night: checking for updates before installing");
-      await this.launcher.startUnit("agentv-update-check.service");
+      await this.launcher.startUnit("origaitv-update-check.service");
       return;
     }
     const progress = updates.progress;
@@ -1543,7 +1543,7 @@ export class Screen {
     // its answer first.
     const checked = Date.parse(status?.checked_at ?? "") || 0;
     if (checked < this.nightCheckAt - 1000 && this.now() - this.nightCheckAt < 10 * 60_000) return;
-    const pending = Boolean(status && (status.agentv?.available || status.omarchy?.available || status.packages > 0));
+    const pending = Boolean(status && (status.origaitv?.available || status.omarchy?.available || status.packages > 0));
     if (!pending) {
       if (updates.tonight) await this.launcher.clearTonight().catch(() => {});
       return over();
@@ -1563,7 +1563,7 @@ export class Screen {
       return;
     }
     this.log(`night: installing the update, nothing has played for ${Math.round(quiet / 60_000)} min${heldAt && !heldTonight ? ", and it waited for a game last night" : ""}`);
-    if (await this.launcher.startUnit("agentv-update-tv.service")) {
+    if (await this.launcher.startUnit("origaitv-update-tv.service")) {
       if (updates.tonight) await this.launcher.clearTonight().catch(() => {});
       await over();
     }
@@ -1676,7 +1676,7 @@ export class Screen {
       this.ambient = true;
       this.ambientAt = this.now();
       this.log(`the ambient screen${this.ambientFrom ? `, over ${this.ambientFrom}` : ""}`);
-      await this.inHome("window.agentvAmbient?.(true)");
+      await this.inHome("window.origaitvAmbient?.(true)");
     }).then(() => ({ ok: true }));
   }
 
@@ -1691,7 +1691,7 @@ export class Screen {
     this.log(`the ambient screen ends: ${why}`);
     const back = this.ambientFrom && this.windows.has(this.ambientFrom) ? this.ambientFrom : null;
     this.ambientFrom = null;
-    await this.inHome("window.agentvAmbient?.(false)");
+    await this.inHome("window.origaitvAmbient?.(false)");
     if (back) await this.toFront(back);
     else {
       const front = this.front();
@@ -1728,7 +1728,7 @@ export class Screen {
         this.sleep?.tv(false);
         this.log("the TV went off; pausing");
         // Home's moving background stops too (ADR-072).
-        void this.inHome(`window.agentvTv?.("off")`);
+        void this.inHome(`window.origaitvTv?.("off")`);
         for (const entry of this.opens.filter((o) => o.role === "web")) {
           if ((await this.media(entry, PAUSE)) > 0) entry.paused = true;
         }
@@ -1747,7 +1747,7 @@ export class Screen {
       this.sleep?.tv(true);
       this.dark = false;
       if (this.outputOff) await this.output(true, "the TV is on");
-      void this.inHome(`window.agentvTv?.("on")`);
+      void this.inHome(`window.origaitvTv?.("on")`);
       const front = this.front();
       if (front?.role === "home") await this.homeOnTv(front).catch((error: Error) => this.log(`home couldn't be put in front: ${error.message}`));
     }).then(() => ({ ok: true }));
@@ -1826,7 +1826,7 @@ export class Screen {
       // And a shared link's page.
       this.apps.get("share")?.stop();
       // And the apps that are pages on home, all but a game.
-      const home = (await Promise.race([this.inHome("({ closed: window.agentvPagesClose?.() ?? [] })"), sleep(500).then(() => ({}))])) as { closed?: unknown };
+      const home = (await Promise.race([this.inHome("({ closed: window.origaitvPagesClose?.() ?? [] })"), sleep(500).then(() => ({}))])) as { closed?: unknown };
       if (Array.isArray(home.closed) && home.closed.length) this.log(`home closed ${home.closed.join(", ")}`);
       // With a PIN set, a profile that asks for it to open is locked when
       // the TV is back (ADR-009, ADR-034).
@@ -1904,7 +1904,7 @@ export class Screen {
     const front = this.front();
     if (front?.role === "steam") return this.opens.find((o) => o.role === "steam")?.id ?? "steam";
     if (front && front.role !== "home") return null;
-    const home = (await Promise.race([this.inHome("({ game: window.agentvGame?.() ?? null })"), sleep(500).then(() => ({}))])) as { game?: unknown };
+    const home = (await Promise.race([this.inHome("({ game: window.origaitvGame?.() ?? null })"), sleep(500).then(() => ({}))])) as { game?: unknown };
     return typeof home.game === "string" ? home.game : null;
   }
 
@@ -1947,7 +1947,7 @@ export class Screen {
 
   // --- Signing in (ADR-032, board 15) ---------------------------------------
 
-  // The app opens as its tile would, with AgenTV's sign-in bar under its
+  // The app opens as its tile would, with origaiTV's sign-in bar under its
   // page, and the app brings its page to the service's sign-in form. Typing
   // on the phone or a keyboard goes to the page. It ends once the app says
   // it's signed in, on Home, or when the app closes.
@@ -2211,7 +2211,7 @@ export class Screen {
   }
 
   // Closes every window and ends the TV session, for the switch to
-  // Omarchy's desktop (agentv desktop). The login manager logs back in.
+  // Omarchy's desktop (origaitv desktop). The login manager logs back in.
   end(): Promise<object> {
     return this.queue(async () => {
       this.ending = true;
@@ -2238,8 +2238,8 @@ export class Screen {
     const layers = await this.hypr.layers();
     return {
       ok: true,
-      // What this process runs, which after an update and before AgenTV's
-      // services restart is still the package from before (agentv-restart).
+      // What this process runs, which after an update and before origaiTV's
+      // services restart is still the package from before (origaitv-restart).
       running: this.runningPackage,
       front: front ? summary(front, clients) : null,
       windows: [...this.windows.values()].map((w) => ({ ...summary(w, clients), front: w.address === front?.address })),
@@ -2302,7 +2302,7 @@ export class Screen {
   sounds(seconds: number): Promise<object> {
     const ms = Math.round(Math.min(Math.max(seconds, 1), 30) * 1000);
     return this.inHome(`new Promise((resolve) => {
-      const launcher = window.agentvLauncher;
+      const launcher = window.origaitvLauncher;
       const sounds = launcher?.sounds;
       if (!sounds) return resolve({ ok: false, error: ${JSON.stringify(NOT_READY)} });
       launcher.go?.("settings");
@@ -2347,7 +2347,7 @@ export class Screen {
     }
   }
 
-  // One request from agentv screen.
+  // One request from origaitv screen.
   async handle(request: any): Promise<object> {
     switch (request?.cmd) {
       case "status":
@@ -2373,7 +2373,7 @@ export class Screen {
       // An installed app, as its tile opens it.
       case "app": {
         // With an item, the app opens it through its playback.open, as a
-        // tile's entry does (agentv selftest S3.2).
+        // tile's entry does (origaitv selftest S3.2).
         const item = request.item && typeof request.item === "object" ? request.item : undefined;
         return this.fromHome({ cmd: "open-app", app: String(request.app ?? ""), ...(item ? { item } : {}) });
       }
@@ -2389,7 +2389,7 @@ export class Screen {
       case "ambient":
         return this.showAmbient();
       case "wake":
-        return this.wake("agentv screen wake");
+        return this.wake("origaitv screen wake");
       case "tv":
         if (typeof request.on !== "boolean") return { ok: false, error: "tv on or off" };
         return this.tv(request.on);
@@ -2398,7 +2398,7 @@ export class Screen {
         return this.fromHome({ cmd: `update-${request.what}` }, true);
       case "power":
         return this.power(request.what);
-      // The PIN, asked for on the TV, for agentv-pin-check when there's no
+      // The PIN, asked for on the TV, for origaitv-pin-check when there's no
       // terminal to type it in, as with Super+Ctrl+Home.
       case "pin":
         return this.askPin(String(request.action ?? ""));
@@ -2455,13 +2455,13 @@ function sleep(ms: number): Promise<void> {
 
 // --- On the box -------------------------------------------------------------
 
-const AGENTV_PATH = process.env.AGENTV_PATH ?? "/usr/share/agentv";
+const ORIGAITV_PATH = process.env.ORIGAITV_PATH ?? "/usr/share/origaitv";
 
 // Chromium itself, not Arch's launcher, which would add the flags in the
 // owner's ~/.config/chromium-flags.conf: those are Omarchy's desktop's, such
 // as its extensions, and the TV session has nothing of the desktop.
 function chromium(): string {
-  if (process.env.AGENTV_CHROMIUM) return process.env.AGENTV_CHROMIUM;
+  if (process.env.ORIGAITV_CHROMIUM) return process.env.ORIGAITV_CHROMIUM;
   return existsSync("/usr/lib/chromium/chromium") ? "/usr/lib/chromium/chromium" : "chromium";
 }
 
@@ -2471,7 +2471,7 @@ function chromium(): string {
 // writes its settings back when it ends, so they're set here, at each
 // start, and not once by a migration.
 function promptsOff(profile: string, whose: string): void {
-  const prefs = spawnSync("agentv-chromium-prefs", [profile], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
+  const prefs = spawnSync("origaitv-chromium-prefs", [profile], { stdio: ["ignore", "ignore", "inherit"], timeout: 5000 });
   if (prefs.status !== 0) console.log(`couldn't turn off ${whose} prompts: ${prefs.error?.message ?? `exit ${prefs.status}`}`);
 }
 
@@ -2578,7 +2578,7 @@ async function barLook(): Promise<string[]> {
 const LOGIND = ["org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager"];
 
 // Whether Settings → Power's sleep is on, and Settings → Updates' overnight
-// installs, as AgenTV's daemon has them. Off when it doesn't answer.
+// installs, as origaiTV's daemon has them. Off when it doesn't answer.
 async function sleepSettings(): Promise<{ sleep: boolean; overnight: boolean }> {
   const response = await fetch(`${HOME_URL}api/home`, { signal: AbortSignal.timeout(5000) });
   const settings = (await response.json())?.settings;
@@ -2656,14 +2656,14 @@ export const launcher: Launcher = {
   },
 
   splashDone() {
-    spawn("agentv-boot-splash", ["done"], { stdio: "ignore", detached: true })
+    spawn("origaitv-boot-splash", ["done"], { stdio: "ignore", detached: true })
       .on("error", () => {})
       .unref();
   },
 
   corner(appInFront) {
     return new Promise((resolve, reject) => {
-      const args = ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "corner", "front", String(appInFront)];
+      const args = ["ipc", "-n", "-p", join(ORIGAITV_PATH, "session", "toast"), "call", "--", "corner", "front", String(appInFront)];
       execFile("qs", args, { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
@@ -2675,7 +2675,7 @@ export const launcher: Launcher = {
   signInBar(name) {
     return new Promise((resolve, reject) => {
       const call = name === null ? ["signin", "hide"] : ["signin", "show", name];
-      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...call], { timeout: 5000 }, (error, stdout) => {
+      execFile("qs", ["ipc", "-n", "-p", join(ORIGAITV_PATH, "session", "toast"), "call", "--", ...call], { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
         else resolve();
@@ -2704,7 +2704,7 @@ export const launcher: Launcher = {
   async listen(state, text) {
     const args = state === "closed" ? ["listen", "hide"] : ["listen", "show", state, text, ...(await barLook())];
     return new Promise((resolve, reject) => {
-      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+      execFile("qs", ["ipc", "-n", "-p", join(ORIGAITV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error(`the overlay didn't answer: ${error.message}`));
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
         else resolve();
@@ -2717,7 +2717,7 @@ export const launcher: Launcher = {
   async typingBar(bar) {
     const args = bar === null ? ["typing", "hide"] : ["typing", "show", bar.from, bar.text, String(bar.password), ...(await barLook()).slice(0, 3)];
     return new Promise((resolve, reject) => {
-      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
+      execFile("qs", ["ipc", "-n", "-p", join(ORIGAITV_PATH, "session", "toast"), "call", "--", ...args], { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error("the overlay didn't answer"));
         else if (stdout.trim() !== "ok") reject(new Error(`the overlay said: ${stdout.trim()}`));
         else resolve();
@@ -2727,7 +2727,7 @@ export const launcher: Launcher = {
 
   toast(text) {
     return new Promise((resolve, reject) => {
-      execFile("qs", ["ipc", "-n", "-p", join(AGENTV_PATH, "session", "toast"), "call", "--", "toast", "show", text], { timeout: 5000 }, (error, stdout) => {
+      execFile("qs", ["ipc", "-n", "-p", join(ORIGAITV_PATH, "session", "toast"), "call", "--", "toast", "show", text], { timeout: 5000 }, (error, stdout) => {
         if (error) reject(new Error(`the toast overlay didn't answer: ${error.message}`));
         else if (stdout.trim() !== "ok") reject(new Error(`the toast overlay said: ${stdout.trim()}`));
         else resolve();
@@ -2747,8 +2747,8 @@ export const launcher: Launcher = {
   },
 
   desktop(grant) {
-    // agentv desktop checks the grant again with agentv-pin-check.
-    spawn("agentv-desktop", [], { stdio: "ignore", detached: true, env: { ...process.env, AGENTV_PIN_GRANT: grant ?? "" } }).unref();
+    // origaitv desktop checks the grant again with origaitv-pin-check.
+    spawn("origaitv-desktop", [], { stdio: "ignore", detached: true, env: { ...process.env, ORIGAITV_PIN_GRANT: grant ?? "" } }).unref();
   },
 
   async nightUpdates() {
@@ -2825,7 +2825,7 @@ export const launcher: Launcher = {
     return new Promise((resolve) => {
       execFile(
         "systemctl",
-        ["is-active", "--quiet", "agentv-update-tv.service", "agentv-go-back.service", "agentv-update-after.service"],
+        ["is-active", "--quiet", "origaitv-update-tv.service", "origaitv-go-back.service", "origaitv-update-after.service"],
         { timeout: 5000 },
         (error) => resolve(!error),
       );
@@ -2947,7 +2947,7 @@ export const launcher: Launcher = {
 
   // Each kill stops one instance and returns once it's gone, as Omarchy's
   // own restart does it; its launcher takes the clean exit as a deliberate
-  // stop and doesn't start it again. AgenTV's toasts are a Quickshell of
+  // stop and doesn't start it again. origaiTV's toasts are a Quickshell of
   // their own, from another config, so they stay.
   async stopOmarchyShell() {
     const shell = join(process.env.OMARCHY_PATH || "/usr/share/omarchy", "shell");
@@ -2979,7 +2979,7 @@ export const launcher: Launcher = {
 };
 
 function serve(screen: Screen): void {
-  const dir = join(process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.()}`, "agentv");
+  const dir = join(process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.()}`, "origaitv");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, "screen.sock");
   rmSync(path, { force: true });
@@ -3004,7 +3004,7 @@ function serve(screen: Screen): void {
 }
 
 // The ledger's half on this side (S3.3): each installed app's worker, made
-// from its package as AgenTV's daemon describes it, reading its playback
+// from its package as origaiTV's daemon describes it, reading its playback
 // state, and the daemon keeping it.
 export function playbackWatch(home = HOME_URL, log: (line: string) => void = console.log): PlaybackWatch {
   const get = async (path: string) => {
@@ -3245,7 +3245,7 @@ async function main(): Promise<void> {
   }).start();
   // Settings, controllers (ADR-084): this runs as the TV's owner, who BlueZ
   // lets pair a Bluetooth game controller, so the daemon's asks come here.
-  const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`), store: join(homedir(), ".local", "state", "agentv", "controllers.json") });
+  const controllers = new Controllers({ log: (line) => console.log(`controllers: ${line}`), store: join(homedir(), ".local", "state", "origaitv", "controllers.json") });
   controllers.watch();
   new AskWatch<ControllerAsk, ControllerAnswer>({
     url: HOME_URL,
@@ -3274,7 +3274,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
-    console.error(`agentv screen: ${error.message}`);
+    console.error(`origaitv screen: ${error.message}`);
     process.exit(1);
   });
 }

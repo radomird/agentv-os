@@ -3,13 +3,13 @@
 // brings its own and no key ships in any repo. It's given on the TV, with
 // the phone's keyboard, and the daemon hands it to root the way it does the
 // provider's key (daemon/key.ts): a drop in its own state, which
-// agentv-key.path moves into /etc/agentv/env, and it never comes back out.
-// /etc/agentv/tmdb.json says whether there's one.
+// origaitv-key.path moves into /etc/origaitv/env, and it never comes back out.
+// /etc/origaitv/tmdb.json says whether there's one.
 
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-// The same shape agentv-key-store takes: the API key, 32 hex digits, or the
+// The same shape origaitv-key-store takes: the API key, 32 hex digits, or the
 // API read access token.
 const KEY = /^[A-Za-z0-9_.:-]{20,300}$/;
 
@@ -21,7 +21,7 @@ export interface TmdbKeyStatus {
 
 export interface TmdbKeyOptions {
   state: string; // the daemon's own state: the drop goes in <state>/key-drop
-  status?: string; // /etc/agentv/tmdb.json
+  status?: string; // /etc/origaitv/tmdb.json
   waitMs?: number; // how long the move as root may take
 }
 
@@ -32,7 +32,7 @@ export class TmdbKey {
 
   constructor(options: TmdbKeyOptions) {
     this.drop = join(options.state, "key-drop", "tmdb.json");
-    this.statusPath = options.status ?? "/etc/agentv/tmdb.json";
+    this.statusPath = options.status ?? "/etc/origaitv/tmdb.json";
     this.waitMs = options.waitMs ?? 10_000;
   }
 

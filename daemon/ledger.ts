@@ -190,7 +190,7 @@ export class Ledger {
   }
 
   // Drops every row of an app, for one that's gone from the box, such as
-  // agentv selftest's stand-in. Says how many went.
+  // origaitv selftest's stand-in. Says how many went.
   forget(app: string): number {
     return Number(this.db.prepare("DELETE FROM watch WHERE app_id = ?").run(app).changes);
   }

@@ -1,6 +1,6 @@
-// One build in the agentv-builder sandbox (agentv-builder@.service). The
+// One build in the origaitv-builder sandbox (origaitv-builder@.service). The
 // sandbox has no network of its own: its loopback is its own, and its only
-// way out is agentv-build-net's two socket files. This forwards a port on
+// way out is origaitv-build-net's two socket files. This forwards a port on
 // that loopback to each, since the provider CLIs take a proxy and a base URL
 // as addresses, and then runs the build.
 //
@@ -35,7 +35,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     console.error("Usage: node start.ts <build-dir>");
     process.exit(2);
   }
-  const net = process.env.AGENTV_BUILD_NET ?? "/run/agentv-build-net";
+  const net = process.env.ORIGAITV_BUILD_NET ?? "/run/origaitv-build-net";
   const servers = [await forward(PROXY_PORT, join(net, "proxy.sock")), await forward(RELAY_PORT, join(net, "relay.sock")), await forward(PAGE_PORT, join(net, "page.sock"))];
   // A stop from the TV: the build says it was stopped, rather than still
   // going, and keeps what it had.
@@ -43,14 +43,14 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     stopped(new Build(dir));
     process.exit(1);
   });
-  const root = process.env.AGENTV_PATH ?? "/usr/share/agentv";
+  const root = process.env.ORIGAITV_PATH ?? "/usr/share/origaitv";
   const proxy = `http://127.0.0.1:${PROXY_PORT}`;
   const status = await new Runner(dir, {
     root,
     home: process.env.HOME,
     proxy,
     relay: `http://127.0.0.1:${RELAY_PORT}`,
-    standIn: process.env.AGENTV_BUILD_STAND_IN,
+    standIn: process.env.ORIGAITV_BUILD_STAND_IN,
     gates: (build, recipe) => gates(build, recipe, { root, proxy }),
   }).run();
   for (const server of servers) server.close();

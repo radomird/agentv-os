@@ -28,7 +28,7 @@ import type { WatchRow } from "./ledger.ts";
 import { match } from "./executors/play.ts";
 import type { TmdbAnswer } from "./tmdb-api.ts";
 
-export const TMDB_SOCKET = "/run/agentv-router/router.sock";
+export const TMDB_SOCKET = "/run/origaitv-router/router.sock";
 
 // The router's service isn't there: no socket, nobody on it, or it went
 // away mid-answer as root stopped it to start it again with a new key.
@@ -273,7 +273,7 @@ function providers(data: unknown): WatchProvider[] {
 export interface NewsOptions {
   get: TmdbGet;
   state: string; // the daemon's own state, for whats-new.json
-  keySet: () => boolean; // /etc/agentv/tmdb.json says there's a key
+  keySet: () => boolean; // /etc/origaitv/tmdb.json says there's a key
   region: () => Promise<string | null>;
   apps: () => Promise<NewsApp[]>; // every app on the box
   now?: () => Date;

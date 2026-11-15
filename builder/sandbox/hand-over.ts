@@ -1,4 +1,4 @@
-// Root's side of a build (agentv-build.service, which agentv-build.path
+// Root's side of a build (origaitv-build.service, which origaitv-build.path
 // starts): the daemon can't start the sandbox itself, so it leaves what it
 // wants in its own state, and this checks it and starts it.
 //
@@ -6,10 +6,10 @@
 //   build's folder (the app's folder is root's, so the builder can't swap
 //   it), copies the version a change starts from, writes request.json and
 //   the ticket the filter and the relay go by, fetches the CLI into the
-//   builder's home the first time, and starts agentv-builder@.service.
+//   builder's home the first time, and starts origaitv-builder@.service.
 // - stop.json: stops the running build.
 // - install.json: an app an adult approved on the phone, put in place as a
-//   Local app (daemon/apps/install.ts), or a theme in /var/lib/agentv/themes
+//   Local app (daemon/apps/install.ts), or a theme in /var/lib/origaitv/themes
 //   (daemon/made-themes.ts), or the version before it, back for a
 //   rollback. The version that was on home is kept for that. Root checks
 //   the app it installs against what the approval showed: it reaches what
@@ -19,7 +19,7 @@
 //   the build wrote.
 // - remove.json: an app or a theme and every build of it, gone.
 // - sign-in.json: a plan's sign-in, the first time the builder runs
-//   (ADR-040): the provider's own CLI signs in, as agentv-builder in the same
+//   (ADR-040): the provider's own CLI signs in, as origaitv-builder in the same
 //   sandbox, through the filter with a sign-in ticket of its own, and keeps
 //   what it gets in its own files in the builder's home.
 // - sign-in-code.json: the code the person pasted on the phone, for the
@@ -27,10 +27,10 @@
 // - fetch-cli.json: the AI's CLI, wanted now rather than with the first
 //   build, once the AI is connected, at the daemon's start and when an ask
 //   found it missing. If it isn't in the builder's home, this starts
-//   agentv-builder-cli@ for it and doesn't wait, so nothing else queues
+//   origaitv-builder-cli@ for it and doesn't wait, so nothing else queues
 //   behind the download. It writes no answer, so it never hides a build's.
 //
-// One build runs at a time. What happened goes to /run/agentv-build/answer.json
+// One build runs at a time. What happened goes to /run/origaitv-build/answer.json
 // for the daemon, and a refused build's status.json says why.
 
 import { execFileSync } from "node:child_process";
@@ -48,12 +48,12 @@ import { DEFAULT_CAP, type Spend, type Ticket } from "./relay.ts";
 
 export interface HandOverOptions {
   drop: string; // the daemon's drop folder
-  builds: string; // /var/lib/agentv/build
-  apps: string; // /var/lib/agentv/apps
-  themes?: string; // /var/lib/agentv/themes, beside the apps
-  recipes?: string; // AgenTV's own, whose rules a theme is checked by again
+  builds: string; // /var/lib/origaitv/build
+  apps: string; // /var/lib/origaitv/apps
+  themes?: string; // /var/lib/origaitv/themes, beside the apps
+  recipes?: string; // origaiTV's own, whose rules a theme is checked by again
   home: string; // the builder's home
-  run: string; // /run/agentv-build
+  run: string; // /run/origaitv-build
   spend: string; // the relay's spend.json
   builder: { uid: number; gid: number };
   rootUid: number; // who owns what the builder mustn't change
@@ -81,7 +81,7 @@ export function checkRequest(data: unknown): { request?: BuildRequest; from?: st
   const sentence = clean(d.sentence, 500);
   if (!sentence) return { error: "a build says what was asked" };
   if (typeof d.phase !== "string" || !PHASES.includes(d.phase)) return { error: "understand, plan, build or stage-b" };
-  if (d.recipe !== null && !KINDS.includes(d.recipe as never)) return { error: "a recipe AgenTV has, or null for a plan" };
+  if (d.recipe !== null && !KINDS.includes(d.recipe as never)) return { error: "a recipe origaiTV has, or null for a plan" };
   if (!PROVIDERS.includes(d.provider as Provider)) return { error: "claude, chatgpt, gemini, grok or muse" };
   if (d.path !== "plan" && d.path !== "key") return { error: "a plan or a key" };
   if (d.provider === "gemini" && d.path === "plan") return { error: "google's plans aren't offered yet" };
@@ -164,13 +164,13 @@ export class HandOver {
   private answer(build: string | null, started: boolean, reason?: string, action = "start"): { started: boolean; reason?: string } {
     mkdirSync(this.o.run, { recursive: true });
     write(join(this.o.run, "answer.json"), { action, build, started, ...(reason ? { reason } : {}), at: new Date().toISOString() });
-    if (reason) console.error(`agentv-build-start: ${reason}`);
+    if (reason) console.error(`origaitv-build-start: ${reason}`);
     return { started, reason };
   }
 
   running(): boolean {
     // With a pattern, is-active says yes when any build's unit is running.
-    return this.o.systemctl(["--quiet", "is-active", "agentv-builder@*.service"]);
+    return this.o.systemctl(["--quiet", "is-active", "origaitv-builder@*.service"]);
   }
 
   // A folder root keeps, or null if something else is there.
@@ -198,7 +198,7 @@ export class HandOver {
       // A sign-in not yet begun stops too.
       this.take("sign-in.json");
       this.take("sign-in-code.json");
-      this.o.systemctl(["stop", "--no-block", "agentv-builder@*.service", "agentv-builder-sign-in@*.service"]);
+      this.o.systemctl(["stop", "--no-block", "origaitv-builder@*.service", "origaitv-builder-sign-in@*.service"]);
       return this.answer(null, false, "stopped", "stop");
     }
     const code = this.take("sign-in-code.json");
@@ -220,16 +220,16 @@ export class HandOver {
   fetchCli(data: unknown): { started: boolean; reason?: string } {
     const provider = (data as { provider?: unknown } | null)?.provider as Provider;
     if (!PROVIDERS.includes(provider)) {
-      console.error("agentv-build-start: a CLI for which provider");
+      console.error("origaitv-build-start: a CLI for which provider");
       return { started: false, reason: "which provider" };
     }
     const cli = CLIS[provider];
     if (existsSync(join(this.o.home, ".local/bin", cli))) return { started: true };
-    if (!this.o.systemctl(["start", "--no-block", `agentv-builder-cli@${cli}.service`])) {
-      console.error(`agentv-build-start: couldn't start fetching ${cli}`);
+    if (!this.o.systemctl(["start", "--no-block", `origaitv-builder-cli@${cli}.service`])) {
+      console.error(`origaitv-build-start: couldn't start fetching ${cli}`);
       return { started: false, reason: `couldn't start fetching ${cli}` };
     }
-    console.log(`agentv-build-start: fetching ${cli}`);
+    console.log(`origaitv-build-start: fetching ${cli}`);
     return { started: true };
   }
 
@@ -336,10 +336,10 @@ export class HandOver {
   }
 
   // A theme the agent made (S6.4): a copy of its build, links left as links,
-  // checked again by AgenTV's own theme rules rather than the build's, then
+  // checked again by origaiTV's own theme rules rather than the build's, then
   // only what Omarchy shows put in place, for anyone to read.
   private async installTheme(theme: string, about: MadeTheme): Promise<void> {
-    const recipe = loadRecipes(this.o.recipes ?? join(process.env.AGENTV_PATH ?? "/usr/share/agentv", "builder", "recipes")).get("theme");
+    const recipe = loadRecipes(this.o.recipes ?? join(process.env.ORIGAITV_PATH ?? "/usr/share/origaitv", "builder", "recipes")).get("theme");
     if (!recipe) throw new Error("there's no theme recipe on this box");
     mkdirSync(this.themes, { recursive: true, mode: 0o755 });
     const staging = mkdtempSync(join(this.themes, ".staging-"));
@@ -359,7 +359,7 @@ export class HandOver {
     if (typeof id !== "string" || !ID.test(id)) return this.answer(null, false, "which app", "remove");
     try {
       const ticket = JSON.parse(readFileSync(join(this.o.run, "ticket.json"), "utf8")) as Ticket;
-      if (ticket.id === id) this.o.systemctl(["stop", "agentv-builder@*.service"]);
+      if (ticket.id === id) this.o.systemctl(["stop", "origaitv-builder@*.service"]);
     } catch {}
     if ((await readInstalled(this.o.apps))[id]) await removeApp(id, this.o.apps);
     removeTheme(this.themes, id);
@@ -379,7 +379,7 @@ export class HandOver {
     const provider = d.provider as Provider;
     if (!PROVIDERS.includes(provider) || !SIGN_IN[provider]) return this.answer(build, false, "that plan has no sign-in yet", "sign-in");
     if (this.running()) return this.answer(build, false, "another build is running; one runs at a time", "sign-in");
-    this.o.systemctl(["stop", "agentv-builder-sign-in@*.service"]);
+    this.o.systemctl(["stop", "origaitv-builder-sign-in@*.service"]);
     const folder = join(this.o.run, "sign-in");
     mkdirSync(this.o.run, { recursive: true });
     rmSync(folder, { recursive: true, force: true });
@@ -392,9 +392,9 @@ export class HandOver {
       return this.answer(build, false, reason, "sign-in");
     };
     const cli = CLIS[provider];
-    if (!existsSync(join(this.o.home, ".local/bin", cli)) && !this.o.systemctl(["start", `agentv-builder-cli@${cli}.service`])) return refuse(`the box couldn't fetch ${cli}`);
-    if (!this.o.systemctl(["restart", "agentv-build-net.service"])) return refuse("the builder's way out didn't start");
-    if (!this.o.systemctl(["start", "--no-block", `agentv-builder-sign-in@${provider}.service`])) return refuse("Couldn't start the sign-in");
+    if (!existsSync(join(this.o.home, ".local/bin", cli)) && !this.o.systemctl(["start", `origaitv-builder-cli@${cli}.service`])) return refuse(`the box couldn't fetch ${cli}`);
+    if (!this.o.systemctl(["restart", "origaitv-build-net.service"])) return refuse("the builder's way out didn't start");
+    if (!this.o.systemctl(["start", "--no-block", `origaitv-builder-sign-in@${provider}.service`])) return refuse("Couldn't start the sign-in");
     return this.answer(build, true, undefined, "sign-in");
   }
 
@@ -499,16 +499,16 @@ export class HandOver {
 
     // The provider's CLI, fetched into the builder's own home the first time.
     const cli = CLIS[request.provider];
-    if (!existsSync(join(this.o.home, ".local/bin", cli)) && !this.o.systemctl(["start", `agentv-builder-cli@${cli}.service`])) {
+    if (!existsSync(join(this.o.home, ".local/bin", cli)) && !this.o.systemctl(["start", `origaitv-builder-cli@${cli}.service`])) {
       rmSync(join(this.o.run, "ticket.json"), { force: true });
       return refuse(`the box couldn't fetch ${cli}`);
     }
     // A fresh start for the way out, with the key as it is now.
-    if (!this.o.systemctl(["restart", "agentv-build-net.service"])) {
+    if (!this.o.systemctl(["restart", "origaitv-build-net.service"])) {
       rmSync(join(this.o.run, "ticket.json"), { force: true });
       return refuse("the builder's way out didn't start");
     }
-    if (!this.o.systemctl(["start", "--no-block", `agentv-builder@${escapePath(`${request.id}/${request.version}`)}.service`])) {
+    if (!this.o.systemctl(["start", "--no-block", `origaitv-builder@${escapePath(`${request.id}/${request.version}`)}.service`])) {
       rmSync(join(this.o.run, "ticket.json"), { force: true });
       return refuse("the builder didn't start");
     }
@@ -520,22 +520,22 @@ export class HandOver {
 function builderIds(): { uid: number; gid: number } {
   const line = readFileSync("/etc/passwd", "utf8")
     .split("\n")
-    .find((l) => l.startsWith("agentv-builder:"));
+    .find((l) => l.startsWith("origaitv-builder:"));
   const [, , uid, gid] = line?.split(":") ?? [];
-  if (!uid || !gid) throw new Error("there's no agentv-builder user");
+  if (!uid || !gid) throw new Error("there's no origaitv-builder user");
   return { uid: Number(uid), gid: Number(gid) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   process.removeAllListeners("warning");
   const handOver = new HandOver({
-    drop: process.env.AGENTV_BUILD_DROP ?? "/var/lib/agentv/daemon/build-drop",
-    builds: "/var/lib/agentv/build",
-    apps: "/var/lib/agentv/apps",
+    drop: process.env.ORIGAITV_BUILD_DROP ?? "/var/lib/origaitv/daemon/build-drop",
+    builds: "/var/lib/origaitv/build",
+    apps: "/var/lib/origaitv/apps",
     themes: THEMES,
-    home: "/var/lib/agentv/builder",
-    run: "/run/agentv-build",
-    spend: "/var/lib/agentv/spend/spend.json",
+    home: "/var/lib/origaitv/builder",
+    run: "/run/origaitv-build",
+    spend: "/var/lib/origaitv/spend/spend.json",
     builder: builderIds(),
     rootUid: 0,
     systemctl: (args) => {

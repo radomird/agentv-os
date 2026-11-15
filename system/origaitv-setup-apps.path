@@ -1,0 +1,13 @@
+# TV setup's apps, handed over by origaiTV's daemon (board 09): when it leaves
+# the ones the household picked in its private state, origaitv-setup-apps.service
+# installs them as root.
+
+[Unit]
+Description=origaiTV setup's apps hand-over
+
+[Path]
+PathExists=/var/lib/origaitv/daemon/apps-drop/install.json
+Unit=origaitv-setup-apps.service
+
+[Install]
+WantedBy=paths.target

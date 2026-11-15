@@ -1,5 +1,5 @@
-// Apps (board 09): AgenTV's official apps for what the TV is for, then the
-// rest under "more", beside the built-in apps that come with AgenTV. OK ticks
+// Apps (board 09): origaiTV's official apps for what the TV is for, then the
+// rest under "more", beside the built-in apps that come with origaiTV. OK ticks
 // one; continue hands the ticked ones to the box to install in the
 // background, from the signed index, and setup carries on while they do. Each
 // app's own setup (a server address, a sign-in) comes from its tile on home.
@@ -30,13 +30,13 @@ const EXAMPLES = ["a puzzle game", "a slideshow of my photos", "a better weather
 // the canvas. An app it doesn't know takes its description and the next
 // colour.
 const NOTES: Record<string, string> = {
-  "agentv.jellyfin": "Your own server",
-  "agentv.plex": "Your own server",
-  "agentv.immich": "Photos",
-  "agentv.steam": "Games",
-  "agentv.music": "Your own music",
+  "origaitv.jellyfin": "Your own server",
+  "origaitv.plex": "Your own server",
+  "origaitv.immich": "Photos",
+  "origaitv.steam": "Games",
+  "origaitv.music": "Your own music",
 };
-const COLOURS: Record<string, string> = { "agentv.jellyfin": "magenta", "agentv.plex": "orange", "agentv.music": "green", "agentv.immich": "yellow", "agentv.steam": "cyan" };
+const COLOURS: Record<string, string> = { "origaitv.jellyfin": "magenta", "origaitv.plex": "orange", "origaitv.music": "green", "origaitv.immich": "yellow", "origaitv.steam": "cyan" };
 const FACES = ["blue", "magenta", "orange", "green", "yellow", "cyan"];
 const NAMES: Record<Goal, string> = { streaming: "streaming", music: "music", media: "photos", gaming: "gaming" };
 
@@ -57,7 +57,7 @@ function packNames(pack: SetupApp[]): string {
 
 // What an install says in a line: the status bar's, while it runs.
 export function installLine(apps: Installs, names: Record<string, string>): string | null {
-  const name = (id: string) => names[id] ?? id.replace(/^agentv\./, "");
+  const name = (id: string) => names[id] ?? id.replace(/^origaitv\./, "");
   const going = Object.keys(apps).filter((id) => apps[id].state === "queued" || apps[id].state === "installing");
   const failed = Object.keys(apps).filter((id) => apps[id].state === "failed");
   if (going.length) return `Installing ${going.map(name).join(", ")}`;
@@ -104,7 +104,7 @@ export async function apps(ctx: Ctx): Promise<View> {
       "button",
       { class: `app-pick${on ? " on" : ""}${app.state === "failed" ? " bad" : ""}`, "data-focus": true, "data-app": app.id, onclick: () => toggle(app) },
       h("span", { class: "app-mark" }, mark),
-      h("span", { class: `app-face avatar-${COLOURS[app.id] ?? FACES[i % FACES.length]}` }, app.builtin && app.id === "agentv.music" ? glyph("music", 40) : app.name.slice(0, 1).toUpperCase()),
+      h("span", { class: `app-face avatar-${COLOURS[app.id] ?? FACES[i % FACES.length]}` }, app.builtin && app.id === "origaitv.music" ? glyph("music", 40) : app.name.slice(0, 1).toUpperCase()),
       h("span", { class: "app-text" }, h("span", { class: "app-name" }, app.name), h("span", { class: "app-note-line" }, why)),
     );
   };

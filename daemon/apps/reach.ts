@@ -35,15 +35,15 @@ export interface ReachOptions {
 }
 
 // What only the loader says, never the app: who the request is from at the
-// connection's level, and anything in AgenTV's own name. The daemon reads
-// x-agentv-* as coming from the box's own screens.
+// connection's level, and anything in origaiTV's own name. The daemon reads
+// x-origaitv-* as coming from the box's own screens.
 const NOT_THE_APPS = ["host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "expect", "content-length"];
 
 export function appHeaders(pairs: Iterable<[string, string]>): Headers {
   const headers = new Headers();
   for (const [name, value] of pairs) {
     const lower = String(name).toLowerCase();
-    if (NOT_THE_APPS.includes(lower) || lower.startsWith("x-agentv-")) continue;
+    if (NOT_THE_APPS.includes(lower) || lower.startsWith("x-origaitv-")) continue;
     headers.append(name, value);
   }
   return headers;

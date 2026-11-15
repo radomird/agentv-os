@@ -29,7 +29,7 @@
     {
       "id": "build",
       "label": "Making it",
-      "does": "Write the game, starting from the template in app/. It's full screen, drawn on a canvas at 60 frames a second with requestAnimationFrame, and readable from the couch. Input comes only from agentv.input.on (keep each button's pressed and let go yourself; there are no key repeats), Back from agentv.onBack, and Home pauses it through agentv.onPause. The best scores go in agentv.storage and on the tile with agentv.tile.set. Call agentv.ready() once the first frame is drawn. Plain scripts in app/, or src/main.js bundled with bundle if you added packages. No inline scripts, eval or code from other sites. Fill in app/manifest.json's description and tile labels. Run check until it passes.",
+      "does": "Write the game, starting from the template in app/. It's full screen, drawn on a canvas at 60 frames a second with requestAnimationFrame, and readable from the couch. Input comes only from origaitv.input.on (keep each button's pressed and let go yourself; there are no key repeats), Back from origaitv.onBack, and Home pauses it through origaitv.onPause. The best scores go in origaitv.storage and on the tile with origaitv.tile.set. Call origaitv.ready() once the first frame is drawn. Plain scripts in app/, or src/main.js bundled with bundle if you added packages. No inline scripts, eval or code from other sites. Fill in app/manifest.json's description and tile labels. Run check until it passes.",
       "tools": ["read", "list", "write", "remove", "bundle", "check"],
       "writes": ["app/**", "src/**", "NOTES.md"],
       "reads": ["kit"],
@@ -48,7 +48,7 @@
     {
       "id": "try",
       "label": "Trying it on a TV",
-      "does": "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it asks for nothing from the internet.",
+      "does": "Run origaiTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it asks for nothing from the internet.",
       "tools": ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
       "writes": ["app/**", "src/**", "tests/**", "NOTES.md"],
       "reads": ["kit", "tests"],

@@ -1,7 +1,7 @@
 // One build on the box (ADR-011, ADR-043, ADR-046): its folder, what it was
 // asked, what its steps have found, and how it's going.
 //
-// A build lives in /var/lib/agentv/build/<id>/<version>/:
+// A build lives in /var/lib/origaitv/build/<id>/<version>/:
 // - request.json: what root handed over from the daemon, read only here;
 // - recipe.json: the recipe this build walks, the kind's or an approved plan's;
 // - state.json: what the agent declared through the harness (what it

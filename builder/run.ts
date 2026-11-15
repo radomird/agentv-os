@@ -1,5 +1,5 @@
 // The builder (ADR-011, ADR-043, ADR-046): one build, one phase at a time,
-// in the agentv-builder sandbox. The daemon asks for each phase, through
+// in the origaitv-builder sandbox. The daemon asks for each phase, through
 // root, and reads status.json for how it goes.
 //
 // - understand: the agent says what the request is and which recipe fits,
@@ -30,8 +30,8 @@ import { whyOf, type Why } from "./reasons.ts";
 import { KINDS, loadRecipes, planRecipe, stepLabel, type Recipe, type Step } from "./recipe.ts";
 
 export interface RunOptions {
-  root?: string; // AgenTV's files: /usr/share/agentv
-  home?: string; // the builder's home: /var/lib/agentv/builder
+  root?: string; // origaiTV's files: /usr/share/origaitv
+  home?: string; // the builder's home: /var/lib/origaitv/builder
   proxy?: string; // the sandbox's way out
   relay?: string; // the key relay
   standIn?: string; // a recorded build to replay instead of a provider
@@ -139,7 +139,7 @@ export class Runner {
       cwd: this.build.work,
       turns: step.turns ?? 30,
       budget: left,
-      home: this.options.home ?? process.env.HOME ?? "/var/lib/agentv/builder",
+      home: this.options.home ?? process.env.HOME ?? "/var/lib/origaitv/builder",
       proxy: this.options.proxy,
       relay: this.options.relay,
       path: request.path,
@@ -206,7 +206,7 @@ export class Runner {
     this.build.setStatus({ build: request.build, id: request.id, version: request.version, phase: request.phase, state: "running", steps: [], started: now(), at: now() });
     if (!/^local\.[a-z0-9][a-z0-9-]*$/.test(request.id)) return this.fail("an app the agent builds has an id that starts with local.");
     if (request.path === "plan" && !this.options.standIn) {
-      const signed = await signedIn(request.provider, { home: this.options.home ?? process.env.HOME ?? "/var/lib/agentv/builder", proxy: this.options.proxy });
+      const signed = await signedIn(request.provider, { home: this.options.home ?? process.env.HOME ?? "/var/lib/origaitv/builder", proxy: this.options.proxy });
       if (signed === null) return this.fail(`${request.provider}'s plan is coming soon: use a key for it`);
       if (!signed) return this.signIn(request, false);
     }
@@ -264,7 +264,7 @@ export class Runner {
       "No recipe fits it, so write a plan for an adult to approve before anything is built. It's always a page app (read @kit/kit.md for what one can do). Submit it with submit_plan:",
       "- name: what it's called on home;",
       "- says: one line on what it is;",
-      "- steps: up to 8, each an id and in plain words what it does (AgenTV adds its own tests and checks after them);",
+      "- steps: up to 8, each an id and in plain words what it does (origaiTV adds its own tests and checks after them);",
       "- permissions: the internet origins it reaches (none if it needs none), the box's photos or music it reads, whether it has a tile on home and sends notices;",
       "- packages: the npm packages it expects, with exact versions where you know them;",
       request.path === "key" ? "- cost: a rough low and high in dollars, for the whole build." : "",
@@ -390,11 +390,11 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     process.exit(2);
   }
   const status = await new Runner(dir, {
-    root: process.env.AGENTV_PATH,
+    root: process.env.ORIGAITV_PATH,
     home: process.env.HOME,
-    proxy: process.env.AGENTV_BUILD_PROXY,
-    relay: process.env.AGENTV_BUILD_RELAY,
-    standIn: process.env.AGENTV_BUILD_STAND_IN,
+    proxy: process.env.ORIGAITV_BUILD_PROXY,
+    relay: process.env.ORIGAITV_BUILD_RELAY,
+    standIn: process.env.ORIGAITV_BUILD_STAND_IN,
   }).run();
   process.exit(status.state === "failed" ? 1 : 0);
 }

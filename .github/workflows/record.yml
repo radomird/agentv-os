@@ -1,13 +1,13 @@
 name: Record fixtures
 
-# Records the replies AgenTV's tests use as fixtures (ADR-019, layer 3), from
+# Records the replies origaiTV's tests use as fixtures (ADR-019, layer 3), from
 # the services themselves: MET Norway's forecasts for the weather app, the
 # museum archives for the art picker, and an Immich album's shared link for
 # the backgrounds. A push to record/met, record/art or record/immich-share
 # (or a branch starting with one) records them and pushes them back to the
 # branch, where someone copies them into a pull request. Run by hand, it
 # records them and keeps them as an artifact, pushing nothing.
-# Jellyfin's and Immich's replies for their apps are recorded in agentv-apps,
+# Jellyfin's and Immich's replies for their apps are recorded in origaitv-apps,
 # with the apps (ADR-036).
 
 on:
@@ -54,13 +54,13 @@ jobs:
           echo "what=$what" >>"$GITHUB_OUTPUT"
 
       - name: Record
-        run: test/agentv/fixtures/record/${{ steps.which.outputs.what }}
+        run: test/origaitv/fixtures/record/${{ steps.which.outputs.what }}
 
       - name: Keep them
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fixtures-${{ steps.which.outputs.what }}-${{ github.run_id }}
-          path: test/agentv/fixtures/${{ steps.which.outputs.what }}/
+          path: test/origaitv/fixtures/${{ steps.which.outputs.what }}/
           retention-days: 7
 
       - name: Push them back to the record branch
@@ -68,7 +68,7 @@ jobs:
         env:
           WHAT: ${{ steps.which.outputs.what }}
         run: |
-          git add "test/agentv/fixtures/$WHAT"
+          git add "test/origaitv/fixtures/$WHAT"
           if git diff --cached --quiet; then
             echo "Nothing new to push."
             exit 0

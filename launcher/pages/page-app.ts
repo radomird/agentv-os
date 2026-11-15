@@ -2,7 +2,7 @@
 // full screen in a sandboxed frame over home, served from an origin of its
 // own. The frame has scripts and nothing else: no storage of the browser's,
 // no forms, popups or leaving home, and the policy its files come with. It
-// reaches the box only through AgenTV's app kit (kit-host.ts).
+// reaches the box only through origaiTV's app kit (kit-host.ts).
 //
 // Home pauses it and keeps it open behind home, two at most, as it does a
 // web app (ADR-031). Back goes to the app first; one that doesn't keep it,
@@ -207,7 +207,7 @@ function listenKeys(): void {
     requestAnimationFrame(poll);
   };
   window.addEventListener("gamepadconnected", () => front && requestAnimationFrame(poll));
-  (window as unknown as { agentvPadPoll?: () => void }).agentvPadPoll = () => requestAnimationFrame(poll);
+  (window as unknown as { origaitvPadPoll?: () => void }).origaitvPadPoll = () => requestAnimationFrame(poll);
 }
 
 // Opens a page app, or brings back the one open behind home, from its tile,
@@ -237,7 +237,7 @@ export function pageView(ctx: Ctx, id: string): View {
   ctx.running.set(id, { id, game: false, paused: false });
   if (existed) entry.host.resume();
   entry.frame.focus();
-  requestAnimationFrame(() => (window as unknown as { agentvPadPoll?: () => void }).agentvPadPoll?.());
+  requestAnimationFrame(() => (window as unknown as { origaitvPadPoll?: () => void }).origaitvPadPoll?.());
   return {
     el,
     act(action: Action) {

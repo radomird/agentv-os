@@ -60,7 +60,7 @@ function pick(ctx: Ctx): View {
   // The last card leaves it for Settings: the TV plays films without an AI.
   // Its empty second line keeps "Later" level with the AIs' names.
   const later = h("button", { class: "ai-card ai-later", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, h("span", { class: "ai-text" }, h("span", { class: "ai-name" }, "Later"), h("span", { class: "ai-maker" }, "\u00a0")));
-  const el = page(ctx, "agentv ai", "Pick your AI", h("p", { class: "setup-line" }, "It answers you and makes your apps"), h("div", { class: "ai-cards" }, ...cards, later));
+  const el = page(ctx, "origaitv ai", "Pick your AI", h("p", { class: "setup-line" }, "It answers you and makes your apps"), h("div", { class: "ai-cards" }, ...cards, later));
   return { el, first: cards[0], info: info(ctx) };
 }
 
@@ -201,7 +201,7 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const keyButton = h("button", { class: `button${plan ? "" : " primary"}`, "data-focus": true, "data-path": "key", onclick: () => void choose("key") }, "Use an API key");
   const later = h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, "Later");
   const options = h("div", { class: "ai-options" }, ...(plan ? [plan] : []), keyButton, later, paste);
-  const el = page(ctx, `agentv ai ${offer.name}`, `Sign in to ${offer.name}`, line, options, qrBox);
+  const el = page(ctx, `origaitv ai ${offer.name}`, `Sign in to ${offer.name}`, line, options, qrBox);
   draw();
 
   // Back here with the plan picked and its terms accepted: the sign-in

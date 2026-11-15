@@ -50,7 +50,7 @@ async function put(change: { size?: SizeId; output?: DisplayState["output"] }, g
   try {
     const response = await fetch("/api/display", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...(grant ? { "X-AgenTV-Grant": grant } : {}) },
+      headers: { "Content-Type": "application/json", ...(grant ? { "X-origaiTV-Grant": grant } : {}) },
       body: JSON.stringify(change),
     });
     const data = (await response.json()) as DisplayState & { ok?: boolean; error?: string };

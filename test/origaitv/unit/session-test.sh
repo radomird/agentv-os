@@ -1,0 +1,217 @@
+#!/bin/bash
+
+# Guards the switch between the TV session and Omarchy's desktop (ADR-031):
+# bin/origaitv-session picks the TV, or Omarchy's own session once after
+# origaitv desktop, and the desktop after three TV sessions that couldn't
+# start; origaitv desktop and origaitv tv go each way; origaitv-session-setup and
+# the migration make the TV session the one the box logs in to.
+
+# shellcheck disable=SC2016 # the fakes' bodies are run later, by the scripts under test
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
+
+bin="$SCRATCH/bin"
+calls="$SCRATCH/calls"
+mkdir -p "$bin" "$SCRATCH/home" "$SCRATCH/omarchy/default/wayland-sessions"
+echo "boot-one" >"$SCRATCH/boot_id"
+printf '[Desktop Entry]\nName=Omarchy\nExec=uwsm start -g -1 -e -D Hyprland hyprland.desktop\n' \
+  >"$SCRATCH/omarchy/default/wayland-sessions/omarchy.desktop"
+
+fake() {
+  printf '#!/bin/bash\n%s\n' "$2" >"$bin/$1"
+  chmod +x "$bin/$1"
+}
+
+fake start-hyprland 'echo "start-hyprland $* tv=$ORIGAITV_SESSION no-sd-target=$HYPRLAND_NO_SD_TARGET desktop=$XDG_CURRENT_DESKTOP" >>"$CALLS"'
+fake Hyprland 'echo "Hyprland $*" >>"$CALLS"'
+fake omarchy-cmd-present 'type -P "$1" >/dev/null'
+fake systemctl 'echo "systemctl $*" >>"$CALLS"'
+fake logger ':'
+fake uwsm 'echo "uwsm $* tv=${ORIGAITV_SESSION:-}" >>"$CALLS"'
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"'
+fake sudo '"$@"'
+fake hyprctl 'echo "hyprctl $*" >>"$CALLS"'
+fake omarchy-done 'exit 0'
+
+run() {
+  rm -f "$calls"
+  env PATH="$bin:$ROOT/bin:$PATH" HOME="$SCRATCH/home" XDG_STATE_HOME="$SCRATCH/home/.local/state" \
+    CALLS="$calls" ORIGAITV_PATH="$ROOT" OMARCHY_PATH="$SCRATCH/omarchy" ORIGAITV_SESSION_DIRS="$SCRATCH/none" \
+    ORIGAITV_BOOT_ID_FILE="$SCRATCH/boot_id" ORIGAITV_BOOT_SPLASH_NOTE="$SCRATCH/splash-note" "$BASH" "$@"
+}
+
+state="$SCRATCH/home/.local/state/origaitv"
+
+# --- origaitv-session ---------------------------------------------------------
+
+run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+grep -q "^start-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=origaiTV:Hyprland" "$calls" ||
+  fail "with no note it starts the TV session with origaiTV's Hyprland setup" "$(cat "$calls")"
+grep -qx "systemctl --user stop origaitv-tv.target" "$calls" || fail "the TV session's units stop with it" "$(cat "$calls")"
+pass "S1.1 with no note, the log-in starts the TV session, without graphical-session.target"
+stopped=$(grep -n -m1 -x "systemctl --user stop bt-agent.service" "$calls" | cut -d: -f1 || true)
+started=$(grep -n -m1 "^start-hyprland " "$calls" | cut -d: -f1 || true)
+(( ${stopped:-999} < ${started:-0} )) ||
+  fail "Omarchy's pairing agent is stopped before the TV session starts" "$(cat "$calls")"
+pass "the desktop's Bluetooth pairing agent, which says yes to any pairing, is stopped before the TV session starts"
+
+rm -f "$state/quick-exits"
+mkdir -p "$state"
+echo "desktop boot-one" >"$state/next-session"
+run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+[[ $(cat "$calls") == "uwsm start -g -1 -e -D Hyprland hyprland.desktop tv=" ]] ||
+  fail "a note from this boot starts Omarchy's own session, as its entry says" "$(cat "$calls")"
+[[ ! -f $state/next-session ]] || fail "the note counts once"
+pass "S1.3 a note from origaitv desktop starts Omarchy's own session, once"
+
+: >"$SCRATCH/splash-note"
+echo "desktop boot-one" >"$state/next-session"
+run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+[[ $(cat "$calls") == $'systemctl start --no-block origaitv-boot-splash-release.service\nuwsm start -g -1 -e -D Hyprland hyprland.desktop tv=' ]] ||
+  fail "leaving for the desktop during the boot's splash lets Plymouth go first" "$(cat "$calls")"
+rm -f "$SCRATCH/splash-note"
+pass "T2.1 Omarchy's desktop started before home has drawn releases Plymouth first"
+
+echo "desktop boot-zero" >"$state/next-session"
+run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+grep -q "^start-hyprland" "$calls" || fail "a note from an earlier boot is ignored" "$(cat "$calls")"
+[[ ! -f $state/next-session ]] || fail "and removed"
+pass "S1.1 after a power on, the TV comes back even if the desktop was on"
+
+rm -f "$state/quick-exits"
+for _ in 1 2 3; do
+  run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+done
+[[ $(cut -d' ' -f1 "$state/quick-exits") == 3 ]] || fail "quick exits are counted" "$(cat "$state/quick-exits")"
+run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+grep -q "^uwsm start" "$calls" || fail "after three TV sessions that ended at once, Omarchy's desktop starts" "$(cat "$calls")"
+[[ ! -f $state/quick-exits ]] || fail "and the count starts again"
+pass "three TV sessions in a row that end within 20 s start Omarchy's desktop, so the box can be fixed"
+
+fake start-hyprland 'echo "desktop boot-one" >"$XDG_STATE_HOME/origaitv/next-session"'
+run "$ROOT/bin/origaitv-session" 2>/dev/null || true
+[[ ! -f $state/quick-exits ]] || fail "a session left for the desktop isn't counted as a failure"
+pass "a TV session left for the desktop doesn't count as one that couldn't start"
+rm -f "$state/next-session"
+
+# --- origaitv desktop ---------------------------------------------------------
+
+fake origaitv-screen 'echo "origaitv-screen $*" >>"$CALLS"; exit "${SCREEN_STATUS:-0}"'
+ln -sf "$ROOT/bin/origaitv-desktop" "$bin/origaitv-desktop"
+ln -sf "$ROOT/bin/origaitv-pin-check" "$bin/origaitv-pin-check"
+ln -sf "$ROOT/bin/origaitv-tv" "$bin/origaitv-tv"
+
+run "$bin/origaitv-desktop" || fail "origaitv desktop goes from the TV session" "$(cat "$calls")"
+[[ $(cat "$state/next-session") == "desktop boot-one" ]] || fail "it leaves a note for this boot"
+grep -qx "origaitv-screen end" "$calls" || fail "the screen daemon closes the apps and ends the session" "$(cat "$calls")"
+pass "S1.3 origaitv desktop leaves a note for the next log-in and ends the TV session"
+
+rm -f "$state/next-session"
+SCREEN_STATUS=2 run "$bin/origaitv-desktop" 2>/dev/null && fail "with no TV session, origaitv desktop says it can't"
+[[ ! -f $state/next-session ]] || fail "and leaves no note behind"
+pass "with no TV session on, origaitv desktop says so and leaves no note"
+
+# --- origaitv tv --------------------------------------------------------------
+
+run "$bin/origaitv-tv" || fail "origaitv tv in the TV session"
+[[ $(cat "$calls") == "origaitv-screen home" ]] || fail "in the TV session it only puts the home screen in front" "$(cat "$calls")"
+pass "in the TV session, origaitv tv puts the home screen in front"
+
+SCREEN_STATUS=2 run "$bin/origaitv-tv" || fail "origaitv tv on the desktop"
+{ grep -qx "close-all" "$calls" && grep -q "^uwsm stop" "$calls"; } ||
+  fail "on Omarchy's desktop it closes the windows and ends the session" "$(cat "$calls")"
+pass "S1.3 on Omarchy's desktop, origaitv tv closes its windows and ends its session"
+
+HYPRLAND_INSTANCE_SIGNATURE=omarchy run "$bin/origaitv-tv" || fail "origaitv tv from Omarchy's Hyprland"
+! grep -q "^origaitv-screen" "$calls" || fail "from Omarchy's own Hyprland it doesn't ask the TV session's daemon" "$(cat "$calls")"
+{ grep -qx "close-all" "$calls" && grep -q "^uwsm stop" "$calls"; } ||
+  fail "and still closes the windows and ends the session" "$(cat "$calls")"
+HYPRLAND_INSTANCE_SIGNATURE=tv ORIGAITV_SESSION=tv run "$bin/origaitv-tv" || fail "origaitv tv from the TV session's Hyprland"
+[[ $(cat "$calls") == "origaitv-screen home" ]] || fail "the TV session's Hyprland still asks its daemon" "$(cat "$calls")"
+pass "S1.3 Back to TV's keys on Omarchy's desktop go straight to ending its session"
+
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"; sleep 30'
+took=$SECONDS
+HYPRLAND_INSTANCE_SIGNATURE=omarchy run "$bin/origaitv-tv" || fail "origaitv tv with windows that don't close"
+took=$((SECONDS - took))
+(( took < 8 )) || fail "a close that hangs is cut off after a few seconds (took $took s)"
+grep -q "^uwsm stop" "$calls" || fail "and the session still ends" "$(cat "$calls")"
+fake omarchy-hyprland-window-close-all 'echo "close-all" >>"$CALLS"'
+pass "S1.3 Back to TV doesn't wait long on windows that don't close"
+
+# --- origaitv-desktop-hook ----------------------------------------------------
+
+loader="$SCRATCH/home/.local/state/omarchy/toggles/hypr/origaitv-back-to-tv.lua"
+run "$ROOT/bin/origaitv-desktop-hook" --install
+{ grep -q "dofile(path)" "$loader" && grep -q "local path = \"$ROOT/session/desktop.lua\"" "$loader"; } ||
+  fail "--install writes a loader for Back to TV in Omarchy's toggles folder" "$(cat "$loader")"
+{ grep -q 'SUPER + CTRL + Home' "$ROOT/session/desktop.lua" && grep -q '"origaitv tv"' "$ROOT/session/desktop.lua"; } ||
+  fail "Back to TV is Super+Ctrl+Home, running origaitv tv"
+pass "Back to TV on Omarchy's desktop is Super+Ctrl+Home, loaded from Omarchy's toggles folder"
+
+# Home and Back in the TV session (ADR-031): Home from a keyboard's Home key and
+# a remote's Home button; Back stays the app's, with each press and release
+# timed so a hold goes home.
+hypr="$ROOT/session/hypr.lua"
+for bind in 'hl.bind("Home", hl.dsp.exec_cmd("origaitv screen home")' 'hl.bind("XF86HomePage", hl.dsp.exec_cmd("origaitv screen home")'; do
+  grep -qF "$bind" "$hypr" || fail "S2.16 Home is bound in the TV session" "$bind"
+done
+for bind in 'for _, key in ipairs({ "Escape", "XF86Back" }) do' \
+  'hl.bind(key, hl.dsp.exec_cmd("origaitv screen back down $(date +%s%3N)"), { non_consuming = true })' \
+  'hl.bind(key, hl.dsp.exec_cmd("origaitv screen back up $(date +%s%3N)"), { non_consuming = true, release = true })'; do
+  grep -qF "$bind" "$hypr" || fail "S2.16 Back reaches the app in front, and its press and release reach the daemon" "$bind"
+done
+pass "S2.16 Home is bound in the TV session, and Back still reaches the app in front"
+
+rm -f "$loader"
+run "$ROOT/bin/origaitv-desktop-hook"
+[[ -f $loader ]] || fail "the desktop's post-boot hook puts a missing loader back"
+grep -q "hyprctl eval dofile" "$calls" || fail "and this session gets the key straight away" "$(cat "$calls")"
+pass "a desktop that missed the loader gets it, and the key, when it starts"
+grep -qx "systemctl --user start origaitv-input.service origaitv-desktop-remote.service" "$calls" ||
+  fail "ADR-037 the desktop starts the phone's trackpad and keys" "$(cat "$calls")"
+grep -qx "PartOf=graphical-session.target" "$ROOT/system/user/origaitv-desktop-remote.service" ||
+  fail "and its relay stops with the desktop's session"
+pass "ADR-037 the phone's remote works on Omarchy's desktop, through the virtual input device"
+
+grep -qx "origaitv-desktop-hook" "$ROOT/config/omarchy/hooks/post-boot.d/origaitv" ||
+  fail "the desktop's post-boot hook runs origaitv-desktop-hook"
+grep -q "origaitv-tv" "$ROOT/config/omarchy/hooks/post-boot.d/origaitv" &&
+  fail "the desktop no longer opens the TV"
+pass "Omarchy's desktop no longer opens the TV; its post-boot hook only adds Back to TV"
+
+# --- origaitv-session-setup and the migration ---------------------------------
+
+me=$(id -un)
+# A box as Omarchy's installer and stage 0 left it: Omarchy's autologin to its
+# desktop (kept on an encrypted disk) and stage 0's own file.
+mkdir -p "$SCRATCH/sddm.conf.d"
+printf '[Autologin]\nUser=%s\nSession=omarchy.desktop\n' "$me" >"$SCRATCH/sddm.conf.d/autologin.conf"
+printf '[Autologin]\nUser=%s\nSession=omarchy.desktop\n' "$me" >"$SCRATCH/sddm.conf.d/origaitv-autologin.conf"
+ORIGAITV_SDDM_CONF_DIR="$SCRATCH/sddm.conf.d" ORIGAITV_STATE="$SCRATCH/var" run "$ROOT/bin/origaitv-session-setup" "$me" ||
+  fail "origaitv-session-setup runs"
+[[ $(cat "$SCRATCH/sddm.conf.d/zz-origaitv-autologin.conf") == $'[Autologin]\nUser='"$me"$'\nSession=origaitv.desktop\nRelogin=true' ]] ||
+  fail "SDDM logs the owner in to the TV session, and back in after every log-out" "$(cat "$SCRATCH/sddm.conf.d/zz-origaitv-autologin.conf")"
+[[ ! -e $SCRATCH/sddm.conf.d/origaitv-autologin.conf ]] || fail "stage 0's autologin file is gone"
+# What SDDM ends up with: the last Session= in name order.
+session=$(for file in "$SCRATCH/sddm.conf.d"/*.conf; do cat "$file"; done | awk -F= '$1 == "Session" { value = $2 } END { print value }')
+[[ $session == "origaitv.desktop" ]] || fail "origaiTV's autologin comes after Omarchy's own, so it's the one SDDM uses" "$session"
+[[ -d $SCRATCH/var/chromium-home && $(stat -c %a "$SCRATCH/var/chromium-home" 2>/dev/null || stat -f %Lp "$SCRATCH/var/chromium-home") == 700 ]] ||
+  fail "the home screen's profile belongs to the owner alone"
+pass "S1.1 SDDM logs the owner in to the TV session, and the home screen gets its own profile"
+
+ORIGAITV_SDDM_CONF_DIR="$SCRATCH/sddm.conf.d" ORIGAITV_STATE="$SCRATCH/var" run "$ROOT/bin/origaitv-session-setup" "no-such-user-here" 2>/dev/null &&
+  fail "an unknown owner is refused"
+pass "an unknown owner is refused"
+
+fake origaitv-session-setup 'echo "origaitv-session-setup $*" >>"$CALLS"'
+migration=$(grep -l "origaitv-session-setup" "$ROOT"/migrations/origaitv/*.sh)
+mkdir -p "$SCRATCH/home/.config/omarchy/hooks/post-boot.d"
+echo "origaitv-tv" >"$SCRATCH/home/.config/omarchy/hooks/post-boot.d/origaitv"
+rm -f "$loader"
+run -euo pipefail "$migration" || fail "the TV session migration runs" "$(cat "$calls")"
+grep -qx "origaitv-session-setup $me" "$calls" || fail "it makes the TV session the one the box logs in to" "$(cat "$calls")"
+cmp -s "$ROOT/config/omarchy/hooks/post-boot.d/origaitv" "$SCRATCH/home/.config/omarchy/hooks/post-boot.d/origaitv" ||
+  fail "the desktop's post-boot hook stops opening the TV"
+[[ -f $loader ]] || fail "the desktop gets Back to TV"
+pass "the migration moves a box installed before onto the TV session"

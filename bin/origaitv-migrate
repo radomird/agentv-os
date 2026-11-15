@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# origaitv:summary=Run pending origaiTV migrations
+# origaitv:args=[--pending | --mark-all-done]
+# origaitv:hidden=true
+
+# origaiTV's own migrations, numbered and run the way omarchy-migrate runs
+# Omarchy's: each <unix-time>.sh once per user, oldest first, with a marker
+# file once it has finished. Omarchy's post-update hook calls this after every
+# update (ADR-025), and an update from the TV runs it itself, right after
+# Omarchy's migrations (bin/origaitv-update-tv). A fresh install marks them all
+# as done, since it already is what they would migrate to.
+#
+# Then it restarts origaiTV's own services on the version just installed
+# (origaitv-restart), so an update only restarts the box when it has to. It's
+# here rather than in the hook because the hook is a copy in the owner's
+# config, from first boot, while this comes with every update.
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: origaitv-migrate [--pending | --mark-all-done]"
+}
+
+mode="run"
+while (( $# )); do
+  case "$1" in
+    --pending) mode="pending" ;;
+    --mark-all-done) mode="mark" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+MIGRATIONS_DIR="$ORIGAITV_PATH/migrations"
+STATE_DIR="${ORIGAITV_MIGRATION_STATE:-$HOME/.local/state/origaitv/migrations}"
+
+# Oldest first. Names are unix times, so a numeric sort is the order.
+migrations() {
+  local file
+
+  [[ -d $MIGRATIONS_DIR ]] || return 0
+  for file in "$MIGRATIONS_DIR"/*.sh; do
+    [[ -f $file ]] && basename "$file"
+  done | sort -n
+}
+
+pending=()
+while IFS= read -r name; do
+  [[ -n $name && ! -f $STATE_DIR/$name ]] && pending+=("$name")
+done < <(migrations)
+
+case "$mode" in
+  pending)
+    (( ${#pending[@]} > 0 )) || exit 1
+    printf '%s\n' "${pending[@]}"
+    exit 0
+    ;;
+  mark)
+    mkdir -p "$STATE_DIR"
+    for name in ${pending[@]+"${pending[@]}"}; do
+      touch "$STATE_DIR/$name"
+    done
+    exit 0
+    ;;
+esac
+
+if (( ${#pending[@]} == 0 )); then
+  echo "No origaiTV migrations to run"
+else
+  mkdir -p "$STATE_DIR"
+  for name in "${pending[@]}"; do
+    echo -e "\e[32m\nRunning origaiTV migration (${name%.sh})\e[0m"
+    # A failed migration stops here unmarked, so the next update runs it
+    # again, and nothing restarts on code it hasn't migrated for.
+    ORIGAITV_PATH="$ORIGAITV_PATH" bash -euo pipefail "$MIGRATIONS_DIR/$name"
+    touch "$STATE_DIR/$name"
+  done
+fi
+
+# A service that doesn't restart says so, and the update goes on: the check
+# after an update from the TV finds a daemon still on the old version.
+"${ORIGAITV_RESTART:-$(dirname -- "${BASH_SOURCE[0]}")/origaitv-restart}" || true

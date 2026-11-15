@@ -3,7 +3,7 @@
 // provider's terms for that way in, and nothing of it installs until an
 // adult accepts them on the phone, which the box records. A key is then
 // pasted on the phone, or typed here, and a check mark says it's kept. A plan
-// signs in through the provider's own CLI the first time AgenTV builds an
+// signs in through the provider's own CLI the first time origaiTV builds an
 // app (stage 6, ADR-040), so for a plan the step says the CLI is ready and
 // when that sign-in comes, with no check mark for it. The provider's agent
 // CLI arrives in the background, through Omarchy's own wrapper.

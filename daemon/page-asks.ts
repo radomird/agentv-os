@@ -1,5 +1,5 @@
 // A streaming service's stage B (ADR-011): the build sees a page of the
-// service as the household's signed-in browser shows it, through AgenTV and
+// service as the household's signed-in browser shows it, through origaiTV and
 // never the browser itself. The builder's way out (builder/sandbox/net.ts)
 // passes on the address, the daemon checks it against the build that's
 // running and queues it here, and the screen daemon, which holds the

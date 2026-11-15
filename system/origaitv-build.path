@@ -1,0 +1,12 @@
+# A build the daemon wants (ADR-011): when it leaves start.json or stop.json
+# in its private state, origaitv-build.service hands it over as root.
+
+[Unit]
+Description=origaiTV build hand-over
+
+[Path]
+PathExistsGlob=/var/lib/origaitv/daemon/build-drop/*.json
+Unit=origaitv-build.service
+
+[Install]
+WantedBy=paths.target

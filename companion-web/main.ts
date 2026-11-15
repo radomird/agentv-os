@@ -1,9 +1,9 @@
-// AgenTV's phone companion (ADR-008, ADR-023, ADR-032, ADR-037, stage 4): the
+// origaiTV's phone companion (ADR-008, ADR-023, ADR-032, ADR-037, stage 4): the
 // page a phone opens from the TV's QR code, on the same network. It pairs
 // with the code the TV shows and keeps the key it and the box agree on. Then it's:
 // - a remote: a d-pad, Back, Home, play or pause and Settings;
 // - a keyboard: what's typed in its text box goes to the TV, the phone
-//   keyboard's dictation too, and on AgenTV's sign-in screen, a name and a
+//   keyboard's dictation too, and on origaiTV's sign-in screen, a name and a
 //   password the phone's password manager can fill;
 // - playback while something plays, and a trackpad for Omarchy's desktop;
 // - who's watching, arrange home, the update notice with Install tonight,
@@ -441,7 +441,7 @@ function keyPage(ask: Ask): HTMLElement {
   );
 }
 
-// On AgenTV's sign-in screen (ADR-032): fields the phone's password manager
+// On origaiTV's sign-in screen (ADR-032): fields the phone's password manager
 // fills, typed into the service's own form on the TV. Nothing keeps them.
 function signIn(name: string): HTMLElement {
   const user = h("input", { class: "field", type: "email", name: "username", id: "username", autocomplete: "username", autocapitalize: "off", spellcheck: "false", required: true }) as HTMLInputElement;
@@ -455,7 +455,7 @@ function signIn(name: string): HTMLElement {
     h("label", { for: "password", class: "label" }, "Password"),
     pass,
     h("button", { class: "button primary", type: "submit", "data-action": "sign-in" }, glyph("lock", 20), h("span", {}, "Sign in")),
-    h("p", { class: "note" }, "Your password manager can fill these. AgenTV never saves them."),
+    h("p", { class: "note" }, "Your password manager can fill these. origaiTV never saves them."),
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -553,7 +553,7 @@ function updatePage(update: Update): HTMLElement {
       failed(error);
     }
   };
-  const name = update.version === "packages" ? "Update ready" : `AgenTV ${shown(update.version)} is ready`;
+  const name = update.version === "packages" ? "Update ready" : `origaiTV ${shown(update.version)} is ready`;
   const parts: (HTMLElement | null)[] = [
     prompt("tv updates"),
     h("h1", {}, name),

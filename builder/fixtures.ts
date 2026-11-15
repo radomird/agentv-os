@@ -1,7 +1,7 @@
 // An app's fixtures (ADR-019 layer 3, ADR-046): the saved pages and recorded
 // replies its contract checks run against, at the app's real addresses, and
 // how a check's answer is matched against what it expects. Layer 3's runner
-// (test/agentv/contract/runner.mts) uses them in CI, and the builder's
+// (test/origaitv/contract/runner.mts) uses them in CI, and the builder's
 // contract_tests on the box (builder/contract-run.ts), where no network and
 // no sign-in are needed to check an app the agent wrote.
 //

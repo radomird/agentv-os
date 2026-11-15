@@ -126,7 +126,7 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
 
   draw(home);
   const el = phase2
-    ? h("div", { class: "setup-page d3 people2" }, ...heading("agentv people", "Who's watching?", ctx.reduced()), row)
+    ? h("div", { class: "setup-page d3 people2" }, ...heading("origaitv people", "Who's watching?", ctx.reduced()), row)
     : h(
         "div",
         { class: "setup-page" },

@@ -468,7 +468,7 @@ export function buildPage(ctx: Ctx, which: string): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile build-page", "data-state": b.state }, ...heading(askBuilds() && b.state === "confirm" ? `agentv make "${b.sentence}"` : `tv app build ${b.id.replace(/^local\./, "")}`, title), ...body.filter((x): x is HTMLElement => x !== null), buttons.length ? h("div", { class: "check-actions" }, ...buttons) : null),
+    h("div", { class: "page profile build-page", "data-state": b.state }, ...heading(askBuilds() && b.state === "confirm" ? `origaitv make "${b.sentence}"` : `tv app build ${b.id.replace(/^local\./, "")}`, title), ...body.filter((x): x is HTMLElement => x !== null), buttons.length ? h("div", { class: "check-actions" }, ...buttons) : null),
     bar(ctx, "apps"),
   );
   return {

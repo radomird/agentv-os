@@ -1,7 +1,7 @@
--- AgenTV's TV session (ADR-031): Hyprland with AgenTV's setup and nothing of
+-- origaiTV's TV session (ADR-031): Hyprland with origaiTV's setup and nothing of
 -- Omarchy's desktop. No bar, notices, screensaver, idle lock or desktop
--- keybindings. bin/agentv-session starts Hyprland with this file, and
--- AgenTV's screen daemon (daemon/screen.ts) decides over Hyprland's IPC which
+-- keybindings. bin/origaitv-session starts Hyprland with this file, and
+-- origaiTV's screen daemon (daemon/screen.ts) decides over Hyprland's IPC which
 -- window is in front.
 --
 -- Every window opens out of sight, on a special workspace that's never shown,
@@ -9,12 +9,12 @@
 -- makes it full screen. So nothing takes the screen on its own, even before
 -- the daemon has seen it.
 
-local agentv_path = os.getenv("AGENTV_PATH") or "/usr/share/agentv"
+local origaitv_path = os.getenv("ORIGAITV_PATH") or "/usr/share/origaitv"
 
 -- What programs started from here see. The screen daemon and the virtual
 -- input device get the same through systemd at start, below.
-hl.env("AGENTV_SESSION", "tv")
-hl.env("AGENTV_PATH", agentv_path)
+hl.env("ORIGAITV_SESSION", "tv")
+hl.env("ORIGAITV_PATH", origaitv_path)
 hl.env("XDG_SESSION_TYPE", "wayland")
 hl.env("GDK_BACKEND", "wayland,x11,*")
 hl.env("QT_QPA_PLATFORM", "wayland;xcb")
@@ -26,7 +26,7 @@ hl.env("HYPRCURSOR_SIZE", "24")
 -- The TV's mode and scale (ADR-062). The screen daemon (daemon/display.ts)
 -- sets them for the size picked, the TV's full resolution at a scale that
 -- turns it into a 1600, 1920 or 2400 wide canvas, and keeps the last ones it
--- set on one line in ~/.local/state/agentv/display, such as
+-- set on one line in ~/.local/state/origaitv/display, such as
 -- "HDMI-A-1 3840x2160@60 2". The session starts at that line, so there's no
 -- flash of another mode before the daemon looks. With no line (the sizes
 -- switched off, or a TV it hasn't seen yet), the TV's preferred mode at
@@ -38,7 +38,7 @@ local function kept_display()
   if not state or state == "" then
     state = (os.getenv("HOME") or "") .. "/.local/state"
   end
-  local file = io.open(state .. "/agentv/display", "r")
+  local file = io.open(state .. "/origaitv/display", "r")
   if not file then
     return nil
   end
@@ -78,11 +78,11 @@ end
 local keyboard = vconsole()
 
 -- The splash's background, for the TV session's first frame, while
--- AgenTV's splash is kept from the boot to home (ADR-060,
--- bin/agentv-boot-splash leaves the note). It's the colour Plymouth drew,
+-- origaiTV's splash is kept from the boot to home (ADR-060,
+-- bin/origaitv-boot-splash leaves the note). It's the colour Plymouth drew,
 -- from its theme's script, so the hand-over shows no other colour.
 local function splash_background()
-  local note = io.open("/run/agentv-boot-splash", "r")
+  local note = io.open("/run/origaitv-boot-splash", "r")
   if not note then
     return nil
   end
@@ -139,11 +139,11 @@ hl.config({
     disable_scale_notification = true,
     disable_hyprland_guiutils_check = true,
     disable_watchdog_warning = true,
-    -- The TV session sets its own XDG_CURRENT_DESKTOP (AgenTV:Hyprland), and
+    -- The TV session sets its own XDG_CURRENT_DESKTOP (origaiTV:Hyprland), and
     -- Hyprland would say so in a notice over the TV.
     disable_xdg_env_checks = true,
     force_default_wallpaper = 0,
-    -- The splash's background while AgenTV's splash is kept from the boot
+    -- The splash's background while origaiTV's splash is kept from the boot
     -- (above), and Tokyo Night's otherwise, for the moment before the home
     -- screen draws.
     background_color = splash_background() or "rgb(1a1b26)",
@@ -176,43 +176,43 @@ hl.config({
 
 -- Out of sight until the daemon says otherwise.
 hl.window_rule({
-  name = "agentv-held",
+  name = "origaitv-held",
   match = { class = ".*" },
-  workspace = "special:agentv-held silent",
+  workspace = "special:origaitv-held silent",
   no_initial_focus = true,
   suppress_event = "fullscreen maximize activate activatefocus fullscreenoutput",
 })
 
 -- Omarchy's desktop, for maintenance, until Settings has its entry (stage
--- 2). agentv desktop asks for the PIN first, once there is one (stage 4).
-hl.bind("SUPER + CTRL + Home", hl.dsp.exec_cmd("agentv desktop"), { description = "Omarchy's desktop" })
+-- 2). origaitv desktop asks for the PIN first, once there is one (stage 4).
+hl.bind("SUPER + CTRL + Home", hl.dsp.exec_cmd("origaitv desktop"), { description = "Omarchy's desktop" })
 
 -- Home from every input (ADR-031): a keyboard's Home key and a remote's Home
 -- button, which the phone sends through the virtual input device too. The
 -- gamepad's guide button reaches the daemon from input.py.
-hl.bind("Home", hl.dsp.exec_cmd("agentv screen home"), { description = "Home" })
-hl.bind("XF86HomePage", hl.dsp.exec_cmd("agentv screen home"), { description = "Home" })
+hl.bind("Home", hl.dsp.exec_cmd("origaitv screen home"), { description = "Home" })
+hl.bind("XF86HomePage", hl.dsp.exec_cmd("origaitv screen home"), { description = "Home" })
 
 -- Back stays the app's, and holding it for a second goes home. Each press and
 -- release says when it happened, since the two commands can arrive out of
 -- order.
 for _, key in ipairs({ "Escape", "XF86Back" }) do
-  hl.bind(key, hl.dsp.exec_cmd("agentv screen back down $(date +%s%3N)"), { non_consuming = true })
-  hl.bind(key, hl.dsp.exec_cmd("agentv screen back up $(date +%s%3N)"), { non_consuming = true, release = true })
+  hl.bind(key, hl.dsp.exec_cmd("origaitv screen back down $(date +%s%3N)"), { non_consuming = true })
+  hl.bind(key, hl.dsp.exec_cmd("origaitv screen back up $(date +%s%3N)"), { non_consuming = true, release = true })
 end
 
 hl.on("hyprland.start", function()
-  -- AgenTV's splash first, before anything else starts, so it's up as soon
+  -- origaiTV's splash first, before anything else starts, so it's up as soon
   -- as it can be (ADR-060). It draws only when the boot kept the splash.
   -- Plymouth, which let go of the screen and kept its last frame up, quits
-  -- once home has drawn (agentv-boot-splash done): this session's first
+  -- once home has drawn (origaitv-boot-splash done): this session's first
   -- frame can come a second or more after it starts.
-  hl.exec_cmd("agentv-boot-splash tv")
+  hl.exec_cmd("origaitv-boot-splash tv")
   -- The screen daemon, the virtual input device and the toast overlay run
-  -- as user units under agentv-tv.target, and need this session's display.
+  -- as user units under origaitv-tv.target, and need this session's display.
   hl.exec_cmd(
     "systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
       .. " && dbus-update-activation-environment --systemd WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
-      .. " ; systemctl --user start agentv-tv.target"
+      .. " ; systemctl --user start origaitv-tv.target"
   )
 end)

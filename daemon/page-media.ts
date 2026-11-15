@@ -52,7 +52,7 @@ export interface PageMediaOptions {
   // The daemon's check of the app's manifest for a call: null when it may,
   // or why not.
   allowed: Ask;
-  cache?: string; // scaled photos: ~/.cache/agentv/page-photos
+  cache?: string; // scaled photos: ~/.cache/origaitv/page-photos
   ffmpeg?: string;
 }
 
@@ -184,7 +184,7 @@ export class PageMedia {
   }
 
   private async scaled(found: { path: string; size: number; mtime: number }, width: number): Promise<Buffer> {
-    const cache = this.options.cache ?? join(homedir(), ".cache", "agentv", "page-photos");
+    const cache = this.options.cache ?? join(homedir(), ".cache", "origaitv", "page-photos");
     const name = createHash("sha256").update(`${found.path}\0${found.size}\0${found.mtime}\0${width}`).digest("hex");
     const out = join(cache, `${name}.jpg`);
     const kept = await readFile(out).catch(() => null);

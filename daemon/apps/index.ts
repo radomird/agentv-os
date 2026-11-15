@@ -1,9 +1,9 @@
-// AgenTV's signed app index (ADR-010): which apps exist, their tier, and the
+// origaiTV's signed app index (ADR-010): which apps exist, their tier, and the
 // exact commit of the public repo each one installs from, and the app's folder
 // in that repo when it shares one with others, as the official apps share
-// agentv-apps (ADR-036). The index counts
-// only with a good signature from AgenTV's key, the same key the box already
-// holds for its packages and tested.json (agentv-keyring), checked with gpgv
+// origaitv-apps (ADR-036). The index counts
+// only with a good signature from origaiTV's key, the same key the box already
+// holds for its packages and tested.json (origaitv-keyring), checked with gpgv
 // against a keyring that holds that key alone.
 
 import { execFile } from "node:child_process";
@@ -32,7 +32,7 @@ export interface AppIndex {
 // A problem with the index, said so the TV or the command line can show it.
 export class IndexError extends Error {}
 
-export const DEFAULT_KEYRING = "/usr/share/pacman/keyrings/agentv.gpg";
+export const DEFAULT_KEYRING = "/usr/share/pacman/keyrings/origaitv.gpg";
 
 export function run(command: string, args: string[], env: Record<string, string> = {}): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -56,13 +56,13 @@ export interface Signed {
 }
 
 // Checks that sig is a good signature of file by a key in keyring, and says
-// which key and when. The keyring may be armored, as agentv-keyring ships it,
+// which key and when. The keyring may be armored, as origaitv-keyring ships it,
 // or binary.
 export async function verifySignature(file: string, sig: string, keyring = DEFAULT_KEYRING): Promise<Signed> {
-  const work = await mkdtemp(join(tmpdir(), "agentv-index-"));
+  const work = await mkdtemp(join(tmpdir(), "origaitv-index-"));
   try {
     await access(keyring).catch(() => {
-      console.error(`agentv: AgenTV's key isn't at ${keyring}`);
+      console.error(`origaitv: origaiTV's key isn't at ${keyring}`);
       throw new IndexError("Couldn't verify the app list, so nothing was installed");
     });
     const binary = join(work, "keyring.gpg");
@@ -98,7 +98,7 @@ export function parseIndex(text: string): AppIndex {
   }
   const index = data as Partial<AppIndex>;
   if (typeof data !== "object" || data === null || index.schema !== 1 || !Array.isArray(index.apps)) {
-    throw new IndexError("Couldn't read the app list. Update AgenTV and try again.");
+    throw new IndexError("Couldn't read the app list. Update origaiTV and try again.");
   }
   const seen = new Set<string>();
   for (const entry of index.apps as Partial<IndexEntry>[]) {
@@ -136,7 +136,7 @@ async function newestOnly(signed: Signed, seen: string): Promise<void> {
   }
   const had = Number(newest?.[signed.key]) || 0;
   if (signed.at < had) {
-    console.error(`agentv: refused an app index signed at ${new Date(signed.at * 1000).toISOString()}, older than the one this box already took (${new Date(had * 1000).toISOString()})`);
+    console.error(`origaitv: refused an app index signed at ${new Date(signed.at * 1000).toISOString()}, older than the one this box already took (${new Date(had * 1000).toISOString()})`);
     throw new IndexError("The app list is older than the one on this TV, so nothing was installed");
   }
   if (signed.at === had) return;
@@ -149,7 +149,7 @@ async function newestOnly(signed: Signed, seen: string): Promise<void> {
 // checks the signature, then the shape. Returns the index. With seen, a
 // file to remember in, an index older than the newest taken is refused.
 export async function loadIndex(source: string, keyring = DEFAULT_KEYRING, seen?: string): Promise<AppIndex> {
-  const work = await mkdtemp(join(tmpdir(), "agentv-index-"));
+  const work = await mkdtemp(join(tmpdir(), "origaitv-index-"));
   try {
     const file = join(work, "index.json");
     const sig = join(work, "index.json.sig");
@@ -157,14 +157,14 @@ export async function loadIndex(source: string, keyring = DEFAULT_KEYRING, seen?
       for (const [name, path] of [["index.json", file], ["index.json.sig", sig]]) {
         const response = await fetch(`${source.replace(/\/$/, "")}/${name}`, { signal: AbortSignal.timeout(30_000) }).catch(() => null);
         if (!response?.ok) {
-          console.error(`agentv: couldn't fetch the app index from ${source}`);
+          console.error(`origaitv: couldn't fetch the app index from ${source}`);
           throw new IndexError("Couldn't load the app list");
         }
         await writeFile(path, Buffer.from(await response.arrayBuffer()));
       }
     } else {
       await writeFile(file, await readFile(join(source, "index.json")).catch(() => {
-        console.error(`agentv: there's no app index at ${source}`);
+        console.error(`origaitv: there's no app index at ${source}`);
         throw new IndexError("Couldn't load the app list");
       }));
       await writeFile(sig, await readFile(join(source, "index.json.sig")).catch(() => {

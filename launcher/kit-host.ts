@@ -1,4 +1,4 @@
-// Home's side of AgenTV's app kit (contract 2, ADR-043): it holds a page
+// Home's side of origaiTV's app kit (contract 2, ADR-043): it holds a page
 // app's frame, answers the kit's calls from that frame alone, and hands the
 // app its input, Back, and Home's pause. Which app asked is the frame's, not
 // anything in the message, so one app can't speak for another. The calls go
@@ -55,7 +55,7 @@ export class KitHost {
   private async heard(event: MessageEvent): Promise<void> {
     if (!this.frame.contentWindow || event.source !== this.frame.contentWindow) return;
     const message = event.data as FromApp;
-    if (!message || message.agentv !== 1) return;
+    if (!message || message.origaitv !== 1) return;
     if ("back" in message) {
       const answer = this.backs.get(message.back);
       this.backs.delete(message.back);
@@ -66,15 +66,15 @@ export class KitHost {
     if (typeof id !== "number") return;
     const args = Array.isArray(message.args) ? message.args : [];
     if (!CALLS.has(call)) {
-      this.post({ agentv: 1, id, ok: false, error: `${String(call)} isn't something the app kit does` });
+      this.post({ origaitv: 1, id, ok: false, error: `${String(call)} isn't something the app kit does` });
       return;
     }
     try {
       if (call === "ready") {
         this.backend.ready();
-        this.post({ agentv: 1, id, ok: true });
+        this.post({ origaitv: 1, id, ok: true });
       } else if (call === "exit") {
-        this.post({ agentv: 1, id, ok: true });
+        this.post({ origaitv: 1, id, ok: true });
         this.backend.exit();
       } else if (MEDIA.has(call)) {
         const value = await this.backend.media(this.app, call, args);
@@ -83,28 +83,28 @@ export class KitHost {
         if (call === "photos.image" || call === "music.track") {
           const file = value as { type: string; bytes: string };
           const bytes = Uint8Array.from(atob(file.bytes), (c) => c.charCodeAt(0)).buffer;
-          this.post({ agentv: 1, id, ok: true, value: { type: file.type, bytes } }, [bytes]);
+          this.post({ origaitv: 1, id, ok: true, value: { type: file.type, bytes } }, [bytes]);
         } else {
-          this.post({ agentv: 1, id, ok: true, value });
+          this.post({ origaitv: 1, id, ok: true, value });
         }
       } else {
-        this.post({ agentv: 1, id, ok: true, value: await this.backend.daemon(this.app, call, args) });
+        this.post({ origaitv: 1, id, ok: true, value: await this.backend.daemon(this.app, call, args) });
       }
     } catch (error) {
-      this.post({ agentv: 1, id, ok: false, error: (error as Error).message || "Something went wrong" });
+      this.post({ origaitv: 1, id, ok: false, error: (error as Error).message || "Something went wrong" });
     }
   }
 
   input(event: InputEvent): void {
-    this.post({ agentv: 1, event: "input", input: event });
+    this.post({ origaitv: 1, event: "input", input: event });
   }
 
   pause(): void {
-    this.post({ agentv: 1, event: "pause" });
+    this.post({ origaitv: 1, event: "pause" });
   }
 
   resume(): void {
-    this.post({ agentv: 1, event: "resume" });
+    this.post({ origaitv: 1, event: "resume" });
   }
 
   // Back, offered to the app: true when it kept it. No answer in time, from
@@ -120,7 +120,7 @@ export class KitHost {
         clearTimeout(timer);
         resolve(kept);
       });
-      this.post({ agentv: 1, event: "back", back });
+      this.post({ origaitv: 1, event: "back", back });
     });
   }
 }

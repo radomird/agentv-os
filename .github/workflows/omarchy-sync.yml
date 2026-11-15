@@ -51,7 +51,7 @@ jobs:
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           if [[ -z $SYNC_TOKEN ]]; then
-            echo "::error::SYNC_TOKEN isn't set, so the Omarchy sync can't open a pull request. Add a fine-grained token with Contents, Pull requests and Workflows read and write on agentv-os and agentv-iso as the SYNC_TOKEN Actions secret."
+            echo "::error::SYNC_TOKEN isn't set, so the Omarchy sync can't open a pull request. Add a fine-grained token with Contents, Pull requests and Workflows read and write on origaitv-os and origaitv-iso as the SYNC_TOKEN Actions secret."
             exit 1
           fi
 

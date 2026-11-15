@@ -210,7 +210,7 @@ export function changeWaiting(n: number, outcome: Extract<Outcome, { kind: "chan
   waiting = { n, app: outcome.app, name: outcome.name, what: outcome.what, recipe: outcome.recipe };
 }
 
-// The one line under a confirm (ADR-046): a kind of app AgenTV knows how to
+// The one line under a confirm (ADR-046): a kind of app origaiTV knows how to
 // make stays on this TV, and something new has steps for you to check first.
 export function confirmLine(recipe: string | null): string {
   return recipe ? "It stays on this TV" : "You'll check the steps first";
@@ -219,7 +219,7 @@ export function confirmLine(recipe: string | null): string {
 export function askChangePage(ctx: Ctx): View {
   const change = waiting;
   if (!change) {
-    const el = h("div", { class: "screen" }, h("div", { class: "page profile" }, ...heading("agentv change", "Nothing to change")), bar(ctx, "ask"));
+    const el = h("div", { class: "screen" }, h("div", { class: "page profile" }, ...heading("origaitv change", "Nothing to change")), bar(ctx, "ask"));
     return { el };
   }
   const name = change.name;
@@ -249,7 +249,7 @@ export function askChangePage(ctx: Ctx): View {
     h(
       "div",
       { class: "page profile build-page ask-change", "data-state": "confirm" },
-      ...heading(`agentv change ${change.app.replace(/^local\./, "")} "${change.what}"`, `Change ${name}?`),
+      ...heading(`origaitv change ${change.app.replace(/^local\./, "")} "${change.what}"`, `Change ${name}?`),
       h("p", { class: "panel-note" }, confirmLine(change.recipe)),
       h("div", { class: "check-actions" }, build, h("button", { class: "button", "data-focus": true, "data-action": "forget", onclick: () => void act("cancel") }, "Not this")),
     ),

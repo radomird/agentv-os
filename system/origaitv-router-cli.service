@@ -1,0 +1,66 @@
+# The router on a plan (daemon/router-serve.ts, ADR-022, ADR-023): the
+# provider's own CLI, once per sentence, with no tools, as origaitv-builder,
+# which signed in to the plan through the CLI's own login when the builder
+# first ran (ADR-040). The plan's tokens stay in the CLI's own files in the
+# builder's home, and origaiTV never reads them.
+#
+# Like a build (origaitv-builder@.service), it has no network of its own:
+# its only way out is origaitv-router's cli-net.sock, which reaches the plans'
+# providers' own hosts and nothing else. It sees the builder's home and
+# nothing else of /var/lib, no keys and no sign-ins of the TV's. It answers
+# the daemon on /run/origaitv-router-cli/route.sock, for the origaitv-router
+# group only.
+
+[Unit]
+Description=origaiTV router on a plan
+Wants=origaitv-router.service
+After=origaitv-router.service
+RequiresMountsFor=/var/lib/origaitv/builder
+
+[Service]
+User=origaitv-builder
+Group=origaitv-builder
+SupplementaryGroups=origaitv-router
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /usr/share/origaitv/daemon/router-serve.ts cli
+Environment=ORIGAITV_PATH=/usr/share/origaitv HOME=/var/lib/origaitv/builder
+WorkingDirectory=/var/lib/origaitv/builder
+RuntimeDirectory=origaitv-router-cli
+RuntimeDirectoryMode=0755
+Restart=on-failure
+TimeoutStopSec=5s
+UMask=0077
+MemoryMax=1G
+TasksMax=128
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/lib:ro /tmp:nosuid,nodev,mode=1777 /var/tmp:nosuid,nodev,mode=1777
+BindPaths=/var/lib/origaitv/builder
+# As in a build (origaitv-builder@.service): the CLI, mise's tree and the
+# CLI's own settings file are read-only, so what runs for every sentence
+# isn't something a run can change.
+ReadOnlyPaths=-/var/lib/origaitv/builder/.local -/var/lib/origaitv/builder/.config -/var/lib/origaitv/builder/.local/share/mise -/var/lib/origaitv/builder/.local/state/mise -/var/lib/origaitv/builder/.claude/settings.json
+ReadWritePaths=-/var/lib/origaitv/builder/.claude -/var/lib/origaitv/builder/.local/share -/var/lib/origaitv/builder/.local/state -/var/lib/origaitv/builder/.config/muse
+InaccessiblePaths=-/etc/origaitv -/mnt -/media -/srv
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+KeyringMode=private
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

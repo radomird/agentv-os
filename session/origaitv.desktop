@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=origaiTV
+Comment=origaiTV's TV session. Powered by Omarchy
+Exec=/usr/bin/origaitv-session
+TryExec=/usr/bin/origaitv-session
+Type=Application
+DesktopNames=origaiTV;Hyprland

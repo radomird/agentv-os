@@ -1,13 +1,13 @@
 name: Omarchy release candidate
 
 # Twice a week: when Omarchy has a release candidate for a release newer than
-# the one AgenTV sits on, a box tries the move to it (ADR-085). Omarchy tags
+# the one origaiTV sits on, a box tries the move to it (ADR-085). Omarchy tags
 # a candidate weeks before the final release, and the daily sync never counts
-# one, so without this the first AgenTV hears of a new Omarchy is the day it
+# one, so without this the first origaiTV hears of a new Omarchy is the day it
 # ships.
 #
 # What it checks is the image layer's omarchy-update check: the night's
-# installed box takes the newer agentv, then Omarchy's update from the rc
+# installed box takes the newer origaitv, then Omarchy's update from the rc
 # channel, from the TV, and Restart and Shut down still work on it. The other
 # image checks run on the Omarchy the box was installed with, which the
 # nightly run covers, so they'd say nothing about the candidate.
@@ -23,8 +23,8 @@ name: Omarchy release candidate
 # and signs them with a throwaway key it makes in the run, as it does for
 # every run that publishes nothing, and the night's box takes them the way
 # a pull request's run puts its packages on it. Edge's published packages
-# wouldn't do: a box that has only those trusts AgenTV's own key alone, and
-# the newer agentv it updates to here is signed with the throwaway one.
+# wouldn't do: a box that has only those trusts origaiTV's own key alone, and
+# the newer origaitv it updates to here is signed with the throwaway one.
 
 on:
   schedule:
@@ -116,7 +116,7 @@ jobs:
           TAG: ${{ needs.find.outputs.tag }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          title="Omarchy $TAG didn't pass AgenTV's checks"
+          title="Omarchy $TAG didn't pass origaiTV's checks"
           {
             echo "Omarchy $TAG is a release candidate. A box couldn't move to it and come back working, so the final release will likely need work here before the daily sync can take it."
             echo
@@ -149,8 +149,8 @@ jobs:
           TAG: ${{ needs.find.outputs.tag }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"didn't pass AgenTV's checks\"" --json number,title |
-            jq -r '.[] | select(.title | test("^Omarchy v[0-9.]+-rc[0-9]+ didn.t pass AgenTV.s checks$")) | .number' |
+          gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"didn't pass origaiTV's checks\"" --json number,title |
+            jq -r '.[] | select(.title | test("^Omarchy v[0-9.]+-rc[0-9]+ didn.t pass origaiTV.s checks$")) | .number' |
             while read -r number; do
               gh issue close "$number" -R "$GITHUB_REPOSITORY" --comment "A box moved to Omarchy $TAG and came back working: $RUN"
             done

@@ -31,7 +31,7 @@ export interface Sink {
   connected: boolean | null;
 }
 
-// What Settings → Sound chose, in ~/.local/state/agentv/audio.json.
+// What Settings → Sound chose, in ~/.local/state/origaitv/audio.json.
 export interface Chosen {
   output?: string;
   levels?: Record<string, number>;
@@ -98,7 +98,7 @@ export class Audio {
 
   constructor(options: AudioOptions) {
     this.pulse = options.pulse;
-    this.path = options.state ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local/state"), "agentv", "audio.json");
+    this.path = options.state ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local/state"), "origaitv", "audio.json");
     this.log = options.log ?? ((line) => console.log(line));
     this.settleMs = options.settleMs ?? 750;
   }

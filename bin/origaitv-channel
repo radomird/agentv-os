@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# origaitv:summary=Show or switch the channel origaiTV updates from
+# origaitv:args=[stable|edge]
+# origaitv:examples=origaitv channel | origaitv channel edge
+# origaitv:requires-sudo=true
+
+# Everyone is on stable. edge gets every commit that passes origaiTV's checks
+# and is for development only (ADR-025). Omarchy stays on its own stable
+# channel either way.
+
+set -euo pipefail
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+ORIGAITV_ETC=${ORIGAITV_ETC:-/etc/origaitv}
+
+if (( $# == 0 )); then
+  if [[ -s $ORIGAITV_ETC/channel ]]; then
+    head -n 1 "$ORIGAITV_ETC/channel"
+  else
+    # shellcheck source=/dev/null
+    source "$ORIGAITV_PATH/settings"
+    echo "${ORIGAITV_CHANNEL:-stable}"
+  fi
+  exit 0
+fi
+
+case "$1" in
+  stable|edge) ;;
+  *) echo "Usage: origaitv channel [stable|edge]" >&2; exit 2 ;;
+esac
+
+sudo install -d -m 755 "$ORIGAITV_ETC"
+echo "$1" | sudo tee "$ORIGAITV_ETC/channel" >/dev/null
+sudo "$ORIGAITV_BIN_DIR/origaitv-pacman-conf"
+echo "origaiTV now updates from $1. Run origaitv update to move to it."

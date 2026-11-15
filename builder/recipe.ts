@@ -1,14 +1,14 @@
 // The builder's recipes (ADR-046). Each kind of app has one: its steps in
 // plain words, the tools each step may use, a package template, and the
-// tests the result must pass. AgenTV's builder walks the steps in order and
+// tests the result must pass. origaiTV's builder walks the steps in order and
 // gives the agent only that step's tools; the agent fills each step in. A
 // recipe names no service and holds no selectors, so it can be public: the
 // service-specific part is learned on the box and kept there.
 //
 // With no recipe for a request, the agent writes a one-off plan instead, and
 // an adult approves it before anything is built. An approved plan becomes
-// that app's recipe: AgenTV's own steps around the plan's, each with
-// AgenTV's tools for a page app, never ones the plan names.
+// that app's recipe: origaiTV's own steps around the plan's, each with
+// origaiTV's tools for a page app, never ones the plan names.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,10 +25,10 @@ export const TOOLS = {
   write: "Write a file in the build, where this step may write.",
   remove: "Remove a file in the build, where this step may write.",
   npm_info: "Look up a package in the npm registry: its versions, when each was published, and what it says it does.",
-  npm_add: "Add an npm package at an exact version, under AgenTV's safeguards.",
+  npm_add: "Add an npm package at an exact version, under origaiTV's safeguards.",
   bundle: "Bundle src/main.js and the packages it imports into the app's main.js.",
-  check: "Run AgenTV's static checks on the app: the contract, no remote scripts or eval, requests only to declared origins, the size limit.",
-  try: "Run AgenTV's own checks on the app in a headless TV: it opens, answers the remote and a gamepad, Back leaves it, 60 fps, its memory, and no undeclared request.",
+  check: "Run origaiTV's static checks on the app: the contract, no remote scripts or eval, requests only to declared origins, the size limit.",
+  try: "Run origaiTV's own checks on the app in a headless TV: it opens, answers the remote and a gamepad, Back leaves it, 60 fps, its memory, and no undeclared request.",
   run_tests: "Run the app's tests, yours and the recipe's.",
   declare_origin: "Declare an internet origin the app reaches, with why. Approval shows it.",
   fetch_sample: "Fetch an address on a declared origin, to see what it answers, and with save keep it as a recorded reply for the fixtures.",
@@ -238,7 +238,7 @@ export function loadRecipe(dir: string): Recipe {
   return { ...data, dir } as Recipe;
 }
 
-// Every recipe AgenTV has, by kind.
+// Every recipe origaiTV has, by kind.
 export function loadRecipes(root: string): Map<Kind, Recipe> {
   const found = new Map<Kind, Recipe>();
   for (const name of readdirSync(root).sort()) {
@@ -267,7 +267,7 @@ export function planProblems(data: unknown): string[] {
     const ids = new Set<string>();
     for (const step of data.steps as unknown[]) {
       if (!isObject(step) || typeof step.id !== "string" || !STEP_ID.test(step.id) || ids.has(step.id) || ["tests", "try"].includes(step.id)) {
-        problems.push("each step has its own id of lowercase letters, and tests and try are AgenTV's");
+        problems.push("each step has its own id of lowercase letters, and tests and try are origaiTV's");
         continue;
       }
       ids.add(step.id);
@@ -298,9 +298,9 @@ export function planProblems(data: unknown): string[] {
 }
 
 // An approved plan as the recipe the builder walks: the plan's steps, then
-// AgenTV's tests and checks, each with AgenTV's page app tools, never ones
+// origaiTV's tests and checks, each with origaiTV's page app tools, never ones
 // the plan names, and the plan's permissions as its bounds. It starts from
-// AgenTV's page app template and tests (builder/recipes/page).
+// origaiTV's page app template and tests (builder/recipes/page).
 export function planRecipe(plan: Plan, root: string): Recipe {
   const work = ["app/**", "src/**", "DESIGN.md", "NOTES.md"];
   return {
@@ -323,7 +323,7 @@ export function planRecipe(plan: Plan, root: string): Recipe {
       {
         id: "try",
         label: "Trying it on a TV",
-        does: "Run AgenTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only what the plan says.",
+        does: "Run origaiTV's checks with try and the tests with run_tests, and fix what they find, until both pass: it opens, answers the remote and a gamepad, Back leaves it, it keeps 60 frames a second within its memory, and it reaches only what the plan says.",
         tools: ["read", "list", "write", "remove", "bundle", "check", "try", "run_tests"],
         writes: [...work, "tests/**"],
         reads: ["kit", "tests", "plan"],

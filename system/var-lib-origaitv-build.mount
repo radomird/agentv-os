@@ -1,0 +1,16 @@
+# The builds, mounted on themselves nosuid and nodev for the whole box
+# (ADR-052, S6.10). A build's unit binds its own folder from here, so in the
+# builder's sandbox too a set-user-ID or set-group-ID bit, or a device file,
+# in a build gives no one more rights. origaitv-builder@ waits for it.
+
+[Unit]
+Description=origaiTV's builds, where set-user-ID bits and devices do nothing
+
+[Mount]
+What=/var/lib/origaitv/build
+Where=/var/lib/origaitv/build
+Type=none
+Options=bind,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target

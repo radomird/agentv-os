@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# origaitv:summary=Install an app
+# origaitv:args=<app-id> [--index <folder-or-url>] | --local <folder> [--yes]
+# origaitv:examples=origaitv app install origaitv.jellyfin | origaitv app install --local ~/my-app
+# origaitv:requires-sudo=true
+
+# Fetches the app's exact commit from the repo the signed index pins it to,
+# checks it against the app contract and puts it in /var/lib/origaitv/apps/.
+# The index counts only with a good signature from origaiTV's key (ADR-010).
+#
+# With --local, the app comes from a folder on this box instead, as one the
+# box's agent built (ADR-039): it's copied without its fixtures, checked as
+# a local app, and installed once an adult says yes to what it can reach,
+# with the adult PIN when one is set. --yes answers the question, not the PIN.
+
+set -euo pipefail
+
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+ORIGAITV_STATE=${ORIGAITV_STATE:-/var/lib/origaitv}
+
+# The apps belong to the box, so changing them takes sudo, in this terminal.
+apps="$ORIGAITV_STATE/apps"
+[[ -d $apps ]] || apps=$ORIGAITV_STATE
+if [[ ! -w $apps ]] && (( EUID != 0 )); then
+  exec sudo -- "$0" "$@"
+fi
+
+# Node 22.6 to 22.17 runs TypeScript only when asked.
+flags=()
+[[ -n $(node -p 'process.features.typescript || ""' 2>/dev/null) ]] || flags+=(--experimental-strip-types)
+
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+export ORIGAITV_PATH ORIGAITV_STATE ORIGAITV_BIN_DIR
+exec node ${flags[@]+"${flags[@]}"} --disable-warning=ExperimentalWarning "$ORIGAITV_PATH/daemon/apps/cli.ts" install "$@"

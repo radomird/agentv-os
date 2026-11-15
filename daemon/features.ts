@@ -40,7 +40,7 @@ export function isFeature(name: unknown): name is Feature {
 
 export interface FeaturesOptions {
   state: string; // the daemon's own state: features.json goes in it
-  // The channel this box updates from, as `agentv channel` says it. The
+  // The channel this box updates from, as `origaitv channel` says it. The
   // daemon always gives it. Without it, as in a test, what features.json
   // says counts, as on edge.
   channel?: () => Promise<string>;
@@ -112,7 +112,7 @@ export class Features {
     }
     const turningOn = entries.some(([name, on]) => on && !this.defaults[name as Feature]);
     if (turningOn && (await this.channel()) !== "edge") {
-      return { ok: false, status: 409, error: "Switches only turn on on edge. Run agentv channel edge, then agentv update, and try again." };
+      return { ok: false, status: 409, error: "Switches only turn on on edge. Run origaitv channel edge, then origaitv update, and try again." };
     }
     const changes = this.changes();
     for (const [name, on] of entries as [Feature, boolean][]) {

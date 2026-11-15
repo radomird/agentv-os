@@ -29,7 +29,7 @@ export function bar(ctx: Ctx, mode: string, info = "", step?: (HTMLElement | str
     ...(askBuilds() && mode !== "ask" ? [h("button", { class: "bar-link", "data-focus": true, "data-action": "bar-ask", onclick: () => ctx.go("ask") }, "Ask"), h("span", {}, "·")] : []),
     h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("apps") }, "Apps"),
     h("span", {}, "·"),
-    h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("settings") }, ctx.updates.status?.agentv.available && !ctx.updates.status.waiting ? "Settings ●" : "Settings"),
+    h("button", { class: "bar-link", "data-focus": true, onclick: () => ctx.go("settings") }, ctx.updates.status?.origaitv.available && !ctx.updates.status.waiting ? "Settings ●" : "Settings"),
   ];
   return h(
     "div",

@@ -1,11 +1,11 @@
 // Every night, each built app's packages against OSV.dev again (ADR-044):
 // a package that was fine when it was approved can turn out to be malware,
 // or to have a high or critical vulnerability, later. This writes what it
-// finds to /var/lib/agentv/npm-check/warnings.json, and the TV and the
+// finds to /var/lib/origaitv/npm-check/warnings.json, and the TV and the
 // phone warn about it, with Remove or Rebuild.
 //
 // It reads each kept build's lockfile, as approved, and runs outside the
-// builder's sandbox (agentv-npm-check.service), so it asks OSV.dev itself.
+// builder's sandbox (origaitv-npm-check.service), so it asks OSV.dev itself.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -81,14 +81,14 @@ export function osvDirect(base = "https://api.osv.dev/v1/") {
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   process.removeAllListeners("warning");
-  const out = join(process.env.STATE_DIRECTORY ?? "/var/lib/agentv/npm-check", "warnings.json");
+  const out = join(process.env.STATE_DIRECTORY ?? "/var/lib/origaitv/npm-check", "warnings.json");
   let previous: Warnings | null = null;
   try {
     previous = JSON.parse(readFileSync(out, "utf8"));
   } catch {}
   let warnings: Warnings;
   try {
-    warnings = await check(process.env.AGENTV_BUILDS ?? "/var/lib/agentv/build", previous, osvDirect());
+    warnings = await check(process.env.ORIGAITV_BUILDS ?? "/var/lib/origaitv/build", previous, osvDirect());
   } catch (error) {
     // Last night's warnings stand when OSV.dev can't be asked tonight.
     warnings = { ...(previous ?? { apps: [] }), checked: new Date().toISOString(), failed: (error as Error).message.slice(0, 200) };
@@ -96,6 +96,6 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(`${out}.next`, `${JSON.stringify(warnings, null, 2)}\n`, { mode: 0o644 });
   renameSync(`${out}.next`, out);
-  console.log(`checked ${keptBuilds(process.env.AGENTV_BUILDS ?? "/var/lib/agentv/build").length} apps: ${warnings.apps.length} with a warning${warnings.failed ? ` (OSV.dev: ${warnings.failed})` : ""}`);
+  console.log(`checked ${keptBuilds(process.env.ORIGAITV_BUILDS ?? "/var/lib/origaitv/build").length} apps: ${warnings.apps.length} with a warning${warnings.failed ? ` (OSV.dev: ${warnings.failed})` : ""}`);
   process.exit(warnings.failed ? 1 : 0);
 }

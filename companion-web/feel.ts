@@ -7,7 +7,7 @@
 // And no zoom: a double tap or a pinch never zooms the page, so quick taps
 // each count as a press.
 
-const KEY = "agentv-phone-feel";
+const KEY = "origaitv-phone-feel";
 const PRESSED_MS = 120;
 
 export function feelOn(): boolean {

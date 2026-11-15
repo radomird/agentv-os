@@ -2,7 +2,7 @@
 // claude as the reference, codex, gemini, grok and muse beside it, each the
 // provider's own unmodified CLI from the builder's own home. Each run has no
 // built-in tools at all, no shell, no web search and no files of its own:
-// only AgenTV's harness, started for this step, with this step's tools.
+// only origaiTV's harness, started for this step, with this step's tools.
 // Each goes out only through the sandbox's filter, and a key never reaches
 // it: the relay outside the sandbox adds it, and stops a build at its cap on
 // every CLI, with a budget flag of its own or not (ADR-045). With a plan,
@@ -16,7 +16,7 @@ import type { Provider } from "./build.ts";
 
 export interface StepRun {
   prompt: string;
-  brief: string; // AgenTV's brief, given as the system prompt's addition
+  brief: string; // origaiTV's brief, given as the system prompt's addition
   harness: { command: string; args: string[] }; // the harness for this step
   cwd: string; // the build's work folder
   turns: number;
@@ -70,7 +70,7 @@ const BESIDE_HARNESS = new Set(["ListMcpResourcesTool", "ReadMcpResourceTool", "
 export function ownTools(event: unknown): string[] {
   const e = event as { type?: string; subtype?: string; tools?: unknown };
   if (e?.type !== "system" || e.subtype !== "init" || !Array.isArray(e.tools)) return [];
-  return e.tools.filter((tool): tool is string => typeof tool === "string" && !tool.startsWith("mcp__agentv__") && !BESIDE_HARNESS.has(tool));
+  return e.tools.filter((tool): tool is string => typeof tool === "string" && !tool.startsWith("mcp__origaitv__") && !BESIDE_HARNESS.has(tool));
 }
 
 // What every run has: the builder's own home, a plain PATH, and the
@@ -90,11 +90,11 @@ function baseEnv(run: { home: string; proxy?: string }): Record<string, string> 
 }
 
 // A plan's own sign-in through its CLI (ADR-022, ADR-040), in the builder's
-// sandbox, as agentv-builder: the command that starts it, whether the
+// sandbox, as origaitv-builder: the command that starts it, whether the
 // person pastes a code back into it from the provider's page, and how the
-// CLI says it's signed in. AgenTV shows the link the CLI prints and passes
+// CLI says it's signed in. origaiTV shows the link the CLI prints and passes
 // on what the person types, and never sees the plan's tokens, which the CLI
-// keeps in its own files. Only the plans AgenTV offers have one.
+// keeps in its own files. Only the plans origaiTV offers have one.
 // How the CLI says it's signed in: a status command and what it prints,
 // or, for a CLI with none, its own credentials file in the builder's home.
 export type SignIn = { login: string[]; pastes: boolean } & ({ status: string[]; signedIn: (out: string, code: number) => boolean } | { file: string });
@@ -128,14 +128,14 @@ export function command(provider: Provider, run: StepRun): Command {
     return {
       command: process.execPath,
       args: ["--disable-warning=ExperimentalWarning", join(import.meta.dirname, "stand-in.ts"), run.standIn, run.step, JSON.stringify(run.harness)],
-      env: { ...baseEnv(run), AGENTV_STAND_IN_BUDGET: String(run.budget ?? "") },
+      env: { ...baseEnv(run), ORIGAITV_STAND_IN_BUDGET: String(run.budget ?? "") },
     };
   }
   const cli = join(run.home, ".local/bin", CLIS[provider]);
   const env = baseEnv(run);
 
   if (provider === "claude") {
-    const mcp = { mcpServers: { agentv: { type: "stdio", command: run.harness.command, args: run.harness.args } } };
+    const mcp = { mcpServers: { origaitv: { type: "stdio", command: run.harness.command, args: run.harness.args } } };
     Object.assign(env, {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
       DISABLE_AUTOUPDATER: "1",
@@ -147,7 +147,7 @@ export function command(provider: Provider, run: StepRun): Command {
     // With a key, the relay outside the sandbox adds it; the CLI holds a
     // stand-in that's no key at all. With a plan, nothing here: an
     // ANTHROPIC_API_KEY would win over the plan's sign-in.
-    if (run.path === "key" && run.relay) Object.assign(env, { ANTHROPIC_BASE_URL: run.relay, ANTHROPIC_API_KEY: "agentv-relay" });
+    if (run.path === "key" && run.relay) Object.assign(env, { ANTHROPIC_BASE_URL: run.relay, ANTHROPIC_API_KEY: "origaitv-relay" });
     const args = [
       "-p",
       run.prompt,
@@ -162,7 +162,7 @@ export function command(provider: Provider, run: StepRun): Command {
       JSON.stringify(mcp),
       "--strict-mcp-config",
       "--allowedTools",
-      "mcp__agentv",
+      "mcp__origaitv",
       "--disallowedTools",
       "Bash",
       "Agent",
@@ -202,11 +202,11 @@ export function command(provider: Provider, run: StepRun): Command {
       "-c",
       "check_for_update_on_startup=false",
       "-c",
-      `mcp_servers.agentv=${server}`,
+      `mcp_servers.origaitv=${server}`,
     ];
     if (run.path === "key" && run.relay) {
-      // A provider of AgenTV's that sends no key: the relay adds it.
-      args.push("-c", 'model_provider="agentv"', "-c", `model_providers.agentv={name="AgenTV",base_url=${toml(`${run.relay}/v1`)},wire_api="responses"}`);
+      // A provider of origaiTV's that sends no key: the relay adds it.
+      args.push("-c", 'model_provider="origaitv"', "-c", `model_providers.origaitv={name="origaiTV",base_url=${toml(`${run.relay}/v1`)},wire_api="responses"}`);
     }
     args.push(`${run.brief}\n\n${run.prompt}`);
     return { command: cli, args, env: { ...env, CODEX_HOME: join(run.home, ".codex") } };
@@ -217,7 +217,7 @@ export function command(provider: Provider, run: StepRun): Command {
     // sign-in lives too, and nothing from Claude's or Cursor's.
     const grokHome = join(run.home, ".grok");
     const config = [
-      "# AgenTV's builder writes this for each step (builder/providers.ts).",
+      "# origaiTV's builder writes this for each step (builder/providers.ts).",
       "[features]",
       "telemetry = false",
       "write_file = false",
@@ -226,16 +226,16 @@ export function command(provider: Provider, run: StepRun): Command {
       "[cli]",
       "auto_update = false",
       "",
-      "[mcp_servers.agentv]",
+      "[mcp_servers.origaitv]",
       `command = ${toml(run.harness.command)}`,
       `args = [${run.harness.args.map(toml).join(", ")}]`,
     ];
     if (run.path === "key" && run.relay) {
-      // A model of AgenTV's that names a key no one has, so grok sends none
+      // A model of origaiTV's that names a key no one has, so grok sends none
       // and the relay adds it.
-      config.push("", "[model.agentv]", `model = ${toml(GROK_MODEL)}`, `base_url = ${toml(`${run.relay}/v1`)}`, 'api_backend = "responses"', 'env_key = "AGENTV_NO_KEY"', "context_window = 500000");
-      config.push("", "[models]", 'default = "agentv"');
-      env.XAI_API_KEY = "agentv-relay";
+      config.push("", "[model.origaitv]", `model = ${toml(GROK_MODEL)}`, `base_url = ${toml(`${run.relay}/v1`)}`, 'api_backend = "responses"', 'env_key = "ORIGAITV_NO_KEY"', "context_window = 500000");
+      config.push("", "[models]", 'default = "origaitv"');
+      env.XAI_API_KEY = "origaitv-relay";
     }
     Object.assign(env, {
       GROK_HOME: grokHome,
@@ -279,7 +279,7 @@ export function command(provider: Provider, run: StepRun): Command {
         "--permission-mode",
         "dontAsk",
         "--allow",
-        "MCPTool(agentv__*)",
+        "MCPTool(origaitv__*)",
         "--rules",
         run.brief,
       ],
@@ -292,9 +292,9 @@ export function command(provider: Provider, run: StepRun): Command {
     // Muse Code: its shell, writes, web tools and observer agents off, no
     // project rules (the work folder isn't a trusted workspace), and the
     // harness its one MCP server. With its shell off, its own sandbox has
-    // nothing to hold; AgenTV's holds it either way.
+    // nothing to hold; origaiTV's holds it either way.
     const config = join(run.home, ".config");
-    const settings = { schema_version: 1, mcpServers: { agentv: { type: "stdio", command: run.harness.command, args: run.harness.args, required: true } } };
+    const settings = { schema_version: 1, mcpServers: { origaitv: { type: "stdio", command: run.harness.command, args: run.harness.args, required: true } } };
     Object.assign(env, {
       XDG_CONFIG_HOME: config,
       XDG_DATA_HOME: join(run.home, ".local", "share"),
@@ -324,17 +324,17 @@ export function command(provider: Provider, run: StepRun): Command {
     // Off Meta's own address, muse sends no key; the relay adds it.
     if (run.path === "key" && run.relay) {
       args.push("--base-url", `${run.relay}/v1`);
-      env.META_API_KEY = "agentv-relay";
+      env.META_API_KEY = "origaitv-relay";
     }
     args.push(`${run.brief}\n\n${run.prompt}`);
     return { command: cli, args, env, files: { [join(config, "muse", "settings.json")]: `${JSON.stringify(settings, null, 2)}\n` } };
   }
 
   // Gemini CLI: its built-in tools all turned off, and the harness trusted.
-  const geminiHome = join(run.home, ".gemini-agentv");
+  const geminiHome = join(run.home, ".gemini-origaitv");
   const settings = {
     tools: { exclude: ["run_shell_command", "web_fetch", "google_web_search", "write_file", "replace", "read_file", "read_many_files", "list_directory", "glob", "search_file_content", "save_memory"] },
-    mcpServers: { agentv: { command: run.harness.command, args: run.harness.args, trust: true } },
+    mcpServers: { origaitv: { command: run.harness.command, args: run.harness.args, trust: true } },
     privacy: { usageStatisticsEnabled: false },
     general: { enableAutoUpdate: false },
   };

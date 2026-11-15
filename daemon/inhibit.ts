@@ -11,7 +11,7 @@ export class Inhibitor {
   private command: string[];
   private child: ChildProcess | null = null;
 
-  constructor(why: string, command = ["systemd-inhibit", "--what=sleep", "--who=AgenTV", "--mode=block"]) {
+  constructor(why: string, command = ["systemd-inhibit", "--what=sleep", "--who=origaiTV", "--mode=block"]) {
     this.why = why;
     this.command = command;
   }

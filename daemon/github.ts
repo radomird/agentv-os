@@ -5,7 +5,7 @@
 // the ask and hands it to the screen daemon (asks.ts), which runs as the
 // person: it clones the repo, puts the app in a folder named after it,
 // commits as them and pushes, never with --force. The builder has no part
-// in it and holds nothing it could push with, and AgenTV's own repos are
+// in it and holds nothing it could push with, and origaiTV's own repos are
 // refused.
 
 import { spawn } from "node:child_process";
@@ -46,8 +46,8 @@ export interface GitHubAnswer {
 
 export const NOT_SIGNED_IN = "This TV isn't signed in to GitHub: run gh auth login on Omarchy's desktop, or add an SSH key there";
 
-// AgenTV's own repos, whose names a fork keeps.
-const AGENTV_REPOS = ["agentv-os", "agentv-iso", "agentv-pkgs", "agentv-apps", "agentv-plugin", "agentv-adapters", "agentv-planning"];
+// origaiTV's own repos, whose names a fork keeps.
+const ORIGAITV_REPOS = ["origaitv-os", "origaitv-iso", "origaitv-pkgs", "origaitv-apps", "origaitv-plugin", "origaitv-adapters", "origaitv-planning"];
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const NAME = /^[A-Za-z0-9._-]{1,100}$/;
 
@@ -60,12 +60,12 @@ export function parseRepo(typed: unknown, login: string): Repo | { error: string
   return { owner, name };
 }
 
-// Why a repo is refused, or null: AgenTV's own, and any repo named like
+// Why a repo is refused, or null: origaiTV's own, and any repo named like
 // one of them.
-export function repoRefusal(repo: Repo, agentv: string | null): string | null {
+export function repoRefusal(repo: Repo, origaitv: string | null): string | null {
   const name = repo.name.toLowerCase();
-  if (agentv && repo.owner.toLowerCase() === agentv.toLowerCase() && /^agentv(?:-|$)/.test(name)) return "That's one of AgenTV's own repos. Pick one of yours.";
-  if (AGENTV_REPOS.includes(name)) return "That's named like one of AgenTV's own repos. Pick another.";
+  if (origaitv && repo.owner.toLowerCase() === origaitv.toLowerCase() && /^origaitv(?:-|$)/.test(name)) return "That's one of origaiTV's own repos. Pick one of yours.";
+  if (ORIGAITV_REPOS.includes(name)) return "That's named like one of origaiTV's own repos. Pick another.";
   return null;
 }
 
@@ -119,7 +119,7 @@ export interface GitHubOptions {
 
 // GitHub's SSH host keys, from its API over HTTPS, so ssh knows it's
 // GitHub without taking whatever answers first on trust.
-export async function gitHubHosts(userAgent = "AgenTV"): Promise<string> {
+export async function gitHubHosts(userAgent = "origaiTV"): Promise<string> {
   const response = await fetch("https://api.github.com/meta", { headers: { Accept: "application/vnd.github+json", "User-Agent": userAgent }, signal: AbortSignal.timeout(15_000) });
   const meta = (await response.json()) as { ssh_keys?: unknown };
   const keys = Array.isArray(meta.ssh_keys) ? meta.ssh_keys.filter((key): key is string => typeof key === "string" && /^(?:ssh-ed25519|ecdsa-sha2-nistp256|ssh-rsa) [A-Za-z0-9+/=]+$/.test(key)) : [];
@@ -135,7 +135,7 @@ function sshOptions(knownHosts: string): string[] {
 // A folder of the person's own for one ask, with GitHub's host keys in it
 // when ssh will need them, and gone afterwards.
 async function inFolder<T>(o: GitHubOptions, ssh: boolean, work: (dir: string, knownHosts: string) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(o.tmp ?? tmpdir(), "agentv-push-"));
+  const dir = mkdtempSync(join(o.tmp ?? tmpdir(), "origaitv-push-"));
   try {
     const knownHosts = join(dir, "known_hosts");
     if (ssh) writeFileSync(knownHosts, await (o.hosts ?? (() => gitHubHosts(o.userAgent)))());
@@ -189,7 +189,7 @@ export async function pushApp(ask: PushAsk, o: GitHubOptions = {}): Promise<GitH
     const git = (args: string[], cwd?: string) => exec("git", [...helper, ...args], { cwd, env, ms: 120_000 });
 
     if (who.via === "gh" && (await exec("gh", ["repo", "view", `${owner}/${name}`, "--json", "name"], { env, ms: 30_000 })).code !== 0) {
-      const made = await exec("gh", ["repo", "create", `${owner}/${name}`, "--private", "--description", `${ask.name}, made on my TV with AgenTV`], { env, ms: 60_000 });
+      const made = await exec("gh", ["repo", "create", `${owner}/${name}`, "--private", "--description", `${ask.name}, made on my TV with origaiTV`], { env, ms: 60_000 });
       if (made.code !== 0) return failed("GitHub couldn't make the repo", made);
     }
     const work = join(dir, "repo");
@@ -209,7 +209,7 @@ export async function pushApp(ask: PushAsk, o: GitHubOptions = {}): Promise<GitH
     await git(["add", "--all", "--", ask.id], work);
     if ((await git(["diff", "--cached", "--quiet"], work)).code === 0) return { ok: true, url, pushed: false };
     if ((await git(["rev-parse", "--verify", "--quiet", "HEAD"], work)).code !== 0) await git(["symbolic-ref", "HEAD", "refs/heads/main"], work);
-    const committed = await git(["commit", "--quiet", "--no-verify", "-m", `${ask.name} ${ask.version}, made on my TV with AgenTV`], work);
+    const committed = await git(["commit", "--quiet", "--no-verify", "-m", `${ask.name} ${ask.version}, made on my TV with origaiTV`], work);
     if (committed.code !== 0) return failed(/user\.(?:name|email)|identity/i.test(committed.stderr) ? "Git doesn't know your name and email yet. Set them on Omarchy's desktop." : "Couldn't commit the app", committed);
     const pushed = await git(["push", "--quiet", "--no-verify", "origin", "HEAD"], work);
     if (pushed.code !== 0) return failed(/\[rejected\]|non-fast-forward|fetch first/.test(pushed.stderr) ? "The repo changed while pushing. Try again." : "GitHub refused the push", pushed);

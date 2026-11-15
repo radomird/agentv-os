@@ -15,7 +15,7 @@
 //
 // The right PIN gives a grant: a random token the TV's pages hold for a few
 // minutes and send with each guarded request. The daemon checks it, and so
-// do the screen daemon and agentv-pin-check before their actions.
+// do the screen daemon and origaitv-pin-check before their actions.
 //
 // A grant belongs to whoever entered the PIN: the TV, or one phone. Nobody
 // else can use it, so a PIN entered on one phone opens nothing for another.

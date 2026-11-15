@@ -1,7 +1,7 @@
 // A theme your agent made (the theme recipe, S6.4). An adult approves it on
-// the phone, and root puts it in /var/lib/agentv/themes/<id>/, where anyone
+// the phone, and root puts it in /var/lib/origaitv/themes/<id>/, where anyone
 // may read it: its colours, its icon set, its pictures and its preview,
-// checked again against AgenTV's own rules. The screen daemon, which runs as
+// checked again against origaiTV's own rules. The screen daemon, which runs as
 // the person, then hands it to Omarchy as a theme of theirs, in
 // ~/.config/omarchy/themes/<name>/, and sets it with omarchy-theme-set, so
 // the TV and the desktop change together (ADR-012). Look lists it beside
@@ -11,16 +11,16 @@ import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync,
 import { join } from "node:path";
 import { parseColors, type ThemePreview, themePreview } from "./themes.ts";
 
-export const THEMES = "/var/lib/agentv/themes";
+export const THEMES = "/var/lib/origaitv/themes";
 
 // What a made theme takes along: what Omarchy shows. The SVG scenes its
 // backgrounds were drawn from stay in the build.
 const FILES = /^(?:colors\.toml|icons\.theme|preview\.png|backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.png)$/;
 const FILE_MAX = 25 * 1024 * 1024;
 const ID = /^local\.[a-z0-9][a-z0-9-]{0,62}$/;
-// Marks the person's copy as AgenTV's, so a theme of their own is never
+// Marks the person's copy as origaiTV's, so a theme of their own is never
 // written over.
-const MARK = ".agentv-theme";
+const MARK = ".origaitv-theme";
 
 export interface MadeTheme {
   id: string;
@@ -126,7 +126,7 @@ export function takeTheme(o: { themes: string; id: string; home: string; omarchy
   return { name };
 }
 
-// And when it's removed: the person's copy, if it's still AgenTV's.
+// And when it's removed: the person's copy, if it's still origaiTV's.
 export function dropTheme(o: { id: string; home: string }): void {
   if (!ID.test(o.id)) return;
   const to = join(o.home, ".config", "omarchy", "themes", themeName(o.id));

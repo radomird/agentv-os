@@ -25,7 +25,7 @@ for log in "$dir"/image-*/image.log; do
   sed "s/$ESC\[[0-9;]*m//g" "$log" >"$clean"
 
   # The list the image checks end with, once per pass.
-  failed=$(awk '/AgenTV image check\(s\) failed:$/ { on = 1; next }
+  failed=$(awk '/origaiTV image check\(s\) failed:$/ { on = 1; next }
     on && /^  [^ ]+$/ { sub(/^  /, ""); print; next }
     { on = 0 }' "$clean" | awk '!seen[$0]++')
   # Each check's lines that say why, under the check they came from.

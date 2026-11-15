@@ -3,7 +3,7 @@
 // which is a session of its own (ADR-031), this does, through the same
 // virtual input device. The daemon knows the desktop is on while this holds
 // its stream open, and the phone's remote opens on the trackpad. Omarchy's
-// post-boot hook starts it (bin/agentv-desktop-hook), and it stops with the
+// post-boot hook starts it (bin/origaitv-desktop-hook), and it stops with the
 // desktop's session.
 
 import { RemoteInput } from "./remote.ts";

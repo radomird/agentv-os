@@ -1,8 +1,8 @@
 // Getting ready (board 35, ADR-025, S5.6): once the box is online it brings
 // itself up to date first, so every screen after this one comes from the
 // newest release. It asks the screen daemon for the update check, and when
-// there's a newer AgenTV or Omarchy, for the same install Settings → Updates
-// runs. The install restarts AgenTV, so this page loads again from the new
+// there's a newer origaiTV or Omarchy, for the same install Settings → Updates
+// runs. The install restarts origaiTV, so this page loads again from the new
 // release and carries on here; one that needs the box to restart comes back
 // here after it. A check or an install that doesn't work doesn't hold setup
 // up: it carries on with the version it has, and Settings → Updates has the
@@ -59,7 +59,7 @@ export function ready(ctx: Ctx, phase2 = false): View {
   const list = h("div", { class: phase2 ? "ready-bar" : "ready-list" });
   const go = h("button", { class: "button primary ready-go hidden", "data-focus": true, "data-action": "continue", onclick: () => void next() }, "Continue");
   const el = phase2
-    ? h("div", { class: "setup-page d3 ready2" }, ...heading("agentv update", "Getting ready", ctx.reduced()), line, list)
+    ? h("div", { class: "setup-page d3 ready2" }, ...heading("origaitv update", "Getting ready", ctx.reduced()), line, list)
     : h("div", { class: "setup-page center" }, h("div", { class: "ready-head" }, ...heading("tv setup", "Getting ready", ctx.reduced()), line), list, go);
   // With setup's own switch on, OK moves on once there's nothing left to do.
   let done = false;
@@ -100,15 +100,15 @@ export function ready(ctx: Ctx, phase2 = false): View {
         : row(">", "Waiting for the network"),
       phone ? row("x", `Paired · ${phone}`) : row(" ", "Phone · pair one later in Settings"),
     ];
-    const [from, to] = versions(r.from ?? about.running, r.to ?? status?.agentv.available ?? null);
+    const [from, to] = versions(r.from ?? about.running, r.to ?? status?.origaitv.available ?? null);
     if (!about.network.online || r.update === null || r.update === "checking") rows.push(row(">", "Checking for updates"));
     else if (r.update === "installing") {
       const now = fresh(progress?.at, r.asked) ? progress : null;
-      rows.push(now?.state === "restarting" ? row(">", `AgenTV ${to} · restarting`) : row(">", `AgenTV ${from} to ${to}`, blocks(now?.percent ?? 0)));
-    } else if (r.update === "done") rows.push(row("x", `AgenTV ${to}`));
-    else if (r.update === "none") rows.push(row("x", `AgenTV ${from} · up to date`));
-    else if (r.update === "failed") rows.push(row("!", `AgenTV ${from} · couldn't update`));
-    else rows.push(row("x", `AgenTV ${from} · update later in Settings`));
+      rows.push(now?.state === "restarting" ? row(">", `origaiTV ${to} · restarting`) : row(">", `origaiTV ${from} to ${to}`, blocks(now?.percent ?? 0)));
+    } else if (r.update === "done") rows.push(row("x", `origaiTV ${to}`));
+    else if (r.update === "none") rows.push(row("x", `origaiTV ${from} · up to date`));
+    else if (r.update === "failed") rows.push(row("!", `origaiTV ${from} · couldn't update`));
+    else rows.push(row("x", `origaiTV ${from} · update later in Settings`));
     list.replaceChildren(...rows);
 
     const finished = r.update !== null && !["checking", "installing"].includes(r.update);
@@ -134,7 +134,7 @@ export function ready(ctx: Ctx, phase2 = false): View {
     const status = ctx.updates.status as UpdateStatus | null;
     const progress = ctx.updates.progress as UpdateProgress | null;
     const phone = about.phones[about.phones.length - 1];
-    const [from, to] = versions(r.from ?? about.running, r.to ?? status?.agentv.available ?? null);
+    const [from, to] = versions(r.from ?? about.running, r.to ?? status?.origaitv.available ?? null);
     const finished = about.network.online && r.update !== null && !["checking", "installing"].includes(r.update);
     let percent = 0;
     if (!about.network.online) line.textContent = "Waiting for the network";
@@ -142,10 +142,10 @@ export function ready(ctx: Ctx, phase2 = false): View {
     else if (r.update === "installing") {
       const now = fresh(progress?.at, r.asked) ? progress : null;
       percent = now?.percent ?? 0;
-      line.textContent = now?.state === "restarting" ? `AgenTV ${to} installed. Restarting…` : `Updating AgenTV ${from} to ${to}`;
+      line.textContent = now?.state === "restarting" ? `origaiTV ${to} installed. Restarting…` : `Updating origaiTV ${from} to ${to}`;
     } else {
       percent = 100;
-      line.textContent = r.update === "done" ? `AgenTV ${to} is ready` : r.update === "failed" ? "Couldn't update. Try later in Settings." : `AgenTV ${from} is up to date`;
+      line.textContent = r.update === "done" ? `origaiTV ${to} is ready` : r.update === "failed" ? "Couldn't update. Try later in Settings." : `origaiTV ${from} is up to date`;
     }
     list.replaceChildren(blocks(percent));
     if (!finished) ran = true;
@@ -185,11 +185,11 @@ export function ready(ctx: Ctx, phase2 = false): View {
           const reply = await screen.checkUpdates();
           if (!reply.ok) about.setup = await setup.ready({ update: "failed" });
         } else if (status && fresh(status.checked_at, r.asked)) {
-          const newer = status.ok && !status.waiting && Boolean(status.agentv.available || status.omarchy.available);
-          if (!status.ok) about.setup = await setup.ready({ update: "failed", from: status.agentv.installed ?? r.from });
-          else if (!newer) about.setup = await setup.ready({ update: "none", from: status.agentv.installed ?? about.running, to: status.agentv.installed ?? about.running });
+          const newer = status.ok && !status.waiting && Boolean(status.origaitv.available || status.omarchy.available);
+          if (!status.ok) about.setup = await setup.ready({ update: "failed", from: status.origaitv.installed ?? r.from });
+          else if (!newer) about.setup = await setup.ready({ update: "none", from: status.origaitv.installed ?? about.running, to: status.origaitv.installed ?? about.running });
           else {
-            about.setup = await setup.ready({ update: "installing", from: status.agentv.installed ?? about.running, to: status.agentv.available ?? status.agentv.installed });
+            about.setup = await setup.ready({ update: "installing", from: status.origaitv.installed ?? about.running, to: status.origaitv.available ?? status.origaitv.installed });
             const reply = await screen.installUpdate("");
             if (!reply.ok) about.setup = await setup.ready({ update: "failed" });
           }

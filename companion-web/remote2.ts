@@ -78,7 +78,7 @@ interface Notice {
   open?: () => void;
 }
 
-const DPAD = "agentv-phone-dpad";
+const DPAD = "origaitv-phone-dpad";
 // How far a swipe goes for one step of the focus, and how long a hold is.
 const STEP_PX = 44;
 const HOLD_MS = 600;

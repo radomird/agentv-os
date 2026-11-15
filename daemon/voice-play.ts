@@ -29,7 +29,7 @@ export class VoicePlayer {
 
   constructor(options: { home: string; dir?: string; players?: [string, string[]][] }) {
     this.home = options.home;
-    this.dir = options.dir ?? join(process.env.XDG_RUNTIME_DIR ?? "/tmp", "agentv-voice");
+    this.dir = options.dir ?? join(process.env.XDG_RUNTIME_DIR ?? "/tmp", "origaitv-voice");
     this.players = options.players ?? PLAYERS;
   }
 

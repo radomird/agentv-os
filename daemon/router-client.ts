@@ -12,7 +12,7 @@ import { isCliProvider } from "./providers/cli.ts";
 import { CANT_ANSWER, GETTING_READY, TOOK_TOO_LONG } from "./providers/no-answer.ts";
 import { NONE, type Routed, type RouterApp } from "./router.ts";
 
-export const ROUTER_SOCKETS = { api: "/run/agentv-router/router.sock", cli: "/run/agentv-router-cli/route.sock" };
+export const ROUTER_SOCKETS = { api: "/run/origaitv-router/router.sock", cli: "/run/origaitv-router-cli/route.sock" };
 
 // A route of none, and why, for a sentence the router never got.
 export function unrouted(sentence: string, provider: Provider, via: "api" | "cli", error: string, setup?: Routed["setup"]): Routed {
