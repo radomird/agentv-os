@@ -1,7 +1,7 @@
 name: Check
 
 # origaiTV's fast gates (ADR-019, layers 1 and 2) on every pull request and every
-# push to agentv: Omarchy's files unchanged since .github/omarchy-base, no em
+# push to origaitv: Omarchy's files unchanged since .github/omarchy-base, no em
 # dashes, no secrets, no service automation, no owner in code, shellcheck,
 # origaiTV's unit tests, and Omarchy's own tests no worse than at the base.
 # A pull request that changes how the box installs, boots, migrates or drives
@@ -19,7 +19,7 @@ on:
     # request's checks as skipped.
     types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
-    branches: [agentv]
+    branches: [origaitv]
   workflow_dispatch:
   workflow_call:
 
@@ -69,7 +69,7 @@ jobs:
   # nightly workflows skips the unit, contract and screen tests too. One that touches
   # only origaiTV's own folders skips Omarchy's own tests, which read bin/,
   # install/, migrations/, default/, shell/, themes/ and every .service and
-  # .conf file. A push to agentv runs everything, so a skip that was wrong
+  # .conf file. A push to origaitv runs everything, so a skip that was wrong
   # shows up right after the merge. A skipped job counts as passed for the
   # ruleset, so the jobs below run unless this says "false": if this job
   # fails, everything runs.
@@ -285,7 +285,7 @@ jobs:
         run: |
           paired=false
           for repo in iso pkgs; do
-            default=agentv
+            default=origaitv
             [[ $repo == pkgs ]] && default=main
             heads=$(git ls-remote --heads "https://github.com/$OWNER/origaitv-$repo.git")
             branch=$HEAD_REF

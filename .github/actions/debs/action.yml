@@ -5,7 +5,7 @@ description: >-
   config. Ubuntu's mirror is sometimes slow enough that ffmpeg's 66 MB of
   packages outlast a job's 10 minutes before any test runs, so the packages
   are kept in GitHub's cache, keyed on exactly what apt would fetch. The
-  push runs on agentv save it, and pull requests read it from there.
+  push runs on origaitv save it, and pull requests read it from there.
 
 inputs:
   packages:

@@ -44,7 +44,7 @@ ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 
 tag=""
-target=agentv
+target=origaitv
 dry_run=0
 while (( $# )); do
   case "$1" in

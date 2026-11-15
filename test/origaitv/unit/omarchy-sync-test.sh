@@ -31,7 +31,7 @@ git init -q -b quattro "$upstream"
   git add -A && git commit -qm "Omarchy 1.1.0 rc" && git tag v1.1.0-rc1
 )
 
-# fork <dir> <base> <release file or ""> [<upstream name>]: a fork on agentv
+# fork <dir> <base> <release file or ""> [<upstream name>]: a fork on origaitv
 # with origaiTV's files added, pushed to a bare origin, and a clone of it.
 fork() {
   local dir="$1" base="$2" release="$3" name="${4:-omacom/omarchy}"
@@ -40,14 +40,14 @@ fork() {
   git clone -q "$dir.git" "$dir"
   (
     cd "$dir"
-    git switch -q -c agentv "$base"
+    git switch -q -c origaitv "$base"
     mkdir -p .github
     printf '%s\n' "$base" >.github/omarchy-base
     printf '%s\n' "$name" >.github/omarchy-upstream
     [[ -n $release ]] && printf '%s\n' "$release" >.github/omarchy-release
     printf 'ours\n' >ours.txt
     git add -A && git commit -qm "Add origaiTV"
-    git push -q origin agentv
+    git push -q origin origaitv
   )
 }
 
@@ -71,7 +71,7 @@ pass "S0.6 the newest stable tag is picked, never a release candidate"
   [[ $(cat .github/omarchy-base) == "v1.0.1" ]] || fail "it moves the base"
   git merge-base --is-ancestor v1.0.1 HEAD || fail "it merges the tag"
   [[ -f ours.txt ]] || fail "origaiTV's files stay"
-  (( $(git rev-list --count --merges origin/agentv..HEAD) == 1 )) || fail "it merges, never rebases"
+  (( $(git rev-list --count --merges origin/origaitv..HEAD) == 1 )) || fail "it merges, never rebases"
   [[ -z $(git config --local user.name || true) ]] || fail "a dry run leaves the repo's git identity alone"
   [[ $(git log -1 --format=%cn) == "github-actions[bot]" ]] || fail "the sync commits as the bot"
 )
@@ -85,7 +85,7 @@ pass "an up-to-date fork does nothing"
 
 # A merge that combines both sides is no longer upstream's file.
 fork "$SCRATCH/edited" v1.0.0 ""
-(cd "$SCRATCH/edited" && printf 'ONE\ntwo\nthree\n' >a.txt && git commit -qam "Edit upstream" && git push -q origin agentv)
+(cd "$SCRATCH/edited" && printf 'ONE\ntwo\nthree\n' >a.txt && git commit -qam "Edit upstream" && git push -q origin origaitv)
 sync "$SCRATCH/edited" || fail "a fork with an edited upstream file still syncs" "$(cat "$SCRATCH/edited.log")"
 [[ $(outcome "$SCRATCH/edited" automerge) == "false" ]] || fail "a change that isn't upstream's turns auto-merge off"
 pass "S0.6 a change that isn't upstream's turns auto-merge off"
@@ -111,7 +111,7 @@ pass "S0.6 a new major version gets a pull request that never merges itself"
 )
 fork "$SCRATCH/sibling" v1.0.1 ""
 mkdir -p "$SCRATCH/sibling/odd dir"
-(cd "$SCRATCH/sibling" && printf 'x\n' >"odd dir/ours too.txt" && git add -A && git commit -qm "More origaiTV" && git push -q origin agentv)
+(cd "$SCRATCH/sibling" && printf 'x\n' >"odd dir/ours too.txt" && git add -A && git commit -qm "More origaiTV" && git push -q origin origaitv)
 sync "$SCRATCH/sibling" --tag v1.5.0 || fail "a sibling line syncs" "$(cat "$SCRATCH/sibling.log")"
 (
   cd "$SCRATCH/sibling"
@@ -141,7 +141,7 @@ pass "a sibling line that has one of origaiTV's files stops and names it"
 # A merge that conflicts says which files and why, and leaves no merge behind.
 (cd "$upstream" && printf 'mine\n' >add.txt && git add -A && git commit -qm "Omarchy 1.0.2" && git tag v1.0.2)
 fork "$SCRATCH/addadd" v1.0.1 ""
-(cd "$SCRATCH/addadd" && printf 'origaitv\n' >add.txt && git add -A && git commit -qm "origaiTV's add.txt" && git push -q origin agentv)
+(cd "$SCRATCH/addadd" && printf 'origaitv\n' >add.txt && git add -A && git commit -qm "origaiTV's add.txt" && git push -q origin origaitv)
 if sync "$SCRATCH/addadd" --tag v1.0.2; then
   fail "a merge that conflicts stops"
 fi
@@ -160,7 +160,7 @@ keeps() {
     mkdir -p test/origaitv/policy
     printf '# origaiTV keeps its own\na.txt # the policy\n' >test/origaitv/policy/upstream-exceptions
     printf '%b' "$3" >a.txt
-    git add -A && git commit -qm "origaiTV's own a.txt" && git push -q origin agentv
+    git add -A && git commit -qm "origaiTV's own a.txt" && git push -q origin origaitv
   )
 }
 keeps "$SCRATCH/kept" v1.0.0 'ours\n'

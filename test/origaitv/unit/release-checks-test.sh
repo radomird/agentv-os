@@ -17,9 +17,9 @@ export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
-# A stand-in origaitv-iso: four commits on agentv, and a branch.
+# A stand-in origaitv-iso: four commits on origaitv, and a branch.
 iso="$SCRATCH/origaitv-iso"
-git init -q -b agentv "$iso"
+git init -q -b origaitv "$iso"
 commit() {
   (cd "$iso" && echo "$1" >"$1.txt" && git add -A && git commit -qm "$1")
   git -C "$iso" rev-parse HEAD
@@ -141,7 +141,7 @@ esac
 GH
 cat >"$SCRATCH/work/.github/scripts/nightly-checks" <<'CHECKS'
 #!/bin/bash
-printf 'built=%s\nchecks=agentv\nnewer=\n' 1234567890123456789012345678901234567890 >>"$GITHUB_OUTPUT"
+printf 'built=%s\nchecks=origaitv\nnewer=\n' 1234567890123456789012345678901234567890 >>"$GITHUB_OUTPUT"
 CHECKS
 cat >"$SCRATCH/work/.github/scripts/release-checks" <<CHECKS
 #!/bin/bash
@@ -157,13 +157,13 @@ which() {
 leg() { sed -n 's/^runs=//p' "$SCRATCH/which.out" | jq -r ".[] | select(.packages == \"stable\") | .$1"; }
 
 which 1.0.0 || fail "the step runs for a tagged release" "$(cat "$SCRATCH/which.log")"
-[[ $(leg checks) == "$third" && $(leg update) == "agentv" ]] ||
-  fail "a tagged release is checked with the commit its tag is on, and its update with agentv" "$(cat "$SCRATCH/which.out")"
+[[ $(leg checks) == "$third" && $(leg update) == "origaitv" ]] ||
+  fail "a tagged release is checked with the commit its tag is on, and its update with origaitv" "$(cat "$SCRATCH/which.out")"
 grep -q '^untagged=' "$SCRATCH/which.out" && fail "a tagged release isn't called untagged" "$(cat "$SCRATCH/which.out")"
 pass "the nightly run checks a tagged release with the commit its tag is on, and its update with tonight's checks"
 
 which 1.1.0 || fail "the step runs for a release with no tag" "$(cat "$SCRATCH/which.log")"
-[[ $(leg checks) == "agentv" && -z $(leg update) ]] || fail "a release with no tag is still checked, with tonight's checks" "$(cat "$SCRATCH/which.out")"
+[[ $(leg checks) == "origaitv" && -z $(leg update) ]] || fail "a release with no tag is still checked, with tonight's checks" "$(cat "$SCRATCH/which.out")"
 grep -q '^untagged=origaiTV 1.1.0 is the stable release, and origaitv-iso has no origaitv-v1.1.0 tag' "$SCRATCH/which.out" ||
   fail "and the step says the release has no tag" "$(cat "$SCRATCH/which.out")"
 pass "a release with no tag in origaitv-iso is still checked, and the run is told to fail and why"

@@ -1,10 +1,10 @@
 name: arch-pin
 description: >-
-  Arch's container, pinned the way origaitv-iso's agentv pins it, for every
+  Arch's container, pinned the way origaitv-iso's origaitv pins it, for every
   leg of an image run. origaitv-iso's test/origaitv/image/ci keeps the pin
   (ARCH_PIN), and tags it :latest for its own build and checks. A leg that
   checks with an older origaitv-iso, such as a stable release's, has a ci from
-  before the pin, so this reads ARCH_PIN from origaitv-iso's agentv and does
+  before the pin, so this reads ARCH_PIN from origaitv-iso's origaitv and does
   the same before that ci runs. The release's commit still decides what goes
   in the ISO; this only picks the container it's built and checked in. An
   empty ARCH_PIN does nothing. Needs GH_TOKEN and OWNER.
@@ -12,17 +12,14 @@ description: >-
 runs:
   using: composite
   steps:
-    - name: Arch's container, as origaitv-iso's agentv pins it
+    - name: Arch's container, as origaitv-iso's origaitv pins it
       shell: bash
       run: |
-        # Until origaitv-iso's rename is on agentv, the file is still under
-        # the old name there.
-        ci=$(gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/origaitv-iso/contents/test/origaitv/image/ci?ref=agentv" ||
-          gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/origaitv-iso/contents/test/agentv/image/ci?ref=agentv") ||
-          { echo "::error::Couldn't read origaitv-iso's test/origaitv/image/ci at agentv, to see which Arch container it pins"; exit 1; }
+        ci=$(gh api -H "Accept: application/vnd.github.raw" "repos/$OWNER/origaitv-iso/contents/test/origaitv/image/ci?ref=origaitv") ||
+          { echo "::error::Couldn't read origaitv-iso's test/origaitv/image/ci at origaitv, to see which Arch container it pins"; exit 1; }
         pin=$(sed -nE 's/^ARCH_PIN=([^[:space:]]*).*/\1/p' <<<"$ci" | head -n 1)
         if [[ -z $pin ]]; then
-          echo "origaitv-iso's agentv pins no Arch container, so this leg builds in Arch's :latest"
+          echo "origaitv-iso's origaitv pins no Arch container, so this leg builds in Arch's :latest"
           exit 0
         fi
         if [[ ! $pin =~ ^ghcr\.io/archlinux/archlinux@sha256:[0-9a-f]{64}$ ]]; then
@@ -31,5 +28,5 @@ runs:
         fi
         docker pull -q "$pin" >/dev/null
         docker tag "$pin" ghcr.io/archlinux/archlinux:latest
-        echo "This leg builds and checks in Arch's container $pin, pinned by origaitv-iso's agentv, whichever origaitv-iso it checks with." |
+        echo "This leg builds and checks in Arch's container $pin, pinned by origaitv-iso's origaitv, whichever origaitv-iso it checks with." |
           tee -a "$GITHUB_STEP_SUMMARY"
