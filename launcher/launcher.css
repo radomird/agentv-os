@@ -596,8 +596,17 @@ button {
   color: var(--foreground);
 }
 
-/* TMDB's logo in Settings → About: smaller than origaiTV's own name above it,
-   as TMDB's terms ask. */
+/* origaiTV's logo in Settings → About, the look's own (launcher/origaitv-logo.ts). */
+.about-logo {
+  display: block;
+  height: 56px;
+  width: auto;
+  max-width: 100%;
+  margin-bottom: 12px;
+}
+
+/* TMDB's logo in Settings → About: smaller than origaiTV's own logo and name
+   above it, as TMDB's terms ask. */
 .about-tmdb {
   display: block;
   height: 28px;

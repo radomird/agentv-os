@@ -33,6 +33,7 @@ import { countryValue, loadCountry } from "./country.ts";
 import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsState, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
+import { logoFor } from "../origaitv-logo.ts";
 import { loadSizes, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
 import { properUnits } from "../box-lines.ts";
 
@@ -458,8 +459,19 @@ export function settings(ctx: Ctx, open?: string): View {
   };
 
   const version = () => ctx.state.version.replace(/\.r\d+\.g[0-9a-f]+$/, "");
+  // Whether the theme's background is light, so About shows the logo that
+  // reads on it. A colour it can't read counts as dark, like most themes.
+  const lightBackground = (): boolean => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
+    const hex = /^#?([0-9a-f]{6})$/i.exec(value)?.[1];
+    if (!hex) return false;
+    const [r, g, b] = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5;
+  };
   const aboutPanel = (): HTMLElement[] => [
     aboutBox(ctx),
+    // The look's own logo, with the name and version under it in words.
+    h("img", { class: "about-logo", src: logoFor(lookId(), lightBackground()), alt: "" }),
     h("div", { class: "panel-big" }, `origaiTV ${ctx.state.version}`),
     note("The world's first open-source agentic TV OS. Powered by Omarchy."),
     note("Omarchy is made by David Heinemeier Hansson and its contributors, under the MIT licence."),
