@@ -38,16 +38,33 @@ export function underway(): BuildView[] {
   return builds().filter((b) => b.state !== "installed" && b.state !== "kept");
 }
 
-export async function loadBuilds(ctx: Ctx): Promise<void> {
+// Which ask for the builds is the newest, and its answer. Asks can overlap,
+// as when word of a build's next step comes while the last one is still
+// being answered, and an older answer that comes in later would put the TV
+// back a step. So only the newest answer is kept, and an ask that a newer
+// one overtook waits for that one, so whoever asked sees the newest too.
+let asked = 0;
+let newest: Promise<void> = Promise.resolve();
+
+export function loadBuilds(ctx: Ctx): Promise<void> {
+  const mine = ++asked;
+  newest = keepNewest(ctx, mine);
+  return newest;
+}
+
+async function keepNewest(ctx: Ctx, mine: number): Promise<void> {
   if (ctx.state.viewer.role !== "adult") {
     state = null;
     return;
   }
+  let answer: BuildsState;
   try {
-    state = await daemon.builds();
+    answer = await daemon.builds();
   } catch {
     return;
   }
+  if (mine !== asked) return newest;
+  state = answer;
   for (const b of state.builds) {
     const was = heard.get(b.build);
     heard.set(b.build, b.state);
