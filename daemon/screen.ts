@@ -70,9 +70,9 @@ import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
-import type { Item } from "../apps/contract/contract.ts";
+import type { Item, Navigation } from "../apps/contract/contract.ts";
 import { RemoteInput, sendInput, wheelTurn } from "./remote.ts";
-import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "./remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "./remote-page.ts";
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
 import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
@@ -94,6 +94,9 @@ export type Role = "home" | "web" | "game" | "share";
 
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:origaitv-held";
+// Hyprland's own stand-in output while it has no monitor. hyprctl doesn't
+// list it, and its events can name it.
+const FALLBACK_OUTPUT = "FALLBACK";
 export const HOME_URL = "http://127.0.0.1:3000/";
 
 // True once home's page has loaded and its own script has run: the
@@ -317,6 +320,8 @@ export interface Playback {
   play?(id: string, item: unknown): void;
   // One of the app's playback calls, for the phone's play and pause.
   call?(id: string, path: string): Promise<unknown>;
+  // The app's hints for the phone's d-pad on its pages (ADR-103).
+  navigation?(id: string): Promise<Navigation[]>;
 }
 
 // What asks an app with signIn whether it's signed in (signin.ts).
@@ -446,6 +451,11 @@ export class Screen {
   // Until when a services' window that opens is stage B's look at a page,
   // which stays out of sight (snapshot).
   private quietUntil = 0;
+  // No monitor to put a window on, as when the TV goes to standby or to
+  // another input and its output goes away; and whether the window in front
+  // still has to be put there once one is back.
+  private noOutput = false;
+  private frontLater = false;
   private backHoldMs: number;
   private backDown = 0;
   private backUp = 0;
@@ -767,6 +777,17 @@ export class Screen {
           this.queue(() => this.omarchyShell());
         }
         break;
+      // "monitoraddedv2>>ID,NAME,DESCRIPTION", and the same when one goes.
+      // Hyprland sends "monitoradded>>NAME" too, for the same monitor.
+      case "monitoraddedv2":
+      case "monitorremovedv2": {
+        const output = data.split(",")[1] ?? "";
+        if (output === FALLBACK_OUTPUT) break;
+        this.log(`Hyprland: ${name.replace("v2", "")} ${output}`);
+        if (name === "monitoraddedv2") this.queue(() => this.outputAdded(output));
+        else this.queue(() => this.outputThere().then(() => {}));
+        break;
+      }
     }
   }
 
@@ -882,6 +903,7 @@ export class Screen {
     }
 
     this.log(`kept out of sight: ${describe(window)}`);
+    if (!(await this.onScreen())) return;
     if (client.workspace.name !== HELD_WORKSPACE) {
       await this.hold(address);
     }
@@ -925,6 +947,9 @@ export class Screen {
   private async activated(address: string): Promise<void> {
     const front = this.front();
     if (!front || this.ending || address === front.address) return;
+    // Focus on no window ("0x"), as when the TV's output goes away, or on
+    // one the daemon doesn't know: nothing to give it back from.
+    if (!this.windows.has(address)) return;
     // Something else got focus. Give it back, but don't fight in a loop.
     if (this.now() - this.lastRefocus < 100) return;
     this.lastRefocus = this.now();
@@ -936,6 +961,7 @@ export class Screen {
   private async moved(address: string, workspace: string): Promise<void> {
     const front = this.front();
     if (workspace === TV_WORKSPACE && address !== front?.address && this.windows.has(address)) {
+      if (!(await this.onScreen())) return;
       this.log(`moved onto the TV without the daemon: ${address}; out of sight again`);
       await this.hold(address);
       if (front) await this.focus(front.address);
@@ -947,6 +973,7 @@ export class Screen {
   // put focus back on the window in front. Hyprland only has a toggle, so
   // it looks first: one event too many must not show it again.
   private async hideHeld(): Promise<void> {
+    if (!(await this.onScreen())) return;
     for (const monitor of await this.hypr.monitors()) {
       if (monitor.specialWorkspace?.name === HELD_WORKSPACE) {
         this.log(`the workspace of windows out of sight was shown on ${monitor.name}; hiding it again`);
@@ -959,12 +986,70 @@ export class Screen {
 
   private async keepFullscreen(): Promise<void> {
     const front = this.front();
-    if (front && !this.ending) await this.place(front.address);
+    if (front && !this.ending && (await this.onScreen())) await this.place(front.address);
+  }
+
+  // --- The TV's output going away -------------------------------------------
+
+  // Whether Hyprland has a monitor to put a window on. When the TV goes to
+  // standby or to another input its output can go away, and Hyprland has
+  // only a stand-in of its own, which hyprctl doesn't list. Moving a window
+  // to a workspace then kills Hyprland 0.56, so nothing is moved, focused or
+  // placed while there's none.
+  private async outputThere(): Promise<boolean> {
+    let monitors;
+    try {
+      monitors = await this.hypr.monitors();
+    } catch {
+      // Hyprland didn't answer: the call that follows finds out.
+      return !this.noOutput;
+    }
+    const there = monitors.some((m) => !m.disabled && m.name !== FALLBACK_OUTPUT);
+    if (there === this.noOutput) this.log(there ? "the TV's output is back" : "the TV's output is gone; windows stay where they are until it's back");
+    this.noOutput = !there;
+    return there;
+  }
+
+  // Before a window is moved, focused or placed. With no monitor it isn't,
+  // and the window in front goes there when one comes (outputAdded).
+  private async onScreen(): Promise<boolean> {
+    if (await this.outputThere()) return true;
+    this.frontLater = true;
+    return false;
+  }
+
+  // A monitor came: the window in front goes there, as the daemon has it,
+  // since Hyprland's workspace may have stayed on its stand-in. The display
+  // daemon gives the monitor its mode, scale and Fit to screen's margin
+  // (daemon/display.ts).
+  private async outputAdded(name: string, tries = 10): Promise<void> {
+    if (this.ending) return;
+    if (!(await this.outputThere())) {
+      // Hyprland can say a monitor came a moment before it lists it.
+      if (tries > 1) setTimeout(() => void this.queue(() => this.outputAdded(name, tries - 1)), 500).unref?.();
+      else this.log(`${name || "a monitor"} came, but Hyprland lists no monitor to put a window on`);
+      return;
+    }
+    const front = this.front();
+    const later = this.frontLater;
+    this.frontLater = false;
+    if (!front) return;
+    this.log(`${name || "a monitor"} came${later ? " after the TV's output was gone" : ""}; ${describe(front)} in front again`);
+    await this.toFront(front.address);
   }
 
   // --- Hyprland -------------------------------------------------------------
 
   private async toFront(address: string): Promise<void> {
+    // With no monitor it's in front for the daemon now, and on the TV once
+    // there's one.
+    if (!(await this.onScreen())) {
+      this.stack = this.stack.filter((a) => a !== address);
+      this.stack.push(address);
+      const known = this.windows.get(address);
+      this.log(`${known ? describe(known) : address} goes in front once the TV's output is back`);
+      return;
+    }
     const window = lua(`address:${address}`);
     await this.hypr.dispatch(`hl.dsp.window.move({ window = ${window}, workspace = ${lua(TV_WORKSPACE)}, follow = false })`);
     await this.focus(address);
@@ -2025,7 +2110,12 @@ export class Screen {
     let seen: string[] = [];
     try {
       seen = await onTv();
-      if (games.some((a) => seen.includes(a))) {
+      // With no monitor nothing shows, and home comes in front of the game
+      // as soon as there's one (outputAdded).
+      if (games.some((a) => seen.includes(a)) && !(await this.onScreen())) {
+        this.log("the TV is locked and the game is on it, with no output; home goes in front of it once there's one");
+        seen = [];
+      } else if (games.some((a) => seen.includes(a))) {
         this.log("the TV is locked and the game was still on it; out of sight");
         for (const address of games.filter((a) => seen.includes(a))) await this.hold(address);
         seen = await onTv();
@@ -2095,6 +2185,8 @@ export class Screen {
       if (id !== url && this.signingIn?.id !== id) void this.signIn?.check(id, this.pageOf(entry)).catch(() => null);
       // A child watching gets the service's profile for children.
       if (id !== url) entry.ready = this.serviceProfile(entry);
+      // The app's hints for the d-pad, next to its ring and Back.
+      if (id !== url) void this.navigationHints(id, entry);
       await this.makeRoom(id);
     }).then(() => ({ ok: true }));
   }
@@ -2121,7 +2213,7 @@ export class Screen {
     await this.launcher.signingIn(this.signingIn).catch(() => {});
     // When it's open already, it's in front now: maximized from here on.
     await this.chain;
-    if (entry.address && this.front()?.address === entry.address) await this.place(entry.address);
+    if (entry.address && this.front()?.address === entry.address && (await this.onScreen())) await this.place(entry.address);
     const started = await this.signIn.start(id, this.pageOf(entry), (signedIn) => void this.signInDone(id, signedIn));
     if (!started) {
       await this.endSignIn("the app can't say whether it's signed in");
@@ -2186,7 +2278,7 @@ export class Screen {
     await this.launcher.signInBar(null).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
     await this.launcher.signingIn(null).catch(() => {});
     const entry = this.opens.find((o) => o.id === signing.id);
-    if (entry?.address && this.front()?.address === entry.address && !this.ending) await this.place(entry.address);
+    if (entry?.address && this.front()?.address === entry.address && !this.ending && (await this.onScreen())) await this.place(entry.address);
   }
 
   private async soundRequest(request: Record<string, unknown>): Promise<object> {
@@ -2312,6 +2404,17 @@ export class Screen {
     await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
     // Its focus moving: the phone's keyboard may come up for it (ADR-065).
     await cdp.bindIn?.(target, FOCUS_BINDING, REMOTE_WORLD, () => void this.tellContext()).catch((error: Error) => this.log(`that page can't say where its focus is: ${error.message}`));
+  }
+
+  // An app's hints for the phone's d-pad on its own pages (ADR-103), in
+  // the world its ring and Back run in, once its worker has said them.
+  private async navigationHints(id: string, entry: Open): Promise<void> {
+    const hints = (await this.playback?.navigation?.(id).catch(() => [])) ?? [];
+    if (!hints.length) return;
+    for (let tries = 0; tries < 50 && !entry.target; tries++) await sleep(100);
+    const cdp = this.apps.get("web")?.cdp;
+    if (!entry.target || !cdp) return;
+    await cdp.addScriptIn(entry.target, navigationPage(hints), REMOTE_WORLD).catch((error: Error) => this.log(`${id}'s hints for the d-pad aren't in its page: ${error.message}`));
   }
 
   // A native game (ADR-103), Steam among them: its window in front if it's

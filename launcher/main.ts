@@ -92,7 +92,8 @@ export interface Ctx {
   toast(text: string | Node, kind?: "ok" | "fail"): void;
   // The ambient screen, as the built-in Clock opens it.
   ambient(): void;
-  saveLayout(layout: Placed[]): Promise<boolean>;
+  // With pinned, Glass's pinned row goes with it, both kept or neither.
+  saveLayout(layout: Placed[], pinned?: string[]): Promise<boolean>;
   // Glass's pinned row (D12), kept as it is saved.
   savePinned(pinned: string[]): Promise<boolean>;
   // The grant from the PIN entered earlier in this visit, while it lasts.
@@ -223,11 +224,13 @@ const ctx: Ctx = {
   ambient() {
     setAmbient(true);
   },
-  async saveLayout(layout) {
+  async saveLayout(layout, pinned) {
     const grant = childWithPin() ? await grantFor("changing home") : undefined;
     if (grant === null) return false;
     try {
-      ctx.state.layout = (await daemon.saveLayout(layout, grant)).layout;
+      const kept = await daemon.saveLayout(layout, grant, pinned);
+      ctx.state.layout = kept.layout;
+      if (kept.pinned) ctx.state.pinned = kept.pinned;
       return true;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");

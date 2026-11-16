@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overlay</title>
+<style>
+  * { outline: none; }
+  body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; }
+  .row { display: flex; gap: 24px; padding: 48px; }
+  .card { position: relative; flex: 0 0 360px; height: 200px; border-radius: 8px; background: #2a2a3a; }
+  .card button, .card a { position: absolute; inset: 0; border: 0; background: transparent; color: transparent; }
+  .card a.hidden { inset: auto; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+</style>
+</head>
+<body>
+<!--
+  Cards the way some streaming sites draw them: an empty button over the
+  card, which opens its details, and the title's link over it too, which
+  opens the title. The last card's link is only hidden text, so its button
+  is all there is to press.
+-->
+<div class="row">
+  <div class="card"><button id="button-1" aria-label="Details 1"></button><a id="link-1" href="next.html?1" tabindex="-1">Title 1</a></div>
+  <div class="card"><button id="button-2" aria-label="Details 2"></button><a id="link-2" href="next.html?2" tabindex="-1">Title 2</a></div>
+  <div class="card"><button id="button-3" aria-label="Details 3"></button><a id="link-3" class="hidden" href="next.html?3" tabindex="-1">Title 3</a></div>
+</div>
+<script>
+  for (const button of document.querySelectorAll("button")) button.addEventListener("click", () => (document.title = `details ${button.id}`));
+</script>
+</body>
+</html>

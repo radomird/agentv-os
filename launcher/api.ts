@@ -456,7 +456,9 @@ export const daemon = {
   kit: async (app: string, name: string, args: unknown[]) => (await call<{ value?: unknown }>("POST", "/api/kit", { app, call: name, args })).value,
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
-  saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", gridName() ? { layout, grid: gridName() } : { layout }, grant),
+  // With pinned, Glass's pinned row is kept with the layout, in one change.
+  saveLayout: (layout: Placed[], grant?: string, pinned?: string[]) =>
+    call<{ layout: Placed[]; pinned?: string[] }>("PUT", "/api/layout", { layout, ...(gridName() ? { grid: gridName() } : {}), ...(pinned ? { pinned } : {}) }, grant),
   savePinned: (pinned: string[], grant?: string) => call<{ pinned: string[] }>("PUT", "/api/pinned", { pinned }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   // A look's preview fills New this week with stand-ins while it has no

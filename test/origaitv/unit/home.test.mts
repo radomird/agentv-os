@@ -70,12 +70,13 @@ test("T20.1 Glass's pinned row: a home that never pinned starts with its first s
     assert.deepEqual(data.pinned, ["origaitv.games", "origaitv.tube"]);
     const viewer = (await get("/api/home")).viewer.id;
     assert.deepEqual(JSON.parse(readFileSync(join(state, "pinned.json"), "utf8"))[viewer], ["origaitv.games", "origaitv.tube"]);
-    // Turned down: seven, one twice, one not on home, or not a list.
+    // Turned down: seven, one twice, one not on home, or not a list, each
+    // said with the app's name where there is one.
     for (const [pinned, why] of [
-      [["origaitv.sample", "origaitv.tube", "someone.radio", "local.mytv", "origaitv.games", "origaitv.sample", "origaitv.tube"], /holds 6/],
-      [["origaitv.tube", "origaitv.tube"], /twice|once/],
-      [["origaitv.nothing"], /isn't on home/],
-      ["origaitv.tube", /list/],
+      [["origaitv.sample", "origaitv.tube", "someone.radio", "local.mytv", "origaitv.games", "origaitv.sample", "origaitv.tube"], /^The top row holds 6 apps\. Remove one first\.$/],
+      [["origaitv.tube", "origaitv.tube"], /^Tube is in the top row already$/],
+      [["origaitv.nothing"], /^That app isn't on home\. Add it to home first\.$/],
+      ["origaitv.tube", /^Couldn't change the top row\. Try again\.$/],
     ] as const) {
       const turned = await send("PUT", "/api/pinned", { pinned });
       assert.equal(turned.status, 400, JSON.stringify(pinned));
@@ -89,6 +90,18 @@ test("T20.1 Glass's pinned row: a home that never pinned starts with its first s
     assert.deepEqual((await get("/api/home")).pinned, ["origaitv.tube"]);
     assert.equal((await send("PUT", "/api/layout", { layout: before })).status, 200);
     assert.deepEqual((await get("/api/home")).pinned, ["origaitv.games", "origaitv.tube"]);
+    // A layout with a pinned row is one change: both kept, or neither.
+    const swapped = before.map((tile: any) => (tile.id === "origaitv.tube" ? { ...tile, id: "someone.radio" } : tile.id === "someone.radio" ? { ...tile, id: "origaitv.tube" } : tile));
+    const both = await send("PUT", "/api/layout", { layout: swapped, pinned: ["origaitv.games", "someone.radio"] });
+    assert.equal(both.status, 200);
+    assert.deepEqual(both.data.pinned, ["origaitv.games", "someone.radio"]);
+    assert.deepEqual((await get("/api/home")).layout, swapped);
+    const neither = await send("PUT", "/api/layout", { layout: before.filter((tile: any) => tile.id !== "local.mytv"), pinned: ["local.mytv"] });
+    assert.equal(neither.status, 400);
+    assert.match(neither.data.error, /^My TV isn't on home/);
+    assert.deepEqual((await get("/api/home")).layout, swapped, "the layout wasn't kept either");
+    assert.deepEqual((await get("/api/home")).pinned, ["origaitv.games", "someone.radio"]);
+    assert.equal((await send("PUT", "/api/layout", { layout: before, pinned: ["origaitv.games", "origaitv.tube"] })).status, 200);
   } finally {
     rmSync(join(state, "pinned.json"), { force: true });
   }
