@@ -970,8 +970,8 @@ test("T22.1 with Fit to screen's margin, a service's window is maximized inside 
   await openApp(t, "origaitv.tube", "0xb");
   assert.equal(t.hypr.get("0xb").fullscreen, 1, "maximized, inside the margin");
   assert.ok(
-    t.hypr.dispatched.includes('hl.dsp.window.fullscreen_state({ window = "address:0xb", internal = 1, client = 0, action = "set" })'),
-    "and not told it's full screen, so its player stays inside too",
+    t.hypr.dispatched.includes('hl.dsp.window.fullscreen_state({ window = "address:0xb", internal = 1, client = 2, action = "set" })'),
+    "but told it's full screen, as before, so a player's own full screen stays inside the window and Escape leaves it",
   );
   // A page asking for full screen gets nothing more: Hyprland says it left
   // full screen, and it's placed inside the margin again.
