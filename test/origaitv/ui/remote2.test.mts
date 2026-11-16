@@ -6,7 +6,8 @@
 // typed with no redraw under it, the first load following the TV, the
 // surface's swipes, tap and hold, a held Back, play and pause that say
 // why when they can't, and the menu. With its switch off, the phone keeps
-// the remote it had.
+// the remote it had. In Glass it's the clickpad (D13, T21.1): a round pad
+// whose edge is the arrows, and round keys under it.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -23,6 +24,8 @@ const require = createRequire(`${process.env.ORIGAITV_UI_MODULES}/`);
 const { chromium } = require("playwright-core") as typeof import("playwright-core");
 
 const PHONE = { width: 375, height: 812 };
+// A larger phone, for the clickpad.
+const BIG_PHONE = { width: 430, height: 932 };
 const dir = mkdtempSync(join(tmpdir(), "origaitv-remote2-ui-"));
 let browser: Browser;
 const errors: string[] = [];
@@ -43,8 +46,9 @@ const boxes: Box[] = [];
 
 // A box with the new remote's switch on or off, and the screen daemon's end
 // of the phone's stream.
-async function box(remote2: boolean): Promise<Box> {
-  const { daemon, url } = await startBox(0, undefined, { features: { remote2 } });
+async function box(remote2: boolean, look?: "glass" | "cinema"): Promise<Box> {
+  const { daemon, url } = await startBox(0, undefined, { features: { remote2, looks: look !== undefined } });
+  if (look) await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
   const made: Box = { daemon, url, phoneUrl: `http://127.0.0.1:${daemon.lanPort}`, keys: [], commands: [], typed: [], actions: [], playback: { ok: true, by: "page" }, input: null as unknown as RemoteInput };
   made.input = new RemoteInput({
     url: `${url}/api/remote`,
@@ -103,9 +107,9 @@ const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const context = (b: Box, body: object) => fetch(`${b.url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 // A paired phone, through the QR code's address.
-async function phone(b: Box, ready = ".r2"): Promise<Page> {
+async function phone(b: Box, ready = ".r2", viewport = PHONE): Promise<Page> {
   await fetch(`${b.url}/api/phones/pair`, { method: "POST" });
-  const page = await browser.newPage({ viewport: PHONE, hasTouch: true });
+  const page = await browser.newPage({ viewport, hasTouch: true });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${b.phoneUrl}/#pair=${b.daemon.phones.secret()}`);
   await page.waitForSelector(ready);
@@ -507,6 +511,207 @@ test("T8.3 the menu: who's watching, Apps on the TV, and Settings brings home in
   await hand.close();
 });
 
+// --- Glass's clickpad (D13) --------------------------------------------------
+
+// Where a finger goes on the clickpad: its middle, or a dot on its edge.
+async function spots(hand: Page): Promise<Record<"middle" | "up" | "down" | "left" | "right", { x: number; y: number }>> {
+  const pad = (await hand.locator(".cp-pad").boundingBox())!;
+  const at = (x: number, y: number) => ({ x: Math.round(pad.x + pad.width * x), y: Math.round(pad.y + pad.height * y) });
+  return { middle: at(0.5, 0.5), up: at(0.5, 0.1), down: at(0.5, 0.9), left: at(0.1, 0.5), right: at(0.9, 0.5) };
+}
+
+for (const viewport of [PHONE, BIG_PHONE]) {
+  test(`T21.1 at ${viewport.width} × ${viewport.height} Glass's remote is the clickpad: a round pad, Back and Home then play and Ask in two columns under its sides, and no d-pad switch`, async () => {
+    const b = await box(true, "glass");
+    const hand = await phone(b, ".cp-pad", viewport);
+    assert.equal(await hand.locator('.r2[data-shape="clickpad"]').count(), 1);
+    const pad = (await hand.locator(".cp-pad").boundingBox())!;
+    assert.ok(Math.abs(pad.width - pad.height) < 1 && pad.width >= 260, `the pad is round and big: ${pad.width} × ${pad.height}`);
+    assert.equal(await hand.evaluate(() => getComputedStyle(document.querySelector(".cp-pad")!).borderRadius), "50%");
+    const keys = await hand.locator(".cp-key").evaluateAll((all) => all.map((key) => ({ name: key.textContent, label: key.getAttribute("aria-label"), box: key.querySelector(".cp-round")!.getBoundingClientRect().toJSON() as DOMRect })));
+    assert.deepEqual(keys.map((key) => key.name), ["Back", "Home", "Play", "Ask"]);
+    assert.deepEqual(keys.map((key) => key.label), ["Back, hold for home", "Home", "Play or pause", "Ask"]);
+    const [back, home, play, ask] = keys.map((key) => key.box);
+    assert.ok(Math.abs(back.y - home.y) < 1 && Math.abs(play.y - ask.y) < 1 && play.y > back.y + back.height, "Back and Home in a row, play and Ask under them");
+    assert.ok(Math.abs(back.x - play.x) < 1 && Math.abs(home.x - ask.x) < 1, "in two columns");
+    const middle = pad.x + pad.width / 2;
+    assert.ok(back.x >= pad.x && back.x + back.width < middle && home.x > middle && home.x + home.width <= pad.x + pad.width, "under the pad's two sides");
+    assert.ok(back.y > pad.y + pad.height, "under the pad");
+    assert.equal(await hand.locator('.cp-key[data-key="home"] .icon-tv').count(), 1, "Home has a TV on it");
+    for (const selector of [".r2-top", ".cp-pad", ".cp-key.ask", ".r2-notice"]) {
+      const found = (await hand.locator(selector).boundingBox())!;
+      assert.ok(found.y >= 0 && found.y + found.height <= viewport.height, `${selector} is on the screen`);
+    }
+    assert.equal(await hand.evaluate(() => document.scrollingElement!.scrollHeight <= innerHeight), true, "nothing scrolls");
+    // The edge is the d-pad: no switch for one, no surface and no wide Ask.
+    assert.equal(await hand.locator('[data-action="dpad"], .r2-surface, .r2-ask').count(), 0);
+    assert.equal(await hand.locator(".cp-pad").getAttribute("aria-label"), "Swipe to move, tap for OK, press the edge for the arrows, hold for the pointer, two fingers to scroll");
+    // A d-pad switched on in another look leaves Glass's clickpad as it is.
+    await hand.evaluate(() => localStorage.setItem("origaitv-phone-dpad", "on"));
+    await hand.reload();
+    await hand.waitForSelector(".cp-pad");
+    assert.equal(await hand.locator(".r2-dpad").count(), 0);
+    await hand.close();
+  });
+}
+
+test("T21.1 Cinema keeps its remote: the surface, the d-pad switch and Ask under the keys", async () => {
+  const b = await box(true, "cinema");
+  const hand = await phone(b, ".r2-surface");
+  assert.equal(await hand.locator(".cp-pad, .cp-key").count(), 0);
+  assert.equal(await hand.locator('[data-action="dpad"]').count(), 1);
+  assert.equal(await hand.locator(".r2-ask").count(), 1);
+  await hand.close();
+});
+
+test("T21.1 the clickpad's edge: a press on a side is its arrow as it lifts, with that quarter lit, held it repeats until it lifts, and a swipe from the edge is a swipe", async () => {
+  const b = await box(true, "glass");
+  const hand = await phone(b, ".cp-pad");
+  const at = await spots(hand);
+  for (const side of ["up", "down", "left", "right"] as const) {
+    const from = b.keys.length;
+    await hand.mouse.move(at[side].x, at[side].y);
+    await hand.mouse.down();
+    await hand.waitForSelector(`.cp-pad[data-edge="${side}"] .cp-arrow.${side}`, { state: "visible" });
+    assert.equal(await hand.locator(`.cp-dot.${side}`).isVisible(), false, "its arrow shows where its dot was");
+    assert.deepEqual(b.keys.slice(from), [], "nothing yet: it could still be a swipe");
+    await hand.mouse.up();
+    await until(() => b.keys.length > from);
+    await wait(100);
+    assert.deepEqual(b.keys.slice(from), [{ key: side }]);
+    await until(async () => (await hand.locator(".cp-pad").getAttribute("data-edge")) === null);
+  }
+  // Held, it repeats while the finger stays, and stops as it lifts.
+  {
+    const from = b.keys.length;
+    await hand.mouse.move(at.right.x, at.right.y);
+    await hand.mouse.down();
+    await wait(1100);
+    const held = b.keys.length - from;
+    await hand.mouse.up();
+    await wait(400);
+    assert.ok(held >= 4, `it repeated: ${held}`);
+    assert.equal(b.keys.length - from, held, "and nothing more once it lifted");
+    assert.ok(b.keys.slice(from).every((k) => k.key === "right"));
+    assert.equal(await hand.locator(".cp-pad").getAttribute("data-edge"), null);
+  }
+  // A finger that starts on the left edge and swipes right is a swipe.
+  {
+    const from = b.keys.length;
+    await hand.mouse.move(at.left.x, at.left.y);
+    await hand.mouse.down();
+    await hand.mouse.move(at.left.x + 100, at.left.y, { steps: 8 });
+    await hand.mouse.up();
+    await wait(200);
+    assert.deepEqual(b.keys.slice(from), [{ key: "right" }, { key: "right" }]);
+  }
+  // A tap in the middle is OK, and the middle shows it.
+  {
+    const from = b.keys.length;
+    await hand.mouse.click(at.middle.x, at.middle.y);
+    await until(() => b.keys.length > from);
+    assert.deepEqual(b.keys.slice(from), [{ key: "enter" }]);
+  }
+  await hand.close();
+});
+
+test("T21.1 a hold in the clickpad's middle opens details on an app's tile and gives the round pointer elsewhere, with Pointer and Done above it; held Back goes home", async () => {
+  const b = await box(true, "glass");
+  const hand = await phone(b, ".cp-pad");
+  const at = await spots(hand);
+  const hold = async (spot: { x: number; y: number }) => {
+    const from = b.keys.length;
+    await hand.mouse.move(spot.x, spot.y);
+    await hand.mouse.down();
+    await wait(800);
+    await hand.mouse.up();
+    await wait(200);
+    return b.keys.slice(from);
+  };
+  await context(b, { front: "home", screen: "home", details: true });
+  await until(async () => (await hand.locator('.cp-pad [data-hint="hold"]').textContent()) === "Hold for details");
+  assert.equal(await hand.locator(".cp-pad").getAttribute("aria-label"), "Swipe to move, tap for OK, press the edge for the arrows, hold for details, two fingers to scroll");
+  assert.deepEqual(await hold(at.middle), [{ key: "i" }]);
+  assert.equal(await hand.locator(".cp-pad.pointer").count(), 0);
+  // A hold on the edge is its arrow, again and again, never the pointer.
+  await context(b, { screen: "menu", details: false });
+  await until(async () => (await hand.locator('.cp-pad [data-hint="hold"]').textContent()) === "Hold for the pointer");
+  const edge = await hold(at.down);
+  assert.ok(edge.length >= 2 && edge.every((k) => k.key === "down"), JSON.stringify(edge));
+  assert.equal(await hand.locator(".cp-pad.pointer").count(), 0);
+  // In the middle, the pointer: the whole round pad, Pointer and Done above.
+  assert.deepEqual(await hold(at.middle), [], "a still finger is not a press");
+  await hand.waitForSelector('.cp-pad.pointer[data-action="trackpad"]');
+  const top = (await hand.locator(".cp-pointer-top").boundingBox())!;
+  const pad = (await hand.locator(".cp-pad").boundingBox())!;
+  assert.ok(top.y + top.height <= pad.y, "Pointer and Done sit above the pad");
+  assert.deepEqual(await hand.locator(".cp-pointer-top .r2-chip, .cp-pointer-top .r2-done").allTextContents(), ["Pointer", "Done"]);
+  const middle = { x: Math.round(pad.x + pad.width / 2), y: Math.round(pad.y + pad.height / 2) };
+  await hand.mouse.move(middle.x, middle.y);
+  await hand.mouse.down();
+  await hand.mouse.move(middle.x + 40, middle.y + 20, { steps: 4 });
+  await hand.mouse.up();
+  await until(() => b.keys.some((k) => Array.isArray(k.move)));
+  await hand.mouse.click(middle.x, middle.y);
+  await until(() => b.keys.some((k) => k.click === "left"));
+  await hand.locator('[data-action="pointer-done"]').click();
+  await hand.waitForSelector('.cp-pad[data-action="clickpad"]');
+  // Back: a tap goes back, and held, the phone sends the hold.
+  const back = (await hand.locator('.cp-key[data-key="back"]').boundingBox())!;
+  const from = b.keys.length;
+  await hand.mouse.click(back.x + back.width / 2, back.y + back.height / 2);
+  await hand.mouse.move(back.x + back.width / 2, back.y + back.height / 2);
+  await hand.mouse.down();
+  await until(() => b.keys.length >= from + 2, 2000);
+  await hand.mouse.up();
+  assert.deepEqual(b.keys.slice(from), [{ key: "back" }, { hold: "back", ms: 1100 }]);
+  // Play asks the box, and says pause while something plays.
+  await hand.locator('.cp-key[data-action="playpause"]').tap();
+  await until(() => b.actions.at(-1) === "toggle");
+  await context(b, { front: "app", playing: true });
+  await until(async () => (await hand.locator('.cp-key[data-action="playpause"]').textContent()) === "Pause");
+  await hand.close();
+});
+
+test("T21.1 two fingers on the clickpad scroll the page in front, from its middle or its edge, with no arrow, and from the pointer in pointer mode", async () => {
+  const b = await box(true, "glass");
+  const hand = await phone(b, ".cp-pad");
+  const cdp = await hand.context().newCDPSession(hand);
+  const drag = async (x: number, y: number, dy: number) => {
+    const from = b.keys.length;
+    const two = (by: number) => [
+      { x, y: y + Math.round(dy * by), id: 1 },
+      { x: x + 40, y: y + Math.round(dy * by), id: 2 },
+    ];
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: two(0) });
+    for (let step = 1; step <= 5; step++) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: two(step / 5) });
+      await wait(20);
+    }
+    await wait(600);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await wait(150);
+    return b.keys.slice(from);
+  };
+  const total = (sent: Record<string, unknown>[]) => sent.reduce((sum, k) => sum + (k.wheel as number[])[1], 0);
+  const at = await spots(hand);
+  for (const [where, spot] of [["middle", { x: at.middle.x - 20, y: at.middle.y - 20 }], ["edge", { x: at.left.x, y: at.left.y - 20 }]] as const) {
+    const sent = await drag(spot.x, spot.y, 40);
+    assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === undefined), `${where}: only the wheel: ${JSON.stringify(sent)}`);
+    assert.equal(total(sent), -120, `${where}: three times the fingers' way, and the page with them`);
+  }
+  assert.equal(await hand.locator(".cp-pad").getAttribute("data-edge"), null, "the edge isn't left lit");
+  await hand.mouse.move(at.middle.x, at.middle.y);
+  await hand.mouse.down();
+  await hand.waitForSelector(".cp-pad.pointer", { timeout: 1500 });
+  await hand.mouse.up();
+  const sent = await drag(at.middle.x - 20, at.middle.y - 20, -40);
+  assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === "pointer"), JSON.stringify(sent));
+  assert.equal(total(sent), 120);
+  await cdp.detach();
+  await hand.close();
+});
+
 test("T8.3 the remote follows the TV's look: Glass and Cinema with the looks on, Terminal with them off", async () => {
   const b = await box(true);
   const state = join(String((b.daemon as unknown as { options: { state: string } }).options.state));
@@ -519,7 +724,9 @@ test("T8.3 the remote follows the TV's look: Glass and Cinema with the looks on,
     await context(b, { screen: "home" });
     await until(async () => (await look()) === id, 5000);
     assert.match(await hand.evaluate(() => getComputedStyle(document.querySelector(".r2")!).fontFamily), new RegExp(font));
-    assert.notEqual(await hand.evaluate(() => getComputedStyle(document.querySelector(".r2-surface")!).borderRadius), "0px", "its surface is rounded");
+    const pad = id === "glass" ? ".cp-pad" : ".r2-surface";
+    await hand.waitForSelector(pad);
+    assert.notEqual(await hand.evaluate((pad) => getComputedStyle(document.querySelector(pad)!).borderRadius, pad), "0px", "its pad is rounded");
   }
   // The looks' fonts come from the box over the phone's port.
   assert.equal((await fetch(`${b.phoneUrl}/launcher/fonts/manrope-latin-wght-normal.woff2`)).status, 200);

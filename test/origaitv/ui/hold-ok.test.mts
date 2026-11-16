@@ -162,6 +162,13 @@ async function holdEnter(page: Page, ms: number, key = "Enter"): Promise<void> {
   await page.keyboard.up(key);
 }
 
+// The phone's OK: the d-pad's button, or in Glass the middle of the
+// clickpad, which Glass's remote has in its place. The swipe pad, and the
+// pointer a hold on it gives, are the clickpad's in Glass.
+const OK = '.r2 [data-key="enter"], .cp-pad[data-action="clickpad"]';
+const PAD = '.r2-surface[data-action="surface"], .cp-pad[data-action="clickpad"]';
+const POINTER = ".r2-pointer, .cp-pad.pointer";
+
 // A paired phone with the d-pad on, which has the remote's OK button. Its
 // buzz is kept, since a headless phone has none.
 async function phone(dpad = true): Promise<Page> {
@@ -178,13 +185,13 @@ async function phone(dpad = true): Promise<Page> {
     };
   }, dpad);
   await page.goto(`http://127.0.0.1:${daemon.lanPort}/#pair=${daemon.phones.secret()}`);
-  await page.waitForSelector(dpad ? '.r2 [data-key="enter"]' : '.r2-surface[data-action="surface"]');
+  await page.waitForSelector(dpad ? OK : PAD);
   return page;
 }
 
 // A finger on the phone's OK for ms, as real touches.
 async function touchOk(hand: Page, ms: number): Promise<void> {
-  const box = (await hand.locator('.r2 [data-key="enter"]').boundingBox())!;
+  const box = (await hand.locator(OK).boundingBox())!;
   const point = { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
   const cdp = await hand.context().newCDPSession(hand);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
@@ -250,14 +257,15 @@ for (const look of LOOKS) {
     // A finger held on OK: the phone ticks as the hold lands and asks for
     // details, the TV opens them, and nothing more is sent as the finger
     // lifts. The phone knows from the TV that a tile has the focus.
-    await until(async () => (await hand.locator(".r2-ok").count()) === 1 && (daemon as unknown as { tv: { details: boolean } }).tv.details);
+    await until(async () => (await hand.locator(OK).count()) === 1 && (daemon as unknown as { tv: { details: boolean } }).tv.details);
     sent.length = 0;
     await hand.evaluate(() => ((window as unknown as { buzzed: unknown[] }).buzzed.length = 0));
     await touchOk(hand, 900);
     await onDetails(page);
     await until(() => sent.length === 1);
     assert.deepEqual(sent, [{ key: "i" }]);
-    assert.deepEqual(await hand.evaluate(() => (window as unknown as { buzzed: unknown[] }).buzzed), [10, 20], "the press's own buzz, then one tick as the hold lands");
+    // The clickpad is a pad, not a button, so only the hold ticks there.
+    assert.deepEqual(await hand.evaluate(() => (window as unknown as { buzzed: unknown[] }).buzzed), look === "glass" ? [20] : [10, 20], "the press's own buzz, then one tick as the hold lands");
     await sleep(300);
     assert.equal(sent.length, 1);
     assert.equal((await asked(page, "open-app")).length, before + 1, "the hold opened nothing");
@@ -376,7 +384,7 @@ test("T16.1 OK held on something that isn't a tile is one OK, however long the k
 
 // A finger held still on the phone's swipe pad for ms.
 async function touchPad(hand: Page, ms: number): Promise<void> {
-  const box = (await hand.locator('.r2-surface[data-action="surface"]').boundingBox())!;
+  const box = (await hand.locator(PAD).boundingBox())!;
   const cdp = await hand.context().newCDPSession(hand);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }] });
   await sleep(ms);
@@ -388,17 +396,17 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
   await useLook("glass");
   const page = await tv();
   const hand = await phone(false);
-  const hint = () => hand.locator('.r2-surface [data-hint="hold"]').textContent();
+  const hint = () => hand.locator('.r2-surface [data-hint="hold"], .cp-pad [data-hint="hold"]').textContent();
   const says = (what: string) => until(async () => (await hint()) === what);
   const pointerAndNothingSent = async (where: string) => {
     await says("Hold for the pointer");
     sent.length = 0;
     await touchPad(hand, 800);
-    await hand.waitForSelector(".r2-pointer");
+    await hand.waitForSelector(POINTER);
     await sleep(200);
     assert.deepEqual(sent, [], `${where}: the TV got no key`);
     await hand.locator('[data-action="pointer-done"]').click();
-    await hand.waitForSelector('.r2-surface[data-action="surface"]');
+    await hand.waitForSelector(PAD);
   };
 
   // A tile on home, then one in Apps, which in Glass is home's list: details.
@@ -410,7 +418,7 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
     await touchPad(hand, 800);
     await onDetails(page);
     assert.deepEqual(sent, [{ key: "i" }], route);
-    assert.equal(await hand.locator(".r2-pointer").count(), 0);
+    assert.equal(await hand.locator(POINTER).count(), 0);
     // On the details page, with the focus on Open: the pointer, and the
     // app doesn't open.
     await pointerAndNothingSent("a details page");

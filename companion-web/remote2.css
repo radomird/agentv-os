@@ -775,6 +775,236 @@ body[data-look="cinema"] .r2-handle {
   border-radius: 2px;
 }
 
+/* --- Glass's clickpad (D13) -------------------------------------------------
+   A round pad on top and round keys under it, in Glass's colours: the
+   theme's foreground mixed into its background, and the accent for Ask and
+   for what's pressed. The screen is the phone's height, so the pad takes
+   what's left of it. */
+
+.r2[data-shape="clickpad"] {
+  gap: 16px;
+  height: var(--r2-height, 100dvh);
+  min-height: 0;
+}
+
+.r2[data-shape="clickpad"] .r2-notice {
+  margin-top: 2px;
+}
+
+.cp-box {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  container-type: size;
+}
+
+.r2-network ~ .cp-box {
+  min-height: 180px;
+}
+
+.cp-pad {
+  position: relative;
+  width: min(86cqw, 100cqh, 340px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--bright-foreground) 13%, var(--background)), color-mix(in srgb, var(--bright-foreground) 7%, var(--background)) 70%);
+  border: 1px solid var(--r2-line);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bright-foreground) 12%, transparent), 0 20px 44px rgba(0, 0, 0, 0.28);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.cp-pad.pressed,
+.cp-pad.pointer {
+  border-color: var(--accent);
+}
+
+/* The edge: a dot on each side, and a press lights its quarter of the ring
+   and shows its arrow where the dot was. */
+.cp-dot,
+.cp-arrow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.cp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.cp-arrow {
+  display: none;
+  line-height: 0;
+  color: var(--accent);
+}
+
+.cp-dot.up, .cp-arrow.up { left: 50%; top: 10%; }
+.cp-dot.down, .cp-arrow.down { left: 50%; top: 90%; }
+.cp-dot.left, .cp-arrow.left { left: 10%; top: 50%; }
+.cp-dot.right, .cp-arrow.right { left: 90%; top: 50%; }
+
+.cp-pad[data-edge="up"] .cp-dot.up,
+.cp-pad[data-edge="down"] .cp-dot.down,
+.cp-pad[data-edge="left"] .cp-dot.left,
+.cp-pad[data-edge="right"] .cp-dot.right {
+  display: none;
+}
+
+.cp-pad[data-edge="up"] .cp-arrow.up,
+.cp-pad[data-edge="down"] .cp-arrow.down,
+.cp-pad[data-edge="left"] .cp-arrow.left,
+.cp-pad[data-edge="right"] .cp-arrow.right {
+  display: block;
+}
+
+.cp-lit {
+  --cp-from: 0deg;
+  position: absolute;
+  inset: 0;
+  display: none;
+  border-radius: 50%;
+  pointer-events: none;
+  background: conic-gradient(from var(--cp-from), color-mix(in srgb, var(--accent) 34%, transparent) 0 90deg, transparent 90deg);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 59.5%, #000 60.5%);
+  mask: radial-gradient(circle closest-side, transparent 59.5%, #000 60.5%);
+}
+
+.cp-pad[data-edge] .cp-lit { display: block; }
+.cp-pad[data-edge="up"] .cp-lit { --cp-from: -45deg; }
+.cp-pad[data-edge="right"] .cp-lit { --cp-from: 45deg; }
+.cp-pad[data-edge="down"] .cp-lit { --cp-from: 135deg; }
+.cp-pad[data-edge="left"] .cp-lit { --cp-from: 225deg; }
+
+/* The middle: swipe, tap for OK, hold, two fingers to scroll. */
+.cp-center {
+  position: absolute;
+  inset: 20%;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bright-foreground) 5%, var(--background));
+  border: 1px solid var(--r2-line);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.cp-center.pressed {
+  background: color-mix(in srgb, var(--accent) 22%, var(--background));
+}
+
+.cp-hint,
+.cp-low {
+  font-size: 13px;
+  line-height: 1.25;
+  text-align: center;
+  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+  pointer-events: none;
+}
+
+.cp-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* The pointer: the whole pad is the trackpad, with Pointer and Done above. */
+.cp-pointer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cp-low {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16%;
+}
+
+.cp-pad.touching .r2-dot {
+  opacity: 0.6;
+}
+
+/* Back and Home, then play and Ask: two columns of round keys under the
+   pad's sides (remote2.ts sets the gap from the pad's width). */
+.cp-keys {
+  display: grid;
+  grid-template-columns: repeat(2, 76px);
+  justify-content: center;
+  column-gap: var(--cp-gap, 92px);
+  row-gap: 14px;
+}
+
+.cp-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bright-foreground);
+  font-size: 13px;
+  font-weight: 650;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.cp-round {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--r2-surface);
+  border: 1px solid var(--r2-line);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bright-foreground) 10%, transparent), 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.cp-round .icon {
+  position: relative;
+}
+
+.cp-key.ask .cp-round {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--r2-on-accent);
+}
+
+.cp-key:active .cp-round {
+  border-color: var(--accent);
+}
+
+/* Back held: it fills from the bottom, and goes home when it's full. */
+.cp-round::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.35;
+  transform: scaleY(0);
+  transform-origin: bottom;
+}
+
+.cp-key.holding .cp-round {
+  border-color: var(--accent);
+}
+
+.cp-key.holding .cp-round::before {
+  transform: scaleY(1);
+  transition: transform 700ms linear;
+}
+
 /* The Ask sheet (ADR-068, D5): the box with no send button, suggestions
    under it, and what your agent is on. */
 .ask-label {
