@@ -851,7 +851,10 @@ export class Home {
     const tv = found.manifest.tv;
     const name = found.manifest.name;
     const category = tv.category;
-    if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name, category };
+    // Only an official app's command runs, as the owner and unsandboxed.
+    // The contract refuses a native app of any other tier, so one installed
+    // before it did isn't shown, and this holds even if one were.
+    if (tv.runtime === "native") return found.tier === "official" ? { runtime: "native", exec: tv.exec ?? [], name, category } : null;
     // A page app opens on home, in its frame (ADR-043).
     if (tv.runtime === "page") return { runtime: "page", name, category };
     const values = (await this.appSettings())[id] ?? {};

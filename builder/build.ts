@@ -88,7 +88,7 @@ export interface BuildStatus {
   plan?: Plan;
   // What approval shows (ADR-043): a screenshot, what it reaches in plain
   // words, and its packages.
-  approval?: { shot?: string; reaches: { always: string[]; declared: string[] }; packages: { name: string; version: string }[] };
+  approval?: { shot?: string; reaches: { always: string[]; declared: string[] }; runs?: { runtime: string; exec: string[] }; packages: { name: string; version: string }[] };
   started: string;
   at: string;
 }
@@ -183,6 +183,15 @@ export function reachesOf(manifest: Manifest): { always: string[]; declared: str
   // they stay as they were written: new words would refuse every app
   // approved before them.
   return { always: [], declared: (manifest.tv.origins ?? []).map((o) => `the internet, at ${o.replace(/^https?:\/\//, "")}`) };
+}
+
+// What the app runs as, from its manifest: its runtime and its command, if
+// it has one. Root compares it again when it installs (hand-over.ts), so an
+// app approved as a page or web app can't go on home as something that runs
+// a program. An approval written before this was kept is for a page or web
+// app with no command, the only kinds a build has made.
+export function runsOf(manifest: Manifest): { runtime: string; exec: string[] } {
+  return { runtime: manifest.tv.runtime, exec: manifest.tv.exec ?? [] };
 }
 
 // --- The app's manifest, as the builder keeps it -------------------------

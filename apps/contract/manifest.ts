@@ -306,6 +306,10 @@ function checkTv(tv: Record<string, unknown>, kinds: Kind[], files: Set<string>,
     if (tv.origins === undefined) problem("a web app lists the origins it may reach in tv.origins");
     if (tv.package !== undefined || tv.exec !== undefined) problem("a web app has no tv.package or tv.exec");
   } else if (tv.runtime === "native") {
+    // A native app runs its command as the box's owner, outside any
+    // sandbox, so only OrigaiTV's own apps from the signed index may be one.
+    // A community or local app is a web or page app.
+    if (tier !== "official") problem("only OrigaiTV's own apps run a program on the box (tv.runtime native)");
     const pkg = tv.package;
     const sources = isObject(pkg) ? Object.keys(pkg) : [];
     if (!isObject(pkg) || sources.length !== 1 || !["pacman", "flatpak"].includes(sources[0])) {

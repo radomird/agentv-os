@@ -357,7 +357,7 @@ test("H2 root installs only the app its approval showed: every origin the build 
   const app = join(dir, "work", "app");
   // A build waiting for its yes: its app lists `lists`, its state says it
   // declared `declared`, and its approval showed what `shown` reaches.
-  const built = (lists: string[], declared: string[], o2: { shown?: string[]; phase?: string } = {}) => {
+  const built = (lists: string[], declared: string[], o2: { shown?: string[]; phase?: string; runs?: { runtime: string; exec: string[] } } = {}) => {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     cpSync(join(ROOT, "test/origaitv/fixtures/apps/blocks"), app, { recursive: true });
@@ -367,7 +367,7 @@ test("H2 root installs only the app its approval showed: every origin the build 
     const reaches = reachesOf(validatePackage(app, "local").manifest!);
     write(lists);
     writeFileSync(join(dir, "state.json"), JSON.stringify({ origins: declared.map((origin) => ({ origin, why: "the forecast" })) }));
-    writeFileSync(join(dir, "status.json"), JSON.stringify({ build: "b1", id: "local.forecast", version: "1.0.0", phase: o2.phase ?? "build", state: "approve", steps: [], approval: { reaches, packages: [] }, started: "", at: "" }));
+    writeFileSync(join(dir, "status.json"), JSON.stringify({ build: "b1", id: "local.forecast", version: "1.0.0", phase: o2.phase ?? "build", state: "approve", steps: [], approval: { reaches, ...(o2.runs ? { runs: o2.runs } : {}), packages: [] }, started: "", at: "" }));
   };
   const install = async () => {
     mkdirSync(o.drop, { recursive: true });
@@ -384,8 +384,14 @@ test("H2 root installs only the app its approval showed: every origin the build 
   built(["https://api.example.org", "https://cdn-metrics.example"], ["https://api.example.org", "https://cdn-metrics.example"], { shown: ["https://api.example.org"] });
   assert.match((await install()).reason!, /what the app reaches isn't what its approval showed/);
   assert.ok(!onHome());
+  // What it runs as isn't what its approval showed: not installed.
+  built(["https://api.example.org"], ["https://api.example.org"], { runs: { runtime: "native", exec: ["bash", "-c", "echo ran"] } });
+  assert.match((await install()).reason!, /what the app runs isn't what its approval showed/);
+  assert.ok(!onHome());
   // One list everywhere: installed, and that's the approved list from now on.
-  built(["https://api.example.org"], ["https://api.example.org"]);
+  // This approval says what the app runs as; the ones above, from before an
+  // approval kept it, are for a page app, which this is.
+  built(["https://api.example.org"], ["https://api.example.org"], { runs: { runtime: "page", exec: [] } });
   assert.equal((await install()).started, true);
   assert.deepEqual(handOver.approvedOrigins("local.forecast", "1.0.0"), ["https://api.example.org"]);
 

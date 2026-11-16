@@ -38,7 +38,7 @@ import { chmodSync, cpSync, existsSync, lchownSync, lstatSync, mkdirSync, mkdtem
 import { cp } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Manifest } from "../../apps/contract/manifest.ts";
-import { type BuildRequest, type BuildStatus, type Provider, reachesOf } from "../build.ts";
+import { type BuildRequest, type BuildStatus, type Provider, reachesOf, runsOf } from "../build.ts";
 import { offered } from "../models.ts";
 import { CLIS, SIGN_IN } from "../providers.ts";
 import { KINDS, loadRecipes, planProblems, type Plan } from "../recipe.ts";
@@ -282,6 +282,11 @@ export class HandOver {
   // or null. What's enforced and what an adult approved are one list.
   private notAsApproved(manifest: Manifest, status: BuildStatus, dir: string): string | null {
     if (JSON.stringify(reachesOf(manifest)) !== JSON.stringify(status.approval?.reaches ?? null)) return "what the app reaches isn't what its approval showed";
+    // And what it runs as: the same runtime and command. An approval from
+    // before this was kept was for a page or web app with no command.
+    const runs = runsOf(manifest);
+    const shown = status.approval?.runs;
+    if (shown ? JSON.stringify(runs) !== JSON.stringify(shown) : !(["page", "web"].includes(runs.runtime) && runs.exec.length === 0)) return "what the app runs isn't what its approval showed";
     const listed = manifest.tv.origins ?? [];
     // This version is on home already, so this is stage B's app: its origins
     // are the ones approved with the app, no more and no fewer.
