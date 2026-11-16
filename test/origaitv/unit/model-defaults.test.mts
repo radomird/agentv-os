@@ -54,13 +54,15 @@ test("T19.1 each provider keeps its own two, and one the new way in doesn't offe
   assert.deepEqual([chatgpt.ask, chatgpt.build], [defaultModel("chatgpt", "plan", "ask"), defaultModel("chatgpt", "plan", "build")]);
   await ai.choose("claude", "plan");
   assert.equal((await ai.read()).models!.build, "claude-fable-5-2", "Claude's own pick is there again");
-  // With a key, Fable 5.2 isn't priced, so it can't be picked, and the pick
-  // made on the plan doesn't carry over.
+  // With a key, Claude's list has Fable 5.2 too, but each way in keeps its
+  // own two: the plan's pick doesn't carry over.
   await ai.choose("claude", "key");
   const key = (await ai.read()).models!;
   assert.equal(key.build, "claude-sonnet-5-5");
-  assert.ok(!key.list.some((m) => m.id === "claude-fable-5-2"));
-  assert.equal((await ai.setModel("build", "claude-fable-5-2")).error, "Pick a model from the list");
+  assert.ok(key.list.some((m) => m.id === "claude-fable-5-2"), "priced for a key");
+  // GPT-5.6 Luna is on a key's list only, so a plan can't pick it.
+  await ai.choose("chatgpt", "plan");
+  assert.equal((await ai.setModel("build", "gpt-5.6-luna")).error, "Pick a model from the list");
   // None picked, none to show.
   await ai.choose(null, undefined);
   assert.equal((await ai.read()).models, null);
@@ -72,8 +74,9 @@ test("T19.1 the router services take a model only from the provider's list for t
   assert.equal(asked.model, "claude-sonnet-5-5");
   assert.equal(routeRequest({ provider: "claude", sentence: "play frozen", model: "claude-opus-9" }, "key"), "a model on the provider's list");
   assert.equal(routeRequest({ provider: "claude", sentence: "play frozen", model: "--help" }, "key"), "a model on the provider's list");
-  assert.equal(routeRequest({ provider: "chatgpt", sentence: "play frozen", model: "gpt-6-luna" }, "key"), "a model on the provider's list", "a plan's model, at the key's service");
-  assert.ok(typeof routeRequest({ provider: "chatgpt", sentence: "play frozen", model: "gpt-6-luna" }, "plan") !== "string");
+  assert.equal(routeRequest({ provider: "chatgpt", sentence: "play frozen", model: "gpt-5.6-luna" }, "plan"), "a model on the provider's list", "a key's own model, at the plan's service");
+  assert.ok(typeof routeRequest({ provider: "chatgpt", sentence: "play frozen", model: "gpt-5.6-luna" }, "key") !== "string");
+  assert.ok(typeof routeRequest({ provider: "chatgpt", sentence: "play frozen", model: "gpt-6-luna" }, "key") !== "string", "the GPT-6 line with a key too, now it's priced");
   const none = routeRequest({ provider: "claude", sentence: "play frozen" });
   assert.ok(typeof none !== "string" && none.model === undefined, "none: the service's own");
   assert.deepEqual(ROUTER_MODELS, { claude: "claude-haiku-5-5", chatgpt: "gpt-5.6-luna", gemini: "gemini-3.8-flash", grok: "grok-4.7", muse: "muse-spark-1.3" }, "by key, the router starts where its evals ran");

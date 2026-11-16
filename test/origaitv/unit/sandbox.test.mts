@@ -244,6 +244,12 @@ test("Claude's cache writes are counted at their own rates", () => {
   assert.deepEqual(meter.usage, { input: 10, cacheWrite5m: 20, cacheWrite1h: 30, cacheRead: 40, output: 99 });
 });
 
+test("OpenAI's cache writes are counted at their own rate, apart from the input", () => {
+  const meter = new Meter("responses");
+  meter.read({ object: "response", usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 20 }, output_tokens: 5 } });
+  assert.deepEqual(meter.usage, { input: 50, cacheRead: 30, cacheWrite5m: 20, cacheWrite1h: 0, output: 5 });
+});
+
 test("the relay takes the provider's key from /etc/origaitv/env's line, and no other", () => {
   const env = "TMDB_API_KEY=tmdb\nANTHROPIC_API_KEY=sk-ant-1\nOPENAI_API_KEY=\nXAI_API_KEY=xai-1\nMETA_API_KEY=LLM_1\n";
   assert.equal(keyFrom(env, "claude"), "sk-ant-1");
