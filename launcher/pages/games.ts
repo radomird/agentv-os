@@ -58,6 +58,13 @@ let games: Games | null = null;
 let driver: Driver | null = null;
 // The page on screen, which draws itself again as installs move on.
 let live: (() => void) | null = null;
+// The game OK asked about, for a few seconds, and the ones handed over to
+// remove, until they're gone or say they weren't. They're kept here, not in
+// the page, since home's own news can draw Settings again in between, and a
+// removal that fails then still says so.
+let armed: string | null = null;
+let disarm = 0;
+const removing = new Set<string>();
 
 export function loadGames(): Promise<void> {
   return call<Games>("GET", "/api/games")
@@ -117,11 +124,6 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
   const adult = ctx.state.viewer.role === "adult";
   let els: HTMLElement[] = [];
   let busy: string | null = null;
-  // The game OK asked about, for a few seconds, and the ones handed over to
-  // remove, until they're gone or say they weren't.
-  let armed: string | null = null;
-  let disarm = 0;
-  const removing = new Set<string>();
 
   const failed = (text: string) => {
     ctx.sounds.play("failure");
@@ -162,7 +164,7 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
       clearTimeout(disarm);
       disarm = window.setTimeout(() => {
         armed = null;
-        if (els[0]?.isConnected) draw();
+        live?.();
       }, 8000);
       return draw();
     }
