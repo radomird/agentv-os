@@ -1,14 +1,30 @@
 // The TV's resolution and its three sizes (daemon/display.ts, ADR-062): the
 // mode a TV runs at, the scale for each size's canvas, which sizes a TV
-// offers, /api/display on the daemon, and the screen daemon setting it in
-// Hyprland and keeping it for the next session.
+// offers, Fit to screen's margin (ADR-103), /api/display on the daemon, and
+// the screen daemon setting it in Hyprland and keeping it for the next
+// session.
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { cleanScale, Display, DisplayWatch, displayFile, offered, parseMode, pickMode, targetFor, type DisplayHyprland, type Mode } from "../../../daemon/display.ts";
+import {
+  cleanMargin,
+  cleanScale,
+  Display,
+  DisplayWatch,
+  displayFile,
+  inset,
+  keptReserved,
+  monitorRule,
+  offered,
+  parseMode,
+  pickMode,
+  targetFor,
+  type DisplayHyprland,
+  type Mode,
+} from "../../../daemon/display.ts";
 import type { Monitor } from "../../../daemon/hyprland.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { DisplayRoutes } from "../../../daemon/routes/display.ts";
@@ -60,44 +76,95 @@ test("a 4K TV offers all three sizes, and a 1080p TV larger and standard", () =>
 
 test("each size is its logical canvas: a 4K TV at standard runs at scale 2", () => {
   const at = (size: "larger" | "standard" | "more", list: string[], output: "auto" | "1080p" = "auto") => targetFor("HDMI-A-1", modes(...list), size, output);
-  assert.deepEqual(at("standard", PANASONIC), { target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 }, canvas: [1920, 1080], sizes: ["larger", "standard", "more"], size: "standard" });
+  assert.deepEqual(at("standard", PANASONIC), { target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: [0, 0] }, canvas: [1920, 1080], sizes: ["larger", "standard", "more"], size: "standard" });
   assert.deepEqual(at("larger", PANASONIC)?.target.scale, 2.4);
   assert.deepEqual(at("larger", PANASONIC)?.canvas, [1600, 900]);
   assert.deepEqual(at("more", PANASONIC)?.canvas, [2400, 1350]);
   assert.deepEqual(at("more", PANASONIC)?.target.scale, 1.6);
-  assert.deepEqual(at("larger", HD)?.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1.2 });
+  assert.deepEqual(at("larger", HD)?.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1.2, reserved: [0, 0] });
   assert.deepEqual(at("more", HD)?.size, "standard", "more on screen on a 1080p TV shows standard");
-  assert.deepEqual(at("standard", PANASONIC, "1080p")?.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1 }, "1080p output on a 4K TV, which scales it up");
+  assert.deepEqual(at("standard", PANASONIC, "1080p")?.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1, reserved: [0, 0] }, "1080p output on a 4K TV, which scales it up");
+});
+
+test("T22.1 Fit to screen's margin is a percent of the canvas on each side, at every size and resolution", () => {
+  // 3 to start with: about 58 by 32 on standard's canvas, whether the TV
+  // runs at 4K or 1080p.
+  assert.deepEqual(targetFor("HDMI-A-1", modes(...PANASONIC), "standard", "auto", 3)?.target.reserved, [58, 32]);
+  assert.deepEqual(targetFor("HDMI-A-1", modes(...HD), "standard", "auto", 3)?.target.reserved, [58, 32]);
+  assert.deepEqual(targetFor("HDMI-A-1", modes(...PANASONIC), "larger", "auto", 3)?.target.reserved, [48, 27]);
+  assert.deepEqual(targetFor("HDMI-A-1", modes(...PANASONIC), "more", "auto", 3)?.target.reserved, [72, 41]);
+  assert.deepEqual(targetFor("HDMI-A-1", modes(...PANASONIC), "standard", "auto", 0)?.target.reserved, [0, 0], "none at all");
+  assert.deepEqual(inset([1920, 1080], 10), [192, 108]);
+  // Kept in half steps, from none to 10.
+  assert.deepEqual([0, 0.5, 3, 4.5, 10].map(cleanMargin), [0, 0.5, 3, 4.5, 10]);
+  for (const bad of [-0.5, 10.5, 2.3, Number.NaN, Infinity, "3", null, undefined, [3]]) assert.equal(cleanMargin(bad), null, String(bad));
+  // The monitor's rule has it as its reserved area, the same on both sides.
+  assert.equal(
+    monitorRule({ output: "HDMI-A-1", mode: "1920x1080@60", scale: 1, reserved: [58, 32] }),
+    'hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "auto", scale = 1, reserved = { top = 32, right = 58, bottom = 32, left = 58 } })',
+  );
+  assert.deepEqual(keptReserved("HDMI-A-1 3840x2160@60 2 58 32"), [58, 32]);
+  for (const line of ["HDMI-A-1 3840x2160@60 2", "HDMI-A-1 3840x2160@60 2 58", "HDMI-A-1 3840x2160@60 2 58 -3", "HDMI-A-1 3840x2160@60 2 5000 3", ""]) {
+    assert.deepEqual(keptReserved(line), [0, 0], line);
+  }
 });
 
 const PANASONIC_TV = { output: "HDMI-A-1", modes: PANASONIC, live: { mode: "3840x2160@60", scale: 1 } };
+// What Fit to screen's margin starts at on standard's canvas.
+const FIT: [number, number] = [58, 32];
 
 test("the display keeps what's picked and the TV it saw, and nothing changes with the switch off", async () => {
   const state = join(base, "model");
   let on = false;
   let smooth: boolean | null = null;
   const display = new Display({ state, on: async () => on, fourKSmooth: async () => smooth });
-  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: null, scale: null, canvas: [1920, 1080], sizes: [], full: null });
+  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: null, scale: null, canvas: [1920, 1080], sizes: [], full: null, margin: 0, inset: [0, 0] });
   assert.deepEqual(await display.choose({ size: "larger" }), { ok: false, status: 409, error: "Sizes aren't available" });
+  assert.deepEqual(await display.choose({ margin: 3 }), { ok: false, status: 409, error: "Sizes aren't available" });
   assert.deepEqual(await display.reported(PANASONIC_TV), { ok: true, changed: true });
   assert.equal(await display.target(), null, "the switch off leaves Hyprland's own mode and scale");
   assert.deepEqual((await display.state()).scale, 1, "and says what the TV runs at");
 
   on = true;
-  assert.deepEqual(await display.state(), { size: "standard", output: "auto", mode: "3840x2160@60", scale: 2, canvas: [1920, 1080], sizes: ["larger", "standard", "more"], full: "3840x2160@60" });
-  assert.deepEqual(await display.target(), { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 });
+  assert.deepEqual(await display.state(), {
+    size: "standard",
+    output: "auto",
+    mode: "3840x2160@60",
+    scale: 2,
+    canvas: [1920, 1080],
+    sizes: ["larger", "standard", "more"],
+    full: "3840x2160@60",
+    margin: 3,
+    inset: FIT,
+  });
+  assert.deepEqual(await display.target(), { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT }, "Fit to screen is on to start with");
   assert.deepEqual(await display.choose({ size: "more" }), { ok: true });
   assert.deepEqual((await display.state()).canvas, [2400, 1350]);
+  assert.deepEqual((await display.state()).inset, [72, 41], "the margin follows the canvas");
   assert.deepEqual(JSON.parse(readFileSync(join(state, "display.json"), "utf8")).size, "more");
   assert.equal((await display.choose({ size: "huge" })).ok, false);
   assert.equal((await display.choose({ output: "720p" })).ok, false);
   assert.equal((await display.choose([])).ok, false);
+
+  // Fit to screen's margin, picked: kept with the size, down to none.
+  assert.deepEqual(await display.choose({ margin: 5 }), { ok: true });
+  assert.deepEqual([(await display.state()).margin, (await display.state()).inset, (await display.target())?.reserved], [5, [120, 68], [120, 68]]);
+  assert.deepEqual(JSON.parse(readFileSync(join(state, "display.json"), "utf8")).margin, 5);
+  assert.deepEqual(await display.choose({ margin: 10.5 }), { ok: false, status: 400, error: "the margin is 0 to 10, in steps of 0.5" });
+  assert.equal((await display.choose({ margin: 2.3 })).ok, false);
+  assert.deepEqual(await display.choose({ margin: 0 }), { ok: true });
+  assert.deepEqual((await display.target())?.reserved, [0, 0]);
+  assert.deepEqual(await display.choose({ margin: 3 }), { ok: true });
   assert.deepEqual(await display.reported(PANASONIC_TV), { ok: true, changed: false });
   assert.equal((await display.reported({ output: 'HDMI"', modes: PANASONIC })).ok, false, "a connector name that could run Lua is refused");
 
   // A box that can't keep 4K smooth starts at 1080p, and can still pick 4K.
   smooth = false;
-  assert.deepEqual(await display.state(), { size: "standard", output: "1080p", mode: "1920x1080@60", scale: 1, canvas: [1920, 1080], sizes: ["larger", "standard"], full: "3840x2160@60" }, "4K can still be picked");
+  assert.deepEqual(
+    await display.state(),
+    { size: "standard", output: "1080p", mode: "1920x1080@60", scale: 1, canvas: [1920, 1080], sizes: ["larger", "standard"], full: "3840x2160@60", margin: 3, inset: FIT },
+    "4K can still be picked",
+  );
   assert.deepEqual(await display.choose({ output: "auto" }), { ok: true });
   assert.deepEqual((await display.state()).mode, "3840x2160@60");
   assert.deepEqual((await display.state()).size, "more", "the pick comes back with the 4K output");
@@ -130,7 +197,7 @@ test("/api/display picks a size, the screen daemon sets it, and the TV hears it"
 
     // The screen daemon tells it the TV, and hears what to set it to.
     const told = await send("POST", "/api/display/tv", PANASONIC_TV);
-    assert.deepEqual(told.data, { ok: true, target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 } });
+    assert.deepEqual(told.data, { ok: true, target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT } });
     assert.equal((await send("POST", "/api/display/tv", { output: "x" })).status, 400);
 
     // The TV's pages listen for the change.
@@ -148,14 +215,30 @@ test("/api/display picks a size, the screen daemon sets it, and the TV hears it"
     // A stand-in screen daemon takes the ask and sets it.
     const screen = (async () => {
       const { ask } = (await (await fetch(`${url}/api/display/ask`)).json()) as { ask: { n: number; target: { scale: number } } };
-      await fetch(`${url}/api/display/ask/${ask.n}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: true, live: { mode: "3840x2160@60", scale: ask.target.scale } }) });
+      await fetch(`${url}/api/display/ask/${ask.n}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ok: true, live: { mode: "3840x2160@60", scale: ask.target.scale, reserved: [48, 27] } }),
+      });
       return ask.target;
     })();
     const started = Date.now();
     const put = await send("PUT", "/api/display", { size: "larger" });
-    assert.deepEqual(put.data, { ok: true, size: "larger", output: "auto", mode: "3840x2160@60", scale: 2.4, canvas: [1600, 900], sizes: ["larger", "standard", "more"], full: "3840x2160@60", applied: true });
+    assert.deepEqual(put.data, {
+      ok: true,
+      size: "larger",
+      output: "auto",
+      mode: "3840x2160@60",
+      scale: 2.4,
+      canvas: [1600, 900],
+      sizes: ["larger", "standard", "more"],
+      full: "3840x2160@60",
+      margin: 3,
+      inset: [48, 27],
+      applied: true,
+    });
     assert.ok(Date.now() - started < 1000, "a size change applies within a second");
-    assert.deepEqual(await screen, { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2.4 });
+    assert.deepEqual(await screen, { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2.4, reserved: [48, 27] });
     await listening;
     assert.match(heard, /event: display\ndata: \{"size":"larger"/);
     await reader.cancel();
@@ -203,8 +286,8 @@ test("the TV follows the box check and the sizes switch at once: 1080p output wh
     adult: async () => true,
   });
   const call = (method: string, path: string, body: unknown = {}) => routes.handle(method, path, body as never, {} as never);
-  await call("POST", "/api/display/tv", { ...PANASONIC_TV, live: { mode: "3840x2160@60", scale: 2 } });
-  assert.deepEqual(sent.at(-1), { ok: true, target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 } }, "before the test has run, the TV's full resolution");
+  await call("POST", "/api/display/tv", { ...PANASONIC_TV, live: { mode: "3840x2160@60", scale: 2, reserved: FIT } });
+  assert.deepEqual(sent.at(-1), { ok: true, target: { output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT } }, "before the test has run, the TV's full resolution");
 
   // A new TV is news for the pages. After that, nothing to do while the TV
   // already runs at what it should.
@@ -216,8 +299,8 @@ test("the TV follows the box check and the sizes switch at once: 1080p output wh
   const following = routes.follow();
   await call("GET", "/api/display/ask");
   const ask = (sent.at(-1) as { ask: { n: number; target: unknown } }).ask;
-  assert.deepEqual(ask.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1 });
-  await call("POST", `/api/display/ask/${ask.n}`, { ok: true, live: { mode: "1920x1080@60", scale: 1 } });
+  assert.deepEqual(ask.target, { output: "HDMI-A-1", mode: "1920x1080@60", scale: 1, reserved: FIT });
+  await call("POST", `/api/display/ask/${ask.n}`, { ok: true, live: { mode: "1920x1080@60", scale: 1, reserved: FIT } });
   await following;
   assert.deepEqual(events.splice(0), ["display"]);
   await call("GET", "/api/display");
@@ -248,11 +331,18 @@ class FakeHyprland implements DisplayHyprland {
   async monitors() {
     return [structuredClone(this.monitor)];
   }
+  // The reserved area the last rule set, top, right, bottom and left.
+  reserved = [0, 0, 0, 0];
   async eval(code: string) {
     this.evals.push(code);
-    const m = /^hl\.monitor\(\{ output = "([^"]+)", mode = "(\d+)x(\d+)@[\d.]+", position = "auto", scale = ([\d.]+) \}\)$/.exec(code);
-    if (m && this.take) setTimeout(() => Object.assign(this.monitor, { width: Number(m[2]), height: Number(m[3]), scale: Number(m[4]) }), 30);
-    else if (/mode = "preferred"/.test(code)) Object.assign(this.monitor, { width: 3840, height: 2160, scale: 1 });
+    const m = /^hl\.monitor\(\{ output = "([^"]+)", mode = "(\d+)x(\d+)@[\d.]+", position = "auto", scale = ([\d.]+), reserved = \{ top = (\d+), right = (\d+), bottom = (\d+), left = (\d+) \} \}\)$/.exec(code);
+    if (m && this.take) {
+      this.reserved = [Number(m[5]), Number(m[6]), Number(m[7]), Number(m[8])];
+      setTimeout(() => Object.assign(this.monitor, { width: Number(m[2]), height: Number(m[3]), scale: Number(m[4]) }), 30);
+    } else if (/mode = "preferred"/.test(code)) {
+      Object.assign(this.monitor, { width: 3840, height: 2160, scale: 1 });
+      this.reserved = [0, 0, 0, 0];
+    }
   }
   events(handler: (name: string, data: string) => void) {
     this.handler = handler;
@@ -263,26 +353,27 @@ test("the screen daemon sets the mode and scale, and keeps them for the next ses
   const hypr = new FakeHyprland();
   const file = join(base, "home", "state", "origaitv", "display");
   const watch = new DisplayWatch({ hyprland: hypr, url: "http://127.0.0.1:1/", file, log: () => {}, settleMs: 500 });
-  const set = await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 });
-  assert.deepEqual(set, { ok: true, live: { mode: "3840x2160@60", scale: 2 } });
-  assert.deepEqual(hypr.evals, ['hl.monitor({ output = "HDMI-A-1", mode = "3840x2160@60", position = "auto", scale = 2 })']);
-  assert.equal(readFileSync(file, "utf8"), "HDMI-A-1 3840x2160@60 2\n");
+  const set = await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: [0, 0] });
+  assert.deepEqual(set, { ok: true, live: { mode: "3840x2160@60", scale: 2, reserved: [0, 0] } });
+  assert.deepEqual(hypr.evals, ['hl.monitor({ output = "HDMI-A-1", mode = "3840x2160@60", position = "auto", scale = 2, reserved = { top = 0, right = 0, bottom = 0, left = 0 } })']);
+  assert.equal(readFileSync(file, "utf8"), "HDMI-A-1 3840x2160@60 2 0 0\n");
 
   // What it runs at already isn't set again, so the TV doesn't look for its signal.
-  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2 });
+  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: [0, 0] });
   assert.equal(hypr.evals.length, 1);
 
   // Hyprland that doesn't take it says so.
   hypr.take = false;
-  const refused = await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 1.6 });
+  const refused = await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 1.6, reserved: [0, 0] });
   assert.equal(refused.ok, false);
   assert.match(String(refused.error), /scale 2/);
   hypr.take = true;
 
   // Nothing that could run Lua goes in.
-  assert.equal((await watch.apply({ output: 'HDMI"})', mode: "3840x2160@60", scale: 2 })).ok, false);
-  assert.equal((await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60 })", scale: 2 })).ok, false);
-  assert.equal((await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 99 })).ok, false);
+  assert.equal((await watch.apply({ output: 'HDMI"})', mode: "3840x2160@60", scale: 2, reserved: [0, 0] })).ok, false);
+  assert.equal((await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60 })", scale: 2, reserved: [0, 0] })).ok, false);
+  assert.equal((await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 99, reserved: [0, 0] })).ok, false);
+  assert.equal((await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: [1, 2, 3] as never })).ok, false);
 
   // The switch off: back to Hyprland's own, and no line for the next session.
   const back = await watch.apply(null);
@@ -296,11 +387,50 @@ test("a session that started at the kept line goes back with the switch off", as
   hypr.monitor.scale = 2;
   const file = join(base, "kept", "display");
   mkdirSync(join(base, "kept"), { recursive: true });
-  writeFileSync(file, "HDMI-A-1 3840x2160@60 2\n");
-  const watch = new DisplayWatch({ hyprland: hypr, url: "http://127.0.0.1:1/", file, log: () => {} });
+  writeFileSync(file, "HDMI-A-1 3840x2160@60 2 58 32\n");
+  const fits: boolean[] = [];
+  const watch = new DisplayWatch({ hyprland: hypr, url: "http://127.0.0.1:1/", file, log: () => {}, fitted: (on) => fits.push(on) });
+  assert.equal(watch.fitted(), true, "the session started with the kept margin");
   await watch.apply(null);
   assert.deepEqual(hypr.evals, ['hl.monitor({ output = "HDMI-A-1", mode = "preferred", position = "auto", scale = "auto" })']);
   assert.equal(hypr.monitor.scale, 1);
+  assert.equal(watch.fitted(), false, "and no margin with the switch off");
+  assert.deepEqual(fits, [false]);
+});
+
+test("T22.1 the screen daemon sets Fit to screen's margin alone without setting the mode again, and keeps it for the next session", async () => {
+  const hypr = new FakeHyprland();
+  hypr.monitor.scale = 2;
+  const file = join(base, "fit", "display");
+  const fits: boolean[] = [];
+  const watch = new DisplayWatch({ hyprland: hypr, url: "http://127.0.0.1:1/", file, log: () => {}, settleMs: 500, fitted: (on) => fits.push(on) });
+  assert.equal(watch.fitted(), false);
+  // The mode and scale it runs at already, with a margin: one rule at the
+  // same mode, which Hyprland takes as the reserved area alone.
+  const set = await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
+  assert.deepEqual(set, { ok: true, live: { mode: "3840x2160@60", scale: 2, reserved: FIT } });
+  assert.deepEqual(hypr.evals, [monitorRule({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT })]);
+  assert.deepEqual(hypr.reserved, [32, 58, 32, 58]);
+  assert.equal(readFileSync(file, "utf8"), "HDMI-A-1 3840x2160@60 2 58 32\n");
+  assert.equal(watch.fitted(), true);
+  assert.deepEqual(fits, [true], "the app in front is placed again");
+  // The same again sets nothing.
+  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
+  assert.equal(hypr.evals.length, 1);
+  // A bigger one, then none: placed again only when it comes or goes.
+  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: [96, 54] });
+  assert.deepEqual(hypr.reserved, [54, 96, 54, 96]);
+  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: [0, 0] });
+  assert.deepEqual(hypr.reserved, [0, 0, 0, 0]);
+  assert.deepEqual(fits, [true, false]);
+  assert.equal(hypr.monitor.scale, 2, "the mode was never set again");
+  // After a restart, the session starts at the kept line, margin and all.
+  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
+  const again = new DisplayWatch({ hyprland: hypr, url: "http://127.0.0.1:1/", file, log: () => {} });
+  assert.equal(again.fitted(), true);
+  const before = hypr.evals.length;
+  await again.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
+  assert.equal(hypr.evals.length, before, "what the session started at isn't set again");
 });
 
 test("the screen daemon tells the daemon its TV at the start, and again when one's plugged in", async () => {

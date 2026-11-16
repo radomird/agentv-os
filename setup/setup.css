@@ -630,6 +630,48 @@
    one's too. Setup's apps step doesn't: it ends above the status bar. */
 .setup-page.apps-page {
   overflow: visible;
+  padding-bottom: 136px;
+}
+
+/* Its groups do, under the headline, with the focus, once they're longer
+   than the screen, as every game platform makes them (ADR-103). The margin
+   and padding leave room for a card's focused border. */
+.app-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  flex: 1;
+  min-height: 0;
+  margin: -8px;
+  padding: 8px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+/* The games (ADR-103): two to a row, each a little shorter, so a long name
+   and its one line, such as needing a mouse and keyboard, fit whole. */
+.app-games .app-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+}
+
+.app-games .app-pick {
+  width: auto;
+  height: 112px;
+}
+
+.app-games .app-face {
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+}
+
+.app-games .app-name {
+  font-size: 34px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-group {
@@ -684,6 +726,8 @@
 }
 
 .app-mark {
+  flex-shrink: 0;
+  white-space: pre;
   font-size: 30px;
   font-weight: 800;
   color: var(--foreground);
@@ -1726,4 +1770,27 @@ body.counted .player-note {
 
 .tb-back-name:empty {
   display: none;
+}
+
+/* Fit to screen (ADR-103, setup/fit.ts): the corner marks over the whole
+   screen, the status bar too, and the picture's size under the tip. */
+.setup-fit .fit-marks {
+  position: fixed;
+  z-index: 5;
+}
+
+/* Below the marks' arms at any margin up to the most, and its headline on
+   one line beside them. */
+.setup-page.setup-fit {
+  padding: 240px 120px 220px;
+  gap: 32px;
+}
+
+.setup-page.setup-fit .setup-headline {
+  font-size: 88px;
+  min-height: 88px;
+}
+
+.setup-fit .fit-controls {
+  margin-top: 8px;
 }

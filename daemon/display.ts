@@ -18,9 +18,18 @@
 //     keeps the last one applied for session/hypr.lua, so the next session
 //     starts at it with no flash of another mode.
 //
+// Fit to screen (ADR-103) rides on the same: a margin round the picture,
+// for a TV that crops its edges (overscan) at a resolution the box's
+// graphics can't shrink the picture for. It's a percent of the canvas on
+// each side, 3 to start with, kept with the size. The screen daemon makes it
+// the monitor's reserved area, and apps are maximized inside it rather than
+// made full screen (daemon/screen.ts). Home stays full screen, and moves its
+// own margin in by as much as the margin is over the 3 it already allows
+// for (launcher/size.ts).
+//
 // Behind the sizes switch (daemon/features.ts). With it off, the TV session
-// keeps Hyprland's preferred mode and automatic scale, as before, and home
-// zooms its 1920 × 1080 page to fit.
+// keeps Hyprland's preferred mode and automatic scale, as before, home
+// zooms its 1920 × 1080 page to fit, and there's no margin.
 
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -37,6 +46,26 @@ export const OUTPUTS: Output[] = ["auto", "1080p"];
 export const CANVAS: Record<Size, number> = { larger: 1600, standard: 1920, more: 2400 };
 // The canvas home is drawn for when there are no sizes (the switch is off).
 export const DESIGN: [number, number] = [1920, 1080];
+
+// Fit to screen's margin, a percent of the canvas on each side: the width's
+// on the left and right, the height's at the top and bottom. 3 to start
+// with, at every resolution; none at all to 10, in half steps.
+export const MARGIN = 3;
+export const MARGIN_MAX = 10;
+export const MARGIN_STEP = 0.5;
+
+// A margin as it's kept, or null for one that isn't.
+export function cleanMargin(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > MARGIN_MAX) return null;
+  const stepped = Math.round(value / MARGIN_STEP) * MARGIN_STEP;
+  return Math.abs(stepped - value) < 1e-9 ? stepped : null;
+}
+
+// The margin in a canvas's pixels: across (left and right) and down (top
+// and bottom).
+export function inset(canvas: [number, number], margin: number): [number, number] {
+  return [Math.round((canvas[0] * margin) / 100), Math.round((canvas[1] * margin) / 100)];
+}
 
 export interface Mode {
   width: number;
@@ -116,24 +145,43 @@ export function fitSize(want: Size, sizes: Size[]): Size {
   return below.length > 0 ? below[below.length - 1] : sizes[0];
 }
 
-// What the screen daemon applies: the output, its mode and the scale.
+// What the screen daemon applies: the output, its mode and the scale, and
+// Fit to screen's margin as the monitor's reserved area, in logical pixels
+// across and down.
 export interface Target {
   output: string;
   mode: string;
   scale: number;
+  reserved: [number, number];
 }
 
-// Where a target comes from: the mode for the output picked, and the scale
-// that turns it into the canvas of the size shown.
-export function targetFor(output: string, modes: Mode[], size: Size, picked: Output): { target: Target; canvas: [number, number]; sizes: Size[]; size: Size } | null {
+// A reserved area as the screen daemon takes it: two whole numbers of
+// logical pixels, none below 0 or over a quarter of 8K's width. A target from
+// before Fit to screen has none.
+export function cleanReserved(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  return value.every((n) => Number.isInteger(n) && n >= 0 && n <= 2048) ? [value[0], value[1]] : null;
+}
+
+// Where a target comes from: the mode for the output picked, the scale
+// that turns it into the canvas of the size shown, and the margin on that
+// canvas.
+export function targetFor(
+  output: string,
+  modes: Mode[],
+  size: Size,
+  picked: Output,
+  margin = 0,
+): { target: Target; canvas: [number, number]; sizes: Size[]; size: Size } | null {
   const mode = pickMode(modes, picked);
   if (!mode) return null;
   const sizes = offered(mode);
   const shown = fitSize(size, sizes);
   const scale = cleanScale(mode.width / CANVAS[shown], mode.width, mode.height);
+  const canvas: [number, number] = [Math.round(mode.width / scale), Math.round(mode.height / scale)];
   return {
-    target: { output, mode: modeText(mode), scale },
-    canvas: [Math.round(mode.width / scale), Math.round(mode.height / scale)],
+    target: { output, mode: modeText(mode), scale, reserved: inset(canvas, margin) },
+    canvas,
     sizes,
     size: shown,
   };
@@ -147,17 +195,26 @@ export function safeOutput(name: unknown): name is string {
 
 // --- The daemon's side ---------------------------------------------------
 
+// What the TV runs at: its mode and scale, and the reserved area the screen
+// daemon set on it, when it said.
+export interface Live {
+  mode: string;
+  scale: number;
+  reserved?: [number, number];
+}
+
 // The TV, as the screen daemon last saw it: its output, the modes it lists,
-// and the mode and scale it runs at now.
+// and what it runs at now.
 export interface Tv {
   output: string;
   modes: string[];
-  live: { mode: string; scale: number } | null;
+  live: Live | null;
 }
 
 interface Saved {
   size?: Size;
   output?: Output;
+  margin?: number;
   tv?: Tv;
 }
 
@@ -172,6 +229,10 @@ export interface DisplayState {
   // The TV's full resolution, when it's more than 1080p, for picking it
   // over 1080p output: "3840x2160@60". Null otherwise.
   full: string | null;
+  // Fit to screen: the margin, a percent on each side, and what that is on
+  // the canvas, across and down. None with the switch off.
+  margin: number;
+  inset: [number, number];
 }
 
 export interface DisplayOptions {
@@ -184,15 +245,20 @@ export interface DisplayOptions {
   fourKSmooth?: () => Promise<boolean | null>;
 }
 
+function cleanLive(said: unknown): Live | null {
+  const l = said as Record<string, unknown> | null | undefined;
+  const mode = parseMode(l?.mode);
+  if (!mode || typeof l?.scale !== "number" || !(l.scale > 0 && l.scale <= 8)) return null;
+  const reserved = cleanReserved(l.reserved);
+  return { mode: modeText(mode), scale: l.scale, ...(reserved ? { reserved } : {}) };
+}
+
 function cleanTv(said: unknown): Tv | null {
   if (!said || typeof said !== "object") return null;
   const tv = said as Record<string, unknown>;
   if (!safeOutput(tv.output) || !Array.isArray(tv.modes)) return null;
   const modes = [...new Set(tv.modes.map(parseMode).filter((m): m is Mode => m !== null).map(modeText))].slice(0, 64);
-  let live: Tv["live"] = null;
-  const l = tv.live as Record<string, unknown> | null | undefined;
-  const mode = parseMode(l?.mode);
-  if (mode && typeof l?.scale === "number" && l.scale > 0 && l.scale <= 8) live = { mode: modeText(mode), scale: l.scale };
+  const live = cleanLive(tv.live);
   if (modes.length === 0 && live) modes.push(live.mode);
   return modes.length > 0 ? { output: tv.output, modes, live } : null;
 }
@@ -214,6 +280,7 @@ export class Display {
       return {
         ...(SIZES.includes(saved.size as Size) ? { size: saved.size as Size } : {}),
         ...(OUTPUTS.includes(saved.output as Output) ? { output: saved.output as Output } : {}),
+        ...(cleanMargin(saved.margin) !== null ? { margin: cleanMargin(saved.margin)! } : {}),
         ...(cleanTv(saved.tv) ? { tv: cleanTv(saved.tv)! } : {}),
       };
     } catch {
@@ -245,24 +312,36 @@ export class Display {
   private async plan(saved: Saved) {
     if (!saved.tv) return null;
     const modes = saved.tv.modes.map(parseMode).filter((m): m is Mode => m !== null);
-    return targetFor(saved.tv.output, modes, saved.size ?? "standard", await this.output(saved));
+    return targetFor(saved.tv.output, modes, saved.size ?? "standard", await this.output(saved), saved.margin ?? MARGIN);
   }
 
   async state(): Promise<DisplayState> {
     const saved = await this.read();
     const live = saved.tv?.live ?? null;
     if (!(await this.o.on())) {
-      return { size: "standard", output: "auto", mode: live?.mode ?? null, scale: live?.scale ?? null, canvas: [DESIGN[0], DESIGN[1]], sizes: [], full: null };
+      return { size: "standard", output: "auto", mode: live?.mode ?? null, scale: live?.scale ?? null, canvas: [DESIGN[0], DESIGN[1]], sizes: [], full: null, margin: 0, inset: [0, 0] };
     }
     const output = await this.output(saved);
+    const margin = saved.margin ?? MARGIN;
     const planned = await this.plan(saved);
     if (!planned) {
       const size = fitSize(saved.size ?? "standard", offered(null));
-      return { size, output, mode: null, scale: null, canvas: [CANVAS[size], Math.round((CANVAS[size] * 9) / 16)], sizes: offered(null), full: null };
+      const canvas: [number, number] = [CANVAS[size], Math.round((CANVAS[size] * 9) / 16)];
+      return { size, output, mode: null, scale: null, canvas, sizes: offered(null), full: null, margin, inset: inset(canvas, margin) };
     }
     const best = pickMode((saved.tv?.modes ?? []).map(parseMode).filter((m): m is Mode => m !== null), "auto");
     const full = best && best.width > 1920 ? modeText(best) : null;
-    return { size: planned.size, output, mode: planned.target.mode, scale: planned.target.scale, canvas: planned.canvas, sizes: planned.sizes, full };
+    return {
+      size: planned.size,
+      output,
+      mode: planned.target.mode,
+      scale: planned.target.scale,
+      canvas: planned.canvas,
+      sizes: planned.sizes,
+      full,
+      margin,
+      inset: planned.target.reserved,
+    };
   }
 
   // What the TV should run at, for the screen daemon, or null while the
@@ -272,14 +351,18 @@ export class Display {
     return (await this.plan(await this.read()))?.target ?? null;
   }
 
-  // A size or an output picked, from Settings or setup's look step.
+  // A size, an output or Fit to screen's margin picked, from Settings or
+  // setup's look step.
   async choose(change: unknown): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
     if (!(await this.o.on())) return { ok: false, status: 409, error: "Sizes aren't available" };
-    if (!change || typeof change !== "object" || Array.isArray(change)) return { ok: false, status: 400, error: 'send {"size": "larger" | "standard" | "more"} or {"output": "auto" | "1080p"}' };
-    const { size, output } = change as { size?: unknown; output?: unknown };
-    if (size === undefined && output === undefined) return { ok: false, status: 400, error: "send a size or an output" };
+    if (!change || typeof change !== "object" || Array.isArray(change)) {
+      return { ok: false, status: 400, error: 'send {"size": "larger" | "standard" | "more"}, {"output": "auto" | "1080p"} or {"margin": 0 to 10}' };
+    }
+    const { size, output, margin } = change as { size?: unknown; output?: unknown; margin?: unknown };
+    if (size === undefined && output === undefined && margin === undefined) return { ok: false, status: 400, error: "send a size, an output or a margin" };
     if (size !== undefined && !SIZES.includes(size as Size)) return { ok: false, status: 400, error: "the size is larger, standard or more" };
     if (output !== undefined && !OUTPUTS.includes(output as Output)) return { ok: false, status: 400, error: "the output is auto or 1080p" };
+    if (margin !== undefined && cleanMargin(margin) === null) return { ok: false, status: 400, error: `the margin is 0 to ${MARGIN_MAX}, in steps of ${MARGIN_STEP}` };
     if (size !== undefined) {
       const saved = await this.read();
       const planned = await this.plan(saved);
@@ -287,18 +370,33 @@ export class Display {
       // Only what this TV offers, unless the output changes with it.
       if (output === undefined && !sizes.includes(size as Size)) return { ok: false, status: 400, error: `This TV offers ${sizes.join(" and ")}` };
     }
-    await this.change((saved) => ({ ...saved, ...(size !== undefined ? { size: size as Size } : {}), ...(output !== undefined ? { output: output as Output } : {}) }));
+    await this.change((saved) => ({
+      ...saved,
+      ...(size !== undefined ? { size: size as Size } : {}),
+      ...(output !== undefined ? { output: output as Output } : {}),
+      ...(margin !== undefined ? { margin: cleanMargin(margin)! } : {}),
+    }));
     return { ok: true };
   }
 
-  // Whether the TV, as the screen daemon last said, runs at a target.
+  // Whether the TV, as the screen daemon last said, runs at a target, its
+  // margin too.
   async runs(target: Target): Promise<boolean> {
     const tv = (await this.read()).tv;
-    return Boolean(tv && tv.output === target.output && tv.live && tv.live.mode === target.mode && Math.abs(tv.live.scale - target.scale) < 0.005);
+    const reserved = tv?.live?.reserved ?? [0, 0];
+    return Boolean(
+      tv &&
+        tv.output === target.output &&
+        tv.live &&
+        tv.live.mode === target.mode &&
+        Math.abs(tv.live.scale - target.scale) < 0.005 &&
+        reserved[0] === target.reserved[0] &&
+        reserved[1] === target.reserved[1],
+    );
   }
 
   // What the TV runs at, after the screen daemon set it.
-  async live(live: { mode: string; scale: number }): Promise<void> {
+  async live(live: Live): Promise<void> {
     await this.change((saved) => (saved.tv ? { ...saved, tv: { ...saved.tv, live } } : saved));
   }
 
@@ -326,18 +424,17 @@ export interface DisplayAsk {
 
 export interface DisplayAnswer {
   ok: boolean;
-  live?: { mode: string; scale: number };
+  live?: Live;
   error?: string;
   late?: boolean;
 }
 
 export function cleanDisplayAnswer(said: unknown): DisplayAnswer {
   const a = (said ?? {}) as Record<string, unknown>;
-  const live = a.live as Record<string, unknown> | undefined;
-  const mode = parseMode(live?.mode);
+  const live = cleanLive(a.live);
   return {
     ok: a.ok === true,
-    ...(mode && typeof live?.scale === "number" ? { live: { mode: modeText(mode), scale: live.scale } } : {}),
+    ...(live ? { live } : {}),
     ...(typeof a.error === "string" ? { error: a.error.slice(0, 300) } : {}),
   };
 }
@@ -350,7 +447,8 @@ export interface DisplayHyprland {
 }
 
 // Where the screen daemon keeps the last mode and scale it applied, for
-// session/hypr.lua: "HDMI-A-1 3840x2160@60 2" on one line.
+// session/hypr.lua, with Fit to screen's reserved area across and down:
+// "HDMI-A-1 3840x2160@60 2 58 32" on one line.
 export function displayFile(env: NodeJS.ProcessEnv, home: string): string {
   return join(env.XDG_STATE_HOME || join(home, ".local", "state"), "origaitv", "display");
 }
@@ -365,10 +463,30 @@ export interface DisplayWatchOptions {
   // How long to keep trying the daemon at the session's start.
   retryMs?: number;
   fetch?: typeof fetch;
+  // Fit to screen's margin came or went, so the app in front is placed
+  // again: maximized inside it, or full screen (daemon/screen.ts).
+  fitted?: (on: boolean) => void;
 }
 
 function liveOf(monitor: Monitor): { mode: string; scale: number } {
   return { mode: modeText({ width: monitor.width, height: monitor.height, refresh: monitor.refreshRate }), scale: monitor.scale ?? 1 };
+}
+
+// The monitor's rule, as the screen daemon sets it with hyprctl eval and
+// session/hypr.lua at the session's start: the mode, the scale, and the
+// reserved area Hyprland keeps clear of maximized windows and of the layers
+// that keep a zone for themselves, such as the sign-in bar.
+export function monitorRule(target: Target): string {
+  const [x, y] = target.reserved;
+  return `hl.monitor({ output = "${target.output}", mode = "${target.mode}", position = "auto", scale = ${target.scale}, reserved = { top = ${y}, right = ${x}, bottom = ${y}, left = ${x} } })`;
+}
+
+// The kept line's reserved area, or none on a line from before it.
+export function keptReserved(line: string): [number, number] {
+  const parts = line.trim().split(/\s+/);
+  if (parts.length !== 5) return [0, 0];
+  const reserved = cleanReserved([Number(parts[3]), Number(parts[4])]);
+  return reserved ?? [0, 0];
 }
 
 export class DisplayWatch {
@@ -377,11 +495,27 @@ export class DisplayWatch {
   // The output this session set a mode and scale on, to put back if the
   // switch goes off.
   private set: string | null = null;
+  // The reserved area on the TV: what this session set, or what
+  // session/hypr.lua started it at from the kept line.
+  private reserved: [number, number];
   private stopped = false;
   private timer?: ReturnType<typeof setTimeout>;
 
   constructor(options: DisplayWatchOptions) {
-    this.o = { log: (line) => console.log(line), settleMs: 1500, retryMs: 5000, fetch: globalThis.fetch, ...options };
+    this.o = { log: (line) => console.log(line), settleMs: 1500, retryMs: 5000, fetch: globalThis.fetch, fitted: () => {}, ...options };
+    this.reserved = keptReserved(this.keptLine() ?? "");
+  }
+
+  // Whether Fit to screen keeps a margin on the TV now, so apps are
+  // maximized inside it rather than full screen.
+  fitted(): boolean {
+    return this.reserved[0] > 0 || this.reserved[1] > 0;
+  }
+
+  private reservedNow(reserved: [number, number]): void {
+    const was = this.fitted();
+    this.reserved = reserved;
+    if (was !== this.fitted()) this.o.fitted(this.fitted());
   }
 
   private async monitor(): Promise<Monitor | null> {
@@ -400,7 +534,7 @@ export class DisplayWatch {
       const response = await this.o.fetch(`${this.o.url}api/display/tv`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ output: monitor.name, modes, live: liveOf(monitor) }),
+        body: JSON.stringify({ output: monitor.name, modes, live: { ...liveOf(monitor), reserved: this.reserved } }),
         signal: AbortSignal.timeout(3000),
       });
       said = (await response.json()) as typeof said;
@@ -412,8 +546,10 @@ export class DisplayWatch {
   }
 
   // The TV at a target, or at Hyprland's own preferred mode and automatic
-  // scale with none. A target it already runs at is left alone, since even
-  // the same mode set again can make the TV look for its signal.
+  // scale with none, and no margin. A target it already runs at is left
+  // alone, since even the same mode set again can make the TV look for its
+  // signal. A new margin alone is set at the same mode and scale, which
+  // Hyprland takes without setting the mode again.
   async apply(target: Target | null): Promise<DisplayAnswer> {
     if (!target) {
       // The session may have started at the line kept last time, so that
@@ -424,47 +560,64 @@ export class DisplayWatch {
       if (output) {
         await this.o.hyprland.eval(`hl.monitor({ output = "${output}", mode = "preferred", position = "auto", scale = "auto" })`).catch((error: Error) => this.o.log(`display: ${error.message}`));
       }
+      this.reservedNow([0, 0]);
       const monitor = await this.monitor();
-      return { ok: true, ...(monitor ? { live: liveOf(monitor) } : {}) };
+      return { ok: true, ...(monitor ? { live: { ...liveOf(monitor), reserved: this.reserved } } : {}) };
     }
     const mode = parseMode(target.mode);
-    if (!safeOutput(target.output) || !mode || !(target.scale > 0 && target.scale <= 8)) return { ok: false, error: "that isn't a mode and scale the tv can take" };
+    const reserved = cleanReserved(target.reserved ?? [0, 0]);
+    if (!safeOutput(target.output) || !mode || !(target.scale > 0 && target.scale <= 8) || !reserved) return { ok: false, error: "that isn't a mode and scale the tv can take" };
+    const wanted: Target = { output: target.output, mode: modeText(mode), scale: target.scale, reserved };
     const runs = (m: Monitor | null) => m !== null && m.name === target.output && m.width === mode.width && m.height === mode.height && Math.abs((m.scale ?? 1) - target.scale) < 0.005;
     let monitor = await this.monitor();
     if (!runs(monitor)) {
       try {
-        await this.o.hyprland.eval(`hl.monitor({ output = "${target.output}", mode = "${modeText(mode)}", position = "auto", scale = ${target.scale} })`);
+        await this.o.hyprland.eval(monitorRule(wanted));
       } catch (error) {
         return { ok: false, error: `hyprland didn't take it: ${(error as Error).message}` };
       }
       this.set = target.output;
+      this.reservedNow(reserved);
       const until = Date.now() + this.o.settleMs;
       while (!runs((monitor = await this.monitor())) && Date.now() < until) await new Promise((done) => setTimeout(done, 50));
       if (!runs(monitor)) return { ok: false, error: `the tv runs at ${monitor ? `${liveOf(monitor).mode}, scale ${liveOf(monitor).scale}` : "nothing"}`, ...(monitor ? { live: liveOf(monitor) } : {}) };
-      this.o.log(`display: ${target.output} at ${modeText(mode)}, scale ${target.scale}`);
+      this.o.log(`display: ${target.output} at ${modeText(mode)}, scale ${target.scale}, margin ${reserved.join(" by ")}`);
+    } else if (reserved[0] !== this.reserved[0] || reserved[1] !== this.reserved[1]) {
+      try {
+        await this.o.hyprland.eval(monitorRule(wanted));
+      } catch (error) {
+        return { ok: false, error: `hyprland didn't take the margin: ${(error as Error).message}`, live: { ...liveOf(monitor!), reserved: this.reserved } };
+      }
+      this.set = target.output;
+      this.reservedNow(reserved);
+      this.o.log(`display: the margin on ${target.output} is ${reserved.join(" by ")}`);
     }
-    this.keep({ output: target.output, mode: modeText(mode), scale: target.scale });
-    return { ok: true, live: liveOf(monitor!) };
+    this.keep(wanted);
+    return { ok: true, live: { ...liveOf(monitor!), reserved: this.reserved } };
   }
 
   private keep(target: Target): void {
     try {
       mkdirSync(dirname(this.o.file), { recursive: true });
-      writeFileSync(`${this.o.file}.tmp`, `${target.output} ${target.mode} ${target.scale}\n`);
+      writeFileSync(`${this.o.file}.tmp`, `${target.output} ${target.mode} ${target.scale} ${target.reserved[0]} ${target.reserved[1]}\n`);
       renameSync(`${this.o.file}.tmp`, this.o.file);
     } catch (error) {
       this.o.log(`display: couldn't keep the mode for the next session: ${(error as Error).message}`);
     }
   }
 
-  // The output named in the line kept last time, if it's one.
-  private kept(): string | null {
+  private keptLine(): string | null {
     try {
-      const output = readFileSync(this.o.file, "utf8").split(" ")[0];
-      return safeOutput(output) ? output : null;
+      return readFileSync(this.o.file, "utf8").split("\n")[0];
     } catch {
       return null;
     }
+  }
+
+  // The output named in the line kept last time, if it's one.
+  private kept(): string | null {
+    const output = this.keptLine()?.split(" ")[0];
+    return safeOutput(output) ? output : null;
   }
 
   private forget(): void {

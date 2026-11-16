@@ -4,6 +4,12 @@
 // TV, larger and standard on a 1080p one. Settings → Themes and backgrounds
 // and setup's look step pick one with this; home lays out on it through
 // looks/looks.ts. Behind the sizes switch.
+//
+// And Fit to screen (ADR-103): a margin round the picture, a percent of the
+// canvas on each side, for a TV that crops its edges. Apps are maximized
+// inside it (daemon/screen.ts). Home stays full screen, its picture to the
+// edges, and its words and tiles move in by as much as the margin is over
+// the 3 percent its own safe area already allows for.
 
 import { featureOn } from "./features.ts";
 import type { SizeId } from "./looks/looks.ts";
@@ -20,6 +26,54 @@ export interface DisplayState {
   sizes: SizeId[];
   // The TV's full resolution, when it's more than 1080p: "3840x2160@60".
   full: string | null;
+  // Fit to screen: the margin, a percent on each side, and what that is on
+  // the canvas, across and down.
+  margin: number;
+  inset: [number, number];
+}
+
+// Fit to screen's margin: 3 percent to start with, none at all to 10, in
+// half steps (daemon/display.ts).
+export const MARGIN = 3;
+export const MARGIN_MAX = 10;
+export const MARGIN_STEP = 0.5;
+
+// The margin as a person reads it: how much of the screen the picture
+// fills across, 94% for a margin of 3 on each side, up to 100%.
+export function pictureSize(margin: number): number {
+  return Math.round(100 - 2 * margin);
+}
+
+// The margin one step over: left makes the picture smaller (more margin),
+// right bigger (less). Null at either end.
+export function steppedMargin(margin: number, by: number): number | null {
+  const next = Math.round((margin - by * MARGIN_STEP) / MARGIN_STEP) * MARGIN_STEP;
+  return next < 0 || next > MARGIN_MAX || next === margin ? null : next;
+}
+
+// The margin on home's canvas, across and down, and how far it is over the
+// margin home's own safe area already allows for.
+export function margins(margin: number, canvas: { width: number; height: number }): { x: number; y: number; overX: number; overY: number } {
+  const x = Math.round((canvas.width * margin) / 100);
+  const y = Math.round((canvas.height * margin) / 100);
+  return {
+    x,
+    y,
+    overX: Math.max(0, x - Math.round((canvas.width * MARGIN) / 100)),
+    overY: Math.max(0, y - Math.round((canvas.height * MARGIN) / 100)),
+  };
+}
+
+// Puts the margin on the page, for the looks' safe area and the fit screen's
+// corners: --fit-x and --fit-y, and --fit-over-x and --fit-over-y. None with
+// the sizes off.
+export function applyMargin(state: DisplayState | null, canvas: { width: number; height: number }): void {
+  const at = margins(state?.margin ?? 0, canvas);
+  const root = document.documentElement.style;
+  root.setProperty("--fit-x", `${at.x}px`);
+  root.setProperty("--fit-y", `${at.y}px`);
+  root.setProperty("--fit-over-x", `${at.overX}px`);
+  root.setProperty("--fit-over-y", `${at.overY}px`);
 }
 
 let shown: DisplayState | null = null;
@@ -44,9 +98,9 @@ export function sizes(): DisplayState | null {
   return shown;
 }
 
-// Picks a size or the output: the TV takes it within a second, and home
-// follows on the display event. The new state, or why not.
-async function put(change: { size?: SizeId; output?: DisplayState["output"] }, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
+// Picks a size, the output or the margin: the TV takes it within a second,
+// and home follows on the display event. The new state, or why not.
+async function put(change: { size?: SizeId; output?: DisplayState["output"]; margin?: number }, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
   try {
     const response = await fetch("/api/display", {
       method: "PUT",
@@ -64,6 +118,10 @@ async function put(change: { size?: SizeId; output?: DisplayState["output"] }, g
 
 export function setSize(size: SizeId, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
   return put({ size }, grant);
+}
+
+export function setMargin(margin: number, grant?: string): Promise<{ state?: DisplayState; error?: string }> {
+  return put({ margin }, grant);
 }
 
 // The TV's full resolution, or 1080p output, which the TV scales up: what a
