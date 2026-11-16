@@ -226,7 +226,7 @@ for (const look of LOOKS) {
       await page.keyboard.press("Enter");
       await page.waitForSelector(".page.apps, .apps-page, .glass-home.list");
       // Back from Apps is home, its parent.
-      await page.waitForTimeout(450);
+      await page.waitForSelector(".page.apps, .apps-page, .glass-home.list:not(.moving)");
       await page.keyboard.press("Escape");
       await page.waitForSelector("body.on-home");
       if (look === "glass") await page.waitForSelector(".glass-home.rest");

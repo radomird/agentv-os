@@ -114,26 +114,34 @@ function card(ctx: Ctx, app: App, entry: TileEntry, at: number): HTMLElement {
 
 // Scrolls the page to a place over Glass's slow time, as the list comes up
 // or goes, then calls done. At once with less motion; the list then only
-// fades.
-function glide(page: HTMLElement, to: number, done: () => void): void {
+// fades. Gives back a way to end it at once, as a key pressed meanwhile does.
+function glide(page: HTMLElement, to: number, done: () => void): () => void {
   const from = page.scrollTop;
-  const still = document.documentElement.classList.contains("reduce-motion") || matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (still || Math.abs(to - from) < 1) {
+  let over = false;
+  const end = () => {
+    if (over) return;
+    over = true;
     page.scrollTop = to;
     done();
-    return;
+  };
+  const still = document.documentElement.classList.contains("reduce-motion") || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (still || Math.abs(to - from) < 1) {
+    end();
+    return end;
   }
   const ms = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--slow")) || 320;
   const start = performance.now();
   // Close to the motion tokens' cubic-bezier(0.2, 0.8, 0.2, 1).
   const ease = (t: number) => 1 - Math.pow(1 - t, 3);
   const step = (now: number) => {
+    if (over) return;
     const t = Math.min(1, (now - start) / ms);
     page.scrollTop = from + (to - from) * ease(t);
     if (t < 1 && page.isConnected) requestAnimationFrame(step);
-    else done();
+    else end();
   };
   requestAnimationFrame(step);
+  return end;
 }
 
 export function home(ctx: Ctx): View {
@@ -252,20 +260,26 @@ export function home(ctx: Ctx): View {
     return [...row.querySelectorAll<HTMLElement>("[data-focus]")].sort((a, b) => Math.abs(middle(a) - at) - Math.abs(middle(b) - at))[0];
   };
 
-  // The list comes up, and the focus goes to target when it's there. The
-  // keys wait while the page moves.
-  let gliding = false;
+  // The page moving, as the list comes up or goes: marked "moving" until
+  // it's there, and a key pressed meanwhile ends it at once and then acts.
+  let finish: (() => void) | null = null;
+  const move = (to: number, done: () => void) => {
+    el.classList.add("moving");
+    finish = glide(page, to, () => {
+      finish = null;
+      el.classList.remove("moving");
+      done();
+    });
+  };
+
+  // The list comes up, and the focus goes to target when it's there.
   const toList = (target?: HTMLElement) => {
     const to = target ?? listTiles()[0];
     if (!to) return false;
     el.classList.remove("rest");
     el.classList.add("list");
-    gliding = true;
     if (!el.classList.contains("editing")) was = { list: true };
-    glide(page, listTop(), () => {
-      gliding = false;
-      ctx.focus.set(to);
-    });
+    move(listTop(), () => ctx.focus.set(to));
     return true;
   };
   // Home at rest again, with the focus on a pinned app. While editing, the
@@ -279,11 +293,7 @@ export function home(ctx: Ctx): View {
     el.classList.remove("list");
     el.classList.add("rest");
     was = { list: false };
-    gliding = true;
-    glide(page, 0, () => {
-      gliding = false;
-      if (to) ctx.focus.set(to);
-    });
+    move(0, () => to && ctx.focus.set(to));
     return true;
   };
 
@@ -320,11 +330,11 @@ export function home(ctx: Ctx): View {
       return toList();
     },
     act(action) {
+      finish?.();
       const from = ctx.focus.get();
       const inList = Boolean(from && list.contains(from));
       const inPinned = Boolean(from && panel.contains(from));
       const resting = el.classList.contains("rest");
-      if (gliding) return true;
       // Back and Home take the list away, and so does up on the pinned row
       // while it's up.
       if ((action === "back" || action === "home") && !resting) return toRest();

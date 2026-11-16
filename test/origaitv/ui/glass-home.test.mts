@@ -84,8 +84,8 @@ async function tv(size: keyof typeof SIZES = "standard"): Promise<Page> {
 type Launcher = { origaitvLauncher: { go(route: string): void; focus: { get(): HTMLElement | undefined } } };
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as Launcher).origaitvLauncher.go(r), route);
 const focused = (page: Page) => page.evaluate(() => (window as unknown as Launcher).origaitvLauncher.focus.get()?.dataset.id ?? (window as unknown as Launcher).origaitvLauncher.focus.get()?.dataset.action);
-// Once the list has stopped moving: its slow time, and a little.
-const settle = (page: Page) => page.waitForTimeout(450);
+// Once the list has stopped moving, and anything fading has faded.
+const settle = (page: Page) => page.waitForFunction(() => !document.querySelector(".glass-home.moving") && document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
 
 // Where things are on the screen, in its pixels.
 async function measure(page: Page) {

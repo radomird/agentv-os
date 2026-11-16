@@ -125,10 +125,16 @@ async function tv(size: Size = "standard", open: Open[] = [], at = url): Promise
 const ids = (page: Page, row: string) => page.$$eval(`${row} [data-id]`, (tiles) => tiles.map((tile) => (tile as HTMLElement).dataset.id));
 const focused = (page: Page) => page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.id ?? document.querySelector<HTMLElement>("#page .focused")?.dataset.action ?? "");
 
-// A key, and long enough after for Glass's list to come up or go.
+// A key, and in Glass, the list come up or gone once it's moved there.
 async function press(page: Page, key: string, look: Look = "cinema"): Promise<void> {
   await page.keyboard.press(key);
-  await page.waitForTimeout(look === "glass" ? 450 : 150);
+  if (look === "glass") await still(page);
+  else await page.waitForTimeout(150);
+}
+
+// Glass's home once its list has stopped moving.
+async function still(page: Page): Promise<void> {
+  await page.waitForFunction(() => !document.querySelector(".glass-home.moving") && document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
 }
 
 // Down from where home starts until the focus is on the Games row.
@@ -136,7 +142,8 @@ async function toGames(page: Page, look: (typeof ROWS)[number]): Promise<void> {
   for (let presses = 0; presses < 4; presses++) {
     if (await page.locator(`${PARTS[look].games} .focused`).count()) return;
     await page.keyboard.press("ArrowDown");
-    await page.waitForTimeout(look === "glass" ? 450 : 250);
+    if (look === "glass") await still(page);
+    else await page.waitForTimeout(250);
   }
   assert.equal(await page.locator(`${PARTS[look].games} .focused`).count(), 1, "down from the apps lands on Games");
 }

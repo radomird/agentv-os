@@ -470,8 +470,8 @@ for (const look of LOOKS) {
     const list = async () => {
       if (look !== "glass") return;
       await go(page, "apps");
-      await page.waitForSelector(".glass-home.list");
-      await sleep(450);
+      await page.waitForSelector(".glass-home.list:not(.moving)");
+      await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
     };
     await list();
     await page.waitForSelector(tile);
