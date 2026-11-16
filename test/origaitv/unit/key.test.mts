@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { modelsFor } from "../../../builder/models.ts";
 import { Daemon } from "../../../daemon/server.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
@@ -72,7 +73,7 @@ test("S4.6 a key from Settings → AI ends up root's alone, and never comes back
     await daemon.ai.record("claude", "key", { phone: "pixel", viewer: "radomir" });
     const stored = await send("PUT", "/api/key", { provider: "claude", key: ` ${KEY} ` });
     // A key kept from Settings → AI is what builds use (Q143).
-    const claudeKey = { provider: "claude", path: "key", accepted: true };
+    const claudeKey = { provider: "claude", path: "key", accepted: true, models: { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5", list: modelsFor("claude", "key") } };
     assert.deepEqual(stored.data, { ok: true, set: true, provider: "claude", plans: claude, ai: claudeKey });
     assert.equal(readFileSync(join(etc, "env"), "utf8"), `ANTHROPIC_API_KEY=${KEY}\n`);
     assert.equal(statSync(join(etc, "env")).mode & 0o777, 0o600);
