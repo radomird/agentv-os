@@ -511,6 +511,15 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     clips.set(el, clip);
     return clip;
   };
+  // The row a thing is in: the nearest area that clips it sideways and
+  // holds more than it shows.
+  const rowOf = (el) => {
+    for (let a = parentOf(el); a && a !== document.body && a !== document.documentElement; a = parentOf(a)) {
+      const clip = clipOf(a);
+      if (clip && clip.x && clip.sx) return a;
+    }
+    return null;
+  };
   // What of an element can be brought into sight on the way: clipped across
   // the way by whatever clips it, but not along it by an area that scrolls
   // that way, the page included. Null when none of it can.
@@ -627,8 +636,13 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     const axis = dx ? "x" : "y";
     const at = startBox(key, from);
     const out = [];
-    for (const { el, box } of gather(axis, h)) {
+    const things = gather(axis, h);
+    // Loose, a press can cross from a row to what's beside it, such as a
+    // menu, but never into another row.
+    const row = loose && dx ? rowOf(from) : null;
+    for (const { el, box } of things) {
       if (holds(el, from) || holds(from, el)) continue;
+      if (row && rowOf(el) && rowOf(el) !== row) continue;
       const gap = dx > 0 ? box.left - at.right : dx < 0 ? at.left - box.right : dy > 0 ? box.top - at.bottom : at.top - box.bottom;
       const mid = (b) => (axis === "x" ? (b.left + b.right) / 2 : (b.top + b.bottom) / 2);
       const length = axis === "x" ? Math.min(box.right - box.left, at.right - at.left) : Math.min(box.bottom - box.top, at.bottom - at.top);
