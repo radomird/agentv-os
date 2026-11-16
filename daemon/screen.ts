@@ -61,7 +61,7 @@ import { dropTheme, takeTheme, type ThemeAnswer, type ThemeAsk, THEMES } from ".
 import { connect, lua, type Client, type Hyprland } from "./hyprland.ts";
 import { DisplayWatch, displayFile } from "./display.ts";
 import { installedPackage, userAgent } from "./identity.ts";
-import { PAUSE, RESUME } from "./media.ts";
+import { MUTE, PAUSE, RESUME, UNMUTE } from "./media.ts";
 import { MUSIC, MusicApp, MusicLibrary, MusicPlayer } from "./music.ts";
 import { OmarchyThemes } from "./omarchy-themes.ts";
 import { WidevineWatch } from "./box.ts";
@@ -300,6 +300,8 @@ interface Open {
   // Its app is a game (ADR-084, ADR-103): the guide button's press stays
   // its own, and neither home nor the TV going off closes or pauses it.
   game?: boolean;
+  // The TV went off with this game open, and muted it until it's back.
+  muted?: boolean;
   // Its service's profile for who's watching, once it's settled as the app
   // opened; an item to play waits for it (service-profiles.ts).
   ready?: Promise<unknown>;
@@ -1700,10 +1702,15 @@ export class Screen {
     }
   }
 
-  // Whether an open app's page is playing.
+  // Whether an open app's page is playing. A game in the services' browser
+  // counts only in front with the TV on: one left running under home, or
+  // with the TV off, like a cloud game's stream, doesn't hold off the idle
+  // screen, sleep or the night's update.
   private async playing(): Promise<boolean> {
     const cdp = this.apps.get("web")?.cdp;
-    for (const entry of cdp ? this.opens.filter((o) => o.target) : []) {
+    const front = this.front()?.address;
+    const counts = (o: Open) => o.target && !(o.game && (o.address !== front || this.tvOff));
+    for (const entry of cdp ? this.opens.filter(counts) : []) {
       const answer = await Promise.race([cdp!.evaluateIn(entry.target!, MEDIA_PLAYING).catch(() => false), sleep(500).then(() => false)]);
       if (answer === true) return true;
     }
@@ -1860,9 +1867,13 @@ export class Screen {
         this.log("the TV went off; pausing");
         // Home's moving background stops too (ADR-072).
         void this.inHome(`window.origaitvTv?.("off")`);
-        // A game keeps running, as it does under home.
+        // A game keeps running, as it does under home. A game in the
+        // services' browser has its sound off until the TV is back.
         for (const entry of this.opens.filter((o) => o.role === "web" && !o.game)) {
           if ((await this.media(entry, PAUSE)) > 0) entry.paused = true;
+        }
+        for (const entry of this.opens.filter((o) => o.role === "web" && o.game)) {
+          if ((await this.media(entry, MUTE)) > 0) entry.muted = true;
         }
         this.tvTimer = setTimeout(() => {
           this.tvTimer = null;
@@ -1877,6 +1888,10 @@ export class Screen {
       this.tvTimer = null;
       this.log("the TV came back on");
       this.sleep?.tv(true);
+      for (const entry of this.opens.filter((o) => o.muted)) {
+        await this.media(entry, UNMUTE);
+        entry.muted = false;
+      }
       this.dark = false;
       if (this.outputOff) await this.output(true, "the TV is on");
       void this.inHome(`window.origaitvTv?.("on")`);

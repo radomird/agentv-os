@@ -35,3 +35,36 @@ export const RESUME = `(async () => {
   }
   return played;
 })()`;
+
+// Muting a game's page while the TV is off (ADR-108): a cloud game keeps
+// running, as a native game does, with its sound off. How many it muted.
+export const MUTE = `(() => {
+  const found = [];
+  const walk = (root) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (el instanceof HTMLMediaElement) found.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (el instanceof HTMLIFrameElement) {
+        try { if (el.contentDocument) walk(el.contentDocument); } catch {}
+      }
+    }
+  };
+  walk(document);
+  const muted = found.filter((el) => !el.muted);
+  for (const el of muted) el.muted = true;
+  window.__origaitvMuted = muted;
+  return muted.length;
+})()`;
+
+// Its sound back, for only what the TV going off muted.
+export const UNMUTE = `(() => {
+  const muted = window.__origaitvMuted ?? [];
+  window.__origaitvMuted = [];
+  let back = 0;
+  for (const el of muted) {
+    if (!el.isConnected) continue;
+    el.muted = false;
+    back++;
+  }
+  return back;
+})()`;
