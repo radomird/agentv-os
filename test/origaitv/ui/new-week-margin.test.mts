@@ -109,7 +109,12 @@ async function seen(page: Page): Promise<Seen> {
   return page.evaluate(() => {
     const zoom = Number(document.documentElement.style.zoom) || 1;
     const headline = document.querySelector(".new-week .headline")!.getBoundingClientRect().left / zoom;
-    const margin = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-x")) || 0;
+    // The look's --safe-x as it resolves: Fit to screen adds to it with calc().
+    const probe = document.createElement("div");
+    probe.style.cssText = "position: absolute; left: var(--safe-x)";
+    document.body.append(probe);
+    const margin = parseFloat(getComputedStyle(probe).left) || 0;
+    probe.remove();
     const row = document.querySelector(".new-week .poster-row")!;
     const slid: string[] = [];
     const scrolled = (el: Element | null) => el && el !== row && el.scrollLeft !== 0;
