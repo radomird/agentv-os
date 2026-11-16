@@ -20,7 +20,7 @@ import { h, zoom } from "../../dom.ts";
 import type { Ctx, View } from "../../main.ts";
 import { buildTile, underway } from "../../pages/build.ts";
 import { logo, NEW, openApp, openEntry } from "../../pages/home.ts";
-import { bar, HOLD_HINT } from "../../pages/parts.ts";
+import { bar, HOLD_HINT, togglePin } from "../../pages/parts.ts";
 import { removeShare, sharedTile, shares } from "../../pages/shared.ts";
 import { cardContent, richest, tileData } from "../cards.ts";
 import { GAMES, isGame, openWords, shelves } from "../games.ts";
@@ -153,9 +153,11 @@ export function home(ctx: Ctx): View {
   const shelf = shelves(apps.filter((app) => !pinnedIds.has(app.id)));
   const adult = ctx.state.viewer.role === "adult";
 
-  // The pinned row, in its frosted panel.
+  // The pinned row, in its frosted panel. With nothing in it, it says what
+  // goes there and how.
   const pinnedTiles = pinned.map((app) => glassTile(ctx, app));
-  const panel = h("div", { class: "glass-row glass-pinned", role: "group", "aria-label": "Top row" }, ...pinnedTiles);
+  const empty = pinnedTiles.length ? [] : [h("p", { class: "glass-pinned-empty" }, "No apps in your top row yet. Hold OK on one, then pick Top row.")];
+  const panel = h("div", { class: "glass-row glass-pinned", role: "group", "aria-label": "Top row" }, ...pinnedTiles, ...empty);
 
   // The list: the other apps, Games, Your own, Not on home, From your phones.
   const listRows = rowsOf(shelf.apps.map((app) => glassTile(ctx, app, true)));
@@ -230,6 +232,8 @@ export function home(ctx: Ctx): View {
   };
 
   const page = h("div", { class: "glass-rows", "data-scroll": true }, top, panel, list);
+  // Where home rests with nothing pinned: Apps in the bar.
+  const barApps = top.querySelector<HTMLElement>('[data-action="bar-apps"]') ?? undefined;
   const el = h("div", { class: `screen glass-home ${open?.list ? "list" : "rest"}` }, stage, page);
 
   // Where the page is with the list up: its first row right under the
@@ -282,10 +286,11 @@ export function home(ctx: Ctx): View {
     move(listTop(), () => ctx.focus.set(to));
     return true;
   };
-  // Home at rest again, with the focus on a pinned app. While editing, the
-  // list stays up and only the focus goes to the pinned row.
+  // Home at rest again, with the focus on a pinned app, or Apps in the bar
+  // with nothing pinned. While editing, the list stays up and only the
+  // focus goes to the pinned row.
   const toRest = (target?: HTMLElement) => {
-    const to = target ?? pinnedTiles.find((tile) => tile.dataset.id === featuredId) ?? pinnedTiles[0];
+    const to = target ?? pinnedTiles.find((tile) => tile.dataset.id === featuredId) ?? pinnedTiles[0] ?? barApps;
     if (el.classList.contains("editing")) {
       if (to) ctx.focus.set(to);
       return true;
@@ -304,7 +309,7 @@ export function home(ctx: Ctx): View {
   };
 
   const wanted = open?.focus ? el.querySelector<HTMLElement>(`[data-id="${CSS.escape(open.focus)}"]`) : null;
-  const first = wanted ?? (open?.list ? listTiles()[0] : undefined) ?? pinnedTiles[0] ?? listTiles()[0];
+  const first = wanted ?? (open?.list ? listTiles()[0] : undefined) ?? pinnedTiles[0] ?? barApps ?? listTiles()[0];
   if (pinnedTiles[0]) feature(first && pinnedTiles.includes(first) ? first : pinnedTiles[0]);
   if (open?.list || (first && list.contains(first))) {
     el.classList.remove("rest");
@@ -312,6 +317,16 @@ export function home(ctx: Ctx): View {
     queueMicrotask(settle);
   }
   if (!open?.editing) was = { list: el.classList.contains("list"), focus: first && list.contains(first) ? first.dataset.id : undefined };
+  // Whatever put the focus in the list (home drawn again on an app that
+  // went there, say), the list comes up with it: the focus is never on a
+  // tile that can't be seen.
+  queueMicrotask(() => {
+    const at = ctx.focus.get();
+    if (!el.isConnected || !el.classList.contains("rest") || !at || !list.contains(at)) return;
+    el.classList.replace("rest", "list");
+    if (!el.classList.contains("editing")) was = { list: true, focus: at.dataset.id };
+    settle();
+  });
 
   return {
     el,
@@ -344,6 +359,8 @@ export function home(ctx: Ctx): View {
         const firstRow = rowsInList()[0];
         return toList(firstRow ? nearestIn(firstRow, from) : undefined) || true;
       }
+      // With nothing pinned, down from the bar brings the list up.
+      if (action === "down" && from && top.contains(from) && !pinnedTiles.length) return toList();
       // Down from the shelf's cards comes back to the pinned row.
       if (action === "down" && from?.closest(".glass-cards")) {
         const back = pinnedTiles.find((tile) => tile.dataset.id === featuredId) ?? pinnedTiles[0];
@@ -372,6 +389,11 @@ export function home(ctx: Ctx): View {
       }
       if (action === "info" && id && ctx.state.apps.some((app) => app.id === id)) {
         ctx.go(`details/${id}`);
+        return true;
+      }
+      // p in the list adds an app to home, or removes it, as it did in Apps.
+      if (action === "pin" && inList && id && ctx.state.apps.some((app) => app.id === id)) {
+        void togglePin(ctx, id).then((changed) => changed && ctx.render("home", id));
         return true;
       }
       if (action === "edit") {

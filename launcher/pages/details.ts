@@ -56,7 +56,7 @@ export function details(ctx: Ctx, id: string): View {
               const on = now.includes(id);
               if (!on && now.length >= MOST_PINNED) {
                 ctx.sounds.play("failure");
-                ctx.toast(`The top row holds ${MOST_PINNED} apps. Take one off it first.`, "fail");
+                ctx.toast(`The top row holds ${MOST_PINNED} apps. Remove one first.`, "fail");
                 return;
               }
               if (await ctx.savePinned(on ? now.filter((one) => one !== id) : [...now, id])) {

@@ -65,25 +65,24 @@ export async function arrange(root: HTMLElement): Promise<void> {
     draw();
   };
 
-  // True once the box kept it.
-  const save = async (next: Placed[] | null): Promise<boolean> => {
-    let kept = false;
+  // Saves the layout, and with top, Glass's top row with it: both, or
+  // neither, in one change.
+  const save = async (next: Placed[] | null, top?: string[]): Promise<void> => {
     if (!next) {
       toast("Home is full. Make room first.");
-      return kept;
+      return;
     }
     try {
-      const reply = await withPin("arranging a child's home", (grant) => api<{ layout: Placed[] }>("PUT", "/api/phone/layout", { layout: next }, grant));
+      const reply = await withPin("arranging a child's home", (grant) => api<{ layout: Placed[]; pinned?: string[] }>("PUT", "/api/phone/layout", { layout: next, ...(top ? { pinned: top } : {}) }, grant));
       if (reply) {
         home.layout = reply.layout;
-        kept = true;
+        if (reply.pinned) home.pinned = reply.pinned;
         navigator.vibrate?.(8);
       }
     } catch (error) {
       toast((error as Error).message);
     }
     draw();
-    return kept;
   };
 
   // A tile picked goes where the next tap is, and is let go of after.
@@ -110,10 +109,7 @@ export async function arrange(root: HTMLElement): Promise<void> {
     const [up, down] = isPinned(id) ? [moving, id] : [id, moving];
     const order = reading(home.layout).map((tile) => tile.id);
     const swapped = reorder(home.layout, order.map((one) => (one === up ? down : one === down ? up : one)), keptOn());
-    const next = top.map((one) => (one === down ? up : one));
-    void save(swapped).then((kept) => {
-      if (kept) void savePinned(next);
-    });
+    void save(swapped, top.map((one) => (one === down ? up : one)));
   };
 
   // In the row looks: a tap picks an app up, and a tap on another in its
@@ -139,7 +135,8 @@ export async function arrange(root: HTMLElement): Promise<void> {
   const rowsOf = (ids: string[], top = false) => {
     const box = h("div", { class: `mini-rows${top ? " mini-pinned" : ""}` });
     for (const id of ids) box.append(h("button", { type: "button", class: `mini-tile${id === picked ? " picked" : ""}`, "data-id": id, onclick: () => tapRow(id) }, name(id)));
-    // Room left in the top row: a tap there adds the picked app.
+    // Room left in the top row: a tap there adds the picked app, and says
+    // to pick one first when none is.
     if (top) {
       for (let at = ids.length; at < PER_ROW; at++) {
         box.append(
@@ -150,13 +147,16 @@ export async function arrange(root: HTMLElement): Promise<void> {
               class: "mini-empty",
               "data-cell": `top-${at}`,
               onclick: () => {
-                if (!picked) return;
+                if (!picked) {
+                  toast("Tap an app first, then tap here");
+                  return;
+                }
                 const id = picked;
                 picked = null;
                 void savePinned([...pinned().filter((one) => one !== id), id]);
               },
             },
-            "Empty",
+            "Add here",
           ),
         );
       }
@@ -269,7 +269,7 @@ export async function arrange(root: HTMLElement): Promise<void> {
                 void savePinned(isPinned(id) ? top.filter((one) => one !== id) : [...top, id]);
               },
             },
-            isPinned(picked) ? "Off the top row" : full ? "Top row · full" : "To the top row",
+            isPinned(picked) ? "Remove from top row" : full ? "Top row is full" : "Add to top row",
           )
         : null;
     const remove = picked

@@ -10,7 +10,9 @@
 // keeps the pinned row per profile.
 
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { Daemon } from "../../../daemon/server.ts";
@@ -41,10 +43,11 @@ const placed = (ids: string[]) => ids.map((id, i) => ({ id, x: i % 4, y: Math.fl
 let browser: Browser;
 let daemon: Daemon;
 let url = "";
+let state = "";
 const errors: string[] = [];
 
 before(async () => {
-  ({ daemon, url } = await startBox(0, APPS, { features: { looks: true } }));
+  ({ daemon, url, state } = await startBox(0, APPS, { features: { looks: true } }));
   browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER });
   assert.equal((await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look: "glass" }) })).status, 200);
 });
@@ -269,7 +272,76 @@ test("T20.1 glass: with the list up, an app opening behind home keeps the list a
   }
 });
 
-test("T20.1 glass: Top row in an app's details pins it, up to six, and takes it off again", async () => {
+test("T20.1 glass: with nothing pinned, home rests on Apps in the bar and says how to pin, and the focus is never on a tile that can't be seen", async () => {
+  // A home of games only, that never pinned: nothing is pinned.
+  rmSync(join(state, "pinned.json"), { force: true });
+  assert.equal((await put("/api/layout", { layout: placed([GAME]) })).status, 200);
+  assert.deepEqual(await pinned(), []);
+  const page = await tv();
+  // The focused element is on the screen, and not in the list while it's away.
+  const seen = () =>
+    page.evaluate(() => {
+      const el = document.querySelector(".focused");
+      if (!el || el.closest(".glass-home.rest .glass-list")) return false;
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.top >= 0 && box.bottom <= innerHeight;
+    });
+  try {
+    await settle(page);
+    assert.ok((await measure(page)).rest, "home is at rest");
+    assert.equal(await focused(page), "bar-apps", "on Apps in the bar");
+    assert.equal((await page.locator(".glass-pinned").innerText()).trim(), "No apps in your top row yet. Hold OK on one, then pick Top row.");
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowRight", "ArrowUp"]) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(100);
+      assert.ok(await seen(), `after ${key}, the focus can be seen`);
+    }
+    // Down brings the list up, on the game.
+    await page.keyboard.press("ArrowDown");
+    await settle(page);
+    assert.ok(!(await measure(page)).rest, "the list is up");
+    assert.equal(await focused(page), GAME);
+    // Back, up from the list's first row, and Home each go back to rest, on Apps.
+    for (const key of ["Escape", "ArrowUp", "Home"]) {
+      if (key !== "Escape") {
+        await page.keyboard.press("ArrowDown");
+        await settle(page);
+      }
+      await page.keyboard.press(key);
+      await settle(page);
+      assert.ok((await measure(page)).rest, `${key}: home is at rest`);
+      assert.equal(await focused(page), "bar-apps", `${key}: on Apps in the bar`);
+      assert.ok(await seen(), `${key}: the focus can be seen`);
+    }
+    // Apps opens the list as ever.
+    await page.keyboard.press("Enter");
+    await settle(page);
+    assert.equal(await focused(page), GAME);
+  } finally {
+    await page.close();
+  }
+});
+
+test("T20.1 glass: p in the list adds an app to home, or removes it, as it did in Apps, and the focus stays on it where it went", async () => {
+  const page = await tv();
+  try {
+    await page.click('.glass-bar [data-action="bar-apps"]');
+    await settle(page);
+    await page.locator('[data-section="off"] [data-id="local.kestrel"]').hover();
+    await page.keyboard.press("p");
+    await page.waitForSelector('.glass-list > .glass-row [data-id="local.kestrel"].focused');
+    assert.ok((await (await fetch(`${url}/api/home`)).json()).layout.some((tile: { id: string }) => tile.id === "local.kestrel"), "on home");
+    await settle(page);
+    assert.ok(!(await measure(page)).rest, "the list stays up");
+    await page.keyboard.press("p");
+    await page.waitForSelector('[data-section="off"] [data-id="local.kestrel"].focused');
+    assert.ok(!(await (await fetch(`${url}/api/home`)).json()).layout.some((tile: { id: string }) => tile.id === "local.kestrel"), "off home again");
+  } finally {
+    await page.close();
+  }
+});
+
+test("T20.1 glass: Top row in an app's details pins it, up to six, and removes it again", async () => {
   // Five pinned: one place free.
   assert.equal((await put("/api/pinned", { pinned: PINNED.slice(0, 5) })).status, 200);
   const page = await tv();
@@ -285,7 +357,7 @@ test("T20.1 glass: Top row in an app's details pins it, up to six, and takes it 
     await page.waitForSelector('.details [data-action="top-row"]');
     await page.click('.details [data-action="top-row"]');
     await page.waitForSelector("#toasts .toast");
-    assert.match(await page.locator("#toasts").innerText(), /The top row holds 6 apps/);
+    assert.match(await page.locator("#toasts").innerText(), /The top row holds 6 apps\. Remove one first\./);
     assert.deepEqual(await pinned(), [...PINNED.slice(0, 5), "local.cove"]);
     // Off again, and home shows the pinned row as kept.
     await go(page, "details/local.cove");
