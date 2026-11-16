@@ -21,8 +21,11 @@ import { pinAsked } from "./pin.ts";
 // How much of the plan is used, asked for when Settings, AI opens.
 let planState: PlanUsageState | null = null;
 
-export function planUsageState(): PlanUsageState | null {
-  return planState;
+// What a plan's rows show, or null when no plan is in use: Settings draws
+// AI again only when this changes, so a key's rows aren't drawn again under
+// the viewer for nothing.
+export function planUsageShown(): PlanUsageState | null {
+  return onPlan() ? planState : null;
 }
 
 export async function loadPlanUsage(): Promise<void> {
