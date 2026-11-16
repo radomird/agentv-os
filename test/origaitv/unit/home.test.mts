@@ -212,6 +212,26 @@ test("a native app with no logo of its own gets the icon its installed package g
   assert.equal((await fetch(`${url}/api/apps/origaitv.games/icon`)).status, 404);
 });
 
+test("a game platform Omarchy sets up itself has the icon Omarchy keeps for its own app of that name, read on the box", async () => {
+  const byId = async () => Object.fromEntries((await get("/api/home")).apps.map((app: any) => [app.id, app]));
+  const share = join(appsDir, "..", "share");
+  const icons = join(share, "omarchy", "applications", "icons");
+  mkdirSync(icons, { recursive: true });
+  writeFileSync(join(icons, "Games.png"), "Omarchy's icon");
+  try {
+    assert.equal((await byId())["origaitv.games"].icon, "/api/apps/origaitv.games/icon");
+    assert.equal(await (await fetch(`${url}/api/apps/origaitv.games/icon`)).text(), "Omarchy's icon");
+    // The package's own icon comes first, once there is one.
+    mkdirSync(join(share, "icons", "hicolor", "256x256", "apps"), { recursive: true });
+    writeFileSync(join(share, "icons", "hicolor", "256x256", "apps", "steam.png"), "the package's icon");
+    mkdirSync(join(share, "applications"), { recursive: true });
+    writeFileSync(join(share, "applications", "steam.desktop"), "[Desktop Entry]\nName=Steam\nExec=/usr/bin/steam %U\nIcon=steam\n");
+    assert.equal(await (await fetch(`${url}/api/apps/origaitv.games/icon`)).text(), "the package's icon");
+  } finally {
+    rmSync(share, { recursive: true, force: true });
+  }
+});
+
 test("a community app that runs a program, put on the box before the contract refused one, isn't shown and doesn't open", async () => {
   const dir = join(appsDir, "someone.games");
   cpSync(join(appsDir, "origaitv.games"), dir, { recursive: true });

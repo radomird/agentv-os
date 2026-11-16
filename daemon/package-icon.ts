@@ -144,7 +144,17 @@ export function themeIcon(icon: string, dirs: string[] = DATA_DIRS): { path: str
 }
 
 // The icon a native app's installed package gives it, or null.
-export function packageIcon(app: NativeApp, dirs: string[] = DATA_DIRS): { path: string; type: string } | null {
+// A game platform Omarchy sets up itself, with no package of its own to
+// give it an icon, such as Battle.net, has the one Omarchy keeps for its
+// own app of that name, in Omarchy's folder (/usr/share/omarchy). So that
+// logo is read on the box too, and no repo of OrigaiTV's ships it.
+export function packageIcon(app: NativeApp & { name?: string }, dirs: string[] = DATA_DIRS): { path: string; type: string } | null {
   const entry = findEntry(app, dirs);
-  return entry ? themeIcon(entry.Icon, dirs) : null;
+  const found = entry ? themeIcon(entry.Icon, dirs) : null;
+  if (found || !app.name || !NAME.test(app.name)) return found;
+  for (const dir of dirs) {
+    const omarchy = usable(join(dir, "omarchy", "applications", "icons", `${app.name}.png`));
+    if (omarchy) return omarchy;
+  }
+  return null;
 }
