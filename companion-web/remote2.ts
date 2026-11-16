@@ -93,10 +93,11 @@ const BACK_HOLD_MS = 700;
 const DETAILS = { key: "i" };
 
 // Two fingers on a pad scroll the page in front (ADR-103): up, down and
-// sideways, the way one finger moves the focus, so two fingers going down
-// show what's further down. The TV's page moves SCROLL_GAIN times the
-// fingers' way, so a swipe across the pad is about a screen, and the phone
-// sends what's gathered at most every SCROLL_EVERY_MS.
+// sideways, the way a page on the phone itself scrolls. The page follows
+// the fingers, so two fingers going down bring down what's above. The TV's
+// page moves SCROLL_GAIN times the fingers' way, so a swipe across the pad
+// is about a screen, and the phone sends what's gathered at most every
+// SCROLL_EVERY_MS.
 const SCROLL_GAIN = 3;
 const SCROLL_EVERY_MS = 30;
 // The most one request scrolls, each way, in the TV page's pixels.
@@ -152,10 +153,11 @@ class TwoFingers {
     if (!was) return this.scrolling;
     this.fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (!this.scrolling || this.fingers.size < 2) return this.scrolling;
-    // The fingers' middle moves by a share of each one's way.
+    // The fingers' middle moves by a share of each one's way, and the page
+    // with it, so it scrolls the other way.
     const share = 1 / this.fingers.size;
-    this.owed[0] += (event.clientX - was.x) * share * SCROLL_GAIN;
-    this.owed[1] += (event.clientY - was.y) * share * SCROLL_GAIN;
+    this.owed[0] -= (event.clientX - was.x) * share * SCROLL_GAIN;
+    this.owed[1] -= (event.clientY - was.y) * share * SCROLL_GAIN;
     this.timer ||= window.setTimeout(() => this.flush(), SCROLL_EVERY_MS);
     return true;
   }
