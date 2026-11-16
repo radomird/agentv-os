@@ -244,7 +244,7 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
     const sent = b.keys.slice(at);
     assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === undefined), `only the wheel: ${JSON.stringify(sent)}`);
     assert.ok(sent.every((k) => (k.wheel as number[])[1] === 0), "sideways only");
-    assert.equal(sent.reduce((sum, k) => sum + (k.wheel as number[])[0], 0), 90, `the fingers' middle went 30 to the right, three times over on the TV: ${JSON.stringify(sent)}`);
+    assert.equal(sent.reduce((sum, k) => sum + (k.wheel as number[])[0], 0), -90, `the fingers' middle went 30 to the right, and the page with it, three times over on the TV: ${JSON.stringify(sent)}`);
     await cdp.detach();
   }
   // Home's other screens, where the focus is on no tile: Settings on a row,
@@ -292,7 +292,7 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
   await hand.close();
 });
 
-test("T21.1 two fingers on the pad scroll the page in front, down, up and sideways, the way one finger moves, and from the pointer in pointer mode", async () => {
+test("T21.1 two fingers on the pad scroll the page in front, down, up and sideways, with the page following the fingers as on a phone, and from the pointer in pointer mode", async () => {
   const b = await box(true);
   const hand = await phone(b);
   const cdp = await hand.context().newCDPSession(hand);
@@ -315,14 +315,15 @@ test("T21.1 two fingers on the pad scroll the page in front, down, up and sidewa
     return b.keys.slice(at);
   };
   const total = (sent: Record<string, unknown>[]) => sent.reduce((sum, k) => [sum[0] + (k.wheel as number[])[0], sum[1] + (k.wheel as number[])[1]], [0, 0]);
-  // Down shows what's further down, as a swipe down moves the focus down.
+  // The page follows the fingers, as on the phone: down brings down what's
+  // above, so the page scrolls up.
   let sent = await drag(0, 40);
   assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === undefined), JSON.stringify(sent));
-  assert.deepEqual(total(sent), [0, 120], "three times the fingers' way, down");
+  assert.deepEqual(total(sent), [0, -120], "three times the fingers' way, up the page");
   sent = await drag(0, -40);
-  assert.deepEqual(total(sent), [0, -120], "and up");
+  assert.deepEqual(total(sent), [0, 120], "and down it");
   sent = await drag(-30, 0);
-  assert.deepEqual(total(sent), [-90, 0], "and sideways");
+  assert.deepEqual(total(sent), [90, 0], "and sideways");
   assert.equal(await hand.locator(".r2-pointer").count(), 0, "two fingers held still a while aren't a hold");
   // The pointer: from where it is, as on a laptop.
   await context(b, { front: "app", screen: "home", playing: false });
@@ -334,7 +335,7 @@ test("T21.1 two fingers on the pad scroll the page in front, down, up and sidewa
   const moves = b.keys.length;
   sent = await drag(0, 40);
   assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === "pointer"), JSON.stringify(sent));
-  assert.deepEqual(total(sent), [0, 120]);
+  assert.deepEqual(total(sent), [0, -120]);
   assert.ok(!b.keys.slice(moves).some((k) => k.move || k.click), "two fingers don't move the pointer or click");
   await cdp.detach();
   await hand.close();
