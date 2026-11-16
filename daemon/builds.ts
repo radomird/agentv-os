@@ -107,6 +107,9 @@ export interface BuildsOptions {
   spend?: string; // /var/lib/origaitv/spend/spend.json
   warnings?: string; // /var/lib/origaitv/npm-check/warnings.json
   recipes?: string; // builder/recipes
+  // The household's model for building on a provider's plan or key
+  // (ADR-103), for a build that has none of its own yet.
+  buildModel?: (provider: Provider, path: "plan" | "key") => Promise<string | undefined>;
   now?: () => Date;
 }
 
@@ -167,7 +170,7 @@ export function nextVersion(versions: string[]): string {
 }
 
 export class Builds {
-  private o: Required<Omit<BuildsOptions, "now">> & { now: () => Date };
+  private o: Required<Omit<BuildsOptions, "now" | "buildModel">> & Pick<BuildsOptions, "buildModel"> & { now: () => Date };
 
   constructor(options: BuildsOptions) {
     this.o = {
@@ -178,8 +181,16 @@ export class Builds {
       spend: options.spend ?? "/var/lib/origaitv/spend/spend.json",
       warnings: options.warnings ?? "/var/lib/origaitv/npm-check/warnings.json",
       recipes: options.recipes ?? fileURLToPath(new URL("../builder/recipes/", import.meta.url)),
+      buildModel: options.buildModel,
       now: options.now ?? (() => new Date()),
     };
+  }
+
+  // The model a build without one of its own is made on: the household's
+  // for building, where its provider's list for that way in has it.
+  private async householdModel(asked: Asked): Promise<string | undefined> {
+    const model = await this.o.buildModel?.(asked.provider, asked.path).catch(() => undefined);
+    return model && offered(asked.provider, asked.path, model) ? model : undefined;
   }
 
   private recipes: Map<Kind, Recipe> | null = null;
@@ -319,6 +330,7 @@ export class Builds {
       // Why, for a screen: the plain line for its kind, never the raw reason.
       const raw = refused ?? notInstalled ?? (mine?.state === "failed" ? mine.reason : undefined);
       const told = { ai: AI_NAMES[asked.provider], ...(asked.path === "key" ? { cap } : {}), ...(!refused && !notInstalled && mine?.why ? { why: mine.why } : {}) };
+      const confirming = !refused && !starting && mine?.state === "confirm";
       views.push({
         build: asked.build,
         id: asked.id,
@@ -327,8 +339,11 @@ export class Builds {
         name: mine?.understood?.name ?? mine?.plan?.name,
         provider: asked.provider,
         path: asked.path,
-        ...(asked.model ? { model: asked.model } : {}),
-        ...(!refused && !starting && mine?.state === "confirm" ? { models: modelsFor(asked.provider, asked.path) } : {}),
+        // "Make X?" shows the model it'll be made on: the build's own, or
+        // the household's for building when it has none, as from before
+        // models were kept. The TV and the phone show and send the same.
+        ...(asked.model ? { model: asked.model } : confirming ? await this.householdModel(asked).then((model) => (model ? { model } : {})) : {}),
+        ...(confirming ? { models: modelsFor(asked.provider, asked.path) } : {}),
         state: refused ? "failed" : starting ? "starting" : (mine?.state ?? "starting"),
         phase: mine?.phase ?? "understand",
         step: mine?.step,
@@ -517,9 +532,12 @@ export class Builds {
     const asked = all.find((a) => a.build === view?.build);
     if (!view || !asked) return { error: NO_APP };
     if (view.state !== "confirm" || !view.understood) return { error: "That app isn't waiting to be confirmed" };
-    if (model !== undefined && model !== asked.model) {
-      if (!offered(asked.provider, asked.path, model)) return { error: "Pick a model from the list" };
-      asked.model = model;
+    // None named, and none of its own: the household's for building, the
+    // one "Make X?" showed.
+    const chosen = model ?? asked.model ?? (await this.householdModel(asked));
+    if (chosen !== undefined && chosen !== asked.model) {
+      if (!offered(asked.provider, asked.path, chosen)) return { error: "Pick a model from the list" };
+      asked.model = chosen as string;
       await this.writeJson(this.askedPath, all);
     }
     const u = view.understood;

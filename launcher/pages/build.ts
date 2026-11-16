@@ -338,10 +338,11 @@ export function buildPage(ctx: Ctx, which: string): View {
   const note = (text: string) => h("p", { class: "panel-note" }, text);
 
   // "Make X?" picks the model for this build, the household's to start
-  // with: left and right go through the provider's list, strongest first
-  // (ADR-103). A list of one has nothing to pick.
+  // with, which the daemon puts in the build's view: left and right go
+  // through the provider's list, strongest first (ADR-103). A list of one
+  // has nothing to pick.
   const models = b.state === "confirm" ? (b.models ?? []) : [];
-  let model = picked.get(b.build) ?? b.model ?? models[0]?.id;
+  let model = picked.get(b.build) ?? b.model;
   const modelValue = h("span", { class: "button-value" }, "");
   const drawModel = () => (modelValue.textContent = models.find((m) => m.id === model)?.name ?? model ?? "");
   const stepModel = (by: number) => {

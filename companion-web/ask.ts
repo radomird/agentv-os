@@ -111,11 +111,12 @@ function waiting(ask: AskView, failed: (error: unknown) => void, done: () => voi
 }
 
 // The model row on "Make X?": the provider's list, strongest first, with
-// the one it'll be made on ticked. A tap picks another for this app only.
+// the one it'll be made on ticked, the household's to start with, as on the
+// TV. A tap picks another for this app only.
 function models(ask: Extract<AskView, { kind: "build" }>, model: string | undefined, failed: (error: unknown) => void, done: () => void): HTMLElement | null {
   const list = ask.models ?? [];
   if (list.length < 2) return null;
-  const chosen = model ?? list[0].id;
+  const chosen = model;
   return h(
     "div",
     { class: "ask-models", role: "radiogroup", "aria-label": "Model" },

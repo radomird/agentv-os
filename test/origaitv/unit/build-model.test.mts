@@ -15,19 +15,19 @@ import { DEFAULT_MODELS, defaultModel, MODELS, modelsFor, offered } from "../../
 import { command, type StepRun } from "../../../builder/providers.ts";
 import { rateFor } from "../../../builder/sandbox/prices.ts";
 import { checkRequest } from "../../../builder/sandbox/hand-over.ts";
-import { Builds } from "../../../daemon/builds.ts";
+import { Builds, type BuildsOptions } from "../../../daemon/builds.ts";
 
 const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 const scratch = mkdtempSync(join(tmpdir(), "origaitv-build-model-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 let count = 0;
 
-function box() {
+function box(extra: Pick<BuildsOptions, "buildModel"> = {}) {
   const base = join(scratch, `box${++count}`);
   const o = { state: join(base, "daemon"), drop: join(base, "daemon", "build-drop"), builds: join(base, "build"), run: join(base, "run"), spend: join(base, "spend.json"), warnings: join(base, "warnings.json") };
   mkdirSync(o.builds, { recursive: true });
   let clock = Date.parse("2026-11-16T18:00:00Z");
-  const builds = new Builds({ ...o, now: () => new Date((clock += 1000)) });
+  const builds = new Builds({ ...o, ...extra, now: () => new Date((clock += 1000)) });
   const drop = (name: string) => {
     const path = join(o.drop, `${name}.json`);
     if (!existsSync(path)) return null;
@@ -173,6 +173,17 @@ test("T19.1 a build is understood on the household's model, made on the one pick
   status(build!.id, "1.1.0", { build: changed.build!.build, phase: "build", state: "kept", understood: { name: "Blocks", recipe: "game", says: "a falling-block game" } });
   await builds.next(build!.id, "make it red", { provider: "chatgpt", path: "plan", model: DEFAULT_MODELS.chatgpt.plan.build });
   assert.equal(drop("start").model, DEFAULT_MODELS.chatgpt.plan.build);
+});
+
+test("T19.1 a build with no model of its own shows the household's for building at Make X?, and is made on it when none is picked", async () => {
+  const { builds, drop, status } = box({ buildModel: async (provider, path) => (provider === "claude" && path === "plan" ? "claude-sonnet-5-5" : undefined) });
+  // As from before models were kept: the build has none.
+  const { build } = await builds.ask("a game like tetris", { provider: "claude", path: "plan" });
+  assert.equal(drop("start").model, undefined);
+  status(build!.id, "1.0.0", { build: build!.build, phase: "understand", state: "confirm", understood: { name: "Blocks", recipe: "game", says: "a falling-block game" } });
+  assert.equal((await builds.list())[0].model, "claude-sonnet-5-5", "the TV and the phone both show the household's");
+  await builds.confirm(build!.build);
+  assert.equal(drop("start").model, "claude-sonnet-5-5", "and it's made on it");
 });
 
 test("T19.1 with a key, a model the relay can't price isn't kept, and the CLI's own is used", async () => {
