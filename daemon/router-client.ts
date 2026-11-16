@@ -20,7 +20,7 @@ export function unrouted(sentence: string, provider: Provider, via: "api" | "cli
 }
 
 // One sentence to a route service, over its socket.
-export function viaSocket(path: string, body: { provider: Provider; sentence: string; apps: RouterApp[] }, timeoutMs = 45_000): Promise<Routed> {
+export function viaSocket(path: string, body: { provider: Provider; sentence: string; apps: RouterApp[]; model?: string }, timeoutMs = 45_000): Promise<Routed> {
   const via = path.includes("router-cli") ? "cli" : "api";
   return new Promise((resolve) => {
     const failed = (error: string) => resolve(unrouted(body.sentence, body.provider, via, error));
@@ -56,7 +56,8 @@ export interface BoxRouterOptions {
   fetchCli?: () => void;
 }
 
-// The router the box's own setup chose.
+// The router the box's own setup chose, on the household's model for asking
+// (ADR-103), which each service checks against the provider's list.
 export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterApp[]) => Promise<Routed> {
   const sockets = o.sockets ?? ROUTER_SOCKETS;
   return async (sentence, apps) => {
@@ -70,10 +71,10 @@ export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterA
     if (ai.path === "key") {
       const key = o.key();
       if (!key.set || key.provider !== ai.provider) return unrouted(sentence, provider, via, `Add your ${name} key in Settings first`, "key");
-      return viaSocket(sockets.api, { provider, sentence, apps });
+      return viaSocket(sockets.api, { provider, sentence, apps, ...(ai.models ? { model: ai.models.ask } : {}) });
     }
     if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't do this yet`, "plan");
-    const routed = await viaSocket(sockets.cli, { provider, sentence, apps });
+    const routed = await viaSocket(sockets.cli, { provider, sentence, apps, ...(ai.models ? { model: ai.models.ask } : {}) });
     if (routed.error === GETTING_READY) o.fetchCli?.();
     return routed;
   };

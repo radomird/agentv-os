@@ -28,6 +28,7 @@ import { loadNetwork, networkPanel, networkRows, watchNetwork } from "./wifi.ts"
 import { profileRows } from "./profiles.ts";
 import { notesPanel, updatesPanel, updatesStart, updatesValue } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageRows } from "./usage.ts";
+import { modelRows, modelUse, stepModel } from "./models.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryValue, loadCountry } from "./country.ts";
 import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
@@ -547,7 +548,7 @@ export function settings(ctx: Ctx, open?: string): View {
           {
             key: "ai",
             label: "AI",
-            rows: () => [row("your-ai", "Your AI", aiValue(), () => openPage("your-ai")), ...usageRows(ctx, () => openPage("usage"))],
+            rows: () => [row("your-ai", "Your AI", aiValue(), () => openPage("your-ai")), ...modelRows(ctx), ...usageRows(ctx, () => openPage("usage"))],
           },
         ]
       : []),
@@ -870,6 +871,12 @@ export function settings(ctx: Ctx, open?: string): View {
         const by = action === "right" ? 1 : -1;
         const cap = current.dataset.adjust === "cap-build" ? { ...caps, build: stepCap(BUILD_CAPS, caps.build, by) } : { ...caps, month: stepCap(MONTH_CAPS, caps.month, by) };
         void changeBuilder(ctx, { cap }, current.dataset.adjust);
+        return true;
+      }
+      // AI's two models (ADR-103).
+      const use = modelUse(current?.dataset.adjust);
+      if (use && (action === "left" || action === "right")) {
+        void stepModel(ctx, use, action === "right" ? 1 : -1);
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {

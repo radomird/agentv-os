@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { defaultModel, modelsFor } from "../../../builder/models.ts";
 import { Ai, OFFERS, planRefused, TERMS_READ } from "../../../daemon/ai.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { pairPhone, type TestPhone } from "./phone-client.mts";
@@ -111,8 +112,8 @@ test("a plan is only where it's offered, and none clears the choice", async () =
   assert.match((await ai.choose("gemini", "plan")).error ?? "", /Google keeps its plan to its own apps/);
   assert.match((await ai.choose("copilot", "key")).error ?? "", /Claude, ChatGPT, Gemini, Grok or Muse/);
   assert.match((await ai.choose("claude", "both")).error ?? "", /a plan or a key/);
-  assert.deepEqual((await ai.choose("claude", "plan")).state, { provider: "claude", path: "plan", accepted: null, cli: null });
-  assert.deepEqual((await ai.choose(null, undefined)).state, { provider: null, path: null, accepted: null, cli: null });
+  assert.deepEqual((await ai.choose("claude", "plan")).state, { provider: "claude", path: "plan", accepted: null, cli: null, models: { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5", list: modelsFor("claude", "plan") } });
+  assert.deepEqual((await ai.choose(null, undefined)).state, { provider: null, path: null, accepted: null, cli: null, models: null });
 });
 
 test("T17.1 Claude's, ChatGPT's and Grok's plans are offered on every channel, Muse's is coming soon, and Google's is key only", async () => {
@@ -121,7 +122,7 @@ test("T17.1 Claude's, ChatGPT's and Grok's plans are offered on every channel, M
     const offers = await ai.offers();
     for (const provider of ["claude", "chatgpt", "grok"] as const) {
       assert.equal(offers[provider].plan.offered, true, `${provider}'s plan, on ${channel}`);
-      assert.deepEqual((await ai.choose(provider, "plan")).state, { provider, path: "plan", accepted: null, cli: null }, `${provider}'s plan can be picked on ${channel}`);
+      assert.deepEqual((await ai.choose(provider, "plan")).state, { provider, path: "plan", accepted: null, cli: null, models: { ask: defaultModel(provider, "plan", "ask"), build: defaultModel(provider, "plan", "build"), list: modelsFor(provider, "plan") } }, `${provider}'s plan can be picked on ${channel}`);
     }
     for (const provider of ["gemini", "muse"] as const) assert.equal(offers[provider].plan.offered, false, `${provider}'s plan, on ${channel}`);
     // A refused pick changes nothing.
@@ -350,7 +351,11 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
   const onTv = (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
   const usePlan = (provider: string, withGrant = true) =>
     fetch(`${url}/api/ai/plan`, { method: "PUT", headers: { "Content-Type": "application/json", ...(withGrant ? { "X-OrigaiTV-Grant": onTv } : {}) }, body: JSON.stringify({ provider }) });
-  const using = async () => (await (await fetch(`${url}/api/key`)).json()).ai;
+  // What builds use, without the models that go with it (model-defaults.test.mts).
+  const using = async () => {
+    const { models: _models, ...ai } = (await (await fetch(`${url}/api/key`)).json()).ai;
+    return ai;
+  };
   const kept = () => JSON.parse(readFileSync(join(state, "terms.json"), "utf8"));
   try {
     assert.equal((await usePlan("claude", false)).status, 403, "past the PIN");
@@ -395,7 +400,8 @@ test("Q143 Settings → AI: an adult picks the household's plan past the PIN, it
     await withRoot(async () => {
       const put = await fetch(`${url}/api/key`, { method: "PUT", headers: { "Content-Type": "application/json", "X-OrigaiTV-Grant": onTv }, body: JSON.stringify({ provider: "claude", key: `sk-ant-${"q".repeat(40)}` }) });
       assert.equal(put.status, 200);
-      assert.deepEqual((await put.json()).ai, { provider: "claude", path: "key", accepted: true });
+      const { models: _models, ...kept } = (await put.json()).ai;
+      assert.deepEqual(kept, { provider: "claude", path: "key", accepted: true });
     });
     assert.deepEqual(await using(), { provider: "claude", path: "key", accepted: true });
   } finally {

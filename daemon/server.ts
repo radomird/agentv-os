@@ -56,6 +56,7 @@ import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
+import { aiModelRoutes } from "./routes/ai-models.ts";
 import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
@@ -721,7 +722,7 @@ export class Daemon {
     const { set, provider } = this.key.status();
     const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name }));
     const ai = await this.ai.read();
-    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
+    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null, ...(ai.models ? { models: ai.models } : {}) } };
   }
 
   // The channel this box updates from, as `origaitv channel` says it: the one
@@ -843,7 +844,7 @@ export class Daemon {
       const key = this.key.status();
       if (!key.set || key.provider !== ai.provider) return { error: "Add an API key in Settings first" };
     }
-    return { ai: { provider: ai.provider, path: ai.path, model: defaultModel(ai.provider, ai.path, "build") } };
+    return { ai: { provider: ai.provider, path: ai.path, model: ai.models?.build ?? defaultModel(ai.provider, ai.path, "build") } };
   }
 
   // The TV's asks of the builder, and the phone's when phone is given. True
@@ -3059,6 +3060,9 @@ export class Daemon {
       this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: await this.ai.offers(), channel: await this.channel(), read: TERMS_READ, key: { set, provider } });
       return;
     }
+
+    // The household's models for asking and building (ADR-103).
+    if (await aiModelRoutes({ ai: this.ai, adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)), body: (q) => this.body(q), json: (s, status, data) => this.json(s, status, data), changed: (state) => this.broadcast("ai", state), log: this.log }, request, response, path)) return;
 
     // The provider and path picked on the TV, or none, to pick again. Past
     // the PIN, once there is one, and a child's profile can't.

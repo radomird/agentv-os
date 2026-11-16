@@ -8,6 +8,7 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { defaultModel, type Model, modelsFor, offered } from "../builder/models.ts";
 
 export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
 // The agent CLI each provider publishes, as Omarchy's wrappers name it.
@@ -182,7 +183,14 @@ export interface AiState {
   accepted: Acceptance | null;
   // How the first run of its CLI went, once they're accepted.
   cli: { state: CliState; cli: string; version: string | null; error: string | null; at: string } | null;
+  // The models it asks and builds on (ADR-103, Q312): the household's, or
+  // the provider's to start with, and the list to pick from, strongest
+  // first. Null until a provider and a way in are picked.
+  models?: { ask: string; build: string; list: Model[] } | null;
 }
+
+export type ModelUse = "ask" | "build";
+type Picked = Partial<Record<Provider, Partial<Record<Path, Partial<Record<ModelUse, string>>>>>>;
 
 function now(): string {
   return new Date().toISOString().replace(/\.\d+Z$/, "+00:00");
@@ -206,6 +214,14 @@ const isProvider = (value: unknown): value is Provider => typeof value === "stri
 const isPath = (value: unknown): value is Path => value === "plan" || value === "key";
 // What a phone or a profile is called, as it shows on the TV.
 const NAME = /^[\p{L}\p{N}' ._-]{1,40}$/u;
+
+// The models in use: the household's picks while they're on the list, else
+// where the provider starts.
+function models(provider: Provider, path: Path, picked: Picked | undefined): NonNullable<AiState["models"]> {
+  const mine = typeof picked === "object" && picked !== null ? picked[provider]?.[path] : undefined;
+  const pick = (use: ModelUse) => (offered(provider, path, mine?.[use]) ? mine![use]! : defaultModel(provider, path, use));
+  return { ask: pick("ask"), build: pick("build"), list: modelsFor(provider, path) };
+}
 
 export class Ai {
   private state: string;
@@ -247,7 +263,23 @@ export class Ai {
     const path = isPath(saved.path) ? saved.path : null;
     const accepted = provider && path ? await this.acceptance(provider, path) : null;
     const cli = saved.cli as AiState["cli"] | undefined;
-    return { provider, path, accepted, cli: accepted && cli && cli.cli === OFFERS[provider!].cli ? cli : null };
+    return { provider, path, accepted, cli: accepted && cli && cli.cli === OFFERS[provider!].cli ? cli : null, models: provider && path ? models(provider, path, saved.models as Picked | undefined) : null };
+  }
+
+  // The household's model for asking or for building, for the provider and
+  // way in it uses now: one from its list, or the provider's to start with.
+  // Each provider keeps its own, so going back to one finds them again.
+  async setModel(use: unknown, model: unknown): Promise<{ state?: AiState; error?: string }> {
+    const state = await this.read();
+    if (!state.provider || !state.path) return { error: "Set up AI in Settings first" };
+    if (use !== "ask" && use !== "build") return { error: "for asking or for building" };
+    if (!offered(state.provider, state.path, model)) return { error: "Pick a model from the list" };
+    const saved = await readJson<Record<string, unknown>>(this.choicePath, {});
+    const picked = (typeof saved.models === "object" && saved.models !== null ? saved.models : {}) as Picked;
+    const mine = { ...picked[state.provider] };
+    mine[state.path] = { ...mine[state.path], [use]: model };
+    await writeJson(this.choicePath, { ...saved, models: { ...picked, [state.provider]: mine } });
+    return { state: await this.read() };
   }
 
   // The provider and the path, as picked on the TV, or none, as when the TV

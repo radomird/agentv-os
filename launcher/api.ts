@@ -174,7 +174,14 @@ export interface KeyState {
   plans?: { provider: string; name?: string }[];
   // What builds use now: the AI picked, by plan or key, and whether its terms
   // are accepted (Q143).
-  ai?: { provider: string | null; path: "plan" | "key" | null; accepted: boolean };
+  ai?: {
+    provider: string | null;
+    path: "plan" | "key" | null;
+    accepted: boolean;
+    // The models it asks and builds on, and the list to pick from,
+    // strongest first (ADR-103).
+    models?: { ask: string; build: string; list: { id: string; name: string }[] } | null;
+  };
 }
 
 // The terms a key waits for, when nobody here has accepted that provider's
@@ -478,6 +485,8 @@ export const daemon = {
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
   // The provider key (S4.6): which provider has one, never the key.
   key: () => call<KeyState>("GET", "/api/key"),
+  // The household's model for asking or building (ADR-103), past the PIN.
+  setModel: (use: "ask" | "build", model: string, grant?: string) => call<{ models?: NonNullable<KeyState["ai"]>["models"] }>("PUT", "/api/ai/models", { use, model }, grant),
   // The key kept, or the terms it waits for.
   saveKey: async (provider: string, key: string, grant?: string): Promise<KeyState | { terms: KeyTerms }> => {
     const response = await fetch("/api/key", { method: "PUT", headers: { "Content-Type": "application/json", ...(grant ? { "X-OrigaiTV-Grant": grant } : {}) }, body: JSON.stringify({ provider, key }) });
