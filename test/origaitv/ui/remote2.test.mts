@@ -698,7 +698,7 @@ test("T21.1 two fingers on the clickpad scroll the page in front, from its middl
   for (const [where, spot] of [["middle", { x: at.middle.x - 20, y: at.middle.y - 20 }], ["edge", { x: at.left.x, y: at.left.y - 20 }]] as const) {
     const sent = await drag(spot.x, spot.y, 40);
     assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === undefined), `${where}: only the wheel: ${JSON.stringify(sent)}`);
-    assert.equal(total(sent), 120, `${where}: three times the fingers' way, down`);
+    assert.equal(total(sent), -120, `${where}: three times the fingers' way, and the page with them`);
   }
   assert.equal(await hand.locator(".cp-pad").getAttribute("data-edge"), null, "the edge isn't left lit");
   await hand.mouse.move(at.middle.x, at.middle.y);
@@ -707,7 +707,7 @@ test("T21.1 two fingers on the clickpad scroll the page in front, from its middl
   await hand.mouse.up();
   const sent = await drag(at.middle.x - 20, at.middle.y - 20, -40);
   assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === "pointer"), JSON.stringify(sent));
-  assert.equal(total(sent), -120);
+  assert.equal(total(sent), 120);
   await cdp.detach();
   await hand.close();
 });
