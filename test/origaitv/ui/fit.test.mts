@@ -195,16 +195,19 @@ test("T22.1 home's own margin follows Fit to screen's, only past the 3 percent i
     try {
       assert.deepEqual(await safe(page), [80, 60], `${look}: as before at 3 percent`);
       // What's cut off at 3 percent, once the tiles have what they show.
+      // Not the weather's words, which are the live forecast's: Terminal's
+      // small Weather tile clips some of them at any margin.
       await page.waitForTimeout(1500);
+      const tiles = '#page *:not([data-id="origaitv.weather"] *)';
       // The words, not the classes, whose order the focus changes.
       const words = (lines: string[]) => lines.map((line) => /^"([^"]*)"/.exec(line)?.[1] ?? line);
-      const before = words(await cutOff(page));
+      const before = words(await cutOff(page, tiles));
       // 6 percent: 115 by 65, which is 57 by 33 over the 3 percent.
       await put({ margin: 6 });
       await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--fit-over-x") === "57px");
       assert.deepEqual(await safe(page), [137, 93], `${look}: moved in by what's over 3 percent`);
       await page.waitForTimeout(1500);
-      for (const line of words(await cutOff(page))) if (!before.includes(line)) assert.fail(`${look} at 6 percent: ${line}`);
+      for (const line of words(await cutOff(page, tiles))) if (!before.includes(line)) assert.fail(`${look} at 6 percent: ${line}`);
       // None: home keeps its own.
       await put({ margin: 0 });
       await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--fit-x") === "0px");
