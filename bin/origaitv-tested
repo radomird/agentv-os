@@ -100,12 +100,15 @@ if [[ -z $pending ]]; then
   checkupdates --nocolor >"$pending" 2>/dev/null || true
 fi
 
+# OrigaiTV itself is in every nightly run, so a list that doesn't name it
+# can't vouch for a new OrigaiTV, and that update waits too. A list from
+# before the package's name changed is one of those.
 held=$(jq -r --rawfile pending "$pending" '
   .packages as $tested
   | $pending | split("\n")[] | select(test("->"))
   | capture("^(?<name>\\S+) \\S+ -> (?<new>\\S+)")
-  | select($tested[.name] != null and $tested[.name] != .new)
-  | "\(.name) \(.new) (tested: \($tested[.name]))"
+  | select(($tested[.name] != null or .name == "origaitv") and $tested[.name] != .new)
+  | "\(.name) \(.new) (tested: \($tested[.name] // "none yet"))"
 ' "$tested")
 
 if [[ -n $held ]]; then

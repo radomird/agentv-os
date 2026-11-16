@@ -54,6 +54,19 @@ pass "a package the nightly run never installs isn't held"
   fail "nothing pending is fine"
 pass "nothing pending is fine"
 
+# OrigaiTV is in every nightly run, so a list that doesn't name it, such as
+# one from before its package was renamed, can't let a new OrigaiTV through.
+jq '.packages = {"omarchy": "4.0.7-1", "chromium": "142.0.1-1"}' "$SCRATCH/tested.json" >"$SCRATCH/old-name.json"
+sign "$SCRATCH/old-name.json" "OrigaiTV test key"
+printf '%s\n' "origaitv 0.1.0-1 -> 0.1.1-1" "omarchy 4.0.6-1 -> 4.0.7-1" >"$SCRATCH/new-origaitv"
+output=$("$cmd" --tested "$SCRATCH/old-name.json" --pending "$SCRATCH/new-origaitv") &&
+  fail "a list that doesn't name OrigaiTV holds a new OrigaiTV" "$output"
+[[ $output == *"origaitv 0.1.1-1 (tested: none yet)"* ]] ||
+  fail "it says OrigaiTV hasn't been tested yet" "$output"
+"$cmd" --tested "$SCRATCH/old-name.json" --pending "$SCRATCH/tested-only" >/dev/null ||
+  fail "the same list still lets tested versions of other packages through"
+pass "a list that doesn't name OrigaiTV holds a new OrigaiTV, and nothing else"
+
 # Then the night passes with the new kernel.
 sed 's/6.17.4.arch1-1/6.17.5.arch1-1/' "$SCRATCH/tested.json" >"$SCRATCH/next.json"
 sign "$SCRATCH/next.json" "OrigaiTV test key"
