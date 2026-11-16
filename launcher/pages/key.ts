@@ -415,7 +415,14 @@ export function planSignInPage(ctx: Ctx): View {
       shown = url;
       qr.src = `/api/ai/sign-in/qr?at=${Date.now()}`;
     }
-    paste.classList.toggle("hidden", !(state === "waiting" && now?.now?.pastes && !now.now.code));
+    const pastes = Boolean(state === "waiting" && now?.now?.pastes && !now.now.code);
+    const appears = pastes && paste.classList.contains("hidden");
+    paste.classList.toggle("hidden", !pastes);
+    // The field takes the focus as it shows, so the phone's keyboard opens
+    // by itself and its paste goes straight in: no mouse needed (ADR-103).
+    // Not from under the PIN's pad, which has the keys while it's up.
+    const on = ctx.focus.get();
+    if (appears && field.isConnected && (!on || paste.parentElement?.contains(on))) ctx.focus.set(field);
   };
 
   const look = async () => {
@@ -450,9 +457,10 @@ export function planSignInPage(ctx: Ctx): View {
   const sendCode = async () => {
     const code = field.value.trim();
     if (!code) return;
-    field.value = "";
     try {
       await signInCall("POST", "/api/ai/sign-in/code", { code }, grant);
+      // The code stays in the field until the TV has it.
+      if (field.value.trim() === code) field.value = "";
       ctx.toast("Signing in…", "ok");
     } catch (error) {
       ctx.sounds.play("failure");

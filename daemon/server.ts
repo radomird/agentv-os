@@ -1219,6 +1219,21 @@ export class Daemon {
       const offer = OFFERS[this.planTerms];
       return { ask: "terms", provider: this.planTerms, path: "plan", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: offer.terms.plan, summary: offer.summary.plan, keyUrl: offer.keyUrl };
     }
+    // The household's plan signing in, from setup or Settings: the phone gets
+    // a page of its own, with the provider's sign-in to open and a field for
+    // the code it gives, since a page on the box's plain http can't read the
+    // phone's clipboard (ADR-103). A build's sign-in has its page under the
+    // build, so this one waits while a build signs in.
+    const signing = await this.planSignIn.state().catch(() => null);
+    if (signing && !signing.signedIn && signing.now?.state === "waiting" && signing.now.url) {
+      const chosen = await this.ai.read();
+      const building = (await this.builds.list().catch(() => [])).some((b) => b.state === "plan-sign-in");
+      if (!building && chosen.provider === signing.provider && chosen.path === "plan") {
+        const offer = OFFERS[signing.provider];
+        const signIn = { url: signing.now.url, ...(signing.now.code ? { code: signing.now.code } : {}), pastes: signing.now.pastes === true };
+        return { ask: "sign-in", provider: signing.provider, path: "plan", name: offer.name, maker: offer.maker, plan: offer.plan.name, terms: [], summary: "", keyUrl: offer.keyUrl, signIn };
+      }
+    }
     if (setup.done || setup.step !== "ai") return null;
     const ai = await this.ai.read();
     if (!ai.provider || !ai.path) return null;
