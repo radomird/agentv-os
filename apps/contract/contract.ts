@@ -66,8 +66,37 @@ export interface AppContext {
   viewer: { id: string; role: "adult" | "child" };
 }
 
+/**
+ * Help for the phone's d-pad on the app's own pages (ADR-103). The TV's
+ * d-pad already moves to the nearest thing that way that can take focus or
+ * be clicked, cards that only show a pointer included, and scrolls when
+ * nothing is further, on any page. A hint names what it can't work out by
+ * itself, as CSS selectors in the app's page. It's data, handed to the page
+ * as it is: the TV runs no code of the app's for it.
+ */
+export interface Navigation {
+  /** Where it applies: a regular expression the page's address matches. Every page of the app without it. */
+  url?: string;
+  /** What the d-pad lands on as well, such as cards that neither take focus nor show a pointer. */
+  items?: string;
+  /** What it never lands on, and nothing inside it, such as a card's hidden copy of its link. */
+  skip?: string;
+  /** The page's own scroll area, when the page itself doesn't scroll. */
+  scroller?: string;
+  /**
+   * Rows that slide by their own buttons rather than scrolling: the row, and
+   * its next and previous buttons inside it. Along such a row, when the next
+   * card isn't all in sight, the d-pad presses the row's button and lands on
+   * the card once it's there.
+   */
+  rows?: { row: string; next: string; previous?: string }[];
+}
+
 export interface TvApp {
   id: string;
+
+  /** Optional. Hints for the phone's d-pad on the app's pages (ADR-103). */
+  navigation?: Navigation[];
 
   /** Open the home URL or start the native window. */
   launch(ctx: AppContext): Promise<void>;

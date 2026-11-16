@@ -13,6 +13,11 @@
     { "name": "OK presses the title that has focus", "page": "https://desk.test/desktop.html", "remote": ["down", "down", "right", "right", "right", "enter"], "after": { "focused": "^Title 4$", "title": "^picked 4$" } },
     { "name": "up from the row reaches the links along the top, and OK opens one", "page": "https://desk.test/desktop.html", "remote": ["down", "down", "up", "enter"], "after": { "url": "/next\\.html\\?(films|series)$" } },
     { "name": "and Back goes back a page", "remote": ["back"], "after": { "url": "/desktop\\.html$" } },
-    { "name": "a page that moves its own focus with the arrows keeps them", "page": "https://desk.test/own-keys.html", "remote": ["right"], "after": { "title": "^on 2$", "focused": "^$" } }
+    { "name": "a page that moves its own focus with the arrows keeps them", "page": "https://desk.test/own-keys.html", "remote": ["right"], "after": { "title": "^on 2$", "focused": "^$" } },
+    { "id": "T21.1", "name": "the d-pad reaches the last row of a page with cards that can't take focus and rows that load as it scrolls", "page": "https://desk.test/rows.html", "remote": ["down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down"], "after": { "focused": "^Row 10 title 1$" } },
+    { "id": "T21.1", "name": "right goes along that row past the edge of the screen", "remote": ["right", "right", "right", "right", "right", "right", "right", "right", "right", "right", "right", "right", "right", "right"], "after": { "focused": "^Row 10 title 15$" } },
+    { "id": "T21.1", "name": "OK presses a card that can't take focus of its own", "remote": ["enter"], "after": { "title": "^picked 10-15$" } },
+    { "id": "T21.1", "name": "with its app's hint, right slides a row by the row's own button and lands on what comes into sight", "page": "https://desk.test/rows.html", "remote": ["down", "down", "down", "right", "right", "right", "right", "right"], "after": { "focused": "^Row 2 title 6$" } },
+    { "id": "T21.1", "name": "the d-pad keeps to a page's own scroll area, down to its last row", "page": "https://desk.test/inner.html", "remote": ["down", "right", "down", "down", "down", "down", "down", "down", "down", "down", "down"], "after": { "focused": "^Row 8 title 1$" } }
   ]
 }

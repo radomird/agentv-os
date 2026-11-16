@@ -9,7 +9,7 @@
 // second, then every 10 s: its row appears within 10 s. A read that fails is
 // logged and the next one tries again. An app without playback isn't read.
 
-import type { PlaybackState } from "../apps/contract/contract.ts";
+import type { Navigation, PlaybackState } from "../apps/contract/contract.ts";
 import type { AppHost, PageBroker, Viewer } from "./apps/loader.ts";
 
 export const EVERY_MS = 10_000;
@@ -121,6 +121,13 @@ export class PlaybackWatch {
     if (!watching || !host) throw new Error(`${id} has no playback here`);
     host.setPage(watching.page);
     return host.call(await this.deps.viewer(), path);
+  }
+
+  // The app's hints for the phone's d-pad on its pages (ADR-103), once its
+  // worker has started, or none.
+  async navigation(id: string): Promise<Navigation[]> {
+    const host = await this.watching.get(id)?.host;
+    return host ? host.navigation().catch(() => []) : [];
   }
 
   // One read, unless the last is still going. True when a state came and

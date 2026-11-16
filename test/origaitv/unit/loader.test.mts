@@ -444,6 +444,23 @@ test("playback.show is optional, and when an app has it, it's a function under p
   await fails(host(app(shows, (m) => (m.tv.capabilities = ["launch", "signIn", "search", "tile"]))).start(), "refused", /has playback\.show, but doesn't say it can playback/);
 });
 
+test("T21.1 an app's hints for the d-pad come from its module as data, and a hint that isn't one stops it loading", async () => {
+  assert.deepEqual(await host(app(tileApp("return {};"))).navigation(), [], "none when it gives none");
+  const hints = [{ url: "/home$", items: ".card", skip: ".card a[hidden]", scroller: "main", rows: [{ row: ".row", next: ".next", previous: ".previous" }] }];
+  const giving = tileApp("return {};").replace("async launch() {},", `async launch() {}, navigation: ${JSON.stringify(hints)},`);
+  assert.deepEqual(await host(app(giving)).navigation(), hints);
+  for (const [bad, why] of [
+    ['"main"', /isn't a list of hints/],
+    ['[{ items: 3 }]', /hint 1's items isn't a selector/],
+    ['[{ url: "(" }]', /url isn't a regular expression/],
+    ['[{ rows: [{ row: ".row" }] }]', /a row without its row and next button/],
+    ['[{ press: ".play" }]', /has press, which isn't a hint/],
+  ] as const) {
+    const code = tileApp("return {};").replace("async launch() {},", `async launch() {}, navigation: ${bad},`);
+    await fails(host(app(code)).start(), "refused", why);
+  }
+});
+
 test("a module that doesn't load says so", async () => {
   await fails(host(app("export default 1;")).start(), "failed", /no default export/);
   await fails(host(app("throw new Error('broken');")).start(), "failed", /broken/);

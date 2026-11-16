@@ -100,15 +100,21 @@
     if (picked) document.title = `picked ${picked.dataset.pick}`;
   });
   // More rows as the end of them comes near, a moment later.
+  // Looked at again after each load, so rows go on loading while the end
+  // is still near.
+  const more = document.getElementById("more");
   let loading = false;
-  new IntersectionObserver((seen) => {
+  const watch = new IntersectionObserver((seen) => {
     if (!seen.some((entry) => entry.isIntersecting) || loading || made >= 10) return;
     loading = true;
     setTimeout(() => {
       for (let i = 0; i < 2 && made < 10; i++) addRow(++made);
       loading = false;
+      watch.unobserve(more);
+      watch.observe(more);
     }, 150);
-  }, { rootMargin: "0px 0px 200px 0px" }).observe(document.getElementById("more"));
+  }, { rootMargin: "0px 0px 200px 0px" });
+  watch.observe(more);
 </script>
 </body>
 </html>

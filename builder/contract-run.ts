@@ -12,7 +12,8 @@ import type { Manifest } from "../apps/contract/manifest.ts";
 import { validatePackage } from "../apps/contract/manifest.ts";
 import { AppHost, type AppHostOptions, type PageBroker } from "../daemon/apps/loader.ts";
 import { cdpPage } from "../daemon/page.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../daemon/remote-page.ts";
+import { navigationPage, REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../daemon/remote-page.ts";
+import type { Navigation } from "../apps/contract/contract.ts";
 import type { Build } from "./build.ts";
 import { type Contract, differences, Fixtures } from "./fixtures.ts";
 import { headless } from "./gates/chromium.ts";
@@ -58,6 +59,9 @@ export interface CheckPage {
   title(): Promise<string>;
   // One of REMOTE_KEYS, pressed and let go, and the page settled after it.
   press(key: string): Promise<void>;
+  // The app's hints for the d-pad, next to its ring and Back, in each page
+  // it loads after, as the screen daemon gives them (ADR-103).
+  hints?(hints: Navigation[]): Promise<void>;
   focused(): Promise<string>;
   close(): Promise<void>;
 }
@@ -73,6 +77,8 @@ export async function checkApp(o: { dir: string; manifest: Manifest; contract: C
   try {
     await host.start();
     results.push({ app, id: "S3.1", name: "its module starts in a worker of its own", ok: true, why: [] });
+    const hints = await host.navigation();
+    if (hints.length) await page?.hints?.(hints);
   } catch (error) {
     results.push({ app, id: "S3.1", name: "its module starts in a worker of its own", ok: false, why: [(error as Error).message] });
     host.stop();
@@ -168,6 +174,7 @@ export async function cdpCheckPage(chromium: string, served: Fixtures): Promise<
     await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }, sessionId);
     await cdp.send("Page.enable", {}, sessionId);
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: REMOTE_PAGE, worldName: REMOTE_WORLD }, sessionId);
+    const hints = async (list: Navigation[]) => void (await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: navigationPage(list), worldName: REMOTE_WORLD }, sessionId));
     let loaded: (() => void) | null = null;
     cdp.on("Page.loadEventFired", (_event, from) => {
       if (from === sessionId) loaded?.();
@@ -202,6 +209,7 @@ export async function cdpCheckPage(chromium: string, served: Fixtures): Promise<
         await settled(evaluate);
       },
       focused: () => evaluate(FOCUSED),
+      hints,
       close: () => browser.close(),
     };
   } catch (error) {

@@ -56,7 +56,7 @@ import { HARNESS } from "../harness.mts";
 import { type Contract, differences, Fixtures } from "../../../builder/fixtures.ts";
 import { MusicApp, MusicLibrary, type MusicPlayer, type Track } from "../../../daemon/music.ts";
 import { cdpPage } from "../../../daemon/page.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
+import { navigationPage, REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
 import type { Storage } from "../../../daemon/storage.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -165,6 +165,8 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
         await settled((expression) => page.evaluate(expression));
       },
       focused: () => page.evaluate(FOCUSED),
+      // The app's hints for the d-pad, as the screen daemon gives them.
+      hints: async (list) => void (await session.send("Page.addScriptToEvaluateOnNewDocument", { source: navigationPage(list), worldName: REMOTE_WORLD })),
       close: () => page.close(),
     };
   };

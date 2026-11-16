@@ -19,7 +19,8 @@ import { cdpCheckPage, checkApp } from "../../../builder/contract-run.ts";
 import { HARNESS } from "../harness.mts";
 import { type Contract, Fixtures } from "../../../builder/fixtures.ts";
 import { CdpPipe } from "../../../daemon/cdp.ts";
-import { BACK_TAP, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "../../../daemon/remote-page.ts";
+import desk from "../fixtures/apps/desk/app.ts";
 
 const DESK = resolve(import.meta.dirname, "../fixtures/apps/desk");
 const PAGES = join(DESK, "fixtures/pages");
@@ -75,9 +76,11 @@ interface State {
 }
 
 // A page opened as the screen daemon opens an app, with the ring and Back.
-async function app(name: string, source = REMOTE_PAGE) {
+async function app(name: string, source = REMOTE_PAGE, hints?: unknown[]) {
   const target = await cdp.open(`${site}${name}`);
   await cdp.addScriptIn(target, source, REMOTE_WORLD);
+  // The app's hints for the d-pad, as the screen daemon gives them.
+  if (hints) await cdp.addScriptIn(target, navigationPage(hints), REMOTE_WORLD);
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId: target, flatten: true });
   await cdp.send("Page.bringToFront", {}, sessionId);
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, sessionId);
@@ -362,6 +365,109 @@ test("T21.1 two fingers scroll the page from its middle, sideways the row that h
   for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(inner.target, `document.getElementById("main").scrollTop >= 300`)); tries++) await sleep(50);
   assert.ok(await cdp.evaluateIn(inner.target, `document.getElementById("main").scrollTop >= 300`), "the page's own scroll area scrolled");
   await cdp.close(inner.target);
+});
+
+// What has focus on the rows' stand-ins: a card's row and number, or an id.
+const PICK = `(() => { const el = document.activeElement; return el && el !== document.body ? el.dataset.pick ?? el.id : ""; })()`;
+
+test("T21.1 the d-pad reaches the last row of a page with cards that can't take focus and rows that load as it scrolls, and scrolls on when nothing is further", async () => {
+  const page = await app("rows.html");
+  const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
+  const read = (expression: string) => cdp.evaluateIn(page.target, expression);
+  // Down from nothing: the first link along the top, then each row in turn,
+  // past the picture that has nothing to press.
+  await page.press("ArrowDown");
+  assert.equal(await pick(), "home", "the first press lands on the top left");
+  const rows: string[] = [];
+  for (let tries = 0; tries < 25 && !(await pick()).startsWith("10-"); tries++) {
+    await page.press("ArrowDown");
+    // A row that's loading is there a moment later.
+    for (let wait = 0; wait < 15 && rows.at(-1) === (await pick()); wait++) await sleep(100);
+    rows.push(await pick());
+  }
+  const reached = [...new Set(rows.map((r) => r.split("-")[0]))];
+  assert.deepEqual(reached, ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], `down goes row by row, loading the rest: ${rows.join(" ")}`);
+  assert.equal(await pick(), "10-1", "and lands on the card under the one before");
+  const last = await page.until((s) => ringAround(s), "the ring is around the last row's card");
+  assert.ok(last.box!.top >= 0 && last.box!.bottom <= (await read("innerHeight")), "it's in sight");
+  // Nothing further down: the page scrolls on, and the focus stays.
+  const before = (await read("scrollY")) as number;
+  await page.press("ArrowDown");
+  for (let tries = 0; tries < 20 && (await read("scrollY")) === before; tries++) await sleep(50);
+  assert.ok(((await read("scrollY")) as number) > before, "the page scrolled down to what's under the rows");
+  assert.equal(await pick(), "10-1", "with the focus where it was");
+  // Along the last row, past the edge of the screen, and OK presses the card.
+  for (let n = 2; n <= 15; n++) await page.press("ArrowRight");
+  assert.equal(await pick(), "10-15", "right goes along the row to its end");
+  const end = await page.until((s) => ringAround(s), "with the ring");
+  assert.ok(end.box!.right <= 1920 && end.box!.left >= 0, `the row slid it into sight: ${JSON.stringify(end.box)}`);
+  await page.press("Enter");
+  await page.until((s) => s.title === "picked 10-15", "OK presses a card that can't take focus of its own");
+  // Up goes back up the rows, to the slider, which slides to what's next.
+  for (let tries = 0; tries < 20 && !(await pick()).startsWith("2-"); tries++) await page.press("ArrowUp");
+  assert.ok((await pick()).startsWith("2-"), `up reaches the slider: ${await pick()}`);
+  for (let tries = 0; tries < 15 && (await pick()) !== "2-12"; tries++) await page.press("ArrowRight");
+  assert.equal(await pick(), "2-12", "right goes along the slider to its last card");
+  const slid = await read(`(() => { const s = document.getElementById("row-2").getBoundingClientRect(); const c = document.activeElement.getBoundingClientRect(); return c.left >= s.left - 1 && c.right <= s.right + 1; })()`);
+  assert.equal(slid, true, "in sight inside the slider");
+  await cdp.close(page.target);
+});
+
+test("T21.1 with its app's hint, the d-pad slides a row by the row's own buttons, and lands on what comes into sight", async () => {
+  const slider = `(() => { const s = document.getElementById("row-2"); const b = s.getBoundingClientRect(); const c = document.activeElement.getBoundingClientRect(); return { left: s.scrollLeft, moved: s.querySelector(".track").style.transform, inside: c.left >= b.left - 1 && c.right <= b.right + 1 }; })()`;
+  // Without the hint, the slider is scrolled like any other row.
+  for (const hints of [undefined, desk.navigation]) {
+    const page = await app("rows.html", REMOTE_PAGE, hints);
+    const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
+    for (let tries = 0; tries < 6 && !(await pick()).startsWith("2-"); tries++) await page.press("ArrowDown");
+    assert.equal(await pick(), "2-1", "down reaches the slider");
+    for (let n = 2; n <= 6; n++) {
+      const was = await pick();
+      await page.press("ArrowRight");
+      for (let wait = 0; wait < 15 && was === (await pick()); wait++) await sleep(100);
+    }
+    assert.equal(await pick(), "2-6");
+    const after = (await cdp.evaluateIn(page.target, slider)) as { left: number; moved: string; inside: boolean };
+    assert.equal(after.inside, true, "the card is in sight inside the slider");
+    if (hints) assert.deepEqual([after.left, after.moved !== ""], [0, true], "the slider moved by its own button, not by scrolling");
+    else assert.deepEqual([after.left > 0, after.moved], [true, ""], "the slider was scrolled");
+    await cdp.close(page.target);
+  }
+});
+
+test("T21.1 a card's link and a button over the same place: the d-pad lands on the link, and on the button when the link is hidden", async () => {
+  const page = await app("overlay.html");
+  await page.press("ArrowRight");
+  await page.until((s) => s.focused === "link-1" && ringAround(s), "the first card's link");
+  await page.press("ArrowRight");
+  await page.until((s) => s.focused === "link-2", "the second's");
+  await page.press("ArrowRight");
+  await page.until((s) => s.focused === "button-3", "the third's button, since its link is hidden text");
+  await page.press("ArrowLeft");
+  await page.until((s) => s.focused === "link-2", "and back");
+  await page.press("Enter");
+  await page.until((s) => s.page === "next.html?2", "OK opens the title");
+  await cdp.close(page.target);
+});
+
+test("T21.1 the d-pad keeps to a page's own scroll area: down its rows as they load, and across to the menu beside them", async () => {
+  const page = await app("inner.html");
+  const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
+  await page.press("ArrowDown");
+  assert.equal(await pick(), "menu-home", "the menu down the side is first");
+  await page.press("ArrowRight");
+  assert.ok((await pick()).startsWith("1-"), `right goes across to the rows: ${await pick()}`);
+  for (let tries = 0; tries < 20 && !(await pick()).startsWith("8-"); tries++) {
+    const was = await pick();
+    await page.press("ArrowDown");
+    for (let wait = 0; wait < 15 && was === (await pick()); wait++) await sleep(100);
+  }
+  assert.equal(await pick(), "8-1", "down reaches the last row, in the page's own scroll area");
+  assert.ok(((await cdp.evaluateIn(page.target, `document.getElementById("main").scrollTop`)) as number) > 300, "which scrolled");
+  assert.equal(await cdp.evaluateIn(page.target, "scrollY"), 0, "and the page itself didn't");
+  await page.press("ArrowLeft");
+  assert.ok((await pick()).startsWith("menu-"), `left goes back to the menu: ${await pick()}`);
+  await cdp.close(page.target);
 });
 
 test("a shared link's page gets the ring, and Back is left to the screen daemon, which closes it (ADR-050, Q164)", async () => {
