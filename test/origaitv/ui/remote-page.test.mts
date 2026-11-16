@@ -152,11 +152,9 @@ function ringAround(s: State): boolean {
 test("the d-pad moves through a page made for a desktop, with a ring on what has focus (ADR-008)", async () => {
   const page = await app("desktop.html");
   assert.equal((await page.state()).focused, "", "nothing has focus at first");
-  for (let tries = 0; tries < 4 && !(await page.state()).focused.startsWith("tile-"); tries++) await page.press("ArrowDown");
-  const first = await page.state();
-  assert.equal(first.focused, "tile-1", "down reaches the row of tiles");
-  assert.ok(ringAround(first), `the ring is around the tile: ${JSON.stringify(first)}`);
-  for (let n = 2; n <= 8; n++) await page.press("ArrowRight");
+  await page.press("ArrowDown");
+  await page.until((s) => s.focused === "tile-3" && ringAround(s), "the first press lands on the biggest thing in view, the tile nearest the middle, with the ring around it");
+  for (let n = 4; n <= 8; n++) await page.press("ArrowRight");
   const last = await page.until((s) => s.focused === "tile-8" && ringAround(s), "right goes along the row to its last tile, past the edge of the screen");
   assert.ok(last.box!.right <= 1920 && last.box!.left >= 0, `the row scrolled the last tile into view: ${JSON.stringify(last.box)}`);
   await page.press("Enter");
@@ -375,10 +373,10 @@ test("T21.1 the d-pad reaches the last row of a page with cards that can't take 
   const page = await app("rows.html");
   const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
   const read = (expression: string) => cdp.evaluateIn(page.target, expression);
-  // Down from nothing: the first link along the top, then each row in turn,
-  // past the picture that has nothing to press.
+  // Down from nothing: the banner, the biggest thing in view, then each row
+  // in turn.
   await page.press("ArrowDown");
-  assert.equal(await pick(), "home", "the first press lands on the top left");
+  assert.equal(await pick(), "hero", "the first press lands on the banner");
   const rows: string[] = [];
   for (let tries = 0; tries < 25 && !(await pick()).startsWith("10-"); tries++) {
     await page.press("ArrowDown");
@@ -388,7 +386,8 @@ test("T21.1 the d-pad reaches the last row of a page with cards that can't take 
   }
   const reached = [...new Set(rows.map((r) => r.split("-")[0]))];
   assert.deepEqual(reached, ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], `down goes row by row, loading the rest: ${rows.join(" ")}`);
-  assert.equal(await pick(), "10-1", "and lands on the card under the one before");
+  const column = `10-${rows[0].split("-")[1]}`;
+  assert.equal(await pick(), column, "and lands on the card under the one before, in the first row's column");
   const last = await page.until((s) => ringAround(s), "the ring is around the last row's card");
   assert.ok(last.box!.top >= 0 && last.box!.bottom <= (await read("innerHeight")), "it's in sight");
   // Nothing further down: the page scrolls on, and the focus stays.
@@ -396,7 +395,7 @@ test("T21.1 the d-pad reaches the last row of a page with cards that can't take 
   await page.press("ArrowDown");
   for (let tries = 0; tries < 20 && (await read("scrollY")) === before; tries++) await sleep(50);
   assert.ok(((await read("scrollY")) as number) > before, "the page scrolled down to what's under the rows");
-  assert.equal(await pick(), "10-1", "with the focus where it was");
+  assert.equal(await pick(), column, "with the focus where it was");
   // Along the last row, past the edge of the screen, and OK presses the card.
   for (let n = 2; n <= 15; n++) await page.press("ArrowRight");
   assert.equal(await pick(), "10-15", "right goes along the row to its end");
@@ -421,7 +420,9 @@ test("T21.1 with its app's hint, the d-pad slides a row by the row's own buttons
     const page = await app("rows.html", REMOTE_PAGE, hints);
     const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
     for (let tries = 0; tries < 6 && !(await pick()).startsWith("2-"); tries++) await page.press("ArrowDown");
-    assert.equal(await pick(), "2-1", "down reaches the slider");
+    assert.ok((await pick()).startsWith("2-"), "down reaches the slider");
+    for (let tries = 0; tries < 6 && (await pick()) !== "2-1"; tries++) await page.press("ArrowLeft");
+    assert.equal(await pick(), "2-1", "and left goes back along it to its first card");
     for (let n = 2; n <= 6; n++) {
       const was = await pick();
       await page.press("ArrowRight");
@@ -439,15 +440,51 @@ test("T21.1 with its app's hint, the d-pad slides a row by the row's own buttons
 test("T21.1 a card's link and a button over the same place: the d-pad lands on the link, and on the button when the link is hidden", async () => {
   const page = await app("overlay.html");
   await page.press("ArrowRight");
-  await page.until((s) => s.focused === "link-1" && ringAround(s), "the first card's link");
-  await page.press("ArrowRight");
-  await page.until((s) => s.focused === "link-2", "the second's");
-  await page.press("ArrowRight");
-  await page.until((s) => s.focused === "button-3", "the third's button, since its link is hidden text");
+  await page.until((s) => s.focused === "button-3" && ringAround(s), "the first press: the card nearest the middle, by its button, since its link is hidden text");
   await page.press("ArrowLeft");
+  await page.until((s) => s.focused === "link-2", "the second card's link, over its button");
+  await page.press("ArrowLeft");
+  await page.until((s) => s.focused === "link-1", "the first's");
+  await page.press("ArrowRight");
   await page.until((s) => s.focused === "link-2", "and back");
   await page.press("Enter");
   await page.until((s) => s.page === "next.html?2", "OK opens the title");
+  await cdp.close(page.target);
+});
+
+test("T21.1 with nothing focused, the first press lands on the biggest thing in view; of things as big, the one nearest the middle, then the higher, then the one on the left", async () => {
+  const page = await app("next.html");
+  // Buttons the same size or not, each placed by its middle's way from the
+  // middle of the screen.
+  const draw = (things: [string, number, number, number, number][]) =>
+    cdp.evaluateIn(
+      page.target,
+      `(() => {
+        document.activeElement?.blur?.();
+        document.body.replaceChildren();
+        for (const [id, dx, dy, w, h] of ${JSON.stringify(things)}) {
+          const b = document.createElement("button");
+          b.id = id;
+          b.style.cssText = "position:fixed;margin:0;border:0;width:" + w + "px;height:" + h + "px;left:" + (innerWidth / 2 + dx - w / 2) + "px;top:" + (innerHeight / 2 + dy - h / 2) + "px";
+          document.body.append(b);
+        }
+      })()`,
+    );
+  const corners: [string, number, number, number, number][] = [
+    ["top-right", 300, -200, 300, 200],
+    ["bottom-left", -300, 200, 300, 200],
+    ["top-left", -300, -200, 300, 200],
+    ["bottom-right", 300, 200, 300, 200],
+  ];
+  await draw(corners);
+  await page.press("ArrowRight");
+  await page.until((s) => s.focused === "top-left", "four the same size as far from the middle: the higher, then the one on the left");
+  await draw([...corners, ["middle", 0, 0, 290, 200]]);
+  await page.press("ArrowDown");
+  await page.until((s) => s.focused === "middle", "one about as big in the middle");
+  await draw([...corners, ["middle", 0, 0, 290, 200], ["big", 650, 350, 420, 300]]);
+  await page.press("ArrowUp");
+  await page.until((s) => s.focused === "big", "something bigger wins, wherever it is in view");
   await cdp.close(page.target);
 });
 
@@ -455,9 +492,11 @@ test("T21.1 the d-pad keeps to a page's own scroll area: down its rows as they l
   const page = await app("inner.html");
   const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
   await page.press("ArrowDown");
-  assert.equal(await pick(), "menu-home", "the menu down the side is first");
+  assert.match(await pick(), /^\d-/, "the first press lands on a card, the biggest things in view");
+  for (let tries = 0; tries < 6 && !(await pick()).startsWith("menu-"); tries++) await page.press("ArrowLeft");
+  assert.ok((await pick()).startsWith("menu-"), `left goes across to the menu down the side: ${await pick()}`);
   await page.press("ArrowRight");
-  assert.ok((await pick()).startsWith("1-"), `right goes across to the rows: ${await pick()}`);
+  assert.match(await pick(), /^\d-1$/, "right goes back across to the rows");
   for (let tries = 0; tries < 20 && !(await pick()).startsWith("8-"); tries++) {
     const was = await pick();
     await page.press("ArrowDown");
@@ -473,9 +512,10 @@ test("T21.1 the d-pad keeps to a page's own scroll area: down its rows as they l
 
 test("a shared link's page gets the ring, and Back is left to the screen daemon, which closes it (ADR-050, Q164)", async () => {
   const page = await app("desktop.html", SHARED_PAGE);
-  for (let tries = 0; tries < 4 && !(await page.state()).focused.startsWith("tile-"); tries++) await page.press("ArrowDown");
+  await page.press("ArrowDown");
+  await page.until((s) => s.focused === "tile-3", "the first press lands on the tile nearest the middle");
   await page.press("ArrowRight");
-  await page.until((s) => s.focused === "tile-2" && ringAround(s), "the arrows move the focus, with the ring around it");
+  await page.until((s) => s.focused === "tile-4" && ringAround(s), "the arrows move the focus, with the ring around it");
   await cdp.evaluateIn(page.target, `location.href = "next.html?films"`);
   await page.until((s) => s.page === "next.html?films", "a second page, so there's one to go back to");
   await page.press("Escape");

@@ -93,6 +93,13 @@ const LOOK_MS = 100;
 // way.
 const PAGE_SHARE = 0.7;
 
+// With nothing focused, the first press lands on the biggest thing in view.
+// Things within SAME_SIZE of its size count as as big, and of those the one
+// nearest the middle of the screen wins, then the higher, then the one on
+// the left, each to within NEAR_PX.
+const SAME_SIZE = 0.9;
+const NEAR_PX = 24;
+
 // holdMs: the screen daemon's hold on Back that goes home. back: whether a
 // tap on Back goes back a page.
 export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
@@ -580,37 +587,48 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     return kept.filter((s) => s.el.matches("a[href]") || !links.some((l) => over(l.box, s.box)));
   };
 
-  // Where an arrow starts from: what has focus, or with nothing, the
-  // corner of the screen it moves away from, so the first press lands on
-  // the first thing there, top left for down and right.
-  // What has focus but has scrolled out of sight starts from the edge of
-  // the screen in its column or its row, so the next press lands on what's
-  // in sight.
+  // Where an arrow starts from: what has focus. What has focus but has
+  // scrolled out of sight starts from the edge of the screen in its column
+  // or its row, so the next press lands on what's in sight.
   const startBox = (key, from) => {
     const [dx, dy] = DIRS[key];
-    if (from) {
-      const b = onScreen(from);
-      if (b.bottom > 0 && b.top < innerHeight && b.right > 0 && b.left < innerWidth) return b;
-      if (dy > 0) return { left: b.left, right: b.right, top: -2, bottom: -1 };
-      if (dy < 0) return { left: b.left, right: b.right, top: innerHeight + 1, bottom: innerHeight + 2 };
-      if (dx > 0) return { left: -2, right: -1, top: b.top, bottom: b.bottom };
-      return { left: innerWidth + 1, right: innerWidth + 2, top: b.top, bottom: b.bottom };
-    }
-    if (dy > 0) return { left: 0, right: 1, top: -2, bottom: -1 };
-    if (dy < 0) return { left: 0, right: 1, top: innerHeight + 1, bottom: innerHeight + 2 };
-    if (dx > 0) return { left: -2, right: -1, top: 0, bottom: 1 };
-    return { left: innerWidth + 1, right: innerWidth + 2, top: 0, bottom: 1 };
+    const b = onScreen(from);
+    if (b.bottom > 0 && b.top < innerHeight && b.right > 0 && b.left < innerWidth) return b;
+    if (dy > 0) return { left: b.left, right: b.right, top: -2, bottom: -1 };
+    if (dy < 0) return { left: b.left, right: b.right, top: innerHeight + 1, bottom: innerHeight + 2 };
+    if (dx > 0) return { left: -2, right: -1, top: b.top, bottom: b.bottom };
+    return { left: innerWidth + 1, right: innerWidth + 2, top: b.top, bottom: b.bottom };
+  };
+  // With nothing focused, whichever arrow it is: the biggest thing in view,
+  // by how much of it is on the screen, such as a banner's Play over a row
+  // of small cards. Of things about as big, the one nearest the middle of
+  // the screen, then the higher, then the one on the left, so a grid of
+  // cards the same size starts at its middle.
+  const biggest = (h) => {
+    const out = gather("none", h).map(({ el, box }) => ({
+      el,
+      area: (box.right - box.left) * (box.bottom - box.top),
+      off: Math.round(Math.hypot((box.left + box.right) / 2 - innerWidth / 2, (box.top + box.bottom) / 2 - innerHeight / 2) / ${NEAR_PX}),
+      top: Math.round(box.top / ${NEAR_PX}),
+      left: box.left,
+    }));
+    if (!out.length) return out;
+    const most = Math.max(...out.map((c) => c.area));
+    const big = out.filter((c) => c.area >= most * ${SAME_SIZE});
+    big.sort((p, q) => p.off - q.off || p.top - q.top || p.left - q.left);
+    return big;
   };
   // What's that way from what has focus, the best first: the nearest line
   // of things that way, and of those, the one most in line with it. Along a
   // row, only what shares some of its height, unless it's loose.
   const ahead = (key, from, h, loose) => {
+    if (!from) return biggest(h);
     const [dx, dy] = DIRS[key];
     const axis = dx ? "x" : "y";
     const at = startBox(key, from);
     const out = [];
     for (const { el, box } of gather(axis, h)) {
-      if (from && (holds(el, from) || holds(from, el))) continue;
+      if (holds(el, from) || holds(from, el)) continue;
       const gap = dx > 0 ? box.left - at.right : dx < 0 ? at.left - box.right : dy > 0 ? box.top - at.bottom : at.top - box.bottom;
       const mid = (b) => (axis === "x" ? (b.left + b.right) / 2 : (b.top + b.bottom) / 2);
       const length = axis === "x" ? Math.min(box.right - box.left, at.right - at.left) : Math.min(box.bottom - box.top, at.bottom - at.top);
@@ -618,7 +636,7 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
       const [a0, a1, b0, b1] = axis === "x" ? [box.top, box.bottom, at.top, at.bottom] : [box.left, box.right, at.left, at.right];
       const apart = Math.max(0, a0 - b1, b0 - a1);
       const shared = Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
-      if (axis === "x" && from && !loose && shared < Math.min(a1 - a0, b1 - b0) * 0.3) continue;
+      if (axis === "x" && !loose && shared < Math.min(a1 - a0, b1 - b0) * 0.3) continue;
       out.push({ el, box, gap: Math.max(0, gap), apart, off: Math.abs((a0 + a1) / 2 - (b0 + b1) / 2), size: axis === "x" ? box.right - box.left : box.bottom - box.top });
     }
     if (!out.length) return [];

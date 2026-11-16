@@ -135,9 +135,10 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
   if (contract.music) return [...results, ...(await runMusic(app, fixtures, contract))];
 
   const served = new Fixtures(fixtures, contract);
-  // Its page in Playwright's Chromium, driven over DevTools as the TV drives it.
+  // Its page in Playwright's Chromium, driven over DevTools as the TV drives it,
+  // at the TV's standard size, as the builder's checks on the box run.
   const openPage = async (): Promise<CheckPage> => {
-    const page: Page = await (await browser()).newPage();
+    const page: Page = await (await browser()).newPage({ viewport: { width: 1920, height: 1080 } });
     await page.route("**/*", (route) => answerRoute(served, route));
     const session = await page.context().newCDPSession(page);
     // The d-pad's ring and Back, as the screen daemon gives every app's page.
