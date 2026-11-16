@@ -529,6 +529,12 @@ button.who {
   margin: 0;
 }
 
+/* Under the list: a model that can cost extra on a plan says so. */
+.ask-models .ask-model-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .off {
   display: flex;
   align-items: center;

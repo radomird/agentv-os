@@ -29,11 +29,14 @@ export interface Model {
   id: string; // as the API and the CLI take it
   name: string; // as the provider names it
   only?: "plan" | "key"; // offered one way in only
+  // On a plan, it can use extra usage, billed past the plan's own limits
+  // (Q324): the TV says so on its row, and it's never a default.
+  costsExtra?: "plan";
 }
 
 export const MODELS: Record<Provider, Model[]> = {
   claude: [
-    { id: "claude-fable-5-2", name: "Fable 5.2" },
+    { id: "claude-fable-5-2", name: "Fable 5.2", costsExtra: "plan" },
     { id: "claude-opus-5-5", name: "Opus 5.5" },
     { id: "claude-sonnet-5-5", name: "Sonnet 5.5" },
     { id: "claude-haiku-5-5", name: "Haiku 5.5" },
@@ -79,7 +82,9 @@ export const DEFAULT_MODELS: Record<Provider, Record<"plan" | "key", Pair>> = {
 // The models on offer for a provider, by plan or key: with a key, only the
 // ones the relay prices.
 export function modelsFor(provider: Provider, path: "plan" | "key"): Model[] {
-  return MODELS[provider].filter((model) => (!model.only || model.only === path) && (path === "plan" || rateFor(provider, model.id) !== null)).map(({ id, name }) => ({ id, name }));
+  return MODELS[provider]
+    .filter((model) => (!model.only || model.only === path) && (path === "plan" || rateFor(provider, model.id) !== null))
+    .map(({ id, name, costsExtra }) => ({ id, name, ...(costsExtra === path ? { costsExtra } : {}) }));
 }
 
 // Whether a model is one this provider offers by this path.

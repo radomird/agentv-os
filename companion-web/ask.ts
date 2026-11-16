@@ -15,7 +15,7 @@ import { sayBox, type Said } from "./say.ts";
 
 // What the Ask box waits on (daemon/routes/ask.ts).
 export type AskView =
-  | { kind: "build"; n: number; build: string; app: string | null; what: string; state: string; phase: string; name: string | null; recipe: string | null; says: string | null; done: number; steps: number; model?: string | null; models?: { id: string; name: string }[] }
+  | { kind: "build"; n: number; build: string; app: string | null; what: string; state: string; phase: string; name: string | null; recipe: string | null; says: string | null; done: number; steps: number; model?: string | null; models?: { id: string; name: string; costsExtra?: "plan" }[] }
   | { kind: "change"; n: number; app: string; name: string; what: string; recipe: string | null };
 
 // A request that's new to the TV gets its steps checked before it's made.
@@ -112,7 +112,8 @@ function waiting(ask: AskView, failed: (error: unknown) => void, done: () => voi
 
 // The model row on "Make X?": the provider's list, strongest first, with
 // the one it'll be made on ticked, the household's to start with, as on the
-// TV. A tap picks another for this app only.
+// TV. A tap picks another for this app only. One that can cost extra on a
+// plan says so under the list (Q324).
 function models(ask: Extract<AskView, { kind: "build" }>, model: string | undefined, failed: (error: unknown) => void, done: () => void): HTMLElement | null {
   const list = ask.models ?? [];
   if (list.length < 2) return null;
@@ -138,5 +139,6 @@ function models(ask: Extract<AskView, { kind: "build" }>, model: string | undefi
         m.name,
       ),
     ),
+    ...(list.find((m) => m.id === chosen)?.costsExtra === "plan" ? [h("p", { class: "note ask-model-note" }, "Can cost extra on your plan")] : []),
   );
 }

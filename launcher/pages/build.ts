@@ -18,6 +18,7 @@ import type { Ctx, View } from "../main.ts";
 import { logo, placeTile } from "./home.ts";
 import { bar, heading } from "./parts.ts";
 import { askBuilds, askWith, confirmLine } from "./ask.ts";
+import { COSTS_EXTRA, costsExtra } from "./models.ts";
 
 // Kept between visits so the pages draw at once, and asked for again as a
 // build moves on.
@@ -344,7 +345,13 @@ export function buildPage(ctx: Ctx, which: string): View {
   const models = b.state === "confirm" ? (b.models ?? []) : [];
   let model = picked.get(b.build) ?? b.model;
   const modelValue = h("span", { class: "button-value" }, "");
-  const drawModel = () => (modelValue.textContent = models.find((m) => m.id === model)?.name ?? model ?? "");
+  // One that can cost extra on a plan says so under its name (Q324).
+  const modelNote = h("span", { class: "button-note" }, COSTS_EXTRA);
+  const drawModel = () => {
+    const shown = models.find((m) => m.id === model);
+    modelValue.textContent = shown?.name ?? model ?? "";
+    modelRow?.classList.toggle("noted", costsExtra(shown, b.path));
+  };
   const stepModel = (by: number) => {
     if (models.length < 2) return;
     const at = Math.max(0, models.findIndex((m) => m.id === model));
@@ -353,7 +360,7 @@ export function buildPage(ctx: Ctx, which: string): View {
     ctx.sounds.play("move");
     drawModel();
   };
-  const modelRow = models.length > 1 ? h("button", { class: "button build-model", "data-focus": true, "data-action": "model", "data-adjust": "model", onclick: () => stepModel(1) }, h("span", {}, "Model"), modelValue) : null;
+  const modelRow = models.length > 1 ? h("button", { class: "button build-model", "data-focus": true, "data-action": "model", "data-adjust": "model", onclick: () => stepModel(1) }, h("span", {}, "Model"), modelValue, modelNote) : null;
   drawModel();
   const make = () => void act(() => daemon.confirm(b.build, models.length ? model : undefined)).then((ok) => ok && (picked.delete(b.build), ctx.render(`build/${b.build}`)));
   let first: HTMLElement | undefined;

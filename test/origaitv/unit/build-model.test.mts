@@ -56,12 +56,15 @@ test("T19.1 each provider's list is short and strongest first, with its two defa
       assert.ok(ids.includes(build), `${provider} by ${path}: building starts on its list`);
       assert.ok(ids.indexOf(build) <= ids.indexOf(ask), `${provider} by ${path}: building's never weaker than asking's`);
       assert.equal(defaultModel(provider, path, "build"), build);
+      for (const model of [ask, build]) assert.ok(!MODELS[provider].find((m) => m.id === model)?.costsExtra, `${provider} by ${path}: one that can cost extra is never a default (Q324)`);
+      if (path === "key") assert.ok(modelsFor(provider, path).every((m) => !m.costsExtra), `${provider}: nothing costs extra on a plan with a key`);
     }
     for (const model of modelsFor(provider, "key")) assert.ok(rateFor(provider, model.id), `${provider}: ${model.id} is priced`);
   }
   for (const path of ["plan", "key"] as const) assert.deepEqual(DEFAULT_MODELS.claude[path], { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" }, "Q312: Haiku 5.5 for asking, Sonnet 5.5 for building");
   assert.deepEqual(modelsFor("claude", "key").map((m) => m.name), ["Opus 5.5", "Sonnet 5.5", "Haiku 5.5"], "Fable 5.2 isn't priced yet");
   assert.deepEqual(modelsFor("claude", "plan").map((m) => m.name), ["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
+  assert.deepEqual(modelsFor("claude", "plan")[0], { id: "claude-fable-5-2", name: "Fable 5.2", costsExtra: "plan" }, "Q324: on a plan, Fable says it can cost extra");
 });
 
 const asked = (change: Record<string, unknown> = {}) => ({

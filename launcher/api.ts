@@ -187,7 +187,7 @@ export interface KeyState {
     accepted: boolean;
     // The models it asks and builds on, and the list to pick from,
     // strongest first (ADR-103).
-    models?: { ask: string; build: string; list: { id: string; name: string }[] } | null;
+    models?: { ask: string; build: string; list: { id: string; name: string; costsExtra?: "plan" }[] } | null;
   };
 }
 
@@ -570,7 +570,7 @@ export interface BuildView {
   // The model it runs on, and while "Make X?" waits, the ones it could run
   // on instead, strongest first (ADR-103).
   model?: string;
-  models?: { id: string; name: string }[];
+  models?: { id: string; name: string; costsExtra?: "plan" }[];
   state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
   phase: "understand" | "plan" | "build" | "stage-b";
   step?: string;
