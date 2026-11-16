@@ -198,6 +198,8 @@ const DEFAULTS: TvSettings = { sound: { on: true, volume: 0.6 }, reduceMotion: f
 // The launcher's own tile, to all apps (board 19). Its id has no dot, so no
 // app can take it.
 export const APPS_TILE = "apps";
+// Glass's pinned row holds one row of six (D12).
+export const MOST_PINNED = 6;
 
 const TILE_MIN = 5;
 const TILE_DEFAULT = 30;
@@ -956,6 +958,40 @@ export class Home {
   private gridFor(asked: Grid, looks: boolean): Grid {
     if (isMore(asked)) return GRID_MORE;
     return looks ? HOME : GRID;
+  }
+
+  // Glass's pinned row (D12): up to six of the apps on the viewer's home,
+  // in the row's own order. Any app or game on home can be in it. A viewer
+  // who never pinned any has the first six apps in home's order, and the
+  // games keep their own row. An app taken off home leaves the row with it.
+  async pinned(viewer: string, layout: Placed[], apps: { id: string; category: string }[]): Promise<string[]> {
+    const onHome = [...layout]
+      .filter((tile) => tile.id !== APPS_TILE)
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map((tile) => tile.id);
+    const saved = (await readJson<Record<string, unknown>>(join(this.state, "pinned.json"), {}))[viewer];
+    if (!Array.isArray(saved)) {
+      const games = new Set(apps.filter((app) => app.category === "games").map((app) => app.id));
+      return onHome.filter((id) => !games.has(id)).slice(0, MOST_PINNED);
+    }
+    return saved.filter((id, at): id is string => typeof id === "string" && onHome.includes(id) && saved.indexOf(id) === at).slice(0, MOST_PINNED);
+  }
+
+  // Keeps the viewer's pinned row, or says why not: each app on home, once,
+  // six at most.
+  async savePinned(viewer: string, pinned: unknown, layout: Placed[]): Promise<string | null> {
+    if (!Array.isArray(pinned) || pinned.some((id) => typeof id !== "string")) return "the top row is a list of apps";
+    if (pinned.length > MOST_PINNED) return `the top row holds ${MOST_PINNED} apps`;
+    if (new Set(pinned).size !== pinned.length) return "an app is in the top row twice";
+    const onHome = new Set(layout.filter((tile) => tile.id !== APPS_TILE).map((tile) => tile.id));
+    const off = (pinned as string[]).find((id) => !onHome.has(id));
+    if (off) return `${off} isn't on home`;
+    await mkdir(this.state, { recursive: true });
+    const file = join(this.state, "pinned.json");
+    const all = await readJson<Record<string, string[]>>(file, {});
+    all[viewer] = pinned as string[];
+    await writeJson(file, all);
+    return null;
   }
 
   async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult", asked: Grid = GRID): Promise<string | null> {

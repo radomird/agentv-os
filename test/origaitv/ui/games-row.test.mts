@@ -12,6 +12,11 @@
 // - at each size the row is all on the screen, and more games than fit
 //   scroll into sight.
 //
+// In Glass the apps over Games are the pinned row and the list's rows, and
+// Games is the list's first section: right under the pinned row when every
+// app is pinned. Between the pinned row and the list, the page moves for
+// the list's slow time.
+//
 // Terminal's home is as it was, each game a tile of its own with "games" in
 // its corner, and so is home with the switches off.
 
@@ -49,7 +54,7 @@ const ROWS = ["glass", "cinema"] as const;
 type Look = (typeof ROWS)[number] | "terminal";
 // The row, its name and the apps' row, in each look.
 const PARTS = {
-  glass: { games: ".glass-games", name: ".glass-shelf", apps: ".glass-row:not(.glass-games)", all: ".glass-games [data-id], .glass-games ~ .glass-row [data-id]" },
+  glass: { games: ".glass-games", name: ".glass-shelf", apps: ":is(.glass-pinned, .glass-list > .glass-row)", all: ".glass-games [data-id], .glass-games ~ .glass-row [data-id]" },
   cinema: { games: ".cinema-games", name: ".cinema-games-name", apps: ".cinema-row:not(.cinema-games):not(.cinema-posters)", all: ".cinema-games [data-id]" },
 } as const;
 
@@ -77,11 +82,15 @@ async function useTheme(theme: string): Promise<void> {
   assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
 }
 
-// Home with these apps on it, in this order, four a row on the grid.
+// Home with these apps on it, in this order, four a row on the grid. Glass
+// pins the first six that aren't games, as on a home that never pinned.
+const GAMES = new Set(BOX.filter((app) => app.category === "games").map((app) => app.id));
 async function onHome(ids: string[], at = url): Promise<void> {
   const layout = ids.map((id, i) => ({ id, x: i % 4, y: Math.floor(i / 4), size: "s" }));
   const response = await fetch(`${at}/api/layout`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout }) });
   assert.equal(response.status, 200);
+  const pinned = ids.filter((id) => !GAMES.has(id)).slice(0, 6);
+  assert.equal((await fetch(`${at}/api/pinned`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned }) })).status, 200);
 }
 
 // Two apps and two games, mixed, as someone might have pinned them.
@@ -116,12 +125,18 @@ async function tv(size: Size = "standard", open: Open[] = [], at = url): Promise
 const ids = (page: Page, row: string) => page.$$eval(`${row} [data-id]`, (tiles) => tiles.map((tile) => (tile as HTMLElement).dataset.id));
 const focused = (page: Page) => page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.id ?? document.querySelector<HTMLElement>("#page .focused")?.dataset.action ?? "");
 
+// A key, and long enough after for Glass's list to come up or go.
+async function press(page: Page, key: string, look: Look = "cinema"): Promise<void> {
+  await page.keyboard.press(key);
+  await page.waitForTimeout(look === "glass" ? 450 : 150);
+}
+
 // Down from where home starts until the focus is on the Games row.
 async function toGames(page: Page, look: (typeof ROWS)[number]): Promise<void> {
   for (let presses = 0; presses < 4; presses++) {
     if (await page.locator(`${PARTS[look].games} .focused`).count()) return;
     await page.keyboard.press("ArrowDown");
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(look === "glass" ? 450 : 250);
   }
   assert.equal(await page.locator(`${PARTS[look].games} .focused`).count(), 1, "down from the apps lands on Games");
 }
@@ -153,21 +168,34 @@ for (const look of ROWS) {
     await onHome(MIXED);
     const page = await tv();
     try {
+      // Glass's list, Games in it, comes up under the pinned row.
+      if (look === "glass") await press(page, "ArrowDown", look);
       assert.deepEqual(await ids(page, parts.games), [STEAM, SNAKE], "the row holds Steam and the game made here");
       assert.deepEqual(await ids(page, parts.apps), ["origaitv.sample", "origaitv.tube"], "and neither is among the apps");
       assert.equal(await page.locator(parts.name).innerText(), "Games");
       assert.equal(await page.locator(parts.name).count(), 1, "one name, for one row");
-      // Right under the apps: nothing between the two rows but the name.
-      const order = await page.evaluate((p) => {
-        const apps = document.querySelector(p.apps)!;
-        const games = document.querySelector(p.games)!;
-        const name = document.querySelector(p.name)!;
-        const between: string[] = [];
-        for (let el = apps.nextElementSibling; el && el !== games; el = el.nextElementSibling) between.push(el.className);
-        return { between, sameParent: apps.parentElement === games.parentElement, below: games.getBoundingClientRect().top >= apps.getBoundingClientRect().bottom, named: name === games.previousElementSibling || games.contains(name) };
-      }, parts);
-      assert.ok(order.sameParent && order.below && order.named, JSON.stringify(order));
-      assert.ok(order.between.every((name) => /cinema-games-name/.test(name)), `nothing else is between the apps and Games: ${order.between.join(", ")}`);
+      // Right under the apps: nothing between the two rows but the name. In
+      // Glass, both apps are pinned, and Games is the list's first section,
+      // under the pinned row once the list is up.
+      if (look === "glass") {
+        const order = await page.evaluate(() => {
+          const section = document.querySelector(".glass-games")!.closest(".glass-section")!;
+          const pinned = document.querySelector(".glass-pinned")!;
+          return { first: section === document.querySelector(".glass-list")!.firstElementChild, below: section.getBoundingClientRect().top >= pinned.getBoundingClientRect().bottom };
+        });
+        assert.ok(order.first && order.below, JSON.stringify(order));
+      } else {
+        const order = await page.evaluate((p) => {
+          const apps = document.querySelector(p.apps)!;
+          const games = document.querySelector(p.games)!;
+          const name = document.querySelector(p.name)!;
+          const between: string[] = [];
+          for (let el = apps.nextElementSibling; el && el !== games; el = el.nextElementSibling) between.push(el.className);
+          return { between, sameParent: apps.parentElement === games.parentElement, below: games.getBoundingClientRect().top >= apps.getBoundingClientRect().bottom, named: name === games.previousElementSibling || games.contains(name) };
+        }, parts);
+        assert.ok(order.sameParent && order.below && order.named, JSON.stringify(order));
+        assert.ok(order.between.every((name) => /cinema-games-name/.test(name)), `nothing else is between the apps and Games: ${order.between.join(", ")}`);
+      }
       // A game's tile is the same kind of element as an app's, so whatever
       // works on one works on the other.
       const kinds = await page.evaluate((p) => {
@@ -208,9 +236,9 @@ for (const look of ROWS) {
       assert.equal(await focused(page), SNAKE);
       await page.keyboard.press("ArrowLeft");
       assert.equal(await focused(page), STEAM);
-      await page.keyboard.press("ArrowUp");
+      await press(page, "ArrowUp", look);
       assert.equal(await focused(page), "origaitv.sample", "up goes back to the apps");
-      await page.keyboard.press("ArrowDown");
+      await press(page, "ArrowDown", look);
       assert.equal(await focused(page), STEAM);
     } finally {
       await page.close();
@@ -231,9 +259,9 @@ for (const look of ROWS) {
       await page.keyboard.press("i");
       await page.waitForSelector(".details-head");
       assert.match(await page.locator("#page").innerText(), /snake/i);
-      // Back is home, with its Games row.
+      // Back is home, with its Games row: in Glass, in the list under it.
       await page.keyboard.press("Escape");
-      await page.waitForSelector(parts.games);
+      await page.waitForSelector(parts.games, { state: "attached" });
     } finally {
       await page.close();
     }
@@ -242,6 +270,9 @@ for (const look of ROWS) {
   test(`${look}: a game that's running says so, where an open app says it's open`, async () => {
     await useLook(look);
     await onHome(MIXED);
+    // Glass says so on the shelf, for an app on the pinned row: these three
+    // are pinned.
+    if (look === "glass") await fetch(`${url}/api/pinned`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: [STEAM, "origaitv.tube", SNAKE] }) });
     const page = await tv("standard", [
       { id: STEAM, game: true, paused: false },
       { id: "origaitv.tube", game: false, paused: false },
@@ -265,7 +296,7 @@ for (const look of ROWS) {
       assert.equal(await says("origaitv.tube"), "Open");
       assert.equal(await says(SNAKE), "", "a game that isn't open says nothing");
       // The game closes: the tile stops saying so, and the focus is where it was.
-      await toGames(page, look);
+      if (look === "cinema") await toGames(page, look);
       const before = await focused(page);
       await page.evaluate(() => (window as unknown as { origaitvRunning: (json: string) => void }).origaitvRunning("[]"));
       await page.waitForTimeout(400);
@@ -348,6 +379,12 @@ async function focusOn(page: Page, id: string): Promise<void> {
 const APPS = ["origaitv.sample", "origaitv.tube", "someone.radio", "local.mytv", ...EXTRA.map((app) => app.id)];
 const SIX = [STEAM, SNAKE, ...MORE.slice(0, 4).map((game) => game.id)];
 
+// Glass's list up, with the focus on one of its tiles.
+async function inList(page: Page, id: string): Promise<void> {
+  if (await page.locator(".glass-home.rest").count()) await press(page, "ArrowDown", "glass");
+  await focusOn(page, id);
+}
+
 for (const count of [2, 3, 5]) {
   test(`glass: with ${count} apps over six games, up from a game past the last app goes to the last app, not the bar`, async () => {
     await useLook("glass");
@@ -355,16 +392,16 @@ for (const count of [2, 3, 5]) {
     await onHome([...apps, ...SIX]);
     const page = await tv();
     try {
+      // The apps are all pinned, and Games is the list's first row: up from
+      // it takes the list away, onto the pinned app over the game.
       for (const game of SIX) {
         const column = SIX.indexOf(game);
-        await focusOn(page, game);
-        await page.keyboard.press("ArrowUp");
-        await page.waitForTimeout(150);
+        await inList(page, game);
+        await press(page, "ArrowUp", "glass");
         assert.equal(await focused(page), apps[Math.min(column, count - 1)], `up from game ${column + 1} of 6`);
       }
-      // From the apps, up is still the bar.
-      await page.keyboard.press("ArrowUp");
-      await page.waitForTimeout(150);
+      // From the apps, up is the bar.
+      await press(page, "ArrowUp", "glass");
       assert.equal(await page.locator(".bar .focused").count(), 1, "up from the apps is the bar");
     } finally {
       await page.close();
@@ -372,29 +409,26 @@ for (const count of [2, 3, 5]) {
   });
 }
 
-test("glass: with eight apps over four games, down from the first row goes to the second row, then to Games, and up comes back the same way", async () => {
+test("glass: with eight apps over four games, down from the pinned row goes to the list's row of apps, then to Games, and up comes back the same way", async () => {
   await useLook("glass");
   const apps = APPS.slice(0, 8);
-  // Twelve tiles: all a home holds at this size.
   await onHome([...apps, ...SIX.slice(0, 4)]);
   const page = await tv();
   try {
+    // Six apps are pinned; the other two are the list's first row.
     for (const column of [0, 1, 2, 5]) {
+      if (await page.locator(".glass-home.list").count()) await press(page, "Escape", "glass");
       await focusOn(page, apps[column]);
-      await page.keyboard.press("ArrowDown");
-      await page.waitForTimeout(150);
-      assert.equal(await focused(page), apps[6 + Math.min(column, 1)], `down from app ${column + 1} is the second row`);
-      await page.keyboard.press("ArrowDown");
-      await page.waitForTimeout(150);
+      await press(page, "ArrowDown", "glass");
+      assert.equal(await focused(page), apps[6 + Math.min(column, 1)], `down from app ${column + 1} is the list's first row`);
+      await press(page, "ArrowDown", "glass");
       assert.equal(await focused(page), SIX[Math.min(column, 1)], "then Games");
-      await page.keyboard.press("ArrowUp");
-      await page.waitForTimeout(150);
-      assert.equal(await focused(page), apps[6 + Math.min(column, 1)], "and up is the second row again");
+      await press(page, "ArrowUp", "glass");
+      assert.equal(await focused(page), apps[6 + Math.min(column, 1)], "and up is the row of apps again");
     }
     // The last row's tile is in sight once it has the focus.
-    await focusOn(page, apps[2]);
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
+    await press(page, "ArrowDown", "glass");
+    await page.keyboard.press("ArrowRight");
     await page.waitForTimeout(300);
     assert.deepEqual(await offScreen(page, "glass"), []);
   } finally {

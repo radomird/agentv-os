@@ -267,8 +267,10 @@ for (const look of LOOKS) {
   });
 }
 
+// Cinema keeps an Apps page of its own; Glass's Apps is home's list, whose
+// tiles hold as home's do.
 test("T16.1 holding OK on an app in Apps opens its details, and OK anywhere else still acts as the key goes down", async () => {
-  await useLook("glass");
+  await useLook("cinema");
   const page = await tv();
   await go(page, "apps");
   await page.waitForSelector(".apps-page");
@@ -399,8 +401,8 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
     await hand.waitForSelector('.r2-surface[data-action="surface"]');
   };
 
-  // A tile on home, then one in Apps: details.
-  for (const [route, tile] of [["home", `#page [data-id="${APP}"]`], ["apps", `.apps-page [data-id="${APP}"]`]] as const) {
+  // A tile on home, then one in Apps, which in Glass is home's list: details.
+  for (const [route, tile] of [["home", `#page [data-id="${APP}"]`], ["apps", ".glass-home.list .glass-list [data-details]"]] as const) {
     await go(page, route);
     await focusOn(page, tile);
     await says("Hold for details");
@@ -463,6 +465,15 @@ for (const look of LOOKS) {
     await useLook(look);
     const page = await tv();
     const tile = `#page [data-id="origaitv.games"]`;
+    // In Glass the game is in home's list, under the pinned row: Apps
+    // brings it up.
+    const list = async () => {
+      if (look !== "glass") return;
+      await go(page, "apps");
+      await page.waitForSelector(".glass-home.list");
+      await sleep(450);
+    };
+    await list();
     await page.waitForSelector(tile);
     // Nothing is open: details has no Quit.
     await focusOn(page, tile);
@@ -470,6 +481,7 @@ for (const look of LOOKS) {
     await onDetails(page, "origaitv.games");
     assert.equal(await page.locator('.details [data-action="quit"]').count(), 0);
     await page.keyboard.press("Escape");
+    await list();
     await focusOn(page, tile);
 
     // The game is open behind home.

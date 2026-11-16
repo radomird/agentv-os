@@ -59,6 +59,41 @@ test("the home screen gets the apps, who made each, and where they are", async (
   }
 });
 
+test("T20.1 Glass's pinned row: a home that never pinned starts with its first six apps that aren't games, and only six apps on home are kept", async () => {
+  // Never pinned: the apps in the layout's order, without the game.
+  assert.deepEqual((await get("/api/home")).pinned, ["origaitv.sample", "origaitv.tube", "someone.radio", "local.mytv"]);
+  assert.equal(existsSync(join(state, "pinned.json")), false, "nothing is saved until it's changed");
+  try {
+    // A game can be pinned, in any order, and it's kept for this profile.
+    const { status, data } = await send("PUT", "/api/pinned", { pinned: ["origaitv.games", "origaitv.tube"] });
+    assert.equal(status, 200);
+    assert.deepEqual(data.pinned, ["origaitv.games", "origaitv.tube"]);
+    const viewer = (await get("/api/home")).viewer.id;
+    assert.deepEqual(JSON.parse(readFileSync(join(state, "pinned.json"), "utf8"))[viewer], ["origaitv.games", "origaitv.tube"]);
+    // Turned down: seven, one twice, one not on home, or not a list.
+    for (const [pinned, why] of [
+      [["origaitv.sample", "origaitv.tube", "someone.radio", "local.mytv", "origaitv.games", "origaitv.sample", "origaitv.tube"], /holds 6/],
+      [["origaitv.tube", "origaitv.tube"], /twice|once/],
+      [["origaitv.nothing"], /isn't on home/],
+      ["origaitv.tube", /list/],
+    ] as const) {
+      const turned = await send("PUT", "/api/pinned", { pinned });
+      assert.equal(turned.status, 400, JSON.stringify(pinned));
+      assert.match(turned.data.error, why);
+    }
+    assert.deepEqual((await get("/api/home")).pinned, ["origaitv.games", "origaitv.tube"]);
+    // An app taken off home leaves the pinned row, and is back on it if it
+    // comes back to home.
+    const before = (await get("/api/home")).layout;
+    assert.equal((await send("PUT", "/api/layout", { layout: before.filter((tile: any) => tile.id !== "origaitv.games") })).status, 200);
+    assert.deepEqual((await get("/api/home")).pinned, ["origaitv.tube"]);
+    assert.equal((await send("PUT", "/api/layout", { layout: before })).status, 200);
+    assert.deepEqual((await get("/api/home")).pinned, ["origaitv.games", "origaitv.tube"]);
+  } finally {
+    rmSync(join(state, "pinned.json"), { force: true });
+  }
+});
+
 test("a layout is kept only when the grid can draw it", async () => {
   const good = [{ id: "origaitv.sample", x: 0, y: 0, size: "l" }, { id: "origaitv.tube", x: 2, y: 0, size: "s" }];
   assert.equal((await send("PUT", "/api/layout", { layout: good })).status, 200);
