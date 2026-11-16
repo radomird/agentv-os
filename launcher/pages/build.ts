@@ -24,6 +24,11 @@ import { askBuilds, askWith, confirmLine } from "./ask.ts";
 let state: BuildsState | null = null;
 // Each build's state when last heard, so a move is told once.
 const heard = new Map<string, string>();
+// The model picked on "Make X?", for each build, until it's made.
+const picked = new Map<string, string>();
+// Each build's state as its page last drew it: a page drawn again keeps the
+// focus where it was, but one that moved on to "Make X?" starts on Make it.
+const drawn = new Map<string, string>();
 
 export function builds(): BuildView[] {
   return state?.builds ?? [];
@@ -322,6 +327,26 @@ export function buildPage(ctx: Ctx, which: string): View {
     h("button", { class: `button${primary ? " primary" : ""}`, "data-focus": true, "data-action": action, onclick }, label);
   const note = (text: string) => h("p", { class: "panel-note" }, text);
 
+  // "Make X?" picks the model for this build, the household's to start
+  // with: left and right go through the provider's list, strongest first
+  // (ADR-103). A list of one has nothing to pick.
+  const models = b.state === "confirm" ? (b.models ?? []) : [];
+  let model = picked.get(b.build) ?? b.model ?? models[0]?.id;
+  const modelValue = h("span", { class: "button-value" }, "");
+  const drawModel = () => (modelValue.textContent = models.find((m) => m.id === model)?.name ?? model ?? "");
+  const stepModel = (by: number) => {
+    if (models.length < 2) return;
+    const at = Math.max(0, models.findIndex((m) => m.id === model));
+    model = models[(at + by + models.length) % models.length].id;
+    picked.set(b.build, model);
+    ctx.sounds.play("move");
+    drawModel();
+  };
+  const modelRow = models.length > 1 ? h("button", { class: "button build-model", "data-focus": true, "data-action": "model", "data-adjust": "model", onclick: () => stepModel(1) }, h("span", {}, "Model"), modelValue) : null;
+  drawModel();
+  const make = () => void act(() => daemon.confirm(b.build, models.length ? model : undefined)).then((ok) => ok && (picked.delete(b.build), ctx.render(`build/${b.build}`)));
+  let first: HTMLElement | undefined;
+
   let title: string;
   let body: (HTMLElement | null)[] = [];
   let buttons: HTMLElement[] = [];
@@ -366,8 +391,9 @@ export function buildPage(ctx: Ctx, which: string): View {
         // ok first (ADR-046), in one line.
         title = `Make ${u.name}?`;
         const cost = b.path === "key" && b.cost ? ` · about ${money(b.cost.low)} to ${money(b.cost.high)}` : "";
-        body = [note(`${confirmLine(u.recipe)}${cost}`), u.address ? h("div", { class: "check-rows" }, row(true, "Site", u.address, true)) : null, b.steps.length ? steps(b) : null];
-        buttons = [button("Make it", "confirm", () => void act(() => daemon.confirm(b.build)).then((ok) => ok && ctx.render(`build/${b.build}`)), true), button("Not this", "forget", () => void forget())];
+        body = [note(`${confirmLine(u.recipe)}${cost}`), u.address ? h("div", { class: "check-rows" }, row(true, "Site", u.address, true)) : null, b.steps.length ? steps(b) : null, modelRow];
+        buttons = [button("Make it", "confirm", make, true), button("Not this", "forget", () => void forget())];
+        first = buttons[0];
         break;
       }
       title = "Is this what you meant?";
@@ -384,8 +410,10 @@ export function buildPage(ctx: Ctx, which: string): View {
           b.minutes ? row(true, "Time", `About ${b.minutes} minutes`) : null,
         ),
         note("Made in the background. You approve it before it's on home."),
+        modelRow,
       ];
-      buttons = [button("Make it", "confirm", () => void act(() => daemon.confirm(b.build)).then((ok) => ok && ctx.render(`build/${b.build}`)), true), button("Not this", "forget", () => void forget())];
+      buttons = [button("Make it", "confirm", make, true), button("Not this", "forget", () => void forget())];
+      first = buttons[0];
       break;
     }
     case "plan": {
@@ -488,9 +516,26 @@ export function buildPage(ctx: Ctx, which: string): View {
     h("div", { class: "page profile build-page", "data-state": b.state }, ...heading(askBuilds() && b.state === "confirm" ? `origaitv make "${b.sentence}"` : `tv app build ${b.id.replace(/^local\./, "")}`, title), ...body.filter((x): x is HTMLElement => x !== null), buttons.length ? h("div", { class: "check-actions" }, ...buttons) : null),
     bar(ctx, "apps"),
   );
+  const moved = drawn.get(b.build) !== b.state;
+  drawn.set(b.build, b.state);
+  // Drawn again over the page it was, the focus stays where it was. Moved
+  // on to a question, it starts on its answer, once the page is in.
+  if (moved && first) {
+    const start = first;
+    queueMicrotask(() => {
+      // Not from under a PIN pad or a notice, which have the keys.
+      const on = ctx.focus.get();
+      if (start.isConnected && on !== start && (!on || el.contains(on))) ctx.focus.set(start, false);
+    });
+  }
   return {
     el,
+    first,
     act(action) {
+      if ((action === "left" || action === "right") && modelRow && ctx.focus.get() === modelRow) {
+        stepModel(action === "right" ? 1 : -1);
+        return true;
+      }
       // Delete puts a failed build away, as its tile says.
       if (action === "remove" && b.state === "failed") {
         void (b.phase === "stage-b" ? removeBuilt(ctx, b.id, name) : forget());

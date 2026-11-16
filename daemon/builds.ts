@@ -28,6 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BuildStatus, Understood } from "../builder/build.ts";
 import { AI_NAMES, plainReason } from "../builder/reasons.ts";
+import { type Model, modelsFor, offered } from "../builder/models.ts";
 import { loadRecipes, signedInPage, stepLabel, type Kind, type Plan, type Recipe } from "../builder/recipe.ts";
 
 export type Provider = "claude" | "chatgpt" | "gemini" | "grok" | "muse";
@@ -49,6 +50,10 @@ export interface BuildView {
   // The AI it runs on, and whether on a plan or a key.
   provider: Provider;
   path: "plan" | "key";
+  // The model it runs on, when one was picked (ADR-103), and while it waits
+  // for "Make X?", the ones it could run on instead.
+  model?: string;
+  models?: Model[];
   state: BuildStatus["state"] | "starting";
   phase: BuildStatus["phase"];
   step?: string;
@@ -112,12 +117,26 @@ interface Asked {
   sentence: string;
   provider: Provider;
   path: "plan" | "key";
+  model?: string;
   from?: string;
   change?: string;
   at: string;
 }
 
 const SENTENCE_MAX = 300;
+
+// The household's AI for a build: its provider, plan or key, and the model
+// it builds on, unless the CLI's own is to be used.
+export interface BuildAi {
+  provider: Provider;
+  path: "plan" | "key";
+  model?: string;
+}
+
+// A model the build keeps, only when it's on the provider's list.
+function modelOf(ai: BuildAi): { model?: string } {
+  return ai.model && offered(ai.provider, ai.path, ai.model) ? { model: ai.model } : {};
+}
 
 // What the daemon says when an adult asks for something a build can't do.
 const NO_APP = "Couldn't find that app";
@@ -307,6 +326,8 @@ export class Builds {
         name: mine?.understood?.name ?? mine?.plan?.name,
         provider: asked.provider,
         path: asked.path,
+        ...(asked.model ? { model: asked.model } : {}),
+        ...(!refused && !starting && mine?.state === "confirm" ? { models: modelsFor(asked.provider, asked.path) } : {}),
         state: refused ? "failed" : starting ? "starting" : (mine?.state ?? "starting"),
         phase: mine?.phase ?? "understand",
         step: mine?.step,
@@ -455,6 +476,7 @@ export class Builds {
       recipe: null,
       provider: asked.provider,
       path: asked.path,
+      ...(asked.model ? { model: asked.model } : {}),
       safeguards: settings.safeguards,
       ...(asked.path === "key" ? { cap: settings.cap } : {}),
       ...(asked.from ? { from: asked.from } : {}),
@@ -467,26 +489,34 @@ export class Builds {
     return asked.some((a) => a.id === id) || installed.includes(id) || existsSync(join(this.o.builds, id));
   }
 
-  // A sentence, for a new app: the agent says what it understood first.
-  async ask(sentence: unknown, ai: { provider: Provider; path: "plan" | "key" }, installed: string[] = []): Promise<{ build?: BuildView; error?: string }> {
+  // A sentence, for a new app: the agent says what it understood first, on
+  // the household's model for building.
+  async ask(sentence: unknown, ai: BuildAi, installed: string[] = []): Promise<{ build?: BuildView; error?: string }> {
     const words = typeof sentence === "string" ? sentence.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
     if (!words || words.length > SENTENCE_MAX) return { error: TOO_LONG };
     if (await this.running()) return { error: ONE_AT_A_TIME };
     const all = await this.asked();
     const at = this.o.now().toISOString();
-    const asked: Asked = { build: `b${this.o.now().getTime()}`, id: idFor(words, (id) => this.taken(id, all, installed)), version: "1.0.0", sentence: words, provider: ai.provider, path: ai.path, at };
+    const asked: Asked = { build: `b${this.o.now().getTime()}`, id: idFor(words, (id) => this.taken(id, all, installed)), version: "1.0.0", sentence: words, provider: ai.provider, path: ai.path, ...modelOf(ai), at };
     await this.writeJson(this.askedPath, [...all, asked]);
     await this.start(asked, "understand");
     return { build: (await this.find(asked.build))! };
   }
 
   // An adult's yes to what the agent understood: the recipe's build, or with
-  // no recipe a plan for an adult first (ADR-046).
-  async confirm(build: unknown): Promise<{ build?: BuildView; error?: string }> {
+  // no recipe a plan for an adult first (ADR-046). A model picked on "Make
+  // X?" is this build's from here on, through a retry too (ADR-103).
+  async confirm(build: unknown, model?: unknown): Promise<{ build?: BuildView; error?: string }> {
     const view = await this.find(build);
-    const asked = (await this.asked()).find((a) => a.build === view?.build);
+    const all = await this.asked();
+    const asked = all.find((a) => a.build === view?.build);
     if (!view || !asked) return { error: NO_APP };
     if (view.state !== "confirm" || !view.understood) return { error: "That app isn't waiting to be confirmed" };
+    if (model !== undefined && model !== asked.model) {
+      if (!offered(asked.provider, asked.path, model)) return { error: "Pick a model from the list" };
+      asked.model = model;
+      await this.writeJson(this.askedPath, all);
+    }
     const u = view.understood;
     if (u.recipe === null) await this.start(asked, "plan", { name: u.name });
     else await this.start(asked, "build", { recipe: u.recipe, name: u.name });
@@ -549,7 +579,9 @@ export class Builds {
   }
 
   // An app's next version: a change to it, or the same again from its recipe.
-  async next(id: unknown, change: unknown, ai: { provider: Provider; path: "plan" | "key" }): Promise<{ build?: BuildView; error?: string }> {
+  // It keeps the model the version it starts from was made on, while that's
+  // still one the household's AI offers (ADR-103).
+  async next(id: unknown, change: unknown, ai: BuildAi): Promise<{ build?: BuildView; error?: string }> {
     if (typeof id !== "string" || !ID.test(id)) return { error: "which app" };
     if (await this.running()) return { error: ONE_AT_A_TIME };
     const all = await this.asked();
@@ -560,6 +592,8 @@ export class Builds {
     if (!first || !current) return { error: NOT_YOURS };
     const words = typeof change === "string" ? change.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
     if (change !== undefined && (!words || words.length > SENTENCE_MAX)) return { error: TOO_LONG };
+    const before = mine.find((a) => a.build === current.build);
+    const kept = before?.model && before.provider === ai.provider && offered(ai.provider, ai.path, before.model) ? { model: before.model } : modelOf(ai);
     const asked: Asked = {
       build: `b${this.o.now().getTime()}`,
       id,
@@ -567,6 +601,7 @@ export class Builds {
       sentence: first.sentence,
       provider: ai.provider,
       path: ai.path,
+      ...kept,
       ...(words ? { from: current.version, change: words } : {}),
       at: this.o.now().toISOString(),
     };

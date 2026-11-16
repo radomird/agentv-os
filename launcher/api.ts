@@ -524,7 +524,7 @@ export const daemon = {
   // The builder (ADR-043 to ADR-046): an adult's asks, and how each goes.
   builds: () => call<BuildsState>("GET", "/api/builds"),
   ask: (sentence: string) => call<{ build: BuildView }>("POST", "/api/builds", { sentence }).then((r) => r.build),
-  confirm: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/confirm`).then((r) => r.build),
+  confirm: (build: string, model?: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/confirm`, model ? { model } : undefined).then((r) => r.build),
   retry: (build: string) => call<{ build: BuildView }>("POST", `/api/builds/${build}/retry`).then((r) => r.build),
   forget: (build: string) => call<{ ok: boolean }>("POST", `/api/builds/${build}/forget`),
   stopBuild: () => call<{ ok: boolean }>("POST", "/api/builds/stop"),
@@ -548,6 +548,10 @@ export interface BuildView {
   name?: string;
   provider: "claude" | "chatgpt" | "gemini" | "grok" | "muse";
   path: "plan" | "key";
+  // The model it runs on, and while "Make X?" waits, the ones it could run
+  // on instead, strongest first (ADR-103).
+  model?: string;
+  models?: { id: string; name: string }[];
   state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
   phase: "understand" | "plan" | "build" | "stage-b";
   step?: string;

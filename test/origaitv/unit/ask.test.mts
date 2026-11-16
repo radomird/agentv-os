@@ -147,7 +147,7 @@ test("the Ask box's routes answer only their own paths, and not at all with the 
 test("T11.2 GET says what the Ask box is waiting on: a make the agent read, with its recipe, or nothing for a child", async () => {
   const { kit } = fakeKit({ outcome: { kind: "build", build: "b1", what: "a game like tetris", say: "" } });
   const { data } = await call(kit, "GET", "/api/phone/ask");
-  assert.deepEqual(data, { ok: true, ask: { kind: "build", n: 7, build: "b1", app: null, what: "a game like tetris", state: "confirm", phase: "understand", name: "Blocks", recipe: "game", says: "a falling-block game", done: 0, steps: 0 } });
+  assert.deepEqual(data, { ok: true, ask: { kind: "build", n: 7, build: "b1", app: null, what: "a game like tetris", state: "confirm", phase: "understand", name: "Blocks", recipe: "game", says: "a falling-block game", done: 0, steps: 0, model: null } });
   assert.deepEqual((await call(fakeKit({ adult: false, outcome: { kind: "build", build: "b1", what: "x", say: "" } }).kit, "GET", "/api/ask")).data, { ok: true, ask: null });
   assert.deepEqual((await call(fakeKit().kit, "GET", "/api/ask")).data, { ok: true, ask: null });
 });

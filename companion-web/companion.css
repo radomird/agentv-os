@@ -496,6 +496,20 @@ button.who {
   color: var(--dark-foreground);
 }
 
+/* "Make X?"'s model row: the provider's list, one ticked (ADR-103). */
+.ask-models {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.ask-models .r2-label {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .off {
   display: flex;
   align-items: center;

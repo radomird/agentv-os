@@ -34,7 +34,8 @@ import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
-import { Builds, type Provider as BuildProvider } from "./builds.ts";
+import { type BuildAi, Builds } from "./builds.ts";
+import { defaultModel } from "../builder/models.ts";
 import { Asks } from "./asks.ts";
 import { exportRefusal, packageFiles, zipFolder } from "./export.ts";
 import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal, type SignIn } from "./github.ts";
@@ -834,15 +835,15 @@ export class Daemon {
   }
 
   // The AI a build runs on: picked, its terms accepted, and a key there for
-  // a key's path.
-  private async builderAi(): Promise<{ ai?: { provider: BuildProvider; path: "plan" | "key" }; error?: string }> {
+  // a key's path, with the household's model for building (ADR-103).
+  private async builderAi(): Promise<{ ai?: BuildAi; error?: string }> {
     const ai = await this.ai.read();
     if (!ai.provider || !ai.path || !ai.accepted) return { error: "Set up AI in Settings first" };
     if (ai.path === "key") {
       const key = this.key.status();
       if (!key.set || key.provider !== ai.provider) return { error: "Add an API key in Settings first" };
     }
-    return { ai: { provider: ai.provider, path: ai.path } };
+    return { ai: { provider: ai.provider, path: ai.path, model: defaultModel(ai.provider, ai.path, "build") } };
   }
 
   // The TV's asks of the builder, and the phone's when phone is given. True
@@ -961,7 +962,9 @@ export class Daemon {
       return true;
     }
     if (method === "POST" && build && (action === "confirm" || action === "retry")) {
-      answer(action === "confirm" ? await this.builds.confirm(build) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
+      // "Make X?" can pick another model for this build (ADR-103).
+      const model = action === "confirm" ? ((await this.body(request)) as { model?: unknown } | undefined)?.model : undefined;
+      answer(action === "confirm" ? await this.builds.confirm(build, model) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
       return true;
     }
     this.json(response, 404, { ok: false, error: "not found" });
@@ -2042,8 +2045,8 @@ export class Daemon {
       adult: async () => (await this.profiles.active()).role === "adult",
       said: () => this.say.current,
       find: (build) => this.builds.find(build),
-      confirm: async (build) => {
-        const done = await this.builds.confirm(build);
+      confirm: async (build, model) => {
+        const done = await this.builds.confirm(build, model);
         void this.watchBuilds();
         return done;
       },
