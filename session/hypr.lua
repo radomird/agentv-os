@@ -224,9 +224,12 @@ hl.on("hyprland.start", function()
   hl.exec_cmd("origaitv-boot-splash tv")
   -- The screen daemon, the virtual input device and the toast overlay run
   -- as user units under origaitv-tv.target, and need this session's display.
+  -- Restarted, not started: after a crash Hyprland starts again in the same
+  -- session (bin/origaitv-hyprland), and the units still running had the
+  -- Hyprland that crashed.
   hl.exec_cmd(
     "systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
       .. " && dbus-update-activation-environment --systemd WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
-      .. " ; systemctl --user start origaitv-tv.target"
+      .. " ; systemctl --user restart origaitv-tv.target"
   )
 end)
