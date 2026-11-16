@@ -746,10 +746,16 @@ body.with-backdrop {
 
 /* New this week: posters with rounded corners, the app under each. The
    card has room around the poster and its two lines, so the focus ring sits
-   clear of them, and the negative margin keeps the posters where they were. */
+   clear of them, and the negative margin keeps the posters where they were.
+   The row runs to the screen's edges and scrolls by itself, as home's rows
+   do, with room above and below it for the lift and the ring. A poster that
+   scrolls in stops at the safe area, and the page never slides sideways. */
 .poster-row {
+  --reach: 40px;
   gap: 44px;
-  overflow: visible;
+  margin: calc(96px - var(--reach)) calc(-1 * var(--safe-x)) calc(-1 * var(--reach));
+  padding: var(--reach) var(--safe-x);
+  scrollbar-width: none;
 }
 
 .poster-card {
@@ -761,6 +767,7 @@ body.with-backdrop {
   border-radius: calc(16px + var(--room));
   background: none;
   width: calc(232px + 2 * var(--room));
+  scroll-margin: 0 calc(var(--safe-x) - var(--room));
 }
 
 .poster-image {

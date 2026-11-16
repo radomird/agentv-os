@@ -15,7 +15,7 @@
 
 import { h } from "../dom.ts";
 import { features } from "../features.ts";
-import { GRID, GRID_MORE, type Grid } from "../layout.ts";
+import { GRID, GRID_MORE, HOME, type Grid } from "../layout.ts";
 
 export const LOOKS = ["terminal", "glass", "cinema"] as const;
 export type LookId = (typeof LOOKS)[number];
@@ -150,10 +150,19 @@ export async function previewColours(): Promise<void> {
   }
 }
 
-// The grid home's layout is on: Terminal at more on screen has a 5 × 4 one of
-// its own (D6), and everything else the profile's 4 × 3 one.
+// The grid Terminal draws home on: at more on screen a 5 × 4 one with a
+// layout of its own (D6), and otherwise the first 4 × 3 of the profile's.
 export function currentGrid(): Grid {
   return state.look === "terminal" && state.size === "more" ? GRID_MORE : GRID;
+}
+
+// The grid home's layout is kept on. With the looks on there's no tile limit
+// (ADR-103): Terminal's four columns and rows that grow, which Glass and
+// Cinema draw as rows and Terminal's grid shows the start of. Terminal at
+// more on screen keeps its own 5 × 4, and phase 1's home its 4 × 3.
+export function homeGrid(): Grid {
+  if (currentGrid() === GRID_MORE) return GRID_MORE;
+  return state.look ? HOME : GRID;
 }
 
 // Its name, as the daemon's /api/home and /api/layout take it, or null for

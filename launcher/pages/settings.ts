@@ -27,7 +27,8 @@ import { loadPhones, phoneRows, phones } from "./phones.ts";
 import { loadNetwork, networkPanel, networkRows, watchNetwork } from "./wifi.ts";
 import { profileRows } from "./profiles.ts";
 import { goBackPanel, notesPanel, updatesPanel, updatesStart, updatesValue } from "./updates.ts";
-import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageRows } from "./usage.ts";
+import { BUILD_CAPS, changeBuilder, loadPlanUsage, MONTH_CAPS, planUsageShown, stepCap, usagePanel, usageRows } from "./usage.ts";
+import { modelRows, modelUse, stepModel } from "./models.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryValue, loadCountry } from "./country.ts";
 import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
@@ -557,7 +558,7 @@ export function settings(ctx: Ctx, open?: string): View {
           {
             key: "ai",
             label: "AI",
-            rows: () => [row("your-ai", "Your AI", aiValue(), () => openPage("your-ai")), ...usageRows(ctx, () => openPage("usage"))],
+            rows: () => [row("your-ai", "Your AI", aiValue(), () => openPage("your-ai")), ...modelRows(ctx), ...usageRows(ctx, () => openPage("usage"))],
           },
         ]
       : []),
@@ -719,6 +720,8 @@ export function settings(ctx: Ctx, open?: string): View {
   follow(() => controllerRows().map((one) => one.textContent), loadControllers(), "phones");
   follow(() => keyState, daemon.key().then((found) => setKeyState({ set: found.set, provider: found.provider, plans: found.plans, ai: found.ai })), "ai", "your-ai");
   follow(() => buildsState(), loadBuilds(ctx), "ai", "usage", "theme");
+  // How much of a plan is used (ADR-103).
+  if (adult) follow(() => planUsageShown(), loadPlanUsage(), "ai", "usage");
   // How the TV is online, now and when the daemon has news of it.
   follow(() => networkRows(() => {}).map((one) => one.textContent), loadNetwork(), "network");
   watchNetwork(() => refresh("network"));
@@ -882,6 +885,12 @@ export function settings(ctx: Ctx, open?: string): View {
         const by = action === "right" ? 1 : -1;
         const cap = current.dataset.adjust === "cap-build" ? { ...caps, build: stepCap(BUILD_CAPS, caps.build, by) } : { ...caps, month: stepCap(MONTH_CAPS, caps.month, by) };
         void changeBuilder(ctx, { cap }, current.dataset.adjust);
+        return true;
+      }
+      // AI's two models (ADR-103).
+      const use = modelUse(current?.dataset.adjust);
+      if (use && (action === "left" || action === "right")) {
+        void stepModel(ctx, use, action === "right" ? 1 : -1);
         return true;
       }
       if (current?.dataset.adjust === "volume" && (action === "left" || action === "right")) {
