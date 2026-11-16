@@ -1,0 +1,18 @@
+# The driver for Xbox controllers over Bluetooth, xpadneo, installed as root
+# by bin/origaitv-xbox-driver from Settings, Phones and controllers
+# (ADR-103). origaitv-setup-apps starts it in turn with the apps it installs,
+# and waits for it. It runs pacman and DKMS, and writes /etc/modprobe.d and
+# /etc/modules-load.d, so it isn't kept to a few folders the way
+# origaitv-setup-apps.service is.
+
+[Unit]
+Description=OrigaiTV: the Xbox controller driver
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/origaitv-xbox-driver
+TimeoutStartSec=30min
+RuntimeDirectory=origaitv-app-package
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+Environment=OMARCHY_PATH=/usr/share/omarchy

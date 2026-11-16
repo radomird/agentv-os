@@ -177,9 +177,9 @@ test("a native app with no logo of its own gets the icon its installed package g
   assert.equal((await fetch(`${url}/api/apps/origaitv.games/icon`)).status, 404);
 });
 
-test("opening an app means its home address with setup filled in, or its command, and its name for the TV to say", async () => {
-  assert.deepEqual(await get("/api/apps/origaitv.sample/launch"), { ok: true, runtime: "web", url: "http://127.0.0.1:1/web/", name: "Sample" });
-  assert.deepEqual(await get("/api/apps/origaitv.games/launch"), { ok: true, runtime: "native", exec: ["steam", "-gamepadui"], name: "Games" });
+test("opening an app means its home address with setup filled in, or its command, and its name for the TV to say, with its category, which says whether it's a game", async () => {
+  assert.deepEqual(await get("/api/apps/origaitv.sample/launch"), { ok: true, runtime: "web", url: "http://127.0.0.1:1/web/", name: "Sample", category: "media" });
+  assert.deepEqual(await get("/api/apps/origaitv.games/launch"), { ok: true, runtime: "native", exec: ["steam", "-gamepadui"], name: "Games", category: "games" });
   // Not set up yet: there's no address to open.
   assert.equal((await fetch(`${url}/api/apps/someone.radio/launch`)).status, 404);
 });

@@ -284,7 +284,7 @@ test("T16.2 with the TV off for a while a web app and a page app that isn't a ga
     close: async (target: string) => void closed.push(target),
   } as unknown as DevTools;
   const web = new StandInApp("web", 300, webCdp);
-  const steam = new StandInApp("steam", 400);
+  const steam = new StandInApp("game", 400);
   let locks = 0;
   let on = true;
   const t = await tv(page, () => on, {
@@ -294,7 +294,7 @@ test("T16.2 with the TV off for a while a web app and a page app that isn't a ga
       return response.ok ? await response.json() : null;
     },
     web: () => web,
-    steam: () => steam,
+    game: () => steam,
     // No PIN on this box, so nothing locks, and the daemon is asked as ever.
     lock: async () => {
       locks++;
@@ -313,7 +313,7 @@ test("T16.2 with the TV off for a while a web app and a page app that isn't a ga
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" }), { ok: true });
   t.hypr.open("0xf", steam.pid, "gamescope");
   await t.screen.idle();
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   await t.screen.home();
   // Notes, from its tile, and then home again: it waits behind home.
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "origaitv.notes" }), { ok: true });

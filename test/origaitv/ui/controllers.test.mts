@@ -208,7 +208,8 @@ for (const look of LOOKS) {
       await page.keyboard.press("Escape");
       await page.waitForSelector('.settings-panel[data-page="phones"]');
       assert.equal(await focused(page), "controllers");
-      assert.match(await panel(page), new RegExp(`Xbox Wireless Controller\\s+${said("Connected")}\\s+${WIRED}\\s+${said("Plugged in")}\\s+${said("Pair a controller")}$`));
+      // Then the Xbox controller driver's row (ADR-103).
+      assert.match(await panel(page), new RegExp(`Xbox Wireless Controller\\s+${said("Connected")}\\s+${WIRED}\\s+${said("Plugged in")}\\s+${said("Pair a controller")}\\s+${said("Xbox controllers")}\\s+${said("Add")}$`));
       assert.equal(await page.locator(".panel .panel-note").count(), 0, "nothing is explained under a row");
       await page.locator(`.panel [data-action="controller-${XBOX.address}"]`).click();
       await page.waitForSelector('.settings-panel[data-page="controllers"]');

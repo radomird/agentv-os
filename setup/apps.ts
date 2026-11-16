@@ -14,6 +14,12 @@
 // goal's own group, every app in it ticked, with the servers under "more".
 // For every other goal it's one card at the start of "more", and one press
 // ticks them all.
+//
+// Every game platform has a group of its own (ADR-103), after the goal's:
+// Steam first, then by name, each with its one line, which says when it
+// needs a mouse and keyboard. For gaming, on a box the box check says runs
+// games, Steam starts ticked. A box that isn't for games is offered the ones
+// that stream their games alone.
 
 import { h } from "../launcher/dom.ts";
 import { glyph } from "../launcher/glyphs.ts";
@@ -49,6 +55,12 @@ function starterNote(app: SetupApp): string {
   return app.description.split(/(?<=\.)\s+/).slice(1).join(" ").replace(/\.$/, "");
 }
 
+// A game's note: what it needs, such as a mouse and keyboard, when its
+// description says, or else its one line.
+export function gameNote(app: { description: string }): string {
+  return starterNote(app as SetupApp) || app.description.replace(/\.$/, "");
+}
+
 // What's in the starter pack, as its card says it: one or two by name, and
 // how many when there are more.
 function packNames(pack: SetupApp[]): string {
@@ -70,12 +82,20 @@ export async function apps(ctx: Ctx): Promise<View> {
   const goal = ctx.info.setup.goal;
   const pack = () => list?.starter ?? [];
   const packed = !!list?.starter?.length;
-  // For Streaming, the starter pack starts ticked.
-  if (ctx.picked === undefined && packed && goal === "streaming") ctx.picked = pack().filter(open).map((app) => app.id);
+  // For Streaming, the starter pack starts ticked, and for gaming, Steam on
+  // a box that runs games.
+  if (ctx.picked === undefined) {
+    const start = [...(packed && goal === "streaming" ? pack().filter(open) : []), ...listedNow().filter((app) => list?.suggested?.includes(app.id) && open(app))].map((app) => app.id);
+    if (start.length) ctx.picked = start;
+  }
   const ticked = new Set<string>(ctx.picked ?? []);
-  const listed = () => [...pack(), ...(list?.for ?? []), ...(list?.more ?? [])];
+  function listedNow(): SetupApp[] {
+    return [...(list?.starter ?? []), ...(list?.for ?? []), ...(list?.games ?? []), ...(list?.more ?? [])];
+  }
+  const listed = () => listedNow();
   const forGoal = h("div", { class: "app-row" });
   const starterRow = h("div", { class: "app-row" });
+  const gamesRow = h("div", { class: "app-row" });
   const more = h("div", { class: "app-row" });
   const note = h("p", { class: "setup-note app-note" });
   // The one way to build from setup: the last tile, shaped like the apps
@@ -88,7 +108,7 @@ export async function apps(ctx: Ctx): Promise<View> {
   );
   const go = h("button", { class: "button primary", "data-focus": true, "data-action": "continue", onclick: () => void next() }, "Continue");
 
-  const card = (app: SetupApp, i: number, starter = false): HTMLElement => {
+  const card = (app: SetupApp, i: number, starter = false, game = false): HTMLElement => {
     const on = app.builtin || app.installed || app.state === "installed" || ticked.has(app.id);
     const mark = app.state === "installing" || app.state === "queued" ? "[>]" : app.state === "failed" ? "[!]" : on ? "[x]" : "[ ]";
     const why = app.builtin
@@ -99,7 +119,9 @@ export async function apps(ctx: Ctx): Promise<View> {
           ? "Couldn't install"
           : starter
             ? starterNote(app)
-            : (NOTES[app.id] ?? app.description);
+            : game
+              ? gameNote(app)
+              : (NOTES[app.id] ?? app.description);
     return h(
       "button",
       { class: `app-pick${on ? " on" : ""}${app.state === "failed" ? " bad" : ""}`, "data-focus": true, "data-app": app.id, onclick: () => toggle(app) },
@@ -132,6 +154,7 @@ export async function apps(ctx: Ctx): Promise<View> {
     forGoal.replaceChildren(...(list?.for ?? []).map((app) => card(app, all.indexOf(app))));
     forGoal.parentElement?.classList.toggle("hidden", !list?.for.length);
     starterRow.replaceChildren(...(own ? pack().map((app) => card(app, all.indexOf(app), true)) : []));
+    gamesRow.replaceChildren(...(list?.games ?? []).map((app) => card(app, all.indexOf(app), false, true)));
     // "Build your own" is the last tile of the grid, whatever the goal.
     more.replaceChildren(...(packed && !own ? [packCard()] : []), ...(list?.more ?? []).map((app) => card(app, all.indexOf(app))), add);
     const wishes = ctx.info.setup.wishes ?? [];
@@ -204,9 +227,17 @@ export async function apps(ctx: Ctx): Promise<View> {
       ),
       go,
     ),
-    h("div", { class: "app-group" }, h("span", { class: "app-head" }, `# for ${goal ? NAMES[goal] : "you"}`), forGoal),
-    ...(packed && goal === "streaming" ? [h("div", { class: "app-group" }, h("span", { class: "app-head" }, "# streaming"), starterRow)] : []),
-    h("div", { class: "app-group" }, h("span", { class: "app-head" }, "# more"), more),
+    // The groups scroll under the headline with the focus once they're
+    // longer than the screen, as every game platform makes them (ADR-103).
+    h(
+      "div",
+      { class: "app-groups", "data-scroll": true },
+      h("div", { class: "app-group" }, h("span", { class: "app-head" }, `# for ${goal ? NAMES[goal] : "you"}`), forGoal),
+      ...(packed && goal === "streaming" ? [h("div", { class: "app-group" }, h("span", { class: "app-head" }, "# streaming"), starterRow)] : []),
+      // Drawn when the index has games for this TV.
+      ...(list?.games?.length ? [h("div", { class: "app-group app-games" }, h("span", { class: "app-head" }, "# games"), gamesRow)] : []),
+      h("div", { class: "app-group" }, h("span", { class: "app-head" }, "# more"), more),
+    ),
     note,
   );
   draw();

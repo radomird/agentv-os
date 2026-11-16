@@ -5,7 +5,9 @@
 # as each installs, and the apps asked for at add your own kept for later.
 # Then origaitv-setup-apps, root's side: it installs each app the daemon left,
 # one after the other, with an official native app's program (ADR-042), says
-# how each went, and leaves out anything that isn't an app id.
+# how each went, and leaves out anything that isn't an app id. It takes each
+# new hand-over as a queue, removes an official app without its program, and
+# installs the Xbox controller driver (ADR-103).
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -84,7 +86,7 @@ STUB
 chmod +x "$ORIGAITV_APP_INSTALL" "$ORIGAITV_APP_PACKAGE" "$SCRATCH/bin/pacman"
 printf '%s' '{"apps":["origaitv.game","origaitv.broken","origaitv.shell","someone.game","origaitv.web"]}' >"$ORIGAITV_SETUP_APPS_DROP"
 PATH="$SCRATCH/bin:$PATH" run || fail "it goes through apps with programs" "$(cat "$SCRATCH/out")"
-[[ $(cat "$SCRATCH/programs") == $'origaitv.game\norigaitv.broken' ]] || fail "only an official native app's missing program is installed" "$(cat "$SCRATCH/programs")"
+[[ $(cat "$SCRATCH/programs") == $'origaitv.game\norigaitv.broken\norigaitv.shell' ]] || fail "every official native app goes through its program's step, which installs only what's missing" "$(cat "$SCRATCH/programs")"
 jq -e '.apps["origaitv.game"].state == "installed" and .apps["origaitv.shell"].state == "installed" and .apps["someone.game"].state == "installed" and .apps["origaitv.web"].state == "installed"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "an app is installed once its program is" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
 jq -e '.apps["origaitv.broken"] | .state == "failed" and .error == "broken-game didn'"'"'t install"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "and failed, with why, when its program didn't install" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
 grep -qx "TimeoutStartSec=90min" "$ROOT/system/origaitv-setup-apps.service" || fail "origaitv-setup-apps.service waits long enough for a program like Steam"
@@ -95,3 +97,69 @@ for word in ProtectSystem=strict NoNewPrivileges=yes StateDirectory=origaitv/app
 done
 grep -qx "PathExists=/var/lib/origaitv/daemon/apps-drop/install.json" "$ROOT/system/origaitv-setup-apps.path" || fail "origaitv-setup-apps.path watches the daemon's drop"
 pass "origaitv-setup-apps.path starts the installs as root when the daemon leaves the apps picked"
+
+# ADR-103: a hand-over left while one is going is taken once it's done, as a
+# queue. The installer stand-in leaves the next one as the daemon would.
+cat >"$ORIGAITV_APP_INSTALL" <<'STUB'
+#!/bin/bash
+echo "$1" >>"${0%/*}/queued"
+if [[ $1 == origaitv.first ]]; then
+  printf '%s' '{"apps":["origaitv.second"]}' >"$ORIGAITV_SETUP_APPS_DROP"
+fi
+echo "Installed $1 1.0.0 ($1)."
+STUB
+chmod +x "$ORIGAITV_APP_INSTALL"
+printf '%s' '{"apps":["origaitv.first"]}' >"$ORIGAITV_SETUP_APPS_DROP"
+run || fail "a queue of hand-overs" "$(cat "$SCRATCH/out")"
+[[ $(cat "$SCRATCH/queued") == $'origaitv.first\norigaitv.second' ]] || fail "the one left while the first installed comes next" "$(cat "$SCRATCH/queued")"
+[[ ! -e $ORIGAITV_SETUP_APPS_DROP ]] || fail "and none is left behind"
+jq -e '.apps["origaitv.first"].state == "installed" and .apps["origaitv.second"].state == "installed"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "both say installed" "$(cat "$SCRATCH/out")"
+pass "ADR-103 apps added while one installs wait their turn, and each gets its own line"
+
+# Removing: only an official app, which goes, and its program stays.
+export ORIGAITV_APP_REMOVE="$SCRATCH/remove"
+cat >"$ORIGAITV_APP_REMOVE" <<'STUB'
+#!/bin/bash
+echo "$1" >>"${0%/*}/removed"
+[[ $1 != origaitv.stuck ]]
+STUB
+chmod +x "$ORIGAITV_APP_REMOVE"
+jq '. + {"origaitv.retro": {tier: "official"}, "origaitv.stuck": {tier: "official"}, "local.blocks": {tier: "local"}}' "$ORIGAITV_APPS/installed.json" >"$SCRATCH/next" && mv "$SCRATCH/next" "$ORIGAITV_APPS/installed.json"
+rm -f "$SCRATCH/programs"
+printf '%s' '{"apps":[],"remove":["origaitv.retro","local.blocks","origaitv.stuck","../x"]}' >"$ORIGAITV_SETUP_APPS_DROP"
+run || fail "a removal" "$(cat "$SCRATCH/out")"
+[[ $(cat "$SCRATCH/removed") == $'origaitv.retro\norigaitv.stuck' ]] || fail "only official apps are removed" "$(cat "$SCRATCH/removed")"
+[[ ! -e $SCRATCH/programs ]] || fail "and no program is touched" "$(cat "$SCRATCH/programs")"
+jq -e '(.apps | has("origaitv.retro") | not) and .apps["origaitv.stuck"].state == "installed" and .apps["origaitv.stuck"].error == "Couldn'"'"'t remove it"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "a removed app's line goes, and one that stayed says so" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
+pass "ADR-103 removing takes an official app off the TV and leaves its program, its games and its saves"
+
+# The Xbox controller driver, in turn with the apps.
+export ORIGAITV_XBOX_DRIVER="$SCRATCH/driver"
+cat >"$ORIGAITV_XBOX_DRIVER" <<'STUB'
+#!/bin/bash
+echo driver >>"${0%/*}/queued"
+mkdir -p "$ORIGAITV_APP_PACKAGE_ERRORS"
+case $(cat "${0%/*}/driver-does") in
+  restart) touch "$ORIGAITV_APP_PACKAGE_ERRORS/xpadneo.restart" ;;
+  fail) echo "Couldn't install the driver. Try again later." >"$ORIGAITV_APP_PACKAGE_ERRORS/xpadneo.error"; exit 1 ;;
+esac
+STUB
+chmod +x "$ORIGAITV_XBOX_DRIVER"
+: >"$SCRATCH/queued"
+echo restart >"$SCRATCH/driver-does"
+printf '%s' '{"apps":["origaitv.third"],"driver":"xpadneo"}' >"$ORIGAITV_SETUP_APPS_DROP"
+run || fail "the driver" "$(cat "$SCRATCH/out")"
+[[ $(cat "$SCRATCH/queued") == $'origaitv.third\ndriver' ]] || fail "after the apps" "$(cat "$SCRATCH/queued")"
+jq -e '.drivers.xpadneo.state == "installed" and .drivers.xpadneo.restart == true' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "says it's in, and wants a restart" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
+rm -f "$ORIGAITV_APP_PACKAGE_ERRORS/xpadneo.restart"
+echo fail >"$SCRATCH/driver-does"
+printf '%s' '{"driver":"xpadneo"}' >"$ORIGAITV_SETUP_APPS_DROP"
+run || fail "a driver that doesn't install" "$(cat "$SCRATCH/out")"
+jq -e '.drivers.xpadneo.state == "failed" and .drivers.xpadneo.error == "Couldn'"'"'t install the driver. Try again later."' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "says why" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
+printf '%s' '{"driver":"something-else"}' >"$ORIGAITV_SETUP_APPS_DROP"
+: >"$SCRATCH/queued"
+run || fail "another driver's name" "$(cat "$SCRATCH/out")"
+[[ ! -s $SCRATCH/queued ]] || fail "is left out" "$(cat "$SCRATCH/queued")"
+grep -qx "ExecStart=/usr/bin/origaitv-xbox-driver" "$ROOT/system/origaitv-xbox-driver.service" || fail "origaitv-xbox-driver.service runs the driver's install"
+! grep -q '^\[Install\]' "$ROOT/system/origaitv-xbox-driver.service" || fail "and only when it's started"
+pass "ADR-103 the Xbox controller driver installs in turn with the apps, and says when it wants a restart or why it didn't"
