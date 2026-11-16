@@ -454,6 +454,14 @@ button.who {
   gap: 6px;
 }
 
+/* Glass's top row, in a panel of its own as on the TV. */
+.mini-rows.mini-pinned {
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
 .mini-rows .mini-tile {
   padding: 4px;
   font-size: 11px;

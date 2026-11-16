@@ -36,7 +36,7 @@ import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./deskt
 import { loadNews, newsPanel, newsState, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 import { logoFor } from "../origaitv-logo.ts";
-import { loadSizes, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
+import { loadSizes, pictureSize, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
 import { properUnits } from "../box-lines.ts";
 
 // The times the screen saver can wait, in minutes (ADR-031).
@@ -308,6 +308,14 @@ export function settings(ctx: Ctx, open?: string): View {
     if (menu.isConnected) ctx.render("settings/look", "size");
   };
 
+  // Fit to screen's row: how much of the screen the picture fills, and its
+  // page. Only with the sizes on, which it rides on.
+  const fitRow = (): HTMLElement[] => {
+    const display = sizes();
+    if (!display) return [];
+    return [row("fit", "Fit to screen", display.margin === 0 ? "Whole screen" : `${pictureSize(display.margin)}%`, () => ctx.go("fit"))];
+  };
+
   // The resolution row, on a TV with more than 1080p: its full resolution,
   // or 1080p output, which the TV scales up. OK and left and right switch.
   const resolutionRow = (): HTMLElement[] => {
@@ -499,6 +507,8 @@ export function settings(ctx: Ctx, open?: string): View {
         // The TV's size (ADR-062), stepped with left and right, or OK for
         // the next one.
         ...(lookId() ? [sizeRow(), ...resolutionRow()] : []),
+        // Fit to screen (ADR-103): its own page, with the corner marks.
+        ...fitRow(),
         ...backgroundRows(),
         row("idle", "Screen saver", `After ${s.idleMinutes} min`, () => void save({ idleMinutes: IDLE[(IDLE.indexOf(s.idleMinutes) + 1) % IDLE.length] }, "look", "idle"), true),
         toggle("Reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),

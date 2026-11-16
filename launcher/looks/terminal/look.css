@@ -5,8 +5,10 @@
    body text is 29 px; and focus lifts as well as rings. */
 
 :root {
-  --safe-x: 80px;
-  --safe-y: 60px;
+  /* Fit to screen moves these in by as much as its margin is over 3 percent
+     (launcher/size.ts). */
+  --safe-x: calc(80px + var(--fit-over-x, 0px));
+  --safe-y: calc(60px + var(--fit-over-y, 0px));
   --bar: 60px;
   --bar-gap: 24px;
 }
@@ -96,6 +98,18 @@ body {
 }
 
 /* --- Larger (1600 wide) -------------------------------------------------- */
+
+/* Settings, Appearance's rows all show, Fit to screen among them: a little
+   less room round them and between them than the other sections have. */
+:root[data-size="larger"] .settings-panel[data-page="look"] {
+  gap: 16px;
+  padding-top: 40px;
+  padding-bottom: 40px;
+}
+
+:root[data-size="larger"] .settings-panel[data-page="look"] > .button {
+  min-height: 72px;
+}
 
 /* The same 4 × 3 grid with less room in each cell, so what's in a tile is
    smaller: on the TV it's all bigger than at standard. A medium tile's

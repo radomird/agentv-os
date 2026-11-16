@@ -102,3 +102,6 @@ T17.3 manual    on the NUC Radomir hears the TV's voice and says yes or no, and 
 T19.1 check     a build carries the model picked on Make it? to its CLI's command line, and root refuses one off the provider's list; the code field takes the focus and the remote types into it, and the phone has its own (layers 2 and 4)
 T19.2 image     a build on a stand-in CLI runs on the model in its start, and root refuses one off the list (the image layer)
 T19.3 manual    on the NUC Radomir picks Haiku for asking and Sonnet for a build, sees his plan's % in Settings, and signs in again with only the phone
+T22.1 check     Fit to screen: a service's window is maximized inside the margin and home's margin follows it, the fit screen in setup and in Settings in each look, nothing cut off; no Go back row when nothing differs, and its page names the version (layers 2 and 4)
+T22.2 image     at 1080p with Fit to screen's margin, a stand-in service page's corners are inside the screen by the margin, a page asking for full screen stays inside it, a new margin applies without setting the mode again, and after a restart too (the image layer at 1920 x 1080)
+T22.3 manual    on the NUC at 1080p on the Panasonic, every streaming app shows its whole page, and Fit to screen in setup takes the margin to fit the TV

@@ -20,8 +20,10 @@
 
 :root {
   --font: "Manrope", system-ui, sans-serif;
-  --safe-x: 80px;
-  --safe-y: 60px;
+  /* Fit to screen moves these in by as much as its margin is over 3 percent
+     (launcher/size.ts). */
+  --safe-x: calc(80px + var(--fit-over-x, 0px));
+  --safe-y: calc(60px + var(--fit-over-y, 0px));
   --bar: 72px;
   --round: 28px;
   --glass: color-mix(in srgb, var(--background) 52%, transparent);
@@ -180,6 +182,22 @@ body:has(#offline) .glass-bar .bar-hint {
 
 /* --- Home ----------------------------------------------------------------- */
 
+/* Home (D12): one page that scrolls. At rest it's the top shelf, with the
+   bar in it, and the pinned row in its frosted panel at the bottom of the
+   screen, and nothing else. Down from the pinned row, or Apps in the bar,
+   brings the list of apps up: the page scrolls until the pinned row is at
+   the top, and the list rises in under it. The pinned row stays there as
+   the list scrolls under it. */
+.glass-home {
+  --tile-h: 160px;
+  --panel-pad: 22px;
+  --panel: calc(var(--tile-h) + 2 * var(--panel-pad) + 3px);
+  --stuck: 36px;
+  /* Room under the pinned row at rest for the name of the app in focus,
+     inside the safe area. */
+  --name-room: calc(1.25em + 30px);
+}
+
 .glass-stage {
   position: absolute;
   inset: 0;
@@ -201,39 +219,174 @@ body:has(#offline) .glass-bar .bar-hint {
   opacity: 1;
 }
 
-/* The scrims that keep the title and the tiles readable over any picture. */
-.glass-stage::before,
+/* In the list, the picture gives way to the home's own background. */
+.glass-home.list .glass-still {
+  opacity: 0;
+}
+
+/* The scrim that keeps the shelf's words and cards readable over any
+   picture: the theme's own colour at the top, fading out, then again
+   under the cards. */
 .glass-stage::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
+  background: linear-gradient(180deg, var(--scrim) 0%, color-mix(in srgb, var(--background) 40%, transparent) 22%, color-mix(in srgb, var(--background) 22%, transparent) 40%, color-mix(in srgb, var(--background) 62%, transparent) 54%, var(--scrim) 100%);
 }
 
-.glass-stage::before {
-  background: linear-gradient(160deg, var(--scrim) 0%, transparent 42%);
-}
-
-.glass-stage::after {
-  background: linear-gradient(180deg, transparent 46%, var(--scrim) 100%);
-}
-
-.glass-title {
+.glass-rows {
   position: absolute;
-  left: var(--safe-x);
-  top: var(--safe-y);
-  max-width: calc(var(--canvas-width, 1920px) - 2 * var(--safe-x) - 520px);
+  inset: 0;
+  /* Room at the page's end, so its last rows can come up under the pinned
+     row and are never cut in half by it. */
+  padding: 0 var(--safe-x) calc(var(--canvas-height, 1080px) * 0.45);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 120px;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+/* The top shelf: the screen down to the pinned row. */
+.glass-top {
+  position: relative;
+  flex: none;
+  height: calc(var(--canvas-height, 1080px) - var(--safe-y) - var(--panel) - var(--name-room));
+  margin: 0 calc(-1 * var(--safe-x)) -120px;
+  padding: var(--safe-y) var(--safe-x) 0;
+}
+
+.glass-top > .bar.glass-bar {
+  position: absolute;
+}
+
+/* What the shelf is showing: the app's icon and a line, by the bar. */
+.glass-shelf-name {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: var(--bar);
+  margin-top: -4px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.6px;
   color: var(--bright-foreground);
 }
 
+.glass-shelf-name .logo {
+  width: 52px;
+  height: 52px;
+  font-size: 24px;
+}
+
+/* The app's films and shows, as sharp poster cards in a row that scrolls
+   by itself and runs to the screen's edges. */
+.glass-cards {
+  --card-h: min(390px, calc(var(--canvas-height, 1080px) * 0.36));
+  display: flex;
+  gap: 32px;
+  margin: 60px calc(-1 * var(--safe-x)) 0;
+  padding: 24px var(--safe-x) 90px;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.tile.glass-card {
+  --lift: 0.08;
+  position: relative;
+  flex: none;
+  width: calc(var(--card-h) * 2 / 3);
+  height: var(--card-h);
+  padding: 0;
+  overflow: visible;
+  border: none;
+  border-radius: 20px;
+  background: none;
+  color: var(--bright-foreground);
+  scroll-margin: 0 var(--safe-x);
+}
+
+.tile.glass-card::after {
+  display: none;
+}
+
+.glass-card-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  border: 1.5px solid var(--glass-edge);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+  background: var(--glass);
+}
+
+.glass-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.glass-card-art:has(.glass-progress)::after {
+  content: "";
+  position: absolute;
+  inset: 55% 0 0;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55));
+}
+
+/* How far in, on the picture itself. */
+.glass-progress {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.35);
+  z-index: 1;
+  overflow: hidden;
+}
+
+.glass-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.tile.glass-card.focused {
+  transform: scale(1.08);
+  z-index: 1;
+}
+
+.glass-card .glass-label {
+  top: calc(100% + 14px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.glass-card .glass-label small {
+  font-size: 24px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.glass-card.focused .glass-label {
+  opacity: 1;
+}
+
+/* An app with nothing to show: its name, big, and what it's doing. */
 .glass-name {
+  margin-top: 36px;
+  max-width: calc(var(--canvas-width, 1920px) - 2 * var(--safe-x) - 520px);
   font-size: 72px;
   font-weight: 800;
   letter-spacing: -2px;
   line-height: 1.05;
+  color: var(--bright-foreground);
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -241,24 +394,9 @@ body:has(#offline) .glass-bar .bar-hint {
 }
 
 .glass-line {
+  margin-top: 14px;
   font-weight: 700;
-}
-
-.glass-rows {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(var(--canvas-height, 1080px) * 0.62);
-  bottom: 0;
-  /* The room under a row that has come up: enough for its tile's name, and
-     at more on screen enough that the row above has left altogether. */
-  --under: max(73px, calc(var(--canvas-height, 1080px) * 0.38 - 338px));
-  padding: 18px var(--safe-x) var(--under);
-  display: flex;
-  flex-direction: column;
-  gap: 120px;
-  overflow: hidden;
-  scrollbar-width: none;
+  color: var(--bright-foreground);
 }
 
 .glass-row {
@@ -268,11 +406,99 @@ body:has(#offline) .glass-bar .bar-hint {
   flex: none;
 }
 
+/* A row of the list that went up under the pinned row fades out. */
+.glass-list .glass-row {
+  transition: opacity var(--fast) var(--ease);
+}
+
+.glass-list .glass-row.gone {
+  opacity: 0;
+}
+
+/* The pinned row: one frosted panel with a thin outline behind its apps,
+   which have no frame of their own until one has the focus. Scrolled down,
+   it stays at the top and the list goes under it. */
+.glass-row.glass-pinned {
+  position: sticky;
+  top: var(--stuck);
+  z-index: 3;
+  margin: 0 calc(-1 * var(--panel-pad) - 4px);
+  padding: var(--panel-pad) calc(var(--panel-pad) + 4px);
+  border-radius: 46px;
+  background: color-mix(in srgb, var(--background) 44%, transparent);
+  border: 1.5px solid var(--glass-edge);
+  backdrop-filter: blur(60px) saturate(170%);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 color-mix(in srgb, var(--bright-foreground) 12%, transparent);
+}
+
+.glass-pinned .tile.glass-tile {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  scroll-margin: 0;
+}
+
+.glass-pinned .tile.glass-tile.focused,
+.glass-pinned .tile.glass-tile.held {
+  background: var(--glass-strong);
+  border-color: var(--glass-edge);
+}
+
+.glass-pinned .glass-tile .logo {
+  width: 100px;
+  height: 100px;
+  font-size: 46px;
+}
+
+/* The focused app's name under the panel, inside the safe area. */
+.glass-pinned .glass-label {
+  top: calc(100% + var(--panel-pad) + 14px);
+  line-height: 1.25;
+}
+
+/* The list: the other apps in rows of six, then Games, Your own, Not on
+   home and From your phones. At rest it isn't there, and it rises in as
+   the page scrolls up to it. */
+.glass-list {
+  display: flex;
+  flex-direction: column;
+  gap: 120px;
+  margin-top: -20px;
+  transition:
+    opacity var(--slow) var(--ease),
+    transform var(--slow) var(--ease),
+    visibility 0s linear 0s;
+}
+
+.glass-home.rest .glass-list {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(80px);
+  transition:
+    opacity var(--slow) var(--ease),
+    transform var(--slow) var(--ease),
+    visibility 0s linear var(--slow);
+}
+
+.reduce-motion .glass-list,
+.reduce-motion .glass-home.rest .glass-list {
+  transform: none;
+}
+
+.glass-section {
+  display: flex;
+  flex-direction: column;
+  gap: 120px;
+  margin-top: 64px;
+}
+
 .tile.glass-tile,
 .glass-row .tile {
   --lift: 0.12;
   position: relative;
-  height: 160px;
+  height: var(--tile-h);
   padding: 0;
   display: flex;
   align-items: center;
@@ -289,19 +515,25 @@ body:has(#offline) .glass-bar .bar-hint {
   display: none;
 }
 
-/* A row further down comes up with room under it for its tile's name. */
-.glass-row .tile {
-  scroll-margin: 18px 0 var(--under);
+/* In the list, the row above the one in focus stays in view under the
+   pinned row, and the first row comes up right under it. */
+.glass-list .tile {
+  scroll-margin: calc(var(--stuck) + var(--panel) + 40px + var(--tile-h) + 120px + 56px) 0 calc(var(--safe-y) + 40px);
 }
 
-/* The games on home (D9): a row of their own under the apps, with its name
-   over its first tile. */
-.glass-games {
+.glass-list > .glass-row:first-child .tile {
+  scroll-margin-top: calc(var(--stuck) + var(--panel) + 90px);
+}
+
+/* The games on home (D9), and the list's other parts: a row of their own,
+   with its name over its first tile. */
+.glass-games,
+.glass-named {
   position: relative;
-  margin-top: 64px;
 }
 
-.glass-shelf {
+.glass-shelf,
+.glass-heading {
   position: absolute;
   left: 4px;
   top: -52px;
@@ -334,6 +566,13 @@ body:has(#offline) .glass-bar .bar-hint {
 
 .glass-row .tile.focused .glass-label {
   opacity: 1;
+}
+
+/* What an app in the list is doing, under its name: open, or running. */
+.glass-tile .glass-label small {
+  display: block;
+  font-size: 0.75em;
+  font-weight: 600;
 }
 
 /* A build's tile in the row: its logo and the ring of its progress. */
@@ -1021,8 +1260,8 @@ body:has(#offline) .glass-bar .bar-hint {
   gap: 24px;
 }
 
-:root[data-size="larger"] .glass-tile {
-  height: 132px;
+:root[data-size="larger"] .glass-home {
+  --tile-h: 132px;
 }
 
 :root[data-size="larger"] .glass-name {

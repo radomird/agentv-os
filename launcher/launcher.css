@@ -2543,3 +2543,88 @@ body.with-backdrop.on-home {
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
   z-index: 2;
 }
+
+/* --- Fit to screen (ADR-103, launcher/fit.ts) ---------------------------- */
+
+/* Four corner marks where the margin puts the edge of what apps fill:
+   --mark-x and --mark-y in from the screen's edges. A TV that crops the
+   picture cuts them off, until the picture is made smaller. */
+.fit-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.fit-mark {
+  position: absolute;
+  width: 112px;
+  height: 112px;
+  border: 0 solid var(--accent);
+}
+
+.fit-mark.top-left {
+  left: var(--mark-x);
+  top: var(--mark-y);
+  border-left-width: 10px;
+  border-top-width: 10px;
+}
+
+.fit-mark.top-right {
+  right: var(--mark-x);
+  top: var(--mark-y);
+  border-right-width: 10px;
+  border-top-width: 10px;
+}
+
+.fit-mark.bottom-left {
+  left: var(--mark-x);
+  bottom: var(--mark-y);
+  border-left-width: 10px;
+  border-bottom-width: 10px;
+}
+
+.fit-mark.bottom-right {
+  right: var(--mark-x);
+  bottom: var(--mark-y);
+  border-right-width: 10px;
+  border-bottom-width: 10px;
+}
+
+/* The page sits well inside the marks, at any margin up to the most. */
+.page.fit {
+  inset: 0;
+  padding: 240px 280px 0;
+}
+
+.fit-tip {
+  max-width: 1100px;
+  margin-top: 8px;
+}
+
+.fit-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  margin-top: 56px;
+}
+
+.fit-controls .button {
+  min-width: 640px;
+}
+
+/* Left and right change the picture's size: a mark each side of it, faint
+   at the end it can't go past. */
+.fit-size .fit-value::before {
+  content: "\2039\00a0\00a0";
+}
+
+.fit-size .fit-value::after {
+  content: "\00a0\00a0\203A";
+}
+
+.fit-size.smallest .fit-value::before,
+.fit-size.biggest .fit-value::after {
+  opacity: 0.25;
+}

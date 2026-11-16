@@ -19,8 +19,10 @@
 
 :root {
   --font: "Instrument Sans", system-ui, sans-serif;
-  --safe-x: 80px;
-  --safe-y: 60px;
+  /* Fit to screen moves these in by as much as its margin is over 3 percent
+     (launcher/size.ts). */
+  --safe-x: calc(80px + var(--fit-over-x, 0px));
+  --safe-y: calc(60px + var(--fit-over-y, 0px));
   --nav: 60px;
   --top: 150px; /* where a page starts, under the tabs */
   --round: 20px;
