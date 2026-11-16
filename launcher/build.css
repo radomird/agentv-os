@@ -1,0 +1,42 @@
+/* The building screen in Glass and Cinema (pages/build.ts, ADR-103): centred
+   on the page, as the update screen is, and drawn with the same parts, so
+   each look gives it its own design: the app's logo and name, the bar, the
+   time left, the steps and Stop. Terminal keeps its page as it was. */
+.build-page.building {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.building-box {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A little closer than the update screen, which has fewer parts. */
+.updating-box.building-box {
+  gap: 24px;
+}
+
+.updating-box.building-box > .build-steps {
+  gap: 10px;
+  margin: 4px 0 0;
+}
+
+.building-box > .logo {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  font-size: 40px;
+}
+
+.building-box > .panel-note,
+.building-time {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.building-box > .check-actions {
+  justify-content: center;
+  margin-top: 8px;
+}

@@ -8,7 +8,8 @@
 //   - { kind: "change", ... }: a change waiting for an adult's ok.
 // - POST /api/ask/confirm and /api/phone/ask/confirm with { n }: an adult's
 //   ok. A make goes on to its recipe or a plan (the builder's own confirm),
-//   and a change starts its new version.
+//   on the model it names, if it names one (ADR-103), and a change starts
+//   its new version.
 // - POST /api/ask/cancel and /api/phone/ask/cancel with { n }: "not this".
 //   A make's build is put away, and a change is dropped.
 //
@@ -17,6 +18,7 @@
 // was built stays the phone's, past the PIN, as for any build.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Model } from "../../builder/models.ts";
 import type { BuildView } from "../builds.ts";
 import type { Outcome } from "../executors/index.ts";
 import type { Said } from "../say.ts";
@@ -35,6 +37,10 @@ export type AskView =
       says: string | null; // what the agent understood, in a line
       done: number;
       steps: number;
+      // The model it runs on, and while it waits for an ok, the ones it
+      // could run on instead (ADR-103).
+      model: string | null;
+      models?: Model[];
     }
   | { kind: "change"; n: number; app: string; name: string; what: string; recipe: string | null };
 
@@ -43,7 +49,7 @@ export interface AskRoutes {
   adult: () => Promise<boolean>;
   said: () => Said | null;
   find: (build: string) => Promise<BuildView | null>;
-  confirm: (build: string) => Promise<{ build?: BuildView; error?: string }>;
+  confirm: (build: string, model?: unknown) => Promise<{ build?: BuildView; error?: string }>;
   forget: (build: string) => Promise<{ error?: string }>;
   change: (app: string, what: string) => Promise<{ build?: BuildView; error?: string }>;
   settle: (n: number, outcome: Outcome) => Said | null;
@@ -77,6 +83,8 @@ export async function askView(kit: Pick<AskRoutes, "said" | "find">): Promise<As
     says: b.understood?.says ?? null,
     done: b.steps.filter((s) => s.state === "done").length,
     steps: b.steps.length,
+    model: b.model ?? null,
+    ...(b.models ? { models: b.models } : {}),
   };
 }
 
@@ -102,7 +110,8 @@ export async function askRoutes(kit: AskRoutes, request: IncomingMessage, respon
     kit.json(response, 403, { ok: false, error: CHILD });
     return true;
   }
-  const n = ((await kit.body(request)) as { n?: unknown } | undefined)?.n;
+  const body = (await kit.body(request)) as { n?: unknown; model?: unknown } | undefined;
+  const n = body?.n;
   const ask = await askView(kit);
   if (!ask || ask.n !== n) {
     kit.json(response, 409, { ok: false, error: "That isn't waiting any more" });
@@ -130,7 +139,7 @@ export async function askRoutes(kit: AskRoutes, request: IncomingMessage, respon
   // A make: the builder's own confirm, once the agent has read the ask.
   if (action === "confirm") {
     if (ask.state !== "confirm") return answer({ error: ask.state === "running" || ask.state === "starting" ? "Still working it out" : "It isn't waiting to be confirmed" }, ""), true;
-    const confirmed = await kit.confirm(ask.build);
+    const confirmed = await kit.confirm(ask.build, body?.model);
     if (confirmed.error) return answer(confirmed, ""), true;
     kit.json(response, 200, { ok: true, ask: await askView(kit) });
     kit.log("a make from the ask box was confirmed");

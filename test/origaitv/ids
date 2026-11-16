@@ -99,3 +99,6 @@ T13.3 manual    on the NUC the screensaver keeps the fan quiet, the CPU idles wi
 T17.1 check     Claude's, ChatGPT's, Grok's and Google's plans are offered on every channel, and Muse stays key only; Settings has no screensaver row; a tile that's waiting shows the one loading mark in each look, dark and light, and Weather has its forecast on home's first draw with a stand-in forecast (layers 2 and 4)
 T17.2 image     after a start with no way to the forecast, home shows the weather once it can be reached, without being left; idle shows the ambient screen; with a voice an answer is said, and with none nothing is installed and nothing errors (the image layer)
 T17.3 manual    on the NUC Radomir hears the TV's voice and says yes or no, and an app is made on ChatGPT's plan, on Grok's and on Google's, each signed in during setup
+T19.1 check     a build carries the model picked on Make it? to its CLI's command line, and root refuses one off the provider's list; the code field takes the focus and the remote types into it, and the phone has its own (layers 2 and 4)
+T19.2 image     a build on a stand-in CLI runs on the model in its start, and root refuses one off the list (the image layer)
+T19.3 manual    on the NUC Radomir picks Haiku for asking and Sonnet for a build, sees his plan's % in Settings, and signs in again with only the phone

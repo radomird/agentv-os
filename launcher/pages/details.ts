@@ -6,11 +6,12 @@
 
 import { daemon, screen } from "../api.ts";
 import { h } from "../dom.ts";
+import { lookId } from "../looks/looks.ts";
 import { mark } from "../looks/words.ts";
 import type { Ctx, View } from "../main.ts";
 import { logo, openBuiltin, quit } from "./home.ts";
 import { builtActions } from "./build.ts";
-import { bar, childProfileButton, togglePin } from "./parts.ts";
+import { addToHome, bar, childProfileButton } from "./parts.ts";
 
 export function details(ctx: Ctx, id: string): View {
   const app = ctx.state.apps.find((a) => a.id === id);
@@ -27,12 +28,21 @@ export function details(ctx: Ctx, id: string): View {
       "data-focus": true,
       "data-action": "home",
       onclick: async () => {
-        if (await togglePin(ctx, id)) ctx.render(`details/${id}`, toggle.dataset.action);
+        // Added, home opens on it; taken off, details stays.
+        const adding = !ctx.state.layout.some((tile) => tile.id === id);
+        if ((await addToHome(ctx, id)) && !(adding && lookId())) ctx.render(`details/${id}`, toggle.dataset.action);
       },
     },
     h("span", {}, "On home"),
     h("span", { class: "button-value" }, mark(onHome ? "[x]" : "[ ]")),
   );
+
+  // Move: home in edit mode with this app in hand, to carry with the
+  // arrows (ADR-103). In Glass and Cinema, while it's on home. Terminal's
+  // details stack their buttons with no room for another, and its grid's
+  // own edit already moves a tile every way.
+  const look = lookId();
+  const moveIt = onHome && (look === "glass" || look === "cinema") ? h("button", { class: "button", "data-focus": true, "data-action": "move", onclick: () => ctx.edit(id, true) }, "Move") : null;
 
   // Whether a child's profile can open it, past the PIN once there is one.
   const children =
@@ -121,7 +131,7 @@ export function details(ctx: Ctx, id: string): View {
           app.credit ? h("dt", {}, "Data from") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
-        h("div", { class: "actions" }, open, close, toggle, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),
+        h("div", { class: "actions" }, open, close, toggle, moveIt, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),
       ),
       app.owner ? h("p", { class: "owner" }, app.owner) : null,
     ),

@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { choices, firstFree, GRID_MORE, move, pin, problem, resize, unpin, type Placed, type Size } from "../../../launcher/layout.ts";
+import { choices, firstFree, GRID, GRID_MORE, HOME, MOST_ROWS, move, pin, problem, reading, reorder, resize, shown, unpin, type Placed, type Size } from "../../../launcher/layout.ts";
 
 const all: Size[] = ["s", "m", "l"];
 const sizes = (id: string): Size[] | undefined => (id.startsWith("small.") ? ["s"] : id === "nowhere" ? undefined : all);
@@ -111,4 +111,50 @@ test("Terminal's 5 × 4 grid at more on screen takes a fifth column and a fourth
   assert.deepEqual(move([{ id: "a", x: 0, y: 0, size: "s" }], "a", 4, 3, GRID_MORE), [{ id: "a", x: 4, y: 3, size: "s" }]);
   assert.deepEqual(choices([{ id: "a", x: 4, y: 3, size: "s" }], "a", all, GRID_MORE).map((c) => c.room), [true, true, true]);
   assert.equal(unpin(wide, "app.fifth").length, four.length);
+});
+
+// With the looks on, home has no tile limit: a layout is kept on HOME,
+// Terminal's four columns and rows that grow (ADR-103, T20.1).
+test("T20.1 a home with no tile limit takes a 13th app and more, past Terminal's 4 × 3, and Terminal's grid shows its first three rows", () => {
+  let layout: Placed[] | null = Array.from({ length: 12 }, (_, i) => ({ id: `app.${i}`, x: i % 4, y: Math.floor(i / 4), size: "s" as Size }));
+  assert.equal(pin(layout, "app.12"), null, "phase 1's 4 × 3 is full");
+  layout = pin(layout, "app.12", "s", HOME);
+  assert.deepEqual(where(layout)["app.12"], "s@0,3", "the next row");
+  for (let i = 13; i < 30; i++) layout = pin(layout!, `app.${i}`, "s", HOME);
+  assert.equal(layout!.length, 30);
+  assert.equal(problem(layout, sizes, HOME), null);
+  assert.match(String(problem(layout, sizes)), /doesn't fit on the grid/, "the 4 × 3 grid still says no");
+  assert.deepEqual(shown(layout!, GRID).map((t) => t.id), Array.from({ length: 12 }, (_, i) => `app.${i}`));
+  assert.match(String(problem([{ id: "app.a", x: 0, y: MOST_ROWS, size: "s" }], sizes, HOME)), /doesn't fit/, "a sane number of rows");
+  assert.equal(HOME.columns, GRID.columns, "Terminal's columns");
+});
+
+test("T20.1 reorder puts tiles in a new reading order, in the places they had when their sizes match", () => {
+  const four = [
+    { id: "a", x: 0, y: 0, size: "s" as Size },
+    { id: "b", x: 1, y: 0, size: "s" as Size },
+    { id: "c", x: 2, y: 0, size: "s" as Size },
+    { id: "d", x: 3, y: 0, size: "s" as Size },
+    { id: "e", x: 0, y: 1, size: "s" as Size },
+    { id: "apps", x: 1, y: 1, size: "s" as Size },
+  ];
+  // e up to where b was: b, c and d move along one.
+  const moved = reorder(four, ["a", "e", "b", "c", "d"]);
+  assert.deepEqual(where(moved), { apps: "s@1,1", a: "s@0,0", e: "s@1,0", b: "s@2,0", c: "s@3,0", d: "s@0,1" });
+  assert.deepEqual(reading(moved!).map((t) => t.id), ["a", "e", "b", "c", "d", "apps"]);
+  assert.equal(reorder(four, ["a", "nowhere"]), null);
+  assert.equal(reorder(four, ["a", "a"]), null);
+});
+
+test("T20.1 reorder lays the tiles out again, in order, when a size doesn't match the place it would take", () => {
+  const mixed = [
+    { id: "big", x: 0, y: 0, size: "l" as Size },
+    { id: "a", x: 2, y: 0, size: "s" as Size },
+    { id: "b", x: 3, y: 0, size: "s" as Size },
+    { id: "c", x: 2, y: 1, size: "s" as Size },
+  ];
+  const moved = reorder(mixed, ["a", "big", "b", "c"], HOME)!;
+  assert.deepEqual(reading(moved).map((t) => t.id), ["a", "big", "b", "c"]);
+  assert.equal(problem(moved, sizes, HOME), null, "it fits, with nothing overlapping");
+  assert.equal(moved.find((t) => t.id === "big")!.size, "l", "sizes stay");
 });

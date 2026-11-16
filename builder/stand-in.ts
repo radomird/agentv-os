@@ -41,7 +41,9 @@ const child = spawn(harness.command, harness.args, { stdio: ["pipe", "pipe", "in
 const mcp = client(child.stdout, child.stdin, () => child.stdin.end());
 
 const listed = (await mcp.list()).map((tool) => tool.name);
-out({ type: "system", subtype: "init", tools: [...listed.map((name) => `mcp__origaitv__${name}`), ...(recorded.offer ?? [])] });
+// The model it was asked to run on, as claude's init line says it.
+const model = process.env.ORIGAITV_STAND_IN_MODEL;
+out({ type: "system", subtype: "init", tools: [...listed.map((name) => `mcp__origaitv__${name}`), ...(recorded.offer ?? [])], ...(model ? { model } : {}) });
 // A CLI that offers tools of its own is stopped here, before it acts.
 if (recorded.offer?.length) await new Promise((resolve) => setTimeout(resolve, 5000));
 let turns = 0;
