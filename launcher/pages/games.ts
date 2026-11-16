@@ -13,6 +13,7 @@
 
 import { asWritten, h } from "../dom.ts";
 import { glyph } from "../glyphs.ts";
+import { needsKeyboard } from "../looks/games.ts";
 import type { Ctx } from "../main.ts";
 
 export interface GameApp {
@@ -89,11 +90,14 @@ export function gamesMoved(redraw: () => void): void {
   });
 }
 
-// What a game's row says: what OK does, or how it's going.
-function value(app: GameApp): string {
+// What a game's row says: what OK does, or how it's going. Removing asks
+// first: OK once arms it, and OK again removes.
+function value(app: GameApp, armed = false): string {
   if (app.state === "queued") return "Waiting…";
   if (app.state === "installing") return "Installing…";
   if (app.state === "removing") return "Removing…";
+  if (app.installed && armed) return "Press OK again to remove";
+  if (app.installed && app.error) return "Couldn't remove · Try again";
   if (app.installed) return "Remove";
   if (app.state === "failed") return "Couldn't install · Try again";
   return "Add";
@@ -102,7 +106,7 @@ function value(app: GameApp): string {
 // The line over the list: which games need a mouse and keyboard, from what
 // each one's description says after its first sentence.
 export function needsLine(apps: { name: string; description: string }[]): string | null {
-  const needs = apps.filter((app) => /^Needs a mouse and keyboard\.?$/.test(app.description.split(/(?<=\.)\s+/).slice(1).join(" ")));
+  const needs = apps.filter(needsKeyboard);
   if (!needs.length) return null;
   const names = needs.map((app) => app.name);
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
@@ -113,6 +117,11 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
   const adult = ctx.state.viewer.role === "adult";
   let els: HTMLElement[] = [];
   let busy: string | null = null;
+  // The game OK asked about, for a few seconds, and the ones handed over to
+  // remove, until they're gone or say they weren't.
+  let armed: string | null = null;
+  let disarm = 0;
+  const removing = new Set<string>();
 
   const failed = (text: string) => {
     ctx.sounds.play("failure");
@@ -148,7 +157,21 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
     if (!adult) return;
     if (app.state === "queued" || app.state === "installing") return ctx.toast(`Installing ${app.name}…`);
     if (app.state === "removing") return ctx.toast(`Removing ${app.name}…`);
-    if (app.installed) return void act(app, "/api/games/remove", { done: `Removing ${app.name}. Your games and saves stay.`, fail: `Couldn't remove ${app.name}` });
+    if (app.installed && armed !== app.id) {
+      armed = app.id;
+      clearTimeout(disarm);
+      disarm = window.setTimeout(() => {
+        armed = null;
+        if (els[0]?.isConnected) draw();
+      }, 8000);
+      return draw();
+    }
+    if (app.installed) {
+      armed = null;
+      clearTimeout(disarm);
+      removing.add(app.id);
+      return void act(app, "/api/games/remove", { done: `Removing ${app.name}. Your games and saves stay.`, fail: `Couldn't remove ${app.name}` });
+    }
     return void act(app, "/api/apps/add", { done: `Adding ${app.name}…`, fail: `Couldn't add ${app.name}` });
   };
 
@@ -166,7 +189,7 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
           adult ? "button" : "div",
           { class: "button wide", "data-focus": adult ? true : undefined, "data-action": `game-${app.id}`, "data-game": app.installed ? "on" : "off", onclick: () => choose(app) },
           h("span", { class: "with-icon" }, glyph("gamepad", 32), asWritten(app.name)),
-          h("span", { class: "button-value" }, adult ? value(app) : app.installed ? "On this TV" : ""),
+          h("span", { class: "button-value" }, adult ? value(app, armed === app.id) : app.installed ? "On this TV" : ""),
         ),
       ),
     );
@@ -192,8 +215,18 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
 
   draw();
   live = () => {
-    if (els[0]?.isConnected) draw();
-    else live = null;
+    if (!els[0]?.isConnected) {
+      live = null;
+      return;
+    }
+    // A removal that's over: gone, or still here and saying why.
+    for (const id of [...removing]) {
+      const app = games?.apps.find((one) => one.id === id);
+      if (app?.state === "removing") continue;
+      removing.delete(id);
+      if (app?.installed && app.error) failed(`Couldn't remove ${app.name}. Try again.`);
+    }
+    draw();
   };
   // Asked for again as the page opens.
   void loadGames().then(() => live?.());

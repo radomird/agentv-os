@@ -184,13 +184,24 @@ test("T23.1 adding two games: the second waits its turn, both land on home's Gam
     const games = (home.apps as { id: string; category: string }[]).filter((app) => app.category === "games" && GAMES.some((one) => one.id === app.id)).map((app) => app.id);
     assert.deepEqual(games.sort(), ["origaitv.retroarch", "origaitv.xboxcloud"], "home's Games row has both, as games");
 
-    // OK on one that's in removes it, and it can be added again.
+    // OK on one that's in asks first, OK again removes it, and it can be
+    // added again.
     await page.keyboard.press("ArrowUp");
     assert.equal(await focused(page), "game-origaitv.retroarch");
+    await page.keyboard.press("Enter");
+    assert.equal(await value(page, "origaitv.retroarch"), "Press OK again to remove");
     await page.keyboard.press("Enter");
     await toast(page, "Removing RetroArch. Your games and saves stay.");
     await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.retroarch"] .button-value')?.textContent === "Add", undefined, { timeout: 8000 });
     assert.equal(await value(page, "origaitv.xboxcloud"), "Remove");
+    // A removal that didn't work says so, and the game stays.
+    APPS_MOVER.removeFails = true;
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await focused(page), "game-origaitv.xboxcloud");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await toast(page, "Couldn't remove Xbox Cloud Gaming. Try again.");
+    await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.xboxcloud"] .button-value')?.textContent === "Couldn't remove · Try again", undefined, { timeout: 8000 });
     const after = await (await fetch(`${url}/api/home`)).json();
     assert.deepEqual((after.apps as { id: string }[]).filter((app) => app.id.startsWith("origaitv.") && GAMES.some((one) => one.id === app.id)).map((app) => app.id), ["origaitv.xboxcloud"]);
     // Home and apps says how many are on the TV.
@@ -199,7 +210,64 @@ test("T23.1 adding two games: the second waits its turn, both land on home's Gam
     await page.waitForFunction(() => /Games\s+1 on this TV/.test(document.querySelector<HTMLElement>('.panel [data-action="games"]')?.innerText ?? ""));
   } finally {
     APPS_MOVER.ms = 400;
+    APPS_MOVER.removeFails = false;
     await page.close();
+  }
+});
+
+test("T23.1 a game that needs a mouse and keyboard says so on its home tile, in every look, with nothing cut off", async () => {
+  for (const look of ["terminal", "glass", "cinema"] as const) {
+    await useLook(look);
+    const page = await tv();
+    try {
+      if (look === "terminal") {
+        await openGames(page);
+        await page.keyboard.press("Enter");
+        await moveTo(page, "origaitv.minecraft");
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.minecraft"] .button-value')?.textContent === "Remove", undefined, { timeout: 8000 });
+      }
+      await go(page, "home");
+      // The remote's arrows to its tile: down to its row, then along it.
+      // Glass and Cinema show a tile's words with the focus on it.
+      const selector = '.tile[data-id="origaitv.minecraft"]';
+      await page.waitForSelector(selector, { state: "attached" });
+      await rest(page);
+      for (let presses = 0; presses < 30; presses++) {
+        const key = await page.evaluate((one) => {
+          const at = document.querySelector<HTMLElement>(".focused");
+          const target = document.querySelector<HTMLElement>(one)!;
+          if (!at || at === target) return null;
+          const a = at.getBoundingClientRect();
+          const t = target.getBoundingClientRect();
+          if (a.bottom <= t.top) return "ArrowDown";
+          if (a.top >= t.bottom) return "ArrowUp";
+          return a.left < t.left ? "ArrowRight" : "ArrowLeft";
+        }, selector);
+        if (!key) break;
+        await page.keyboard.press(key);
+        await page.waitForTimeout(150);
+      }
+      await page.waitForTimeout(500);
+      // Terminal writes it in lower case, as it does every word.
+      assert.match(await page.locator(selector).first().innerText(), /needs a mouse and keyboard/i, look);
+      const cut = await page.evaluate((one) => {
+        const tile = document.querySelector<HTMLElement>(one)!;
+        const line = [...tile.querySelectorAll<HTMLElement>("*")].find((el) => el.children.length === 0 && el.textContent === "Needs a mouse and keyboard")!;
+        const at = line.getBoundingClientRect();
+        // And the room it takes doesn't push the name into the logo.
+        const name = [...tile.querySelectorAll<HTMLElement>("*")].find((el) => [...el.childNodes].some((node) => node.nodeType === 3 && node.textContent?.trim().toLowerCase() === "minecraft"));
+        const logo = tile.querySelector<HTMLElement>(".logo");
+        const n = name?.getBoundingClientRect();
+        const l = logo?.getBoundingClientRect();
+        const overlap = !!n && !!l && n.top < l.bottom - 1 && n.bottom > l.top + 1 && n.left < l.right - 1 && n.right > l.left + 1;
+        return overlap || at.left < 0 || at.right > innerWidth || at.top < 0 || at.bottom > innerHeight || line.scrollWidth > line.clientWidth + 1 || line.scrollHeight > line.clientHeight + 1;
+      }, selector);
+      if (SHOTS) await page.screenshot({ path: join(SHOTS, `games-needs-keyboard-${look}.png`) });
+      assert.equal(cut, false, `${look}: the line is whole and on the screen`);
+    } finally {
+      await page.close();
+    }
   }
 });
 

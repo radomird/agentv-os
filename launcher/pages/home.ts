@@ -18,6 +18,7 @@ import { buildNotice, homeBuildTile } from "./build.ts";
 import { openPage } from "./page-app.ts";
 import { bar, HOLD_HINT } from "./parts.ts";
 import { later, release, tonight } from "./updates.ts";
+import { NEEDS_KEYBOARD, needsKeyboard } from "../looks/games.ts";
 import { currentGrid, lookId, preview } from "../looks/looks.ts";
 import { showcasePicture } from "../looks/showcase.ts";
 
@@ -57,6 +58,7 @@ function state(ctx: Ctx, app: App): HTMLElement {
   if (open) return h("span", { class: "tile-state" }, open.paused ? "Paused" : "Open");
   if (app.needsSetup) return h("span", { class: "tile-state" }, "Set up");
   if (app.signIn === "needed") return h("span", { class: "tile-state tile-sign-in" }, "Sign in");
+  if (needsKeyboard(app)) return h("span", { class: "tile-label" }, NEEDS_KEYBOARD);
   return h("span", { class: "tile-label" }, app.category);
 }
 
