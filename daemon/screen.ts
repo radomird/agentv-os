@@ -2815,7 +2815,7 @@ export const launcher: Launcher = {
     const command = exec[0] ?? "";
     const which = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(command) && (process.env.PATH ?? "/usr/bin").split(":").some((dir) => existsSync(join(dir, command)));
     if (!which) {
-      throw new Error(`${name ?? command} isn't installed. Add it again in Settings, under Games.`);
+      throw new Error(`${name ?? command} isn't installed. Add it again in Settings, under Home and apps, then Games.`);
     }
     // Its own gamescope, for frame pacing (ADR-031), at the TV's mode, so the
     // game and whatever it starts are one window the daemon knows. Steam's

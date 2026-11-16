@@ -315,8 +315,8 @@ class FakeLauncher implements Launcher {
   // Each native game started, with its command and the mode it was given.
   games: Array<{ exec: string[]; mode: MonitorMode; app: FakeApp }> = [];
   game(exec: string[], mode: MonitorMode, name?: string) {
-    if (exec[0] === "steam" && !this.steamInstalled) throw new Error(`${name ?? "Steam"} isn't installed. Add it again in Settings, under Games.`);
-    if (exec[0] !== "steam" && !this.installed.has(exec[0])) throw new Error(`${name ?? exec[0]} isn't installed. Add it again in Settings, under Games.`);
+    if (exec[0] === "steam" && !this.steamInstalled) throw new Error(`${name ?? "Steam"} isn't installed. Add it again in Settings, under Home and apps, then Games.`);
+    if (exec[0] !== "steam" && !this.installed.has(exec[0])) throw new Error(`${name ?? exec[0]} isn't installed. Add it again in Settings, under Home and apps, then Games.`);
     const app = this.launch("game");
     this.games.push({ exec, mode, app });
     return app;
@@ -2768,7 +2768,7 @@ test("T23.1 a native game whose program isn't there says so, and nothing is left
   t.launcher.targets.set("origaitv.retroarch", RETRO);
   const answer = (await t.screen.fromHome({ cmd: "open-app", app: "origaitv.retroarch" })) as { ok: boolean; error: string };
   assert.equal(answer.ok, false);
-  assert.equal(answer.error, "RetroArch isn't installed. Add it again in Settings, under Games.");
+  assert.equal(answer.error, "RetroArch isn't installed. Add it again in Settings, under Home and apps, then Games.");
   assert.deepEqual(await open(t.screen), []);
 });
 
