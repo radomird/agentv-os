@@ -6,8 +6,8 @@
 //   cache reads are 0.025 times its input, and it has no long-context rate)
 // - https://developers.openai.com/api/docs/pricing (the GPT-6 line bills a
 //   prompt over 272K tokens at its long rate for all of it, and writes to
-//   the cache at 1.25 times input; GPT-5.6 Sol's price is a promotion until
-//   2026-11-30, so read it again then)
+//   the cache at 1.25 times input for half an hour and 2.5 times for twelve
+//   hours)
 // - https://ai.google.dev/gemini-api/docs/pricing (Gemini 3's prices are
 //   to roughly double on 2027-01-01, so read it again before then)
 // - https://docs.x.ai/docs/models (a prompt that reaches 200K tokens is
@@ -54,8 +54,6 @@ export const PRICES: Record<Provider, Record<string, Rate>> = {
     "gpt-6-astra": { in: 10, out: 50, cacheRead: 1, above: { tokens: 272_000, rate: { in: 20, out: 75, cacheRead: 2 } } },
     "gpt-6.1-sol": { in: 2, out: 10, cacheRead: 0.1, above: { tokens: 272_000, rate: { in: 4, out: 15, cacheRead: 0.2 } } },
     "gpt-6-luna": { in: 0.1, out: 0.5, cacheRead: 0.01, above: { tokens: 272_000, rate: { in: 0.2, out: 0.75, cacheRead: 0.02 } } },
-    "gpt-5.6-sol": { in: 4, out: 20, cacheRead: 0.4 },
-    "gpt-5.6-terra": { in: 2, out: 12, cacheRead: 0.2 },
     "gpt-5.6-luna": { in: 0.2, out: 1.2, cacheRead: 0.02 },
     "gpt-5.5": { in: 5, out: 30, cacheRead: 0.5, above: { tokens: 272_000 } },
     "gpt-5.4": { in: 2.5, out: 15, cacheRead: 0.25, above: { tokens: 272_000 } },
@@ -113,27 +111,30 @@ export function rateFor(provider: Provider, model: string): Rate | null {
 
 // What one request used, in tokens. Input is what wasn't cached; a cache
 // write is billed as input at 1.25 times for five minutes and twice for an
-// hour (Claude's), and a read at its own rate. OpenAI's writes, for its
-// default half hour, are 1.25 times too, and count as cacheWrite5m.
+// hour (Claude's), and a read at its own rate. OpenAI's writes are 1.25
+// times for its default half hour, counted as cacheWrite5m, and 2.5 times
+// for twelve hours.
 export interface Usage {
   input: number;
   output: number;
   cacheRead: number;
   cacheWrite5m: number;
   cacheWrite1h: number;
+  cacheWrite12h: number;
 }
 
-export const NO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
+export const NO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheWrite12h: 0 };
 
 // Dollars for a request, or null when it can't be priced. fast is Claude's
 // fast mode, at twice the price.
 export function cost(rate: Rate, usage: Usage, fast = false): number | null {
-  const prompt = usage.input + usage.cacheRead + usage.cacheWrite5m + usage.cacheWrite1h;
+  const prompt = usage.input + usage.cacheRead + usage.cacheWrite5m + usage.cacheWrite1h + usage.cacheWrite12h;
   let r: Omit<Rate, "above"> = rate;
   if (rate.above && prompt > rate.above.tokens) {
     if (!rate.above.rate) return null;
     r = rate.above.rate;
   }
-  const dollars = (usage.input * r.in + usage.cacheWrite5m * r.in * 1.25 + usage.cacheWrite1h * r.in * 2 + usage.cacheRead * r.cacheRead + usage.output * r.out) / 1_000_000;
+  const written = usage.cacheWrite5m * 1.25 + usage.cacheWrite1h * 2 + usage.cacheWrite12h * 2.5;
+  const dollars = (usage.input * r.in + written * r.in + usage.cacheRead * r.cacheRead + usage.output * r.out) / 1_000_000;
   return fast ? dollars * 2 : dollars;
 }

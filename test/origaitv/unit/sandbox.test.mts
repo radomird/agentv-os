@@ -39,7 +39,8 @@ test("a request costs its input, cache writes and reads, and output, each at its
   const opus = rateFor("claude", "claude-opus-5-5")!;
   // 1M input at $4, 1M 5-minute writes at $5, 1M 1-hour at $8, 1M reads at
   // $0.20, 1M output at $20.
-  assert.equal(cost(opus, { input: 1e6, cacheWrite5m: 1e6, cacheWrite1h: 1e6, cacheRead: 1e6, output: 1e6 }), 4 + 5 + 8 + 0.2 + 20);
+  assert.equal(cost(opus, { input: 1e6, cacheWrite5m: 1e6, cacheWrite1h: 1e6, cacheWrite12h: 0, cacheRead: 1e6, output: 1e6 }), 4 + 5 + 8 + 0.2 + 20);
+  assert.equal(cost(rateFor("chatgpt", "gpt-6.1-sol")!, { ...NO_USAGE, cacheWrite5m: 100_000, cacheWrite12h: 100_000 }), 0.25 + 0.5, "OpenAI's half-hour write at 1.25 times input, its twelve-hour one at 2.5");
   assert.equal(cost(opus, { ...NO_USAGE, output: 1e6 }, true), 40, "fast mode is twice the price");
   const haiku = rateFor("claude", "claude-haiku-5-5")!;
   assert.equal(cost(haiku, { ...NO_USAGE, input: 50_000, output: 1e6 }), 0.005 + 0.5);
@@ -241,13 +242,16 @@ test("Claude's cache writes are counted at their own rates", () => {
   const meter = new Meter("messages");
   meter.read({ type: "message_start", message: { usage: { input_tokens: 10, cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 30 }, cache_read_input_tokens: 40, output_tokens: 1 } } });
   meter.read({ type: "message_delta", usage: { output_tokens: 99 } });
-  assert.deepEqual(meter.usage, { input: 10, cacheWrite5m: 20, cacheWrite1h: 30, cacheRead: 40, output: 99 });
+  assert.deepEqual(meter.usage, { input: 10, cacheWrite5m: 20, cacheWrite1h: 30, cacheWrite12h: 0, cacheRead: 40, output: 99 });
 });
 
-test("OpenAI's cache writes are counted at their own rate, apart from the input", () => {
+test("OpenAI's cache writes are counted at their own rate, apart from the input, and a twelve-hour one apart from a half-hour one", () => {
   const meter = new Meter("responses");
   meter.read({ object: "response", usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 20 }, output_tokens: 5 } });
-  assert.deepEqual(meter.usage, { input: 50, cacheRead: 30, cacheWrite5m: 20, cacheWrite1h: 0, output: 5 });
+  assert.deepEqual(meter.usage, { input: 50, cacheRead: 30, cacheWrite5m: 20, cacheWrite1h: 0, cacheWrite12h: 0, output: 5 });
+  const long = new Meter("responses");
+  long.read({ object: "response", usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 20, cache_write_tokens_details: { ttl_30m_tokens: 15, ttl_12h_tokens: 5 } }, output_tokens: 5 } });
+  assert.deepEqual(long.usage, { input: 50, cacheRead: 30, cacheWrite5m: 15, cacheWrite1h: 0, cacheWrite12h: 5, output: 5 });
 });
 
 test("the relay takes the provider's key from /etc/origaitv/env's line, and no other", () => {
