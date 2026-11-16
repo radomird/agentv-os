@@ -47,21 +47,27 @@
     }
     rows.append(heading, row);
   };
-  for (let r = 1; r <= 2; r++) addRow(r);
-  let made = 2;
+  for (let r = 1; r <= 3; r++) addRow(r);
+  let made = 3;
   document.addEventListener("click", (event) => {
     const picked = event.target.closest("[data-pick]");
     if (picked) document.title = `picked ${picked.dataset.pick}`;
   });
+  // Looked at again after each load, so rows go on loading while the end
+  // is still near.
+  const more = document.getElementById("more");
   let loading = false;
-  new IntersectionObserver((seen) => {
+  const watch = new IntersectionObserver((seen) => {
     if (!seen.some((entry) => entry.isIntersecting) || loading || made >= 8) return;
     loading = true;
     setTimeout(() => {
       for (let i = 0; i < 2 && made < 8; i++) addRow(++made);
       loading = false;
+      watch.unobserve(more);
+      watch.observe(more);
     }, 150);
-  }, { root: document.getElementById("main"), rootMargin: "0px 0px 100px 0px" }).observe(document.getElementById("more"));
+  }, { root: document.getElementById("main"), rootMargin: "0px 0px 100px 0px" });
+  watch.observe(more);
 </script>
 </body>
 </html>
