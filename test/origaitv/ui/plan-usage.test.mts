@@ -65,6 +65,12 @@ async function tv(): Promise<Page> {
   return page;
 }
 
+// Until nothing on the page is still moving in: Glass fades a page in, and
+// its words read fainter until it's there.
+async function settled(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
+}
+
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go(r), route);
 const actions = (page: Page) => page.locator(".settings-panel [data-focus]").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.action));
 const soon = (hours: number) => new Date(Date.now() + hours * 3600_000).toISOString();
@@ -85,6 +91,7 @@ for (const look of LOOKS) {
         await go(page, "settings/ai");
         await page.waitForSelector('.settings-panel[data-page="ai"] [data-action="plan-week"]');
         await rest(page);
+        await settled(page);
         const rows = await actions(page);
         for (const gone of ["usage", "cap-build", "cap-month"]) if (rows.includes(gone)) problems.push(`${theme}: AI has ${gone} on a plan`);
         if (!rows.includes("safeguards")) problems.push(`${theme}: no safety checks row`);
