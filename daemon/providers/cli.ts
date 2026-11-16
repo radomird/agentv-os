@@ -1,7 +1,9 @@
 // A plan's back end (ADR-022, ADR-023, ADR-053): the provider's own CLI,
 // unmodified, run once per sentence as the builder, which signed in to the
-// plan through the CLI's own login. OrigaiTV never sees the plan's tokens:
-// the CLI reads them from its own files in the builder's home.
+// plan through the CLI's own login. The daemon never sees the plan's tokens:
+// the CLI reads them from its own files in the builder's home. The same
+// service also runs Omarchy's usage check, which reads the sign-in too and
+// lets only the numbers out (daemon/plan-usage.ts).
 //
 // Each run is the router's brief and nothing else: no tools, no MCP
 // servers, no hooks, no skills, no project files, no session kept, and the
