@@ -96,10 +96,16 @@ async function measure(page: Page) {
     const list = document.querySelector(".glass-list")!;
     const shown = (el: Element) => getComputedStyle(el).visibility !== "hidden" && Number(getComputedStyle(el).opacity) > 0.01;
     const focused = document.querySelector(".focused");
+    // The look's --safe-y as it resolves: Fit to screen adds to it with calc().
+    const probe = document.createElement("div");
+    probe.style.cssText = "position: absolute; top: var(--safe-y)";
+    document.body.append(probe);
+    const safeY = parseFloat(getComputedStyle(probe).top) * zoom;
+    probe.remove();
     return {
       height: innerHeight,
       zoom,
-      safeY: parseFloat(getComputedStyle(root).getPropertyValue("--safe-y")) * zoom,
+      safeY,
       stuck: parseFloat(getComputedStyle(document.querySelector(".glass-pinned")!).top) * zoom,
       rest: document.querySelector(".glass-home")!.classList.contains("rest"),
       panel: rect(document.querySelector(".glass-pinned")),
@@ -133,11 +139,12 @@ test("T20.1 glass at rest: the shelf and the pinned row, nothing under it, and t
         const under = await page.evaluate(([x, y]) => document.elementsFromPoint(innerWidth * x, y).some((el) => el.closest(".glass-list")), [x, (at.panel!.bottom + at.height) / 2]);
         assert.equal(under, false, `${size}: nothing of the list under the pinned row`);
       }
-      // A wider margin, as Fit to screen sets: the row and its name move up
-      // with it.
-      await page.evaluate(() => document.documentElement.style.setProperty("--safe-y", "110px"));
+      // A wider margin, as Fit to screen sets it: the row and its name move
+      // up with it.
+      await page.evaluate(() => document.documentElement.style.setProperty("--fit-over-y", "50px"));
       await page.waitForTimeout(100);
       const wide = await measure(page);
+      assert.ok(Math.abs(wide.safeY - (at.safeY + 50 * at.zoom)) < 1, `${size}: the margin grew (${at.safeY} to ${wide.safeY})`);
       assert.ok(wide.label!.bottom <= wide.height - wide.safeY + 0.5, `${size}: with a wider margin, its name is still inside it (${Math.round(wide.label!.bottom)} of ${wide.height - wide.safeY})`);
     } finally {
       await page.close();
