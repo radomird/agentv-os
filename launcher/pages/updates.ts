@@ -30,11 +30,19 @@ export function release(updates: Updates): string | null {
   return next && !updates.status?.waiting ? shown(next) : null;
 }
 
-// Go back's snapshot, while it's for the origaitv the box has now.
+// Go back's snapshot, while it's for the origaitv the box has now and goes
+// back to a different one. Whole package versions are compared, since two
+// builds can read the same once shown() trims them.
 export function goBack(updates: Updates): GoBack | null {
   const go = updates.goBack;
   const now = updates.status?.origaitv.installed;
-  return go && now && go.to.origaitv === now ? go : null;
+  return go && now && go.to.origaitv === now && go.from.origaitv !== now ? go : null;
+}
+
+// The version Go back returns to, as its page names it: trimmed, unless that
+// reads the same as the one installed.
+function backTo(go: GoBack): string {
+  return shown(go.from.origaitv) === shown(go.to.origaitv) ? go.from.origaitv : shown(go.from.origaitv);
 }
 
 // The check after the last update found something off, there's a snapshot
@@ -229,7 +237,8 @@ export function updatesPanel(ctx: Ctx, open: (page: string) => void): HTMLElemen
     updateRow("version", "Version", shown(status.origaitv.installed)),
     ready(status) ? updateRow("install", "Install now", next ? shown(next) : "", () => void install(ctx)) : next ? updateRow("new-version", "New version", shown(next)) : null,
     next && status.notes.origaitv.length ? updateRow("whats-new", "What's new", "", () => open("whats-new")) : null,
-    go ? h("button", { class: "button", "data-focus": true, "data-action": "go-back", onclick: () => void goBackNow(ctx) }, `Go back to ${shown(go.from.origaitv)}`) : null,
+    // Go back asks first, on a page of its own that names the version.
+    go ? updateRow("go-back", "Go back", "", () => open("go-back")) : null,
     says ? h("div", { class: `panel-note${held(ctx) ? " held-note" : tonight(ctx.updates) ? " tonight-note" : ""}`, "data-line": "updates" }, says) : null,
     overnightRow,
   ];
@@ -249,6 +258,28 @@ export function notesPanel(ctx: Ctx): HTMLElement[] {
     ready(status) ? h("div", { class: "update-choices notes-choices" }, ...choices(ctx, "settings/whats-new"), tonightNote(ctx)) : null,
   ];
   return parts.filter((part): part is HTMLElement => part !== null);
+}
+
+// Go back, a level under Updates: which version it goes back to, then Go
+// back, which asks for the PIN, or Stay.
+export function goBackPanel(ctx: Ctx): HTMLElement[] {
+  const go = goBack(ctx.updates);
+  if (!go) return [h("div", { class: "panel-title" }, "Go back"), h("div", { class: "empty" }, "There's no other version to go back to")];
+  const stay = () => {
+    ctx.sounds.play("back");
+    ctx.render("settings/updates", "go-back");
+  };
+  return [
+    h("div", { class: "panel-title" }, "Go back"),
+    h("div", { class: "section go-back-question" }, `Go back to OrigaiTV ${backTo(go)}?`),
+    h("div", { class: "panel-note" }, "Your TV restarts to go back"),
+    h(
+      "div",
+      { class: "update-choices go-back-choices" },
+      h("button", { class: "button primary", "data-focus": true, "data-action": "go-back-now", onclick: () => void goBackNow(ctx) }, "Go back"),
+      h("button", { class: "button", "data-focus": true, "data-action": "stay", onclick: stay }, "Stay"),
+    ),
+  ];
 }
 
 async function overnight(ctx: Ctx): Promise<void> {
