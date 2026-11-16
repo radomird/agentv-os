@@ -39,6 +39,7 @@ import { cp } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { Manifest } from "../../apps/contract/manifest.ts";
 import { type BuildRequest, type BuildStatus, type Provider, reachesOf } from "../build.ts";
+import { offered } from "../models.ts";
 import { CLIS, SIGN_IN } from "../providers.ts";
 import { KINDS, loadRecipes, planProblems, type Plan } from "../recipe.ts";
 import { checkTheme, themeRules } from "../theme.ts";
@@ -86,6 +87,9 @@ export function checkRequest(data: unknown): { request?: BuildRequest; from?: st
   if (d.path !== "plan" && d.path !== "key") return { error: "a plan or a key" };
   if (d.provider === "gemini" && d.path === "plan") return { error: "google's plans aren't offered yet" };
   if (typeof d.safeguards !== "boolean") return { error: "whether npm's safeguards are on" };
+  // A model only from the provider's list, and with a key only one the
+  // relay prices (ADR-103).
+  if (d.model !== undefined && !offered(d.provider as Provider, d.path, d.model)) return { error: d.path === "key" ? "a model on the provider's list that the relay prices" : "a model on the provider's list" };
   let plan: Plan | undefined;
   if (d.plan !== undefined) {
     if (d.recipe !== null) return { error: "a plan is only for a request no recipe fits" };
@@ -120,6 +124,7 @@ export function checkRequest(data: unknown): { request?: BuildRequest; from?: st
   if (change) request.change = change;
   if (plan) request.plan = plan;
   if (d.signedIn === true && d.path === "plan") request.signedIn = true;
+  if (typeof d.model === "string") request.model = d.model;
   return { request, from: d.from as string | undefined, cap };
 }
 

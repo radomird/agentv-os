@@ -143,6 +143,7 @@ export class Runner {
       proxy: this.options.proxy,
       relay: this.options.relay,
       path: request.path,
+      model: request.model,
       standIn: this.options.standIn,
       step: step.id,
     });
@@ -153,7 +154,7 @@ export class Runner {
     // Understanding and planning run beside an empty build: nothing is in
     // work/ until a recipe or a plan is walked.
     const cwd = existsSync(this.build.work) ? this.build.work : this.build.dir;
-    this.build.log({ step: step.id, started: true });
+    this.build.log({ step: step.id, started: true, ...(request.model ? { model: request.model } : {}) });
     const lines: string[] = [];
     // What the CLI says on its way out, read only for why a step failed.
     let stderr = "";
@@ -173,7 +174,10 @@ export class Runner {
           buffer = buffer.slice(end + 1);
           if (own.length || !line.includes('"init"')) continue;
           try {
-            own = ownTools(JSON.parse(line));
+            const init = JSON.parse(line);
+            own = ownTools(init);
+            // The model the CLI says it started on, for the build's log.
+            if (init?.type === "system" && init.subtype === "init" && typeof init.model === "string") this.build.log({ step: step.id, cliModel: init.model.slice(0, 80) });
           } catch {}
           if (own.length) child.kill("SIGKILL");
         }
