@@ -1590,16 +1590,18 @@ export class Daemon {
       return;
     }
 
-    // Arrange home (S4.7): the viewer's grid and the apps that can go on it.
+    // Arrange home (S4.7): the viewer's grid and the apps that can go on it,
+    // and the TV's look, since Glass and Cinema draw home as rows (ADR-103).
     if (method === "GET" && path === "/api/phone/home") {
       const viewer = await this.profiles.active();
-      const [apps, layout] = await Promise.all([this.home.apps(viewer), this.home.layout(viewer.id, viewer.role)]);
+      const [apps, layout, looks] = await Promise.all([this.home.apps(viewer), this.home.layout(viewer.id, viewer.role), this.features.on("looks")]);
       this.json(response, 200, {
         ok: true,
         viewer,
         appsTile: APPS_TILE,
-        apps: apps.map((app) => ({ id: app.id, name: app.name, sizes: app.sizes })),
+        apps: apps.map((app) => ({ id: app.id, name: app.name, category: app.category, sizes: app.sizes })),
         layout,
+        look: looks ? await currentLook({ root: this.options.root, state: this.options.state }) : null,
       });
       return;
     }

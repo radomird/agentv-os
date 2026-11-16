@@ -1,18 +1,25 @@
 // Editing home in Glass and Cinema, where home is rows of apps rather than
 // Terminal's grid (pages/edit.ts). It's the look's own home, with the same
-// keys as Terminal's: OK picks the focused app up, left and right carry it
-// along its row, OK puts it down and Back puts it back. Delete takes it off
-// home. Neither look draws an app bigger at another size, so + and - do
-// nothing here; sizes are Terminal's, and the phone's. Every change is saved as it happens, to the profile's one layout,
-// with the moves Terminal's grid makes, so Terminal's home stays whole.
+// keys as Terminal's: OK picks the focused app up, the arrows carry it, OK
+// puts it down and Back puts it back. Left and right carry it along its row,
+// and in Glass up and down carry it to the row above or below, to the place
+// under or over it (ADR-103). Cinema's apps are one row. A game stays among
+// the games. Delete takes it off home. Neither look draws an app bigger at
+// another size, so + and - do nothing here; sizes are Terminal's, and the
+// phone's. Every change is saved as it happens, to the profile's one layout,
+// in the order the look draws, and where it can, in the places Terminal's
+// grid had, so Terminal's home keeps its shape.
+//
+// Move in an app's details opens this with the app in hand. Putting it down
+// goes home with the focus on it, and Back puts it back and goes back.
 
-import { move, unpin, type Placed, type Size } from "../layout.ts";
+import { reorder, unpin, type Placed } from "../layout.ts";
 import { h } from "../dom.ts";
 import type { Ctx, View } from "../main.ts";
 import { shelves } from "./games.ts";
 import { ordered } from "./glass/home.ts";
 import { lookHome } from "./homes.ts";
-import { currentGrid } from "./looks.ts";
+import { homeGrid } from "./looks.ts";
 
 function same(a: unknown[], b: unknown[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -20,10 +27,10 @@ function same(a: unknown[], b: unknown[]): boolean {
 
 const HINT = "Editing home. Move with the arrows, then OK";
 
-export function rowEdit(ctx: Ctx, focusOn?: string): View {
-  const grid = currentGrid();
+export function rowEdit(ctx: Ctx, focusOn?: string, moving = false): View {
+  const grid = homeGrid();
   let layout = ctx.state.layout.map((tile) => ({ ...tile }));
-  let held: { id: string; before: Placed[] } | null = null;
+  let held: { id: string; before: Placed[] } | null = moving && focusOn && layout.some((tile) => tile.id === focusOn) ? { id: focusOn, before: layout } : null;
   // Home as it is now in this edit: the look draws it from a layout of its
   // own, which is saved as each change is made.
   const shadow = (): Ctx => Object.create(ctx, { state: { value: { ...ctx.state, layout } } }) as Ctx;
@@ -76,47 +83,55 @@ export function rowEdit(ctx: Ctx, focusOn?: string): View {
     ctx.sounds.play("failure");
   };
 
-  // Every app on home in the order the look draws them.
-  const all = (): string[] => {
-    const shelf = shelves(ordered(shadow()));
-    return [...shelf.apps, ...shelf.games].map((app) => app.id);
+  // Puts an app at a place in its shelf, as the look draws it, and the apps
+  // between move along one to make room. False when there's no such place.
+  const place = (id: string, to: number): boolean => {
+    const shelf = shelfOf(id);
+    const from = shelf.indexOf(id);
+    if (from < 0 || to < 0 || to >= shelf.length || to === from) return false;
+    const moved = [...shelf];
+    moved.splice(from, 1);
+    moved.splice(to, 0, id);
+    // The shelf's apps take the places in home's order the shelf had, in
+    // their new order, so the other shelf stays where it is.
+    let next = 0;
+    const order = ordered(shadow()).map((app) => (shelf.includes(app.id) ? moved[next++] : app.id));
+    const result = reorder(layout, order, grid);
+    if (!result) return false;
+    layout = result;
+    return true;
   };
-  const fits = (id: string, size: Size) => (ctx.state.apps.find((app) => app.id === id)?.sizes.map((one) => one.size) ?? ["s"]).includes(size);
 
-  // One step along the row: it swaps places with its neighbour, as a move
-  // on Terminal's grid does. Where that would shuffle other apps too, as a
-  // big tile can on Terminal's grid, the two trade places and sizes
-  // instead, which leaves the rest where they were.
-  const step = (id: string, by: number) => {
-    const order = shelfOf(id);
-    const at = order.indexOf(id);
-    const other = layout.find((tile) => tile.id === order[at + by]);
-    const mine = layout.find((tile) => tile.id === id);
-    if (!other || !mine) {
+  // Where up or down takes an app in Glass: the place under or over it in
+  // the row above or below, or that row's last when it's shorter. Null in
+  // Cinema, whose apps are one row, past the first or last row, and across
+  // from the apps to the games.
+  const across = (id: string, by: 1 | -1): number | null => {
+    const tile = el.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`);
+    const row = tile?.closest(".glass-row");
+    if (!tile || !row) return null;
+    const rows = [...el.querySelectorAll(".glass-row")];
+    const target = rows[rows.indexOf(row) + by];
+    if (!target) return null;
+    const column = [...row.querySelectorAll(":scope > .tile")].indexOf(tile);
+    const shelf = shelfOf(id);
+    const there = [...target.querySelectorAll<HTMLElement>(":scope > .tile")];
+    const apps = there.filter((one) => shelf.includes(one.dataset.id ?? ""));
+    if (!apps.length) return null;
+    const under = there[Math.min(column, there.length - 1)];
+    const pick = apps.includes(under) ? under : apps[apps.length - 1];
+    return shelf.indexOf(pick.dataset.id!);
+  };
+
+  const step = (id: string, action: "left" | "right" | "up" | "down") => {
+    const at = shelfOf(id).indexOf(id);
+    const to = action === "left" ? at - 1 : action === "right" ? at + 1 : across(id, action === "down" ? 1 : -1);
+    if (to === null || !place(id, to)) {
       ctx.sounds.play("failure");
       return;
     }
-    const before = layout;
-    const wanted = all().map((one) => (one === id ? other.id : one === other.id ? id : one));
-    const tries = [
-      () => move(layout, id, other.x, other.y, grid),
-      () =>
-        fits(id, other.size) && fits(other.id, mine.size)
-          ? layout.map((tile) => (tile.id === id ? { ...tile, x: other.x, y: other.y, size: other.size } : tile.id === other.id ? { ...tile, x: mine.x, y: mine.y, size: mine.size } : tile))
-          : null,
-    ];
-    for (const attempt of tries) {
-      const next = attempt();
-      if (!next) continue;
-      layout = next;
-      if (same(all(), wanted)) {
-        ctx.sounds.play("move");
-        redraw(id);
-        return;
-      }
-      layout = before;
-    }
-    ctx.sounds.play("failure");
+    ctx.sounds.play("move");
+    redraw(id);
   };
 
   const remove = (id: string) => {
@@ -155,20 +170,23 @@ export function rowEdit(ctx: Ctx, focusOn?: string): View {
       if (action === "home") return false;
       const id = ctx.focus.get()?.dataset.id;
       if (held) {
-        if (action === "left" || action === "right") step(held.id, action === "right" ? 1 : -1);
+        if (action === "left" || action === "right" || action === "up" || action === "down") step(held.id, action);
         else if (action === "ok") {
           const before = held.before;
           const put = held.id;
           held = null;
           redraw(put);
-          if (same(before, layout)) ctx.sounds.play("back");
-          else void save(before, put);
+          // Moved from its details: home, with the focus where it went,
+          // once it's kept.
+          const done = same(before, layout) ? (ctx.sounds.play("back"), Promise.resolve()) : save(before, put);
+          if (moving) void done.then(() => ctx.home(put));
         } else if (action === "back") {
           const put = held.id;
           layout = held.before;
           held = null;
           redraw(put);
           ctx.sounds.play("back");
+          if (moving) ctx.back();
         }
         return true;
       }

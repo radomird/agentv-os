@@ -3,10 +3,10 @@
 
 import { daemon, type App } from "../api.ts";
 import { clock, h } from "../dom.ts";
-import { pin, unpin } from "../layout.ts";
+import { inside, pin, unpin } from "../layout.ts";
 import type { Ctx } from "../main.ts";
 import { lookBar } from "../looks/bars.ts";
-import { currentGrid, lookId } from "../looks/looks.ts";
+import { currentGrid, homeGrid, lookId } from "../looks/looks.ts";
 import { askBuilds } from "./ask.ts";
 
 // What home and Apps say while a tile is in focus: holding OK on it opens
@@ -53,10 +53,11 @@ export function section(name: string, extra = ""): HTMLElement {
 }
 
 // Puts an app on home, small in the first free cell, or takes it off. False
-// when nothing changed.
+// when nothing changed. With the looks on, home has no tile limit (ADR-103),
+// so there's always room; phase 1's 4 × 3 home can still be full.
 export async function togglePin(ctx: Ctx, id: string): Promise<boolean> {
   const onHome = ctx.state.layout.some((tile) => tile.id === id);
-  const layout = onHome ? unpin(ctx.state.layout, id) : pin(ctx.state.layout, id, "s", currentGrid());
+  const layout = onHome ? unpin(ctx.state.layout, id) : pin(ctx.state.layout, id, "s", homeGrid());
   if (!layout) {
     ctx.toast("Home is full. Make room first.", "fail");
     ctx.sounds.play("failure");
@@ -64,6 +65,23 @@ export async function togglePin(ctx: Ctx, id: string): Promise<boolean> {
   }
   if (!(await ctx.saveLayout(layout))) return false;
   ctx.sounds.play("confirm");
+  return true;
+}
+
+// Puts an app on home from its details, and goes home with the focus on it,
+// so you see where it went (ADR-103). Terminal's grid shows its first 12
+// cells, and an app past them is in Apps, which it says. Taking an app off
+// home stays on its details. False when nothing changed.
+export async function addToHome(ctx: Ctx, id: string): Promise<boolean> {
+  const adding = !ctx.state.layout.some((tile) => tile.id === id);
+  if (!(await togglePin(ctx, id))) return false;
+  if (!adding || !lookId()) return true;
+  const placed = ctx.state.layout.find((tile) => tile.id === id);
+  if (lookId() === "terminal" && placed && !inside(placed, currentGrid())) {
+    const name = ctx.state.apps.find((app) => app.id === id)?.name ?? "It";
+    ctx.toast(`Home's grid is full, so ${name} is in Apps`);
+  }
+  ctx.home(id);
   return true;
 }
 

@@ -440,6 +440,25 @@ button.who {
   gap: 6px;
 }
 
+/* Glass and Cinema's home as rows of six, as the TV draws them (ADR-103). */
+.mini-shelves {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mini-rows {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: 52px;
+  gap: 6px;
+}
+
+.mini-rows .mini-tile {
+  padding: 4px;
+  font-size: 11px;
+}
+
 .mini-tile,
 .mini-empty {
   min-width: 0;
