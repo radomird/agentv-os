@@ -434,7 +434,8 @@ export class Screen {
   private windows = new Map<string, Window>();
   // Windows that have been in front, the one in front last.
   private stack: string[] = [];
-  private apps = new Map<Role, App>();
+  // By role, and a native game by gameKey(its id), since several can run.
+  private apps = new Map<string, App>();
   private opens: Open[] = [];
   private want: { role: Role; until: number; app?: string } | null = null;
   // Until when a services' window that opens is stage B's look at a page,

@@ -232,7 +232,7 @@ test("T23.1 a child's profile sees the games and can't add or remove one", async
     // Settings on a child's profile is past the PIN, when the test before
     // set one.
     await go(page, "settings/games");
-    if ((await page.waitForSelector('.pin-pad, .settings-panel[data-page="games"]')).evaluate((el) => el.classList.contains("pin-pad"))) {
+    if (await (await page.waitForSelector('.pin-pad, .settings-panel[data-page="games"]')).evaluate((el) => el.classList.contains("pin-pad"))) {
       for (const digit of "2468") await page.keyboard.press(digit);
     }
     await page.waitForSelector('.settings-panel[data-page="games"]');
