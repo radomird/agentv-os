@@ -9,14 +9,32 @@
 # such as Steam. This installs it the way Omarchy's own installer does, or
 # with omarchy-pkg-add where Omarchy has none, from the repositories the box
 # already uses. origaitv-setup-apps starts it as root, through
-# origaitv-app-package@<app-id>.service, once the app itself is in. It leaves
-# out the step Omarchy's installer ends with, which starts the program, since
-# this runs as root. Only an app installed as official can name a package.
+# origaitv-app-package@<app-id>.service, once the app itself is in. Only an
+# app installed as official can name a package.
+#
+# ADR-103 adds every game platform Omarchy's menu has. Omarchy's installers
+# expect someone at a terminal: they ask with gum, start the program at the
+# end, and run as the person with sudo inside. So this repeats what each one
+# does, without the questions and without starting anything:
+#
+# - root's steps here: the lib32 graphics drivers first where the program
+#   needs them (omarchy-install-gaming-gpu-lib32, which runs unattended),
+#   then the packages with omarchy-pkg-add, and Lutris's own fix;
+# - GeForce NOW's flatpak, from NVIDIA's own flatpak repository, with
+#   Flathub for its runtime, as NVIDIA's installer adds them;
+# - the person's own steps, such as RetroArch's settings and ~/Games, run as
+#   the person by bin/origaitv-game-setup, with nothing of root's and no sudo.
+#
+# It runs every time an official native app is added, so a program that's
+# there already still gets its first steps, and only what's missing is
+# installed.
 
 set -euo pipefail
 
+ORIGAITV_BIN_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 APPS=${ORIGAITV_APPS:-/var/lib/origaitv/apps}
 ERRORS=${ORIGAITV_APP_PACKAGE_ERRORS:-/run/origaitv-app-package}
+RUNUSER=${ORIGAITV_RUNUSER:-runuser}
 export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
 export PATH="$OMARCHY_PATH/bin:$PATH"
 
@@ -40,32 +58,147 @@ tier=$(jq -r --arg id "$id" '.[$id].tier // empty' "$APPS/installed.json" 2>/dev
 manifest="$APPS/$id/manifest.json"
 [[ $(jq -r '.tv.runtime // empty' "$manifest" 2>/dev/null) == "native" ]] || fail "it isn't a native app"
 pkg=$(jq -r '.tv.package.pacman // empty' "$manifest" 2>/dev/null || true)
-if [[ -z $pkg ]]; then
-  [[ -n $(jq -r '.tv.package.flatpak // empty' "$manifest" 2>/dev/null) ]] && fail "Can't install this kind of app yet"
-  fail "it names no package"
-fi
-[[ $pkg =~ ^[a-z0-9][a-z0-9@._+-]*$ ]] || fail "'$pkg' isn't a package name"
-
-if pacman -Q -- "$pkg" >/dev/null 2>&1; then
-  echo "origaitv-app-package: $pkg is installed already"
-  exit 0
-fi
+flatpak=$(jq -r '.tv.package.flatpak // empty' "$manifest" 2>/dev/null || true)
+[[ -n $pkg || -n $flatpak ]] || fail "it names no package"
+[[ -z $pkg || $pkg =~ ^[a-z0-9][a-z0-9@._+-]*$ ]] || fail "'$pkg' isn't a package name"
 
 # pacman installs only with every repository's package list on the box,
 # which the box's own updates fetch. This never fetches them on the side,
 # since lists newer than the system can break it.
 SYNC=${ORIGAITV_PACMAN_SYNC:-/var/lib/pacman/sync}
-for repo in $(pacman-conf --repo-list 2>/dev/null); do
-  [[ -f $SYNC/$repo.db ]] || fail "Update OrigaiTV in Settings first, then add the app again"
-done
+synced() {
+  local repo
+  for repo in $(pacman-conf --repo-list 2>/dev/null); do
+    [[ -f $SYNC/$repo.db ]] || fail "Update OrigaiTV in Settings first, then add the app again"
+  done
+}
 
-# What Omarchy's own installer runs first, for the programs it has one for.
+# missing <package>...: the ones pacman doesn't have.
+missing() {
+  local each
+  for each in "$@"; do
+    pacman -Q -- "$each" >/dev/null 2>&1 || echo "$each"
+  done
+}
+
+# The person this box is for, whose home the first steps write to: the
+# first account with a login shell, as origaitv-update-tv finds them.
+owner=${ORIGAITV_OWNER:-$(awk -F: '$3 >= 1000 && $3 < 60000 && $7 !~ /nologin|false/ { print $1; exit }' /etc/passwd)}
+
+# as_owner <step>: one of bin/origaitv-game-setup's steps, as the person,
+# with a clean environment, no profile and no sudo. Nothing the person wrote
+# runs, and nothing of root's goes with it.
+as_owner() {
+  local home
+  [[ -n $owner ]] || return 1
+  home=$(getent passwd "$owner" | cut -d: -f6)
+  [[ -n $home && -d $home ]] || return 1
+  "$RUNUSER" -u "$owner" -- env -i HOME="$home" USER="$owner" LOGNAME="$owner" SHELL=/bin/bash \
+    PATH="/usr/local/bin:/usr/bin:$OMARCHY_PATH/bin" OMARCHY_PATH="$OMARCHY_PATH" LANG="${LANG:-C.UTF-8}" \
+    bash --noprofile --norc "$ORIGAITV_BIN_DIR/origaitv-game-setup" "$1"
+}
+
+# --- A flatpak ---------------------------------------------------------------
+
+if [[ -n $flatpak ]]; then
+  # Only the flatpaks OrigaiTV knows where to get, each from the repository
+  # its maker publishes it in.
+  case $flatpak in
+    com.nvidia.geforcenow)
+      remote=GeForceNOW
+      repo=https://international.download.nvidia.com/GFNLinux/flatpak/geforcenow.flatpakrepo
+      ;;
+    *) fail "Can't install this kind of app yet" ;;
+  esac
+  if flatpak info --system -- "$flatpak" >/dev/null 2>&1; then
+    echo "origaitv-app-package: $flatpak is installed already"
+    exit 0
+  fi
+  if [[ -n $(missing flatpak) ]]; then
+    synced
+    omarchy-pkg-add flatpak || fail "Couldn't install Flatpak"
+  fi
+  # Its runtime comes from Flathub, and the app from its maker's own
+  # repository, which flatpak checks against the key it names.
+  flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || fail "Couldn't reach Flathub. Try again later."
+  flatpak remote-add --system --if-not-exists "$remote" "$repo" || fail "Couldn't reach its download. Try again later."
+  flatpak install --system --noninteractive -y "$remote" "$flatpak" || fail "Couldn't install it. Try again later."
+  echo "origaitv-app-package: installed $flatpak for $id"
+  exit 0
+fi
+
+# --- Packages ----------------------------------------------------------------
+
+# What each program needs besides itself, as Omarchy's own installer has it.
+packages=("$pkg")
+lib32=false
 case $pkg in
   steam)
     # omarchy-install-gaming-steam: the lib32 drivers for this box's
     # graphics come before Steam, so Steam doesn't pull in another's.
-    omarchy-install-gaming-gpu-lib32 || fail "Couldn't install this app's graphics drivers"
+    lib32=true
+    ;;
+  lutris)
+    # omarchy-install-gaming-lutris: Wine, its helpers and umu-launcher,
+    # whose lib32 Vulkan driver comes first for the same reason.
+    lib32=true
+    packages+=(umu-launcher wine-staging wine-mono wine-gecko winetricks python-protobuf)
+    ;;
+  heroic-games-launcher-bin | umu-launcher)
+    # omarchy-install-gaming-heroic, and -battlenet's umu-launcher.
+    lib32=true
+    ;;
+  retroarch)
+    # omarchy-install-gaming-retroarch: its menus and the full set of cores.
+    packages+=(
+      retroarch-assets-glui retroarch-assets-ozone retroarch-assets-xmb
+      libretro-beetle-pce libretro-beetle-pce-fast libretro-beetle-psx libretro-beetle-psx-hw libretro-beetle-supergrafx
+      libretro-blastem
+      libretro-bsnes libretro-bsnes-hd
+      libretro-core-info
+      libretro-desmume libretro-dolphin libretro-flycast
+      libretro-gambatte libretro-genesis-plus-gx
+      libretro-kronos
+      libretro-mame libretro-melonds libretro-mesen libretro-mesen-s libretro-mgba libretro-mupen64plus-next
+      libretro-nestopia
+      libretro-overlays
+      libretro-parallel-n64 libretro-picodrive libretro-play libretro-ppsspp
+      libretro-sameboy libretro-scummvm libretro-shaders-slang libretro-snes9x
+      libretro-yabause
+      libretro-cap32-git libretro-fbneo-git libretro-uae-git
+      libretro-vice-x128-git libretro-vice-x64-git libretro-vice-x64dtv-git libretro-vice-x64sc-git
+      libretro-vice-xcbm2-git libretro-vice-xcbm5x0-git libretro-vice-xpet-git
+      libretro-vice-xplus4-git libretro-vice-xscpu64-git libretro-vice-xvic-git
+      libretro-database-git
+      retroarch-joypad-autoconfig-git
+    )
     ;;
 esac
-omarchy-pkg-add "$pkg" || fail "Couldn't install $pkg"
-echo "origaitv-app-package: installed $pkg for $id"
+
+mapfile -t wanted < <(missing "${packages[@]}")
+if (( ${#wanted[@]} == 0 )); then
+  echo "origaitv-app-package: $pkg is installed already"
+else
+  synced
+  if $lib32; then
+    omarchy-install-gaming-gpu-lib32 || fail "Couldn't install this app's graphics drivers"
+  fi
+  omarchy-pkg-add "${wanted[@]}" || fail "Couldn't install $pkg"
+  echo "origaitv-app-package: installed ${wanted[*]} for $id"
+fi
+
+# Lutris ships with "#!/usr/bin/env python3", which finds mise's Python
+# before the system's, and that one can't load Lutris. Omarchy's installer
+# pins it to the system's, and so does this.
+LUTRIS=${ORIGAITV_LUTRIS:-/usr/bin/lutris}
+if [[ $pkg == lutris && -f $LUTRIS ]] && head -n 1 "$LUTRIS" | grep -q 'env python3'; then
+  sed -i '1 c\#!/bin/python3' "$LUTRIS" || fail "Couldn't set up Lutris"
+fi
+
+# --- The person's first steps ------------------------------------------------
+
+case $id in
+  origaitv.retroarch) as_owner retroarch || fail "Couldn't set up RetroArch" ;;
+  origaitv.battlenet) as_owner battlenet || fail "Couldn't download Battle.net's setup. Try again later." ;;
+esac
+exit 0

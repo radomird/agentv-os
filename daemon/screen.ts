@@ -13,14 +13,15 @@
 // It also starts the home screen, the session's main app, in a Chromium of
 // its own (/var/lib/origaitv/chromium-home, ADR-030's kiosk app window), and
 // starts it again when it stops. Web apps open in the services' Chromium
-// (/var/lib/origaitv/chromium, with Widevine and the sign-ins), and Steam in a
-// gamescope of its own.
+// (/var/lib/origaitv/chromium, with Widevine and the sign-ins), and a native
+// game, Steam among them, in a gamescope of its own.
 //
 // Home pauses the app in front and shows the home screen; choosing the app
 // again brings it back where it was. Up to two apps stay open like that, and
 // a third closes the oldest. A game keeps running under home until it's
-// quit. Back goes to the app in front, and holding it for a second goes home
-// (ADR-031).
+// quit: any app whose category is games, a native one in its gamescope or a
+// web one such as a cloud game. Back goes to the app in front, and holding it
+// for a second goes home (ADR-031).
 //
 // With nothing playing and no input for the time Settings gives (10 minutes
 // at first), the home screen shows its ambient screen over whatever was in
@@ -86,7 +87,10 @@ import { Inhibitor } from "./inhibit.ts";
 import { Sleep, logindSleep } from "./sleep.ts";
 import { NEEDS_PIN, NOT_READY } from "./notices.ts";
 
-export type Role = "home" | "web" | "steam" | "share";
+// A native game, Steam among them, is "game": the daemon started it, in a
+// gamescope of its own. A web app that's a game is still "web", in the
+// services' Chromium; what makes either a game is its app's category.
+export type Role = "home" | "web" | "game" | "share";
 
 export const TV_WORKSPACE = "1";
 export const HELD_WORKSPACE = "special:origaitv-held";
@@ -160,6 +164,23 @@ export interface MonitorMode {
   refreshRate: number;
 }
 
+// What opening an installed app means, from OrigaiTV's daemon: a page in the
+// services' Chromium, a program, or a page app on home. Its category says
+// whether it's a game.
+export type AppTarget =
+  | { runtime: "web"; url: string; name?: string; category?: string }
+  | { runtime: "native"; exec: string[]; name?: string; category?: string }
+  | { runtime: "page"; name?: string; category?: string };
+
+// Whether an app that opens is a game. Steam's own command counts too, for a
+// daemon that answers without the category, as one from before it did.
+export function isGameTarget(target: AppTarget): boolean {
+  return target.category === "games" || (target.runtime === "native" && target.exec[0] === "steam");
+}
+
+// The key a native game's process has in the daemon's apps.
+const gameKey = (id: string) => `game:${id}`;
+
 export interface Launcher {
   // Resolves once the home screen's page answers, or after a while anyway.
   homeReady(): Promise<void>;
@@ -172,7 +193,10 @@ export interface Launcher {
   shareBrowser(url: string): App;
   // Where a shared link opens: the app that declares its site, or none.
   shareTarget(id: string): Promise<{ url: string; app?: string }>;
-  steam(mode: MonitorMode): App;
+  // A native game: its command in a gamescope of its own at the TV's mode,
+  // as a process group of the daemon's, so every window it opens is known
+  // as the game's. Throws when the command isn't there.
+  game(exec: string[], mode: MonitorMode, name?: string): App;
   toast(text: string): Promise<void>;
   // The listening bar over the app in front (ADR-054), in a state with its
   // words, or gone with "closed".
@@ -181,7 +205,8 @@ export interface Launcher {
   // button can show in the corner (ADR-031).
   corner(appInFront: boolean): Promise<void>;
   // What opening an installed app means, from OrigaiTV's daemon, or null.
-  appTarget(id: string): Promise<{ runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[]; name?: string } | { runtime: "page"; name?: string } | null>;
+  // With its category, since a game opens and stays open as a game does.
+  appTarget(id: string): Promise<AppTarget | null>;
   // OrigaiTV's sign-in bar in the overlay, under the service's page (board
   // 15), for the app named, or gone with null.
   signInBar(name: string | null): Promise<void>;
@@ -257,6 +282,8 @@ interface Window {
   address: string;
   pid: number;
   role: Role | null;
+  // A native game's app id: which game's gamescope opened it.
+  app?: string;
   class: string;
   title: string;
 }
@@ -273,6 +300,9 @@ interface Open {
   usedAt: number;
   // Home paused it, so choosing it again plays it.
   paused: boolean;
+  // Its app is a game (ADR-084, ADR-103): the guide button's press stays
+  // its own, and neither home nor the TV going off closes or pauses it.
+  game?: boolean;
   // Its service's profile for who's watching, once it's settled as the app
   // opened; an item to play waits for it (service-profiles.ts).
   ready?: Promise<unknown>;
@@ -410,7 +440,8 @@ export class Screen {
   private windows = new Map<string, Window>();
   // Windows that have been in front, the one in front last.
   private stack: string[] = [];
-  private apps = new Map<Role, App>();
+  // By role, and a native game by gameKey(its id), since several can run.
+  private apps = new Map<string, App>();
   private opens: Open[] = [];
   private want: { role: Role; until: number; app?: string } | null = null;
   // Until when a services' window that opens is stage B's look at a page,
@@ -737,11 +768,17 @@ export class Screen {
   // --- What the windows are -------------------------------------------------
 
   roleOf(pid: number): Role | null {
+    return this.ownerOf(pid).role;
+  }
+
+  // The role of the app that started a process, and for a native game, its
+  // app id: a game's windows are its gamescope's, and any of its children's.
+  private ownerOf(pid: number): { role: Role | null; app?: string } {
     let current: number | null = pid;
     for (let depth = 0; current && depth < 10; depth++) {
-      for (const app of this.apps.values()) {
+      for (const [key, app] of this.apps) {
         if (app.pid === current) {
-          return app.role;
+          return { role: app.role, ...(key.startsWith("game:") ? { app: key.slice("game:".length) } : {}) };
         }
       }
       current = this.launcher.parent(current);
@@ -749,17 +786,19 @@ export class Screen {
     // A services' Chromium that was already running when a web app opened,
     // or one from before the daemon restarted, is known by its profile.
     const profile = this.launcher.profile(pid);
-    if (profile === HOME_PROFILE) return "home";
-    if (profile === SERVICES_PROFILE) return "web";
-    if (profile === SHARE_PROFILE) return "share";
-    return null;
+    if (profile === HOME_PROFILE) return { role: "home" };
+    if (profile === SERVICES_PROFILE) return { role: "web" };
+    if (profile === SHARE_PROFILE) return { role: "share" };
+    return { role: null };
   }
 
   private remember(client: Client): Window {
+    const owner = this.ownerOf(client.pid);
     const window: Window = {
       address: client.address,
       pid: client.pid,
-      role: this.roleOf(client.pid),
+      role: owner.role,
+      ...(owner.app ? { app: owner.app } : {}),
       class: client.class,
       title: client.title,
     };
@@ -780,6 +819,25 @@ export class Screen {
     return homes[homes.length - 1] ?? null;
   }
 
+  // Two windows of the same app, as far as coming in front goes: the same
+  // role, and for a native game, the same game.
+  private sameApp(a: Window, b: Window | null | undefined): boolean {
+    return Boolean(b && a.role && a.role === b.role && (a.role !== "game" || a.app === b.app));
+  }
+
+  // The game a window belongs to, if it's a game's: a native game's, or a
+  // web app's whose category is games.
+  private gameOf(window: Window | null | undefined): Open | undefined {
+    if (!window) return undefined;
+    if (window.role === "game") return this.opens.find((o) => o.role === "game" && o.id === window.app);
+    return this.opens.find((o) => o.game && o.address === window.address);
+  }
+
+  // Whether a window is a game's.
+  private isGame(window: Window | null | undefined): boolean {
+    return window?.role === "game" || this.gameOf(window) !== undefined;
+  }
+
   // --- Events ---------------------------------------------------------------
 
   private async opened(address: string): Promise<void> {
@@ -787,10 +845,10 @@ export class Screen {
     if (!client) return;
     const window = this.remember(client);
     const front = this.front();
-    const wanted = this.want && window.role === this.want.role && this.now() <= this.want.until;
+    const wanted = this.want && window.role === this.want.role && (window.role !== "game" || window.app === this.want.app) && this.now() <= this.want.until;
     const quiet = !wanted && window.role === "web" && this.now() <= this.quietUntil;
 
-    if (!quiet && (wanted || (window.role && front?.role === window.role) || (window.role === "home" && !front))) {
+    if (!quiet && (wanted || this.sameApp(window, front) || (window.role === "home" && !front))) {
       const app = wanted ? this.want?.app : undefined;
       if (wanted) this.want = null;
       this.log(`in front: ${describe(window)}`);
@@ -830,7 +888,7 @@ export class Screen {
 
     // Another window of the same app, such as the one a sign-in window
     // opened from, comes back. Otherwise the home screen does.
-    const same = [...this.stack].reverse().map((a) => this.windows.get(a)).find((w) => w && w.role === window.role);
+    const same = [...this.stack].reverse().map((a) => this.windows.get(a)).find((w) => w && this.sameApp(window, w));
     if (same && window.role !== "home") {
       await this.toFront(same.address);
       return;
@@ -1138,8 +1196,9 @@ export class Screen {
         }
         const target = await this.launcher.appTarget(id).catch(() => null);
         if (!target) return { ok: false, error: "Can't open that app yet" };
+        const game = isGameTarget(target);
         if (target.runtime === "web") {
-          const reply = await this.openWeb(target.url, id);
+          const reply = await this.openWeb(target.url, id, game);
           // For a child, in the profile for children.
           const ready = this.opens.find((o) => o.id === id)?.ready;
           if (item) void Promise.resolve(ready).then(() => this.playback?.play?.(id, item));
@@ -1147,7 +1206,9 @@ export class Screen {
         }
         // A page app opens on home, in its frame (ADR-043).
         if (target.runtime === "page") return this.openPage(id);
-        if (target.exec[0] === "steam") return this.openSteam(id);
+        // A native game, in a gamescope of its own (ADR-103). A native app
+        // that isn't a game has no way onto the TV yet.
+        if (game) return this.openGame(id, target.exec, target.name);
         return { ok: false, error: "Can't open that app yet" };
       }
       // Someone else is watching (S4.2): an open app takes the service's
@@ -1399,23 +1460,25 @@ export class Screen {
   // Home, from any input (ADR-031): the app in front pauses and goes out of
   // sight, and the home screen comes to the front. With the home screen
   // already there, it goes back to its own home page. A game's guide button
-  // is the game's own: a press stays Steam's, and holding it for a second
-  // goes home (ADR-084). daemon/input.py times the hold, for each gamepad,
-  // and says "guide-hold" while the button is still down. Anywhere else the
-  // press has gone home already, so the hold has nothing left to do.
+  // is the game's own: a press stays the game's, and holding it for a second
+  // goes home (ADR-084), from any game, native or web (ADR-103).
+  // daemon/input.py times the hold, for each gamepad, and says "guide-hold"
+  // while the button is still down. Anywhere else the press has gone home
+  // already, so the hold has nothing left to do. A game isn't paused: it
+  // keeps running under home.
   home(from = ""): Promise<object> {
     return this.queue(async () => {
       const front = this.front();
-      if (from === "guide" && front?.role === "steam") return;
+      if (from === "guide" && this.isGame(front)) return;
       if (from === "guide-hold") {
-        if (front?.role !== "steam") return;
+        if (!this.isGame(front)) return;
         this.log("the guide button held with a game in front: home");
       }
       if (this.signingIn) await this.endSignIn("home");
-      const entry = front && this.opens.find((o) => o.address === front.address);
+      const entry = front && (this.gameOf(front) ?? this.opens.find((o) => o.address === front.address));
       if (entry) {
         entry.usedAt = this.now();
-        if (entry.role === "web") entry.paused = (await this.media(entry, PAUSE)) > 0;
+        if (entry.role === "web" && !entry.game) entry.paused = (await this.media(entry, PAUSE)) > 0;
       }
       const home = this.homeWindow();
       if (home && front?.address === home.address) {
@@ -1520,9 +1583,9 @@ export class Screen {
 
   // Closes the oldest apps past KEEP_OPEN; a game doesn't count.
   private async makeRoom(keep: string): Promise<void> {
-    const apps = this.opens.filter((o) => o.role !== "steam");
+    const apps = this.opens.filter((o) => !o.game);
     for (const oldest of apps.filter((o) => o.id !== keep).sort((a, b) => a.usedAt - b.usedAt)) {
-      if (this.opens.filter((o) => o.role !== "steam").length <= KEEP_OPEN) break;
+      if (this.opens.filter((o) => !o.game).length <= KEEP_OPEN) break;
       this.log(`closing ${oldest.id}, the oldest of ${KEEP_OPEN + 1} apps open`);
       await this.closeOpen(oldest);
     }
@@ -1532,11 +1595,11 @@ export class Screen {
     this.opens = this.opens.filter((o) => o !== entry);
     this.playback?.closed(entry.id);
     if (this.signingIn?.id === entry.id) await this.endSignIn("it closed");
-    if (entry.role === "steam") {
-      for (const window of [...this.windows.values()].filter((w) => w.role === "steam")) {
+    if (entry.role === "game") {
+      for (const window of [...this.windows.values()].filter((w) => w.role === "game" && w.app === entry.id)) {
         await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
       }
-      this.apps.get("steam")?.stop();
+      this.apps.get(gameKey(entry.id))?.stop();
     } else {
       if (entry.target && this.apps.get("web")?.cdp) await this.apps.get("web")!.cdp!.close(entry.target).catch(() => {});
       // Its window too, in case the page didn't take it with it.
@@ -1558,7 +1621,7 @@ export class Screen {
   }
 
   private runningApps(): { id: string; game: boolean; paused: boolean }[] {
-    return this.opens.filter((o) => o.address).map((o) => ({ id: o.id, game: o.role === "steam", paused: o.paused }));
+    return this.opens.filter((o) => o.address).map((o) => ({ id: o.id, game: o.game === true, paused: o.paused }));
   }
 
   // Tells the home screen which apps are open, for their tiles.
@@ -1837,7 +1900,8 @@ export class Screen {
         this.log("the TV went off; pausing");
         // Home's moving background stops too (ADR-072).
         void this.inHome(`window.origaitvTv?.("off")`);
-        for (const entry of this.opens.filter((o) => o.role === "web")) {
+        // A game keeps running, as it does under home.
+        for (const entry of this.opens.filter((o) => o.role === "web" && !o.game)) {
           if ((await this.media(entry, PAUSE)) > 0) entry.paused = true;
         }
         this.tvTimer = setTimeout(() => {
@@ -1917,9 +1981,10 @@ export class Screen {
     if (this.dark) void this.look("the TV's connector changed");
   }
 
-  // The TV has been off for tvOffCloseMs. Every app closes but a game: Steam
-  // with whatever it runs, and a game made on this TV, which is a page in
-  // home's own window (ADR-084). The other apps that are pages on home close
+  // The TV has been off for tvOffCloseMs. Every app closes but a game: a
+  // native one, such as Steam, with whatever it runs, a web app that's a
+  // game, and a game made on this TV, which is a page in home's own window
+  // (ADR-084, ADR-103). The other apps that are pages on home close
   // too, and home closes those, since it knows which of them is a game. A game that was in front stays in front, so
   // the TV comes back on to it and not to the ambient screen. A profile that
   // locks comes back on home's PIN pad instead, with the game open behind it.
@@ -1928,9 +1993,9 @@ export class Screen {
     let locked = false;
     return this.queue(async () => {
       if (!this.tvOff) return;
-      const games = this.opens.filter((o) => o.role === "steam");
+      const games = this.opens.filter((o) => o.game);
       this.log(`the TV has been off for a while; closing every app${games.length ? ` but ${games.map((o) => o.id).join(", ")}` : ""}`);
-      for (const entry of this.opens.filter((o) => o.role !== "steam")) await this.closeOpen(entry);
+      for (const entry of this.opens.filter((o) => !o.game)) await this.closeOpen(entry);
       // And a shared link's page.
       this.apps.get("share")?.stop();
       // And the apps that are pages on home, all but a game.
@@ -1948,7 +2013,7 @@ export class Screen {
       // The ambient screen that idling put over a game stays as it is, and a
       // key on it still goes back to the game.
       const over = this.ambient && this.ambientFrom ? this.windows.get(this.ambientFrom) : undefined;
-      if (over?.role === "steam" && !locked) {
+      if (this.isGame(over) && !locked) {
         stays = true;
         return;
       }
@@ -1976,10 +2041,10 @@ export class Screen {
 
   // On a locked TV the game ends out of reach, whatever happened on the way
   // to home: a compositor call that failed, or home with no window just
-  // then. Steam's windows go out of sight, home is asked for once more, and
-  // a game that can't be put out of sight closes.
+  // then. The games' windows go out of sight, home is asked for once more,
+  // and a game that can't be put out of sight closes.
   private async gameOutOfReach(): Promise<void> {
-    const games = [...this.windows.values()].filter((w) => w.role === "steam").map((w) => w.address);
+    const games = [...this.windows.values()].filter((w) => this.isGame(w)).map((w) => w.address);
     if (!games.length) return;
     const onTv = async () => (await this.hypr.clients()).filter((c) => c.workspace.name === TV_WORKSPACE).map((c) => c.address);
     let seen: string[] = [];
@@ -1998,8 +2063,12 @@ export class Screen {
       }
     } catch (error) {
       this.log(`the TV is locked and the game couldn't be put out of sight, so it closes: ${(error as Error).message}`);
-      this.opens = this.opens.filter((o) => o.role !== "steam");
-      this.apps.get("steam")?.stop();
+      const closing = this.opens.filter((o) => o.game);
+      this.opens = this.opens.filter((o) => !o.game);
+      for (const entry of closing) {
+        if (entry.role === "game") this.apps.get(gameKey(entry.id))?.stop();
+        else if (entry.target) await this.apps.get("web")?.cdp?.close(entry.target).catch(() => {});
+      }
       this.running();
     }
     this.stack = this.stack.filter((a) => !games.includes(a));
@@ -2009,26 +2078,28 @@ export class Screen {
     else if (!seen.includes(home.address)) await this.toFront(home.address).catch((error: Error) => this.log(`home couldn't be put in front: ${error.message}`));
   }
 
-  // The game in front, if one is: Steam's window, or a game made on this TV
-  // on home, which knows its apps' categories. Not behind the ambient screen
-  // or the PIN pad.
+  // The game in front, if one is: a native game's window, a web app that's a
+  // game, or a game made on this TV on home, which knows its apps'
+  // categories. Not behind the ambient screen or the PIN pad.
   private async gameInFront(): Promise<string | null> {
     if (this.ambient) return null;
     const front = this.front();
-    if (front?.role === "steam") return this.opens.find((o) => o.role === "steam")?.id ?? "steam";
+    const game = this.gameOf(front);
+    if (game) return game.id;
+    if (front?.role === "game") return front.app ?? "game";
     if (front && front.role !== "home") return null;
     const home = (await Promise.race([this.inHome("({ game: window.origaitvGame?.() ?? null })"), sleep(500).then(() => ({}))])) as { game?: unknown };
     return typeof home.game === "string" ? home.game : null;
   }
 
-  openWeb(url: string, id = url): Promise<object> {
+  openWeb(url: string, id = url, game = false): Promise<object> {
     if (!/^(https?|data):/.test(url)) {
       return Promise.resolve({ ok: false, error: "only http, https and data URLs open on the TV" });
     }
     if (this.opens.some((o) => o.id === id && o.address && this.windows.has(o.address))) return this.reopen(id);
     return this.queue(async () => {
       this.opens = this.opens.filter((o) => o.id !== id);
-      const entry: Open = { id, role: "web", usedAt: this.now(), paused: false };
+      const entry: Open = { id, role: "web", usedAt: this.now(), paused: false, ...(game ? { game: true } : {}) };
       this.opens.push(entry);
       this.want = { role: "web", until: this.now() + 30_000, app: id };
       const running = this.apps.get("web");
@@ -2273,45 +2344,57 @@ export class Screen {
     await cdp.bindIn?.(target, FOCUS_BINDING, REMOTE_WORLD, () => void this.tellContext()).catch((error: Error) => this.log(`that page can't say where its focus is: ${error.message}`));
   }
 
-  openSteam(id = "steam"): Promise<object> {
+  // A native game (ADR-103), Steam among them: its window in front if it's
+  // running, or its command started in a gamescope of its own, at the TV's
+  // mode. The daemon starts it itself, since the session's Hyprland holds
+  // every window out of sight that the daemon doesn't know (session/hypr.lua),
+  // and a game's windows are known as the ones its gamescope opens.
+  openGame(id: string, exec: string[], name?: string): Promise<object> {
     let result: object = { ok: true };
+    const key = gameKey(id);
     return this.queue(async () => {
-      const running = [...this.windows.values()].filter((w) => w.role === "steam").pop();
+      const running = [...this.windows.values()].filter((w) => w.role === "game" && w.app === id).pop();
       if (running) {
         await this.toFront(running.address);
-        const entry = this.opens.find((o) => o.role === "steam");
+        const entry = this.opens.find((o) => o.role === "game" && o.id === id);
         if (entry) entry.usedAt = this.now();
         return;
       }
-      this.opens = this.opens.filter((o) => o.role !== "steam");
-      this.opens.push({ id, role: "steam", usedAt: this.now(), paused: false });
-      if (this.apps.has("steam")) {
-        this.want = { role: "steam", until: this.now() + 120_000, app: id };
+      this.opens = this.opens.filter((o) => !(o.role === "game" && o.id === id));
+      this.opens.push({ id, role: "game", usedAt: this.now(), paused: false, game: true });
+      if (this.apps.has(key)) {
+        this.want = { role: "game", until: this.now() + 120_000, app: id };
         return;
       }
       const monitor = (await this.hypr.monitors()).find((m) => m.focused) ?? (await this.hypr.monitors())[0];
       if (!monitor) {
-        result = { ok: false, error: "No screen to show Steam on" };
+        result = { ok: false, error: `No screen to show ${name ?? "the game"} on` };
+        this.opens = this.opens.filter((o) => !(o.role === "game" && o.id === id));
         return;
       }
       try {
         // The TV's mode in logical pixels, as Hyprland's scale makes it, so
-        // Steam follows the size picked (ADR-062).
+        // the game follows the size picked (ADR-062).
         const scale = monitor.scale && monitor.scale > 0 ? monitor.scale : 1;
-        const app = this.launcher.steam({ width: Math.round(monitor.width / scale), height: Math.round(monitor.height / scale), refreshRate: monitor.refreshRate });
-        this.apps.set("steam", app);
+        const app = this.launcher.game(exec, { width: Math.round(monitor.width / scale), height: Math.round(monitor.height / scale), refreshRate: monitor.refreshRate }, name);
+        this.apps.set(key, app);
         app.onExit(() => {
-          if (this.apps.get("steam") === app) this.apps.delete("steam");
-          this.opens = this.opens.filter((o) => o.role !== "steam");
+          if (this.apps.get(key) === app) this.apps.delete(key);
+          this.opens = this.opens.filter((o) => !(o.role === "game" && o.id === id));
           this.running();
         });
-        this.want = { role: "steam", until: this.now() + 120_000, app: id };
-        this.log(`started Steam in its gamescope (pid ${app.pid})`);
+        this.want = { role: "game", until: this.now() + 120_000, app: id };
+        this.log(`started ${name ?? id} in its gamescope (pid ${app.pid})`);
       } catch (error) {
-        this.opens = this.opens.filter((o) => o.role !== "steam");
+        this.opens = this.opens.filter((o) => !(o.role === "game" && o.id === id));
         result = { ok: false, error: (error as Error).message };
       }
     }).then(() => result);
+  }
+
+  // Steam, the way it always opened (S3.5): origaitv screen open steam.
+  openSteam(id = "steam"): Promise<object> {
+    return this.openGame(id, ["steam", "-gamepadui"], "Steam");
   }
 
   close(role: Role): Promise<object> {
@@ -2320,7 +2403,7 @@ export class Screen {
       for (const window of [...this.windows.values()].filter((w) => w.role === role)) {
         await this.hypr.dispatch(`hl.dsp.window.close({ window = ${lua(`address:${window.address}`)} })`);
       }
-      if (role === "steam") this.apps.get("steam")?.stop();
+      if (role === "game") for (const [key, app] of this.apps) if (key.startsWith("game:")) app.stop();
     }).then(() => ({ ok: true }));
   }
 
@@ -2361,6 +2444,7 @@ export class Screen {
       open: this.opens.map((o) => ({
         id: o.id,
         role: o.role,
+        ...(o.game ? { game: true } : {}),
         paused: o.paused,
         front: o.address !== undefined && o.address === front?.address,
         // The service's profile for who's watching: "pending" while it's
@@ -2521,8 +2605,9 @@ export class Screen {
       case "apps":
         return this.appsPage(String(request.page ?? ""));
       case "close":
-        if (!["home", "web", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or steam" };
-        return this.close(request.role);
+        // "steam" is what it was called before any game opened (ADR-103).
+        if (!["home", "web", "game", "steam"].includes(request.role)) return { ok: false, error: "close what: home, web or game" };
+        return this.close(request.role === "steam" ? "game" : request.role);
       case "toast":
         return this.toast(String(request.text ?? ""));
       // One of the theme's own backgrounds, as picking it on the TV asks for.
@@ -2555,6 +2640,7 @@ function summary(window: Window, clients: Client[]) {
   return {
     address: window.address,
     role: window.role,
+    ...(window.app ? { app: window.app } : {}),
     class: client?.class ?? window.class,
     title: client?.title ?? window.title,
     pid: window.pid,
@@ -2755,18 +2841,21 @@ export const launcher: Launcher = {
     return { url: data.url, ...(typeof data.app === "string" ? { app: data.app } : {}) };
   },
 
-  steam(mode) {
-    const which = (process.env.PATH ?? "/usr/bin").split(":").some((dir) => existsSync(join(dir, "steam")));
+  game(exec, mode, name) {
+    const command = exec[0] ?? "";
+    const which = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(command) && (process.env.PATH ?? "/usr/bin").split(":").some((dir) => existsSync(join(dir, command)));
     if (!which) {
-      throw new Error("Steam isn't installed. On Omarchy's desktop: Install > Gaming > Steam.");
+      throw new Error(`${name ?? command} isn't installed. Add it again in Settings, under Games.`);
     }
-    // Its own gamescope, for Steam's frame pacing (ADR-031), at the TV's mode.
-    const child = spawn(
-      "gamescope",
-      ["-f", "-e", "-W", String(mode.width), "-H", String(mode.height), "-r", String(Math.round(mode.refreshRate)), "--", "steam", "-gamepadui"],
-      { stdio: ["ignore", "ignore", "inherit"], detached: true },
-    );
-    return track("steam", child, true);
+    // Its own gamescope, for frame pacing (ADR-031), at the TV's mode, so the
+    // game and whatever it starts are one window the daemon knows. Steam's
+    // gets gamescope's Steam integration too, as it always had.
+    const steam = command === "steam" ? ["-e"] : [];
+    const child = spawn("gamescope", ["-f", ...steam, "-W", String(mode.width), "-H", String(mode.height), "-r", String(Math.round(mode.refreshRate)), "--", ...exec], {
+      stdio: ["ignore", "ignore", "inherit"],
+      detached: true,
+    });
+    return track("game", child, true);
   },
 
   splashDone() {
@@ -2854,9 +2943,10 @@ export const launcher: Launcher = {
     if (!response.ok) return null;
     const target = await response.json();
     const name = typeof target.name === "string" ? target.name : undefined;
-    if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url, name };
-    if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String), name };
-    if (target.runtime === "page") return { runtime: "page", name };
+    const category = typeof target.category === "string" ? target.category : undefined;
+    if (target.runtime === "web" && typeof target.url === "string") return { runtime: "web", url: target.url, name, category };
+    if (target.runtime === "native" && Array.isArray(target.exec)) return { runtime: "native", exec: target.exec.map(String), name, category };
+    if (target.runtime === "page") return { runtime: "page", name, category };
     return null;
   },
 

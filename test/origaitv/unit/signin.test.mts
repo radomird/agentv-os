@@ -308,7 +308,7 @@ test("the daemon keeps what each app said, a tile says Sign in until its app is 
   assert.equal((await post("origaitv.nothing", { signedIn: true })).status, 404);
   assert.equal((await post("local.notes", { signedIn: "yes" })).status, 400);
   // The screen daemon gets the name for the sign-in bar with the address.
-  assert.deepEqual(await get("/api/apps/local.notes/launch"), { ok: true, runtime: "web", url: `${base}/web/`, name: "Notes" });
+  assert.deepEqual(await get("/api/apps/local.notes/launch"), { ok: true, runtime: "web", url: `${base}/web/`, name: "Notes", category: "streaming" });
 });
 
 test("an app with no icon of its own gets its site's, kept on the box", async () => {

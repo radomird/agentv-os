@@ -210,7 +210,7 @@ test("ADR-043 the daemon serves a page app from its own origin, under its policy
     assert.equal((await get(port, host, "/api/kit", "POST", JSON.stringify({ app: "origaitv.blocks", call: "storage.get", args: ["best"] }))).status, 405);
 
     // Home opens it in its frame, and its details say what it reaches.
-    assert.deepEqual(JSON.parse((await get(port, local, "/api/apps/origaitv.blocks/launch")).body), { ok: true, runtime: "page", name: "Blocks" });
+    assert.deepEqual(JSON.parse((await get(port, local, "/api/apps/origaitv.blocks/launch")).body), { ok: true, runtime: "page", name: "Blocks", category: "games" });
     const home = JSON.parse((await get(port, local, "/api/home")).body);
     const blocks = home.apps.find((a: { id: string }) => a.id === "origaitv.blocks");
     assert.equal(blocks.runtime, "page");
