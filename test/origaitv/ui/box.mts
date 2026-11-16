@@ -247,23 +247,47 @@ export const OFFICIAL = [
 
 // What origaitv-setup-apps does as root, for a box with no root: it takes the
 // daemon's drop, puts each app in the apps folder (the sample app, named for
-// it) and says how each went.
+// it, in its category) and says how each went. Like root, it takes the next
+// drop once it's done with one, removes an app a drop names (ADR-103), and
+// installs the Xbox controller driver, which here only says it did.
+// APPS_MOVER_MS is how long each takes, which a test can lengthen to see a
+// queue.
+export const APPS_MOVER = { ms: 400, restart: false };
 function appsMover(state: string, apps: string, status: string, catalog: IndexEntry[]): void {
   const drop = join(state, "apps-drop", "install.json");
-  setInterval(() => {
-    let ids: string[];
+  let going = false;
+  const read = (): { apps: Record<string, unknown>; drivers?: Record<string, unknown> } => {
     try {
-      ids = JSON.parse(readFileSync(drop, "utf8")).apps;
+      return JSON.parse(readFileSync(status, "utf8"));
+    } catch {
+      return { apps: {} };
+    }
+  };
+  setInterval(() => {
+    if (going) return;
+    let handed: { apps?: string[]; remove?: string[]; driver?: string };
+    try {
+      handed = JSON.parse(readFileSync(drop, "utf8"));
     } catch {
       return;
     }
     rmSync(drop, { force: true });
-    const said: Record<string, { state: string }> = {};
-    const write = () => writeFileSync(status, JSON.stringify({ apps: said }));
-    for (const id of ids) said[id] = { state: "installing" };
-    write();
+    going = true;
+    const ids = handed.apps ?? [];
+    const gone = handed.remove ?? [];
+    const said = read();
+    for (const id of ids) said.apps[id] = { state: "installing" };
+    for (const id of gone) said.apps[id] = { state: "removing" };
+    if (handed.driver === "xpadneo") said.drivers = { ...said.drivers, xpadneo: { state: "installing" } };
+    writeFileSync(status, JSON.stringify(said));
     setTimeout(() => {
       const installed = JSON.parse(readFileSync(join(apps, "installed.json"), "utf8"));
+      const now = read();
+      for (const id of gone) {
+        rmSync(join(apps, id), { recursive: true, force: true });
+        delete installed[id];
+        delete now.apps[id];
+      }
       for (const id of ids) {
         const app = catalog.find((a) => a.id === id)!;
         const target = join(apps, id);
@@ -271,14 +295,17 @@ function appsMover(state: string, apps: string, status: string, catalog: IndexEn
         const manifest = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
         manifest.id = id;
         manifest.name = app.name;
+        if (app.category) manifest.tv.category = app.category;
         writeFileSync(join(target, "manifest.json"), JSON.stringify(manifest, null, 2));
         writeFileSync(join(target, "app.ts"), code(id));
         installed[id] = { id, name: app.name, version: "1.0.0", tier: "official", installedAt: new Date().toISOString() };
-        said[id] = { state: "installed" };
+        now.apps[id] = { state: "installed" };
       }
+      if (handed.driver === "xpadneo") now.drivers = { ...now.drivers, xpadneo: { state: "installed", ...(APPS_MOVER.restart ? { restart: true } : {}) } };
       writeFileSync(join(apps, "installed.json"), JSON.stringify(installed, null, 2));
-      write();
-    }, 400);
+      writeFileSync(status, JSON.stringify(now));
+      going = false;
+    }, APPS_MOVER.ms);
   }, 50).unref();
 }
 

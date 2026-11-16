@@ -12,6 +12,7 @@ import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { addApp, installMoved } from "./pages/add-app.ts";
+import { gamesMoved } from "./pages/games.ts";
 import { appSetup } from "./pages/app-setup.ts";
 import { buildAsk, buildChange, buildPage, buildsMoved, loadBuilds } from "./pages/build.ts";
 import { apps } from "./pages/apps.ts";
@@ -929,7 +930,11 @@ async function start(): Promise<void> {
       if (notice.text) ctx.toast(`${notice.name ?? "An app"}: ${notice.text}`, "ok");
     },
     // An app added from Apps, or picked in setup, is installing.
-    "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),
+    "setup-apps": () => {
+      installMoved(ctx, history[history.length - 1] === "add-app");
+      // Settings' Games page and its Xbox row (ADR-103).
+      if (history[history.length - 1].startsWith("settings")) gamesMoved(redraw);
+    },
     // A build moved on (ADR-043 to ADR-046): its tile, its page and home's bar.
     builds: () => buildsMoved(ctx, history[history.length - 1], redraw),
     // Someone else is watching (S4.2): their home, at once. A child's profile
